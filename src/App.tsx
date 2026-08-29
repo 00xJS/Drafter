@@ -29,9 +29,48 @@ interface Toast {
   undo?: () => void
 }
 
+/** Local mode is for private hosts only — a public deploy without a backend fails closed. */
+function isPrivateHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.localhost') ||
+    /^192\.168\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+  )
+}
+
+function NotConfigured() {
+  return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="brand login-brand">
+          <span className="brand-mark">✈</span>
+          <span>Drafter</span>
+        </div>
+        <p className="login-sub">This deployment is locked</p>
+        <p>
+          Drafter fails closed on public hosts: no backend is configured, so there is no sign-in and nothing here is
+          editable or stored.
+        </p>
+        <p className="field-hint">
+          Site owner: set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in the host's
+          environment variables and redeploy to enable sign-in and sync.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /** Auth gate: with Supabase configured, the planner mounts only after sign-in. */
 export default function App() {
   const supabaseOn = isSupabaseConfigured()
+  // constant for the lifetime of the page, so the early return is hook-safe
+  if (!supabaseOn && import.meta.env.PROD && !isPrivateHost(window.location.hostname)) {
+    return <NotConfigured />
+  }
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(!supabaseOn)
 
