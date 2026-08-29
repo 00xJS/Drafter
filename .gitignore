@@ -5,5 +5,6 @@ dist
 server/drafter.db
 dev-dist
 
-# docs stay local-only — never uploaded
+# docs stay local-only — never uploaded (the root README is the one exception)
 *.md
+!/README.md
