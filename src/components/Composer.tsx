@@ -198,7 +198,7 @@ export function Composer({ post, preset, getLatest, onSave, onDelete, onClose }:
     const next: Post = { ...current }
     for (const key of Object.keys(form) as (keyof typeof form)[]) {
       if (JSON.stringify(form[key]) !== JSON.stringify(was[key])) {
-        ;(next as Record<string, unknown>)[key] = form[key]
+        ;(next as unknown as Record<string, unknown>)[key] = form[key]
       }
     }
     if (next.status === 'posted') next.postedAt = next.postedAt ?? next.scheduledFor ?? new Date().toISOString()
