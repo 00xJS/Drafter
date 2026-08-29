@@ -17,7 +17,7 @@ npm run dev          # app on http://localhost:5173
 
 ### Deploying to Netlify
 
-`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies Claude server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `ANTHROPIC_API_KEY` for AI features.
+`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies Claude server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `ANTHROPIC_API_KEY` for AI features (plus `ANTHROPIC_WORKSPACE_ID` if that key is identity-linked and not scoped to a single workspace).
 
 ## Views
 
