@@ -12,6 +12,7 @@ interface Props {
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function postDate(p: Post): string | undefined {
+  if (p.status === 'canceled') return undefined
   if (p.status === 'posted') return p.postedAt ?? p.scheduledFor
   return p.scheduledFor
 }

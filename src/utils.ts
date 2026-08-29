@@ -37,6 +37,24 @@ export function fromLocalInput(v: string): string | undefined {
   return v ? new Date(v).toISOString() : undefined
 }
 
+export function humanizeDuration(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000))
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  if (days < 14) return `${days}d ${hours % 24}h`
+  return `${days}d`
+}
+
+export function timeAgo(iso: string): string {
+  return `${humanizeDuration(Date.now() - new Date(iso).getTime())} ago`
+}
+
+export function timeUntil(iso: string): string {
+  return `in ${humanizeDuration(new Date(iso).getTime() - Date.now())}`
+}
+
 export function fmtNum(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'k'

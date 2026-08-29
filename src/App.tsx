@@ -7,15 +7,17 @@ import { notifyDue } from './notify'
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { Board } from './components/Board'
 import { Calendar } from './components/Calendar'
+import { Dashboard } from './components/Dashboard'
 import { PostsTable } from './components/PostsTable'
 import { Insights } from './components/Insights'
 import { Composer } from './components/Composer'
 import { Login } from './components/Login'
 import { Settings } from './components/Settings'
 
-type View = 'board' | 'calendar' | 'posts' | 'insights'
+type View = 'dashboard' | 'board' | 'calendar' | 'posts' | 'insights'
 
 const VIEW_LABELS: Record<View, string> = {
+  dashboard: 'Dashboard',
   board: 'Board',
   calendar: 'Calendar',
   posts: 'Posts',
@@ -51,7 +53,7 @@ export default function App() {
 
 function Planner() {
   const store = usePosts()
-  const [view, setView] = useState<View>('board')
+  const [view, setView] = useState<View>('dashboard')
   const [composer, setComposer] = useState<{ post?: Post; preset?: Partial<Post> } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
@@ -127,6 +129,7 @@ function Planner() {
       </header>
 
       <main className="content">
+        {view === 'dashboard' && <Dashboard posts={store.posts} onOpen={openPost} />}
         {view === 'board' && (
           <Board posts={store.posts} onOpen={openPost} onStatus={store.setStatus} onNew={s => newPost({ status: s })} />
         )}

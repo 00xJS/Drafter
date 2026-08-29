@@ -49,6 +49,11 @@ describe('sanitizePost', () => {
     expect(p?.postedAt).toBeUndefined()
   })
 
+  it('keeps the canceled status', () => {
+    const p = sanitizePost(valid({ status: 'canceled' }))
+    expect(p?.status).toBe('canceled')
+  })
+
   it('drops invalid dates and recurrence', () => {
     const p = sanitizePost({ ...valid(), scheduledFor: 'not a date', recurrence: { freq: 'hourly' } })
     expect(p?.scheduledFor).toBeUndefined()

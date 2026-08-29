@@ -230,8 +230,8 @@ button:focus-visible {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(230px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(200px, 1fr));
+  gap: 12px;
   align-items: start;
   overflow-x: auto;
 }
@@ -1342,6 +1342,74 @@ textarea {
   line-height: 1.55;
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* ---------- dashboard ---------- */
+
+.stat-warn {
+  color: var(--danger);
+}
+
+.dash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.dash-list li:hover {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
+.dash-list li:last-child {
+  border-bottom: none;
+}
+
+.dash-title {
+  font-weight: 600;
+  display: block;
+}
+
+.dash-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dash-reason {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.dash-when {
+  text-align: right;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-when small {
+  color: var(--muted);
+}
+
+.dash-fix {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ---------- responsive ---------- */

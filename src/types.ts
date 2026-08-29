@@ -1,5 +1,5 @@
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
-export type Status = 'idea' | 'draft' | 'scheduled' | 'posted'
+export type Status = 'idea' | 'draft' | 'scheduled' | 'posted' | 'canceled'
 
 export interface Metrics {
   likes?: number
@@ -64,13 +64,14 @@ export const PLATFORM_META: Record<Platform, { label: string; short: string; col
   youtube: { label: 'YouTube', short: 'YT', color: '#dc2626', charLimit: 5000 },
 }
 
-export const STATUSES: Status[] = ['idea', 'draft', 'scheduled', 'posted']
+export const STATUSES: Status[] = ['idea', 'draft', 'scheduled', 'posted', 'canceled']
 
 export const STATUS_META: Record<Status, { label: string; color: string; bg: string }> = {
   idea: { label: 'Idea', color: '#7c3aed', bg: '#f3eefe' },
   draft: { label: 'Draft', color: '#b45309', bg: '#fdf1dc' },
   scheduled: { label: 'Scheduled', color: '#0369a1', bg: '#e3f2fc' },
   posted: { label: 'Posted', color: '#15803d', bg: '#e2f7e9' },
+  canceled: { label: 'Canceled', color: '#6b7280', bg: '#f1f2f4' },
 }
 
 export function engagement(p: Post): number {
