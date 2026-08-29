@@ -35,7 +35,11 @@ export default async req => {
   if (!prompt) return Response.json({ error: 'prompt is required' }, { status: 400 })
   const maxTokens = Math.min(Math.max(Number(body?.maxTokens) || 2048, 256), 8192)
 
-  const anthropic = new Anthropic()
+  // identity-linked keys without a workspace scope require this header
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
+  const anthropic = new Anthropic(
+    workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {},
+  )
   const response = await anthropic.messages.create({
     model: AI_MODEL,
     max_tokens: maxTokens,

@@ -26,7 +26,14 @@ const upsertStmt = db.prepare(
 )
 const allStmt = db.prepare('SELECT data FROM posts')
 
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null
+// ANTHROPIC_WORKSPACE_ID: needed for identity-linked keys without a workspace scope
+const anthropic = process.env.ANTHROPIC_API_KEY
+  ? new Anthropic(
+      process.env.ANTHROPIC_WORKSPACE_ID
+        ? { defaultHeaders: { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID } }
+        : {},
+    )
+  : null
 const AI_MODEL = 'claude-opus-5'
 
 function json(res, status, payload) {

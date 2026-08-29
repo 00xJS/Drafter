@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { getAIKey, setAIKey } from '../ai'
+import { getAIKey, getAIWorkspace, setAIKey, setAIWorkspace } from '../ai'
 import { BackupStatus, chooseBackupFile, disableBackup, initBackup, resumeBackup } from '../backup'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -15,6 +15,7 @@ export function Settings({ store, onClose }: Props) {
   const [backup, setBackup] = useState<BackupStatus>('none')
   const [notif, setNotif] = useState(notificationPermission())
   const [aiKey, setKey] = useState(getAIKey())
+  const [aiWorkspace, setWorkspace] = useState(getAIWorkspace())
   const [savedFlash, setSavedFlash] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [accountEmail, setAccountEmail] = useState('')
@@ -158,13 +159,26 @@ export function Settings({ store, onClose }: Props) {
                 className="btn"
                 onClick={() => {
                   setAIKey(aiKey.trim())
+                  setAIWorkspace(aiWorkspace.trim())
                   setSavedFlash(true)
                   setTimeout(() => setSavedFlash(false), 1500)
                 }}
               >
-                {savedFlash ? 'Saved ✓' : 'Save key'}
+                {savedFlash ? 'Saved ✓' : 'Save'}
               </button>
             </div>
+            <div className="ai-row">
+              <input
+                placeholder="wrkspc_… (only for keys not scoped to a workspace)"
+                value={aiWorkspace}
+                onChange={e => setWorkspace(e.target.value)}
+                style={{ flex: 1 }}
+              />
+            </div>
+            <p className="field-hint">
+              If the API says “anthropic-workspace-id is required”, either paste your workspace ID above — or simpler,
+              create the key scoped to a workspace and leave this blank.
+            </p>
           </section>
         </div>
 

@@ -5,6 +5,7 @@ import { fmtDate } from './utils'
 
 const KEY_STORAGE = 'drafter:ai-key'
 const LEGACY_KEY_STORAGE = 'post-pilot:ai-key' // pre-rename builds
+const WS_STORAGE = 'drafter:ai-workspace'
 const MODEL = 'claude-opus-5'
 
 export function getAIKey(): string {
@@ -27,6 +28,24 @@ export function setAIKey(key: string): void {
   try {
     if (key) localStorage.setItem(KEY_STORAGE, key)
     else localStorage.removeItem(KEY_STORAGE)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Only needed for identity-linked keys that aren't scoped to a single workspace. */
+export function getAIWorkspace(): string {
+  try {
+    return localStorage.getItem(WS_STORAGE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function setAIWorkspace(id: string): void {
+  try {
+    if (id) localStorage.setItem(WS_STORAGE, id)
+    else localStorage.removeItem(WS_STORAGE)
   } catch {
     /* storage unavailable */
   }
@@ -66,7 +85,12 @@ async function complete(system: string, prompt: string, maxTokens = 2048): Promi
   if (!apiKey) {
     throw new Error('No AI access — add an Anthropic API key in Settings, or run `npm run server` with ANTHROPIC_API_KEY set.')
   }
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  const workspaceId = getAIWorkspace()
+  const client = new Anthropic({
+    apiKey,
+    dangerouslyAllowBrowser: true,
+    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
+  })
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: maxTokens,
