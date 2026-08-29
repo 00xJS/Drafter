@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { getSupabase } from '../supabase'
 
-export function Login() {
+export function Login({ onBack }: { onBack?: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -47,6 +47,11 @@ export function Login() {
         <p className="field-hint">
           Accounts are created in the Supabase dashboard (Authentication → Users) — there is no public sign-up.
         </p>
+        {onBack && (
+          <button type="button" className="btn subtle" onClick={onBack}>
+            ← Back
+          </button>
+        )}
       </form>
     </div>
   )

@@ -11,6 +11,7 @@ import { Dashboard } from './components/Dashboard'
 import { PostsTable } from './components/PostsTable'
 import { Insights } from './components/Insights'
 import { Composer } from './components/Composer'
+import { Landing } from './components/Landing'
 import { Login } from './components/Login'
 import { Settings } from './components/Settings'
 
@@ -42,37 +43,12 @@ function isPrivateHost(hostname: string): boolean {
   )
 }
 
-function NotConfigured() {
-  return (
-    <div className="login-wrap">
-      <div className="login-card">
-        <div className="brand login-brand">
-          <span className="brand-mark">✈</span>
-          <span>Drafter</span>
-        </div>
-        <p className="login-sub">This deployment is locked</p>
-        <p>
-          Drafter fails closed on public hosts: no backend is configured, so there is no sign-in and nothing here is
-          editable or stored.
-        </p>
-        <p className="field-hint">
-          Site owner: set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in the host's
-          environment variables and redeploy to enable sign-in and sync.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-/** Auth gate: with Supabase configured, the planner mounts only after sign-in. */
+/** Gate: public visitors see the landing page; the planner mounts only after sign-in. */
 export default function App() {
   const supabaseOn = isSupabaseConfigured()
-  // constant for the lifetime of the page, so the early return is hook-safe
-  if (!supabaseOn && import.meta.env.PROD && !isPrivateHost(window.location.hostname)) {
-    return <NotConfigured />
-  }
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(!supabaseOn)
+  const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
     const sb = getSupabase()
@@ -86,7 +62,13 @@ export default function App() {
   }, [])
 
   if (!authReady) return null
-  if (supabaseOn && !session) return <Login />
+  // fail closed: a public deploy with no backend gets the landing page with sign-in hidden
+  if (!supabaseOn && import.meta.env.PROD && !isPrivateHost(window.location.hostname)) {
+    return <Landing configured={false} />
+  }
+  if (supabaseOn && !session) {
+    return showLogin ? <Login onBack={() => setShowLogin(false)} /> : <Landing configured onSignIn={() => setShowLogin(true)} />
+  }
   return <Planner />
 }
 
