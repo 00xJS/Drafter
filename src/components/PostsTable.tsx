@@ -3,7 +3,7 @@ import { Platform, PLATFORMS, PLATFORM_META, Post, Status, STATUSES, STATUS_META
 import { Store } from '../store'
 import { postsFromCSV } from '../importers'
 import { migrateStored, STORAGE_VERSION } from '../schema'
-import { excerpt, fmtDate, fmtNum } from '../utils'
+import { excerpt, fmtDateTime, fmtNum } from '../utils'
 import { ImportArchiveDialog } from './ImportArchiveDialog'
 
 interface Props {
@@ -13,14 +13,24 @@ interface Props {
   onDelete(p: Post): void
 }
 
+type SortKey = 'date' | 'engagement'
+
+const postWhen = (p: Post) => p.postedAt ?? p.scheduledFor ?? p.updatedAt
+
 export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<Status | 'all'>('all')
   const [platform, setPlatform] = useState<Platform | 'all'>('all')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'date', dir: -1 })
   const [notice, setNotice] = useState('')
   const [archiveOpen, setArchiveOpen] = useState(false)
   const jsonInput = useRef<HTMLInputElement>(null)
   const csvInput = useRef<HTMLInputElement>(null)
+
+  const toggleSort = (key: SortKey) =>
+    setSort(cur => (cur.key === key ? { key, dir: cur.dir === -1 ? 1 : -1 } : { key, dir: -1 }))
+
+  const sortArrow = (key: SortKey) => (sort.key === key ? (sort.dir === -1 ? ' ▼' : ' ▲') : '')
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -28,10 +38,11 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
       .filter(p => status === 'all' || p.status === status)
       .filter(p => platform === 'all' || p.platforms.includes(platform))
       .filter(p => !needle || (p.title + ' ' + p.body + ' ' + p.tags.join(' ')).toLowerCase().includes(needle))
-      .sort((a, b) =>
-        (b.postedAt ?? b.scheduledFor ?? b.updatedAt).localeCompare(a.postedAt ?? a.scheduledFor ?? a.updatedAt),
-      )
-  }, [store.posts, q, status, platform])
+      .sort((a, b) => {
+        if (sort.key === 'date') return sort.dir * postWhen(a).localeCompare(postWhen(b))
+        return sort.dir * (engagement(a) - engagement(b))
+      })
+  }, [store.posts, q, status, platform, sort])
 
   function exportJSON() {
     const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), posts: store.allPosts }
@@ -135,14 +146,23 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
         </div>
       )}
 
+      <div className="table-scroll">
       <table className="posts-table">
         <thead>
           <tr>
             <th>Post</th>
             <th>Platforms</th>
             <th>Status</th>
-            <th>Date</th>
-            <th className="num">Engagement</th>
+            <th>
+              <button className="th-sort" onClick={() => toggleSort('date')}>
+                Date &amp; time{sortArrow('date')}
+              </button>
+            </th>
+            <th className="num">
+              <button className="th-sort" onClick={() => toggleSort('engagement')}>
+                Engagement{sortArrow('engagement')}
+              </button>
+            </th>
             <th></th>
           </tr>
         </thead>
@@ -167,7 +187,7 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
                   {STATUS_META[p.status].label}
                 </span>
               </td>
-              <td className="cell-date">{fmtDate(p.postedAt ?? p.scheduledFor) || '—'}</td>
+              <td className="cell-date">{fmtDateTime(p.postedAt ?? p.scheduledFor) || '—'}</td>
               <td className="num">{p.status === 'posted' ? fmtNum(engagement(p)) : '—'}</td>
               <td>
                 <button
@@ -184,6 +204,7 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
       {filtered.length === 0 && <p className="empty">No posts match.</p>}
 
       {archiveOpen && <ImportArchiveDialog store={store} onClose={() => setArchiveOpen(false)} />}

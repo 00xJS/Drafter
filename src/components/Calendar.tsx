@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Post, STATUS_META } from '../types'
-import { dateKey } from '../utils'
+import { dateKey, fmtTime } from '../utils'
 
 interface Props {
   posts: Post[]
@@ -32,6 +32,9 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
       const arr = map.get(k) ?? []
       arr.push(p)
       map.set(k, arr)
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (postDate(a) ?? '').localeCompare(postDate(b) ?? ''))
     }
     return map
   }, [posts])
@@ -104,25 +107,29 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
               }}
             >
               <div className="cal-daynum">{d.getDate()}</div>
-              {shown.map(p => (
-                <button
-                  key={p.id}
-                  className="cal-pill"
-                  style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}
-                  draggable={p.status !== 'posted'}
-                  onDragStart={e => {
-                    e.dataTransfer.setData('text/plain', p.id)
-                    e.dataTransfer.effectAllowed = 'move'
-                  }}
-                  onClick={e => {
-                    e.stopPropagation()
-                    onOpen(p)
-                  }}
-                  title={p.title || 'Untitled'}
-                >
-                  {p.title || 'Untitled'}
-                </button>
-              ))}
+              {shown.map(p => {
+                const when = postDate(p)
+                return (
+                  <button
+                    key={p.id}
+                    className="cal-pill"
+                    style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}
+                    draggable={p.status !== 'posted'}
+                    onDragStart={e => {
+                      e.dataTransfer.setData('text/plain', p.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onClick={e => {
+                      e.stopPropagation()
+                      onOpen(p)
+                    }}
+                    title={`${when ? fmtTime(when) + ' · ' : ''}${p.title || 'Untitled'}`}
+                  >
+                    {when && <span className="cal-pill-time">{fmtTime(when)}</span>}
+                    <span className="cal-pill-title">{p.title || 'Untitled'}</span>
+                  </button>
+                )
+              })}
               {dayPosts.length > 3 && <div className="cal-more">+{dayPosts.length - 3} more</div>}
             </div>
           )

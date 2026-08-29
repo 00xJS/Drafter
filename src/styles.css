@@ -422,9 +422,24 @@ button:focus-visible {
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 5px;
-  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cal-pill-time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.cal-pill-title {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cal-more {
@@ -476,6 +491,20 @@ button:focus-visible {
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+}
+
+.th-sort {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-sort:hover {
+  color: var(--text);
 }
 
 .posts-table td {
@@ -1525,6 +1554,11 @@ textarea {
 
 /* ---------- responsive ---------- */
 
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 @media (max-width: 900px) {
   .board {
     grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -1535,13 +1569,156 @@ textarea {
   }
 }
 
+@media (max-width: 640px) {
+  .content {
+    padding: 12px;
+  }
+
+  /* top bar: brand + actions on one row, tabs on their own swipeable row */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+
+  .tabs {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    margin: 0 -12px;
+    padding: 0 12px;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    white-space: nowrap;
+    padding: 10px 14px;
+  }
+
+  .topbar .btn.primary {
+    margin-left: 0;
+  }
+
+  /* compact 2-up stat tiles instead of a mile of full-width cards */
+  .kpi-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .stat-tile {
+    padding: 10px 12px;
+  }
+
+  .stat-value {
+    font-size: 21px;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .heatmap-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .heatmap {
+    min-width: 430px;
+  }
+
+  .posts-table {
+    min-width: 620px;
+  }
+
+  /* calendar: tighter cells, no hint text */
+  .cal-toolbar h2 {
+    min-width: 0;
+    font-size: 15px;
+  }
+
+  .cal-hint {
+    display: none;
+  }
+
+  .cal-cell {
+    min-height: 72px;
+    padding: 3px;
+  }
+
+  .cal-pill {
+    font-size: 10px;
+    padding: 4px 5px;
+  }
+
+  .cal-pill-time {
+    font-size: 9px;
+  }
+
+  .cal-daynum {
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+  }
+
+  .modal-backdrop {
+    padding: 12px 8px;
+    align-items: stretch;
+  }
+
+  .modal-body {
+    max-height: none;
+  }
+
+  .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+  }
+
+  .modal-body {
+    overflow-y: auto;
+  }
+
+  .landing-hero {
+    padding: 40px 20px 24px;
+  }
+
+  .landing-hero h1 {
+    font-size: 32px;
+  }
+
+  .top-posts li {
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 560px) {
   .board {
     grid-template-columns: 1fr;
   }
+}
 
-  .topbar {
-    flex-wrap: wrap;
-    gap: 8px;
+/* touch devices: bigger tap targets for the small controls */
+@media (pointer: coarse) {
+  .media-remove {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+  }
+
+  .toast-undo,
+  .toast-close {
+    padding: 10px 8px;
+    margin: -8px 0;
+  }
+
+  .cal-pill {
+    min-height: 24px;
   }
 }

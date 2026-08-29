@@ -6,6 +6,7 @@ export function uid(): string {
 
 const DATE_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
 const DATETIME_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 
 export function fmtDate(iso?: string): string {
   return iso ? DATE_FMT.format(new Date(iso)) : ''
@@ -13,6 +14,10 @@ export function fmtDate(iso?: string): string {
 
 export function fmtDateTime(iso?: string): string {
   return iso ? DATETIME_FMT.format(new Date(iso)) : ''
+}
+
+export function fmtTime(iso?: string): string {
+  return iso ? TIME_FMT.format(new Date(iso)) : ''
 }
 
 export function excerpt(s: string, n = 90): string {
