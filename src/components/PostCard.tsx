@@ -1,7 +1,14 @@
-import { Post, PLATFORM_META, engagement } from '../types'
+import { Post, PLATFORM_META, STATUSES, STATUS_META, Status, engagement } from '../types'
 import { excerpt, fmtDateTime, fmtNum } from '../utils'
 
-export function PostCard({ post, onOpen }: { post: Post; onOpen(p: Post): void }) {
+interface Props {
+  post: Post
+  onOpen(p: Post): void
+  /** When present, the card shows a one-tap status control (works on touch, unlike drag). */
+  onStatus?(id: string, status: Status): void
+}
+
+export function PostCard({ post, onOpen, onStatus }: Props) {
   const date =
     post.status === 'posted'
       ? fmtDateTime(post.postedAt)
@@ -22,7 +29,27 @@ export function PostCard({ post, onOpen }: { post: Post; onOpen(p: Post): void }
       }}
       onClick={() => onOpen(post)}
     >
-      <div className="card-title">{post.title || excerpt(post.body, 40) || 'Untitled'}</div>
+      <div className="card-title-row">
+        <div className="card-title">{post.title || excerpt(post.body, 40) || 'Untitled'}</div>
+        {onStatus && (
+          <span className="card-status" onClick={e => e.stopPropagation()}>
+            <span className="card-status-icon" aria-hidden>
+              ⇄
+            </span>
+            <select
+              value={post.status}
+              aria-label="Change status"
+              onChange={e => onStatus(post.id, e.target.value as Status)}
+            >
+              {STATUSES.map(s => (
+                <option key={s} value={s}>
+                  {STATUS_META[s].label}
+                </option>
+              ))}
+            </select>
+          </span>
+        )}
+      </div>
       {post.body && <div className="card-body">{excerpt(post.body)}</div>}
       <div className="card-meta">
         <span className="chips">

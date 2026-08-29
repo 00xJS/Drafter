@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Post, STATUS_META } from '../types'
+import { PLATFORM_META, Post, STATUS_META } from '../types'
 import { dateKey, fmtTime } from '../utils'
 
 interface Props {
@@ -22,6 +22,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
+  const [sheetDay, setSheetDay] = useState<Date | null>(null)
 
   const byDay = useMemo(() => {
     const map = new Map<string, Post[]>()
@@ -53,6 +54,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
   const todayKey = dateKey(new Date())
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
   const shift = (delta: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1))
+  const sheetPosts = sheetDay ? (byDay.get(dateKey(sheetDay)) ?? []) : []
 
   return (
     <div className="calendar">
@@ -75,7 +77,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
         >
           Today
         </button>
-        <span className="cal-hint">Click a day to schedule a post · drag a pill to reschedule</span>
+        <span className="cal-hint">Tap a day for its schedule · drag a pill to reschedule</span>
       </div>
 
       <div className="cal-grid cal-head-row">
@@ -95,10 +97,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
             <div
               key={k}
               className={'cal-cell' + (inMonth ? '' : ' out') + (k === todayKey ? ' today' : '')}
-              onClick={() => {
-                const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0, 0)
-                onNew(at.toISOString())
-              }}
+              onClick={() => setSheetDay(d)}
               onDragOver={e => e.preventDefault()}
               onDrop={e => {
                 e.preventDefault()
@@ -135,6 +134,67 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
           )
         })}
       </div>
+
+      {sheetDay && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setSheetDay(null)}>
+          <div className="modal narrow day-sheet" role="dialog" aria-modal="true">
+            <header className="modal-head">
+              <h2>{sheetDay.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
+              <button className="btn subtle" onClick={() => setSheetDay(null)} aria-label="Close">
+                ✕
+              </button>
+            </header>
+            <div className="modal-body">
+              {sheetPosts.length === 0 ? (
+                <p className="empty">Nothing on this day yet.</p>
+              ) : (
+                <ul className="dash-list">
+                  {sheetPosts.map(p => (
+                    <li
+                      key={p.id}
+                      onClick={() => {
+                        setSheetDay(null)
+                        onOpen(p)
+                      }}
+                    >
+                      <div className="dash-main">
+                        <span className="dash-title">{p.title || p.body.slice(0, 50) || 'Untitled'}</span>
+                        <span className="dash-meta">
+                          <span
+                            className="badge"
+                            style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}
+                          >
+                            {STATUS_META[p.status].label}
+                          </span>
+                          {p.platforms.map(pl => (
+                            <span key={pl} className="chip platform" style={{ background: PLATFORM_META[pl].color }}>
+                              {PLATFORM_META[pl].short}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      <strong className="day-time">{fmtTime(postDate(p))}</strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <footer className="modal-foot">
+              <span className="spacer" />
+              <button
+                className="btn primary"
+                onClick={() => {
+                  const at = new Date(sheetDay.getFullYear(), sheetDay.getMonth(), sheetDay.getDate(), 9, 0, 0)
+                  setSheetDay(null)
+                  onNew(at.toISOString())
+                }}
+              >
+                + New post this day
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

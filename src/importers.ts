@@ -224,7 +224,7 @@ export function postsFromInstagramArchive(text: string): Post[] {
   const data: unknown = JSON.parse(text)
   const list: IgPost[] = Array.isArray(data) ? data : []
   const posts: Post[] = []
-  list.forEach((item, i) => {
+  list.forEach(item => {
     if (!item || typeof item !== 'object') return
     const media = Array.isArray(item.media) ? item.media : []
     const ts = item.creation_timestamp ?? media[0]?.creation_timestamp
@@ -232,7 +232,8 @@ export function postsFromInstagramArchive(text: string): Post[] {
     const caption = fixLatin1Utf8((item.title ?? media[0]?.title ?? '').trim())
     const postedAt = new Date(ts * 1000).toISOString()
     posts.push({
-      id: `ig-${ts}-${i}`,
+      // timestamp + caption hash: stable across re-exports, unlike the array index
+      id: `ig-${ts}-${hashId(caption)}`,
       title: '',
       body: caption,
       platforms: ['instagram'],

@@ -35,9 +35,6 @@ export interface Post {
   recurrence?: Recurrence
   /** Tombstone: set instead of hard-deleting so deletes sync and can be undone. */
   deletedAt?: string
-  /** When a due-post reminder was shown, to avoid repeats. */
-  notifiedAt?: string
-  sample?: boolean
 }
 
 export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
@@ -74,19 +71,4 @@ export const STATUS_META: Record<Status, { label: string; color: string; bg: str
   canceled: { label: 'Canceled', color: '#6b7280', bg: '#f1f2f4' },
 }
 
-export function engagement(p: Post): number {
-  if (!p.metrics) return 0
-  let sum = 0
-  for (const m of Object.values(p.metrics)) {
-    if (!m) continue
-    sum += (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0)
-  }
-  return sum
-}
-
-export function impressions(p: Post): number {
-  if (!p.metrics) return 0
-  let sum = 0
-  for (const m of Object.values(p.metrics)) sum += m?.impressions ?? 0
-  return sum
-}
+export { engagement, impressions } from '../shared/domain.mjs'

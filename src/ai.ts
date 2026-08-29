@@ -1,118 +1,49 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { Platform, PLATFORM_META, Post, engagement, impressions } from './types'
 import { getSupabase } from './supabase'
 import { fmtDate } from './utils'
 
-const KEY_STORAGE = 'drafter:ai-key'
-const LEGACY_KEY_STORAGE = 'post-pilot:ai-key' // pre-rename builds
-const WS_STORAGE = 'drafter:ai-workspace'
-const MODEL = 'claude-opus-5'
+// All AI calls go through the session-gated /api/ai proxy (the Netlify
+// function). No API key ever reaches the browser.
 
-export function getAIKey(): string {
-  try {
-    const key = localStorage.getItem(KEY_STORAGE)
-    if (key !== null) return key
-    const legacy = localStorage.getItem(LEGACY_KEY_STORAGE)
-    if (legacy) {
-      localStorage.setItem(KEY_STORAGE, legacy)
-      localStorage.removeItem(LEGACY_KEY_STORAGE)
-      return legacy
-    }
-    return ''
-  } catch {
-    return ''
+class AIError extends Error {}
+
+async function complete(system: string, prompt: string, maxTokens = 2048): Promise<string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const sb = getSupabase()
+  if (sb) {
+    const { data } = await sb.auth.getSession()
+    if (data.session) headers.authorization = `Bearer ${data.session.access_token}`
   }
-}
-
-export function setAIKey(key: string): void {
+  let res: Response
   try {
-    if (key) localStorage.setItem(KEY_STORAGE, key)
-    else localStorage.removeItem(KEY_STORAGE)
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-/** Only needed for identity-linked keys that aren't scoped to a single workspace. */
-export function getAIWorkspace(): string {
-  try {
-    return localStorage.getItem(WS_STORAGE) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-export function setAIWorkspace(id: string): void {
-  try {
-    if (id) localStorage.setItem(WS_STORAGE, id)
-    else localStorage.removeItem(WS_STORAGE)
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-async function viaProxy(system: string, prompt: string, maxTokens: number): Promise<string | null> {
-  try {
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
-    // the hosted AI proxy verifies the Supabase session so strangers can't burn credits
-    const sb = getSupabase()
-    if (sb) {
-      const { data } = await sb.auth.getSession()
-      if (data.session) headers.authorization = `Bearer ${data.session.access_token}`
-    }
-    const res = await fetch('/api/ai', {
+    res = await fetch('/api/ai', {
       method: 'POST',
       headers,
       body: JSON.stringify({ system, prompt, maxTokens }),
       signal: AbortSignal.timeout(180_000),
     })
-    if (!res.ok) return null
-    const data: unknown = await res.json()
-    const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
-    return typeof text === 'string' ? text : null
   } catch {
-    return null
+    throw new AIError('AI is unreachable from here — it runs on the hosted site (or via `netlify dev` locally).')
   }
-}
-
-async function complete(system: string, prompt: string, maxTokens = 2048): Promise<string> {
-  // Prefer the local server (keeps the API key out of the browser)…
-  const proxied = await viaProxy(system, prompt, maxTokens)
-  if (proxied !== null) return proxied
-
-  // …fall back to calling the API directly with a key from Settings.
-  const apiKey = getAIKey()
-  if (!apiKey) {
-    throw new Error('No AI access — add an Anthropic API key in Settings, or run `npm run server` with ANTHROPIC_API_KEY set.')
+  if (res.status === 401) throw new AIError('Session expired — sign in again and retry.')
+  if (res.status === 501) throw new AIError('AI is not configured on this site: set ANTHROPIC_API_KEY in the host environment.')
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new AIError((body as { error?: string } | null)?.error ?? `AI request failed (HTTP ${res.status}).`)
   }
-  const workspaceId = getAIWorkspace()
-  const client = new Anthropic({
-    apiKey,
-    dangerouslyAllowBrowser: true,
-    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
-  })
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: prompt }],
-  })
-  if (response.stop_reason === 'refusal') throw new Error('The model declined this request.')
-  let text = ''
-  for (const block of response.content) {
-    if (block.type === 'text') text += block.text
-  }
-  if (!text.trim()) throw new Error('Empty response from the model.')
+  const data: unknown = await res.json()
+  const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
+  if (typeof text !== 'string' || !text.trim()) throw new AIError('The model returned an empty response.')
   return text
 }
 
 function extractJSON<T>(text: string): T {
   const starts = ['{', '['].map(ch => text.indexOf(ch)).filter(i => i !== -1)
-  if (starts.length === 0) throw new Error('The model returned no JSON.')
+  if (starts.length === 0) throw new AIError('The model returned no JSON.')
   const start = Math.min(...starts)
   const close = text[start] === '{' ? '}' : ']'
   const end = text.lastIndexOf(close)
-  if (end <= start) throw new Error('The model returned malformed JSON.')
+  if (end <= start) throw new AIError('The model returned malformed JSON.')
   return JSON.parse(text.slice(start, end + 1)) as T
 }
 
@@ -131,7 +62,7 @@ export async function generateVariants(body: string, platforms: Platform[]): Pro
     const v = raw[pl]
     if (typeof v === 'string' && v.trim()) out[pl] = v.trim()
   }
-  if (Object.keys(out).length === 0) throw new Error('The model returned no usable variants.')
+  if (Object.keys(out).length === 0) throw new AIError('The model returned no usable variants.')
   return out
 }
 

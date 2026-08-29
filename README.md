@@ -13,7 +13,7 @@ npm run dev          # app on http://localhost:5173
 
 **Cloud mode (Supabase)** — active when `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are set (`.env.local` locally, site env vars on Netlify). The app requires sign-in (Supabase Auth; accounts are created in the Supabase dashboard — no public sign-up), syncs every change to Postgres, and bots can manage posts through the Supabase REST API (documented in the local, unpublished `BOTS.md`). Schema lives in `supabase/migrations/` (`supabase db push` applies it).
 
-**Local mode** — with no Supabase env vars, data stays in the browser, optionally synced to a local SQLite file via `npm run server` (which can also serve the built app on your network, and proxies AI when started with `ANTHROPIC_API_KEY`).
+**Local mode** — with no Supabase env vars, data stays in the browser (IndexedDB). Useful for offline dev; there is no separate local server anymore.
 
 ### Deploying to Netlify
 
@@ -48,7 +48,7 @@ Re-importing an archive is idempotent — posts match by platform id, and your l
 
 ## Data & sync model
 
-Posts are stored as a versioned payload in `localStorage` (`drafter:v1`, migrated automatically from the old `post-pilot:v1` key), validated and migrated on load — malformed data is quarantined, never overwritten. Deletes are tombstones (undo-able, purged after 90 days). Sync is last-write-wins per post by `updatedAt`, so the newest edit wins across devices; the server merges and returns the full set. Images live in IndexedDB and are not part of JSON exports or sync.
+Posts cache locally in IndexedDB (validated and migrated on load) and sync to Postgres with **delta sync**: only posts newer than the last cursor move in either direction, so an imported archive doesn't turn every sync into a megabyte exchange. Sync also fires when the app returns to the foreground. Last-write-wins per post by `updatedAt` is **enforced by a database trigger** for every writer (app, MCP, raw REST), with strictly-increasing stamps on every edit. Deletes are tombstones (undo-able, purged after 90 days). Images upload to Supabase Storage (owner-scoped) with IndexedDB as the offline cache, so they follow you across devices.
 
 ## Development
 

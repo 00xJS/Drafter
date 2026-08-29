@@ -51,9 +51,12 @@ export function Board({ posts, onOpen, onStatus, onNew }: Props) {
               <span className="board-count">{list.length}</span>
             </header>
             <div className="board-cards">
-              {list.map(p => (
-                <PostCard key={p.id} post={p} onOpen={onOpen} />
+              {(s === 'posted' ? list.slice(0, 30) : list).map(p => (
+                <PostCard key={p.id} post={p} onOpen={onOpen} onStatus={onStatus} />
               ))}
+              {s === 'posted' && list.length > 30 && (
+                <p className="board-more">+ {list.length - 30} older — see the Posts tab</p>
+              )}
             </div>
             <button className="board-add" onClick={() => onNew(s)}>
               + Add

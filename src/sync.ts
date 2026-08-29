@@ -2,38 +2,28 @@ import { Post } from './types'
 import { sanitizePost } from './schema'
 import { getSupabase } from './supabase'
 
-function sanitizeList(list: unknown[]): Post[] {
-  return list.map(sanitizePost).filter((p): p is Post => p !== null)
+export interface SyncResult {
+  /** Posts newer than `since` (everything when since is null). Null when unreachable. */
+  posts: Post[] | null
+  /** True when the failure was an expired/invalid session rather than the network. */
+  authError: boolean
 }
 
 /**
- * Push the local set and receive the merged set back (last-write-wins per post).
- * Uses Supabase when configured, else the local `npm run server` endpoint.
- * Returns null when no backend is reachable (the app keeps working locally).
+ * Delta sync against the sync_posts RPC: push only the posts newer than the
+ * cursor, receive only the rows newer than the cursor. `since: null` performs
+ * a full exchange (first run or repair).
  */
-export async function syncNow(local: Post[]): Promise<Post[] | null> {
+export async function syncNow(outgoing: Post[], since: string | null): Promise<SyncResult> {
   const sb = getSupabase()
-  if (sb) {
-    const { data, error } = await sb.rpc('sync_posts', { incoming: local })
-    if (error) {
-      console.error('Supabase sync failed:', error.message)
-      return null
-    }
-    return Array.isArray(data) ? sanitizeList(data) : null
+  if (!sb) return { posts: null, authError: false }
+  const { data, error } = await sb.rpc('sync_posts', { incoming: outgoing, since })
+  if (error) {
+    console.error('Supabase sync failed:', error.message)
+    const msg = `${error.message} ${error.code ?? ''}`.toLowerCase()
+    const authError = msg.includes('jwt') || msg.includes('401') || msg.includes('permission denied')
+    return { posts: null, authError }
   }
-
-  try {
-    const res = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ posts: local }),
-      signal: AbortSignal.timeout(4000),
-    })
-    if (!res.ok) return null
-    const data: unknown = await res.json()
-    const list = data && typeof data === 'object' ? (data as { posts?: unknown }).posts : null
-    return Array.isArray(list) ? sanitizeList(list) : null
-  } catch {
-    return null
-  }
+  if (!Array.isArray(data)) return { posts: null, authError: false }
+  return { posts: data.map(sanitizePost).filter((p): p is Post => p !== null), authError: false }
 }

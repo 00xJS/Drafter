@@ -1,9 +1,10 @@
 const DB_NAME = 'drafter'
-const STORES = ['media', 'handles'] as const
+// 'posts' arrived in v2 (the local cache moved out of localStorage's 5MB quota)
+const STORES = ['media', 'handles', 'posts'] as const
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
+    const req = indexedDB.open(DB_NAME, 2)
     req.onupgradeneeded = () => {
       for (const s of STORES) {
         if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s)

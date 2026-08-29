@@ -107,8 +107,6 @@ export function sanitizePost(raw: unknown): Post | null {
     mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
     recurrence,
     deletedAt: isoDate(r.deletedAt),
-    notifiedAt: isoDate(r.notifiedAt),
-    sample: r.sample === true ? true : undefined,
   }
 }
 

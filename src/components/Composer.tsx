@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Metrics,
   Platform,
@@ -11,6 +11,7 @@ import {
   STATUSES,
   STATUS_META,
 } from '../types'
+import { newerStamp } from '../postops'
 import { fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
 import { generateVariants, suggestTags } from '../ai'
@@ -18,6 +19,9 @@ import { generateVariants, suggestTags } from '../ai'
 interface Props {
   post?: Post
   preset?: Partial<Post>
+  /** The freshest copy in the store — save() merges onto it so fields the user
+   *  did NOT touch keep concurrent edits (e.g. a bot logging metrics). */
+  getLatest(id: string): Post | undefined
   onSave(p: Post): void
   onDelete(id: string): void
   onClose(): void
@@ -25,7 +29,7 @@ interface Props {
 
 const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impressions']
 
-export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
+export function Composer({ post, preset, getLatest, onSave, onDelete, onClose }: Props) {
   const [base] = useState<Post>(() => {
     const now = new Date().toISOString()
     return (
@@ -60,6 +64,7 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
   const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | null>(null)
   const [aiError, setAiError] = useState('')
   const mediaInput = useRef<HTMLInputElement>(null)
+  const finePointer = useMemo(() => window.matchMedia('(pointer: fine)').matches, [])
 
   useEffect(() => {
     let live = true
@@ -131,21 +136,20 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
     }
   }
 
-  function save() {
-    const now = new Date().toISOString()
+  /** The form's current value for every editable field, in Post shape. */
+  function formValues() {
     const cleanVariants: NonNullable<Post['variants']> = {}
     for (const pl of platforms) {
       const v = variants[pl]
       if (v && v.trim()) cleanVariants[pl] = v
     }
-    const next: Post = {
-      ...base,
+    return {
       title: title.trim(),
       body,
       platforms,
       status,
       scheduledFor: fromLocalInput(scheduledFor),
-      postedAt: status === 'posted' ? (fromLocalInput(postedAt) ?? now) : undefined,
+      postedAt: fromLocalInput(postedAt),
       tags: tags
         .split(',')
         .map(t => t.trim().replace(/^#/, ''))
@@ -155,9 +159,51 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
       metrics: Object.keys(metrics).length > 0 ? metrics : undefined,
       variants: Object.keys(cleanVariants).length > 0 ? cleanVariants : undefined,
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
-      recurrence: freq ? { freq } : undefined,
-      updatedAt: now,
+      recurrence: freq ? ({ freq } as Post['recurrence']) : undefined,
     }
+  }
+
+  function baseValues() {
+    return {
+      title: base.title,
+      body: base.body,
+      platforms: base.platforms,
+      status: base.status,
+      scheduledFor: base.scheduledFor,
+      postedAt: base.postedAt,
+      tags: base.tags,
+      notes: base.notes,
+      link: base.link,
+      metrics: base.metrics,
+      variants: base.variants,
+      mediaIds: base.mediaIds,
+      recurrence: base.recurrence,
+    }
+  }
+
+  const isDirty = () => JSON.stringify(formValues()) !== JSON.stringify(baseValues())
+
+  function requestClose() {
+    if (isDirty() && !window.confirm('Discard your changes?')) return
+    onClose()
+  }
+
+  function save() {
+    // merge only the fields the user changed onto the FRESHEST copy, so
+    // concurrent updates (a bot logging metrics, an edit on another device)
+    // survive an open composer
+    const current = getLatest(base.id) ?? base
+    const form = formValues()
+    const was = baseValues()
+    const next: Post = { ...current }
+    for (const key of Object.keys(form) as (keyof typeof form)[]) {
+      if (JSON.stringify(form[key]) !== JSON.stringify(was[key])) {
+        ;(next as Record<string, unknown>)[key] = form[key]
+      }
+    }
+    if (next.status === 'posted') next.postedAt = next.postedAt ?? next.scheduledFor ?? new Date().toISOString()
+    else next.postedAt = undefined
+    next.updatedAt = newerStamp(current.updatedAt)
     onSave(next)
   }
 
@@ -167,13 +213,16 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
     <div
       className="modal-backdrop"
       onMouseDown={e => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) requestClose()
       }}
     >
       <div className="modal" role="dialog" aria-modal="true">
         <header className="modal-head">
           <h2>{post ? 'Edit post' : 'New post'}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
+          <button className="btn primary modal-head-save" onClick={save}>
+            Save
+          </button>
+          <button className="btn subtle" onClick={requestClose} aria-label="Close">
             ✕
           </button>
         </header>
@@ -183,7 +232,12 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
             <span>
               Title <small>(internal — not published)</small>
             </span>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Feature launch teaser" autoFocus />
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Feature launch teaser"
+              autoFocus={!post && finePointer}
+            />
           </label>
 
           <label className="field">
@@ -377,7 +431,7 @@ export function Composer({ post, preset, onSave, onDelete, onClose }: Props) {
           {overLimit.length > 0 && (
             <span className="warn">Over the limit for {overLimit.map(pl => PLATFORM_META[pl].short).join(', ')}</span>
           )}
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={requestClose}>
             Cancel
           </button>
           <button className="btn primary" onClick={save}>

@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { getAIKey, getAIWorkspace, setAIKey, setAIWorkspace } from '../ai'
-import { BackupStatus, chooseBackupFile, disableBackup, initBackup, resumeBackup } from '../backup'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
 import { fmtDateTime } from '../utils'
@@ -12,28 +10,16 @@ interface Props {
 }
 
 export function Settings({ store, onClose }: Props) {
-  const [backup, setBackup] = useState<BackupStatus>('none')
   const [notif, setNotif] = useState(notificationPermission())
-  const [aiKey, setKey] = useState(getAIKey())
-  const [aiWorkspace, setWorkspace] = useState(getAIWorkspace())
-  const [savedFlash, setSavedFlash] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [accountEmail, setAccountEmail] = useState('')
+  const [syncing, setSyncing] = useState(false)
   const supabaseOn = isSupabaseConfigured()
 
   useEffect(() => {
-    initBackup().then(setBackup)
     getSupabase()
       ?.auth.getSession()
       .then(({ data }) => setAccountEmail(data.session?.user.email ?? ''))
   }, [])
-
-  const backupLabel: Record<BackupStatus, string> = {
-    unsupported: 'Not supported in this browser (needs Chrome/Edge).',
-    none: 'Off — pick a file and every change is written to it automatically.',
-    'needs-permission': 'Paused — the browser needs you to re-allow access after a reload.',
-    active: 'On — every change is written to your backup file.',
-  }
 
   return (
     <div
@@ -56,12 +42,14 @@ export function Settings({ store, onClose }: Props) {
             <p className={store.syncInfo.online ? 'sync-ok' : 'sync-off'}>
               {store.syncInfo.online
                 ? `Connected — last synced ${store.syncInfo.lastAt ? fmtDateTime(store.syncInfo.lastAt) : 'just now'}.`
-                : 'Offline — changes stay in this browser.'}
+                : store.syncInfo.authError
+                  ? 'Session expired — sign in again to resume syncing.'
+                  : 'Offline — changes stay on this device until the connection returns.'}
             </p>
             <p className="field-hint">
               {supabaseOn
-                ? 'Syncing to Supabase — your data is shared with every signed-in device and your bots.'
-                : 'Run npm run server in the project folder to sync to a local SQLite database, or set the Supabase env vars for cloud sync.'}
+                ? 'Your data lives in Supabase Postgres, shared with every signed-in device and your bots. Images sync through Supabase Storage.'
+                : 'No backend configured — data stays in this browser. Use Export in the Posts tab for backups.'}
             </p>
             <button
               className="btn"
@@ -95,7 +83,8 @@ export function Settings({ store, onClose }: Props) {
           <section className="settings-section">
             <h3>Reminders</h3>
             <p className="field-hint">
-              Get a notification when a scheduled post's time arrives (while the app is open).
+              Get a notification when a scheduled post's time arrives. Reminders fire while Drafter is open on this
+              device — there is no server-side push (yet).
             </p>
             <p>
               {notif === 'granted'
@@ -119,65 +108,10 @@ export function Settings({ store, onClose }: Props) {
           </section>
 
           <section className="settings-section">
-            <h3>Auto-backup file</h3>
-            <p>{backupLabel[backup]}</p>
-            <div className="ai-row">
-              {backup === 'needs-permission' && (
-                <button className="btn" onClick={async () => setBackup(await resumeBackup())}>
-                  Resume backups
-                </button>
-              )}
-              {backup !== 'unsupported' && (
-                <button className="btn" onClick={async () => setBackup(await chooseBackupFile())}>
-                  {backup === 'none' ? 'Choose backup file' : 'Change file'}
-                </button>
-              )}
-              {backup !== 'none' && backup !== 'unsupported' && (
-                <button className="btn subtle" onClick={async () => setBackup(await disableBackup())}>
-                  Turn off
-                </button>
-              )}
-            </div>
-          </section>
-
-          <section className="settings-section">
             <h3>AI assist</h3>
             <p className="field-hint">
-              Powers "Generate platform variants", "Suggest tags", and the Insights analysis. Preferred: run the sync
-              server with <code>ANTHROPIC_API_KEY</code> set, so the key never touches the browser. Alternatively,
-              paste a key here (stored only in this browser).
-            </p>
-            <div className="ai-row">
-              <input
-                type="password"
-                placeholder="sk-ant-…"
-                value={aiKey}
-                onChange={e => setKey(e.target.value)}
-                style={{ flex: 1 }}
-              />
-              <button
-                className="btn"
-                onClick={() => {
-                  setAIKey(aiKey.trim())
-                  setAIWorkspace(aiWorkspace.trim())
-                  setSavedFlash(true)
-                  setTimeout(() => setSavedFlash(false), 1500)
-                }}
-              >
-                {savedFlash ? 'Saved ✓' : 'Save'}
-              </button>
-            </div>
-            <div className="ai-row">
-              <input
-                placeholder="wrkspc_… (only for keys not scoped to a workspace)"
-                value={aiWorkspace}
-                onChange={e => setWorkspace(e.target.value)}
-                style={{ flex: 1 }}
-              />
-            </div>
-            <p className="field-hint">
-              If the API says “anthropic-workspace-id is required”, either paste your workspace ID above — or simpler,
-              create the key scoped to a workspace and leave this blank.
+              The ✨ features run through the site's server-side proxy — configure <code>ANTHROPIC_API_KEY</code> in the
+              host environment (Netlify). No key is ever stored in the browser.
             </p>
           </section>
         </div>

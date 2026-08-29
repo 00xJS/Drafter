@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Metrics, Platform, PLATFORM_META, Post, engagement, impressions } from '../types'
+import { Metrics, Platform, PLATFORMS, PLATFORM_META, Post, engagement, impressions } from '../types'
 import { fmtDate, fmtNum } from '../utils'
 import { analyzeTopPosts } from '../ai'
 import { ChartCard, ColumnChart, Datum, HBarChart, HeatRow, Heatmap } from './charts'
@@ -80,6 +80,8 @@ function StatTile({
 
 export function Insights({ posts }: { posts: Post[] }) {
   const [range, setRange] = useState<RangeDays>(90)
+  const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all')
+  const [excludeReplies, setExcludeReplies] = useState(true)
   const [analysis, setAnalysis] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState('')
@@ -88,8 +90,10 @@ export function Insights({ posts }: { posts: Post[] }) {
     () =>
       posts
         .filter(p => p.status === 'posted' && p.postedAt)
+        .filter(p => !excludeReplies || !p.tags.includes('reply'))
+        .filter(p => platformFilter === 'all' || p.platforms.includes(platformFilter))
         .sort((a, b) => a.postedAt!.localeCompare(b.postedAt!)),
-    [posts],
+    [posts, excludeReplies, platformFilter],
   )
 
   const posted = useMemo(() => {
@@ -157,16 +161,20 @@ export function Insights({ posts }: { posts: Post[] }) {
   }, [posted, range])
 
   const byPlatform = useMemo(() => {
-    const map = new Map<Platform, { likes: number; comments: number; shares: number; impressions: number }>()
+    const map = new Map<Platform, { posts: number; likes: number; comments: number; shares: number; impressions: number }>()
     for (const p of posted) {
-      if (!p.metrics) continue
-      for (const [pl, m] of Object.entries(p.metrics) as [Platform, Metrics | undefined][]) {
-        if (!m) continue
-        const acc = map.get(pl) ?? { likes: 0, comments: 0, shares: 0, impressions: 0 }
-        acc.likes += m.likes ?? 0
-        acc.comments += m.comments ?? 0
-        acc.shares += m.shares ?? 0
-        acc.impressions += m.impressions ?? 0
+      // seed from the post's platforms so a platform with no metrics yet
+      // (e.g. an Instagram archive) still shows up instead of vanishing
+      for (const pl of p.platforms) {
+        const acc = map.get(pl) ?? { posts: 0, likes: 0, comments: 0, shares: 0, impressions: 0 }
+        acc.posts += 1
+        const m: Metrics | undefined = p.metrics?.[pl]
+        if (m) {
+          acc.likes += m.likes ?? 0
+          acc.comments += m.comments ?? 0
+          acc.shares += m.shares ?? 0
+          acc.impressions += m.impressions ?? 0
+        }
         map.set(pl, acc)
       }
     }
@@ -223,13 +231,25 @@ export function Insights({ posts }: { posts: Post[] }) {
 
   return (
     <div className="insights">
-      <div className="filter-row" role="group" aria-label="Date range">
+      <div className="filter-row" role="group" aria-label="Filters">
         <span className="filter-label">Range</span>
         {RANGE_OPTIONS.map(o => (
           <button key={o.value} className={range === o.value ? 'seg on' : 'seg'} onClick={() => setRange(o.value)}>
             {o.label}
           </button>
         ))}
+        <select value={platformFilter} onChange={e => setPlatformFilter(e.target.value as Platform | 'all')}>
+          <option value="all">All platforms</option>
+          {PLATFORMS.map(pl => (
+            <option key={pl} value={pl}>
+              {PLATFORM_META[pl].label}
+            </option>
+          ))}
+        </select>
+        <label className="filter-check">
+          <input type="checkbox" checked={excludeReplies} onChange={e => setExcludeReplies(e.target.checked)} />
+          Exclude replies
+        </label>
       </div>
 
       {posted.length === 0 ? (
@@ -286,9 +306,10 @@ export function Insights({ posts }: { posts: Post[] }) {
             <ChartCard
               title="Engagement by platform"
               subtitle="Likes + comments + shares"
-              columns={['Platform', 'Likes', 'Comments', 'Shares', 'Engagement', 'Impressions']}
+              columns={['Platform', 'Posts', 'Likes', 'Comments', 'Shares', 'Engagement', 'Impressions']}
               rows={byPlatform.map(([pl, m]) => [
                 PLATFORM_META[pl].label,
+                m.posts,
                 m.likes,
                 m.comments,
                 m.shares,

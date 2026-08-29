@@ -1552,6 +1552,186 @@ textarea {
   white-space: nowrap;
 }
 
+/* ---------- new interaction chrome ---------- */
+
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.card-title-row .card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-status {
+  position: relative;
+  flex-shrink: 0;
+  width: 26px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.card-status select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.card-status-icon {
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.board-more {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  margin: 4px 0;
+}
+
+.sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.sync-btn:hover {
+  background: var(--surface-2);
+}
+
+.auth-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #fdf1dc;
+  color: #b45309;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(11, 11, 11, 0.5);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.auth-overlay .login-wrap {
+  min-height: auto;
+  background: transparent;
+}
+
+.day-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.show-all {
+  display: block;
+  margin: 12px auto;
+}
+
+.modal-head-save {
+  display: none;
+  margin-left: auto;
+}
+
+/* mobile posts list */
+.mpost-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mpost {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.mpost-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mpost-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.action-menu {
+  position: relative;
+}
+
+.action-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-menu[open] .action-menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(11, 11, 11, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  min-width: 180px;
+}
+
 /* ---------- responsive ---------- */
 
 .table-scroll {
@@ -1572,37 +1752,60 @@ textarea {
 @media (max-width: 640px) {
   .content {
     padding: 12px;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
-  /* top bar: brand + actions on one row, tabs on their own swipeable row */
+  /* iOS zooms any focused field under 16px — don't let it */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* view switcher becomes a fixed bottom tab bar (thumb reach) */
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    margin: 0;
+    order: initial;
+    width: auto;
+  }
+
+  /* the new-post button becomes a floating action button */
+  .new-post-btn {
+    position: fixed;
+    right: 16px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    z-index: 41;
+    border-radius: 999px;
+    padding: 12px 18px;
+    box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+  }
+
+  .modal {
+    height: 100dvh;
+  }
+
+  .modal-head-save {
+    display: inline-block;
+  }
+
   .topbar {
-    flex-wrap: wrap;
     gap: 8px 10px;
     padding: 10px 12px;
-  }
-
-  .tabs {
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-    margin: 0 -12px;
-    padding: 0 12px;
-  }
-
-  .tabs::-webkit-scrollbar {
-    display: none;
   }
 
   .tab {
     white-space: nowrap;
     padding: 10px 14px;
-  }
-
-  .topbar .btn.primary {
-    margin-left: 0;
   }
 
   /* compact 2-up stat tiles instead of a mile of full-width cards */
@@ -1699,8 +1902,19 @@ textarea {
 }
 
 @media (max-width: 560px) {
+  /* one column per screen, swipe between statuses — mobile kanban */
   .board {
-    grid-template-columns: 1fr;
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+  }
+
+  .board-col {
+    flex: 0 0 86%;
+    scroll-snap-align: start;
+    min-height: 120px;
   }
 }
 

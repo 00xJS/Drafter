@@ -4,6 +4,7 @@ import { Store } from '../store'
 import { postsFromCSV } from '../importers'
 import { migrateStored, STORAGE_VERSION } from '../schema'
 import { excerpt, fmtDateTime, fmtNum } from '../utils'
+import { useMediaQuery } from '../useMediaQuery'
 import { ImportArchiveDialog } from './ImportArchiveDialog'
 
 interface Props {
@@ -24,8 +25,10 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'date', dir: -1 })
   const [notice, setNotice] = useState('')
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [showAll, setShowAll] = useState(false)
   const jsonInput = useRef<HTMLInputElement>(null)
   const csvInput = useRef<HTMLInputElement>(null)
+  const isNarrow = useMediaQuery('(max-width: 640px)')
 
   const toggleSort = (key: SortKey) =>
     setSort(cur => (cur.key === key ? { key, dir: cur.dir === -1 ? 1 : -1 } : { key, dir: -1 }))
@@ -43,6 +46,8 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
         return sort.dir * (engagement(a) - engagement(b))
       })
   }, [store.posts, q, status, platform, sort])
+
+  const visible = showAll ? filtered : filtered.slice(0, 200)
 
   function exportJSON() {
     const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), posts: store.allPosts }
@@ -97,22 +102,57 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
             </option>
           ))}
         </select>
+        {isNarrow && (
+          <span className="segmented sort-seg">
+            <button className={sort.key === 'date' ? 'seg on' : 'seg'} onClick={() => toggleSort('date')}>
+              Date{sortArrow('date')}
+            </button>
+            <button className={sort.key === 'engagement' ? 'seg on' : 'seg'} onClick={() => toggleSort('engagement')}>
+              Eng{sortArrow('engagement')}
+            </button>
+          </span>
+        )}
         <span className="spacer" />
-        <button className="btn" onClick={() => onNew({ status: 'posted', postedAt: new Date().toISOString() })}>
-          Log past post
-        </button>
-        <button className="btn" onClick={() => setArchiveOpen(true)}>
-          Import archive
-        </button>
-        <button className="btn" onClick={() => csvInput.current?.click()}>
-          CSV
-        </button>
-        <button className="btn" onClick={() => jsonInput.current?.click()}>
-          Import JSON
-        </button>
-        <button className="btn" onClick={exportJSON}>
-          Export JSON
-        </button>
+        {isNarrow ? (
+          <details className="action-menu">
+            <summary className="btn">Import / Export ▾</summary>
+            <div className="action-menu-items">
+              <button className="btn" onClick={() => onNew({ status: 'posted', postedAt: new Date().toISOString() })}>
+                Log past post
+              </button>
+              <button className="btn" onClick={() => setArchiveOpen(true)}>
+                Import archive
+              </button>
+              <button className="btn" onClick={() => csvInput.current?.click()}>
+                Import CSV
+              </button>
+              <button className="btn" onClick={() => jsonInput.current?.click()}>
+                Import JSON
+              </button>
+              <button className="btn" onClick={exportJSON}>
+                Export JSON
+              </button>
+            </div>
+          </details>
+        ) : (
+          <>
+            <button className="btn" onClick={() => onNew({ status: 'posted', postedAt: new Date().toISOString() })}>
+              Log past post
+            </button>
+            <button className="btn" onClick={() => setArchiveOpen(true)}>
+              Import archive
+            </button>
+            <button className="btn" onClick={() => csvInput.current?.click()}>
+              CSV
+            </button>
+            <button className="btn" onClick={() => jsonInput.current?.click()}>
+              Import JSON
+            </button>
+            <button className="btn" onClick={exportJSON}>
+              Export JSON
+            </button>
+          </>
+        )}
         <input
           ref={csvInput}
           type="file"
@@ -146,6 +186,42 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
         </div>
       )}
 
+      {isNarrow ? (
+        <ul className="mpost-list">
+          {visible.map(p => (
+            <li key={p.id} className="mpost" onClick={() => onOpen(p)}>
+              <div className="mpost-top">
+                <span className="row-title">{p.title || excerpt(p.body, 48) || 'Untitled'}</span>
+                <span className="badge" style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}>
+                  {STATUS_META[p.status].label}
+                </span>
+              </div>
+              {p.title && p.body && <div className="row-body">{excerpt(p.body, 90)}</div>}
+              <div className="mpost-meta">
+                <span className="chips">
+                  {p.platforms.map(pl => (
+                    <span key={pl} className="chip platform" style={{ background: PLATFORM_META[pl].color }}>
+                      {PLATFORM_META[pl].short}
+                    </span>
+                  ))}
+                </span>
+                <span className="cell-date">{fmtDateTime(p.postedAt ?? p.scheduledFor) || '—'}</span>
+                {p.status === 'posted' && <span className="card-eng">♥ {fmtNum(engagement(p))}</span>}
+                <span className="spacer" />
+                <button
+                  className="btn subtle danger"
+                  onClick={e => {
+                    e.stopPropagation()
+                    onDelete(p)
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
       <div className="table-scroll">
       <table className="posts-table">
         <thead>
@@ -167,7 +243,7 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
           </tr>
         </thead>
         <tbody>
-          {filtered.map(p => (
+          {visible.map(p => (
             <tr key={p.id} onClick={() => onOpen(p)}>
               <td>
                 <div className="row-title">{p.title || excerpt(p.body, 48) || 'Untitled'}</div>
@@ -205,6 +281,12 @@ export function PostsTable({ store, onOpen, onNew, onDelete }: Props) {
         </tbody>
       </table>
       </div>
+      )}
+      {filtered.length > visible.length && (
+        <button className="btn show-all" onClick={() => setShowAll(true)}>
+          Show all {filtered.length} posts
+        </button>
+      )}
       {filtered.length === 0 && <p className="empty">No posts match.</p>}
 
       {archiveOpen && <ImportArchiveDialog store={store} onClose={() => setArchiveOpen(false)} />}
