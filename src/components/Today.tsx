@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { CalendarEvent, CalendarSource, Person, Project, Task, TaskStatus, projectProgress } from '../types'
 import { SEEN_META, compareStats, personStats } from '../people'
 import { doneByWeek, stalledProjects } from '../review'
@@ -46,8 +46,29 @@ function TaskRow({
   onStatus(id: string, s: TaskStatus): void
 }) {
   const done = task.status === 'done'
+  const touch = useRef<{ x: number; y: number } | null>(null)
+  const [dx, setDx] = useState(0)
   return (
-    <li className={done ? 'trow done' : 'trow'} onClick={() => onOpen(task)}>
+    <li
+      className={done ? 'trow done' : 'trow'}
+      style={dx ? { transform: `translateX(${dx}px)`, transition: 'none' } : undefined}
+      onClick={() => onOpen(task)}
+      onTouchStart={e => {
+        touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      }}
+      onTouchMove={e => {
+        if (!touch.current) return
+        const ddx = e.touches[0].clientX - touch.current.x
+        const ddy = e.touches[0].clientY - touch.current.y
+        if (Math.abs(ddx) > Math.abs(ddy) && ddx > 0) setDx(Math.min(ddx, 120))
+      }}
+      onTouchEnd={() => {
+        // swipe right to complete (or reopen)
+        if (dx > 80) onStatus(task.id, done ? 'todo' : 'done')
+        setDx(0)
+        touch.current = null
+      }}
+    >
       <input
         type="checkbox"
         className="tcheck"
@@ -119,6 +140,9 @@ export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMa
       .sort(compareTasks)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
+    const inbox = open
+      .filter(t => !t.projectId && !t.dueAt && t.status === 'todo' && nowMs - new Date(t.createdAt).getTime() < 7 * DAY_MS)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const stale = open
       .filter(t => !t.dueAt && t.status === 'todo' && nowMs - new Date(t.updatedAt).getTime() > STALE_DAYS * DAY_MS)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
@@ -128,7 +152,7 @@ export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMa
     const activeProjects = projects
       .filter(p => p.status === 'active')
       .map(p => ({ project: p, progress: projectProgress(tasks.filter(t => t.projectId === p.id)) }))
-    return { open, overdue, today, week, doing, blocked, stale, doneRecent, activeProjects }
+    return { open, overdue, today, week, doing, blocked, stale, inbox, doneRecent, activeProjects }
   }, [tasks, projects])
 
   if (tasks.length === 0 && projects.length === 0) {
@@ -154,6 +178,7 @@ export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMa
     { key: 'week', title: 'This week', sub: 'Due in the next 7 days', tasks: s.week },
     { key: 'doing', title: 'In progress, no date', sub: 'Started but not scheduled', tasks: s.doing },
     { key: 'blocked', title: 'Blocked', sub: 'Waiting on something — worth a nudge?', tasks: s.blocked },
+    { key: 'inbox', title: 'Inbox', sub: 'Captured this week — give each a project or a date', tasks: s.inbox },
     { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
   ].filter(sec => sec.tasks.length > 0)
 

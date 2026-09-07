@@ -8,6 +8,8 @@ interface Props {
   onChange(next: string): void
   status?: string
   autoFocus?: boolean
+  /** Turn the selected text (or the current line) into a task. */
+  onCreateTask?(title: string): void
 }
 
 const EMOJI = ['💡', '✅', '⭐', '🔥', '❤', '🎯', '📌', '📝', '🏡', '🛠', '💻', '💰', '📅', '⏰', '🚀', '🎉', '🤔', '⚠', '❓', '👍', '👀', '🧠', '🌱', '🍕', '☕', '🎁', '✈', '🏃', '🎨', '🔧']
@@ -19,7 +21,7 @@ type Cmd = { label: string; title: string; run: () => void; key?: string }
  * or shortcuts, paste or drop photos inline. The HTML is sanitized on the way
  * in and out; photos live in the media store (synced) and are referenced by id.
  */
-export function RichNotes({ value, onChange, status, autoFocus }: Props) {
+export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -159,6 +161,28 @@ export function RichNotes({ value, onChange, status, autoFocus }: Props) {
             </span>
           )}
         </span>
+        {onCreateTask && (
+          <button
+            type="button"
+            className="btn subtle notes-tool notes-to-task"
+            title="Turn the selected text (or the line you're on) into a task"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => {
+              const sel = window.getSelection()
+              let text = sel?.toString().trim() ?? ''
+              if (!text && sel?.anchorNode) {
+                const node = sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : (sel.anchorNode as HTMLElement)
+                text = node?.closest('li, p, h1, h2, h3')?.textContent?.trim() ?? ''
+              }
+              if (!text) {
+                text = window.prompt('Task title') ?? ''
+              }
+              if (text.trim()) onCreateTask(text.trim().slice(0, 140))
+            }}
+          >
+            ☐ Task
+          </button>
+        )}
         <label className="btn subtle notes-tool" title="Add photos (or paste / drop them anywhere in the note)">
           📷
           <input

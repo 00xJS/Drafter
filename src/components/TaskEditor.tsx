@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Attachment,
   ChecklistItem,
   Comment,
   Metrics,
@@ -31,6 +32,8 @@ interface Props {
   preset?: Partial<Task>
   projects: Project[]
   people: Person[]
+  /** Open tasks that could block this one (same project preferred). */
+  candidates: Task[]
   /** The freshest copy in the store — save() merges onto it so fields the user
    *  did NOT touch keep concurrent edits (e.g. a bot adding a comment). */
   getLatest(id: string): Task | undefined
@@ -46,7 +49,7 @@ const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impres
 type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
 type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
-export function TaskEditor({ task, preset, projects, people, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
+export function TaskEditor({ task, preset, projects, people, candidates, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
     const now = new Date().toISOString()
@@ -84,6 +87,36 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
   const [freq, setFreq] = useState<RecurrenceFreq | ''>(base.recurrence?.freq ?? '')
   const [mediaIds, setMediaIds] = useState<string[]>(base.mediaIds ?? [])
   const [peopleIds, setPeopleIds] = useState<string[]>(base.peopleIds ?? [])
+  const [attachments, setAttachments] = useState<Attachment[]>(base.attachments ?? [])
+  const [estimateCost, setEstimateCost] = useState(base.estimateCost !== undefined ? String(base.estimateCost) : '')
+  const [actualCost, setActualCost] = useState(base.actualCost !== undefined ? String(base.actualCost) : '')
+  const [blockedBy, setBlockedBy] = useState<string[]>(base.blockedBy ?? [])
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  async function addFiles(files: FileList | null) {
+    if (!files) return
+    const added: Attachment[] = []
+    for (const file of Array.from(files)) {
+      const id = await saveMedia(file)
+      added.push({ id, name: file.name, type: file.type || 'application/octet-stream', size: file.size })
+    }
+    if (added.length > 0) setAttachments(cur => [...cur, ...added])
+  }
+
+  async function openAttachment(a: Attachment) {
+    const url = await mediaURL(a.id)
+    if (!url) return setAiError('That file is not available offline yet.')
+    const link = document.createElement('a')
+    link.href = url
+    link.download = a.name
+    link.target = '_blank'
+    link.click()
+  }
+
+  const money = (v: string) => {
+    const n = Number(v.replace(/[,\s£$€]/g, ''))
+    return v.trim() && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined
+  }
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [isSocial, setIsSocial] = useState(!!base.social)
   const [platforms, setPlatforms] = useState<Platform[]>(base.social?.platforms?.length ? base.social.platforms : ['x'])
@@ -198,6 +231,10 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
       recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
       social,
       peopleIds: peopleIds.length > 0 ? peopleIds : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      estimateCost: money(estimateCost),
+      actualCost: money(actualCost),
+      blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
     }
   }
 
@@ -220,6 +257,10 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
       recurrence: base.recurrence,
       social: base.social,
       peopleIds: base.peopleIds,
+      attachments: base.attachments,
+      estimateCost: base.estimateCost,
+      actualCost: base.actualCost,
+      blockedBy: base.blockedBy,
     }
   }
 
@@ -549,6 +590,46 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
               </div>
             </div>
 
+            {candidates.length > 0 && (
+              <label className="field">
+                <span>
+                  Blocked by <small>(unblocks itself when they're done)</small>
+                </span>
+                <select
+                  value=""
+                  onChange={e => {
+                    const id = e.target.value
+                    if (id && !blockedBy.includes(id)) {
+                      setBlockedBy(cur => [...cur, id])
+                      if (status === 'todo') setStatus('blocked')
+                    }
+                  }}
+                >
+                  <option value="">Add a blocker…</option>
+                  {candidates
+                    .filter(c => c.id !== base.id && !blockedBy.includes(c.id))
+                    .map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.title || 'Untitled'}
+                      </option>
+                    ))}
+                </select>
+                {blockedBy.length > 0 && (
+                  <span className="chips blockers">
+                    {blockedBy.map(id => {
+                      const c = candidates.find(x => x.id === id)
+                      return (
+                        <button key={id} type="button" className="toggle on" onClick={() => setBlockedBy(cur => cur.filter(x => x !== id))} title="Remove blocker">
+                          {c?.status === 'done' ? '✓ ' : '⏳ '}
+                          {c?.title ?? 'Unknown task'} ✕
+                        </button>
+                      )
+                    })}
+                  </span>
+                )}
+              </label>
+            )}
+
             <label className="field">
               <span>Due</span>
               <input type="datetime-local" value={dueAt} onChange={e => setDueAt(e.target.value)} />
@@ -560,6 +641,17 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
                 <input type="datetime-local" value={completedAt} onChange={e => setCompletedAt(e.target.value)} />
               </label>
             )}
+
+            <div className="field-row costs">
+              <label className="field">
+                <span>Estimate</span>
+                <input inputMode="decimal" value={estimateCost} onChange={e => setEstimateCost(e.target.value)} placeholder="0" />
+              </label>
+              <label className="field">
+                <span>Actual cost</span>
+                <input inputMode="decimal" value={actualCost} onChange={e => setActualCost(e.target.value)} placeholder="0" />
+              </label>
+            </div>
 
             <label className="field">
               <span>Repeat</span>
@@ -647,6 +739,35 @@ export function TaskEditor({ task, preset, projects, people, getLatest, onSave, 
                   }}
                 />
               </div>
+            </div>
+
+            <div className="field">
+              <span>Files</span>
+              <ul className="attachments">
+                {attachments.map(a => (
+                  <li key={a.id}>
+                    <button type="button" className="attachment" onClick={() => openAttachment(a)} title="Open / download">
+                      📎 {a.name} <small>{a.size > 1_000_000 ? `${(a.size / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(a.size / 1000))} KB`}</small>
+                    </button>
+                    <button type="button" className="btn subtle" aria-label="Remove file" onClick={() => setAttachments(cur => cur.filter(x => x.id !== a.id))}>
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="btn" onClick={() => fileInput.current?.click()}>
+                + Attach a file
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                hidden
+                onChange={e => {
+                  addFiles(e.target.files)
+                  e.target.value = ''
+                }}
+              />
             </div>
 
             {!isSocial && (

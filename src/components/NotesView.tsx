@@ -16,10 +16,11 @@ interface PaneProps {
   project: Project
   getLatest(id: string): Project | undefined
   onSave(p: Project): void
+  onCreateTask(title: string, projectId: string): void
 }
 
 /** One project's notes pad, autosaving as you type (debounced). */
-function NotesPane({ project, getLatest, onSave }: PaneProps) {
+function NotesPane({ project, getLatest, onSave, onCreateTask }: PaneProps) {
   const [text, setText] = useState(() => noteHtml(project))
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
   const [dirty, setDirty] = useState(false)
@@ -75,7 +76,7 @@ function NotesPane({ project, getLatest, onSave }: PaneProps) {
           {project.name} · Notes
         </h2>
       </header>
-      <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} />
+      <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} onCreateTask={title => onCreateTask(title, project.id)} />
     </div>
   )
 }
@@ -88,10 +89,11 @@ interface Props {
   onSave(p: Project): void
   onSelectProject(id: string): void
   onNewProject(): void
+  onCreateTask(title: string, projectId: string): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onNewProject }: Props) {
-  if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} />
+export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onNewProject, onCreateTask }: Props) {
+  if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} onCreateTask={onCreateTask} />
 
   const visible = projects.filter(p => p.status !== 'archived')
   if (visible.length === 0) {

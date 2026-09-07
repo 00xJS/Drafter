@@ -15,6 +15,7 @@ import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
 import { People } from './People'
 import { Review } from './Review'
+import { Search } from './Search'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
@@ -62,6 +63,7 @@ export default function Planner() {
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -87,6 +89,33 @@ export default function Planner() {
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
   const mirroring = store.calendars.some(c => c.id === GOOGLE_PUSH_ID && c.enabled)
   const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring)
+
+  // Cmd/Ctrl+K opens search from anywhere
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(o => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // shared into the app (PWA share target) or opened with ?new=
+  useEffect(() => {
+    if (!store.loaded) return
+    const params = new URLSearchParams(window.location.search)
+    const title = params.get('title') ?? params.get('new')
+    const text = params.get('text')
+    const url = params.get('url')
+    if (!title && !text && !url) return
+    window.history.replaceState({}, '', window.location.pathname)
+    const looksLikeUrl = (s: string | null) => !!s && /^https?:\/\//.test(s)
+    const link = url ?? (looksLikeUrl(text) ? text! : undefined)
+    setEditor({ preset: { title: (title ?? (looksLikeUrl(text) ? '' : text) ?? '').slice(0, 140), description: text && text !== link ? text : '', link, status: 'todo' } })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.loaded])
 
   // back from Google's consent screen
   useEffect(() => {
@@ -228,6 +257,9 @@ export default function Planner() {
           <span className={store.syncInfo.online ? 'sync-dot on' : 'sync-dot'} />
           <span className="sync-label">{syncing ? 'Syncing…' : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}</span>
         </button>
+        <button className="btn subtle" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
+          🔍
+        </button>
         <button className="btn subtle" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           ⚙
         </button>
@@ -360,6 +392,7 @@ export default function Planner() {
                 onSave={p => store.upsert(p)}
                 onSelectProject={id => setProjectFilter(id)}
                 onNewProject={newProject}
+                onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
               />
             )}
             {view === 'review' && (
@@ -409,6 +442,7 @@ export default function Planner() {
           preset={editor.preset}
           projects={store.projects}
           people={store.people}
+          candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
           getLatest={id => store.tasks.find(x => x.id === id)}
           onSave={t => {
             store.upsert(t)
@@ -443,6 +477,19 @@ export default function Planner() {
             setProjectFilter(p.id)
             setView('notes')
           }}
+        />
+      )}
+
+      {searchOpen && (
+        <Search
+          tasks={store.tasks}
+          projects={store.projects}
+          people={store.people}
+          onOpenTask={openTask}
+          onOpenProject={openProject}
+          onOpenPerson={() => setView('insights')}
+          onCreateTask={title => newTask({ title, status: 'todo' })}
+          onClose={() => setSearchOpen(false)}
         />
       )}
 

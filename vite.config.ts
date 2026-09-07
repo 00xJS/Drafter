@@ -11,7 +11,12 @@ export default defineConfig({
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',
-        description: 'Plan, draft, and track social media posts',
+        description: 'Personal project manager: projects, tasks, notes, people and calendars',
+        share_target: {
+          action: '/',
+          method: 'GET',
+          params: { title: 'title', text: 'text', url: 'url' },
+        },
         theme_color: '#0f1115',
         background_color: '#0f1115',
         display: 'standalone',
