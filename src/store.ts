@@ -150,7 +150,7 @@ function maxMetrics(a: MetricsMap | undefined, b: MetricsMap | undefined): { mer
   return { merged, changed }
 }
 
-export function useItems(): Store {
+export function useItems(myId: string | null = null): Store {
   const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
   const [syncInfo, setSyncInfo] = useState<SyncInfo>({ online: false, authError: false })
@@ -273,17 +273,21 @@ export function useItems(): Store {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
-  const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt), [items])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt && isMine(i)), [items, myId])
   const templates = useMemo(
     () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
+  // calendar subscriptions and reviews are personal: only mine (or unowned, pre-household) show
+  const isMine = (i: Item) => !i.ownerId || !myId || i.ownerId === myId
   const calendars = useMemo(
     () =>
       items
-        .filter((i): i is CalendarSource => i.kind === 'calendar' && !i.deletedAt)
+        .filter((i): i is CalendarSource => i.kind === 'calendar' && !i.deletedAt && isMine(i))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [items],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
   )
 
   return {

@@ -3458,3 +3458,21 @@ textarea {
 .digest-hour select {
   padding: 3px 6px;
 }
+
+/* household */
+.assignee {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+.mine-seg {
+  margin-left: auto;
+}

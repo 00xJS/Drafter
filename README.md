@@ -35,6 +35,8 @@ The **project bar** under the header filters every view to one project (double-c
 
 **Search** (🔍 or Cmd/Ctrl+K) finds tasks, notes, comments, checklists, projects and people; typing something new and pressing Enter creates a task. On a phone, the installed app is a **share target**: share a link or text from any app and it opens as a new task. Tasks with no project and no date show in Today's **Inbox** for a week so nothing captured gets lost. Tasks also carry **files** (any type, synced through the media store), an **estimate and actual cost**, and **blocked-by** links: a blocked task moves to To do by itself when its blockers complete. On mobile the tabs sit at the bottom and a right-swipe on a Today row completes it.
 
+**Household.** Settings → Household → *Create household*, then add members by their account email (accounts are still created by the site owner in Supabase). Everyone in the household sees the same projects, tasks, notes and people and can assign tasks (*Who's doing it*); the project bar gains a **Mine / Everyone** switch. Calendars, reminders and reviews stay personal. Under the hood every record carries its owner and the database policy grants access to your own records plus your household's, replacing the original single-owner policy; existing data is assigned to the owner on migration.
+
 **Deleting is two-step everywhere:** the first click arms the button, a second click within four seconds confirms. Deleted tasks, projects and calendars go to the **Trash** (Tasks → Trash) for 90 days, where one click restores them or a two-step *Delete forever* removes the record from the database outright; the undo toast still works too.
 
 ## Views

@@ -5,6 +5,7 @@ import { TaskCard } from './TaskCard'
 interface Props {
   tasks: Task[]
   projects: Map<string, Project>
+  members: { id: string; displayName: string }[]
   /** True when the board is showing every project (cards then carry a project chip). */
   showProject: boolean
   onOpen(t: Task): void
@@ -24,7 +25,7 @@ function sortForColumn(list: Task[], s: TaskStatus): Task[] {
 
 const DONE_CAP = 30
 
-export function Board({ tasks, projects, showProject, onOpen, onStatus, onNew }: Props) {
+export function Board({ tasks, projects, members, showProject, onOpen, onStatus, onNew }: Props) {
   return (
     <>
       {tasks.length === 0 && (
@@ -65,6 +66,7 @@ export function Board({ tasks, projects, showProject, onOpen, onStatus, onNew }:
                     key={t.id}
                     task={t}
                     project={showProject && t.projectId ? projects.get(t.projectId) : undefined}
+                    assignee={t.assigneeId ? members.find(m => m.id === t.assigneeId)?.displayName : undefined}
                     onOpen={onOpen}
                     onStatus={onStatus}
                   />

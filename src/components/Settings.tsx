@@ -8,15 +8,35 @@ import { PROJECT_COLORS } from '../types'
 import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
+import { householdAction } from '../household'
+import type { HouseholdInfo } from '../household'
 
 interface Props {
   store: Store
   calendars: CalendarState
   googlePush: GooglePushState
+  household: { info: HouseholdInfo | null; myId: string | null; refresh(): Promise<void>; error?: string }
   onClose(): void
 }
 
-export function Settings({ store, calendars, googlePush, onClose }: Props) {
+export function Settings({ store, calendars, googlePush, household, onClose }: Props) {
+  const [hhName, setHhName] = useState('')
+  const [invite, setInvite] = useState('')
+  const [displayName, setDisplayName] = useState(household.info?.me.displayName ?? '')
+  const [hhBusy, setHhBusy] = useState(false)
+  const [hhError, setHhError] = useState('')
+  const runHh = async (fn: () => Promise<unknown>) => {
+    setHhBusy(true)
+    setHhError('')
+    try {
+      await fn()
+      await household.refresh()
+    } catch (e) {
+      setHhError((e as Error).message)
+    } finally {
+      setHhBusy(false)
+    }
+  }
   const [notif, setNotif] = useState(notificationPermission())
   const [accountEmail, setAccountEmail] = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -189,6 +209,64 @@ export function Settings({ store, calendars, googlePush, onClose }: Props) {
               {syncing ? 'Syncing…' : 'Sync now'}
             </button>
           </section>
+
+          {supabaseOn && (
+            <section className="settings-section">
+              <h3>Household</h3>
+              <p className="field-hint">
+                Share the planner with the people you live with: everyone in the household sees the same projects, tasks,
+                notes and people, can assign tasks to each other, and keeps their own calendars, reminders and reviews.
+              </p>
+              <div className="check-add">
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your name as others see it" />
+                <button className="btn" disabled={hhBusy} onClick={() => runHh(() => householdAction('me', { displayName }))}>
+                  Save name
+                </button>
+              </div>
+              {household.info?.household ? (
+                <>
+                  <p className="sync-line">
+                    <strong>{household.info.household.name}</strong>
+                    <small className="muted">{household.info.members.length} member{household.info.members.length === 1 ? '' : 's'}</small>
+                    <span className="spacer" />
+                    <ConfirmButton className="btn subtle danger" confirmLabel="Leave household?" onConfirm={() => runHh(() => householdAction('leave'))}>
+                      Leave
+                    </ConfirmButton>
+                  </p>
+                  <ul className="cal-sources">
+                    {household.info.members.map(m => (
+                      <li key={m.id} className="cal-source">
+                        <span className="assignee">{m.displayName.slice(0, 2).toUpperCase()}</span>
+                        <span className="cal-source-name">
+                          {m.displayName} <small>· {m.email}{m.role === 'owner' ? ' · owner' : ''}{m.id === household.myId ? ' · you' : ''}</small>
+                        </span>
+                        {m.id !== household.myId && household.info?.members.find(x => x.id === household.myId)?.role === 'owner' && (
+                          <ConfirmButton className="btn subtle danger" confirmLabel="Remove?" onConfirm={() => runHh(() => householdAction('remove', { userId: m.id }))}>
+                            Remove
+                          </ConfirmButton>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="check-add">
+                    <input value={invite} onChange={e => setInvite(e.target.value)} placeholder="Add a member by their account email" type="email" />
+                    <button className="btn" disabled={hhBusy || !invite.trim()} onClick={() => runHh(() => householdAction('invite', { email: invite })).then(() => setInvite(''))}>
+                      Add
+                    </button>
+                  </div>
+                  <p className="field-hint">They need an account first (the site owner creates accounts in the Supabase dashboard). Adding them shares everything immediately.</p>
+                </>
+              ) : (
+                <div className="check-add">
+                  <input value={hhName} onChange={e => setHhName(e.target.value)} placeholder="Household name, e.g. The Sucklings" />
+                  <button className="btn primary" disabled={hhBusy} onClick={() => runHh(() => householdAction('create', { name: hhName }))}>
+                    Create household
+                  </button>
+                </div>
+              )}
+              {(hhError || household.error) && <p className="warn">{hhError || household.error}</p>}
+            </section>
+          )}
 
           {supabaseOn && (
             <section className="settings-section">

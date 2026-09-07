@@ -7,6 +7,7 @@ import { getSupabase } from '../supabase'
 import { projectById } from '../taskutils'
 import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
+import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
@@ -46,7 +47,8 @@ interface Toast {
 }
 
 export default function Planner() {
-  const store = useItems()
+  const household = useHousehold()
+  const store = useItems(household.myId)
   const [view, setView] = useState<View>('today')
   const [projectFilter, setProjectFilter] = useState<string>(() => {
     try {
@@ -66,6 +68,21 @@ export default function Planner() {
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [mineOnly, setMineOnly] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('drafter:mine-only') === '1'
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('drafter:mine-only', mineOnly ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [mineOnly])
+  const inHousehold = !!household.info?.household && (household.info?.members.length ?? 0) > 1
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -150,10 +167,11 @@ export default function Planner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
-  const filteredTasks = useMemo(
-    () => (activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)),
-    [store.tasks, activeFilter],
-  )
+  const filteredTasks = useMemo(() => {
+    let list = activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)
+    if (mineOnly && inHousehold && household.myId) list = list.filter(t => (t.assigneeId ? t.assigneeId === household.myId : t.ownerId === household.myId || !t.ownerId))
+    return list
+  }, [store.tasks, activeFilter, mineOnly, inHousehold, household.myId])
   const posts = useMemo(() => filteredTasks.map(toPost).filter((p): p is Post => p !== null), [filteredTasks])
   const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
 
@@ -340,6 +358,16 @@ export default function Planner() {
           <button className="pchip add" onClick={newProject}>
             + Project
           </button>
+          {inHousehold && (
+            <span className="segmented mine-seg">
+              <button className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
+                Mine
+              </button>
+              <button className={!mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(false)}>
+                Everyone
+              </button>
+            </span>
+          )}
         </div>
       )}
 
@@ -377,6 +405,7 @@ export default function Planner() {
               <Board
                 tasks={filteredTasks}
                 projects={projectMap}
+                members={household.info?.members ?? []}
                 showProject={activeFilter === 'all'}
                 onOpen={openTask}
                 onStatus={changeStatus}
@@ -488,6 +517,7 @@ export default function Planner() {
           preset={editor.preset}
           projects={store.projects}
           people={store.people}
+          members={inHousehold ? household.info!.members : []}
           candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
           getLatest={id => store.tasks.find(x => x.id === id)}
           onSave={t => {
@@ -583,7 +613,7 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} household={household} onClose={() => setSettingsOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

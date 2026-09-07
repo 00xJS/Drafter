@@ -44,7 +44,12 @@ export interface Social {
   metrics?: Partial<Record<Platform, Metrics>>
 }
 
-export interface Task {
+/** Set by the server on read: which account the record belongs to. */
+export interface Owned {
+  ownerId?: string
+}
+
+export interface Task extends Owned {
   kind: 'task'
   id: string
   title: string
@@ -81,7 +86,7 @@ export interface Task {
   deletedAt?: string
 }
 
-export interface Project {
+export interface Project extends Owned {
   kind: 'project'
   id: string
   name: string
@@ -103,7 +108,7 @@ export interface Project {
 }
 
 /** A subscribed external calendar (Google secret address, iCloud share link, any ICS feed). */
-export interface CalendarSource {
+export interface CalendarSource extends Owned {
   kind: 'calendar'
   id: string
   name: string
@@ -151,7 +156,7 @@ export interface Attachment {
 }
 
 /** Someone you want to keep close. Visits are done tasks with them attached. */
-export interface Person {
+export interface Person extends Owned {
   kind: 'person'
   id: string
   name: string
@@ -169,7 +174,7 @@ export interface Person {
 }
 
 /** A saved weekly/monthly review: top priorities, reflections, the AI summary. */
-export interface Review {
+export interface Review extends Owned {
   kind: 'review'
   id: string
   period: 'week' | 'month'
@@ -199,7 +204,7 @@ export interface TemplateMilestone {
 }
 
 /** A reusable project blueprint. */
-export interface Template {
+export interface Template extends Owned {
   kind: 'template'
   id: string
   name: string

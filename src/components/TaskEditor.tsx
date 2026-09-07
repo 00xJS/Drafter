@@ -33,6 +33,8 @@ interface Props {
   preset?: Partial<Task>
   projects: Project[]
   people: Person[]
+  /** Household members (empty when not in a household). */
+  members: { id: string; displayName: string }[]
   /** Open tasks that could block this one (same project preferred). */
   candidates: Task[]
   /** The freshest copy in the store — save() merges onto it so fields the user
@@ -50,7 +52,7 @@ const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impres
 type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
 type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
-export function TaskEditor({ task, preset, projects, people, candidates, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
+export function TaskEditor({ task, preset, projects, people, members, candidates, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
     const now = new Date().toISOString()
@@ -92,6 +94,7 @@ export function TaskEditor({ task, preset, projects, people, candidates, getLate
   const [estimateCost, setEstimateCost] = useState(base.estimateCost !== undefined ? String(base.estimateCost) : '')
   const [actualCost, setActualCost] = useState(base.actualCost !== undefined ? String(base.actualCost) : '')
   const [blockedBy, setBlockedBy] = useState<string[]>(base.blockedBy ?? [])
+  const [assigneeId, setAssigneeId] = useState(base.assigneeId ?? '')
   const fileInput = useRef<HTMLInputElement>(null)
 
   async function addFiles(files: FileList | null) {
@@ -236,6 +239,7 @@ export function TaskEditor({ task, preset, projects, people, candidates, getLate
       estimateCost: money(estimateCost),
       actualCost: money(actualCost),
       blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
+      assigneeId: assigneeId || undefined,
     }
   }
 
@@ -262,6 +266,7 @@ export function TaskEditor({ task, preset, projects, people, candidates, getLate
       estimateCost: base.estimateCost,
       actualCost: base.actualCost,
       blockedBy: base.blockedBy,
+      assigneeId: base.assigneeId,
     }
   }
 
@@ -568,6 +573,20 @@ export function TaskEditor({ task, preset, projects, people, candidates, getLate
                   ))}
               </select>
             </label>
+
+            {members.length > 1 && (
+              <label className="field">
+                <span>Who's doing it</span>
+                <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+                  <option value="">Anyone</option>
+                  {members.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="field">
               <span>Status</span>

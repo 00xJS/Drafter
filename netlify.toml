@@ -27,6 +27,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/household"
+  to = "/.netlify/functions/household"
+  status = 200
+
+[[redirects]]
   from = "/api/inbound"
   to = "/.netlify/functions/inbound"
   status = 200

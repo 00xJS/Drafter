@@ -7,12 +7,13 @@ import { DueBadge, PriorityMark, ProjectChip } from './bits'
 interface Props {
   task: Task
   project?: Project
+  assignee?: string
   onOpen(t: Task): void
   /** When present, the card shows a one-tap status control (works on touch, unlike drag). */
   onStatus?(id: string, status: TaskStatus): void
 }
 
-export function TaskCard({ task, project, onOpen, onStatus }: Props) {
+export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
   const check = checklistProgress(task)
   const gh = parseGithubUrl(task.githubUrl)
   const eng = task.social ? engagement({ metrics: task.social.metrics }) : 0
@@ -49,6 +50,16 @@ export function TaskCard({ task, project, onOpen, onStatus }: Props) {
       {task.description && <div className="card-body">{excerpt(task.description)}</div>}
       <div className="card-meta">
         {project && <ProjectChip project={project} />}
+        {assignee && (
+          <span className="assignee" title={assignee}>
+            {assignee
+              .split(/[\s@._-]+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map(s => s[0]!.toUpperCase())
+              .join('')}
+          </span>
+        )}
         {task.social && (
           <span className="chips">
             {task.social.platforms.map(pl => (
