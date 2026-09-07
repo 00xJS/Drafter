@@ -229,6 +229,23 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
                   Save name
                 </button>
               </div>
+              {(household.info?.invites ?? []).length > 0 && (
+                <ul className="cal-sources">
+                  {household.info!.invites!.map(inv => (
+                    <li key={inv.householdId} className="cal-source">
+                      <span className="cal-source-name">
+                        <strong>{inv.name}</strong> <small>invited you to share their planner</small>
+                      </span>
+                      <button className="btn primary" disabled={hhBusy} onClick={() => runHh(() => householdAction('accept', { householdId: inv.householdId }))}>
+                        Accept
+                      </button>
+                      <button className="btn subtle" disabled={hhBusy} onClick={() => runHh(() => householdAction('decline'))}>
+                        Decline
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {household.info?.household ? (
                 <>
                   <p className="sync-line">
@@ -260,7 +277,10 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
                       Add
                     </button>
                   </div>
-                  <p className="field-hint">They need an account first (the site owner creates accounts in the Supabase dashboard). Adding them shares everything immediately.</p>
+                  <p className="field-hint">
+                    They need an account first (the site owner creates accounts in the Supabase dashboard). They will see the
+                    invitation in their own Settings and must accept it — nothing is shared until they do.
+                  </p>
                 </>
               ) : (
                 <div className="check-add">

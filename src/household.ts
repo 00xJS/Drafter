@@ -13,10 +13,17 @@ export interface Member {
   joinedAt: string
 }
 
+export interface HouseholdInvite {
+  householdId: string
+  name: string
+}
+
 export interface HouseholdInfo {
   me: { id: string; email: string; displayName: string | null }
   household: { id: string; name: string; created_by: string | null } | null
   members: Member[]
+  /** Invitations waiting for me to accept. Joining is never automatic. */
+  invites?: HouseholdInvite[]
 }
 
 async function json<T>(res: Response): Promise<T> {

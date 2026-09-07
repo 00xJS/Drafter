@@ -18,10 +18,38 @@ function hasClock(iso) {
   return d.getUTCHours() + d.getUTCMinutes() > 0
 }
 
-async function loadItems() {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${supabaseUrl}/rest/v1/posts?select=data&deleted=is.false`, { headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}` } })
+function serviceHeaders() {
+  const key = process.env.SUPABASE_SERVICE_KEY
+  return { apikey: key, authorization: `Bearer ${key}` }
+}
+
+const baseUrl = () => process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+
+/** The owner ids a user may see: themselves plus their household (mirrors household_user_ids()). */
+async function visibleOwnerIds(userId) {
+  const ids = new Set([userId])
+  try {
+    const mine = await fetch(`${baseUrl()}/rest/v1/household_members?user_id=eq.${encodeURIComponent(userId)}&select=household_id`, { headers: serviceHeaders() })
+    const rows = mine.ok ? await mine.json() : []
+    for (const r of rows) {
+      const peers = await fetch(`${baseUrl()}/rest/v1/household_members?household_id=eq.${encodeURIComponent(r.household_id)}&select=user_id`, { headers: serviceHeaders() })
+      if (peers.ok) for (const p of await peers.json()) ids.add(p.user_id)
+    }
+  } catch {
+    /* a household lookup failure must not widen the scope — fall through with just the user */
+  }
+  return [...ids]
+}
+
+/**
+ * The feed reads with the service key, which bypasses RLS, so the owner filter
+ * MUST be applied here: without it one feed token would dump every user's
+ * tasks. Scope is the token's owner plus their household, matching the app.
+ */
+async function loadItems(ownerIds) {
+  if (!ownerIds.length) return []
+  const list = ownerIds.map(id => `"${id}"`).join(',')
+  const res = await fetch(`${baseUrl()}/rest/v1/posts?select=data&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`, { headers: serviceHeaders() })
   if (!res.ok) throw new Error(`Supabase ${res.status}`)
   return (await res.json()).map(r => legacyPostToTask(r.data))
 }
@@ -75,7 +103,7 @@ export default async req => {
     if (!row) return new Response('Not found', { status: 404 })
     let items
     try {
-      items = await loadItems()
+      items = await loadItems(await visibleOwnerIds(row.user_id))
     } catch (e) {
       return new Response(`feed unavailable: ${e?.message ?? e}`, { status: 502 })
     }

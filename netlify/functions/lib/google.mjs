@@ -3,7 +3,7 @@
 // (service role only), so nobody can read anyone else's calendars — and the
 // browser never holds a Google token at all.
 
-import { createHash } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
@@ -197,6 +197,13 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
   return 'created'
 }
 
+/**
+ * A cryptographically random token. These guard the calendar feed, the
+ * email-in webhook and the OAuth state, all of which are the ONLY thing
+ * standing between an anonymous request and personal data — so they must come
+ * from a CSPRNG, never from Date.now()/Math.random(), which an attacker who
+ * knows roughly when a token was minted could search.
+ */
 export function randomToken(bytes = 24) {
-  return createHash('sha256').update(`${Date.now()}:${Math.random()}:${process.pid}:${bytes}`).digest('base64url').slice(0, bytes * 4 / 3 | 0)
+  return randomBytes(bytes).toString('base64url')
 }

@@ -62,7 +62,28 @@ export default async req => {
 
   try {
     const mine = await settingsGet(user.id)
-    if (body.action === 'status') return Response.json({ me: { id: user.id, email: user.email, displayName: mine?.display_name ?? null }, ...(await describe(user.id)) })
+    if (body.action === 'status') {
+      const invites = await rest(`household_invites?user_id=eq.${encodeURIComponent(user.id)}&select=household_id,created_at`).catch(() => [])
+      const withNames = []
+      for (const inv of invites ?? []) {
+        const [h] = await rest(`households?id=eq.${inv.household_id}&select=id,name`).catch(() => [])
+        if (h) withNames.push({ householdId: h.id, name: h.name })
+      }
+      return Response.json({ me: { id: user.id, email: user.email, displayName: mine?.display_name ?? null }, invites: withNames, ...(await describe(user.id)) })
+    }
+    if (body.action === 'accept') {
+      // consent step: only the invitee can turn their own invitation into membership
+      const [inv] = await rest(`household_invites?user_id=eq.${encodeURIComponent(user.id)}&household_id=eq.${encodeURIComponent(String(body.householdId ?? ''))}&select=household_id`).catch(() => [])
+      if (!inv) return Response.json({ error: 'That invitation is no longer available.' }, { status: 404 })
+      if (await membershipOf(user.id)) return Response.json({ error: 'You are already in a household — leave it first.' }, { status: 409 })
+      await rest('household_members', { method: 'POST', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ household_id: inv.household_id, user_id: user.id, role: 'member' }) })
+      await rest(`household_invites?user_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } }).catch(() => {})
+      return Response.json(await describe(user.id))
+    }
+    if (body.action === 'decline') {
+      await rest(`household_invites?user_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } }).catch(() => {})
+      return Response.json({ ...(await describe(user.id)), invites: [] })
+    }
     if (body.action === 'me') {
       await settingsSet(user.id, { display_name: String(body.displayName ?? '').trim().slice(0, 40) || null })
       return Response.json({ ok: true })
@@ -76,12 +97,23 @@ export default async req => {
     const m = await membershipOf(user.id)
     if (!m) return Response.json({ error: 'Create a household first.' }, { status: 409 })
     if (body.action === 'invite') {
+      // Joining a household grants full read/write of everyone's records, so it
+      // takes the owner's action AND the invitee's consent. Inserting the
+      // membership directly would let anyone absorb another account silently.
+      if (m.role !== 'owner') return Response.json({ error: 'Only the household owner can invite people.' }, { status: 403 })
       const email = String(body.email ?? '').trim().toLowerCase()
       const target = (await adminUsers()).find(u => (u.email ?? '').toLowerCase() === email)
-      if (!target) return Response.json({ error: `No account for ${email}. The site owner creates accounts in the Supabase dashboard first.` }, { status: 404 })
-      if (await membershipOf(target.id)) return Response.json({ error: `${email} is already in a household.` }, { status: 409 })
-      await rest('household_members', { method: 'POST', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ household_id: m.household_id, user_id: target.id, role: 'member' }) })
-      return Response.json(await describe(user.id))
+      // one generic reply for every outcome, so this cannot be used to probe
+      // which email addresses have accounts on the deployment
+      const sent = Response.json({ ...(await describe(user.id)), invited: email, note: 'If that account exists, the invitation is waiting for them to accept in their own Settings.' })
+      if (!target || target.id === user.id) return sent
+      if (await membershipOf(target.id)) return sent
+      await rest('household_invites', {
+        method: 'POST',
+        headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ household_id: m.household_id, user_id: target.id, invited_by: user.id }),
+      })
+      return sent
     }
     if (body.action === 'remove') {
       if (m.role !== 'owner') return Response.json({ error: 'Only the household owner can remove members.' }, { status: 403 })

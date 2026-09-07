@@ -60,5 +60,13 @@ export default async req => {
     body: JSON.stringify({ incoming: [task] }),
   })
   if (!res.ok) return new Response('store failed', { status: 502 })
+  // sync_posts runs under the service key, so auth.uid() is null and the row
+  // would otherwise be attributed to the site owner. Re-point it at whoever
+  // owns this inbound token. (The LWW trigger allows this: data is unchanged.)
+  await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(task.id)}`, {
+    method: 'PATCH',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+    body: JSON.stringify({ user_id: row.user_id }),
+  }).catch(() => {})
   return Response.json({ ok: true, id: task.id, title })
 }
