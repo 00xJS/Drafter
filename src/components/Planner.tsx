@@ -14,13 +14,14 @@ import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
 import { People } from './People'
+import { Review } from './Review'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { Settings } from './Settings'
 
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'insights'
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'review' | 'insights'
 type CalendarMode = 'month' | 'timeline'
 
 const VIEW_LABELS: Record<View, string> = {
@@ -29,6 +30,7 @@ const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   calendar: 'Calendar',
   notes: 'Notes',
+  review: 'Review',
   insights: 'Insights',
 }
 
@@ -358,6 +360,26 @@ export default function Planner() {
                 onSave={p => store.upsert(p)}
                 onSelectProject={id => setProjectFilter(id)}
                 onNewProject={newProject}
+              />
+            )}
+            {view === 'review' && (
+              <Review
+                tasks={store.tasks}
+                projects={store.projects}
+                projectMap={projectMap}
+                people={store.people}
+                reviews={store.reviews}
+                onSaveReview={r => store.upsert(r)}
+                onOpen={openTask}
+                onStatus={changeStatus}
+                onReschedule={(ids, dueAt) => {
+                  for (const id of ids) {
+                    const t = store.tasks.find(x => x.id === id)
+                    if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
+                  }
+                  showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
+                }}
+                onOpenProject={openProject}
               />
             )}
             {view === 'insights' && (

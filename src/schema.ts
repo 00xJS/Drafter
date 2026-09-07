@@ -1,9 +1,14 @@
 import {
+  Attachment,
   CalendarSource,
   ChecklistItem,
   PERSON_GROUPS,
   Person,
   PersonGroup,
+  Review,
+  Template,
+  TemplateMilestone,
+  TemplateTask,
   Comment,
   Item,
   Metrics,
@@ -142,6 +147,32 @@ function social(v: unknown): Task['social'] {
   return { platforms, metrics, variants }
 }
 
+function attachments(v: unknown): Attachment[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: Attachment[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const id = str(r.id)
+    if (!id) continue
+    out.push({ id, name: str(r.name) ?? 'file', type: str(r.type) ?? 'application/octet-stream', size: count(r.size) ?? 0 })
+  }
+  return out.length > 0 ? out : undefined
+}
+
+function money(v: unknown): number | undefined {
+  const n = typeof v === 'string' ? Number(v.replace(/[,\s£$€]/g, '')) : typeof v === 'number' ? v : NaN
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined
+}
+
+function dateOnly(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  if (!s) return undefined
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const iso = isoDate(s)
+  return iso ? iso.slice(0, 10) : undefined
+}
+
 function urlOrUndefined(v: unknown): string | undefined {
   const s = str(v)?.trim()
   return s ? s : undefined
@@ -187,6 +218,11 @@ export function sanitizeTask(raw: unknown): Task | null {
     recurrence,
     social: social(r.social),
     peopleIds: idList(r.peopleIds),
+    attachments: attachments(r.attachments),
+    estimateCost: money(r.estimateCost),
+    actualCost: money(r.actualCost),
+    blockedBy: idList(r.blockedBy),
+    assigneeId: urlOrUndefined(r.assigneeId),
     deletedAt: isoDate(r.deletedAt),
   }
 }
@@ -263,6 +299,85 @@ export function sanitizePerson(raw: unknown): Person | null {
     group: typeof r.group === 'string' && PERSON_GROUP_SET.has(r.group) ? (r.group as PersonGroup) : 'family',
     cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
     notes: str(r.notes)?.trim() || undefined,
+    birthday: dateOnly(r.birthday),
+    anniversary: dateOnly(r.anniversary),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+/** Coerce arbitrary data into a valid Review. */
+export function sanitizeReview(raw: unknown): Review | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const key = str(r.key)
+  if (!id || !key) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'review',
+    id,
+    period: r.period === 'month' ? 'month' : 'week',
+    key,
+    top: strList(r.top).slice(0, 5),
+    reflections: str(r.reflections)?.trim() || undefined,
+    summary: str(r.summary)?.trim() || undefined,
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+/** Coerce arbitrary data into a valid Template. */
+export function sanitizeTemplate(raw: unknown): Template | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const name = str(r.name)?.trim()
+  if (!id || !name) return null
+  const now = new Date().toISOString()
+  const color = str(r.color)?.trim()
+  const tasks: TemplateTask[] = []
+  if (Array.isArray(r.tasks)) {
+    for (const raw of r.tasks) {
+      if (!raw || typeof raw !== 'object') continue
+      const t = raw as Record<string, unknown>
+      const title = str(t.title)?.trim()
+      if (!title) continue
+      const offset = Number(t.offsetDays)
+      tasks.push({
+        title,
+        description: str(t.description)?.trim() || undefined,
+        offsetDays: Number.isFinite(offset) ? Math.round(offset) : undefined,
+        priority: typeof t.priority === 'string' && PRIORITY_SET.has(t.priority) ? (t.priority as Priority) : undefined,
+        checklist: strList(t.checklist).length ? strList(t.checklist) : undefined,
+        tags: strList(t.tags).length ? strList(t.tags) : undefined,
+      })
+    }
+  }
+  const milestones: TemplateMilestone[] = []
+  if (Array.isArray(r.milestones)) {
+    for (const raw of r.milestones) {
+      if (!raw || typeof raw !== 'object') continue
+      const m = raw as Record<string, unknown>
+      const name = str(m.name)?.trim()
+      const offset = Number(m.offsetDays)
+      if (name && Number.isFinite(offset)) milestones.push({ name, offsetDays: Math.round(offset) })
+    }
+  }
+  const duration = Number(r.durationDays)
+  return {
+    kind: 'template',
+    id,
+    name,
+    emoji: str(r.emoji)?.trim() || undefined,
+    color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
+    description: str(r.description)?.trim() || undefined,
+    tasks,
+    milestones: milestones.length ? milestones : undefined,
+    notesHtml: str(r.notesHtml) || undefined,
+    durationDays: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : undefined,
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -270,7 +385,7 @@ export function sanitizePerson(raw: unknown): Person | null {
 }
 
 /**
- * Coerce any record — task, project, calendar, person, or a pre-v3 post — into a valid Item.
+ * Coerce any record — task, project, calendar, person, review, template, or a pre-v3 post — into a valid Item.
  * Returns null if unusable.
  */
 export function sanitizeItem(raw: unknown): Item | null {
@@ -279,6 +394,8 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'project') return sanitizeProject(converted)
   if (converted.kind === 'calendar') return sanitizeCalendar(converted)
   if (converted.kind === 'person') return sanitizePerson(converted)
+  if (converted.kind === 'review') return sanitizeReview(converted)
+  if (converted.kind === 'template') return sanitizeTemplate(converted)
   return sanitizeTask(converted)
 }
 

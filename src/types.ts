@@ -69,6 +69,14 @@ export interface Task {
   social?: Social
   /** People this task involves; when it's done, it counts as seeing them. */
   peopleIds?: string[]
+  /** Files (any type) in the media store. */
+  attachments?: Attachment[]
+  estimateCost?: number
+  actualCost?: number
+  /** Ids of tasks that must be done first; the task unblocks itself when they are. */
+  blockedBy?: string[]
+  /** Household member responsible (a Supabase user id). */
+  assigneeId?: string
   /** Tombstone: set instead of hard-deleting so deletes sync and can be undone. */
   deletedAt?: string
 }
@@ -135,6 +143,13 @@ export const CADENCE_META: Record<Cadence, string> = {
   180: 'Twice a year',
 }
 
+export interface Attachment {
+  id: string
+  name: string
+  type: string
+  size: number
+}
+
 /** Someone you want to keep close. Visits are done tasks with them attached. */
 export interface Person {
   kind: 'person'
@@ -145,12 +160,63 @@ export interface Person {
   group: PersonGroup
   cadenceDays?: number
   notes?: string
+  /** YYYY-MM-DD (year optional as 0000). */
+  birthday?: string
+  anniversary?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person
+/** A saved weekly/monthly review: top priorities, reflections, the AI summary. */
+export interface Review {
+  kind: 'review'
+  id: string
+  period: 'week' | 'month'
+  /** 2026-W37 or 2026-09 */
+  key: string
+  top: string[]
+  reflections?: string
+  summary?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export interface TemplateTask {
+  title: string
+  description?: string
+  /** Days after the project start. */
+  offsetDays?: number
+  priority?: Priority
+  checklist?: string[]
+  tags?: string[]
+}
+
+export interface TemplateMilestone {
+  name: string
+  offsetDays: number
+}
+
+/** A reusable project blueprint. */
+export interface Template {
+  kind: 'template'
+  id: string
+  name: string
+  emoji?: string
+  color: string
+  description?: string
+  tasks: TemplateTask[]
+  milestones?: TemplateMilestone[]
+  notesHtml?: string
+  /** Suggested length in days (drives the target date). */
+  durationDays?: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Review | Template
 
 /**
  * The legacy post shape. Still the lingua franca of the importers, the

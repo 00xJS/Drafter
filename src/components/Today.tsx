@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { CalendarEvent, CalendarSource, Person, Project, Task, TaskStatus, projectProgress } from '../types'
 import { SEEN_META, compareStats, personStats } from '../people'
+import { doneByWeek, stalledProjects } from '../review'
 import { DAY_MS, compareTasks, dayOffset, isOpen } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { excerpt, fmtTime, timeAgo } from '../utils'
@@ -80,6 +81,8 @@ function eventWhen(ev: CalendarEvent): string {
 }
 
 export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
+  const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
+  const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
     () =>
       people
@@ -161,8 +164,30 @@ export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMa
         <StatTile label="Due today" value={String(s.today.length)} />
         <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" />
         <StatTile label="Open" value={String(s.open.length)} sub="to do, doing or blocked" />
-        <StatTile label="Done this week" value={String(s.doneRecent.length)} sub="keep the streak" />
+        <div className="stat-tile">
+          <div className="stat-label">Done this week</div>
+          <div className="stat-value">{s.doneRecent.length}</div>
+          <div className="spark" aria-hidden title="Done per week, last 12 weeks">
+            {weekly.map((n, i) => (
+              <span key={i} className={i === weekly.length - 1 ? 'spark-bar now' : 'spark-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / Math.max(...weekly, 1)) * 80}%` }} />
+            ))}
+          </div>
+        </div>
       </div>
+
+      {stalled.length > 0 && (
+        <p className="stalled-line">
+          <span className="badge badge-blocked">Stalled</span>
+          {stalled.map(p => (
+            <button key={p.id} className="pchip static stalled-chip" onClick={() => onOpenProject(p)} title="No activity in 14 days — still worth doing?">
+              <span className="pdot" style={{ background: p.color }} />
+              {p.emoji ? `${p.emoji} ` : ''}
+              {p.name}
+            </button>
+          ))}
+          <small className="muted">nothing moved in 14 days — pick one up or pause it</small>
+        </p>
+      )}
 
       {s.activeProjects.length > 0 && (
         <div className="project-cards">

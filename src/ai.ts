@@ -163,3 +163,23 @@ export async function suggestCatchUp(input: {
     .filter(x => x.title)
     .slice(0, 4)
 }
+
+/** A short, honest write-up of a week or month from its data and the user's reflections. */
+export async function summarizeReview(input: {
+  period: 'week' | 'month'
+  label: string
+  done: string[]
+  slipped: string[]
+  upcoming: string[]
+  people: string[]
+  projects: string[]
+  stalled: string[]
+  reflections?: string
+}): Promise<string> {
+  const list = (xs: string[]) => (xs.length ? xs.slice(0, 40).map(x => `- ${x}`).join('\n') : '- none')
+  return complete(
+    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. Never invent anything not in the data.',
+    `Period: this ${input.period} (${input.label})\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    900,
+  )
+}

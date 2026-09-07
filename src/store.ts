@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, Item, Person, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
+import { CalendarSource, Item, Person, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
@@ -60,6 +60,8 @@ export interface Store {
   calendars: CalendarSource[]
   /** People you track visits with. */
   people: Person[]
+  reviews: Review[]
+  templates: Template[]
   /** Everything including tombstones — for export and sync. */
   allItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
@@ -74,6 +76,21 @@ export interface Store {
   setStatus(id: string, status: TaskStatus): StatusChange | null
   importItems(incoming: unknown[]): ImportSummary
   syncNowManual(): Promise<boolean>
+}
+
+/** Tasks blocked only by done tasks move to To do once their last blocker completes. */
+function releaseBlocked(list: Item[]): Item[] {
+  const doneIds = new Set(list.filter(i => i.kind === 'task' && i.status === 'done').map(i => i.id))
+  const live = new Set(list.filter(i => i.kind === 'task' && !i.deletedAt).map(i => i.id))
+  let changed = false
+  const next = list.map(i => {
+    if (i.kind !== 'task' || i.status !== 'blocked' || !i.blockedBy?.length) return i
+    const stillBlocked = i.blockedBy.some(id => live.has(id) && !doneIds.has(id))
+    if (stillBlocked) return i
+    changed = true
+    return { ...i, status: 'todo' as TaskStatus, updatedAt: newerStamp(i.updatedAt) }
+  })
+  return changed ? next : list
 }
 
 export function stampStatus(t: Task, status: TaskStatus): Task {
@@ -256,6 +273,11 @@ export function useItems(): Store {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
+  const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt), [items])
+  const templates = useMemo(
+    () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
+    [items],
+  )
   const calendars = useMemo(
     () =>
       items
@@ -269,6 +291,8 @@ export function useItems(): Store {
     projects,
     calendars,
     people,
+    reviews,
+    templates,
     allItems: items,
     loaded,
     syncInfo,
@@ -280,7 +304,7 @@ export function useItems(): Store {
           const spawn = nextOccurrence(item, uid)
           if (spawn) next = next.map(x => (x.id === item.id ? { ...item, recurrence: undefined } : x)).concat(spawn)
         }
-        return ensureProjects(next)
+        return ensureProjects(releaseBlocked(next))
       }),
     remove: id =>
       setItems(list =>
@@ -307,7 +331,7 @@ export function useItems(): Store {
       setItems(list => {
         let next: Item[] = list.map(x => (x.id === id ? (spawned ? { ...updated, recurrence: undefined } : updated) : x))
         if (spawned) next = next.concat(spawned)
-        return next
+        return releaseBlocked(next)
       })
       return { prev: old, spawnedId: spawned?.id }
     },
