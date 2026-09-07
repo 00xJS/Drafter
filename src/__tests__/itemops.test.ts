@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applySync, mergeItems, nextOccurrence, purgeTombstones } from '../itemops'
-import { Task } from '../types'
+import { nextUp } from '../review'
+import { Project, Task } from '../types'
 
 function task(id: string, updatedAt: string, over: Partial<Task> = {}): Task {
   return {
@@ -139,5 +140,35 @@ describe('applySync', () => {
     const d = applySync([], sent, [task('a', T)], null)
     expect(d.unconfirmed).toEqual([])
     expect(d.cursor).toBe(T)
+  })
+})
+
+describe('nextUp', () => {
+  const proj = (id: string): Project => ({
+    kind: 'project',
+    id,
+    name: id,
+    color: '#fff',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  })
+
+  it('puts a just-created task first, ahead of older work', () => {
+    const now = new Date('2026-09-11T12:00:00.000Z')
+    const old = Array.from({ length: 8 }, (_, i) =>
+      task(`old${i}`, '2026-08-01T00:00:00.000Z', { projectId: 'p', createdAt: '2026-08-01T00:00:00.000Z' }),
+    )
+    const fresh = task('fresh', '2026-09-11T11:59:00.000Z', { projectId: 'p', createdAt: '2026-09-11T11:59:00.000Z', title: 'Buy a tap washer' })
+    const ranked = nextUp([...old, fresh], [proj('p')], 6, now)
+    expect(ranked[0].task.id).toBe('fresh')
+    expect(ranked[0].reason).toBe('just added')
+  })
+
+  it('still ranks overdue work above an older undated task', () => {
+    const now = new Date('2026-09-11T12:00:00.000Z')
+    const late = task('late', '2026-09-01T00:00:00.000Z', { dueAt: '2026-09-05T09:00:00.000Z', createdAt: '2026-09-01T00:00:00.000Z' })
+    const undated = task('undated', '2026-06-01T00:00:00.000Z', { createdAt: '2026-06-01T00:00:00.000Z' })
+    expect(nextUp([undated, late], [], 6, now)[0].task.id).toBe('late')
   })
 })

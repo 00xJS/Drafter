@@ -150,6 +150,9 @@ export interface NextUp {
   score: number
 }
 
+/** A task created this recently is almost certainly what you are looking at the screen for. */
+const JUST_ADDED_MS = 10 * 60_000
+
 export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new Date()): NextUp[] {
   const nowMs = now.getTime()
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
@@ -168,6 +171,13 @@ export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new 
     let reason = ''
     const due = t.dueAt ? Date.parse(t.dueAt) : NaN
     const days = Number.isFinite(due) ? Math.round((due - nowMs) / DAY_MS) : null
+
+    // Ranking otherwise rewards age, so a brand-new task sorts to the BOTTOM and
+    // vanishes behind the cut — you save something and the page looks unchanged.
+    const age = nowMs - Date.parse(t.createdAt)
+    if (Number.isFinite(age) && age >= 0 && age < JUST_ADDED_MS) {
+      return { task: t, reason: 'just added', score: 2000 - age / 1000 }
+    }
 
     if (days !== null && days < 0) {
       score += 1000 - Math.min(days * -1, 60)

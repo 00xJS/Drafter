@@ -41,6 +41,8 @@ interface Props {
    *  did NOT touch keep concurrent edits (e.g. a bot adding a comment). */
   getLatest(id: string): Task | undefined
   onSave(t: Task): void
+  /** Called instead of onSave when a brand-new task had nothing in it. */
+  onDiscard?(): void
   /** Persist without closing (comments and checklist ticks land immediately). */
   onCommit(t: Task): void
   onDelete(id: string): void
@@ -52,7 +54,7 @@ const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impres
 type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
 type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
-export function TaskEditor({ task, preset, projects, people, members, candidates, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
+export function TaskEditor({ task, preset, projects, people, members, candidates, getLatest, onSave, onDiscard, onCommit, onDelete, onClose }: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
     const now = new Date().toISOString()
@@ -307,6 +309,8 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
       !(t.peopleIds?.length) &&
       !(t.attachments?.length) &&
       !(t.mediaIds?.length) &&
+      !t.dueAt &&
+      !t.tags.length &&
       !t.link &&
       !t.githubUrl &&
       !t.notes?.trim()
@@ -316,7 +320,9 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
   function save() {
     const next = merged()
     if (!task && isEmpty(next)) {
-      // brand-new and blank: discard rather than litter the list with "Untitled"
+      // brand-new and blank: discard rather than litter the list with "Untitled",
+      // but say so — a task disappearing without a word is worse than a stray one
+      onDiscard?.()
       onClose()
       return
     }

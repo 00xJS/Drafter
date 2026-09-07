@@ -1209,6 +1209,7 @@ textarea {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px));
   background: var(--inverse-bg);
   color: var(--inverse-text);
   border-radius: 10px;
@@ -3718,4 +3719,25 @@ textarea {
 .settings-body.showing-household .g-household,
 .settings-body.showing-data .g-data {
   display: block;
+}
+
+/* on a phone the toast spanned a narrow column and sat under the New task
+   button, so a confirmation could be unreadable and its Undo unreachable */
+@media (max-width: 640px) {
+  .toast {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    justify-content: space-between;
+  }
+  .toast > span:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  /* keep the floating button clear of it */
+  .new-post-btn {
+    bottom: calc(132px + env(safe-area-inset-bottom)) !important;
+  }
 }

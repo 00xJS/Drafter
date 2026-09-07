@@ -555,10 +555,13 @@ export default function Planner() {
           getLatest={id => store.tasks.find(x => x.id === id)}
           onSave={t => {
             const before = store.tasks.find(x => x.id === t.id)
+            const isNew = !before
             store.upsert(t)
             setEditor(null)
+            if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => store.remove(t.id))
             if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
           }}
+          onDiscard={() => showToast('Nothing to save — that task was empty.')}
           onCommit={t => store.upsert(t)}
           onDelete={id => {
             const t = store.tasks.find(x => x.id === id)
