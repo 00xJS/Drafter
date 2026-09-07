@@ -68,7 +68,15 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
     if (!emoji) setEmoji(t.emoji ?? '')
     setColor(t.color)
     if (!description) setDescription(t.description ?? '')
-    if (!startAt) setStartAt(toDateInput(new Date().toISOString()))
+    if (!startAt) {
+      // event-anchored templates (a trip, a party) schedule backwards from the
+      // start, so default it far enough ahead that the lead-in fits — otherwise
+      // every "book it 6 weeks before" task lands overdue on day one
+      const lead = Math.min(0, ...t.tasks.map(x => x.offsetDays ?? 0), ...(t.milestones ?? []).map(m => m.offsetDays))
+      const d = new Date()
+      d.setDate(d.getDate() - lead)
+      setStartAt(toDateInput(d.toISOString()))
+    }
   }
 
   const runDraft = async () => {
