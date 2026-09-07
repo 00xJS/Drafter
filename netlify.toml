@@ -42,6 +42,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/microsoft"
+  to = "/.netlify/functions/microsoft"
+  status = 200
+
+[[redirects]]
+  from = "/api/microsoft/*"
+  to = "/.netlify/functions/microsoft/:splat"
+  status = 200
+
+[[redirects]]
   from = "/api/google"
   to = "/.netlify/functions/google"
   status = 200

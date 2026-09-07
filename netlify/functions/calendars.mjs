@@ -5,6 +5,7 @@
 
 import { expandEvents, parseICS } from '../../shared/ics.mjs'
 import { listEvents, toEvent } from './lib/google.mjs'
+import { listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
 import { getUser } from './lib/session.mjs'
 
 const MAX_SOURCES = 12
@@ -66,6 +67,27 @@ export default async req => {
       const id = String(src?.id ?? '')
       if (!id) return
       const raw = String(src?.url ?? '')
+      if (raw.startsWith('ms:')) {
+        // ms:<accountId>:<calendarId>
+        const rest = raw.slice(3)
+        const sep = rest.indexOf(':')
+        const accountId = sep === -1 ? '' : rest.slice(0, sep)
+        const calendarId = sep === -1 ? '' : rest.slice(sep + 1)
+        if (!accountId || !calendarId) return
+        if (!user) {
+          errors[id] = 'Outlook calendars need a signed-in account'
+          return
+        }
+        try {
+          for (const item of await msListEvents(user.id, accountId, calendarId, new Date(from).toISOString(), new Date(to).toISOString())) {
+            const ev = msToEvent(item, id)
+            if (ev) events.push(ev)
+          }
+        } catch (e) {
+          errors[id] = e?.message ?? 'Outlook fetch failed'
+        }
+        return
+      }
       if (raw.startsWith('google:')) {
         const calendarId = raw.slice('google:'.length)
         if (!calendarId || calendarId === 'push') return

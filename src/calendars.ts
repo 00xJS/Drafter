@@ -229,7 +229,8 @@ export interface CalendarState {
 
 export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
   const [state, setState] = useState<Omit<CalendarState, 'refresh'>>({ events: [], errors: {}, names: {}, loading: false })
-  const enabled = sources.filter(s => s.enabled && s.url !== GOOGLE_PUSH_URL)
+  // pseudo-sources (task mirrors) are not feeds to fetch
+  const enabled = sources.filter(s => s.enabled && s.url !== GOOGLE_PUSH_URL && !s.url.startsWith('ms-push:'))
   const signature = enabled.map(s => s.id + '|' + s.url).join('\n')
   const busy = useRef(false)
   const sigRef = useRef(signature)
@@ -316,4 +317,136 @@ export function prepDueFor(ev: CalendarEvent): string {
   if (dayBefore.getTime() > Date.now()) return dayBefore.toISOString()
   const sameDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 9, 0, 0)
   return (sameDay.getTime() > Date.now() ? sameDay : new Date(Date.now() + 3_600_000)).toISOString()
+}
+
+// ---- Outlook / Microsoft 365 (OAuth, per user, several accounts) -------------
+
+export interface MicrosoftAccount {
+  id: string
+  email: string
+  name: string
+  hasMirror: boolean
+}
+
+export interface MicrosoftStatus {
+  configured: boolean
+  accounts: MicrosoftAccount[]
+  missing: string[]
+  redirectUri: string
+}
+
+export interface MicrosoftCalendarInfo {
+  id: string
+  name: string
+  primary: boolean
+  writable: boolean
+}
+
+export function microsoftAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  return apiFetch('/api/microsoft', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }),
+    timeoutMs: 60_000,
+  }).then(json<T>)
+}
+
+/** Source url for one Outlook calendar. */
+export const msSourceUrl = (accountId: string, calendarId: string) => `ms:${accountId}:${calendarId}`
+/** The pseudo-source that turns on mirroring tasks into one Outlook account. */
+export const msPushUrl = (accountId: string) => `ms-push:${accountId}`
+export const msPushId = (accountId: string) => `ms-push-${accountId}`
+export const isMicrosoftSource = (s: CalendarSource) => s.url.startsWith('ms:') || s.url.startsWith('ms-push:')
+
+const MS_PUSH_CURSOR = 'drafter:ms-push-cursor'
+const MS_PULL_CURSOR = 'drafter:ms-pull-cursor'
+
+const readCursor = (key: string) => {
+  try {
+    return localStorage.getItem(key) ?? ''
+  } catch {
+    return ''
+  }
+}
+const writeCursor = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Forget the mirror cursor so the next push re-sends everything. */
+export function resetMicrosoftPushCursor(accountId: string): void {
+  writeCursor(`${MS_PUSH_CURSOR}:${accountId}`, '')
+}
+
+/**
+ * Mirror tasks into the "Drafter" calendar of each Outlook account that has
+ * mirroring on, then pull back anything moved in Outlook. Same shape as the
+ * Google mirror; the server side is idempotent.
+ */
+export function useMicrosoftSync(
+  items: Item[],
+  projects: Project[],
+  accountIds: string[],
+  onPulled?: (changes: GoogleChange[]) => void,
+): GooglePushState {
+  const [state, setState] = useState<{ lastAt?: string; error?: string; pending: boolean }>({ pending: false })
+  const busy = useRef(false)
+  const timer = useRef<number | undefined>(undefined)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+  const idsRef = useRef(accountIds)
+  idsRef.current = accountIds
+  const onPulledRef = useRef(onPulled)
+  onPulledRef.current = onPulled
+
+  const pushNow = useCallback(async () => {
+    if (busy.current || idsRef.current.length === 0) return
+    busy.current = true
+    setState(s => ({ ...s, pending: true }))
+    try {
+      const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
+      for (const accountId of idsRef.current) {
+        const cursorKey = `${MS_PUSH_CURSOR}:${accountId}`
+        const cursor = readCursor(cursorKey)
+        const tasks = itemsRef.current.filter(i => i.kind === 'task' && i.updatedAt > cursor)
+        if (tasks.length > 0) {
+          const result = await microsoftAction<{ errors: { id: string; error: string }[] }>('push', { accountId, tasks: tasks.slice(0, 200), projects: names })
+          if (result.errors.length > 0) {
+            setState({ lastAt: new Date().toISOString(), error: result.errors[0].error, pending: false })
+            continue
+          }
+          writeCursor(cursorKey, tasks.slice(0, 200).reduce((m, t) => (t.updatedAt > m ? t.updatedAt : m), cursor))
+        }
+        if (onPulledRef.current) {
+          try {
+            const pullKey = `${MS_PULL_CURSOR}:${accountId}`
+            const r = await microsoftAction<{ changes: GoogleChange[]; at: string }>('pull', { accountId, since: readCursor(pullKey) || undefined })
+            writeCursor(pullKey, r.at)
+            if (r.changes.length) onPulledRef.current(r.changes)
+          } catch {
+            /* pull is best-effort */
+          }
+        }
+      }
+      setState({ lastAt: new Date().toISOString(), pending: false })
+    } catch (e) {
+      setState(s => ({ ...s, error: (e as Error).message, pending: false }))
+    } finally {
+      busy.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (accountIds.length === 0) return
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => pushNow(), 3000)
+    return () => window.clearTimeout(timer.current)
+  }, [items, accountIds, pushNow])
+
+  return { ...state, pushNow }
 }

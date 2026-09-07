@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, resetGooglePushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -15,11 +15,12 @@ interface Props {
   store: Store
   calendars: CalendarState
   googlePush: GooglePushState
+  microsoftSync: GooglePushState
   household: { info: HouseholdInfo | null; myId: string | null; refresh(): Promise<void>; error?: string }
   onClose(): void
 }
 
-export function Settings({ store, calendars, googlePush, household, onClose }: Props) {
+export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose }: Props) {
   const [hhName, setHhName] = useState('')
   const [invite, setInvite] = useState('')
   const [displayName, setDisplayName] = useState(household.info?.me.displayName ?? '')
@@ -47,6 +48,10 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
   const [feedError, setFeedError] = useState('')
   const [feedBusy, setFeedBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [ms, setMs] = useState<MicrosoftStatus | null>(null)
+  const [msCals, setMsCals] = useState<{ account: { id: string; name: string; email: string }; calendars: MicrosoftCalendarInfo[]; error?: string }[] | null>(null)
+  const [msBusy, setMsBusy] = useState(false)
+  const [msError, setMsError] = useState('')
   const [google, setGoogle] = useState<GoogleStatus | null>(null)
   const [googleError, setGoogleError] = useState('')
   const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
@@ -88,6 +93,16 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
     fetchFeedInfo()
       .then(setFeed)
       .catch(e => setFeedError((e as Error).message))
+    microsoftAction<MicrosoftStatus>('status')
+      .then(st => {
+        setMs(st)
+        if (st.accounts.length > 0) {
+          microsoftAction<{ accounts: typeof msCals }>('calendars')
+            .then(r => setMsCals(r.accounts))
+            .catch(e => setMsError((e as Error).message))
+        }
+      })
+      .catch(e => setMsError((e as Error).message))
     googleAction<GoogleStatus>('status')
       .then(st => {
         setGoogle(st)
@@ -461,10 +476,156 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
             )}
             {googleError && google?.connected && <p className="warn">{googleError}</p>}
 
+            <h4>Outlook / Microsoft 365</h4>
+            {ms?.configured ? (
+              <>
+                {ms.accounts.length === 0 ? (
+                  <p className="sync-line">
+                    <button
+                      className="btn primary"
+                      disabled={msBusy}
+                      onClick={async () => {
+                        setMsBusy(true)
+                        setMsError('')
+                        try {
+                          const { url } = await microsoftAction<{ url: string }>('auth')
+                          window.location.href = url
+                        } catch (e) {
+                          setMsError((e as Error).message)
+                          setMsBusy(false)
+                        }
+                      }}
+                    >
+                      {msBusy ? 'Opening Microsoft…' : 'Connect Outlook'}
+                    </button>
+                    <small>Personal and work accounts both work — connect as many as you like.</small>
+                  </p>
+                ) : (
+                  <>
+                    {(msCals ?? ms.accounts.map(a => ({ account: a, calendars: [] as MicrosoftCalendarInfo[] }))).map(entry => {
+                      const acct = entry.account
+                      const mirrorSource = store.calendars.find(c => c.url === msPushUrl(acct.id))
+                      return (
+                        <div key={acct.id} className="ms-account">
+                          <p className="sync-line">
+                            <strong>{acct.name}</strong>
+                            <small className="muted">{acct.email}</small>
+                            <span className="spacer" />
+                            <ConfirmButton
+                              className="btn subtle danger"
+                              confirmLabel="Disconnect?"
+                              onConfirm={async () => {
+                                for (const c of store.calendars.filter(c => c.url.includes(acct.id))) store.remove(c.id)
+                                await microsoftAction('disconnect', { accountId: acct.id })
+                                setMs(await microsoftAction<MicrosoftStatus>('status'))
+                                setMsCals(cur => (cur ?? []).filter(x => x.account.id !== acct.id))
+                              }}
+                            >
+                              Disconnect
+                            </ConfirmButton>
+                          </p>
+                          {'error' in entry && entry.error ? (
+                            <p className="warn">{entry.error}</p>
+                          ) : (
+                            <ul className="cal-sources">
+                              {entry.calendars.map(cal => {
+                                const src = store.calendars.find(c => c.url === msSourceUrl(acct.id, cal.id))
+                                return (
+                                  <li key={cal.id} className="cal-source">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!src?.enabled}
+                                      aria-label={`Show ${cal.name}`}
+                                      onChange={e => {
+                                        const url = msSourceUrl(acct.id, cal.id)
+                                        const existing = store.calendars.find(c => c.url === url)
+                                        const now = new Date().toISOString()
+                                        if (e.target.checked && !existing) {
+                                          store.upsert({ kind: 'calendar', id: uid(), name: `${cal.name} (${acct.email || acct.name})`, url, color: PROJECT_COLORS[2], enabled: true, createdAt: now, updatedAt: now })
+                                        } else if (e.target.checked && existing) {
+                                          store.upsert({ ...existing, enabled: true, updatedAt: newerStamp(existing.updatedAt) })
+                                        } else if (existing) {
+                                          store.remove(existing.id)
+                                        }
+                                      }}
+                                    />
+                                    <span className="pdot" style={{ background: PROJECT_COLORS[2] }} />
+                                    <span className="cal-source-name">
+                                      {cal.name}
+                                      {cal.primary && <small> · primary</small>}
+                                    </span>
+                                    <span className="cal-source-status">
+                                      {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}
+                                    </span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          )}
+                          <label className="cal-source mirror-row">
+                            <input
+                              type="checkbox"
+                              checked={!!mirrorSource?.enabled}
+                              onChange={e => {
+                                const now = new Date().toISOString()
+                                if (mirrorSource) store.upsert({ ...mirrorSource, enabled: e.target.checked, updatedAt: newerStamp(mirrorSource.updatedAt) })
+                                else if (e.target.checked)
+                                  store.upsert({ kind: 'calendar', id: msPushId(acct.id), name: `Drafter → ${acct.email || acct.name}`, url: msPushUrl(acct.id), color: PROJECT_COLORS[0], enabled: true, createdAt: now, updatedAt: now })
+                                if (e.target.checked) {
+                                  resetMicrosoftPushCursor(acct.id)
+                                  window.setTimeout(() => microsoftSync.pushNow(), 500)
+                                }
+                              }}
+                            />
+                            <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar here</span>
+                            <span className="cal-source-status">
+                              {microsoftSync.error ? <span className="warn">{microsoftSync.error}</span> : microsoftSync.pending ? <small>syncing…</small> : microsoftSync.lastAt ? <small>synced {timeAgo(microsoftSync.lastAt)}</small> : null}
+                            </span>
+                          </label>
+                        </div>
+                      )
+                    })}
+                    <p className="sync-line">
+                      <button
+                        className="btn"
+                        disabled={msBusy}
+                        onClick={async () => {
+                          setMsBusy(true)
+                          try {
+                            const { url } = await microsoftAction<{ url: string }>('auth')
+                            window.location.href = url
+                          } catch (e) {
+                            setMsError((e as Error).message)
+                            setMsBusy(false)
+                          }
+                        }}
+                      >
+                        + Connect another account
+                      </button>
+                      <small>Add your work account alongside your personal one.</small>
+                    </p>
+                  </>
+                )}
+                <p className="field-hint">
+                  Outlook events show on the Month view, the Timeline and Today. Mirroring writes open, dated tasks into a Drafter
+                  calendar there, and moving one in Outlook moves its due date back here.
+                </p>
+              </>
+            ) : ms ? (
+              <p className="field-hint">
+                Not configured on the host yet: set {ms.missing.join(', ')} on Netlify. In the Azure portal register an app that
+                allows <em>any organizational directory and personal Microsoft accounts</em>, with the redirect URI{' '}
+                <code>{ms.redirectUri}</code>.
+              </p>
+            ) : (
+              <p className="field-hint">{msError ? `Outlook status unavailable: ${msError}` : 'Checking Outlook…'}</p>
+            )}
+            {msError && ms?.configured && <p className="warn">{msError}</p>}
+
             <h4>Other calendars (iCloud, holidays, any .ics link)</h4>
-            {store.calendars.filter(c => !isGoogleSource(c)).length > 0 && (
+            {store.calendars.filter(c => !isGoogleSource(c) && !isMicrosoftSource(c)).length > 0 && (
               <ul className="cal-sources">
-                {store.calendars.filter(c => !isGoogleSource(c)).map(c => (
+                {store.calendars.filter(c => !isGoogleSource(c) && !isMicrosoftSource(c)).map(c => (
                   <li key={c.id} className="cal-source">
                     <input
                       type="checkbox"

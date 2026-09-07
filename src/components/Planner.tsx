@@ -5,7 +5,7 @@ import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { projectById } from '../taskutils'
-import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush } from '../calendars'
+import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
@@ -108,21 +108,13 @@ export default function Planner() {
   const calendars = useCalendarEvents(store.calendars)
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
   const mirroring = store.calendars.some(c => c.id === GOOGLE_PUSH_ID && c.enabled)
-  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, changes => {
-    // a mirrored task moved (or was deleted) in Google Calendar: reflect it here
-    let moved = 0
-    for (const c of changes) {
-      const t = store.tasks.find(x => x.id === c.taskId)
-      if (!t || c.updated <= t.updatedAt) continue
-      if (c.deleted) continue // deleting in Google never deletes the task; the next push recreates it
-      if (!c.start) continue
-      const next = new Date(c.start).toISOString()
-      if (next === t.dueAt) continue
-      store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
-      moved++
-    }
-    if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from Google Calendar`)
-  })
+  const msMirrorIds = useMemo(
+    () => store.calendars.filter(c => c.enabled && c.url.startsWith('ms-push:')).map(c => c.url.slice('ms-push:'.length)),
+    [store.calendars],
+  )
+  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, changes =>
+    applyMirrorChanges(changes, 'Google Calendar'),
+  )
 
   // Cmd/Ctrl+K opens search from anywhere
   useEffect(() => {
@@ -151,9 +143,34 @@ export default function Planner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.loaded])
 
-  // back from Google's consent screen
+  /** A mirrored task moved (or was deleted) in an external calendar. */
+  const applyMirrorChanges = (changes: { taskId: string; deleted: boolean; start: string | null; updated: string }[], source: string) => {
+    let moved = 0
+    for (const c of changes) {
+      const t = store.tasks.find(x => x.id === c.taskId)
+      if (!t || c.updated <= t.updatedAt || c.deleted || !c.start) continue
+      const next = new Date(c.start).toISOString()
+      if (next === t.dueAt) continue
+      store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
+      moved++
+    }
+    if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from ${source}`)
+  }
+
+  const microsoftSync = useMicrosoftSync(store.allItems, store.projects, store.loaded ? msMirrorIds : [], changes =>
+    applyMirrorChanges(changes, 'Outlook'),
+  )
+
+  // back from a calendar consent screen (Google or Microsoft)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const ms = params.get('microsoft')
+    if (ms) {
+      window.history.replaceState({}, '', window.location.pathname)
+      showToast(ms === 'connected' ? 'Outlook connected — pick the calendars to show in Settings.' : `Outlook could not be connected (${(params.get('reason') ?? 'unknown error').replace(/_/g, ' ')}).`)
+      setSettingsOpen(true)
+      return
+    }
     const result = params.get('google')
     if (!result) return
     window.history.replaceState({}, '', window.location.pathname)
@@ -165,6 +182,8 @@ export default function Planner() {
       showToast(`Google Calendar could not be connected (${reason.replace(/_/g, ' ')}).`)
       setSettingsOpen(true)
     }
+    // eslint-disable-next-line no-useless-return
+    return
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
@@ -614,7 +633,7 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} household={household} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

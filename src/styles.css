@@ -3625,3 +3625,15 @@ textarea {
     overflow-x: visible;
   }
 }
+
+/* connected Outlook accounts */
+.ms-account {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.ms-account .sync-line {
+  margin-top: 0;
+}
