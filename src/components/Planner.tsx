@@ -6,6 +6,7 @@ import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { projectById } from '../taskutils'
 import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush } from '../calendars'
+import { parseGithubUrl, setIssueState } from '../github'
 import { timeAgo } from '../utils'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
@@ -89,7 +90,21 @@ export default function Planner() {
   const calendars = useCalendarEvents(store.calendars)
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
   const mirroring = store.calendars.some(c => c.id === GOOGLE_PUSH_ID && c.enabled)
-  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring)
+  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, changes => {
+    // a mirrored task moved (or was deleted) in Google Calendar: reflect it here
+    let moved = 0
+    for (const c of changes) {
+      const t = store.tasks.find(x => x.id === c.taskId)
+      if (!t || c.updated <= t.updatedAt) continue
+      if (c.deleted) continue // deleting in Google never deletes the task; the next push recreates it
+      if (!c.start) continue
+      const next = new Date(c.start).toISOString()
+      if (next === t.dueAt) continue
+      store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
+      moved++
+    }
+    if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from Google Calendar`)
+  })
 
   // Cmd/Ctrl+K opens search from anywhere
   useEffect(() => {
@@ -230,9 +245,16 @@ export default function Planner() {
     showToast(`Deleted project “${p.name}”`, () => store.restore([p.id]))
   }
 
+  /** Done in Drafter closes the linked GitHub issue (when the host can write). Quiet on failure. */
+  const closeLinkedIssue = (t: Task) => {
+    const ref = parseGithubUrl(t.githubUrl)
+    if (ref?.type === 'issue') setIssueState(t.githubUrl!, 'close').then(() => showToast(`Closed ${ref.owner}/${ref.repo}#${ref.number} on GitHub`)).catch(() => {})
+  }
+
   const changeStatus = (id: string, status: TaskStatus) => {
     const change = store.setStatus(id, status)
     if (!change) return
+    if (status === 'done' && change.prev.status !== 'done') closeLinkedIssue(change.prev)
     showToast(`Moved to ${STATUS_META[status].label}`, () => {
       store.upsert({ ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) })
       if (change.spawnedId) store.remove(change.spawnedId)
@@ -469,8 +491,10 @@ export default function Planner() {
           candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
           getLatest={id => store.tasks.find(x => x.id === id)}
           onSave={t => {
+            const before = store.tasks.find(x => x.id === t.id)
             store.upsert(t)
             setEditor(null)
+            if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
           }}
           onCommit={t => store.upsert(t)}
           onDelete={id => {

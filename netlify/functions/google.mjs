@@ -90,6 +90,22 @@ export default async req => {
     if (action === 'calendars') {
       return Response.json({ calendars: await listCalendars(user.id) })
     }
+    if (action === 'pull') {
+      // events in the Drafter calendar the user moved in Google since `since`
+      const calendarId = await drafterCalendarId(user.id)
+      const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
+      const page = await (await import('./lib/google.mjs')).gapi(user.id, `/calendars/${encodeURIComponent(calendarId)}/events?updatedMin=${encodeURIComponent(since)}&singleEvents=true&showDeleted=true&maxResults=250&privateExtendedProperty=${encodeURIComponent('drafter=1')}`)
+      const changes = (page.items ?? [])
+        .filter(ev => ev.extendedProperties?.private?.taskId)
+        .map(ev => ({
+          taskId: ev.extendedProperties.private.taskId,
+          deleted: ev.status === 'cancelled',
+          start: ev.start?.dateTime ?? (ev.start?.date ? `${ev.start.date}T09:00:00` : null),
+          allDay: !!ev.start?.date,
+          updated: ev.updated,
+        }))
+      return Response.json({ changes, at: new Date().toISOString() })
+    }
     if (action === 'push') {
       const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 200) : []
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}

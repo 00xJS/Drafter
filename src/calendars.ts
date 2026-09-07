@@ -22,7 +22,12 @@ export interface CalendarFeedInfo {
   configured: boolean
   enabled: boolean
   url: string | null
+  inboundUrl?: string | null
   missing: string[]
+}
+
+export function inboundAction(action: 'inbound-enable' | 'inbound-rotate' | 'inbound-disable'): Promise<{ inboundUrl: string | null }> {
+  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) }).then(json<{ inboundUrl: string | null }>)
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -75,12 +80,39 @@ export interface GooglePushState {
   pushNow(): Promise<void>
 }
 
+export interface GoogleChange {
+  taskId: string
+  deleted: boolean
+  start: string | null
+  allDay: boolean
+  updated: string
+}
+
+const PULL_CURSOR_KEY = 'drafter:google-pull-cursor'
+
+/** Ask Google which mirrored tasks were moved there since the last pull. */
+export async function pullGoogleChanges(): Promise<GoogleChange[]> {
+  let since = ''
+  try {
+    since = localStorage.getItem(PULL_CURSOR_KEY) ?? ''
+  } catch {
+    /* ignore */
+  }
+  const r = await googleAction<{ changes: GoogleChange[]; at: string }>('pull', { since: since || undefined })
+  try {
+    localStorage.setItem(PULL_CURSOR_KEY, r.at)
+  } catch {
+    /* ignore */
+  }
+  return r.changes
+}
+
 /**
  * Mirror tasks into the Google "Drafter" calendar: after every local change,
  * push the tasks whose updatedAt passed the cursor. Server-side the push is
  * idempotent (upsert by task id, delete when no longer open/dated).
  */
-export function useGooglePush(items: Item[], projects: Project[], enabled: boolean): GooglePushState {
+export function useGooglePush(items: Item[], projects: Project[], enabled: boolean, onPulled?: (changes: GoogleChange[]) => void): GooglePushState {
   const [state, setState] = useState<{ lastAt?: string; error?: string; pending: boolean }>({ pending: false })
   const busy = useRef(false)
   const timer = useRef<number | undefined>(undefined)
@@ -88,6 +120,8 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
   itemsRef.current = items
   const projectsRef = useRef(projects)
   projectsRef.current = projects
+  const onPulledRef = useRef(onPulled)
+  onPulledRef.current = onPulled
 
   const pushNow = useCallback(async () => {
     if (busy.current) return
@@ -116,6 +150,14 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
       }
       setState({ lastAt: new Date().toISOString(), pending: false })
       if (tasks.length > 200) window.setTimeout(() => pushNow(), 500)
+      else if (onPulledRef.current) {
+        try {
+          const changes = await pullGoogleChanges()
+          if (changes.length) onPulledRef.current(changes)
+        } catch {
+          /* pull is best-effort */
+        }
+      }
     } catch (e) {
       setState(s => ({ ...s, error: (e as Error).message, pending: false }))
     } finally {
@@ -129,6 +171,21 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
     timer.current = window.setTimeout(() => pushNow(), 3000)
     return () => window.clearTimeout(timer.current)
   }, [items, enabled, pushNow])
+
+  useEffect(() => {
+    if (!enabled || !onPulledRef.current) return
+    const pull = () => pullGoogleChanges().then(c => c.length && onPulledRef.current?.(c)).catch(() => {})
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull()
+    }
+    const t = window.setInterval(pull, 30 * 60_000)
+    document.addEventListener('visibilitychange', onVisible)
+    pull()
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [enabled])
 
   return { ...state, pushNow }
 }

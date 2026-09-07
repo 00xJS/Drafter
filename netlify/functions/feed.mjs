@@ -99,6 +99,16 @@ export default async req => {
         await settingsSet(user.id, { feed_token: feedToken })
         return Response.json({ configured: true, enabled: true, url: feedUrl(url.origin, feedToken), missing: [] })
       }
+      if (body.action === 'inbound-enable' || body.action === 'inbound-rotate') {
+        const current = await settingsGet(user.id)
+        const tok = body.action === 'inbound-rotate' || !current?.inbound_token ? randomToken(24) : current.inbound_token
+        await settingsSet(user.id, { inbound_token: tok })
+        return Response.json({ inboundUrl: `${url.origin}/api/inbound?key=${encodeURIComponent(tok)}` })
+      }
+      if (body.action === 'inbound-disable') {
+        await settingsSet(user.id, { inbound_token: null })
+        return Response.json({ inboundUrl: null })
+      }
       if (body.action === 'disable') {
         await settingsSet(user.id, { feed_token: null })
         return Response.json({ configured: true, enabled: false, url: null, missing: [] })
@@ -106,7 +116,13 @@ export default async req => {
       return Response.json({ error: 'unknown action' }, { status: 400 })
     }
     const s = await settingsGet(user.id)
-    return Response.json({ configured: true, enabled: !!s?.feed_token, url: s?.feed_token ? feedUrl(url.origin, s.feed_token) : null, missing: [] })
+    return Response.json({
+      configured: true,
+      enabled: !!s?.feed_token,
+      url: s?.feed_token ? feedUrl(url.origin, s.feed_token) : null,
+      inboundUrl: s?.inbound_token ? `${url.origin}/api/inbound?key=${encodeURIComponent(s.inbound_token)}` : null,
+      missing: [],
+    })
   } catch (e) {
     return Response.json({ error: e?.message ?? 'settings unavailable' }, { status: e?.status === 501 ? 501 : 502 })
   }

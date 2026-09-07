@@ -25,6 +25,7 @@ import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
 import { REFINE_META, RefineMode, generateVariants, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { GithubCard } from './GithubCard'
+import { createIssue, parseGithubUrl } from '../github'
 import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
@@ -702,6 +703,24 @@ export function TaskEditor({ task, preset, projects, people, candidates, getLate
               <input value={githubUrl} onChange={e => setGithubUrl(e.target.value)} placeholder="Issue, PR, repo or project URL" />
             </label>
             {githubUrl.trim() && <GithubCard url={githubUrl.trim()} />}
+            {!githubUrl.trim() && project?.githubUrl && parseGithubUrl(project.githubUrl)?.repo && (
+              <button
+                type="button"
+                className="btn subtle ai-inline"
+                disabled={!title.trim() || aiBusy !== null}
+                onClick={async () => {
+                  setAiError('')
+                  try {
+                    const issue = await createIssue(project.githubUrl!, title.trim(), description.trim())
+                    setGithubUrl(issue.url)
+                  } catch (e) {
+                    setAiError((e as Error).message)
+                  }
+                }}
+              >
+                Create a GitHub issue in {parseGithubUrl(project.githubUrl)!.repo}
+              </button>
+            )}
 
             <label className="field">
               <span>Link</span>

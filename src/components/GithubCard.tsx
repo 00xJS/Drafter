@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GITHUB_STATE_META, GithubCard as Card, fetchGithubCard, githubLabel, parseGithubUrl } from '../github'
+import { GITHUB_STATE_META, GithubCard as Card, fetchGithubCard, githubLabel, parseGithubUrl, setIssueState } from '../github'
 import { timeAgo } from '../utils'
 
 interface Props {
@@ -73,6 +73,29 @@ export function GithubCard({ url }: Props) {
               {l.name}
             </span>
           ))}
+        </div>
+      )}
+      {card?.canWrite && (card.type === 'issue' || card.type === 'pr') && card.type === 'issue' && (
+        <div className="ai-row">
+          <button
+            type="button"
+            className="btn subtle"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                await setIssueState(url, card.state === 'open' ? 'close' : 'reopen')
+                await load(true)
+              } catch (e) {
+                setError((e as Error).message)
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {card.state === 'open' ? 'Close issue on GitHub' : 'Reopen issue'}
+          </button>
         </div>
       )}
       {error && <p className="field-hint warn">{error}</p>}

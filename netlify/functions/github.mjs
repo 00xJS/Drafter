@@ -125,8 +125,37 @@ async function resolve(ref, token) {
   throw Object.assign(new Error('unsupported GitHub URL'), { status: 400 })
 }
 
+async function write(req, url) {
+  const token = process.env.GITHUB_TOKEN
+  if (!token) return Response.json({ error: 'GitHub write-back needs GITHUB_TOKEN (with repo/issues write access) on the host.' }, { status: 501 })
+  const body = await req.json().catch(() => ({}))
+  try {
+    if (body.action === 'close' || body.action === 'reopen') {
+      const ref = parseRef(body.url ?? '')
+      if (!ref || (ref.type !== 'issue' && ref.type !== 'pr')) return Response.json({ error: 'not an issue or pull request URL' }, { status: 400 })
+      const i = await gh(`/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify(body.action === 'close' ? { state: 'closed', state_reason: 'completed' } : { state: 'open' }),
+      })
+      return Response.json({ ok: true, state: i.state, url: i.html_url })
+    }
+    if (body.action === 'create') {
+      const ref = parseRef(body.repoUrl ?? '')
+      if (!ref || !ref.repo) return Response.json({ error: 'give a repository URL' }, { status: 400 })
+      const i = await gh(`/repos/${ref.owner}/${ref.repo}/issues`, token, {
+        method: 'POST',
+        body: JSON.stringify({ title: String(body.title ?? 'Task').slice(0, 200), body: String(body.body ?? '').slice(0, 20000) }),
+      })
+      return Response.json({ ok: true, url: i.html_url, number: i.number })
+    }
+    return Response.json({ error: 'unknown action' }, { status: 400 })
+  } catch (e) {
+    return Response.json({ error: e?.message ?? 'GitHub write failed' }, { status: e?.status === 404 ? 404 : 502 })
+  }
+}
+
 export default async req => {
-  if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+  if (req.method !== 'GET' && req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
@@ -139,13 +168,14 @@ export default async req => {
     if (!check.ok) return Response.json({ error: 'invalid session' }, { status: 401 })
   }
 
+  if (req.method === 'POST') return write(req, new URL(req.url))
   const url = new URL(req.url).searchParams.get('url') ?? ''
   const ref = parseRef(url)
   if (!ref) return Response.json({ error: 'not a GitHub issue, pull request, repository or project URL' }, { status: 400 })
 
   try {
     const card = await resolve(ref, process.env.GITHUB_TOKEN)
-    return Response.json(card, { headers: { 'cache-control': 'private, max-age=120' } })
+    return Response.json({ ...card, canWrite: !!process.env.GITHUB_TOKEN }, { headers: { 'cache-control': 'private, max-age=120' } })
   } catch (e) {
     const status = e?.status === 404 ? 404 : e?.status === 501 ? 501 : e?.status === 403 || e?.status === 429 ? 429 : 502
     const message =

@@ -29,6 +29,24 @@ export interface GithubCard {
   description?: string
   milestone?: string
   updatedAt?: string
+  /** The host has a token that can close / create issues. */
+  canWrite?: boolean
+}
+
+async function post<T>(body: Record<string, unknown>): Promise<T> {
+  const res = await apiFetch('/api/github', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const data = (await res.json().catch(() => null)) as (T & { error?: string }) | null
+  if (!res.ok || !data) throw new Error(data?.error ?? `GitHub write failed (HTTP ${res.status}).`)
+  return data
+}
+
+export function setIssueState(url: string, action: 'close' | 'reopen'): Promise<{ state: string }> {
+  cache.delete(url.trim())
+  return post({ action, url })
+}
+
+export function createIssue(repoUrl: string, title: string, body: string): Promise<{ url: string; number: number }> {
+  return post({ action: 'create', repoUrl, title, body })
 }
 
 export function parseGithubUrl(input: string | undefined): GithubRef | null {

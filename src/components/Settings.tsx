@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, feedAction, fetchFeedInfo, googleAction, isGoogleSource, resetGooglePushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, resetGooglePushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -458,6 +458,35 @@ export function Settings({ store, calendars, googlePush, onClose }: Props) {
             )}
             {feedError && feed && <p className="warn">{feedError}</p>}
           </section>
+
+          {feed?.configured && (
+            <section className="settings-section">
+              <h3>Email in</h3>
+              <p className="field-hint">
+                Forward an email and it becomes a task (subject → title, body → description, first link → link). Point a
+                forwarding rule at this address: Mailgun Routes, SendGrid Inbound Parse, Cloudflare Email Workers, Zapier or
+                Make all can call it. The link is yours alone — reset it if it leaks.
+              </p>
+              {feed.inboundUrl ? (
+                <div className="copy-row">
+                  <input readOnly value={feed.inboundUrl} onFocus={e => e.currentTarget.select()} />
+                  <button className="btn" onClick={() => navigator.clipboard.writeText(feed.inboundUrl!).catch(() => {})}>
+                    Copy
+                  </button>
+                  <button className="btn subtle" disabled={feedBusy} onClick={() => inboundAction('inbound-rotate').then(r => setFeed(f => (f ? { ...f, inboundUrl: r.inboundUrl } : f)))}>
+                    Reset
+                  </button>
+                  <button className="btn subtle danger" disabled={feedBusy} onClick={() => inboundAction('inbound-disable').then(r => setFeed(f => (f ? { ...f, inboundUrl: r.inboundUrl } : f)))}>
+                    Turn off
+                  </button>
+                </div>
+              ) : (
+                <button className="btn" disabled={feedBusy} onClick={() => inboundAction('inbound-enable').then(r => setFeed(f => (f ? { ...f, inboundUrl: r.inboundUrl } : f)))}>
+                  Create my email-in address
+                </button>
+              )}
+            </section>
+          )}
 
           {store.templates.length > 0 && (
             <section className="settings-section">
