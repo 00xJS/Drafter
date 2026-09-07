@@ -15,6 +15,14 @@ export const SCOPES = ['offline_access', 'openid', 'email', 'profile', 'User.Rea
 /** Namespace for the marker that identifies events this app owns. */
 const TASK_PROP = 'String {66f5a359-4659-4830-9070-00047ec6ac6e} Name drafterTaskId'
 
+/**
+ * OData string literals are single-quoted and escape a quote by doubling it.
+ * Task ids are usually ours, but a record synced from a household member could
+ * carry anything, so never interpolate one raw into a filter.
+ */
+const odataLiteral = v => `'${String(v).replace(/'/g, "''")}'`
+
+
 const env = () => ({ clientId: process.env.MICROSOFT_CLIENT_ID, clientSecret: process.env.MICROSOFT_CLIENT_SECRET })
 
 export function microsoftConfigured() {
@@ -173,7 +181,7 @@ export function toEvent(item, sourceId) {
  */
 export async function listEvents(userId, accountId, calendarId, fromIso, toIso) {
   const out = []
-  let url = `${GRAPH}/me/calendars/${encodeURIComponent(calendarId)}/calendarView?startDateTime=${encodeURIComponent(fromIso)}&endDateTime=${encodeURIComponent(toIso)}&$top=250&$select=id,subject,start,end,isAllDay,isCancelled,location&$expand=singleValueExtendedProperties($filter=id eq '${TASK_PROP}')`
+  let url = `${GRAPH}/me/calendars/${encodeURIComponent(calendarId)}/calendarView?startDateTime=${encodeURIComponent(fromIso)}&endDateTime=${encodeURIComponent(toIso)}&$top=250&$select=id,subject,start,end,isAllDay,isCancelled,location&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})`
   while (url && out.length < 2000) {
     const page = await graph(userId, accountId, url, { headers: { Prefer: 'outlook.timezone="UTC"' } })
     for (const item of page.value ?? []) out.push(item)
@@ -233,7 +241,8 @@ function eventBodyFor(task, projectName, site) {
 }
 
 async function findMirrored(userId, accountId, calendarId, taskId) {
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(`singleValueExtendedProperties/any(ep: ep/id eq '${TASK_PROP}' and ep/value eq '${taskId}')`)}`
+  const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(TASK_PROP)} and ep/value eq ${odataLiteral(taskId)})`
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(filter)}`
   const page = await graph(userId, accountId, q)
   return page.value?.[0] ?? null
 }
@@ -263,7 +272,7 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
 
 /** Mirrored events changed in Outlook since `since` — the pull half of the sync. */
 export async function pullChanges(userId, accountId, calendarId, sinceIso) {
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq '${TASK_PROP}')&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
   const page = await graph(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
   return (page.value ?? [])
     .map(ev => {
