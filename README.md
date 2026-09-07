@@ -17,7 +17,7 @@ npm run dev          # app on http://localhost:5173
 
 ### Deploying to Netlify
 
-`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies the model server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optionally `GITHUB_TOKEN` (see GitHub links), and one AI key for the ✨ features:
+`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies the model server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optionally `GITHUB_TOKEN` (see GitHub links), optionally `CALENDAR_FEED_TOKEN` + `SUPABASE_SERVICE_KEY` (see Calendar sync), and one AI key for the ✨ features:
 
 - `NVIDIA_API_KEY` — a free key from [build.nvidia.com](https://build.nvidia.com) (NVIDIA Developer Program, ~40 requests/min). Uses the OpenAI-compatible NIM endpoint; pick a model with `NVIDIA_MODEL` (default `nvidia/nemotron-3-super-120b-a12b`; list at `https://integrate.api.nvidia.com/v1/models`).
 - `ANTHROPIC_API_KEY` — Claude instead (plus `ANTHROPIC_WORKSPACE_ID` if that key is identity-linked and not scoped to a single workspace; model via `ANTHROPIC_MODEL`).
@@ -56,6 +56,13 @@ Paste a GitHub URL into a task's or project's **GitHub** field — an issue, pul
 Re-importing an archive is idempotent — posts match by platform id, and your local edits always win.
 
 **Also supported:** a generic analytics CSV (headers like `date, platform, text, likes, comments, shares, impressions`), "Log something done", and JSON backup import. Imported posts land in the built-in **Social media** project.
+
+## Calendar sync
+
+Two directions, both without OAuth:
+
+- **Your calendars in Drafter.** Settings → Calendars: paste an ICS address (Google Calendar's *Secret address in iCal format*, an iCloud *Public Calendar* webcal link, a holidays feed…). Events overlay the Month view (dashed pills), the Timeline (a Calendar row), and Today's *Coming up* list, each with a **Plan** button that creates a prep task due the morning before. Read-only; fetched through the session-gated `/api/calendars` function (calendar hosts don't send CORS headers) and cached in IndexedDB. Recurrence (birthdays, weekly classes, monthly bills), EXDATE and detached overrides are expanded server-side by `shared/ics.mjs`.
+- **Drafter in your calendar.** `/api/feed.ics?token=…` is an iCalendar feed of open tasks with due dates, project targets and milestones. Subscribe once in Google Calendar (*Other calendars → From URL*) or Apple Calendar (*File → New Calendar Subscription*). Enable it by setting `CALENDAR_FEED_TOKEN` (any 16+ character secret) and `SUPABASE_SERVICE_KEY` on Netlify; Settings then shows the subscribe link with a copy button. Google refreshes subscribed feeds every several hours, Apple as often as you configure.
 
 ## Reminders, backup, PWA
 

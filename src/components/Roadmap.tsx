@@ -1,12 +1,15 @@
 import { useMemo } from 'react'
-import { PROJECT_STATUS_META, Project, Task, projectProgress } from '../types'
+import { CalendarEvent, CalendarSource, PROJECT_STATUS_META, Project, Task, projectProgress } from '../types'
 import { DAY_MS, startOfDay } from '../taskutils'
+import { eventStartDate } from '../calendars'
 import { fmtDate } from '../utils'
 import { ProgressBar } from './bits'
 
 interface Props {
   projects: Project[]
   tasks: Task[]
+  events: CalendarEvent[]
+  sourceMap: Map<string, CalendarSource>
   onOpenProject(p: Project): void
   onNewProject(): void
   onOpenTask(t: Task): void
@@ -24,7 +27,7 @@ interface Row {
   dueTasks: Task[]
 }
 
-export function Roadmap({ projects, tasks, onOpenProject, onNewProject, onOpenTask }: Props) {
+export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onNewProject, onOpenTask }: Props) {
   const model = useMemo(() => {
     const today = startOfDay()
     const visible = projects.filter(p => p.status !== 'archived')
@@ -59,8 +62,12 @@ export function Roadmap({ projects, tasks, onOpenProject, onNewProject, onOpenTa
     const x = (d: Date | number) => ((typeof d === 'number' ? d : d.getTime()) - from.getTime()) / DAY_MS * PX_PER_DAY
     const width = x(to)
     rows.sort((a, b) => a.start.getTime() - b.start.getTime())
-    return { rows, months, x, width, today, todayX: x(today) }
-  }, [projects, tasks])
+    const markers = events
+      .map(ev => ({ ev, at: eventStartDate(ev) }))
+      .filter(m => m.at >= from && m.at < to)
+      .slice(0, 400)
+    return { rows, months, x, width, today, todayX: x(today), markers }
+  }, [projects, tasks, events])
 
   if (projects.length === 0) {
     return (
@@ -101,6 +108,25 @@ export function Roadmap({ projects, tasks, onOpenProject, onNewProject, onOpenTa
               ))}
             </div>
           </div>
+          {model.markers.length > 0 && (
+            <div className="rm-row rm-events">
+              <div className="rm-label rm-label-head">Calendar</div>
+              <div className="rm-track" style={{ width: model.width }}>
+                {model.months.map(m => (
+                  <span key={m.left} className="rm-gridline" style={{ left: m.left }} />
+                ))}
+                <span className="rm-today" style={{ left: model.todayX }} />
+                {model.markers.map(({ ev, at }) => (
+                  <span
+                    key={ev.id}
+                    className="rm-event"
+                    style={{ left: model.x(at), background: sourceMap.get(ev.sourceId)?.color ?? '#94a3b8' }}
+                    title={`${ev.title} · ${fmtDate(at.toISOString())}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           {model.rows.map(row => {
             const left = model.x(row.start)
             const w = Math.max(model.x(row.end) - left, 8)

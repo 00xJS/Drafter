@@ -1,14 +1,19 @@
 import { useMemo, useState } from 'react'
-import { Project, STATUS_META, Task } from '../types'
+import { CalendarEvent, CalendarSource, Project, STATUS_META, Task } from '../types'
 import { dateKey, fmtTime } from '../utils'
+import { eventDayKeys } from '../calendars'
 import { ProjectChip } from './bits'
 
 interface Props {
   tasks: Task[]
   projectMap: Map<string, Project>
+  events: CalendarEvent[]
+  sourceMap: Map<string, CalendarSource>
   onOpen(t: Task): void
   onNew(dueAtIso: string): void
   onReschedule(id: string, day: Date): void
+  /** Create a prep task for an external event. */
+  onPlan(ev: CalendarEvent): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -26,7 +31,7 @@ function hasClock(iso: string): boolean {
   return d.getHours() + d.getMinutes() > 0
 }
 
-export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Props) {
+export function Calendar({ tasks, projectMap, events, sourceMap, onOpen, onNew, onReschedule, onPlan }: Props) {
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -47,6 +52,19 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
     return map
   }, [tasks])
 
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>()
+    for (const ev of events) {
+      for (const k of eventDayKeys(ev)) {
+        const arr = map.get(k) ?? []
+        arr.push(ev)
+        map.set(k, arr)
+      }
+    }
+    for (const arr of map.values()) arr.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start))
+    return map
+  }, [events])
+
   const cells = useMemo(() => {
     const offset = cursor.getDay() // Sunday-start week
     const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
@@ -60,6 +78,8 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
   const shift = (delta: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1))
   const sheetTasks = sheetDay ? (byDay.get(dateKey(sheetDay)) ?? []) : []
+  const sheetEvents = sheetDay ? (eventsByDay.get(dateKey(sheetDay)) ?? []) : []
+  const eventColor = (ev: CalendarEvent) => sourceMap.get(ev.sourceId)?.color ?? '#94a3b8'
 
   return (
     <div className="calendar">
@@ -97,8 +117,14 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
           const k = dateKey(d)
           const inMonth = d.getMonth() === cursor.getMonth()
           const dayTasks = byDay.get(k) ?? []
-          // cells have a fixed height: when a day overflows, trade the last pill for the "+N more" line
-          const shown = dayTasks.length > MAX_PILLS ? dayTasks.slice(0, MAX_PILLS - 1) : dayTasks
+          const dayEvents = eventsByDay.get(k) ?? []
+          // cells have a fixed height: events first, then tasks; when a day
+          // overflows, trade the last pill for the "+N more" line
+          const total = dayEvents.length + dayTasks.length
+          const budget = total > MAX_PILLS ? MAX_PILLS - 1 : MAX_PILLS
+          const shownEvents = dayEvents.slice(0, Math.min(dayEvents.length, Math.max(1, budget - Math.min(dayTasks.length, budget - 1))))
+          const shown = dayTasks.slice(0, budget - shownEvents.length)
+          const hidden = total - shownEvents.length - shown.length
           return (
             <div
               key={k}
@@ -112,6 +138,21 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
               }}
             >
               <div className="cal-daynum">{d.getDate()}</div>
+              {shownEvents.map(ev => (
+                <button
+                  key={ev.id}
+                  className="cal-pill event"
+                  style={{ borderColor: eventColor(ev), color: eventColor(ev) }}
+                  title={`${ev.allDay ? '' : fmtTime(ev.start) + ' · '}${ev.title}${ev.location ? ' · ' + ev.location : ''}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setSheetDay(d)
+                  }}
+                >
+                  {!ev.allDay && <span className="cal-pill-time">{fmtTime(ev.start)}</span>}
+                  <span className="cal-pill-title">{ev.title}</span>
+                </button>
+              ))}
               {shown.map(t => {
                 const when = taskDate(t)
                 const project = t.projectId ? projectMap.get(t.projectId) : undefined
@@ -139,7 +180,7 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
                   </button>
                 )
               })}
-              {dayTasks.length > shown.length && <div className="cal-more">+{dayTasks.length - shown.length} more</div>}
+              {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
             </div>
           )
         })}
@@ -155,8 +196,34 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
               </button>
             </header>
             <div className="modal-body">
+              {sheetEvents.length > 0 && (
+                <ul className="dash-list event-list">
+                  {sheetEvents.map(ev => (
+                    <li key={ev.id} className="event-row">
+                      <span className="pdot" style={{ background: eventColor(ev) }} />
+                      <div className="dash-main">
+                        <span className="dash-title">{ev.title}</span>
+                        <span className="dash-reason">
+                          {ev.allDay ? 'All day' : `${fmtTime(ev.start)} – ${fmtTime(ev.end)}`}
+                          {ev.location ? ` · ${ev.location}` : ''}
+                          {sourceMap.get(ev.sourceId) ? ` · ${sourceMap.get(ev.sourceId)!.name}` : ''}
+                        </span>
+                      </div>
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          setSheetDay(null)
+                          onPlan(ev)
+                        }}
+                      >
+                        Plan for this
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {sheetTasks.length === 0 ? (
-                <p className="empty">Nothing on this day yet.</p>
+                <p className="empty">{sheetEvents.length > 0 ? 'No tasks on this day yet.' : 'Nothing on this day yet.'}</p>
               ) : (
                 <ul className="dash-list">
                   {sheetTasks.map(t => {

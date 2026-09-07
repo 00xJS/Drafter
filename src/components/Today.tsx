@@ -1,13 +1,17 @@
 import { useMemo } from 'react'
-import { Project, Task, TaskStatus, projectProgress } from '../types'
+import { CalendarEvent, CalendarSource, Project, Task, TaskStatus, projectProgress } from '../types'
 import { DAY_MS, compareTasks, dayOffset, isOpen } from '../taskutils'
-import { excerpt, timeAgo } from '../utils'
+import { eventStartDate } from '../calendars'
+import { excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 
 interface Props {
   tasks: Task[]
   projects: Project[]
   projectMap: Map<string, Project>
+  events: CalendarEvent[]
+  sourceMap: Map<string, CalendarSource>
+  onPlan(ev: CalendarEvent): void
   onOpen(t: Task): void
   onOpenProject(p: Project): void
   onStatus(id: string, s: TaskStatus): void
@@ -61,7 +65,28 @@ function TaskRow({
   )
 }
 
-export function Today({ tasks, projects, projectMap, onOpen, onOpenProject, onStatus, onNew }: Props) {
+const EVENT_HORIZON_DAYS = 14
+
+function eventWhen(ev: CalendarEvent): string {
+  const start = eventStartDate(ev)
+  const off = dayOffset(start.toISOString())
+  const day = off === 0 ? 'Today' : off === 1 ? 'Tomorrow' : start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  return ev.allDay ? day : `${day} ${fmtTime(ev.start)}`
+}
+
+export function Today({ tasks, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
+  const upcomingEvents = useMemo(() => {
+    const now = Date.now()
+    const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
+    return events
+      .filter(ev => {
+        const start = eventStartDate(ev).getTime()
+        const end = ev.allDay ? start + DAY_MS : new Date(ev.end).getTime()
+        return end > now && start < horizon
+      })
+      .slice(0, 10)
+  }, [events])
+
   const s = useMemo(() => {
     const now = new Date()
     const nowMs = now.getTime()
@@ -145,6 +170,34 @@ export function Today({ tasks, projects, projectMap, onOpen, onOpenProject, onSt
             </button>
           ))}
         </div>
+      )}
+
+      {upcomingEvents.length > 0 && (
+        <section className="chart-card coming-up">
+          <header className="chart-head">
+            <div>
+              <h3>Coming up</h3>
+              <p className="chart-sub">From your calendars, next {EVENT_HORIZON_DAYS} days — plan ahead with one tap</p>
+            </div>
+          </header>
+          <ul className="dash-list event-list">
+            {upcomingEvents.map(ev => (
+              <li key={ev.id} className="event-row">
+                <span className="pdot" style={{ background: sourceMap.get(ev.sourceId)?.color ?? '#94a3b8' }} />
+                <div className="dash-main">
+                  <span className="dash-title">{ev.title}</span>
+                  <span className="dash-reason">
+                    {eventWhen(ev)}
+                    {ev.location ? ` · ${ev.location}` : ''}
+                  </span>
+                </div>
+                <button className="btn" onClick={() => onPlan(ev)}>
+                  Plan
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {sections.length === 0 ? (

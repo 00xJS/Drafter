@@ -1,4 +1,5 @@
 import {
+  CalendarSource,
   ChecklistItem,
   Comment,
   Item,
@@ -213,14 +214,37 @@ export function sanitizeProject(raw: unknown): Project | null {
   }
 }
 
+/** Coerce arbitrary data into a valid CalendarSource. */
+export function sanitizeCalendar(raw: unknown): CalendarSource | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const url = str(r.url)?.trim()
+  if (!id || !url) return null
+  const now = new Date().toISOString()
+  const color = str(r.color)?.trim()
+  return {
+    kind: 'calendar',
+    id,
+    name: str(r.name)?.trim() || 'Calendar',
+    url,
+    color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[7],
+    enabled: r.enabled !== false,
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
 /**
- * Coerce any record — task, project, or a pre-v3 post — into a valid Item.
+ * Coerce any record — task, project, calendar, or a pre-v3 post — into a valid Item.
  * Returns null if unusable.
  */
 export function sanitizeItem(raw: unknown): Item | null {
   if (!raw || typeof raw !== 'object') return null
   const converted = legacyPostToTask(raw) as Record<string, unknown>
   if (converted.kind === 'project') return sanitizeProject(converted)
+  if (converted.kind === 'calendar') return sanitizeCalendar(converted)
   return sanitizeTask(converted)
 }
 

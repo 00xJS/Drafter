@@ -2603,3 +2603,106 @@ textarea {
   display: inline-flex;
   margin-bottom: 12px;
 }
+
+/* external calendar events */
+.cal-pill.event {
+  background: transparent;
+  border: 1px dashed currentColor;
+  font-weight: 500;
+  cursor: default;
+}
+.event-list .event-row {
+  cursor: default;
+}
+.event-list .event-row .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+.event-list .event-row:hover {
+  background: transparent;
+}
+.rm-events .rm-track {
+  min-height: 26px;
+}
+.rm-event {
+  position: absolute;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-4px) rotate(45deg);
+  border-radius: 1px;
+  opacity: 0.9;
+}
+.cal-sources {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.cal-source-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.cal-source-name small,
+.cal-source-status small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.cal-source-status {
+  font-size: 12px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.cal-add-name {
+  flex: 1 1 120px;
+}
+.cal-add-url {
+  flex: 3 1 240px;
+}
+.swatches.small .swatch {
+  width: 18px;
+  height: 18px;
+}
+.settings-section h4 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+}
+.copy-row {
+  display: flex;
+  gap: 6px;
+}
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.sync-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

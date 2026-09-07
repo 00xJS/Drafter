@@ -88,7 +88,33 @@ export interface Project {
   deletedAt?: string
 }
 
-export type Item = Task | Project
+/** A subscribed external calendar (Google secret address, iCloud share link, any ICS feed). */
+export interface CalendarSource {
+  kind: 'calendar'
+  id: string
+  name: string
+  url: string
+  color: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/** One concrete occurrence of an external event, as returned by /api/calendars. */
+export interface CalendarEvent {
+  id: string
+  sourceId: string
+  title: string
+  /** ISO datetime, or YYYY-MM-DD for all-day events. */
+  start: string
+  /** Exclusive end: ISO datetime, or YYYY-MM-DD for all-day events. */
+  end: string
+  allDay: boolean
+  location?: string
+}
+
+export type Item = Task | Project | CalendarSource
 
 /**
  * The legacy post shape. Still the lingua franca of the importers, the

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
+import { CalendarEvent, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
 import { useItems } from '../store'
 import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { projectById } from '../taskutils'
+import { eventStartDate, prepDueFor, useCalendarEvents } from '../calendars'
 import { timeAgo } from '../utils'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
@@ -75,6 +76,8 @@ export default function Planner() {
   }, [calMode])
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
+  const calendars = useCalendarEvents(store.calendars)
+  const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
   const filteredTasks = useMemo(
     () => (activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)),
@@ -104,6 +107,16 @@ export default function Planner() {
   const newTask = (preset?: Partial<Task>) =>
     setEditor({ preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset } })
   const openProject = (project: Project) => setProjectEditor({ project })
+  /** Turn an external event into a prep task due the morning before. */
+  const planForEvent = (ev: CalendarEvent) => {
+    const when = eventStartDate(ev).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+    newTask({
+      title: `Prep: ${ev.title}`,
+      status: 'todo',
+      dueAt: prepDueFor(ev),
+      notes: `For “${ev.title}” on ${when}${ev.location ? ` · ${ev.location}` : ''}`,
+    })
+  }
   const newProject = () => setProjectEditor({})
 
   const deleteTask = (t: Task) => {
@@ -224,6 +237,9 @@ export default function Planner() {
                 tasks={filteredTasks}
                 projects={filterProject ? [filterProject] : store.projects}
                 projectMap={projectMap}
+                events={calendars.events}
+                sourceMap={sourceMap}
+                onPlan={planForEvent}
                 onOpen={openTask}
                 onOpenProject={openProject}
                 onStatus={changeStatus}
@@ -254,14 +270,19 @@ export default function Planner() {
                   <Calendar
                     tasks={filteredTasks}
                     projectMap={projectMap}
+                    events={calendars.events}
+                    sourceMap={sourceMap}
                     onOpen={openTask}
                     onNew={d => newTask({ status: 'todo', dueAt: d })}
                     onReschedule={reschedule}
+                    onPlan={planForEvent}
                   />
                 ) : (
                   <Roadmap
                     projects={filterProject ? [filterProject] : store.projects}
                     tasks={store.tasks}
+                    events={calendars.events}
+                    sourceMap={sourceMap}
                     onOpenProject={openProject}
                     onNewProject={newProject}
                     onOpenTask={openTask}
@@ -314,7 +335,7 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings store={store} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings store={store} calendars={calendars} onClose={() => setSettingsOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

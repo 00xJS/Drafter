@@ -1,19 +1,44 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
+import { CalendarFeedInfo, CalendarState, fetchFeedInfo } from '../calendars'
+import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
-import { fmtDateTime } from '../utils'
+import { PROJECT_COLORS } from '../types'
+import { fmtDateTime, timeAgo, uid } from '../utils'
 
 interface Props {
   store: Store
+  calendars: CalendarState
   onClose(): void
 }
 
-export function Settings({ store, onClose }: Props) {
+export function Settings({ store, calendars, onClose }: Props) {
   const [notif, setNotif] = useState(notificationPermission())
   const [accountEmail, setAccountEmail] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [calName, setCalName] = useState('')
+  const [calUrl, setCalUrl] = useState('')
+  const [calColor, setCalColor] = useState(PROJECT_COLORS[3])
+  const [feed, setFeed] = useState<CalendarFeedInfo | null>(null)
+  const [feedError, setFeedError] = useState('')
+  const [copied, setCopied] = useState(false)
   const supabaseOn = isSupabaseConfigured()
+
+  useEffect(() => {
+    fetchFeedInfo()
+      .then(setFeed)
+      .catch(e => setFeedError((e as Error).message))
+  }, [])
+
+  const addCalendar = () => {
+    const url = calUrl.trim().replace(/^webcal:\/\//i, 'https://')
+    if (!url) return
+    const now = new Date().toISOString()
+    store.upsert({ kind: 'calendar', id: uid(), name: calName.trim() || 'Calendar', url, color: calColor, enabled: true, createdAt: now, updatedAt: now })
+    setCalName('')
+    setCalUrl('')
+  }
 
   useEffect(() => {
     getSupabase()
@@ -104,6 +129,108 @@ export function Settings({ store, onClose }: Props) {
               >
                 Enable notifications
               </button>
+            )}
+          </section>
+
+          <section className="settings-section">
+            <h3>Calendars</h3>
+            <p className="field-hint">
+              Subscribe to your Google or iCloud calendars (birthdays, holidays, family) and their events show up on
+              the Month view, the Timeline, and Today's <em>Coming up</em> list — read-only, with a one-tap prep task.
+            </p>
+            {store.calendars.length > 0 && (
+              <ul className="cal-sources">
+                {store.calendars.map(c => (
+                  <li key={c.id} className="cal-source">
+                    <input
+                      type="checkbox"
+                      checked={c.enabled}
+                      aria-label="Enabled"
+                      onChange={e => store.upsert({ ...c, enabled: e.target.checked, updatedAt: newerStamp(c.updatedAt) })}
+                    />
+                    <span className="pdot" style={{ background: c.color }} />
+                    <span className="cal-source-name">
+                      {c.name}
+                      {calendars.names[c.id] && calendars.names[c.id] !== c.name && <small> · {calendars.names[c.id]}</small>}
+                    </span>
+                    <span className="cal-source-status">
+                      {calendars.errors[c.id] ? (
+                        <span className="warn">{calendars.errors[c.id]}</span>
+                      ) : (
+                        <small>{calendars.events.filter(e => e.sourceId === c.id).length} events</small>
+                      )}
+                    </span>
+                    <button className="btn subtle danger" onClick={() => store.remove(c.id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="cal-add">
+              <input value={calName} onChange={e => setCalName(e.target.value)} placeholder="Name (e.g. Family)" className="cal-add-name" />
+              <input value={calUrl} onChange={e => setCalUrl(e.target.value)} placeholder="https://… or webcal://… (.ics address)" className="cal-add-url" />
+              <span className="swatches small">
+                {PROJECT_COLORS.map(c => (
+                  <button key={c} type="button" className={calColor === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setCalColor(c)} aria-label={c} />
+                ))}
+              </span>
+              <button className="btn" disabled={!calUrl.trim()} onClick={addCalendar}>
+                Add calendar
+              </button>
+            </div>
+            <p className="field-hint">
+              <strong>Google:</strong> calendar settings → <em>Integrate calendar</em> → copy the <em>Secret address in
+              iCal format</em>. <strong>iCloud:</strong> Calendar app → share the calendar → tick <em>Public Calendar</em> →
+              copy the webcal link. Both stay private to this app; the addresses are stored with your data, never in the
+              page.
+            </p>
+            <p className="sync-line">
+              {calendars.error ? (
+                <span className="warn">{calendars.error}</span>
+              ) : calendars.lastAt ? (
+                <small>Events refreshed {timeAgo(calendars.lastAt)}.</small>
+              ) : null}{' '}
+              {store.calendars.length > 0 && (
+                <button className="btn" disabled={calendars.loading} onClick={() => calendars.refresh()}>
+                  {calendars.loading ? 'Refreshing…' : 'Refresh now'}
+                </button>
+              )}
+            </p>
+
+            <h4>Your tasks in Google / Apple Calendar</h4>
+            {feed?.configured && feed.url ? (
+              <>
+                <p className="field-hint">
+                  Subscribe to this address once (Google Calendar → <em>Other calendars → From URL</em>; Apple Calendar →{' '}
+                  <em>File → New Calendar Subscription</em>). Open tasks with due dates, project targets and milestones
+                  appear there and stay in sync. Anyone with the link can read the feed — treat it like a password.
+                </p>
+                <div className="copy-row">
+                  <input readOnly value={feed.url} onFocus={e => e.currentTarget.select()} />
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(feed.url!)
+                        setCopied(true)
+                        window.setTimeout(() => setCopied(false), 2000)
+                      } catch {
+                        /* the field is selectable */
+                      }
+                    }}
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </>
+            ) : feed ? (
+              <p className="field-hint">
+                Not enabled yet. Set {feed.missing.join(' and ')} in the host environment (Netlify) and redeploy; the
+                subscribe link appears here.
+              </p>
+            ) : (
+              <p className="field-hint">{feedError ? `Feed status unavailable: ${feedError}` : 'Checking feed status…'}</p>
             )}
           </section>
 
