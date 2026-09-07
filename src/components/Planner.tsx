@@ -16,18 +16,19 @@ import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { Settings } from './Settings'
 
-type View = 'today' | 'board' | 'roadmap' | 'calendar' | 'tasks' | 'insights'
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'insights'
+type CalendarMode = 'month' | 'timeline'
 
 const VIEW_LABELS: Record<View, string> = {
   today: 'Today',
-  board: 'Board',
-  roadmap: 'Roadmap',
-  calendar: 'Calendar',
   tasks: 'Tasks',
+  board: 'Board',
+  calendar: 'Calendar',
   insights: 'Insights',
 }
 
 const FILTER_KEY = 'drafter:project-filter'
+const CAL_MODE_KEY = 'drafter:calendar-mode'
 
 interface Toast {
   msg: string
@@ -44,6 +45,13 @@ export default function Planner() {
       return 'all'
     }
   })
+  const [calMode, setCalMode] = useState<CalendarMode>(() => {
+    try {
+      return localStorage.getItem(CAL_MODE_KEY) === 'timeline' ? 'timeline' : 'month'
+    } catch {
+      return 'month'
+    }
+  })
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -58,6 +66,13 @@ export default function Planner() {
       /* ignore */
     }
   }, [projectFilter])
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAL_MODE_KEY, calMode)
+    } catch {
+      /* ignore */
+    }
+  }, [calMode])
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
@@ -225,23 +240,34 @@ export default function Planner() {
                 onNew={s => newTask({ status: s })}
               />
             )}
-            {view === 'roadmap' && (
-              <Roadmap
-                projects={filterProject ? [filterProject] : store.projects}
-                tasks={store.tasks}
-                onOpenProject={openProject}
-                onNewProject={newProject}
-                onOpenTask={openTask}
-              />
-            )}
             {view === 'calendar' && (
-              <Calendar
-                tasks={filteredTasks}
-                projectMap={projectMap}
-                onOpen={openTask}
-                onNew={d => newTask({ status: 'todo', dueAt: d })}
-                onReschedule={reschedule}
-              />
+              <>
+                <div className="segmented cal-mode" role="tablist" aria-label="Calendar mode">
+                  <button className={calMode === 'month' ? 'seg on' : 'seg'} onClick={() => setCalMode('month')}>
+                    Month
+                  </button>
+                  <button className={calMode === 'timeline' ? 'seg on' : 'seg'} onClick={() => setCalMode('timeline')}>
+                    Timeline
+                  </button>
+                </div>
+                {calMode === 'month' ? (
+                  <Calendar
+                    tasks={filteredTasks}
+                    projectMap={projectMap}
+                    onOpen={openTask}
+                    onNew={d => newTask({ status: 'todo', dueAt: d })}
+                    onReschedule={reschedule}
+                  />
+                ) : (
+                  <Roadmap
+                    projects={filterProject ? [filterProject] : store.projects}
+                    tasks={store.tasks}
+                    onOpenProject={openProject}
+                    onNewProject={newProject}
+                    onOpenTask={openTask}
+                  />
+                )}
+              </>
             )}
             {view === 'tasks' && (
               <TasksTable store={store} tasks={filteredTasks} projectMap={projectMap} onOpen={openTask} onNew={newTask} onDelete={deleteTask} />

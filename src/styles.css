@@ -2598,3 +2598,8 @@ textarea {
   width: 100%;
   resize: vertical;
 }
+
+.cal-mode {
+  display: inline-flex;
+  margin-bottom: 12px;
+}

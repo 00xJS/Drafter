@@ -82,7 +82,7 @@ export function Roadmap({ projects, tasks, onOpenProject, onNewProject, onOpenTa
   return (
     <div className="roadmap">
       <div className="toolbar">
-        <h2 className="view-title">Roadmap</h2>
+        <h2 className="view-title">Timeline</h2>
         <span className="cal-hint">Bars are project spans · ◆ milestones · dots are due tasks · click anything to open it</span>
         <span className="spacer" />
         <button className="btn" onClick={onNewProject}>
