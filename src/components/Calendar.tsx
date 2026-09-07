@@ -11,7 +11,7 @@ interface Props {
   onReschedule(id: string, day: Date): void
 }
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MAX_PILLS = 3
 
 /** The day a task shows on: its due date, or the day it was completed. */
@@ -48,7 +48,7 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
   }, [tasks])
 
   const cells = useMemo(() => {
-    const offset = (cursor.getDay() + 6) % 7 // Monday-start week
+    const offset = cursor.getDay() // Sunday-start week
     const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
     const total = Math.ceil((offset + daysInMonth) / 7) * 7
     const out: Date[] = []
