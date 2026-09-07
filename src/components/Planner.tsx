@@ -477,6 +477,18 @@ export default function Planner() {
             setProjectFilter(p.id)
             setView('notes')
           }}
+          templates={store.templates}
+          onCreateMany={(p, ts) => {
+            store.upsert(p)
+            for (const t of ts) store.upsert(t)
+            setProjectEditor(null)
+            setProjectFilter(p.id)
+            showToast(`${projectEditor.project ? 'Added' : 'Created'} ${ts.length} task${ts.length === 1 ? '' : 's'} in “${p.name}”`)
+          }}
+          onSaveTemplate={t => {
+            store.upsert(t)
+            showToast(`Template “${t.name}” saved — pick it when creating a project`)
+          }}
         />
       )}
 

@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, Task, projectProgress } from '../types'
+import { Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, Task, Template, projectProgress } from '../types'
+import { BUILT_IN_TEMPLATES, instantiateTemplate, templateFromProject } from '../templates'
+import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
 import { fromLocalInput, uid } from '../utils'
 import { GithubCard } from './GithubCard'
@@ -14,12 +16,17 @@ interface Props {
   onDelete(id: string): void
   onClose(): void
   onOpenNotes?(p: Project): void
+  /** Saved templates (built-ins are added automatically). */
+  templates?: Template[]
+  /** Create a project together with its tasks (from a template or an AI plan). */
+  onCreateMany?(project: Project, tasks: Task[]): void
+  onSaveTemplate?(t: Template): void
 }
 
 const toDateInput = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 10) : '')
 const fromDateInput = (v: string) => (v ? fromLocalInput(`${v}T12:00`) : undefined)
 
-export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose, onOpenNotes }: Props) {
+export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose, onOpenNotes, templates = [], onCreateMany, onSaveTemplate }: Props) {
   const [base] = useState<Project>(() => {
     const now = new Date().toISOString()
     return (
@@ -44,6 +51,77 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   const [milestones, setMilestones] = useState<Milestone[]>(base.milestones ?? [])
   const [githubUrl, setGithubUrl] = useState(base.githubUrl ?? '')
   const [newMs, setNewMs] = useState('')
+  const [templateId, setTemplateId] = useState('')
+  const [goal, setGoal] = useState('')
+  const [plan, setPlan] = useState<DraftedPlan | null>(null)
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planError, setPlanError] = useState('')
+  const [savedTemplate, setSavedTemplate] = useState(false)
+  const allTemplates = [...templates, ...BUILT_IN_TEMPLATES]
+  const chosen = allTemplates.find(t => t.id === templateId)
+
+  const pickTemplate = (id: string) => {
+    setTemplateId(id)
+    const t = allTemplates.find(x => x.id === id)
+    if (!t) return
+    if (!name.trim()) setName(t.name)
+    if (!emoji) setEmoji(t.emoji ?? '')
+    setColor(t.color)
+    if (!description) setDescription(t.description ?? '')
+    if (!startAt) setStartAt(toDateInput(new Date().toISOString()))
+  }
+
+  const runDraft = async () => {
+    setPlanBusy(true)
+    setPlanError('')
+    try {
+      setPlan(await draftPlan(goal.trim(), name.trim(), description.trim() || undefined))
+    } catch (e) {
+      setPlanError((e as Error).message)
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  /** Create (or extend) the project with a template's or the AI plan's tasks. */
+  const createWith = (tpl: Template) => {
+    if (!onCreateMany) return
+    const start = startAt ? new Date(`${startAt}T12:00`) : new Date()
+    const { project: p, tasks: ts } = instantiateTemplate(tpl, start, {
+      id: base.id,
+      name: name.trim() || tpl.name,
+      emoji: emoji.trim() || tpl.emoji,
+      color,
+      description: description.trim() || tpl.description,
+      status,
+      githubUrl: githubUrl.trim() || undefined,
+      milestones: [...milestones, ...(tpl.milestones ?? []).map(m => ({ id: uid(), name: m.name, dueAt: fromLocalInput(`${toDateInput(new Date(start.getFullYear(), start.getMonth(), start.getDate() + m.offsetDays, 12).toISOString())}T12:00`) }))],
+      createdAt: base.createdAt,
+    })
+    if (project) {
+      // existing project: keep its dates unless empty
+      p.startAt = base.startAt ?? p.startAt
+      p.targetAt = base.targetAt ?? p.targetAt
+      p.notesHtml = base.notesHtml ?? p.notesHtml
+      p.updatedAt = newerStamp(base.updatedAt)
+    }
+    onCreateMany(p, ts)
+  }
+
+  const planAsTemplate = (): Template | null =>
+    plan
+      ? {
+          kind: 'template',
+          id: 'ai-plan',
+          name: name.trim() || 'Plan',
+          color,
+          durationDays: plan.durationDays,
+          tasks: plan.tasks,
+          milestones: plan.milestones,
+          createdAt: base.createdAt,
+          updatedAt: base.createdAt,
+        }
+      : null
 
   const progress = projectProgress(tasks)
 
@@ -120,6 +198,39 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
         </header>
 
         <div className="modal-body">
+          {!project && onCreateMany && (
+            <label className="field">
+              <span>
+                Start from a template <small>(optional — tasks and milestones come with it)</small>
+              </span>
+              <select value={templateId} onChange={e => pickTemplate(e.target.value)}>
+                <option value="">Blank project</option>
+                {templates.length > 0 && (
+                  <optgroup label="Your templates">
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.emoji ? `${t.emoji} ` : ''}
+                        {t.name} · {t.tasks.length} tasks
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Built in">
+                  {BUILT_IN_TEMPLATES.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.emoji ? `${t.emoji} ` : ''}
+                      {t.name} · {t.tasks.length} tasks
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              {chosen && (
+                <small className="field-hint">
+                  {chosen.description} The <strong>Start</strong> date below anchors every task.
+                </small>
+              )}
+            </label>
+          )}
           <div className="field-row">
             <label className="field emoji-field">
               <span>Icon</span>
@@ -201,6 +312,58 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             </div>
           </div>
 
+          {onCreateMany && (
+            <div className="field ai-plan">
+              <span>
+                ✨ Draft a plan from a goal <small>(the model proposes dated tasks and milestones; you choose)</small>
+              </span>
+              <div className="check-add">
+                <input value={goal} onChange={e => setGoal(e.target.value)} placeholder="e.g. Turn the spare room into a home office by the end of November" />
+                <button type="button" className="btn" disabled={!goal.trim() || planBusy} onClick={runDraft}>
+                  {planBusy ? 'Drafting…' : 'Draft'}
+                </button>
+              </div>
+              {planError && <p className="warn">{planError}</p>}
+              {plan && (
+                <div className="ai-proposal">
+                  <div className="ai-proposal-head">
+                    <strong>
+                      {plan.tasks.length} tasks · {plan.milestones.length} milestones · about {plan.durationDays} days
+                    </strong>
+                    <small>Anchored on the Start date {startAt ? `(${startAt})` : '(today)'}</small>
+                  </div>
+                  <ul className="plan-list">
+                    {plan.milestones.map(m => (
+                      <li key={`m-${m.name}`} className="plan-ms">
+                        ◆ {m.name} <small>day {m.offsetDays}</small>
+                      </li>
+                    ))}
+                    {plan.tasks.map((t, i) => (
+                      <li key={i}>
+                        {t.title} <small>day {t.offsetDays}{t.priority && t.priority !== 'normal' ? ` · ${t.priority}` : ''}{t.checklist?.length ? ` · ${t.checklist.length} steps` : ''}</small>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="ai-row">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => {
+                        const tpl = planAsTemplate()
+                        if (tpl) createWith(tpl)
+                      }}
+                    >
+                      {project ? 'Add these to the project' : 'Create project with this plan'}
+                    </button>
+                    <button type="button" className="btn subtle" onClick={() => setPlan(null)}>
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <label className="field">
             <span>
               GitHub <small>(repo or Projects board URL)</small>
@@ -245,13 +408,31 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
               Delete
             </ConfirmButton>
           )}
+          {project && onSaveTemplate && (
+            <button
+              className="btn subtle"
+              title="Save this project's tasks and milestones as a reusable template"
+              onClick={() => {
+                onSaveTemplate(templateFromProject(getLatest(project.id) ?? project, tasks))
+                setSavedTemplate(true)
+              }}
+            >
+              {savedTemplate ? 'Saved as template ✓' : 'Save as template'}
+            </button>
+          )}
           <span className="spacer" />
           <button className="btn" onClick={requestClose}>
             Cancel
           </button>
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
+          {!project && chosen && onCreateMany ? (
+            <button className="btn primary" onClick={() => createWith(chosen)}>
+              Create with {chosen.tasks.length} tasks
+            </button>
+          ) : (
+            <button className="btn primary" onClick={save}>
+              Save
+            </button>
+          )}
         </footer>
       </div>
     </div>

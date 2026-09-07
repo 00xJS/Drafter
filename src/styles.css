@@ -3401,3 +3401,25 @@ textarea {
     touch-action: pan-y;
   }
 }
+
+/* templates + AI plan */
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 13px;
+}
+.plan-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.plan-list li small {
+  color: var(--muted);
+  margin-left: 6px;
+}
+.plan-list .plan-ms {
+  color: var(--accent);
+  font-weight: 600;
+}

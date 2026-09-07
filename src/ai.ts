@@ -183,3 +183,37 @@ export async function summarizeReview(input: {
     900,
   )
 }
+
+export interface DraftedPlan {
+  durationDays: number
+  tasks: { title: string; offsetDays: number; priority?: 'low' | 'normal' | 'high' | 'urgent'; checklist?: string[] }[]
+  milestones: { name: string; offsetDays: number }[]
+}
+
+/** Turn a goal sentence into a dated plan: tasks with day offsets and a few milestones. */
+export async function draftPlan(goal: string, name: string, context?: string): Promise<DraftedPlan> {
+  const text = await complete(
+    'You are a pragmatic project planner for personal and household projects. Produce realistic, well-ordered plans a single person can follow, with sensible lead times (booking before doing, ordering before assembling). Prefer 8–15 tasks. No fluff.',
+    `Project: ${name || '(unnamed)'}\nGoal: ${goal}\n${context ? `Context:\n${context}\n` : ''}\nRespond with ONLY a JSON object: {"durationDays": number, "tasks": [{"title": "imperative, under 70 chars", "offsetDays": days from start (0 = start day), "priority": "low|normal|high|urgent", "checklist": ["optional short steps"]}], "milestones": [{"name": "short", "offsetDays": number}] } with 2–4 milestones.`,
+    1800,
+  )
+  const raw = extractJSON<{ durationDays?: unknown; tasks?: unknown[]; milestones?: unknown[] }>(text)
+  const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : d)
+  const tasks = (Array.isArray(raw.tasks) ? raw.tasks : [])
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === 'object')
+    .map(t => ({
+      title: String(t.title ?? '').trim().slice(0, 120),
+      offsetDays: num(t.offsetDays),
+      priority: (['low', 'normal', 'high', 'urgent'] as const).find(p => p === t.priority),
+      checklist: Array.isArray(t.checklist) ? t.checklist.map(String).filter(Boolean).slice(0, 8) : undefined,
+    }))
+    .filter(t => t.title)
+    .slice(0, 25)
+  const milestones = (Array.isArray(raw.milestones) ? raw.milestones : [])
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map(m => ({ name: String(m.name ?? '').trim().slice(0, 60), offsetDays: num(m.offsetDays) }))
+    .filter(m => m.name)
+    .slice(0, 6)
+  if (tasks.length === 0) throw new AIError('The model returned no tasks.')
+  return { durationDays: Math.max(1, num(raw.durationDays, Math.max(...tasks.map(t => t.offsetDays), 7))), tasks, milestones }
+}
