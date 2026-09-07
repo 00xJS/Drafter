@@ -26,8 +26,8 @@ async function complete(system: string, prompt: string, maxTokens = 2048): Promi
     throw new AIError('AI is unreachable from here — it runs on the hosted site (or via `netlify dev` locally).')
   }
   if (res.status === 401) throw new AIError('Session expired — sign in again and retry.')
-  if (res.status === 501) throw new AIError('AI is not configured on this site: set ANTHROPIC_API_KEY in the host environment.')
   if (!res.ok) {
+    // 501 = no provider key on the host; the server names the env vars to set.
     const body = await res.json().catch(() => null)
     throw new AIError((body as { error?: string } | null)?.error ?? `AI request failed (HTTP ${res.status}).`)
   }

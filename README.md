@@ -17,7 +17,12 @@ npm run dev          # app on http://localhost:5173
 
 ### Deploying to Netlify
 
-`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies Claude server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `ANTHROPIC_API_KEY` for AI features (plus `ANTHROPIC_WORKSPACE_ID` if that key is identity-linked and not scoped to a single workspace).
+`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies the model server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and one AI key for the ✨ features:
+
+- `NVIDIA_API_KEY` — a free key from [build.nvidia.com](https://build.nvidia.com) (NVIDIA Developer Program, ~40 requests/min). Uses the OpenAI-compatible NIM endpoint; pick a model with `NVIDIA_MODEL` (default `nvidia/nemotron-3-super-120b-a12b`; list at `https://integrate.api.nvidia.com/v1/models`).
+- `ANTHROPIC_API_KEY` — Claude instead (plus `ANTHROPIC_WORKSPACE_ID` if that key is identity-linked and not scoped to a single workspace; model via `ANTHROPIC_MODEL`).
+
+If both keys are set NVIDIA wins; force one with `AI_PROVIDER=nvidia|anthropic`.
 
 ## Views
 

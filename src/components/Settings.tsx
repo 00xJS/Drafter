@@ -110,8 +110,9 @@ export function Settings({ store, onClose }: Props) {
           <section className="settings-section">
             <h3>AI assist</h3>
             <p className="field-hint">
-              The ✨ features run through the site's server-side proxy — configure <code>ANTHROPIC_API_KEY</code> in the
-              host environment (Netlify). No key is ever stored in the browser.
+              The ✨ features run through the site's server-side proxy — configure <code>NVIDIA_API_KEY</code> (free
+              from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). No key is ever
+              stored in the browser.
             </p>
           </section>
         </div>
