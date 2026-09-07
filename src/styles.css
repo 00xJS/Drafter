@@ -3021,3 +3021,159 @@ textarea {
   gap: 6px;
   flex: none;
 }
+
+/* people */
+.people {
+  margin-bottom: 20px;
+}
+.people .toolbar {
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+.people .chart-sub {
+  margin: 2px 0 0;
+}
+.people-summary {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.person-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.person-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.person-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.person-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--inverse-text);
+  font-weight: 700;
+  flex: none;
+}
+.person-avatar.small {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+.person-reason {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.person-stats {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.person-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  flex: 1;
+}
+.person-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--border);
+  min-height: 2px;
+}
+.person-nums {
+  display: flex;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.person-nums span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.person-nums small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.person-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+.person-recent li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.person-recent li:hover {
+  color: var(--accent);
+}
+.person-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.people-delete {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+}
+
+.person-ideas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.person-idea {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+}
+.person-idea small {
+  color: var(--text-2);
+}
+.person-idea:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}

@@ -1,6 +1,9 @@
 import {
   CalendarSource,
   ChecklistItem,
+  PERSON_GROUPS,
+  Person,
+  PersonGroup,
   Comment,
   Item,
   Metrics,
@@ -183,6 +186,7 @@ export function sanitizeTask(raw: unknown): Task | null {
     mediaIds: idList(r.mediaIds),
     recurrence,
     social: social(r.social),
+    peopleIds: idList(r.peopleIds),
     deletedAt: isoDate(r.deletedAt),
   }
 }
@@ -238,8 +242,35 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
   }
 }
 
+const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
+
+/** Coerce arbitrary data into a valid Person. */
+export function sanitizePerson(raw: unknown): Person | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const name = str(r.name)?.trim()
+  if (!id || !name) return null
+  const now = new Date().toISOString()
+  const color = str(r.color)?.trim()
+  const cadence = Number(r.cadenceDays)
+  return {
+    kind: 'person',
+    id,
+    name,
+    emoji: str(r.emoji)?.trim() || undefined,
+    color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[5],
+    group: typeof r.group === 'string' && PERSON_GROUP_SET.has(r.group) ? (r.group as PersonGroup) : 'family',
+    cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
+    notes: str(r.notes)?.trim() || undefined,
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
 /**
- * Coerce any record — task, project, calendar, or a pre-v3 post — into a valid Item.
+ * Coerce any record — task, project, calendar, person, or a pre-v3 post — into a valid Item.
  * Returns null if unusable.
  */
 export function sanitizeItem(raw: unknown): Item | null {
@@ -247,6 +278,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   const converted = legacyPostToTask(raw) as Record<string, unknown>
   if (converted.kind === 'project') return sanitizeProject(converted)
   if (converted.kind === 'calendar') return sanitizeCalendar(converted)
+  if (converted.kind === 'person') return sanitizePerson(converted)
   return sanitizeTask(converted)
 }
 

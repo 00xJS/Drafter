@@ -41,6 +41,7 @@ The **project bar** under the header filters every view to one project (double-c
 - **Calendar → Month** — month view by due date (done tasks show on their completion day). Click a day to add; drag a pill to move its due date.
 - **Tasks** — searchable, filterable, sortable list of everything, plus JSON backup/export, social archive / CSV import, and undo-able deletes.
 - **Notes** — the selected project's notepad (rich text with inline photos), or an index of all projects' notes.
+- **Insights → People** — the people you want to keep close. Give each a rhythm ("every 2 weeks"); any completed task they're attached to counts as seeing them, or log a visit in one tap. Cards show last seen, visits in the last 30/90 days, the average gap, a 12-week sparkline, and a status: on track, due a catch-up, overdue, or seeing a lot. Today surfaces the ones that need attention with a **Plan something** button.
 - **Insights** — analytics for the social posts: engagement by platform, best time to post, per-tag performance, top posts, and an optional AI analysis. Every chart has a table view.
 
 The task editor's ✨ buttons break a task into checklist steps, suggest tags, and (for posts) draft platform variants.

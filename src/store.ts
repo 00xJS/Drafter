@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
+import { CalendarSource, Item, Person, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
@@ -58,6 +58,8 @@ export interface Store {
   projects: Project[]
   /** Subscribed external calendars. */
   calendars: CalendarSource[]
+  /** People you track visits with. */
+  people: Person[]
   /** Everything including tombstones — for export and sync. */
   allItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
@@ -247,6 +249,13 @@ export function useItems(): Store {
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [items],
   )
+  const people = useMemo(
+    () =>
+      items
+        .filter((i): i is Person => i.kind === 'person' && !i.deletedAt)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [items],
+  )
   const calendars = useMemo(
     () =>
       items
@@ -259,6 +268,7 @@ export function useItems(): Store {
     tasks,
     projects,
     calendars,
+    people,
     allItems: items,
     loaded,
     syncInfo,

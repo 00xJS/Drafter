@@ -73,6 +73,11 @@ export function TaskCard({ task, project, onOpen, onStatus }: Props) {
             {gh.type === 'pr' ? '⎇' : gh.type === 'issue' ? '◉' : '⌥'} {gh.number ? `#${gh.number}` : gh.repo ?? 'GH'}
           </span>
         )}
+        {task.peopleIds && task.peopleIds.length > 0 && (
+          <span className="card-flag" title="People">
+            👥 {task.peopleIds.length}
+          </span>
+        )}
         {task.mediaIds && task.mediaIds.length > 0 && <span className="card-flag">🖼 {task.mediaIds.length}</span>}
         {task.recurrence && (
           <span className="card-flag" title="Repeats">

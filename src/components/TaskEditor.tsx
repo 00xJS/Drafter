@@ -4,6 +4,7 @@ import {
   Comment,
   Metrics,
   PLATFORMS,
+  Person,
   PLATFORM_META,
   PRIORITIES,
   PRIORITY_META,
@@ -29,6 +30,7 @@ interface Props {
   task?: Task
   preset?: Partial<Task>
   projects: Project[]
+  people: Person[]
   /** The freshest copy in the store — save() merges onto it so fields the user
    *  did NOT touch keep concurrent edits (e.g. a bot adding a comment). */
   getLatest(id: string): Task | undefined
@@ -44,7 +46,7 @@ const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impres
 type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
 type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
-export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
+export function TaskEditor({ task, preset, projects, people, getLatest, onSave, onCommit, onDelete, onClose }: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
     const now = new Date().toISOString()
@@ -81,6 +83,7 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
   const [newComment, setNewComment] = useState('')
   const [freq, setFreq] = useState<RecurrenceFreq | ''>(base.recurrence?.freq ?? '')
   const [mediaIds, setMediaIds] = useState<string[]>(base.mediaIds ?? [])
+  const [peopleIds, setPeopleIds] = useState<string[]>(base.peopleIds ?? [])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [isSocial, setIsSocial] = useState(!!base.social)
   const [platforms, setPlatforms] = useState<Platform[]>(base.social?.platforms?.length ? base.social.platforms : ['x'])
@@ -194,6 +197,7 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
       social,
+      peopleIds: peopleIds.length > 0 ? peopleIds : undefined,
     }
   }
 
@@ -215,6 +219,7 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
       mediaIds: base.mediaIds,
       recurrence: base.recurrence,
       social: base.social,
+      peopleIds: base.peopleIds,
     }
   }
 
@@ -578,6 +583,27 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
                 {aiBusy === 'tags' ? 'Suggesting…' : '✨ Suggest tags'}
               </button>
             </label>
+
+            {people.length > 0 && (
+              <div className="field">
+                <span>
+                  People <small>(done = seen them)</small>
+                </span>
+                <div className="platform-toggles">
+                  {people.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={peopleIds.includes(p.id) ? 'toggle on' : 'toggle'}
+                      onClick={() => setPeopleIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
+                    >
+                      {p.emoji ? `${p.emoji} ` : ''}
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <label className="field">
               <span>GitHub</span>

@@ -555,6 +555,76 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_people',
+    description: 'People you track visits with: last seen, visits in the last 30/90 days, target rhythm, and whether they are overdue a catch-up or being seen a lot.',
+    inputSchema: { type: 'object', properties: {} },
+    async run() {
+      const all = await fetchAll()
+      const tasks = all.filter(i => i.kind === 'task')
+      const nowMs = Date.now()
+      return {
+        people: all
+          .filter(i => i.kind === 'person')
+          .map(p => {
+            const visits = tasks
+              .filter(t => t.status === 'done' && t.completedAt && (t.peopleIds ?? []).includes(p.id))
+              .map(t => t.completedAt)
+              .sort()
+              .reverse()
+            const daysSince = visits[0] ? Math.floor((nowMs - Date.parse(visits[0])) / DAY) : null
+            const c = p.cadenceDays
+            const status = !visits[0] ? 'never' : c && daysSince > c * 1.5 ? 'overdue' : c && daysSince > c ? 'due' : 'ok'
+            return {
+              id: p.id,
+              name: p.name,
+              group: p.group,
+              cadenceDays: c ?? null,
+              lastSeen: visits[0] ?? null,
+              daysSince,
+              visitsLast30Days: visits.filter(v => nowMs - Date.parse(v) < 30 * DAY).length,
+              visitsLast90Days: visits.filter(v => nowMs - Date.parse(v) < 90 * DAY).length,
+              status,
+              notes: p.notes ?? null,
+            }
+          }),
+      }
+    },
+  },
+  {
+    name: 'log_visit',
+    description: 'Record that the user saw someone (creates a completed "visit" task attached to that person). personId from list_people.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        personId: { type: 'string' },
+        at: { type: 'string', description: 'ISO date/datetime (default: now)' },
+        note: { type: 'string', description: 'What you did, e.g. "Sunday lunch"' },
+      },
+      required: ['personId'],
+    },
+    async run({ personId, at, note }) {
+      const all = await fetchAll()
+      const person = all.find(i => i.kind === 'person' && i.id === personId)
+      if (!person) throw new Error(`No person with id "${personId}". Use list_people.`)
+      const stamp = now()
+      const task = {
+        kind: 'task',
+        id: newId(),
+        title: note ? String(note) : `Saw ${person.name}`,
+        description: '',
+        status: 'done',
+        priority: 'normal',
+        completedAt: at ? isoOrThrow(at, 'at') : stamp,
+        createdAt: stamp,
+        updatedAt: stamp,
+        tags: ['visit'],
+        peopleIds: [person.id],
+      }
+      await writeItem(task)
+      return { logged: summarizeTask(task) }
+    },
+  },
+  {
     name: 'get_overview',
     description: 'The Today page as data: counts by status, overdue / due today / due this week, blocked items, per-project progress, and what was completed in the last 7 days.',
     inputSchema: { type: 'object', properties: {} },

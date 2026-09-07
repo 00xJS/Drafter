@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { CalendarEvent, CalendarSource, Project, Task, TaskStatus, projectProgress } from '../types'
+import { CalendarEvent, CalendarSource, Person, Project, Task, TaskStatus, projectProgress } from '../types'
+import { SEEN_META, compareStats, personStats } from '../people'
 import { DAY_MS, compareTasks, dayOffset, isOpen } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { excerpt, fmtTime, timeAgo } from '../utils'
@@ -7,6 +8,10 @@ import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bi
 
 interface Props {
   tasks: Task[]
+  /** Unfiltered tasks — visits are counted across every project. */
+  allTasks: Task[]
+  people: Person[]
+  onPlanWith(p: Person): void
   projects: Project[]
   projectMap: Map<string, Project>
   events: CalendarEvent[]
@@ -74,7 +79,16 @@ function eventWhen(ev: CalendarEvent): string {
   return ev.allDay ? day : `${day} ${fmtTime(ev.start)}`
 }
 
-export function Today({ tasks, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
+export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
+  const peopleNudges = useMemo(
+    () =>
+      people
+        .map(p => personStats(p, allTasks))
+        .filter(s => s.status === 'overdue' || s.status === 'due' || s.status === 'often')
+        .sort(compareStats)
+        .slice(0, 6),
+    [people, allTasks],
+  )
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
@@ -170,6 +184,40 @@ export function Today({ tasks, projects, projectMap, events, sourceMap, onPlan, 
             </button>
           ))}
         </div>
+      )}
+
+      {peopleNudges.length > 0 && (
+        <section className="chart-card people-nudges">
+          <header className="chart-head">
+            <div>
+              <h3>People</h3>
+              <p className="chart-sub">Who's due a call or a plan — and who you're seeing a lot</p>
+            </div>
+          </header>
+          <ul className="dash-list event-list">
+            {peopleNudges.map(s => (
+              <li key={s.person.id} className="event-row">
+                <span className="person-avatar small" style={{ background: s.person.color }}>
+                  {s.person.emoji ?? s.person.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="dash-main">
+                  <span className="dash-title">
+                    {s.person.name}{' '}
+                    <span className="badge" style={{ background: SEEN_META[s.status].bg, color: SEEN_META[s.status].color }}>
+                      {SEEN_META[s.status].label}
+                    </span>
+                  </span>
+                  <span className="dash-reason">{s.reason}</span>
+                </div>
+                {s.status !== 'often' && (
+                  <button className="btn" onClick={() => onPlanWith(s.person)}>
+                    Plan something
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {upcomingEvents.length > 0 && (

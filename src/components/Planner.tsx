@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
+import { CalendarEvent, Person, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
 import { useItems } from '../store'
 import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
@@ -13,6 +13,7 @@ import { Today } from './Today'
 import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
+import { People } from './People'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
@@ -130,6 +131,25 @@ export default function Planner() {
   const newTask = (preset?: Partial<Task>) =>
     setEditor({ preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset } })
   const openProject = (project: Project) => setProjectEditor({ project })
+  /** A done task dated at the visit is what "seeing someone" is made of. */
+  const logVisit = (person: Person, atIso: string, note: string) => {
+    const now = new Date().toISOString()
+    store.upsert({
+      kind: 'task',
+      id: crypto.randomUUID(),
+      title: note || `Saw ${person.name}`,
+      description: '',
+      status: 'done',
+      priority: 'normal',
+      completedAt: atIso,
+      createdAt: now,
+      updatedAt: now,
+      tags: ['visit'],
+      peopleIds: [person.id],
+    })
+    showToast(`Logged a visit with ${person.name}`)
+  }
+  const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
   /** Turn an external event into a prep task due the morning before. */
   const planForEvent = (ev: CalendarEvent) => {
     const when = eventStartDate(ev).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
@@ -260,6 +280,9 @@ export default function Planner() {
             {view === 'today' && (
               <Today
                 tasks={filteredTasks}
+                allTasks={store.tasks}
+                people={store.people}
+                onPlanWith={planWith}
                 projects={filterProject ? [filterProject] : store.projects}
                 projectMap={projectMap}
                 events={calendars.events}
@@ -337,7 +360,23 @@ export default function Planner() {
                 onNewProject={newProject}
               />
             )}
-            {view === 'insights' && <Insights posts={posts} />}
+            {view === 'insights' && (
+              <>
+                <People
+                  people={store.people}
+                  tasks={store.tasks}
+                  onSave={p => store.upsert(p)}
+                  onDelete={id => {
+                    store.remove(id)
+                    showToast('Removed', () => store.restore([id]))
+                  }}
+                  onLogVisit={logVisit}
+                  onPlan={planWith}
+                  onOpenTask={openTask}
+                />
+                <Insights posts={posts} />
+              </>
+            )}
           </>
         )}
       </main>
@@ -347,6 +386,7 @@ export default function Planner() {
           task={editor.task}
           preset={editor.preset}
           projects={store.projects}
+          people={store.people}
           getLatest={id => store.tasks.find(x => x.id === id)}
           onSave={t => {
             store.upsert(t)

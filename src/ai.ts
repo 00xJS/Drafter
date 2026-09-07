@@ -136,3 +136,30 @@ export async function refineDescription(mode: RefineMode, title: string, descrip
     .replace(/^["“]|["”]$/g, '')
     .trim()
 }
+
+export interface CatchUpIdea {
+  title: string
+  why: string
+}
+
+/** Concrete ideas for the next catch-up with someone, grounded in what you know about them. */
+export async function suggestCatchUp(input: {
+  name: string
+  group: string
+  notes?: string
+  daysSince?: number
+  recent: { what: string; when: string }[]
+}): Promise<CatchUpIdea[]> {
+  const recent = input.recent.length ? input.recent.map(r => `- ${r.when}: ${r.what}`).join('\n') : '- nothing logged yet'
+  const text = await complete(
+    'You help someone keep up with the people they love. Suggest specific, low-effort, realistic plans — a call, a walk, lunch, an errand done together, a game night — not grand gestures. Vary the ideas. Use what you know about the person; never invent facts about them.',
+    `Person: ${input.name} (${input.group})\n${input.daysSince !== undefined ? `Last seen: ${input.daysSince} days ago` : 'Never logged'}\nNotes about them: ${input.notes || '(none)'}\nRecent times together:\n${recent}\n\nSuggest 4 ideas for the next catch-up. Respond with ONLY a JSON array of objects {"title": "short imperative plan, under 60 chars", "why": "one sentence tying it to what you know"}.`,
+    768,
+  )
+  const raw = extractJSON<unknown[]>(text)
+  return raw
+    .filter((x): x is { title?: unknown; why?: unknown } => !!x && typeof x === 'object')
+    .map(x => ({ title: String(x.title ?? '').trim(), why: String(x.why ?? '').trim() }))
+    .filter(x => x.title)
+    .slice(0, 4)
+}

@@ -43,7 +43,7 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                   <li key={i.id} className="trash-row">
                     <div className="dash-main">
                       <span className="dash-title">
-                        <small className="muted">{i.kind === 'task' ? 'Task' : i.kind === 'project' ? 'Project' : 'Calendar'}</small> {label(i)}
+                        <small className="muted">{i.kind === 'task' ? 'Task' : i.kind === 'project' ? 'Project' : i.kind === 'person' ? 'Person' : 'Calendar'}</small> {label(i)}
                       </span>
                       <span className="dash-meta">
                         {t && (

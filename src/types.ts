@@ -67,6 +67,8 @@ export interface Task {
   mediaIds?: string[]
   recurrence?: Recurrence
   social?: Social
+  /** People this task involves; when it's done, it counts as seeing them. */
+  peopleIds?: string[]
   /** Tombstone: set instead of hard-deleting so deletes sync and can be undone. */
   deletedAt?: string
 }
@@ -118,7 +120,37 @@ export interface CalendarEvent {
   location?: string
 }
 
-export type Item = Task | Project | CalendarSource
+export type PersonGroup = 'family' | 'friends' | 'other'
+export const PERSON_GROUPS: PersonGroup[] = ['family', 'friends', 'other']
+export const PERSON_GROUP_META: Record<PersonGroup, string> = { family: 'Family', friends: 'Friends', other: 'Other' }
+
+/** Target days between visits. */
+export type Cadence = 7 | 14 | 30 | 60 | 90 | 180
+export const CADENCE_META: Record<Cadence, string> = {
+  7: 'Every week',
+  14: 'Every 2 weeks',
+  30: 'Monthly',
+  60: 'Every 2 months',
+  90: 'Every 3 months',
+  180: 'Twice a year',
+}
+
+/** Someone you want to keep close. Visits are done tasks with them attached. */
+export interface Person {
+  kind: 'person'
+  id: string
+  name: string
+  emoji?: string
+  color: string
+  group: PersonGroup
+  cadenceDays?: number
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person
 
 /**
  * The legacy post shape. Still the lingua franca of the importers, the
