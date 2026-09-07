@@ -2911,3 +2911,46 @@ textarea {
 .md del {
   color: var(--muted);
 }
+
+/* notes as a page */
+.notes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: calc(100vh - 170px);
+}
+.notes-page .notes {
+  flex: 1;
+}
+.notes-page .notes-body {
+  min-height: calc(100vh - 290px);
+}
+.notes-page-head {
+  display: flex;
+  align-items: center;
+}
+.notes-index .toolbar {
+  margin-bottom: 12px;
+}
+.notes-cards {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.notes-card {
+  align-items: stretch;
+  min-height: 140px;
+}
+.notes-card-preview {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-2);
+  max-height: 150px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.notes-card-preview h1,
+.notes-card-preview h2,
+.notes-card-preview h3 {
+  font-size: 14px;
+  margin: 4px 0;
+}

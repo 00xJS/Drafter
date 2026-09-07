@@ -15,11 +15,11 @@ import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
-import { ProjectNotes } from './ProjectNotes'
+import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { Settings } from './Settings'
 
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'insights'
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'insights'
 type CalendarMode = 'month' | 'timeline'
 
 const VIEW_LABELS: Record<View, string> = {
@@ -27,6 +27,7 @@ const VIEW_LABELS: Record<View, string> = {
   tasks: 'Tasks',
   board: 'Board',
   calendar: 'Calendar',
+  notes: 'Notes',
   insights: 'Insights',
 }
 
@@ -57,7 +58,6 @@ export default function Planner() {
   })
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
-  const [notesFor, setNotesFor] = useState<Project | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
@@ -237,9 +237,6 @@ export default function Planner() {
               <button className="pchip edit" onClick={() => openProject(filterProject)} aria-label="Edit project">
                 ✎
               </button>
-              <button className="pchip edit" onClick={() => setNotesFor(filterProject)} title="Project notes">
-                Notes{filterProject.notes ? ' •' : ''}
-              </button>
             </>
           )}
           <button className="pchip add" onClick={newProject}>
@@ -330,6 +327,16 @@ export default function Planner() {
                 trashCount={store.allItems.filter(i => i.deletedAt).length}
               />
             )}
+            {view === 'notes' && (
+              <NotesView
+                projects={store.projects}
+                project={filterProject}
+                getLatest={id => store.projects.find(x => x.id === id)}
+                onSave={p => store.upsert(p)}
+                onSelectProject={id => setProjectFilter(id)}
+                onNewProject={newProject}
+              />
+            )}
             {view === 'insights' && <Insights posts={posts} />}
           </>
         )}
@@ -371,17 +378,9 @@ export default function Planner() {
           onClose={() => setProjectEditor(null)}
           onOpenNotes={p => {
             setProjectEditor(null)
-            setNotesFor(p)
+            setProjectFilter(p.id)
+            setView('notes')
           }}
-        />
-      )}
-
-      {notesFor && (
-        <ProjectNotes
-          project={store.projects.find(p => p.id === notesFor.id) ?? notesFor}
-          getLatest={id => store.projects.find(x => x.id === id)}
-          onSave={p => store.upsert(p)}
-          onClose={() => setNotesFor(null)}
         />
       )}
 
