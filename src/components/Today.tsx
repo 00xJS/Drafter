@@ -238,6 +238,33 @@ export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, pro
         </div>
       )}
 
+      {sections.length === 0 ? (
+        <div className="chart-card">
+          <p className="empty">Nothing due and nothing stuck. Pull something from the Wishlist or enjoy the quiet.</p>
+        </div>
+      ) : (
+        <div className="today-grid">
+          {sections.map(sec => (
+            <section key={sec.key} className={sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card'}>
+              <header className="chart-head">
+                <div>
+                  <h3>
+                    {sec.title} <span className="board-count">{sec.tasks.length}</span>
+                  </h3>
+                  {sec.sub && <p className="chart-sub">{sec.sub}</p>}
+                </div>
+              </header>
+              <ul className="dash-list tlist">
+                {sec.tasks.slice(0, 12).map(t => (
+                  <TaskRow key={t.id} task={t} project={t.projectId ? projectMap.get(t.projectId) : undefined} onOpen={onOpen} onStatus={onStatus} />
+                ))}
+              </ul>
+              {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
+            </section>
+          ))}
+        </div>
+      )}
+
       {occasions.length > 0 && (
         <section className="chart-card occasions">
           <header className="chart-head">
@@ -331,33 +358,6 @@ export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, pro
             ))}
           </ul>
         </section>
-      )}
-
-      {sections.length === 0 ? (
-        <div className="chart-card">
-          <p className="empty">Nothing due and nothing stuck. Pull something from the Wishlist or enjoy the quiet.</p>
-        </div>
-      ) : (
-        <div className="today-grid">
-          {sections.map(sec => (
-            <section key={sec.key} className={sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card'}>
-              <header className="chart-head">
-                <div>
-                  <h3>
-                    {sec.title} <span className="board-count">{sec.tasks.length}</span>
-                  </h3>
-                  {sec.sub && <p className="chart-sub">{sec.sub}</p>}
-                </div>
-              </header>
-              <ul className="dash-list tlist">
-                {sec.tasks.slice(0, 12).map(t => (
-                  <TaskRow key={t.id} task={t} project={t.projectId ? projectMap.get(t.projectId) : undefined} onOpen={onOpen} onStatus={onStatus} />
-                ))}
-              </ul>
-              {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
-            </section>
-          ))}
-        </div>
       )}
 
       {s.doneRecent.length > 0 && (

@@ -3488,3 +3488,140 @@ textarea {
   margin: 0 auto 12px;
   word-break: break-word;
 }
+
+/* people list (compact rows, uniform actions) */
+.people-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.people-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+.people-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.people-kpis {
+  margin-bottom: 12px;
+}
+.people-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.person-row + .person-row {
+  border-top: 1px solid var(--border);
+}
+.person-row.open {
+  background: var(--surface-2);
+}
+.person-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+}
+.person-summary:hover {
+  background: var(--surface-2);
+}
+.person-ident {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.person-ident small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-inline-stats {
+  display: flex;
+  gap: 14px;
+  flex: none;
+}
+.person-inline-stats span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.person-inline-stats small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.person-caret {
+  color: var(--muted);
+  width: 12px;
+  flex: none;
+}
+.person-detail {
+  padding: 0 14px 14px 62px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* every action the same height and evenly spaced */
+.person-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.person-actions .btn {
+  flex: 1 1 120px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+/* people picker inside the task editor */
+.people-picker-search {
+  margin-top: 6px;
+  width: 100%;
+}
+.picker-results {
+  margin-top: 6px;
+  gap: 6px;
+}
+.attendees {
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .person-inline-stats {
+    display: none;
+  }
+  .person-detail {
+    padding-left: 14px;
+  }
+  .person-actions .btn {
+    flex: 1 1 45%;
+  }
+  /* the project bar must never hide a project off-screen on a phone */
+  .project-bar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}

@@ -90,6 +90,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
   const [freq, setFreq] = useState<RecurrenceFreq | ''>(base.recurrence?.freq ?? '')
   const [mediaIds, setMediaIds] = useState<string[]>(base.mediaIds ?? [])
   const [peopleIds, setPeopleIds] = useState<string[]>(base.peopleIds ?? [])
+  const [peopleQuery, setPeopleQuery] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>(base.attachments ?? [])
   const [estimateCost, setEstimateCost] = useState(base.estimateCost !== undefined ? String(base.estimateCost) : '')
   const [actualCost, setActualCost] = useState(base.actualCost !== undefined ? String(base.actualCost) : '')
@@ -296,8 +297,30 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
     return next
   }
 
+  /** A task with nothing in it is almost always an accidental open-and-close. */
+  function isEmpty(t: Task): boolean {
+    return (
+      !t.title.trim() &&
+      !t.description.trim() &&
+      !(t.checklist?.length) &&
+      !(t.comments?.length) &&
+      !(t.peopleIds?.length) &&
+      !(t.attachments?.length) &&
+      !(t.mediaIds?.length) &&
+      !t.link &&
+      !t.githubUrl &&
+      !t.notes?.trim()
+    )
+  }
+
   function save() {
-    onSave(merged())
+    const next = merged()
+    if (!task && isEmpty(next)) {
+      // brand-new and blank: discard rather than litter the list with "Untitled"
+      onClose()
+      return
+    }
+    onSave(next)
   }
 
   function addComment() {
@@ -699,21 +722,53 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
             {people.length > 0 && (
               <div className="field">
                 <span>
-                  People <small>(done = seen them)</small>
+                  People <small>(marking this done counts as seeing them)</small>
                 </span>
-                <div className="platform-toggles">
-                  {people.map(p => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={peopleIds.includes(p.id) ? 'toggle on' : 'toggle'}
-                      onClick={() => setPeopleIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
-                    >
-                      {p.emoji ? `${p.emoji} ` : ''}
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
+                {/* only who is actually attached is listed; the rest are found by
+                    typing, so a long contact list never fills the editor */}
+                {peopleIds.length > 0 && (
+                  <div className="platform-toggles attendees">
+                    {peopleIds.map(id => {
+                      const p = people.find(x => x.id === id)
+                      return (
+                        <button key={id} type="button" className="toggle on" onClick={() => setPeopleIds(cur => cur.filter(x => x !== id))} title="Remove">
+                          {p?.emoji ? `${p.emoji} ` : ''}
+                          {p?.name ?? 'Unknown'} ✕
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <input
+                  className="people-picker-search"
+                  value={peopleQuery}
+                  onChange={e => setPeopleQuery(e.target.value)}
+                  placeholder={peopleIds.length ? 'Add someone else…' : 'Search people to add…'}
+                />
+                {peopleQuery.trim() && (
+                  <div className="platform-toggles picker-results">
+                    {people
+                      .filter(p => !peopleIds.includes(p.id) && p.name.toLowerCase().includes(peopleQuery.trim().toLowerCase()))
+                      .slice(0, 8)
+                      .map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="toggle"
+                          onClick={() => {
+                            setPeopleIds(cur => [...cur, p.id])
+                            setPeopleQuery('')
+                          }}
+                        >
+                          {p.emoji ? `${p.emoji} ` : ''}
+                          {p.name}
+                        </button>
+                      ))}
+                    {people.filter(p => !peopleIds.includes(p.id) && p.name.toLowerCase().includes(peopleQuery.trim().toLowerCase())).length === 0 && (
+                      <small className="muted">No match.</small>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
