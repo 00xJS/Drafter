@@ -173,7 +173,7 @@ export function ColumnChart({
 }
 
 // Sequential blue ramp (validated palette steps 100→600) for the heatmap.
-const HEAT_RAMP = ['#cde2fb', '#9ec5f4', '#5598e7', '#2a78d6', '#184f95']
+const HEAT_RAMP = ['#3a2210', '#7c3a0f', '#c2540f', '#f97316', '#fdba74']
 
 export interface HeatCell {
   count: number

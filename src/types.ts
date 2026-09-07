@@ -164,24 +164,24 @@ export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
 export const PLATFORMS: Platform[] = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
 
 export const PLATFORM_META: Record<Platform, { label: string; short: string; color: string; charLimit: number }> = {
-  x: { label: 'X (Twitter)', short: 'X', color: '#111827', charLimit: 280 },
-  instagram: { label: 'Instagram', short: 'IG', color: '#d6336c', charLimit: 2200 },
-  threads: { label: 'Threads', short: 'TH', color: '#374151', charLimit: 500 },
+  x: { label: 'X (Twitter)', short: 'X', color: '#52525b', charLimit: 280 },
+  instagram: { label: 'Instagram', short: 'IG', color: '#db2777', charLimit: 2200 },
+  threads: { label: 'Threads', short: 'TH', color: '#6b7280', charLimit: 500 },
   linkedin: { label: 'LinkedIn', short: 'LI', color: '#0a66c2', charLimit: 3000 },
   facebook: { label: 'Facebook', short: 'FB', color: '#1877f2', charLimit: 63206 },
-  tiktok: { label: 'TikTok', short: 'TT', color: '#0f172a', charLimit: 2200 },
+  tiktok: { label: 'TikTok', short: 'TT', color: '#475569', charLimit: 2200 },
   youtube: { label: 'YouTube', short: 'YT', color: '#dc2626', charLimit: 5000 },
 }
 
 export const TASK_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
 
 export const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string }> = {
-  wishlist: { label: 'Wishlist', color: '#7c3aed', bg: '#f3eefe' },
-  todo: { label: 'To do', color: '#b45309', bg: '#fdf1dc' },
-  doing: { label: 'Doing', color: '#0369a1', bg: '#e3f2fc' },
-  blocked: { label: 'Blocked', color: '#be123c', bg: '#fde7ec' },
-  done: { label: 'Done', color: '#15803d', bg: '#e2f7e9' },
-  canceled: { label: 'Canceled', color: '#6b7280', bg: '#f1f2f4' },
+  wishlist: { label: 'Wishlist', color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+  todo: { label: 'To do', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
+  doing: { label: 'Doing', color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
+  blocked: { label: 'Blocked', color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
+  done: { label: 'Done', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+  canceled: { label: 'Canceled', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
 }
 
 /** Statuses that still need work — the "open" set every due-date view cares about. */
@@ -190,22 +190,22 @@ export const OPEN_STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked']
 export const PRIORITIES: Priority[] = ['low', 'normal', 'high', 'urgent']
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string; glyph: string; rank: number }> = {
-  low: { label: 'Low', color: '#6b7280', glyph: '▽', rank: 0 },
-  normal: { label: 'Normal', color: '#52514e', glyph: '—', rank: 1 },
-  high: { label: 'High', color: '#c2410c', glyph: '▲', rank: 2 },
-  urgent: { label: 'Urgent', color: '#b91c1c', glyph: '‼', rank: 3 },
+  low: { label: 'Low', color: '#9ca3af', glyph: '▽', rank: 0 },
+  normal: { label: 'Normal', color: '#b3b8c4', glyph: '—', rank: 1 },
+  high: { label: 'High', color: '#fb923c', glyph: '▲', rank: 2 },
+  urgent: { label: 'Urgent', color: '#f87171', glyph: '‼', rank: 3 },
 }
 
 export const PROJECT_STATUSES: ProjectStatus[] = ['active', 'paused', 'done', 'archived']
 
 export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; color: string; bg: string }> = {
-  active: { label: 'Active', color: '#0369a1', bg: '#e3f2fc' },
-  paused: { label: 'Paused', color: '#b45309', bg: '#fdf1dc' },
-  done: { label: 'Done', color: '#15803d', bg: '#e2f7e9' },
-  archived: { label: 'Archived', color: '#6b7280', bg: '#f1f2f4' },
+  active: { label: 'Active', color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
+  paused: { label: 'Paused', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
+  done: { label: 'Done', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+  archived: { label: 'Archived', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
 }
 
-export const PROJECT_COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#db2777', '#7c3aed', '#475569']
+export const PROJECT_COLORS = ['#f97316', '#fbbf24', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#f87171', '#94a3b8']
 
 export { engagement, impressions, SOCIAL_PROJECT_ID } from '../shared/domain.mjs'
 

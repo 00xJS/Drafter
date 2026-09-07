@@ -88,8 +88,8 @@ export async function fetchGithubCard(url: string, force = false): Promise<Githu
 }
 
 export const GITHUB_STATE_META: Record<GithubState, { label: string; color: string; bg: string }> = {
-  open: { label: 'Open', color: '#15803d', bg: '#e2f7e9' },
-  closed: { label: 'Closed', color: '#7c3aed', bg: '#f3eefe' },
-  merged: { label: 'Merged', color: '#7c3aed', bg: '#f3eefe' },
-  draft: { label: 'Draft', color: '#6b7280', bg: '#f1f2f4' },
+  open: { label: 'Open', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+  closed: { label: 'Closed', color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+  merged: { label: 'Merged', color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+  draft: { label: 'Draft', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
 }

@@ -1,23 +1,30 @@
 :root {
-  color-scheme: light;
-  /* app chrome */
-  --bg: #f9f9f7;
-  --surface: #fcfcfb;
-  --surface-2: #f0efec;
-  --border: #e3e2dc;
-  --text: #0b0b0b;
-  --text-2: #52514e;
-  --muted: #898781;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --danger: #d03b3b;
+  color-scheme: dark;
+  /* app chrome — dark by design */
+  --bg: #0f1115;
+  --surface: #171a21;
+  --surface-2: #1f232c;
+  --border: #2b303b;
+  --text: #e7e9ee;
+  --text-2: #b3b8c4;
+  --muted: #7d8494;
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --on-accent: #1a1206;
+  --danger: #f87171;
+  /* the "inverted" pill: light chip on the dark ground */
+  --inverse-bg: #e7e9ee;
+  --inverse-text: #0f1115;
+  --ok: #4ade80;
+  --warn-bg: rgba(245, 158, 11, 0.16);
+  --warn-text: #fcd34d;
   --radius: 10px;
-  --shadow: 0 1px 2px rgba(11, 11, 11, 0.06), 0 1px 1px rgba(11, 11, 11, 0.04);
-  /* chart tokens (validated palette) */
-  --viz-grid: #e1e0d9;
-  --viz-baseline: #c3c2b7;
-  --viz-series-1: #2a78d6;
-  --viz-series-1-hot: #3987e5;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  /* chart tokens */
+  --viz-grid: #2b303b;
+  --viz-baseline: #3d4453;
+  --viz-series-1: #f97316;
+  --viz-series-1-hot: #fb923c;
 }
 
 * {
@@ -98,7 +105,7 @@ button:focus-visible {
   height: 26px;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 14px;
 }
 
@@ -120,8 +127,8 @@ button:focus-visible {
 }
 
 .tab.active {
-  background: var(--text);
-  color: #fff;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
 }
 
 .topbar .btn.primary {
@@ -145,7 +152,7 @@ button:focus-visible {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn.primary:hover {
@@ -382,12 +389,18 @@ button:focus-visible {
 
 .cal-cell {
   background: var(--surface);
-  min-height: 96px;
+  /* fixed height: a busy day must not stretch its whole row */
+  height: 108px;
+  overflow: hidden;
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 3px;
   cursor: pointer;
+  min-width: 0;
+}
+.cal-cell > * {
+  flex: none;
 }
 
 .cal-cell:hover {
@@ -401,7 +414,7 @@ button:focus-visible {
 
 .cal-cell.today .cal-daynum {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .cal-daynum {
@@ -426,6 +439,13 @@ button:focus-visible {
   align-items: baseline;
   gap: 4px;
   min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.cal-pill-time {
+  flex: none;
 }
 
 .cal-pill-time {
@@ -567,7 +587,7 @@ button:focus-visible {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(11, 11, 11, 0.4);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -581,7 +601,7 @@ button:focus-visible {
   border-radius: 12px;
   width: 680px;
   max-width: 100%;
-  box-shadow: 0 20px 50px rgba(11, 11, 11, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
 }
 
 .modal-head {
@@ -678,9 +698,9 @@ textarea {
 }
 
 .toggle.on {
-  background: var(--text);
+  background: var(--inverse-bg);
   border-color: var(--text);
-  color: #fff;
+  color: var(--inverse-text);
 }
 
 .segmented,
@@ -700,9 +720,9 @@ textarea {
 }
 
 .seg.on {
-  background: var(--text);
+  background: var(--inverse-bg);
   border-color: var(--text);
-  color: #fff;
+  color: var(--inverse-text);
   font-weight: 600;
 }
 
@@ -877,8 +897,8 @@ textarea {
   position: absolute;
   top: 4px;
   transform: translateX(-50%);
-  background: var(--text);
-  color: #fff;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   border-radius: 6px;
   padding: 5px 9px;
   display: flex;
@@ -1189,21 +1209,21 @@ textarea {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text);
-  color: #fff;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   border-radius: 10px;
   padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 8px 24px rgba(11, 11, 11, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 100;
 }
 
 .toast-undo {
   border: none;
   background: transparent;
-  color: #a5b4fc;
+  color: var(--accent);
   font-weight: 700;
   padding: 0;
 }
@@ -1215,7 +1235,7 @@ textarea {
 .toast-close {
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--muted);
   padding: 0;
 }
 
@@ -1230,7 +1250,7 @@ textarea {
 }
 
 .sync-dot.on {
-  background: #0ca30c;
+  background: var(--ok);
 }
 
 /* ---------- composer extras ---------- */
@@ -1370,7 +1390,7 @@ textarea {
 }
 
 .sync-ok {
-  color: #006300;
+  color: var(--ok);
   font-weight: 600;
 }
 
@@ -1414,7 +1434,7 @@ textarea {
 }
 
 .stat-delta.up {
-  color: #006300;
+  color: var(--ok);
 }
 
 .stat-delta.down {
@@ -1620,8 +1640,8 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: #fdf1dc;
-  color: #b45309;
+  background: var(--warn-bg);
+  color: var(--warn-text);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
@@ -1631,7 +1651,7 @@ textarea {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(11, 11, 11, 0.5);
+  background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
@@ -1724,7 +1744,7 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(11, 11, 11, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1787,7 +1807,7 @@ textarea {
     z-index: 41;
     border-radius: 999px;
     padding: 12px 18px;
-    box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+    box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
   }
 
   .modal {
@@ -1850,7 +1870,7 @@ textarea {
   }
 
   .cal-cell {
-    min-height: 72px;
+    height: 88px;
     padding: 3px;
   }
 
@@ -1980,12 +2000,12 @@ textarea {
   background: var(--surface-2);
 }
 .pchip.on {
-  background: var(--text);
-  color: #fff;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   border-color: var(--text);
 }
 .pchip.on .pdot {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(15, 17, 21, 0.35);
 }
 .pchip.add,
 .pchip.edit {
@@ -2027,30 +2047,30 @@ textarea {
   color: var(--text-2);
 }
 .due-overdue {
-  background: #fde7ec;
-  color: #be123c;
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
 }
 .due-today {
-  background: #fdf1dc;
-  color: #b45309;
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
 }
 .due-soon {
-  background: #e3f2fc;
-  color: #0369a1;
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
 }
 .card.prio-border-urgent {
-  border-left: 3px solid #b91c1c;
+  border-left: 3px solid #f87171;
 }
 .card.prio-border-high {
-  border-left: 3px solid #c2410c;
+  border-left: 3px solid #fb923c;
 }
 .badge-blocked {
-  background: #fde7ec;
-  color: #be123c;
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
 }
 .badge-doing {
-  background: #e3f2fc;
-  color: #0369a1;
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
 }
 
 /* progress bar */
@@ -2079,7 +2099,7 @@ textarea {
   margin-bottom: 16px;
 }
 .chart-card.warn-card {
-  border-color: #f3c2ce;
+  border-color: rgba(244, 63, 94, 0.45);
 }
 .tlist .trow {
   align-items: center;
@@ -2301,7 +2321,7 @@ textarea {
   background: var(--border);
 }
 .rm-task.blocked {
-  outline: 2px solid #be123c;
+  outline: 2px solid #fda4af;
   outline-offset: 1px;
 }
 
@@ -2543,4 +2563,38 @@ textarea {
   .rm-label .badge {
     display: none;
   }
+}
+
+/* AI description rewrites */
+.desc-ai {
+  margin-top: 6px;
+}
+.desc-ai .btn {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.ai-proposal {
+  margin-top: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+.ai-proposal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.ai-proposal-head small {
+  color: var(--muted);
+}
+.ai-proposal textarea {
+  width: 100%;
+  resize: vertical;
 }

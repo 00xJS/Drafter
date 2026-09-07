@@ -12,6 +12,7 @@ interface Props {
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MAX_PILLS = 3
 
 /** The day a task shows on: its due date, or the day it was completed. */
 function taskDate(t: Task): string | undefined {
@@ -96,7 +97,8 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
           const k = dateKey(d)
           const inMonth = d.getMonth() === cursor.getMonth()
           const dayTasks = byDay.get(k) ?? []
-          const shown = dayTasks.slice(0, 3)
+          // cells have a fixed height: when a day overflows, trade the last pill for the "+N more" line
+          const shown = dayTasks.length > MAX_PILLS ? dayTasks.slice(0, MAX_PILLS - 1) : dayTasks
           return (
             <div
               key={k}
@@ -137,7 +139,7 @@ export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Pro
                   </button>
                 )
               })}
-              {dayTasks.length > 3 && <div className="cal-more">+{dayTasks.length - 3} more</div>}
+              {dayTasks.length > shown.length && <div className="cal-more">+{dayTasks.length - shown.length} more</div>}
             </div>
           )
         })}

@@ -105,3 +105,34 @@ export async function suggestChecklist(title: string, description: string): Prom
     .filter(Boolean)
     .slice(0, 8)
 }
+
+export type RefineMode = 'clarify' | 'expand' | 'summarize'
+
+export const REFINE_META: Record<RefineMode, { label: string; busy: string; hint: string }> = {
+  clarify: { label: '✨ Clarify', busy: 'Clarifying…', hint: 'Rewrite for clarity, same facts' },
+  expand: { label: '✨ Add details', busy: 'Expanding…', hint: 'Fill in steps, specifics and open questions' },
+  summarize: { label: '✨ Summarize', busy: 'Summarizing…', hint: 'Condense to the essentials' },
+}
+
+const REFINE_PROMPTS: Record<RefineMode, string> = {
+  clarify:
+    'Rewrite the description so it is clear and unambiguous. Keep every fact, number, name and link; fix vague wording; use short sentences and "-" bullets where they help. Do not invent details. Keep roughly the same length.',
+  expand:
+    'Expand the description into a more complete brief: what "done" looks like, the concrete steps or sub-parts, materials/tools/people involved, and any decisions or open questions to settle. Keep every existing fact; where you add specifics you are unsure of, phrase them as questions or options rather than asserting them. Plain text with "-" bullets.',
+  summarize:
+    'Condense the description to its essentials: the goal, the key constraints, and the next action. Keep every number, name and link that matters. Aim for a third of the length, plain text, "-" bullets if there are several points.',
+}
+
+/** Rewrite a task description in one of three ways; returns the new text only. */
+export async function refineDescription(mode: RefineMode, title: string, description: string): Promise<string> {
+  const text = await complete(
+    'You are a precise editor for personal and household project notes. You only ever return the rewritten description — no preamble, no headings, no markdown emphasis, no quotes around it.',
+    `${REFINE_PROMPTS[mode]}\n\nTask title: ${title || '(none)'}\n\nCurrent description:\n"""\n${description}\n"""\n\nReturn ONLY the new description text.`,
+    1200,
+  )
+  return text
+    .trim()
+    .replace(/^```[a-z]*\n?|\n?```$/g, '')
+    .replace(/^["“]|["”]$/g, '')
+    .trim()
+}

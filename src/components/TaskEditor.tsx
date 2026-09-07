@@ -21,7 +21,7 @@ import {
 import { newerStamp } from '../itemops'
 import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
-import { generateVariants, suggestChecklist, suggestTags } from '../ai'
+import { REFINE_META, RefineMode, generateVariants, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { GithubCard } from './GithubCard'
 
 interface Props {
@@ -85,8 +85,10 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
   const [platforms, setPlatforms] = useState<Platform[]>(base.social?.platforms?.length ? base.social.platforms : ['x'])
   const [variants, setVariants] = useState<Variants>(base.social?.variants ?? {})
   const [metrics, setMetrics] = useState<Metric>(base.social?.metrics ?? {})
-  const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | 'checklist' | null>(null)
+  const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | 'checklist' | RefineMode | null>(null)
   const [aiError, setAiError] = useState('')
+  /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
+  const [proposal, setProposal] = useState<{ mode: RefineMode; text: string } | null>(null)
   const mediaInput = useRef<HTMLInputElement>(null)
   const finePointer = useMemo(() => window.matchMedia('(pointer: fine)').matches, [])
 
@@ -128,11 +130,14 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
     if (ids.length > 0) setMediaIds(cur => [...cur, ...ids])
   }
 
-  async function runAI(kind: 'variants' | 'tags' | 'checklist') {
+  async function runAI(kind: 'variants' | 'tags' | 'checklist' | RefineMode) {
     setAiError('')
     setAiBusy(kind)
     try {
-      if (kind === 'variants') {
+      if (kind === 'clarify' || kind === 'expand' || kind === 'summarize') {
+        const text = await refineDescription(kind, title, description)
+        setProposal({ mode: kind, text })
+      } else if (kind === 'variants') {
         const generated = await generateVariants(description, platforms)
         setVariants(cur => ({ ...cur, ...generated }))
       } else if (kind === 'tags') {
@@ -302,6 +307,57 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
             <label className="field">
               <span>Description</span>
               <textarea rows={5} value={description} onChange={e => setDescription(e.target.value)} placeholder={isSocial ? 'Write the post…' : 'What needs to happen, and why? Links, measurements, context…'} />
+              <div className="ai-row desc-ai">
+                {(Object.keys(REFINE_META) as RefineMode[]).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className="btn subtle"
+                    title={REFINE_META[mode].hint}
+                    disabled={!description.trim() || aiBusy !== null}
+                    onClick={e => {
+                      e.preventDefault()
+                      runAI(mode)
+                    }}
+                  >
+                    {aiBusy === mode ? REFINE_META[mode].busy : REFINE_META[mode].label}
+                  </button>
+                ))}
+              </div>
+              {proposal && (
+                <div className="ai-proposal" onClick={e => e.preventDefault()}>
+                  <div className="ai-proposal-head">
+                    <strong>{REFINE_META[proposal.mode].label.replace('✨ ', '')} suggestion</strong>
+                    <small>Review, then replace or keep yours</small>
+                  </div>
+                  <textarea rows={Math.min(12, Math.max(4, proposal.text.split('\n').length + 1))} value={proposal.text} onChange={e => setProposal({ ...proposal, text: e.target.value })} />
+                  <div className="ai-row">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => {
+                        setDescription(proposal.text)
+                        setProposal(null)
+                      }}
+                    >
+                      Replace description
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setDescription(cur => (cur.trim() ? `${cur.trimEnd()}\n\n${proposal.text}` : proposal.text))
+                        setProposal(null)
+                      }}
+                    >
+                      Append below
+                    </button>
+                    <button type="button" className="btn subtle" onClick={() => setProposal(null)}>
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
               {isSocial && (
                 <div className="char-counts">
                   <span className="char-total">{description.length} characters</span>

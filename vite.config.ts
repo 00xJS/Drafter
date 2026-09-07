@@ -12,8 +12,8 @@ export default defineConfig({
         name: 'Drafter',
         short_name: 'Drafter',
         description: 'Plan, draft, and track social media posts',
-        theme_color: '#4f46e5',
-        background_color: '#f9f9f7',
+        theme_color: '#0f1115',
+        background_color: '#0f1115',
         display: 'standalone',
         start_url: '/',
         icons: [
