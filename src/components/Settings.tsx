@@ -9,6 +9,8 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
+import { isNative, localRemindersEnabled, openExternal, requestLocalNotificationPermission, scheduleLocalReminders, setLocalRemindersEnabled } from '../native'
+import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
 
@@ -73,7 +75,11 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const [pushBusy, setPushBusy] = useState(false)
   const [thisEndpoint, setThisEndpoint] = useState<string | null>(null)
   const [digestHour, setDigestHour] = useState(8)
+  const [localOn, setLocalOn] = useState(localRemindersEnabled())
+  const [localErr, setLocalErr] = useState('')
   useEffect(() => {
+    // push is sent by the server, so without an account there is nothing to ask
+    if (!isSupabaseConfigured()) return
     fetchPushInfo()
       .then(info => {
         setPush(info)
@@ -138,8 +144,14 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
     setGoogleBusy(true)
     setGoogleError('')
     try {
-      const { url } = await googleAction<{ url: string }>('auth')
-      window.location.href = url
+      const { url } = await googleAction<{ url: string }>('auth', isNative() ? { native: true } : {})
+      if (isNative()) {
+        // consent runs in Safari and comes back through drafter://oauth
+        await openExternal(url)
+        setGoogleBusy(false)
+      } else {
+        window.location.href = url
+      }
     } catch (e) {
       setGoogleError((e as Error).message)
       setGoogleBusy(false)
@@ -387,7 +399,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     </>
                   ) : (
                     <>
-                      <button className="btn primary" disabled={pushBusy || !pushSupported()} onClick={() => runPush(() => enablePush(push.publicKey!))}>
+                      <button className="btn primary" disabled={pushBusy || !pushSupported() || (!isNative() && !push.publicKey)} onClick={() => runPush(() => enablePush(push.publicKey ?? ''))}>
                         {pushBusy ? 'Enabling…' : 'Enable on this device'}
                       </button>
                       <small>
@@ -424,30 +436,70 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
               </>
             ) : push ? (
               <p className="field-hint">Not configured on the host: set {push.missing.join(', ')} on Netlify (run <code>npx web-push generate-vapid-keys</code> for the VAPID pair).</p>
+            ) : !isSupabaseConfigured() ? (
+              <p className="field-hint">Push reminders are sent by the server, so they need a signed-in account.</p>
             ) : (
               <p className="field-hint">{pushError ? `Push status unavailable: ${pushError}` : 'Checking push…'}</p>
             )}
             {pushError && push && <p className="warn">{pushError}</p>}
-            <h4>While the app is open</h4>
-            <p className="field-hint">Browser notifications when a task's due time arrives on this device.</p>
-            <p>
-              {notif === 'granted'
-                ? 'Notifications are on.'
-                : notif === 'denied'
-                  ? 'Notifications are blocked — allow them in the browser’s site settings.'
-                  : notif === 'unsupported'
-                    ? 'Not supported in this browser.'
-                    : 'Notifications are off.'}
-            </p>
-            {notif === 'default' && (
-              <button
-                className="btn"
-                onClick={async () => {
-                  setNotif(await enableNotifications())
-                }}
-              >
-                Enable notifications
-              </button>
+            {isNative() ? (
+              <>
+                <h4>On this iPhone</h4>
+                <p className="field-hint">
+                  A notification at each task's due time and on the morning of a birthday or anniversary. The phone fires these itself: they work with the app
+                  closed and need no account.
+                </p>
+                <p className="sync-line">
+                  <label className="cal-source mirror-row">
+                    <input
+                      type="checkbox"
+                      checked={localOn}
+                      onChange={async e => {
+                        setLocalErr('')
+                        if (e.target.checked) {
+                          if (!(await requestLocalNotificationPermission())) {
+                            setLocalErr('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
+                            return
+                          }
+                          setLocalRemindersEnabled(true)
+                          setLocalOn(true)
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people))
+                        } else {
+                          setLocalRemindersEnabled(false)
+                          setLocalOn(false)
+                          await scheduleLocalReminders([])
+                        }
+                      }}
+                    />
+                    <span className="cal-source-name">Remind me on this iPhone</span>
+                  </label>
+                </p>
+                {localErr && <p className="warn">{localErr}</p>}
+              </>
+            ) : (
+              <>
+                <h4>While the app is open</h4>
+                <p className="field-hint">Browser notifications when a task's due time arrives on this device.</p>
+                <p>
+                  {notif === 'granted'
+                    ? 'Notifications are on.'
+                    : notif === 'denied'
+                      ? 'Notifications are blocked — allow them in the browser’s site settings.'
+                      : notif === 'unsupported'
+                        ? 'Not supported in this browser.'
+                        : 'Notifications are off.'}
+                </p>
+                {notif === 'default' && (
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      setNotif(await enableNotifications())
+                    }}
+                  >
+                    Enable notifications
+                  </button>
+                )}
+              </>
             )}
           </section>
 
@@ -532,8 +584,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         setMsBusy(true)
                         setMsError('')
                         try {
-                          const { url } = await microsoftAction<{ url: string }>('auth')
-                          window.location.href = url
+                          const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
+                          if (isNative()) {
+                            await openExternal(url)
+                            setMsBusy(false)
+                          } else {
+                            window.location.href = url
+                          }
                         } catch (e) {
                           setMsError((e as Error).message)
                           setMsBusy(false)
@@ -636,8 +693,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         onClick={async () => {
                           setMsBusy(true)
                           try {
-                            const { url } = await microsoftAction<{ url: string }>('auth')
-                            window.location.href = url
+                            const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
+                            if (isNative()) {
+                              await openExternal(url)
+                              setMsBusy(false)
+                            } else {
+                              window.location.href = url
+                            }
                           } catch (e) {
                             setMsError((e as Error).message)
                             setMsBusy(false)

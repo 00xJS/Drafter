@@ -10,6 +10,8 @@ import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGoogl
 import { parseGithubUrl, setIssueState } from '../github'
 import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
+import { closeExternal, initNative, isNative, localRemindersEnabled, scheduleLocalReminders } from '../native'
+import { buildLocalReminders } from '../reminders'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
 import { Today } from './Today'
@@ -28,6 +30,7 @@ import { Settings } from './Settings'
 import { ErrorBoundary } from './ErrorBoundary'
 
 type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'review' | 'social'
+const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'review', 'social']
 type CalendarMode = 'month' | 'timeline'
 
 const VIEW_LABELS: Record<View, string> = {
@@ -87,6 +90,8 @@ export default function Planner() {
   }, [mineOnly])
   const inHousehold = !!household.info?.household && (household.info?.members.length ?? 0) > 1
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // bumped when a calendar consent flow returns, so an open Settings refetches
+  const [settingsNonce, setSettingsNonce] = useState(0)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
@@ -130,20 +135,92 @@ export default function Planner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // shared into the app (PWA share target) or opened with ?new=
-  useEffect(() => {
-    if (!store.loaded) return
-    const params = new URLSearchParams(window.location.search)
+  // Every way in, understood in one place: the PWA share target, ?new=, ?task=,
+  // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
+  // consent screen. Anything that needs data waits for the store to load.
+  const pendingLink = useRef<URLSearchParams | null>(null)
+  const applyLink = (params: URLSearchParams) => {
+    const ms = params.get('microsoft')
+    const google = params.get('google')
+    if (ms || google) {
+      void closeExternal()
+      const who = ms ? 'Outlook' : 'Google Calendar'
+      const ok = (ms ?? google) === 'connected'
+      showToast(ok ? `${who} connected — pick the calendars to show in Settings.` : `${who} could not be connected (${(params.get('reason') ?? 'unknown error').replace(/_/g, ' ')}).`)
+      setSettingsNonce(n => n + 1)
+      setSettingsOpen(true)
+      return
+    }
+    if (!store.loaded) {
+      pendingLink.current = params
+      return
+    }
+    const view = params.get('view')
+    if (view && (VIEWS as string[]).includes(view)) setView(view as View)
+    const taskId = params.get('task')
+    if (taskId) {
+      const t = store.tasks.find(x => x.id === taskId)
+      if (t) setEditor({ task: t })
+      else showToast('That task is not on this device yet — it will appear after the next sync.')
+      return
+    }
     const title = params.get('title') ?? params.get('new')
     const text = params.get('text')
     const url = params.get('url')
     if (!title && !text && !url) return
-    window.history.replaceState({}, '', window.location.pathname)
     const looksLikeUrl = (s: string | null) => !!s && /^https?:\/\//.test(s)
     const link = url ?? (looksLikeUrl(text) ? text! : undefined)
-    setEditor({ preset: { title: (title ?? (looksLikeUrl(text) ? '' : text) ?? '').slice(0, 140), description: text && text !== link ? text : '', link, status: 'todo' } })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // an optional due time, so a Shortcut can say "remind me at …"
+    const due = Date.parse(params.get('due') ?? '')
+    setEditor({
+      preset: {
+        title: (title ?? (looksLikeUrl(text) ? '' : text) ?? '').slice(0, 140),
+        description: text && text !== link ? text : '',
+        link,
+        status: 'todo',
+        ...(Number.isFinite(due) ? { dueAt: new Date(due).toISOString() } : {}),
+      },
+    })
+  }
+  const applyLinkRef = useRef(applyLink)
+  applyLinkRef.current = applyLink
+  const paramsOf = (raw: string): URLSearchParams => {
+    try {
+      return new URL(raw, window.location.origin).searchParams
+    } catch {
+      return new URLSearchParams()
+    }
+  }
+
+  // the page's own URL, once
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if ([...params.keys()].length === 0) return
+    window.history.replaceState({}, '', window.location.pathname)
+    applyLinkRef.current(params)
+  }, [])
+  // whatever arrived before the data did
+  useEffect(() => {
+    if (!store.loaded || !pendingLink.current) return
+    const p = pendingLink.current
+    pendingLink.current = null
+    applyLinkRef.current(p)
   }, [store.loaded])
+  // the iOS shell: links, push taps, and a sync whenever the app comes forward
+  useEffect(() => {
+    let dispose = () => {}
+    void initNative({
+      onUrl: url => applyLinkRef.current(paramsOf(url)),
+      onResume: () => {
+        void store.syncNowManual()
+        remindersRef.current()
+      },
+    }).then(d => {
+      dispose = d
+    })
+    return () => dispose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /** A mirrored task moved (or was deleted) in an external calendar. */
   const applyMirrorChanges = (changes: { taskId: string; deleted: boolean; start: string | null; updated: string }[], source: string) => {
@@ -163,31 +240,6 @@ export default function Planner() {
     applyMirrorChanges(changes, 'Outlook'),
   )
 
-  // back from a calendar consent screen (Google or Microsoft)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const ms = params.get('microsoft')
-    if (ms) {
-      window.history.replaceState({}, '', window.location.pathname)
-      showToast(ms === 'connected' ? 'Outlook connected — pick the calendars to show in Settings.' : `Outlook could not be connected (${(params.get('reason') ?? 'unknown error').replace(/_/g, ' ')}).`)
-      setSettingsOpen(true)
-      return
-    }
-    const result = params.get('google')
-    if (!result) return
-    window.history.replaceState({}, '', window.location.pathname)
-    if (result === 'connected') {
-      showToast('Google Calendar connected — pick the calendars to show in Settings.')
-      setSettingsOpen(true)
-    } else {
-      const reason = params.get('reason') ?? 'unknown error'
-      showToast(`Google Calendar could not be connected (${reason.replace(/_/g, ' ')}).`)
-      setSettingsOpen(true)
-    }
-    // eslint-disable-next-line no-useless-return
-    return
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
   const filteredTasks = useMemo(() => {
     let list = activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)
@@ -215,6 +267,19 @@ export default function Planner() {
     const t = window.setInterval(() => notifyRef.current(), 30_000)
     return () => window.clearInterval(t)
   }, [])
+
+  // iOS: the phone itself fires a notification at each due time and on occasion
+  // mornings — no server involved, so it works with no account and the app closed
+  const remindersRef = useRef(() => {})
+  remindersRef.current = () => {
+    if (!isNative() || !localRemindersEnabled()) return
+    void scheduleLocalReminders(buildLocalReminders(store.tasks, store.people))
+  }
+  useEffect(() => {
+    if (!store.loaded) return
+    const t = window.setTimeout(() => remindersRef.current(), 1500)
+    return () => window.clearTimeout(t)
+  }, [store.loaded, store.tasks, store.people])
 
   const openTask = (task: Task) => setEditor({ task })
   const newTask = (preset?: Partial<Task>) =>
@@ -649,7 +714,7 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings key={settingsNonce} store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

@@ -572,13 +572,16 @@ const TOOLS = [
               .sort()
               .reverse()
             const daysSince = visits[0] ? Math.floor((nowMs - Date.parse(visits[0])) / DAY) : null
-            const c = p.cadenceDays
-            const status = !visits[0] ? 'never' : c && daysSince > c * 1.5 ? 'overdue' : c && daysSince > c ? 'due' : 'ok'
+            // no declared rhythm is measured against the app's 90-day default, as the
+            // People page does — otherwise a 400-day gap would read as fine
+            const c = p.cadenceDays ?? 90
+            const status = !visits[0] ? 'never' : daysSince > c * 1.5 ? 'overdue' : daysSince > c ? 'due' : 'ok'
             return {
               id: p.id,
               name: p.name,
               group: p.group,
-              cadenceDays: c ?? null,
+              cadenceDays: p.cadenceDays ?? null,
+              effectiveCadenceDays: c,
               lastSeen: visits[0] ?? null,
               daysSince,
               visitsLast30Days: visits.filter(v => nowMs - Date.parse(v) < 30 * DAY).length,

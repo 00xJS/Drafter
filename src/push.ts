@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import { isNative } from './native'
 
 // Web push: the browser's subscription is registered with /api/push, keyed to
 // the signed-in user; the hourly digest function sends to it.
@@ -6,6 +7,9 @@ import { apiFetch } from './api'
 export interface PushInfo {
   configured: boolean
   missing: string[]
+  /** Which channels the host can send on. */
+  webPush: boolean
+  apns: boolean
   publicKey: string | null
   subscriptions: string[]
   digestEmail: boolean
@@ -20,7 +24,37 @@ async function json<T>(res: Response): Promise<T> {
   return body
 }
 
-export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+export const pushSupported = () => isNative() || ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)
+
+/** The iOS app's APNs device token, remembered so it can be unsubscribed later. */
+const APNS_KEY = 'drafter:apns-token'
+const storedApnsToken = (): string | null => {
+  try {
+    return localStorage.getItem(APNS_KEY)
+  } catch {
+    return null
+  }
+}
+
+/** Ask iOS for permission and a device token. */
+async function nativeToken(): Promise<string> {
+  const { PushNotifications } = await import('@capacitor/push-notifications')
+  let perm = await PushNotifications.checkPermissions()
+  if (perm.receive !== 'granted') perm = await PushNotifications.requestPermissions()
+  if (perm.receive !== 'granted') throw new Error('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
+  return new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Apple did not hand back a device token. The build needs the push capability and the phone needs to be online.')), 15_000)
+    void PushNotifications.addListener('registration', t => {
+      clearTimeout(timer)
+      resolve(t.value)
+    })
+    void PushNotifications.addListener('registrationError', e => {
+      clearTimeout(timer)
+      reject(new Error(e.error))
+    })
+    void PushNotifications.register()
+  })
+}
 
 export function fetchPushInfo(): Promise<PushInfo> {
   return apiFetch('/api/push').then(json<PushInfo>)
@@ -36,6 +70,10 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 
 /** The current device's subscription endpoint, if any. */
 export async function currentEndpoint(): Promise<string | null> {
+  if (isNative()) {
+    const t = storedApnsToken()
+    return t ? `apns:${t}` : null
+  }
   if (!pushSupported()) return null
   const reg = await navigator.serviceWorker.getRegistration()
   const sub = await reg?.pushManager.getSubscription()
@@ -58,6 +96,17 @@ async function activeRegistration(): Promise<ServiceWorkerRegistration> {
 }
 
 export async function enablePush(publicKey: string): Promise<string[]> {
+  if (isNative()) {
+    const token = await nativeToken()
+    try {
+      localStorage.setItem(APNS_KEY, token)
+    } catch {
+      /* ignore */
+    }
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const r = await apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'subscribe', subscription: { type: 'apns', token }, timezone }) }).then(json<{ subscriptions: string[] }>)
+    return r.subscriptions
+  }
   if (!pushSupported()) throw new Error('This browser does not support push notifications.')
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') throw new Error('Notifications were not allowed.')
@@ -69,6 +118,22 @@ export async function enablePush(publicKey: string): Promise<string[]> {
 }
 
 export async function disablePush(): Promise<string[]> {
+  if (isNative()) {
+    const endpoint = await currentEndpoint()
+    try {
+      localStorage.removeItem(APNS_KEY)
+    } catch {
+      /* ignore */
+    }
+    try {
+      const { PushNotifications } = await import('@capacitor/push-notifications')
+      await PushNotifications.unregister()
+    } catch {
+      /* already off */
+    }
+    const r = await apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'unsubscribe', endpoint }) }).then(json<{ subscriptions: string[] }>)
+    return r.subscriptions
+  }
   const reg = await navigator.serviceWorker.getRegistration()
   const sub = await reg?.pushManager.getSubscription()
   const endpoint = sub?.endpoint

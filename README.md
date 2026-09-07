@@ -85,6 +85,45 @@ All integration secrets are **per user**: each signed-in account's Google tokens
 - **Auto-backup:** pick a backup file in Settings (Chromium browsers) and every change is written to it automatically.
 - **PWA:** the production build is installable and works offline.
 
+## iOS app
+
+The same app, in a native shell (Capacitor). Nothing is duplicated: the web
+bundle is packaged into `ios/`, talks to the hosted API and Supabase exactly
+as the browser does, and syncs through the same `sync_posts` round-trip.
+
+```bash
+npm run ios          # builds the bundle for the app, syncs it, opens Xcode
+```
+
+Then run on a simulator or a phone from Xcode. `npm run build:ios` alone
+rebuilds and syncs without opening Xcode. A free Apple ID installs on your own
+iPhone for a week at a time; a paid developer account is needed for TestFlight,
+the App Store and push notifications.
+
+What the shell adds over the installed web app:
+
+- **Reminders with nothing to set up.** Settings → Reminders → *Remind me on
+  this iPhone* schedules a notification on the phone itself at each task's due
+  time (9am for date-only tasks) and on the morning of a birthday or
+  anniversary. No server, no account, works with the app closed.
+- **Push through Apple.** Turn on reminders in Settings → Reminders as usual;
+  the app registers with APNs instead of a browser. On the host set
+  `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` (the `.p8` contents) and
+  `APNS_BUNDLE_ID=app.drafter.ios` (see `.env.example`). Tapping a nudge opens
+  that task; Sunday's digest opens the weekly review.
+- **Calendar connections that work.** Google and Outlook consent runs in Safari
+  and returns to the app through `drafter://oauth` — the API hands the browser
+  a one-time token so the cookie-bound state still holds.
+- **A URL scheme for capture.** `drafter://new?title=…`, `drafter://open?task=<id>`
+  and `drafter://open?view=review` all work from anywhere on the phone. A
+  two-step Shortcut ("Receive text/URLs from Share Sheet" → "Open URL"
+  `drafter://new?title=[Shortcut Input]`) puts Drafter in every share sheet.
+- Syncs whenever the app comes to the foreground, haptics on completion, dark
+  system UI, and the status bar tucked into the app's own header.
+
+Not there yet: a Home Screen widget and a native share extension (both need
+their own Swift targets), and universal links.
+
 ## Data & sync model
 
 Tasks and projects cache locally in IndexedDB (validated and migrated on load) and sync to Postgres with **delta sync**: only records newer than the last cursor move in either direction, so an imported archive doesn't turn every sync into a megabyte exchange. The table is still called `posts`; each row is a task or a project (`data->>'kind'`). **Pre-v3 rows are never rewritten** — every reader (the app, the MCP server) converts a legacy post into a social task on read, so the upgrade needs no data migration, only `supabase db push` for the new generated columns and the wider status validation. Sync also fires when the app returns to the foreground. Last-write-wins per post by `updatedAt` is **enforced by a database trigger** for every writer (app, MCP, raw REST), with strictly-increasing stamps on every edit. Deletes are tombstones (undo-able, purged after 90 days). Images upload to Supabase Storage (owner-scoped) with IndexedDB as the offline cache, so they follow you across devices.

@@ -134,7 +134,6 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<{ mode: RefineMode; text: string } | null>(null)
   const mediaInput = useRef<HTMLInputElement>(null)
-  const finePointer = useMemo(() => window.matchMedia('(pointer: fine)').matches, [])
 
   useEffect(() => {
     let live = true
@@ -383,7 +382,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
           <div className="editor-main">
             <label className="field">
               <span>Title</span>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Book the electrician" autoFocus={!task && finePointer} />
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Book the electrician" autoFocus={!task} />
             </label>
 
             <label className="field">

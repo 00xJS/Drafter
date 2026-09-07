@@ -84,7 +84,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 10px 20px;
+  /* under the status bar / Dynamic Island on an installed app */
+  padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -1815,13 +1816,25 @@ textarea {
     height: 100dvh;
   }
 
+  /* The sheet starts under the status bar / Dynamic Island. Taps up there go
+     to iOS (scroll-to-top), never to the page, so the head must sit below it
+     or its Save cannot be pressed at all on an installed app. */
+  .modal-head {
+    padding-top: calc(14px + env(safe-area-inset-top));
+  }
+  .modal-foot {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
   .modal-head-save {
     display: inline-block;
   }
 
+
   .topbar {
     gap: 8px 10px;
-    padding: 10px 12px;
+    /* keep the status-bar / Dynamic Island clearance on phones too */
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
   }
 
   .tab {
@@ -3740,4 +3753,23 @@ textarea {
   .new-post-btn {
     bottom: calc(132px + env(safe-area-inset-bottom)) !important;
   }
+}
+
+/* settings is a fixed-height dialog on desktop; on a phone it is a full sheet
+   (after the desktop rule above, so it wins) */
+@media (max-width: 640px) {
+  .settings-modal {
+    height: 100dvh;
+    width: 100%;
+  }
+}
+
+/* the signed-out pages have their own headers: keep them out from under the
+   status bar / Dynamic Island on an installed app */
+.landing-header {
+  padding-top: calc(14px + env(safe-area-inset-top));
+}
+.login-wrap {
+  padding-top: calc(24px + env(safe-area-inset-top));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }

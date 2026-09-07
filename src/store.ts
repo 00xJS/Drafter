@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarSource, Item, Person, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
+import { haptic } from './native'
 import { uid } from './utils'
 import { purgeRemote, syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
@@ -346,6 +347,8 @@ export function useItems(myId: string | null = null): Store {
       const old = itemsRef.current.find(x => x.id === id)
       if (!old || old.kind !== 'task' || old.status === status) return null
       const updated = stampStatus(old, status)
+      // a small physical "done" on the phone; silent everywhere else
+      if (status === 'done' && old.status !== 'done') void haptic('success')
       let spawned: Task | null = null
       if (status === 'done' && old.status !== 'done' && updated.recurrence) {
         spawned = nextOccurrence(updated, uid)
