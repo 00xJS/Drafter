@@ -15,8 +15,22 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
-const NVIDIA_DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b'
+/**
+ * Tried in order. A model can be listed in the public catalogue yet still 404
+ * on chat/completions for a given account or tier, so one hard-coded name is
+ * fragile: every AI feature would break at once. NVIDIA_MODEL, when set, is
+ * tried first; the rest are long-standing, widely-served fallbacks.
+ */
+const NVIDIA_FALLBACK_MODELS = [
+  'nvidia/nemotron-3-super-120b-a12b',
+  'nvidia/llama-3.1-nemotron-70b-instruct',
+  'openai/gpt-oss-20b',
+  'nvidia/nemotron-nano-3-30b-a3b',
+]
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
+
+/** Remembered for the life of the warm instance so we don't re-probe every call. */
+let resolvedNvidiaModel = null
 
 function resolveProvider() {
   const forced = (process.env.AI_PROVIDER ?? '').trim().toLowerCase()
@@ -34,12 +48,7 @@ function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^<think>[\s\S]*$/, '').trim()
 }
 
-async function completeNvidia({ system, prompt, maxTokens }) {
-  const model = process.env.NVIDIA_MODEL || NVIDIA_DEFAULT_MODEL
-  const messages = []
-  if (system) messages.push({ role: 'system', content: system })
-  messages.push({ role: 'user', content: prompt })
-
+async function callNvidia(model, messages, maxTokens) {
   const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -49,31 +58,56 @@ async function completeNvidia({ system, prompt, maxTokens }) {
     },
     body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.6, top_p: 0.95, stream: false }),
   })
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '')
-    let message = detail.slice(0, 300)
-    try {
-      const parsed = JSON.parse(detail)
-      message = parsed?.error?.message ?? parsed?.detail ?? parsed?.message ?? message
-    } catch {
-      /* not JSON */
-    }
-    if (res.status === 429) return { status: 429, error: 'NVIDIA rate limit hit (free tier is ~40 requests/min) — wait a moment and retry.' }
-    if (res.status === 401 || res.status === 403) return { status: 502, error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.' }
-    if (res.status === 404) return { status: 502, error: `NVIDIA model "${model}" was not found — check NVIDIA_MODEL.` }
-    return { status: 502, error: `NVIDIA API error (HTTP ${res.status})${message ? `: ${message}` : ''}` }
+  if (res.ok) return { ok: true, data: await res.json() }
+  const detail = await res.text().catch(() => '')
+  let message = detail.slice(0, 300)
+  try {
+    const parsed = JSON.parse(detail)
+    message = parsed?.error?.message ?? parsed?.detail ?? parsed?.message ?? message
+  } catch {
+    /* not JSON */
   }
+  return { ok: false, status: res.status, message }
+}
 
-  const data = await res.json()
-  const choice = data?.choices?.[0]
-  const content = choice?.message?.content
-  const text = typeof content === 'string'
-    ? content
-    : Array.isArray(content)
-      ? content.filter(part => part?.type === 'text').map(part => part.text).join('')
-      : ''
-  return { text: stripThinking(text) }
+async function completeNvidia({ system, prompt, maxTokens }) {
+  const messages = []
+  if (system) messages.push({ role: 'system', content: system })
+  messages.push({ role: 'user', content: prompt })
+
+  // configured model first, then the fallbacks, skipping duplicates
+  const configured = process.env.NVIDIA_MODEL?.trim()
+  const candidates = [...new Set([resolvedNvidiaModel, configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
+
+  const tried = []
+  for (const model of candidates) {
+    const attempt = await callNvidia(model, messages, maxTokens)
+    if (attempt.ok) {
+      resolvedNvidiaModel = model
+      const choice = attempt.data?.choices?.[0]
+      const content = choice?.message?.content
+      const text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.filter(part => part?.type === 'text').map(part => part.text).join('')
+          : ''
+      return { text: stripThinking(text) }
+    }
+    // a model this account cannot serve: try the next one
+    if (attempt.status === 404 || attempt.status === 400) {
+      tried.push(`${model} (${attempt.status})`)
+      if (resolvedNvidiaModel === model) resolvedNvidiaModel = null
+      continue
+    }
+    // anything else is about the request or the key, not the model — stop here
+    if (attempt.status === 429) return { status: 429, error: 'NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.' }
+    if (attempt.status === 401 || attempt.status === 403) return { status: 502, error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.' }
+    return { status: 502, error: `NVIDIA API error (HTTP ${attempt.status})${attempt.message ? `: ${attempt.message}` : ''}` }
+  }
+  return {
+    status: 502,
+    error: `No NVIDIA model was available for this key. Tried: ${tried.join(', ')}. Set NVIDIA_MODEL on the host to one your account can serve (list them at ${NVIDIA_BASE_URL}/models).`,
+  }
 }
 
 async function completeAnthropic({ system, prompt, maxTokens }) {

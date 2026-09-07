@@ -24,6 +24,7 @@ import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { Settings } from './Settings'
+import { ErrorBoundary } from './ErrorBoundary'
 
 type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'review' | 'insights'
 type CalendarMode = 'month' | 'timeline'
@@ -382,7 +383,7 @@ export default function Planner() {
 
       <main className="content">
         {store.loaded && (
-          <>
+          <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
             {view === 'today' && (
               <Today
                 tasks={filteredTasks}
@@ -507,7 +508,7 @@ export default function Planner() {
                 <Insights posts={posts} />
               </>
             )}
-          </>
+          </ErrorBoundary>
         )}
       </main>
 

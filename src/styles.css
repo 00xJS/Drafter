@@ -3476,3 +3476,15 @@ textarea {
 .mine-seg {
   margin-left: auto;
 }
+
+.error-hero .error-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  max-width: 640px;
+  margin: 0 auto 12px;
+  word-break: break-word;
+}

@@ -258,6 +258,12 @@ export function useItems(myId: string | null = null): Store {
     }
   }, [items, loaded])
 
+  // Calendar subscriptions and reviews are personal: only mine (or unowned,
+  // pre-household rows) show. Declared BEFORE every memo that calls it — a
+  // const used above its declaration throws once the list is non-empty, which
+  // took down the whole app the first time a review was saved.
+  const isMine = (i: Item) => !i.ownerId || !myId || i.ownerId === myId
+
   const tasks = useMemo(() => items.filter((i): i is Task => i.kind === 'task' && !i.deletedAt), [items])
   const projects = useMemo(
     () =>
@@ -279,8 +285,6 @@ export function useItems(myId: string | null = null): Store {
     () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
-  // calendar subscriptions and reviews are personal: only mine (or unowned, pre-household) show
-  const isMine = (i: Item) => !i.ownerId || !myId || i.ownerId === myId
   const calendars = useMemo(
     () =>
       items
