@@ -12,6 +12,15 @@ import { clearLocalData } from '../idb'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
 
+/** Settings was one 800-line scroll; these are the four things you come here for. */
+const SETTINGS_GROUPS = [
+  { key: 'calendars', label: 'Calendars' },
+  { key: 'reminders', label: 'Reminders & AI' },
+  { key: 'household', label: 'Household' },
+  { key: 'data', label: 'Data' },
+] as const
+type SettingsGroup = (typeof SETTINGS_GROUPS)[number]['key']
+
 interface Props {
   store: Store
   calendars: CalendarState
@@ -22,6 +31,7 @@ interface Props {
 }
 
 export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose }: Props) {
+  const [group, setGroup] = useState<SettingsGroup>('calendars')
   const [hhName, setHhName] = useState('')
   const [invite, setInvite] = useState('')
   const [displayName, setDisplayName] = useState(household.info?.me.displayName ?? '')
@@ -196,7 +206,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="modal narrow" role="dialog" aria-modal="true">
+      <div className="modal settings-modal" role="dialog" aria-modal="true">
         <header className="modal-head">
           <h2>Settings</h2>
           <button className="btn subtle" onClick={onClose} aria-label="Close">
@@ -204,8 +214,15 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
           </button>
         </header>
 
-        <div className="modal-body">
-          <section className="settings-section">
+        <div className={`modal-body settings-body showing-${group}`}>
+          <nav className="settings-nav" role="tablist" aria-label="Settings sections">
+            {SETTINGS_GROUPS.filter(g => g.key !== 'household' || supabaseOn).map(g => (
+              <button key={g.key} className={group === g.key ? 'seg on' : 'seg'} onClick={() => setGroup(g.key)} role="tab" aria-selected={group === g.key}>
+                {g.label}
+              </button>
+            ))}
+          </nav>
+          <section className="settings-section g-data">
             <h3>Sync</h3>
             <p className={store.syncInfo.online ? 'sync-ok' : 'sync-off'}>
               {store.syncInfo.online
@@ -233,7 +250,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
           </section>
 
           {supabaseOn && (
-            <section className="settings-section">
+            <section className="settings-section g-household">
               <h3>Household</h3>
               <p className="field-hint">
                 Share the planner with the people you live with: everyone in the household sees the same projects, tasks,
@@ -311,7 +328,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
           )}
 
           {supabaseOn && (
-            <section className="settings-section">
+            <section className="settings-section g-household">
               <h3>Account</h3>
               <p>{accountEmail ? `Signed in as ${accountEmail}.` : 'Signed in.'}</p>
               <button
@@ -331,7 +348,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             </section>
           )}
 
-          <section className="settings-section">
+          <section className="settings-section g-reminders">
             <h3>Reminders</h3>
             <h4>Push notifications (works with the app closed)</h4>
             {push?.configured ? (
@@ -413,7 +430,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             )}
           </section>
 
-          <section className="settings-section">
+          <section className="settings-section g-calendars">
             <h3>Calendars</h3>
             <p className="field-hint">
               Subscribe to your Google or iCloud calendars (birthdays, holidays, family) and their events show up on
@@ -737,7 +754,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
           </section>
 
           {feed?.configured && (
-            <section className="settings-section">
+            <section className="settings-section g-data">
               <h3>Email in</h3>
               <p className="field-hint">
                 Forward an email and it becomes a task (subject → title, body → description, first link → link). Point a
@@ -766,7 +783,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
           )}
 
           {store.templates.length > 0 && (
-            <section className="settings-section">
+            <section className="settings-section g-data">
               <h3>Project templates</h3>
               <p className="field-hint">Saved from your projects. Pick one when creating a new project.</p>
               <ul className="cal-sources">
@@ -786,7 +803,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             </section>
           )}
 
-          <section className="settings-section">
+          <section className="settings-section g-reminders">
             <h3>AI assist</h3>
             <p className="field-hint">
               The ✨ features (break a task into steps, suggest tags, platform variants, post analysis) run through the

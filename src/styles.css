@@ -3651,3 +3651,71 @@ textarea {
   font-weight: 400;
   color: var(--muted);
 }
+
+/* settings: four groups instead of one long scroll */
+.settings-modal {
+  width: 760px;
+  max-width: 100%;
+  height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+}
+.settings-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-nav .seg {
+  flex: 1 1 auto;
+}
+
+/* settings: four groups instead of one 800-line scroll */
+.settings-modal {
+  width: 760px;
+  max-width: 100%;
+  height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+}
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+  padding: 2px 0 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-nav .seg {
+  flex: 1 1 auto;
+}
+/* only the chosen group is on screen */
+.settings-body .settings-section {
+  display: none;
+}
+.settings-body.showing-calendars .g-calendars,
+.settings-body.showing-reminders .g-reminders,
+.settings-body.showing-household .g-household,
+.settings-body.showing-data .g-data {
+  display: block;
+}
