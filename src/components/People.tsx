@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, personStats } from '../people'
+import { PersonStats, SEEN_META, compareStats, personStats, yearReport } from '../people'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
@@ -25,6 +25,8 @@ function PersonForm({ person, onSave, onClose }: { person?: Person; onSave(p: Pe
   const [cadence, setCadence] = useState<Cadence | ''>((person?.cadenceDays as Cadence | undefined) ?? '')
   const [color, setColor] = useState(person?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
   const [notes, setNotes] = useState(person?.notes ?? '')
+  const [birthday, setBirthday] = useState(person?.birthday ?? '')
+  const [anniversary, setAnniversary] = useState(person?.anniversary ?? '')
   const save = () => {
     if (!name.trim()) return
     const now = new Date().toISOString()
@@ -37,6 +39,8 @@ function PersonForm({ person, onSave, onClose }: { person?: Person; onSave(p: Pe
       color,
       cadenceDays: cadence === '' ? undefined : cadence,
       notes: notes.trim() || undefined,
+      birthday: birthday || undefined,
+      anniversary: anniversary || undefined,
       createdAt: person?.createdAt ?? now,
       updatedAt: person ? newerStamp(person.updatedAt) : now,
     })
@@ -93,9 +97,21 @@ function PersonForm({ person, onSave, onClose }: { person?: Person; onSave(p: Pe
               ))}
             </div>
           </div>
+          <div className="field-row">
+            <label className="field">
+              <span>
+                Birthday <small>(year optional: use 0004 if unknown)</small>
+              </span>
+              <input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Anniversary</span>
+              <input type="date" value={anniversary} onChange={e => setAnniversary(e.target.value)} />
+            </label>
+          </div>
           <label className="field">
             <span>Notes</span>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Birthday, favourite restaurant, what to ask about next time…" />
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Favourite restaurant, gift ideas, what to ask about next time…" />
           </label>
         </div>
         <footer className="modal-foot">
@@ -269,6 +285,9 @@ export function PersonCard({ stats, onEdit, onLog, onPlan, onOpenTask }: { stats
 export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, onOpenTask }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
+  const [year, setYear] = useState(() => new Date().getFullYear())
+  const report = useMemo(() => yearReport(people, tasks, year), [people, tasks, year])
+  const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
   const stats = useMemo(() => people.map(p => personStats(p, tasks)).sort(compareStats), [people, tasks])
   const counts = useMemo(() => {
     const c = { overdue: 0, due: 0, often: 0 }
@@ -309,6 +328,60 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
               <PersonCard key={s.person.id} stats={s} onEdit={() => setEditing({ person: s.person })} onLog={() => setLogging(s.person)} onPlan={title => onPlan(s.person, title)} onOpenTask={onOpenTask} />
             ))}
           </div>
+
+          <section className="chart-card year-report">
+            <header className="chart-head">
+              <div>
+                <h3>The year with people</h3>
+                <p className="chart-sub">Visits per month · trend compares the last 90 days with the 90 before</p>
+              </div>
+              <span className="segmented">
+                <button className="seg" onClick={() => setYear(y => y - 1)} aria-label="Previous year">
+                  ‹
+                </button>
+                <button className="seg on">{year}</button>
+                <button className="seg" onClick={() => setYear(y => y + 1)} aria-label="Next year">
+                  ›
+                </button>
+              </span>
+            </header>
+            <div className="table-scroll">
+              <table className="year-table">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    {MONTHS.map((m, i) => (
+                      <th key={i} className="num">
+                        {m}
+                      </th>
+                    ))}
+                    <th className="num">Total</th>
+                    <th>Trend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.map(r => (
+                    <tr key={r.person.id}>
+                      <td>
+                        <span className="pdot" style={{ background: r.person.color }} /> {r.person.name}
+                      </td>
+                      {r.months.map((n, i) => (
+                        <td key={i} className="num year-cell" style={n > 0 ? { background: `color-mix(in srgb, ${r.person.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}>
+                          {n || ''}
+                        </td>
+                      ))}
+                      <td className="num">
+                        <strong>{r.total}</strong>
+                      </td>
+                      <td>
+                        {r.trend > 0 ? <span className="badge" style={{ background: SEEN_META.often.bg, color: SEEN_META.often.color }}>↑ more lately</span> : r.trend < 0 ? <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>↓ drifting</span> : <small className="muted">steady</small>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </>
       )}
 

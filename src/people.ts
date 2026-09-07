@@ -96,3 +96,63 @@ export function compareStats(a: PersonStats, b: PersonStats): number {
   if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status]
   return (b.daysSince ?? 0) - (a.daysSince ?? 0)
 }
+
+export interface Occasion {
+  person: Person
+  kind: 'birthday' | 'anniversary'
+  /** Next occurrence as a local Date. */
+  at: Date
+  daysUntil: number
+  /** Age or years, when the stored date has a real year. */
+  years?: number
+}
+
+/** Birthdays and anniversaries coming up within `days` (today included). */
+export function upcomingOccasions(people: Person[], days = 14, now: Date = new Date()): Occasion[] {
+  const today = startOfDay(now)
+  const out: Occasion[] = []
+  for (const person of people) {
+    for (const kind of ['birthday', 'anniversary'] as const) {
+      const raw = person[kind]
+      if (!raw) continue
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (!m) continue
+      const year = Number(m[1])
+      let next = new Date(today.getFullYear(), Number(m[2]) - 1, Number(m[3]))
+      if (next < today) next = new Date(today.getFullYear() + 1, Number(m[2]) - 1, Number(m[3]))
+      const daysUntil = Math.round((next.getTime() - today.getTime()) / DAY_MS)
+      if (daysUntil > days) continue
+      out.push({ person, kind, at: next, daysUntil, years: year > 1900 ? next.getFullYear() - year : undefined })
+    }
+  }
+  return out.sort((a, b) => a.daysUntil - b.daysUntil)
+}
+
+export interface YearRow {
+  person: Person
+  /** Visits per month, Jan..Dec of the given year. */
+  months: number[]
+  total: number
+  /** Positive = seeing more lately, negative = drifting (last 90 days vs the 90 before). */
+  trend: number
+}
+
+export function yearReport(people: Person[], tasks: Task[], year: number, now: Date = new Date()): YearRow[] {
+  const nowMs = now.getTime()
+  return people
+    .map(person => {
+      const visits = visitsFor(person.id, tasks)
+      const months = Array.from({ length: 12 }, () => 0)
+      for (const v of visits) {
+        const d = new Date(v.at)
+        if (d.getFullYear() === year) months[d.getMonth()]++
+      }
+      const recent = visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS).length
+      const before = visits.filter(v => {
+        const age = nowMs - Date.parse(v.at)
+        return age >= 90 * DAY_MS && age < 180 * DAY_MS
+      }).length
+      return { person, months, total: months.reduce((a, b) => a + b, 0), trend: recent - before }
+    })
+    .sort((a, b) => b.total - a.total)
+}

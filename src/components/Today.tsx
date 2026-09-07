@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { CalendarEvent, CalendarSource, Person, Project, Task, TaskStatus, projectProgress } from '../types'
-import { SEEN_META, compareStats, personStats } from '../people'
+import { SEEN_META, compareStats, personStats, upcomingOccasions } from '../people'
 import { doneByWeek, stalledProjects } from '../review'
 import { DAY_MS, compareTasks, dayOffset, isOpen } from '../taskutils'
 import { eventStartDate } from '../calendars'
@@ -13,6 +13,7 @@ interface Props {
   allTasks: Task[]
   people: Person[]
   onPlanWith(p: Person): void
+  onPlanOccasion(p: Person, kind: 'birthday' | 'anniversary', at: Date): void
   projects: Project[]
   projectMap: Map<string, Project>
   events: CalendarEvent[]
@@ -101,8 +102,9 @@ function eventWhen(ev: CalendarEvent): string {
   return ev.allDay ? day : `${day} ${fmtTime(ev.start)}`
 }
 
-export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
+export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
+  const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
   const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
     () =>
@@ -234,6 +236,39 @@ export function Today({ tasks, allTasks, people, onPlanWith, projects, projectMa
             </button>
           ))}
         </div>
+      )}
+
+      {occasions.length > 0 && (
+        <section className="chart-card occasions">
+          <header className="chart-head">
+            <div>
+              <h3>Occasions</h3>
+              <p className="chart-sub">Birthdays and anniversaries in the next 3 weeks</p>
+            </div>
+          </header>
+          <ul className="dash-list event-list">
+            {occasions.map(o => (
+              <li key={`${o.person.id}-${o.kind}`} className="event-row">
+                <span className="person-avatar small" style={{ background: o.person.color }}>
+                  {o.kind === 'birthday' ? '🎂' : '💍'}
+                </span>
+                <div className="dash-main">
+                  <span className="dash-title">
+                    {o.person.name}'s {o.kind}
+                    {o.years ? <small className="muted"> · turns {o.years}</small> : null}
+                  </span>
+                  <span className="dash-reason">
+                    {o.daysUntil === 0 ? 'Today!' : o.daysUntil === 1 ? 'Tomorrow' : `In ${o.daysUntil} days`} ·{' '}
+                    {o.at.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <button className="btn" onClick={() => onPlanOccasion(o.person, o.kind, o.at)}>
+                  Plan a gift
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {peopleNudges.length > 0 && (

@@ -16,6 +16,7 @@ import { Insights } from './Insights'
 import { People } from './People'
 import { Review } from './Review'
 import { Search } from './Search'
+import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
@@ -180,6 +181,27 @@ export default function Planner() {
     })
     showToast(`Logged a visit with ${person.name}`)
   }
+  const planOccasion = (person: Person, kind: 'birthday' | 'anniversary', at: Date) => {
+    const due = new Date(at.getFullYear(), at.getMonth(), at.getDate() - 5, 9, 0, 0)
+    newTask({
+      title: `Gift for ${person.name}'s ${kind}`,
+      status: 'todo',
+      priority: 'high',
+      dueAt: (due.getTime() > Date.now() ? due : new Date(Date.now() + 3_600_000)).toISOString(),
+      peopleIds: [person.id],
+      tags: ['gift', kind],
+      notes: person.notes ? `Ideas from their notes: ${person.notes}` : undefined,
+    })
+  }
+  const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
+  const logAttendance = (ev: CalendarEvent, peopleIds: string[]) => {
+    if (peopleIds.length === 0) return
+    const now = new Date().toISOString()
+    const at = ev.allDay ? new Date(`${ev.start}T12:00`).toISOString() : new Date(ev.start).toISOString()
+    store.upsert({ kind: 'task', id: crypto.randomUUID(), title: ev.title, description: ev.location ? `At ${ev.location}` : '', status: 'done', priority: 'normal', completedAt: at, createdAt: now, updatedAt: now, tags: ['visit'], peopleIds })
+    const names = peopleIds.map(id => store.people.find(p => p.id === id)?.name ?? '').filter(Boolean)
+    showToast(`Logged ${names.join(', ')} at “${ev.title}”`)
+  }
   const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
   /** Turn an external event into a prep task due the morning before. */
   const planForEvent = (ev: CalendarEvent) => {
@@ -317,6 +339,7 @@ export default function Planner() {
                 allTasks={store.tasks}
                 people={store.people}
                 onPlanWith={planWith}
+                onPlanOccasion={planOccasion}
                 projects={filterProject ? [filterProject] : store.projects}
                 projectMap={projectMap}
                 events={calendars.events}
@@ -358,6 +381,7 @@ export default function Planner() {
                     onNew={d => newTask({ status: 'todo', dueAt: d })}
                     onReschedule={reschedule}
                     onPlan={planForEvent}
+                    onAttendance={ev => setAttendance(ev)}
                   />
                 ) : (
                   <Roadmap
@@ -489,6 +513,18 @@ export default function Planner() {
             store.upsert(t)
             showToast(`Template “${t.name}” saved — pick it when creating a project`)
           }}
+        />
+      )}
+
+      {attendance && (
+        <AttendancePicker
+          event={attendance}
+          people={store.people}
+          onDone={ids => {
+            logAttendance(attendance, ids)
+            setAttendance(null)
+          }}
+          onClose={() => setAttendance(null)}
         />
       )}
 

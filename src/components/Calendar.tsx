@@ -14,6 +14,8 @@ interface Props {
   onReschedule(id: string, day: Date): void
   /** Create a prep task for an external event. */
   onPlan(ev: CalendarEvent): void
+  /** Log who was at a past event. */
+  onAttendance(ev: CalendarEvent): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -31,7 +33,7 @@ function hasClock(iso: string): boolean {
   return d.getHours() + d.getMinutes() > 0
 }
 
-export function Calendar({ tasks, projectMap, events, sourceMap, onOpen, onNew, onReschedule, onPlan }: Props) {
+export function Calendar({ tasks, projectMap, events, sourceMap, onOpen, onNew, onReschedule, onPlan, onAttendance }: Props) {
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -209,15 +211,27 @@ export function Calendar({ tasks, projectMap, events, sourceMap, onOpen, onNew, 
                           {sourceMap.get(ev.sourceId) ? ` · ${sourceMap.get(ev.sourceId)!.name}` : ''}
                         </span>
                       </div>
-                      <button
-                        className="btn"
-                        onClick={() => {
-                          setSheetDay(null)
-                          onPlan(ev)
-                        }}
-                      >
-                        Plan for this
-                      </button>
+                      {new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < Date.now() ? (
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            setSheetDay(null)
+                            onAttendance(ev)
+                          }}
+                        >
+                          Who was there?
+                        </button>
+                      ) : (
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            setSheetDay(null)
+                            onPlan(ev)
+                          }}
+                        >
+                          Plan for this
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

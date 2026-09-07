@@ -8,7 +8,11 @@ import { DAY_MS, startOfDay } from './taskutils'
 
 const T = (title: string, offsetDays: number, extra: Partial<TemplateTask> = {}): TemplateTask => ({ title, offsetDays, ...extra })
 
-export const BUILT_IN_TEMPLATES: Template[] = [
+const BUILT_IN_STAMP = '2026-09-01T00:00:00.000Z'
+type BuiltIn = Omit<Template, 'createdAt' | 'updatedAt'>
+const builtIn = (list: BuiltIn[]): Template[] => list.map(t => ({ ...t, createdAt: BUILT_IN_STAMP, updatedAt: BUILT_IN_STAMP }))
+
+export const BUILT_IN_TEMPLATES: Template[] = builtIn([
   {
     kind: 'template',
     id: 'tpl-holiday',
@@ -132,7 +136,7 @@ export const BUILT_IN_TEMPLATES: Template[] = [
       { name: 'Reveal', offsetDays: 42 },
     ],
   },
-]
+])
 
 const stampAt = (start: Date, offsetDays: number, hour = 9): string => {
   const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + offsetDays, hour, 0, 0)

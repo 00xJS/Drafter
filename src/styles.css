@@ -3423,3 +3423,27 @@ textarea {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* year report */
+.year-report {
+  margin-top: 14px;
+}
+.year-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.year-table th,
+.year-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.year-table .num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.year-cell {
+  border-radius: 4px;
+}
