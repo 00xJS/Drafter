@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarEvent, CalendarSource } from './types'
+import { CalendarEvent, CalendarSource, Item, Project } from './types'
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
 import { dateKey } from './utils'
@@ -20,15 +20,126 @@ interface Cached {
 
 export interface CalendarFeedInfo {
   configured: boolean
+  enabled: boolean
   url: string | null
   missing: string[]
 }
 
-export async function fetchFeedInfo(): Promise<CalendarFeedInfo> {
-  const res = await apiFetch('/api/feed.ics')
-  const body = (await res.json().catch(() => null)) as (CalendarFeedInfo & { error?: string }) | null
+async function json<T>(res: Response): Promise<T> {
+  const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null
   if (!res.ok || !body) throw new Error(body?.error ?? `HTTP ${res.status}`)
   return body
+}
+
+export function fetchFeedInfo(): Promise<CalendarFeedInfo> {
+  return apiFetch('/api/feed.ics').then(json<CalendarFeedInfo>)
+}
+
+export function feedAction(action: 'enable' | 'rotate' | 'disable'): Promise<CalendarFeedInfo> {
+  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) }).then(json<CalendarFeedInfo>)
+}
+
+// ---- Google Calendar (OAuth, per user) ---------------------------------------
+
+export interface GoogleStatus {
+  configured: boolean
+  connected: boolean
+  email: string | null
+  missing: string[]
+  redirectUri: string
+}
+
+export interface GoogleCalendarInfo {
+  id: string
+  name: string
+  color?: string
+  primary: boolean
+  writable: boolean
+}
+
+export function googleAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  return apiFetch('/api/google', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...payload }), timeoutMs: 60_000 }).then(json<T>)
+}
+
+/** The pseudo-source that turns on mirroring tasks into the connected Google account. */
+export const GOOGLE_PUSH_URL = 'google:push'
+export const GOOGLE_PUSH_ID = 'google-push'
+export const isGoogleSource = (s: CalendarSource) => s.url.startsWith('google:')
+
+const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
+
+export interface GooglePushState {
+  lastAt?: string
+  error?: string
+  pending: boolean
+  pushNow(): Promise<void>
+}
+
+/**
+ * Mirror tasks into the Google "Drafter" calendar: after every local change,
+ * push the tasks whose updatedAt passed the cursor. Server-side the push is
+ * idempotent (upsert by task id, delete when no longer open/dated).
+ */
+export function useGooglePush(items: Item[], projects: Project[], enabled: boolean): GooglePushState {
+  const [state, setState] = useState<{ lastAt?: string; error?: string; pending: boolean }>({ pending: false })
+  const busy = useRef(false)
+  const timer = useRef<number | undefined>(undefined)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+
+  const pushNow = useCallback(async () => {
+    if (busy.current) return
+    let cursor = ''
+    try {
+      cursor = localStorage.getItem(PUSH_CURSOR_KEY) ?? ''
+    } catch {
+      /* ignore */
+    }
+    const tasks = itemsRef.current.filter(i => i.kind === 'task' && i.updatedAt > cursor)
+    if (tasks.length === 0) return
+    busy.current = true
+    setState(s => ({ ...s, pending: true }))
+    try {
+      const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
+      const result = await googleAction<{ errors: { id: string; error: string }[] }>('push', { tasks: tasks.slice(0, 200), projects: names })
+      if (result.errors.length > 0) {
+        setState({ lastAt: new Date().toISOString(), error: result.errors[0].error, pending: false })
+        return
+      }
+      const maxSeen = tasks.slice(0, 200).reduce((m, t) => (t.updatedAt > m ? t.updatedAt : m), cursor)
+      try {
+        localStorage.setItem(PUSH_CURSOR_KEY, maxSeen)
+      } catch {
+        /* ignore */
+      }
+      setState({ lastAt: new Date().toISOString(), pending: false })
+      if (tasks.length > 200) window.setTimeout(() => pushNow(), 500)
+    } catch (e) {
+      setState(s => ({ ...s, error: (e as Error).message, pending: false }))
+    } finally {
+      busy.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => pushNow(), 3000)
+    return () => window.clearTimeout(timer.current)
+  }, [items, enabled, pushNow])
+
+  return { ...state, pushNow }
+}
+
+/** Forget the push cursor so the next push re-mirrors everything (after connecting or reconnecting). */
+export function resetGooglePushCursor(): void {
+  try {
+    localStorage.removeItem(PUSH_CURSOR_KEY)
+  } catch {
+    /* ignore */
+  }
 }
 
 async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
@@ -61,7 +172,7 @@ export interface CalendarState {
 
 export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
   const [state, setState] = useState<Omit<CalendarState, 'refresh'>>({ events: [], errors: {}, names: {}, loading: false })
-  const enabled = sources.filter(s => s.enabled)
+  const enabled = sources.filter(s => s.enabled && s.url !== GOOGLE_PUSH_URL)
   const signature = enabled.map(s => s.id + '|' + s.url).join('\n')
   const busy = useRef(false)
   const sigRef = useRef(signature)

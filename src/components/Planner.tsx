@@ -5,7 +5,7 @@ import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { projectById } from '../taskutils'
-import { eventStartDate, prepDueFor, useCalendarEvents } from '../calendars'
+import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush } from '../calendars'
 import { timeAgo } from '../utils'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
@@ -78,6 +78,25 @@ export default function Planner() {
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const calendars = useCalendarEvents(store.calendars)
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
+  const mirroring = store.calendars.some(c => c.id === GOOGLE_PUSH_ID && c.enabled)
+  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring)
+
+  // back from Google's consent screen
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('google')
+    if (!result) return
+    window.history.replaceState({}, '', window.location.pathname)
+    if (result === 'connected') {
+      showToast('Google Calendar connected — pick the calendars to show in Settings.')
+      setSettingsOpen(true)
+    } else {
+      const reason = params.get('reason') ?? 'unknown error'
+      showToast(`Google Calendar could not be connected (${reason.replace(/_/g, ' ')}).`)
+      setSettingsOpen(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
   const filteredTasks = useMemo(
     () => (activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)),
@@ -335,7 +354,7 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings store={store} calendars={calendars} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings store={store} calendars={calendars} googlePush={googlePush} onClose={() => setSettingsOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, fetchFeedInfo } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, feedAction, fetchFeedInfo, googleAction, isGoogleSource, resetGooglePushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -10,10 +10,11 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 interface Props {
   store: Store
   calendars: CalendarState
+  googlePush: GooglePushState
   onClose(): void
 }
 
-export function Settings({ store, calendars, onClose }: Props) {
+export function Settings({ store, calendars, googlePush, onClose }: Props) {
   const [notif, setNotif] = useState(notificationPermission())
   const [accountEmail, setAccountEmail] = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -22,14 +23,89 @@ export function Settings({ store, calendars, onClose }: Props) {
   const [calColor, setCalColor] = useState(PROJECT_COLORS[3])
   const [feed, setFeed] = useState<CalendarFeedInfo | null>(null)
   const [feedError, setFeedError] = useState('')
+  const [feedBusy, setFeedBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [google, setGoogle] = useState<GoogleStatus | null>(null)
+  const [googleError, setGoogleError] = useState('')
+  const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
+  const [googleBusy, setGoogleBusy] = useState(false)
   const supabaseOn = isSupabaseConfigured()
+  const pushSource = store.calendars.find(c => c.id === GOOGLE_PUSH_ID)
+  const mirroring = !!pushSource?.enabled
 
   useEffect(() => {
     fetchFeedInfo()
       .then(setFeed)
       .catch(e => setFeedError((e as Error).message))
+    googleAction<GoogleStatus>('status')
+      .then(st => {
+        setGoogle(st)
+        if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
+      })
+      .catch(e => setGoogleError((e as Error).message))
   }, [])
+
+  const runFeed = async (action: 'enable' | 'rotate' | 'disable') => {
+    setFeedBusy(true)
+    setFeedError('')
+    try {
+      setFeed(await feedAction(action))
+    } catch (e) {
+      setFeedError((e as Error).message)
+    } finally {
+      setFeedBusy(false)
+    }
+  }
+
+  const connectGoogle = async () => {
+    setGoogleBusy(true)
+    setGoogleError('')
+    try {
+      const { url } = await googleAction<{ url: string }>('auth')
+      window.location.href = url
+    } catch (e) {
+      setGoogleError((e as Error).message)
+      setGoogleBusy(false)
+    }
+  }
+
+  const disconnectGoogle = async () => {
+    if (!window.confirm('Disconnect Google Calendar? Its calendars disappear from the overlay and mirroring stops (already-mirrored events stay in Google).')) return
+    setGoogleBusy(true)
+    try {
+      await googleAction('disconnect')
+      for (const c of store.calendars.filter(isGoogleSource)) store.remove(c.id)
+      setGoogle(g => (g ? { ...g, connected: false, email: null } : g))
+      setGoogleCals(null)
+    } catch (e) {
+      setGoogleError((e as Error).message)
+    } finally {
+      setGoogleBusy(false)
+    }
+  }
+
+  const toggleGoogleCalendar = (cal: GoogleCalendarInfo, on: boolean) => {
+    const url = `google:${cal.id}`
+    const existing = store.calendars.find(c => c.url === url)
+    if (on && !existing) {
+      const now = new Date().toISOString()
+      store.upsert({ kind: 'calendar', id: uid(), name: cal.name, url, color: cal.color && /^#/.test(cal.color) ? cal.color : PROJECT_COLORS[4], enabled: true, createdAt: now, updatedAt: now })
+    } else if (on && existing && !existing.enabled) {
+      store.upsert({ ...existing, enabled: true, updatedAt: newerStamp(existing.updatedAt) })
+    } else if (!on && existing) {
+      store.remove(existing.id)
+    }
+  }
+
+  const setMirroring = (on: boolean) => {
+    const now = new Date().toISOString()
+    if (pushSource) store.upsert({ ...pushSource, enabled: on, updatedAt: newerStamp(pushSource.updatedAt) })
+    else if (on) store.upsert({ kind: 'calendar', id: GOOGLE_PUSH_ID, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: now, updatedAt: now })
+    if (on) {
+      resetGooglePushCursor()
+      window.setTimeout(() => googlePush.pushNow(), 500)
+    }
+  }
 
   const addCalendar = () => {
     const url = calUrl.trim().replace(/^webcal:\/\//i, 'https://')
@@ -138,9 +214,73 @@ export function Settings({ store, calendars, onClose }: Props) {
               Subscribe to your Google or iCloud calendars (birthdays, holidays, family) and their events show up on
               the Month view, the Timeline, and Today's <em>Coming up</em> list — read-only, with a one-tap prep task.
             </p>
-            {store.calendars.length > 0 && (
+            <h4>Google Calendar</h4>
+            {google?.connected ? (
+              <>
+                <p className="sync-line">
+                  <span>
+                    Connected{google.email ? ` as ${google.email}` : ''}. Tick the calendars to show; they are tied to your
+                    account only.
+                  </span>
+                  <button className="btn subtle danger" disabled={googleBusy} onClick={disconnectGoogle}>
+                    Disconnect
+                  </button>
+                </p>
+                {googleCals ? (
+                  <ul className="cal-sources">
+                    {googleCals.map(cal => {
+                      const src = store.calendars.find(c => c.url === `google:${cal.id}`)
+                      return (
+                        <li key={cal.id} className="cal-source">
+                          <input type="checkbox" checked={!!src?.enabled} aria-label={`Show ${cal.name}`} onChange={e => toggleGoogleCalendar(cal, e.target.checked)} />
+                          <span className="pdot" style={{ background: cal.color ?? PROJECT_COLORS[4] }} />
+                          <span className="cal-source-name">
+                            {cal.name}
+                            {cal.primary && <small> · primary</small>}
+                          </span>
+                          <span className="cal-source-status">
+                            {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <p className="field-hint">{googleError || 'Loading your calendars…'}</p>
+                )}
+                <label className="cal-source mirror-row">
+                  <input type="checkbox" checked={mirroring} onChange={e => setMirroring(e.target.checked)} />
+                  <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar in Google</span>
+                  <span className="cal-source-status">
+                    {googlePush.error ? <span className="warn">{googlePush.error}</span> : googlePush.pending ? <small>pushing…</small> : googlePush.lastAt ? <small>pushed {timeAgo(googlePush.lastAt)}</small> : null}
+                  </span>
+                </label>
+                <p className="field-hint">
+                  Open tasks with a due date appear in Google within seconds of a change (and vanish when done). Google's
+                  own events flow the other way through the ticked calendars above. Edit tasks in Drafter, not in Google.
+                </p>
+              </>
+            ) : google?.configured ? (
+              <p className="sync-line">
+                <button className="btn primary" disabled={googleBusy} onClick={connectGoogle}>
+                  {googleBusy ? 'Opening Google…' : 'Connect Google Calendar'}
+                </button>
+                <small>Read your calendars and mirror tasks. Tokens stay server-side, per account.</small>
+              </p>
+            ) : google ? (
+              <p className="field-hint">
+                Not configured on the host yet: set {google.missing.join(', ')} on Netlify. The OAuth client's redirect URI
+                must be <code>{google.redirectUri}</code>.
+              </p>
+            ) : (
+              <p className="field-hint">{googleError ? `Google status unavailable: ${googleError}` : 'Checking Google…'}</p>
+            )}
+            {googleError && google?.connected && <p className="warn">{googleError}</p>}
+
+            <h4>Other calendars (iCloud, holidays, any .ics link)</h4>
+            {store.calendars.filter(c => !isGoogleSource(c)).length > 0 && (
               <ul className="cal-sources">
-                {store.calendars.map(c => (
+                {store.calendars.filter(c => !isGoogleSource(c)).map(c => (
                   <li key={c.id} className="cal-source">
                     <input
                       type="checkbox"
@@ -198,13 +338,13 @@ export function Settings({ store, calendars, onClose }: Props) {
               )}
             </p>
 
-            <h4>Your tasks in Google / Apple Calendar</h4>
-            {feed?.configured && feed.url ? (
+            <h4>Subscribe link for Apple Calendar (or any calendar app)</h4>
+            {feed?.enabled && feed.url ? (
               <>
                 <p className="field-hint">
-                  Subscribe to this address once (Google Calendar → <em>Other calendars → From URL</em>; Apple Calendar →{' '}
-                  <em>File → New Calendar Subscription</em>). Open tasks with due dates, project targets and milestones
-                  appear there and stay in sync. Anyone with the link can read the feed — treat it like a password.
+                  Subscribe once (Apple Calendar → <em>File → New Calendar Subscription</em>; Google → <em>Other calendars →
+                  From URL</em>). Open tasks with due dates, project targets and milestones appear there and stay in sync.
+                  The link is yours alone and works like a password — reset it if it leaks.
                 </p>
                 <div className="copy-row">
                   <input readOnly value={feed.url} onFocus={e => e.currentTarget.select()} />
@@ -222,16 +362,27 @@ export function Settings({ store, calendars, onClose }: Props) {
                   >
                     {copied ? 'Copied' : 'Copy'}
                   </button>
+                  <button className="btn subtle" disabled={feedBusy} onClick={() => runFeed('rotate')}>
+                    Reset link
+                  </button>
+                  <button className="btn subtle danger" disabled={feedBusy} onClick={() => runFeed('disable')}>
+                    Turn off
+                  </button>
                 </div>
               </>
-            ) : feed ? (
-              <p className="field-hint">
-                Not enabled yet. Set {feed.missing.join(' and ')} in the host environment (Netlify) and redeploy; the
-                subscribe link appears here.
+            ) : feed?.configured ? (
+              <p className="sync-line">
+                <button className="btn" disabled={feedBusy} onClick={() => runFeed('enable')}>
+                  {feedBusy ? 'Creating…' : 'Create my subscribe link'}
+                </button>
+                <small>Generates a private feed address for your account.</small>
               </p>
+            ) : feed ? (
+              <p className="field-hint">Not available: needs {feed.missing.join(' and ')} on the host (Netlify).</p>
             ) : (
               <p className="field-hint">{feedError ? `Feed status unavailable: ${feedError}` : 'Checking feed status…'}</p>
             )}
+            {feedError && feed && <p className="warn">{feedError}</p>}
           </section>
 
           <section className="settings-section">

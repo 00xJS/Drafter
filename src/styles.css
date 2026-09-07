@@ -2706,3 +2706,8 @@ textarea {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.mirror-row {
+  cursor: pointer;
+  margin: 6px 0;
+}

@@ -4,6 +4,8 @@
 // calendar hosts don't send CORS headers. Session-gated like every function.
 
 import { expandEvents, parseICS } from '../../shared/ics.mjs'
+import { listEvents, toEvent } from './lib/google.mjs'
+import { getUser } from './lib/session.mjs'
 
 const MAX_SOURCES = 12
 const MAX_BYTES = 4 * 1024 * 1024
@@ -42,14 +44,8 @@ async function fetchICS(url) {
 export default async req => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
-  if (supabaseUrl && anonKey) {
-    const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
-    if (!token) return Response.json({ error: 'sign in required' }, { status: 401 })
-    const check = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, authorization: `Bearer ${token}` } })
-    if (!check.ok) return Response.json({ error: 'invalid session' }, { status: 401 })
-  }
+  const { user, response } = await getUser(req)
+  if (response) return response
 
   let body
   try {
@@ -68,8 +64,26 @@ export default async req => {
   await Promise.all(
     sources.map(async src => {
       const id = String(src?.id ?? '')
-      const url = normalizeUrl(src?.url)
       if (!id) return
+      const raw = String(src?.url ?? '')
+      if (raw.startsWith('google:')) {
+        const calendarId = raw.slice('google:'.length)
+        if (!calendarId || calendarId === 'push') return
+        if (!user) {
+          errors[id] = 'Google calendars need a signed-in account'
+          return
+        }
+        try {
+          for (const item of await listEvents(user.id, calendarId, new Date(from).toISOString(), new Date(to).toISOString())) {
+            const ev = toEvent(item, id)
+            if (ev) events.push(ev)
+          }
+        } catch (e) {
+          errors[id] = e?.message ?? 'Google fetch failed'
+        }
+        return
+      }
+      const url = normalizeUrl(raw)
       if (!url) {
         errors[id] = 'not a valid https:// or webcal:// address'
         return
