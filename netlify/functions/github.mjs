@@ -1,3 +1,4 @@
+import { withCors } from './lib/cors.mjs'
 // GitHub link cards: the app pastes an issue / PR / repo / Projects URL onto a
 // task and this proxy returns its live state. Read-only. Uses GITHUB_TOKEN
 // when set (needed for private repos and for Projects v2, which is GraphQL-only);
@@ -154,7 +155,7 @@ async function write(req, url) {
   }
 }
 
-export default async req => {
+const handler = async req => {
   if (req.method !== 'GET' && req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -187,3 +188,5 @@ export default async req => {
     return Response.json({ error: message }, { status })
   }
 }
+
+export default withCors(handler)

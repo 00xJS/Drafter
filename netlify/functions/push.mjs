@@ -4,16 +4,25 @@
 // VAPID keys come from the host: `npx web-push generate-vapid-keys` →
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (+ VAPID_SUBJECT, a mailto: or https:).
 
+import { withCors } from './lib/cors.mjs'
 import webpush from 'web-push'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
+import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApns } from './lib/apns.mjs'
+
+// Two channels, one list: browser subscriptions carry an endpoint + keys and go
+// through web-push; the iOS app's entries are { type: 'apns', token } and go
+// straight to Apple. Either channel being set up makes push "configured".
+export const webPushConfigured = () => !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)
 
 export function pushConfigured() {
-  return !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && settingsStoreConfigured())
+  return settingsStoreConfigured() && (webPushConfigured() || apnsConfigured())
 }
 
 export function configureWebPush() {
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY)
 }
+
+const isApns = sub => sub?.type === 'apns' && typeof sub.token === 'string'
 
 /**
  * Send to every subscription. Returns `gone` (expired endpoints to drop) and
@@ -22,16 +31,30 @@ export function configureWebPush() {
  * send, and reporting that as success would leave push silently broken.
  */
 export async function sendToAll(subscriptions, payload) {
-  configureWebPush()
+  const subs = subscriptions ?? []
+  if (subs.some(sub => !isApns(sub)) && webPushConfigured()) configureWebPush()
   const gone = []
   const failed = []
   await Promise.all(
-    (subscriptions ?? []).map(async sub => {
+    subs.map(async sub => {
+      if (isApns(sub)) {
+        if (!apnsConfigured()) return failed.push({ endpoint: sub.endpoint, kind: 'apns', statusCode: 501, body: `APNs is not configured on the host: set ${missingApnsEnv().join(', ')}` })
+        try {
+          const { status, reason } = await sendApns(sub.token, apnsPayload(payload), { collapseId: payload.tag })
+          if (status >= 200 && status < 300) return
+          if (isGoneReason(status, reason)) gone.push(sub.endpoint)
+          else failed.push({ endpoint: sub.endpoint, kind: 'apns', statusCode: status, body: reason })
+        } catch (e) {
+          failed.push({ endpoint: sub.endpoint, kind: 'apns', statusCode: 0, body: String(e?.message ?? e).slice(0, 200) })
+        }
+        return
+      }
+      if (!webPushConfigured()) return failed.push({ endpoint: sub.endpoint, kind: 'web', statusCode: 501, body: 'VAPID keys are not set on the host' })
       try {
         await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600 })
       } catch (e) {
         if (e?.statusCode === 404 || e?.statusCode === 410) gone.push(sub.endpoint)
-        else failed.push({ endpoint: sub.endpoint, statusCode: e?.statusCode ?? 0, body: String(e?.body ?? e?.message ?? '').slice(0, 200) })
+        else failed.push({ endpoint: sub.endpoint, kind: 'web', statusCode: e?.statusCode ?? 0, body: String(e?.body ?? e?.message ?? '').slice(0, 200) })
       }
     }),
   )
@@ -40,6 +63,14 @@ export async function sendToAll(subscriptions, payload) {
 
 function explainPushFailure(failed) {
   const codes = [...new Set(failed.map(f => f.statusCode))]
+  const apns = failed.filter(f => f.kind === 'apns')
+  if (apns.length) {
+    const reasons = [...new Set(apns.map(f => f.body).filter(Boolean))].join(', ')
+    if (codes.includes(501)) return apns[0].body
+    if (codes.includes(403)) return `Apple rejected the provider token (${reasons || '403'}). APNS_KEY_ID, APNS_TEAM_ID and APNS_PRIVATE_KEY must belong to one key from the Apple Developer portal, and APNS_BUNDLE_ID must match the app.`
+    if (codes.includes(400)) return `Apple refused the request (${reasons || '400'}). A BadDeviceToken from a Simulator or Xcode build usually means APNS_ENV=sandbox is needed.`
+    return `Apple refused the notification (${reasons || codes.join(', ')}).`
+  }
   if (codes.includes(403) || codes.includes(401)) {
     return 'The push service rejected the VAPID credentials (403). VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be the matching pair from a single `npx web-push generate-vapid-keys` run — regenerate both, set both, redeploy, then turn push off and on again here.'
   }
@@ -47,12 +78,16 @@ function explainPushFailure(failed) {
   return `The push service refused the message (HTTP ${codes.join(', ') || 'unknown'}).`
 }
 
-export default async req => {
+const handler = async req => {
   const { user, response, unconfigured } = await getUser(req)
   if (response) return response
   if (unconfigured || !user) return Response.json({ error: 'Push needs a signed-in account (Supabase) — not available in local mode.' }, { status: 501 })
   const configured = pushConfigured()
-  const missing = [!process.env.VAPID_PUBLIC_KEY && 'VAPID_PUBLIC_KEY', !process.env.VAPID_PRIVATE_KEY && 'VAPID_PRIVATE_KEY', !settingsStoreConfigured() && 'SUPABASE_SERVICE_KEY'].filter(Boolean)
+  // what would make push work: the settings store always, plus at least one channel
+  const missing = [
+    !settingsStoreConfigured() && 'SUPABASE_SERVICE_KEY',
+    !webPushConfigured() && !apnsConfigured() && 'VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (browsers) and/or APNS_KEY_ID + APNS_TEAM_ID + APNS_PRIVATE_KEY + APNS_BUNDLE_ID (iOS app)',
+  ].filter(Boolean)
 
   try {
     if (req.method === 'GET') {
@@ -60,6 +95,8 @@ export default async req => {
       return Response.json({
         configured,
         missing,
+        webPush: webPushConfigured(),
+        apns: apnsConfigured(),
         publicKey: process.env.VAPID_PUBLIC_KEY ?? null,
         subscriptions: (s?.push_subscriptions ?? []).map(x => x.endpoint),
         digestEmail: !!s?.digest_email,
@@ -78,8 +115,19 @@ export default async req => {
 
     if (body.action === 'subscribe') {
       const sub = body.subscription
-      if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return Response.json({ error: 'invalid subscription' }, { status: 400 })
-      const next = [...subs.filter(x => x.endpoint !== sub.endpoint), { endpoint: sub.endpoint, keys: sub.keys, expirationTime: sub.expirationTime ?? null }].slice(-8)
+      let entry
+      if (sub?.type === 'apns') {
+        // the iOS app: a hex device token from Apple
+        const token = String(sub.token ?? '')
+        if (!/^[0-9a-f]{32,400}$/i.test(token)) return Response.json({ error: 'invalid device token' }, { status: 400 })
+        if (!apnsConfigured()) return Response.json({ error: `APNs is not configured on the host: set ${missingApnsEnv().join(', ')}` }, { status: 501 })
+        entry = { endpoint: `apns:${token}`, type: 'apns', token }
+      } else {
+        if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return Response.json({ error: 'invalid subscription' }, { status: 400 })
+        if (!webPushConfigured()) return Response.json({ error: 'Browser push is not configured on the host: set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY' }, { status: 501 })
+        entry = { endpoint: sub.endpoint, keys: sub.keys, expirationTime: sub.expirationTime ?? null }
+      }
+      const next = [...subs.filter(x => x.endpoint !== entry.endpoint), entry].slice(-8)
       await settingsSet(user.id, { push_subscriptions: next, timezone: typeof body.timezone === 'string' ? body.timezone : (s.timezone ?? null) })
       return Response.json({ ok: true, subscriptions: next.map(x => x.endpoint) })
     }
@@ -109,3 +157,5 @@ export default async req => {
     return Response.json({ error: e?.message ?? 'push settings unavailable' }, { status: e?.status === 501 ? 501 : 502 })
   }
 }
+
+export default withCors(handler)

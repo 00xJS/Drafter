@@ -8,8 +8,9 @@
 // https://<site>/api/microsoft/callback -> MICROSOFT_CLIENT_ID and a client
 // secret in MICROSOFT_CLIENT_SECRET.
 
+import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
-import { clearCookieHeader, cookieHeader, newVerifier, stateFor, verifyState } from './lib/oauth.mjs'
+import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
 import {
   authUrl,
   connectAccount,
@@ -30,8 +31,29 @@ const STATE_TTL_MS = 10 * 60_000
 
 const MS_COOKIE = 'drafter_ms_oauth'
 
+/** Safari, opened by the iOS app with a one-time handoff: set the cookie here, then on to Microsoft. */
+async function start(url) {
+  const fail = reason => new Response(null, { status: 302, headers: { location: `${url.origin}/?microsoft=error&reason=${reason}` } })
+  if (!microsoftConfigured()) return fail('not_configured')
+  const handoff = url.searchParams.get('h') ?? ''
+  const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
+  if (!row || !handoffFresh(row.oauth_handoff_at)) return fail('bad_state')
+  const verifier = newVerifier()
+  const state = stateFor(verifier)
+  await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, ms_oauth_state: state, ms_state_at: new Date().toISOString() })
+  const headers = new Headers({ location: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state) })
+  headers.append('set-cookie', cookieHeader(MS_COOKIE, verifier))
+  headers.append('set-cookie', cookieHeader(RETURN_COOKIE, 'native'))
+  return new Response(null, { status: 302, headers })
+}
+
 async function callback(req, url) {
-  const back = q => new Response(null, { status: 302, headers: { location: `${url.origin}/?${q}`, 'set-cookie': clearCookieHeader(MS_COOKIE) } })
+  const back = q => {
+    const headers = new Headers({ location: `${returnTarget(req, url.origin)}?${q}` })
+    headers.append('set-cookie', clearCookieHeader(MS_COOKIE))
+    headers.append('set-cookie', clearCookieHeader(RETURN_COOKIE))
+    return new Response(null, { status: 302, headers })
+  }
   if (!microsoftConfigured()) return back('microsoft=error&reason=not_configured')
   if (url.searchParams.get('error')) return back(`microsoft=error&reason=${encodeURIComponent(url.searchParams.get('error_description') ?? url.searchParams.get('error'))}`)
   const code = url.searchParams.get('code')
@@ -53,11 +75,15 @@ async function callback(req, url) {
   }
 }
 
-export default async req => {
+const handler = async req => {
   const url = new URL(req.url)
   if (url.pathname.endsWith('/callback')) {
     if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
     return callback(req, url)
+  }
+  if (url.pathname.endsWith('/start')) {
+    if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+    return start(url)
   }
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   const { user, response, unconfigured } = await getUser(req)
@@ -81,6 +107,11 @@ export default async req => {
     if (!microsoftConfigured()) return Response.json({ error: `Outlook is not configured on the host: set ${missingMicrosoftEnv().join(', ')}` }, { status: 501 })
 
     if (action === 'auth') {
+      if (body.native) {
+        const handoff = newHandoff()
+        await settingsSet(user.id, { oauth_handoff: handoff, oauth_handoff_at: new Date().toISOString() })
+        return Response.json({ url: `${url.origin}/api/microsoft/start?h=${handoff}` })
+      }
       const verifier = newVerifier()
       const state = stateFor(verifier)
       await settingsSet(user.id, { ms_oauth_state: state, ms_state_at: new Date().toISOString() })
@@ -134,3 +165,5 @@ export default async req => {
     return Response.json({ error: e?.message ?? 'Microsoft request failed' }, { status })
   }
 }
+
+export default withCors(handler)

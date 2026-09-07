@@ -31,17 +31,17 @@ async function rest(path, init = {}) {
 /** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
 function localParts(date, tz) {
   const ms = date instanceof Date ? date.getTime() : Date.parse(date)
-  if (!Number.isFinite(ms)) return { hour: null, day: null }
+  if (!Number.isFinite(ms)) return { hour: null, day: null, weekday: null }
   try {
     const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', hour: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit' })
+      new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', hour: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
         .formatToParts(new Date(ms))
         .map(x => [x.type, x.value]),
     )
-    return { hour: Number(p.hour), day: `${p.year}-${p.month}-${p.day}` }
+    return { hour: Number(p.hour), day: `${p.year}-${p.month}-${p.day}`, weekday: p.weekday ?? null }
   } catch {
     const d = new Date(ms)
-    return { hour: d.getUTCHours(), day: d.toISOString().slice(0, 10) }
+    return { hour: d.getUTCHours(), day: d.toISOString().slice(0, 10), weekday: null }
   }
 }
 
@@ -157,7 +157,7 @@ export default async () => {
         .map(r => legacyPostToTask(r.data))
 
       const tz = u.timezone || 'UTC'
-      const { hour, day } = localParts(now, tz)
+      const { hour, day, weekday } = localParts(now, tz)
       if (hour === null) continue
       const subs = u.push_subscriptions ?? []
       const patch = {}
@@ -168,9 +168,12 @@ export default async () => {
       const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
       if (hour >= wantHour && u.last_digest_day !== day) {
         const digest = buildDigest(items, tz, now)
+        // Sunday's digest is the doorway to the weekly review
+        const sunday = weekday === 'Sun'
+        if (sunday) digest.lines.push('Sunday: your weekly review is ready.')
         if (digest.lines.length > 0) {
           if (liveSubs.length && pushConfigured()) {
-            const { gone, failed } = await sendToAll(liveSubs, { title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: site ? `${site}/` : '/' })
+            const { gone, failed } = await sendToAll(liveSubs, { title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}/${sunday ? '?view=review' : ''}` })
             if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
             if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
             sent += Math.max(0, liveSubs.length - failed.length)
@@ -194,7 +197,7 @@ export default async () => {
           return Number.isFinite(at) && at <= now.getTime() && at > from
         })
         for (const t of due.slice(0, 5)) {
-          const { gone, failed } = await sendToAll(liveSubs, { title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: site ? `${site}/` : '/' })
+          const { gone, failed } = await sendToAll(liveSubs, { title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}` })
           if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
           if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
           sent += Math.max(0, liveSubs.length - failed.length)

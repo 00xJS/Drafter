@@ -6,8 +6,9 @@
 // redirect URI https://<site>/api/google/callback → GOOGLE_CLIENT_ID /
 // GOOGLE_CLIENT_SECRET on the host. SUPABASE_SERVICE_KEY stores tokens per user.
 
+import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
-import { clearCookieHeader, cookieHeader, newVerifier, stateFor, verifyState } from './lib/oauth.mjs'
+import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
 import { SCOPES, drafterCalendarId, exchangeCode, googleConfigured, listCalendars, missingGoogleEnv, pushTask, randomToken, revoke } from './lib/google.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`
@@ -15,8 +16,44 @@ const STATE_TTL_MS = 10 * 60_000
 
 const GOOGLE_COOKIE = 'drafter_google_oauth'
 
+function consentUrl(origin, state, loginHint) {
+  const q = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUriFor(origin),
+    response_type: 'code',
+    scope: SCOPES.join(' '),
+    access_type: 'offline',
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+    state,
+  })
+  if (loginHint) q.set('login_hint', loginHint)
+  return `https://accounts.google.com/o/oauth2/v2/auth?${q}`
+}
+
+/** Safari, opened by the iOS app with a one-time handoff: set the cookie here, then on to Google. */
+async function start(url) {
+  const fail = reason => new Response(null, { status: 302, headers: { location: `${url.origin}/?google=error&reason=${reason}` } })
+  if (!googleConfigured()) return fail('not_configured')
+  const handoff = url.searchParams.get('h') ?? ''
+  const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
+  if (!row || !handoffFresh(row.oauth_handoff_at)) return fail('bad_state')
+  const verifier = newVerifier()
+  const state = stateFor(verifier)
+  await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, google_oauth_state: state, google_state_at: new Date().toISOString() })
+  const headers = new Headers({ location: consentUrl(url.origin, state) })
+  headers.append('set-cookie', cookieHeader(GOOGLE_COOKIE, verifier))
+  headers.append('set-cookie', cookieHeader(RETURN_COOKIE, 'native'))
+  return new Response(null, { status: 302, headers })
+}
+
 async function callback(req, url) {
-  const back = q => new Response(null, { status: 302, headers: { location: `${url.origin}/?${q}`, 'set-cookie': clearCookieHeader(GOOGLE_COOKIE) } })
+  const back = q => {
+    const headers = new Headers({ location: `${returnTarget(req, url.origin)}?${q}` })
+    headers.append('set-cookie', clearCookieHeader(GOOGLE_COOKIE))
+    headers.append('set-cookie', clearCookieHeader(RETURN_COOKIE))
+    return new Response(null, { status: 302, headers })
+  }
   if (!googleConfigured()) return back('google=error&reason=not_configured')
   if (url.searchParams.get('error')) return back(`google=error&reason=${encodeURIComponent(url.searchParams.get('error'))}`)
   const code = url.searchParams.get('code')
@@ -45,11 +82,15 @@ async function callback(req, url) {
   }
 }
 
-export default async req => {
+const handler = async req => {
   const url = new URL(req.url)
   if (url.pathname.endsWith('/callback')) {
     if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
     return callback(req, url)
+  }
+  if (url.pathname.endsWith('/start')) {
+    if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+    return start(url)
   }
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   const { user, response, unconfigured } = await getUser(req)
@@ -73,21 +114,16 @@ export default async req => {
     if (!googleConfigured()) return Response.json({ error: `Google Calendar is not configured on the host: set ${missingGoogleEnv().join(', ')}` }, { status: 501 })
 
     if (action === 'auth') {
+      if (body.native) {
+        // the app cannot hold the cookie; Safari will, via /start
+        const handoff = newHandoff()
+        await settingsSet(user.id, { oauth_handoff: handoff, oauth_handoff_at: new Date().toISOString() })
+        return Response.json({ url: `${url.origin}/api/google/start?h=${handoff}` })
+      }
       const verifier = newVerifier()
       const state = stateFor(verifier)
       await settingsSet(user.id, { google_oauth_state: state, google_state_at: new Date().toISOString() })
-      const q = new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        redirect_uri: redirectUriFor(url.origin),
-        response_type: 'code',
-        scope: SCOPES.join(' '),
-        access_type: 'offline',
-        prompt: 'consent',
-        include_granted_scopes: 'true',
-        login_hint: user.email,
-        state,
-      })
-      return Response.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` }, { headers: { 'set-cookie': cookieHeader(GOOGLE_COOKIE, verifier) } })
+      return Response.json({ url: consentUrl(url.origin, state, user.email) }, { headers: { 'set-cookie': cookieHeader(GOOGLE_COOKIE, verifier) } })
     }
     if (action === 'disconnect') {
       await revoke(user.id)
@@ -134,3 +170,5 @@ export default async req => {
     return Response.json({ error: e?.message ?? 'Google request failed' }, { status })
   }
 }
+
+export default withCors(handler)

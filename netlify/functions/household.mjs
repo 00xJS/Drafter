@@ -4,6 +4,7 @@
 // Accounts are still created by the site owner in Supabase; inviting someone
 // just links an existing account to your household.
 
+import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 
 function env() {
@@ -52,7 +53,7 @@ async function describe(userId) {
   return { household, members }
 }
 
-export default async req => {
+const handler = async req => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   const { user, response, unconfigured } = await getUser(req)
   if (response) return response
@@ -136,3 +137,5 @@ export default async req => {
     return Response.json({ error: e?.message ?? 'household request failed' }, { status: 502 })
   }
 }
+
+export default withCors(handler)

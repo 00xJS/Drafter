@@ -3,6 +3,7 @@
 // concrete event instances for a window. Fetching happens here because the
 // calendar hosts don't send CORS headers. Session-gated like every function.
 
+import { withCors } from './lib/cors.mjs'
 import { expandEvents, parseICS } from '../../shared/ics.mjs'
 import { listEvents, toEvent } from './lib/google.mjs'
 import { listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
@@ -42,7 +43,7 @@ async function fetchICS(url) {
   }
 }
 
-export default async req => {
+const handler = async req => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const { user, response } = await getUser(req)
@@ -122,3 +123,5 @@ export default async req => {
   events.sort((a, b) => a.start.localeCompare(b.start))
   return Response.json({ events, errors, names, fetchedAt: new Date(now).toISOString() })
 }
+
+export default withCors(handler)

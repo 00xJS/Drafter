@@ -27,7 +27,7 @@ export function clearCookieHeader(name) {
   return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`
 }
 
-function readCookie(req, name) {
+export function readCookie(req, name) {
   const raw = req.headers.get('cookie') ?? ''
   for (const part of raw.split(';')) {
     const [k, ...rest] = part.trim().split('=')
@@ -44,3 +44,25 @@ export function verifyState(req, name, state) {
   const got = Buffer.from(String(state))
   return expected.length === got.length && timingSafeEqual(expected, got)
 }
+
+// ---- native app handoff -------------------------------------------------------
+//
+// The iOS app cannot complete consent inside its web view: the callback lands
+// in Safari, which has its own cookie jar. So the app asks for a one-time
+// handoff token (session-gated), opens /start?h=<token> in Safari, and /start
+// mints the verifier cookie THERE before forwarding to the provider. The token
+// is single-use and short-lived; the cookie binding then works as on the web.
+
+export const HANDOFF_TTL_MS = 2 * 60_000
+export const newHandoff = () => randomBytes(24).toString('base64url')
+
+/** Marks the browser as having been opened by the app, so the callback returns to it. */
+export const RETURN_COOKIE = 'drafter_return'
+
+/** Where the callback should send the browser: back into the app, or to the site. */
+export function returnTarget(req, origin) {
+  return readCookie(req, RETURN_COOKIE) === 'native' ? 'drafter://oauth' : `${origin}/`
+}
+
+/** True when a stored handoff is still fresh. */
+export const handoffFresh = at => Number.isFinite(Date.parse(at ?? '')) && Date.now() - Date.parse(at) < HANDOFF_TTL_MS

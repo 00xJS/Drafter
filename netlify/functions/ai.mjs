@@ -12,6 +12,7 @@
 // Requires a valid Supabase session when Supabase env vars are configured,
 // so the public site can't be used to burn credits.
 
+import { withCors } from './lib/cors.mjs'
 import Anthropic from '@anthropic-ai/sdk'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
@@ -130,7 +131,7 @@ async function completeAnthropic({ system, prompt, maxTokens }) {
   return { text }
 }
 
-export default async req => {
+const handler = async req => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -174,3 +175,5 @@ export default async req => {
   if (result.error) return Response.json({ error: result.error }, { status: result.status ?? 502 })
   return Response.json({ text: result.text, provider })
 }
+
+export default withCors(handler)

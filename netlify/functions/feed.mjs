@@ -5,6 +5,7 @@
 // role only) and shown once in Settings. POST { action: enable|rotate|disable }
 // manages it; GET without a token reports status for the signed-in user.
 
+import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
 import { legacyPostToTask } from '../../shared/domain.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
@@ -92,7 +93,7 @@ function feedFor(items, site) {
 
 const feedUrl = (origin, token) => `${origin}/api/feed.ics?token=${encodeURIComponent(token)}`
 
-export default async req => {
+const handler = async req => {
   const url = new URL(req.url)
   const token = url.searchParams.get('token')
 
@@ -155,3 +156,5 @@ export default async req => {
     return Response.json({ error: e?.message ?? 'settings unavailable' }, { status: e?.status === 501 ? 501 : 502 })
   }
 }
+
+export default withCors(handler)
