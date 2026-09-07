@@ -1,14 +1,36 @@
-import { Metrics, PLATFORMS, Platform, Post, STATUSES, Status } from './types'
+import {
+  ChecklistItem,
+  Comment,
+  Item,
+  Metrics,
+  Milestone,
+  PLATFORMS,
+  PRIORITIES,
+  PROJECT_COLORS,
+  PROJECT_STATUSES,
+  Platform,
+  Priority,
+  Project,
+  ProjectStatus,
+  RecurrenceFreq,
+  TASK_STATUSES,
+  Task,
+  TaskStatus,
+} from './types'
+import { legacyPostToTask } from '../shared/domain.mjs'
 
 // Hand-rolled validation instead of a schema library: imports come from messy
-// real-world files (archives, CSVs, old backups), so the goal is coerce-and-repair,
-// not strict rejection. Every entry point into the store goes through sanitizePost.
+// real-world files (archives, CSVs, old backups) and pre-v3 records still live
+// in the database, so the goal is coerce-and-repair, not strict rejection.
+// Every entry point into the store goes through sanitizeItem.
 
-export const STORAGE_VERSION = 2
+export const STORAGE_VERSION = 3
 
 const PLATFORM_SET = new Set<string>(PLATFORMS)
-const STATUS_SET = new Set<string>(STATUSES)
-const FREQ_SET = new Set(['weekly', 'biweekly', 'monthly'])
+const TASK_STATUS_SET = new Set<string>(TASK_STATUSES)
+const PROJECT_STATUS_SET = new Set<string>(PROJECT_STATUSES)
+const PRIORITY_SET = new Set<string>(PRIORITIES)
+const FREQ_SET = new Set(['daily', 'weekly', 'biweekly', 'monthly'])
 const METRIC_KEYS = ['likes', 'comments', 'shares', 'impressions'] as const
 
 function str(v: unknown): string | undefined {
@@ -29,35 +51,73 @@ function count(v: unknown): number | undefined {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined
 }
 
-/** Coerce arbitrary data into a valid Post, repairing what it can. Returns null if unusable. */
-export function sanitizePost(raw: unknown): Post | null {
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, unknown>
-  const id = str(r.id)
-  if (!id) return null
+function strList(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v
+        .filter((t): t is string => typeof t === 'string')
+        .map(t => t.trim())
+        .filter(Boolean)
+    : []
+}
 
+function idList(v: unknown): string[] | undefined {
+  const list = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  return list.length > 0 ? list : undefined
+}
+
+function checklist(v: unknown): ChecklistItem[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: ChecklistItem[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const id = str(r.id)
+    const text = str(r.text)?.trim()
+    if (id && text) out.push({ id, text, done: r.done === true })
+  }
+  return out.length > 0 ? out : undefined
+}
+
+function comments(v: unknown): Comment[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: Comment[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const id = str(r.id)
+    const body = str(r.body)?.trim()
+    const createdAt = isoDate(r.createdAt)
+    if (id && body && createdAt) out.push({ id, body, createdAt })
+  }
+  out.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return out.length > 0 ? out : undefined
+}
+
+function milestones(v: unknown): Milestone[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: Milestone[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const id = str(r.id)
+    const name = str(r.name)?.trim()
+    if (id && name) out.push({ id, name, dueAt: isoDate(r.dueAt), done: r.done === true || undefined })
+  }
+  return out.length > 0 ? out : undefined
+}
+
+function social(v: unknown): Task['social'] {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
   const platforms = Array.isArray(r.platforms)
     ? (r.platforms.filter(p => typeof p === 'string' && PLATFORM_SET.has(p)) as Platform[])
     : []
-  const scheduledFor = isoDate(r.scheduledFor)
-  let postedAt = isoDate(r.postedAt)
-  const status: Status =
-    typeof r.status === 'string' && STATUS_SET.has(r.status)
-      ? (r.status as Status)
-      : postedAt
-        ? 'posted'
-        : scheduledFor
-          ? 'scheduled'
-          : 'draft'
-  const now = new Date().toISOString()
-  if (status === 'posted') postedAt = postedAt ?? scheduledFor ?? now
-  else postedAt = undefined
 
-  let metrics: Post['metrics']
+  let metrics: Partial<Record<Platform, Metrics>> | undefined
   if (r.metrics && typeof r.metrics === 'object') {
-    for (const [k, v] of Object.entries(r.metrics as Record<string, unknown>)) {
-      if (!PLATFORM_SET.has(k) || !v || typeof v !== 'object') continue
-      const src = v as Record<string, unknown>
+    for (const [k, val] of Object.entries(r.metrics as Record<string, unknown>)) {
+      if (!PLATFORM_SET.has(k) || !val || typeof val !== 'object') continue
+      const src = val as Record<string, unknown>
       const m: Metrics = {}
       for (const mk of METRIC_KEYS) {
         const n = count(src[mk])
@@ -67,59 +127,116 @@ export function sanitizePost(raw: unknown): Post | null {
     }
   }
 
-  let variants: Post['variants']
+  let variants: Partial<Record<Platform, string>> | undefined
   if (r.variants && typeof r.variants === 'object') {
-    for (const [k, v] of Object.entries(r.variants as Record<string, unknown>)) {
-      if (PLATFORM_SET.has(k) && typeof v === 'string' && v.trim()) (variants ??= {})[k as Platform] = v
+    for (const [k, val] of Object.entries(r.variants as Record<string, unknown>)) {
+      if (PLATFORM_SET.has(k) && typeof val === 'string' && val.trim()) (variants ??= {})[k as Platform] = val
     }
   }
 
-  const tags = Array.isArray(r.tags)
-    ? r.tags
-        .filter((t): t is string => typeof t === 'string')
-        .map(t => t.trim())
-        .filter(Boolean)
-    : []
+  if (platforms.length === 0 && !metrics && !variants) return undefined
+  return { platforms, metrics, variants }
+}
 
-  const mediaIds = Array.isArray(r.mediaIds) ? r.mediaIds.filter((x): x is string => typeof x === 'string') : []
+function urlOrUndefined(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  return s ? s : undefined
+}
+
+/** Coerce arbitrary data into a valid Task, repairing what it can. */
+export function sanitizeTask(raw: unknown): Task | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id) return null
+
+  const dueAt = isoDate(r.dueAt)
+  let completedAt = isoDate(r.completedAt)
+  const status: TaskStatus =
+    typeof r.status === 'string' && TASK_STATUS_SET.has(r.status) ? (r.status as TaskStatus) : completedAt ? 'done' : 'todo'
+  const now = new Date().toISOString()
+  if (status === 'done') completedAt = completedAt ?? dueAt ?? now
+  else completedAt = undefined
 
   const rawFreq = r.recurrence && typeof r.recurrence === 'object' ? (r.recurrence as { freq?: unknown }).freq : undefined
-  const recurrence =
-    typeof rawFreq === 'string' && FREQ_SET.has(rawFreq)
-      ? { freq: rawFreq as 'weekly' | 'biweekly' | 'monthly' }
-      : undefined
+  const recurrence = typeof rawFreq === 'string' && FREQ_SET.has(rawFreq) ? { freq: rawFreq as RecurrenceFreq } : undefined
 
   return {
+    kind: 'task',
     id,
     title: str(r.title) ?? '',
-    body: str(r.body) ?? '',
-    platforms,
+    description: str(r.description) ?? str(r.body) ?? '',
     status,
-    createdAt: isoDate(r.createdAt) ?? postedAt ?? now,
-    updatedAt: isoDate(r.updatedAt) ?? postedAt ?? now,
-    scheduledFor,
-    postedAt,
-    tags,
+    priority: typeof r.priority === 'string' && PRIORITY_SET.has(r.priority) ? (r.priority as Priority) : 'normal',
+    projectId: urlOrUndefined(r.projectId),
+    dueAt,
+    completedAt,
+    createdAt: isoDate(r.createdAt) ?? completedAt ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? completedAt ?? now,
+    tags: strList(r.tags),
     notes: str(r.notes)?.trim() || undefined,
-    link: str(r.link)?.trim() || undefined,
-    metrics,
-    variants,
-    mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+    link: urlOrUndefined(r.link),
+    githubUrl: urlOrUndefined(r.githubUrl),
+    checklist: checklist(r.checklist),
+    comments: comments(r.comments),
+    mediaIds: idList(r.mediaIds),
     recurrence,
+    social: social(r.social),
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+/** Coerce arbitrary data into a valid Project. */
+export function sanitizeProject(raw: unknown): Project | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id) return null
+  const now = new Date().toISOString()
+  const color = str(r.color)?.trim()
+  return {
+    kind: 'project',
+    id,
+    name: str(r.name)?.trim() || 'Untitled project',
+    description: str(r.description)?.trim() || undefined,
+    color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
+    emoji: str(r.emoji)?.trim() || undefined,
+    status:
+      typeof r.status === 'string' && PROJECT_STATUS_SET.has(r.status) ? (r.status as ProjectStatus) : 'active',
+    startAt: isoDate(r.startAt),
+    targetAt: isoDate(r.targetAt),
+    milestones: milestones(r.milestones),
+    githubUrl: urlOrUndefined(r.githubUrl),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
   }
 }
 
 /**
- * Parse any stored/exported payload into posts. Accepts the v1 bare array and
- * the v2 `{ version, posts }` wrapper. Returns null if the shape is unrecognized.
+ * Coerce any record — task, project, or a pre-v3 post — into a valid Item.
+ * Returns null if unusable.
  */
-export function migrateStored(data: unknown): Post[] | null {
-  const list = Array.isArray(data)
-    ? data
-    : data && typeof data === 'object' && Array.isArray((data as { posts?: unknown }).posts)
-      ? ((data as { posts: unknown[] }).posts)
-      : null
+export function sanitizeItem(raw: unknown): Item | null {
+  if (!raw || typeof raw !== 'object') return null
+  const converted = legacyPostToTask(raw) as Record<string, unknown>
+  if (converted.kind === 'project') return sanitizeProject(converted)
+  return sanitizeTask(converted)
+}
+
+/**
+ * Parse any stored/exported payload into items. Accepts the v1 bare array,
+ * the v2 `{ version, posts }` wrapper and the v3 `{ version, items }` wrapper.
+ * Returns null if the shape is unrecognized.
+ */
+export function migrateStored(data: unknown): Item[] | null {
+  let list: unknown[] | null = null
+  if (Array.isArray(data)) list = data
+  else if (data && typeof data === 'object') {
+    const d = data as { items?: unknown; posts?: unknown }
+    if (Array.isArray(d.items)) list = d.items
+    else if (Array.isArray(d.posts)) list = d.posts
+  }
   if (!list) return null
-  return list.map(sanitizePost).filter((p): p is Post => p !== null)
+  return list.map(sanitizeItem).filter((p): p is Item => p !== null)
 }

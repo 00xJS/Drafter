@@ -1,8 +1,8 @@
-import { Post } from './types'
+import { OPEN_STATUSES, Task } from './types'
 import { excerpt } from './utils'
 
 // Reminders are device-local by design: each open device notifies once per
-// post. Nothing here writes to the synced store (a UI event must never win a
+// task. Nothing here writes to the synced store (a UI event must never win a
 // data merge). While the app is closed no reminder fires — server-side push
 // would be the upgrade path.
 
@@ -58,19 +58,22 @@ async function show(title: string, body: string): Promise<boolean> {
   }
 }
 
-const MAX_AGE_MS = 86_400_000 // don't nag about posts overdue by more than a day
+const MAX_AGE_MS = 86_400_000 // don't nag about tasks overdue by more than a day
 
-/** Fire a reminder for every scheduled post whose time has arrived. */
-export async function notifyDue(posts: Post[]): Promise<void> {
+/** Fire a reminder for every open task whose due time has arrived. */
+export async function notifyDue(tasks: Task[]): Promise<void> {
   if (!notificationsSupported() || Notification.permission !== 'granted') return
   const now = Date.now()
   const already = seen()
   let dirty = false
-  for (const p of posts) {
-    if (p.status !== 'scheduled' || !p.scheduledFor || p.deletedAt || already.has(p.id)) continue
-    const due = new Date(p.scheduledFor).getTime()
+  for (const p of tasks) {
+    if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt || already.has(p.id)) continue
+    const due = new Date(p.dueAt).getTime()
     if (due <= now && now - due < MAX_AGE_MS) {
-      const shown = await show(`Time to post: ${p.title || 'Untitled'}`, excerpt(p.body, 120) || 'Open Drafter to copy the content.')
+      const shown = await show(
+        `${p.social ? 'Time to post' : 'Due now'}: ${p.title || 'Untitled'}`,
+        excerpt(p.description, 120) || 'Open Drafter for the details.',
+      )
       if (shown) {
         already.add(p.id)
         dirty = true

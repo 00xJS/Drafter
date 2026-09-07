@@ -1,23 +1,31 @@
 import { useMemo, useState } from 'react'
-import { PLATFORM_META, Post, STATUS_META } from '../types'
+import { Project, STATUS_META, Task } from '../types'
 import { dateKey, fmtTime } from '../utils'
+import { ProjectChip } from './bits'
 
 interface Props {
-  posts: Post[]
-  onOpen(p: Post): void
-  onNew(scheduledForIso: string): void
+  tasks: Task[]
+  projectMap: Map<string, Project>
+  onOpen(t: Task): void
+  onNew(dueAtIso: string): void
   onReschedule(id: string, day: Date): void
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-function postDate(p: Post): string | undefined {
-  if (p.status === 'canceled') return undefined
-  if (p.status === 'posted') return p.postedAt ?? p.scheduledFor
-  return p.scheduledFor
+/** The day a task shows on: its due date, or the day it was completed. */
+function taskDate(t: Task): string | undefined {
+  if (t.status === 'canceled') return undefined
+  if (t.status === 'done') return t.completedAt ?? t.dueAt
+  return t.dueAt
 }
 
-export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
+function hasClock(iso: string): boolean {
+  const d = new Date(iso)
+  return d.getHours() + d.getMinutes() > 0
+}
+
+export function Calendar({ tasks, projectMap, onOpen, onNew, onReschedule }: Props) {
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -25,36 +33,32 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
   const [sheetDay, setSheetDay] = useState<Date | null>(null)
 
   const byDay = useMemo(() => {
-    const map = new Map<string, Post[]>()
-    for (const p of posts) {
-      const d = postDate(p)
+    const map = new Map<string, Task[]>()
+    for (const t of tasks) {
+      const d = taskDate(t)
       if (!d) continue
       const k = dateKey(d)
       const arr = map.get(k) ?? []
-      arr.push(p)
+      arr.push(t)
       map.set(k, arr)
     }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => (postDate(a) ?? '').localeCompare(postDate(b) ?? ''))
-    }
+    for (const arr of map.values()) arr.sort((a, b) => (taskDate(a) ?? '').localeCompare(taskDate(b) ?? ''))
     return map
-  }, [posts])
+  }, [tasks])
 
   const cells = useMemo(() => {
     const offset = (cursor.getDay() + 6) % 7 // Monday-start week
     const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
     const total = Math.ceil((offset + daysInMonth) / 7) * 7
     const out: Date[] = []
-    for (let i = 0; i < total; i++) {
-      out.push(new Date(cursor.getFullYear(), cursor.getMonth(), 1 - offset + i))
-    }
+    for (let i = 0; i < total; i++) out.push(new Date(cursor.getFullYear(), cursor.getMonth(), 1 - offset + i))
     return out
   }, [cursor])
 
   const todayKey = dateKey(new Date())
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
   const shift = (delta: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1))
-  const sheetPosts = sheetDay ? (byDay.get(dateKey(sheetDay)) ?? []) : []
+  const sheetTasks = sheetDay ? (byDay.get(dateKey(sheetDay)) ?? []) : []
 
   return (
     <div className="calendar">
@@ -77,7 +81,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
         >
           Today
         </button>
-        <span className="cal-hint">Tap a day for its schedule · drag a pill to reschedule</span>
+        <span className="cal-hint">Tap a day for its tasks · drag a pill to move its due date</span>
       </div>
 
       <div className="cal-grid cal-head-row">
@@ -91,8 +95,8 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
         {cells.map(d => {
           const k = dateKey(d)
           const inMonth = d.getMonth() === cursor.getMonth()
-          const dayPosts = byDay.get(k) ?? []
-          const shown = dayPosts.slice(0, 3)
+          const dayTasks = byDay.get(k) ?? []
+          const shown = dayTasks.slice(0, 3)
           return (
             <div
               key={k}
@@ -106,30 +110,34 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
               }}
             >
               <div className="cal-daynum">{d.getDate()}</div>
-              {shown.map(p => {
-                const when = postDate(p)
+              {shown.map(t => {
+                const when = taskDate(t)
+                const project = t.projectId ? projectMap.get(t.projectId) : undefined
                 return (
                   <button
-                    key={p.id}
-                    className="cal-pill"
-                    style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}
-                    draggable={p.status !== 'posted'}
+                    key={t.id}
+                    className={t.status === 'done' ? 'cal-pill done' : 'cal-pill'}
+                    style={{
+                      background: project ? project.color + '22' : STATUS_META[t.status].bg,
+                      color: project ? project.color : STATUS_META[t.status].color,
+                    }}
+                    draggable={t.status !== 'done'}
                     onDragStart={e => {
-                      e.dataTransfer.setData('text/plain', p.id)
+                      e.dataTransfer.setData('text/plain', t.id)
                       e.dataTransfer.effectAllowed = 'move'
                     }}
                     onClick={e => {
                       e.stopPropagation()
-                      onOpen(p)
+                      onOpen(t)
                     }}
-                    title={`${when ? fmtTime(when) + ' · ' : ''}${p.title || 'Untitled'}`}
+                    title={`${when && hasClock(when) ? fmtTime(when) + ' · ' : ''}${t.title || 'Untitled'}${project ? ' · ' + project.name : ''}`}
                   >
-                    {when && <span className="cal-pill-time">{fmtTime(when)}</span>}
-                    <span className="cal-pill-title">{p.title || 'Untitled'}</span>
+                    {when && hasClock(when) && <span className="cal-pill-time">{fmtTime(when)}</span>}
+                    <span className="cal-pill-title">{t.title || 'Untitled'}</span>
                   </button>
                 )
               })}
-              {dayPosts.length > 3 && <div className="cal-more">+{dayPosts.length - 3} more</div>}
+              {dayTasks.length > 3 && <div className="cal-more">+{dayTasks.length - 3} more</div>}
             </div>
           )
         })}
@@ -145,37 +153,34 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
               </button>
             </header>
             <div className="modal-body">
-              {sheetPosts.length === 0 ? (
+              {sheetTasks.length === 0 ? (
                 <p className="empty">Nothing on this day yet.</p>
               ) : (
                 <ul className="dash-list">
-                  {sheetPosts.map(p => (
-                    <li
-                      key={p.id}
-                      onClick={() => {
-                        setSheetDay(null)
-                        onOpen(p)
-                      }}
-                    >
-                      <div className="dash-main">
-                        <span className="dash-title">{p.title || p.body.slice(0, 50) || 'Untitled'}</span>
-                        <span className="dash-meta">
-                          <span
-                            className="badge"
-                            style={{ background: STATUS_META[p.status].bg, color: STATUS_META[p.status].color }}
-                          >
-                            {STATUS_META[p.status].label}
-                          </span>
-                          {p.platforms.map(pl => (
-                            <span key={pl} className="chip platform" style={{ background: PLATFORM_META[pl].color }}>
-                              {PLATFORM_META[pl].short}
+                  {sheetTasks.map(t => {
+                    const when = taskDate(t)
+                    const project = t.projectId ? projectMap.get(t.projectId) : undefined
+                    return (
+                      <li
+                        key={t.id}
+                        onClick={() => {
+                          setSheetDay(null)
+                          onOpen(t)
+                        }}
+                      >
+                        <div className="dash-main">
+                          <span className="dash-title">{t.title || t.description.slice(0, 50) || 'Untitled'}</span>
+                          <span className="dash-meta">
+                            <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                              {STATUS_META[t.status].label}
                             </span>
-                          ))}
-                        </span>
-                      </div>
-                      <strong className="day-time">{fmtTime(postDate(p))}</strong>
-                    </li>
-                  ))}
+                            {project && <ProjectChip project={project} />}
+                          </span>
+                        </div>
+                        {when && hasClock(when) && <strong className="day-time">{fmtTime(when)}</strong>}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -189,7 +194,7 @@ export function Calendar({ posts, onOpen, onNew, onReschedule }: Props) {
                   onNew(at.toISOString())
                 }}
               >
-                + New post this day
+                + New task this day
               </button>
             </footer>
           </div>

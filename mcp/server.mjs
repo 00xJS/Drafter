@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Drafter MCP server — purpose-built tools for AI agents to manage the planner.
+// Drafter MCP server — purpose-built tools for AI agents to manage the planner:
+// projects, tasks (due dates, priorities, checklists, comments) and the social
+// posting extension.
 //
 // Zero dependencies: speaks MCP's stdio transport (newline-delimited JSON-RPC 2.0)
 // directly, and talks to the Supabase backend with fetch. Node 18+.
@@ -10,10 +12,24 @@
 //   node mcp/server.mjs
 //
 // Every write goes through the sync_posts RPC, so the same last-write-wins
-// merge that protects the app protects agent edits too.
+// merge that protects the app protects agent edits too. Pre-v3 rows (social
+// posts) are converted to tasks on read, exactly like the app does.
 
 import { createInterface } from 'node:readline'
 import { randomBytes } from 'node:crypto'
+import {
+  PLATFORMS,
+  PRIORITIES,
+  PROJECT_STATUSES,
+  RECURRENCE_FREQS,
+  SOCIAL_PROJECT_ID,
+  TASK_STATUSES,
+  cleanMetrics,
+  engagement,
+  legacyPostToTask,
+  newerStamp,
+  nextOccurrence,
+} from '../shared/domain.mjs'
 
 const BASE = process.env.SUPABASE_URL
 const KEY = process.env.SUPABASE_SERVICE_KEY
@@ -21,9 +37,8 @@ const KEY = process.env.SUPABASE_SERVICE_KEY
 // support, which this server does not implement.
 const PROTOCOL_VERSIONS = ['2025-06-18', '2024-11-05']
 
-const PLATFORMS = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
-const STATUSES = ['idea', 'draft', 'scheduled', 'posted', 'canceled']
 const DAY = 86_400_000
+const OPEN = ['todo', 'doing', 'blocked']
 
 // ---------------------------------------------------------------------------
 // Supabase access
@@ -51,25 +66,35 @@ async function api(path, init = {}) {
   return text ? JSON.parse(text) : null
 }
 
-/** Write posts through the LWW merge; returns the full current post list. */
-async function syncWrite(posts) {
-  return api('/rest/v1/rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: posts }) })
+/** Write items through the LWW merge; returns the full current item list (normalized). */
+async function syncWrite(items) {
+  const all = await api('/rest/v1/rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: items }) })
+  return all.map(legacyPostToTask)
 }
 
-async function fetchPost(id) {
+/** All live rows, normalized to v3 shape. */
+async function fetchAll() {
+  const rows = await api('/rest/v1/posts?select=data&deleted=is.false&order=updated_at.desc')
+  return rows.map(r => legacyPostToTask(r.data))
+}
+
+async function fetchItem(id, kind) {
   const rows = await api(`/rest/v1/posts?id=eq.${encodeURIComponent(id)}&select=data`)
-  const post = rows?.[0]?.data
-  if (!post) throw new Error(`No post with id "${id}".`)
-  if (post.deletedAt) throw new Error(`Post "${id}" is deleted.`)
-  return post
+  const item = rows?.[0]?.data ? legacyPostToTask(rows[0].data) : null
+  if (!item) throw new Error(`No ${kind} with id "${id}".`)
+  if (item.deletedAt) throw new Error(`${kind} "${id}" is deleted.`)
+  if (item.kind !== kind) throw new Error(`"${id}" is a ${item.kind}, not a ${kind}.`)
+  return item
 }
+const fetchTask = id => fetchItem(id, 'task')
+const fetchProject = id => fetchItem(id, 'project')
 
-/** Persist one edited post and confirm the write won the merge. */
-async function writePost(post) {
-  const all = await syncWrite([post])
-  const stored = all.find(p => p.id === post.id)
-  if (!stored || stored.updatedAt !== post.updatedAt) {
-    throw new Error('Write was rejected by the last-write-wins merge (a newer copy exists). Re-read the post and retry.')
+/** Persist one edited item and confirm the write won the merge. */
+async function writeItem(item) {
+  const all = await syncWrite([item])
+  const stored = all.find(p => p.id === item.id)
+  if (!stored || stored.updatedAt !== item.updatedAt) {
+    throw new Error('Write was rejected by the last-write-wins merge (a newer copy exists). Re-read the item and retry.')
   }
   return stored
 }
@@ -79,28 +104,6 @@ async function writePost(post) {
 // ---------------------------------------------------------------------------
 
 const now = () => new Date().toISOString()
-
-/**
- * A stamp guaranteed strictly newer than the previous one, so an edit always
- * wins the strictly-newer-wins merge against the copy it was based on — and
- * writePost's equality check is then a sound success signal.
- */
-function newerStamp(prevIso) {
-  const prev = prevIso ? Date.parse(prevIso) : 0
-  return new Date(Math.max(Date.now(), (Number.isFinite(prev) ? prev : 0) + 1)).toISOString()
-}
-
-const METRIC_KEYS = ['likes', 'comments', 'shares', 'impressions']
-
-/** Keep only known metric fields with finite non-negative numeric values. */
-function cleanMetrics(raw) {
-  const out = {}
-  for (const key of METRIC_KEYS) {
-    const n = Number(raw?.[key])
-    if (Number.isFinite(n) && n >= 0) out[key] = Math.round(n)
-  }
-  return out
-}
 
 function newId() {
   return `mcp-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
@@ -112,6 +115,11 @@ function isoOrThrow(value, field) {
   return d.toISOString()
 }
 
+function oneOf(value, list, field) {
+  if (!list.includes(value)) throw new Error(`Invalid ${field} "${value}". Valid: ${list.join(', ')}`)
+  return value
+}
+
 function checkPlatforms(platforms) {
   if (!Array.isArray(platforms) || platforms.length === 0) throw new Error('platforms must be a non-empty array')
   const bad = platforms.filter(p => !PLATFORMS.includes(p))
@@ -119,52 +127,45 @@ function checkPlatforms(platforms) {
   return platforms
 }
 
-function engagementOf(post) {
-  let sum = 0
-  for (const m of Object.values(post.metrics ?? {})) {
-    sum += (m?.likes ?? 0) + (m?.comments ?? 0) + (m?.shares ?? 0)
-  }
-  return sum
+function applyStatus(task, status) {
+  task.status = oneOf(status, TASK_STATUSES, 'status')
+  if (status === 'done') task.completedAt = task.completedAt ?? now()
+  else delete task.completedAt
 }
 
-function summarize(post) {
+function summarizeTask(t) {
   return {
-    id: post.id,
-    title: post.title || null,
-    body: (post.body ?? '').length > 120 ? post.body.slice(0, 120) + '…' : post.body,
-    status: post.status,
-    platforms: post.platforms,
-    scheduledFor: post.scheduledFor ?? null,
-    postedAt: post.postedAt ?? null,
-    tags: post.tags ?? [],
-    recurrence: post.recurrence?.freq ?? null,
-    engagement: post.status === 'posted' ? engagementOf(post) : null,
+    id: t.id,
+    title: t.title || null,
+    description: (t.description ?? '').length > 120 ? t.description.slice(0, 120) + '…' : t.description,
+    status: t.status,
+    priority: t.priority ?? 'normal',
+    projectId: t.projectId ?? null,
+    dueAt: t.dueAt ?? null,
+    completedAt: t.completedAt ?? null,
+    tags: t.tags ?? [],
+    checklist: t.checklist ? `${t.checklist.filter(c => c.done).length}/${t.checklist.length}` : null,
+    comments: t.comments?.length ?? 0,
+    githubUrl: t.githubUrl ?? null,
+    recurrence: t.recurrence?.freq ?? null,
+    social: t.social ? { platforms: t.social.platforms, engagement: t.status === 'done' ? engagement({ metrics: t.social.metrics }) : null } : null,
   }
 }
 
-/** The app spawns the next occurrence when a recurring post is completed; mirror that. */
-function nextOccurrence(post) {
-  if (!post.recurrence) return null
-  const base = new Date(post.postedAt ?? post.scheduledFor ?? Date.now())
-  if (isNaN(base.getTime())) return null
-  const next = new Date(base)
-  if (post.recurrence.freq === 'weekly') next.setDate(next.getDate() + 7)
-  else if (post.recurrence.freq === 'biweekly') next.setDate(next.getDate() + 14)
-  else next.setMonth(next.getMonth() + 1)
-  const stamp = now()
+function summarizeProject(p, tasks = []) {
+  const live = tasks.filter(t => t.status !== 'canceled')
+  const done = live.filter(t => t.status === 'done').length
   return {
-    id: newId(),
-    title: post.title,
-    body: post.body,
-    platforms: [...post.platforms],
-    status: 'scheduled',
-    createdAt: stamp,
-    updatedAt: stamp,
-    scheduledFor: next.toISOString(),
-    tags: [...(post.tags ?? [])],
-    notes: post.notes,
-    variants: post.variants ? { ...post.variants } : undefined,
-    recurrence: { ...post.recurrence },
+    id: p.id,
+    name: p.name,
+    emoji: p.emoji ?? null,
+    status: p.status,
+    description: p.description ?? null,
+    startAt: p.startAt ?? null,
+    targetAt: p.targetAt ?? null,
+    milestones: p.milestones ?? [],
+    githubUrl: p.githubUrl ?? null,
+    tasks: { total: live.length, done, open: live.filter(t => OPEN.includes(t.status)).length },
   }
 }
 
@@ -174,222 +175,337 @@ function nextOccurrence(post) {
 
 const TOOLS = [
   {
-    name: 'list_posts',
-    description:
-      'List posts, newest first. Filter by status (idea|draft|scheduled|posted|canceled) and/or a search term matched against title, body, and tags. Returns compact summaries; use get_post for full detail.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', enum: STATUSES, description: 'Only posts with this status' },
-        search: { type: 'string', description: 'Case-insensitive term matched against title, body, and tags' },
-        limit: { type: 'number', description: 'Max results (default 20, max 100)' },
-      },
-    },
-    async run({ status, search, limit }) {
-      const SCAN = 1000
-      let path = `/rest/v1/posts?select=data&deleted=is.false&order=updated_at.desc&limit=${SCAN}`
-      if (status) {
-        if (!STATUSES.includes(status)) throw new Error(`Invalid status "${status}". Valid: ${STATUSES.join(', ')}`)
-        path += `&status=eq.${status}`
-      }
-      const rows = await api(path)
-      let posts = rows.map(r => r.data)
-      if (search) {
-        const needle = String(search).toLowerCase()
-        posts = posts.filter(p =>
-          `${p.title ?? ''} ${p.body ?? ''} ${(p.tags ?? []).join(' ')}`.toLowerCase().includes(needle),
-        )
-      }
-      const cap = Math.min(Math.max(Number(limit) || 20, 1), 100)
-      return {
-        count: posts.length,
-        showing: Math.min(cap, posts.length),
-        ...(rows.length === SCAN ? { note: `search/count covered only the ${SCAN} most recently updated posts` } : {}),
-        posts: posts.slice(0, cap).map(summarize),
-      }
+    name: 'list_projects',
+    description: 'List projects with task counts. Includes archived ones only when includeArchived is true.',
+    inputSchema: { type: 'object', properties: { includeArchived: { type: 'boolean' } } },
+    async run({ includeArchived }) {
+      const all = await fetchAll()
+      const tasks = all.filter(i => i.kind === 'task')
+      const projects = all.filter(i => i.kind === 'project' && (includeArchived || i.status !== 'archived'))
+      return { count: projects.length, projects: projects.map(p => summarizeProject(p, tasks.filter(t => t.projectId === p.id))) }
     },
   },
   {
-    name: 'get_post',
-    description: 'Fetch one post in full (body, variants, metrics, notes, everything) by id.',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string' } },
-      required: ['id'],
-    },
-    async run({ id }) {
-      return fetchPost(id)
-    },
-  },
-  {
-    name: 'create_draft',
-    description:
-      'Create a new post. Defaults to status "draft"; pass scheduledFor (ISO datetime) to create it scheduled instead. Platforms: x, instagram, threads, linkedin, facebook, tiktok, youtube. Keep X bodies within 280 characters (use variants for per-platform text).',
+    name: 'create_project',
+    description: 'Create a project (a container for tasks, shown on the roadmap). Dates are ISO; color is a hex string.',
     inputSchema: {
       type: 'object',
       properties: {
-        body: { type: 'string', description: 'The post text' },
-        platforms: { type: 'array', items: { type: 'string', enum: PLATFORMS } },
-        title: { type: 'string', description: 'Internal title (not published)' },
-        tags: { type: 'array', items: { type: 'string' } },
-        notes: { type: 'string', description: 'Internal notes for the human reviewer' },
-        scheduledFor: { type: 'string', description: 'ISO datetime; if set, the post is created as scheduled' },
-        variants: {
-          type: 'object',
-          description: 'Optional per-platform text overrides, e.g. {"x": "short version"}',
-          additionalProperties: { type: 'string' },
-        },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        emoji: { type: 'string' },
+        color: { type: 'string', description: 'Hex color, e.g. #4f46e5' },
+        startAt: { type: 'string' },
+        targetAt: { type: 'string' },
+        githubUrl: { type: 'string', description: 'Repo or GitHub Projects URL' },
+        milestones: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, dueAt: { type: 'string' } }, required: ['name'] } },
       },
-      required: ['body', 'platforms'],
+      required: ['name'],
     },
-    async run({ body, platforms, title, tags, notes, scheduledFor, variants }) {
-      if (!body || !String(body).trim()) throw new Error('body must not be empty')
-      checkPlatforms(platforms)
+    async run({ name, description, emoji, color, startAt, targetAt, githubUrl, milestones }) {
+      if (!name || !String(name).trim()) throw new Error('name must not be empty')
       const stamp = now()
-      const post = {
+      const project = {
+        kind: 'project',
         id: newId(),
-        title: title ? String(title) : '',
-        body: String(body),
-        platforms,
-        status: scheduledFor ? 'scheduled' : 'draft',
+        name: String(name).trim(),
+        description: description ? String(description) : undefined,
+        emoji: emoji ? String(emoji) : undefined,
+        color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#4f46e5',
+        status: 'active',
+        startAt: startAt ? isoOrThrow(startAt, 'startAt') : undefined,
+        targetAt: targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined,
+        githubUrl: githubUrl ? String(githubUrl) : undefined,
+        milestones: Array.isArray(milestones)
+          ? milestones.filter(m => m && m.name).map(m => ({ id: newId(), name: String(m.name), dueAt: m.dueAt ? isoOrThrow(m.dueAt, 'milestone.dueAt') : undefined }))
+          : undefined,
         createdAt: stamp,
         updatedAt: stamp,
-        scheduledFor: scheduledFor ? isoOrThrow(scheduledFor, 'scheduledFor') : undefined,
-        tags: Array.isArray(tags) ? tags.map(String) : [],
-        notes: notes ? String(notes) : undefined,
-        variants:
-          variants && typeof variants === 'object'
-            ? Object.fromEntries(Object.entries(variants).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string'))
-            : undefined,
       }
-      await writePost(post)
-      return { created: summarize(post) }
+      await writeItem(project)
+      return { created: summarizeProject(project) }
     },
   },
   {
-    name: 'update_post',
-    description: 'Edit an existing post’s content fields (title, body, tags, notes, link, variants). Reads the latest copy first, so edits are merge-safe.',
+    name: 'update_project',
+    description: 'Edit a project: name, description, status (active|paused|done|archived), dates, GitHub URL, or add a milestone.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        status: { type: 'string', enum: PROJECT_STATUSES },
+        startAt: { type: 'string' },
+        targetAt: { type: 'string' },
+        githubUrl: { type: 'string' },
+        addMilestone: { type: 'object', properties: { name: { type: 'string' }, dueAt: { type: 'string' } }, required: ['name'] },
+        completeMilestone: { type: 'string', description: 'Name (or id) of a milestone to mark reached' },
+      },
+      required: ['id'],
+    },
+    async run({ id, name, description, status, startAt, targetAt, githubUrl, addMilestone, completeMilestone }) {
+      const project = await fetchProject(id)
+      if (name !== undefined) project.name = String(name).trim() || project.name
+      if (description !== undefined) project.description = String(description) || undefined
+      if (status !== undefined) project.status = oneOf(status, PROJECT_STATUSES, 'status')
+      if (startAt !== undefined) project.startAt = startAt ? isoOrThrow(startAt, 'startAt') : undefined
+      if (targetAt !== undefined) project.targetAt = targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined
+      if (githubUrl !== undefined) project.githubUrl = String(githubUrl) || undefined
+      if (addMilestone?.name) {
+        project.milestones = [...(project.milestones ?? []), { id: newId(), name: String(addMilestone.name), dueAt: addMilestone.dueAt ? isoOrThrow(addMilestone.dueAt, 'dueAt') : undefined }]
+      }
+      if (completeMilestone) {
+        const m = (project.milestones ?? []).find(x => x.id === completeMilestone || x.name.toLowerCase() === String(completeMilestone).toLowerCase())
+        if (!m) throw new Error(`No milestone "${completeMilestone}" on this project.`)
+        m.done = true
+      }
+      project.updatedAt = newerStamp(project.updatedAt)
+      await writeItem(project)
+      return { updated: summarizeProject(project) }
+    },
+  },
+  {
+    name: 'list_tasks',
+    description:
+      'List tasks, most urgent first (overdue → due soon → priority). Filters: status (wishlist|todo|doing|blocked|done|canceled, or "open" for todo+doing+blocked), projectId, dueBefore (ISO), search term (title, description, tags). Returns compact summaries; use get_task for full detail.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: [...TASK_STATUSES, 'open'] },
+        projectId: { type: 'string' },
+        dueBefore: { type: 'string', description: 'Only tasks due before this ISO datetime' },
+        search: { type: 'string' },
+        limit: { type: 'number', description: 'Max results (default 25, max 200)' },
+      },
+    },
+    async run({ status, projectId, dueBefore, search, limit }) {
+      let tasks = (await fetchAll()).filter(i => i.kind === 'task')
+      if (status) {
+        oneOf(status, [...TASK_STATUSES, 'open'], 'status')
+        tasks = tasks.filter(t => (status === 'open' ? OPEN.includes(t.status) : t.status === status))
+      }
+      if (projectId) tasks = tasks.filter(t => t.projectId === projectId)
+      if (dueBefore) {
+        const cutoff = isoOrThrow(dueBefore, 'dueBefore')
+        tasks = tasks.filter(t => t.dueAt && t.dueAt < cutoff)
+      }
+      if (search) {
+        const needle = String(search).toLowerCase()
+        tasks = tasks.filter(t => `${t.title ?? ''} ${t.description ?? ''} ${(t.tags ?? []).join(' ')}`.toLowerCase().includes(needle))
+      }
+      const rank = { urgent: 3, high: 2, normal: 1, low: 0 }
+      tasks.sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999') || (rank[b.priority] ?? 1) - (rank[a.priority] ?? 1) || b.updatedAt.localeCompare(a.updatedAt))
+      const cap = Math.min(Math.max(Number(limit) || 25, 1), 200)
+      return { count: tasks.length, showing: Math.min(cap, tasks.length), tasks: tasks.slice(0, cap).map(summarizeTask) }
+    },
+  },
+  {
+    name: 'get_task',
+    description: 'Fetch one task in full (description, checklist, comments, social fields, everything) by id.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    async run({ id }) {
+      return fetchTask(id)
+    },
+  },
+  {
+    name: 'create_task',
+    description:
+      'Create a task. Defaults: status "todo" (or "wishlist" if you say so), priority "normal". Give it a projectId from list_projects when it belongs somewhere. For a social post, pass social.platforms — the description is the post text (keep X within 280 characters; use social.variants for per-platform text).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        projectId: { type: 'string' },
+        status: { type: 'string', enum: TASK_STATUSES },
+        priority: { type: 'string', enum: PRIORITIES },
+        dueAt: { type: 'string', description: 'ISO datetime' },
+        tags: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
+        link: { type: 'string' },
+        githubUrl: { type: 'string', description: 'GitHub issue / PR / repo / project URL to link' },
+        checklist: { type: 'array', items: { type: 'string' }, description: 'Initial checklist steps' },
+        recurrence: { type: 'string', enum: RECURRENCE_FREQS },
+        social: {
+          type: 'object',
+          description: 'Makes this task a social post',
+          properties: {
+            platforms: { type: 'array', items: { type: 'string', enum: PLATFORMS } },
+            variants: { type: 'object', additionalProperties: { type: 'string' } },
+          },
+          required: ['platforms'],
+        },
+      },
+      required: ['title'],
+    },
+    async run({ title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, checklist, recurrence, social }) {
+      if (!title || !String(title).trim()) throw new Error('title must not be empty')
+      const stamp = now()
+      const task = {
+        kind: 'task',
+        id: newId(),
+        title: String(title).trim(),
+        description: description ? String(description) : '',
+        status: status ? oneOf(status, TASK_STATUSES, 'status') : 'todo',
+        priority: priority ? oneOf(priority, PRIORITIES, 'priority') : 'normal',
+        projectId: projectId ? String(projectId) : undefined,
+        dueAt: dueAt ? isoOrThrow(dueAt, 'dueAt') : undefined,
+        createdAt: stamp,
+        updatedAt: stamp,
+        tags: Array.isArray(tags) ? tags.map(String) : [],
+        notes: notes ? String(notes) : undefined,
+        link: link ? String(link) : undefined,
+        githubUrl: githubUrl ? String(githubUrl) : undefined,
+        checklist: Array.isArray(checklist) && checklist.length > 0 ? checklist.map(text => ({ id: newId(), text: String(text), done: false })) : undefined,
+        recurrence: recurrence ? { freq: oneOf(recurrence, RECURRENCE_FREQS, 'recurrence') } : undefined,
+      }
+      if (task.status === 'done') task.completedAt = stamp
+      if (social) {
+        checkPlatforms(social.platforms)
+        task.social = {
+          platforms: social.platforms,
+          variants:
+            social.variants && typeof social.variants === 'object'
+              ? Object.fromEntries(Object.entries(social.variants).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string'))
+              : undefined,
+        }
+        if (!task.projectId) task.projectId = SOCIAL_PROJECT_ID
+      }
+      if (task.projectId) {
+        const projects = (await fetchAll()).filter(i => i.kind === 'project')
+        if (!projects.some(p => p.id === task.projectId) && task.projectId !== SOCIAL_PROJECT_ID) {
+          throw new Error(`No project with id "${task.projectId}". Use list_projects.`)
+        }
+      }
+      await writeItem(task)
+      return { created: summarizeTask(task) }
+    },
+  },
+  {
+    name: 'update_task',
+    description:
+      'Edit a task. Any field you pass replaces the old value (status changes to "done" stamp completedAt and spawn the next occurrence of a repeating task). Reads the latest copy first, so edits are merge-safe.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string' },
         title: { type: 'string' },
-        body: { type: 'string' },
+        description: { type: 'string' },
+        projectId: { type: 'string', description: 'Empty string removes the task from its project' },
+        status: { type: 'string', enum: TASK_STATUSES },
+        priority: { type: 'string', enum: PRIORITIES },
+        dueAt: { type: 'string', description: 'ISO datetime; empty string clears it' },
         tags: { type: 'array', items: { type: 'string' } },
         notes: { type: 'string' },
         link: { type: 'string' },
-        variants: { type: 'object', additionalProperties: { type: 'string' } },
+        githubUrl: { type: 'string' },
+        addChecklist: { type: 'array', items: { type: 'string' }, description: 'Steps to append' },
+        tickChecklist: { type: 'array', items: { type: 'string' }, description: 'Checklist item texts (or ids) to mark done' },
+        variants: { type: 'object', additionalProperties: { type: 'string' }, description: 'Social per-platform overrides' },
       },
       required: ['id'],
     },
-    async run({ id, title, body, tags, notes, link, variants }) {
-      const post = await fetchPost(id)
-      if (title !== undefined) post.title = String(title)
-      if (body !== undefined) post.body = String(body)
-      if (tags !== undefined) post.tags = Array.isArray(tags) ? tags.map(String) : post.tags
-      if (notes !== undefined) post.notes = String(notes) || undefined
-      if (link !== undefined) post.link = String(link) || undefined
-      if (variants !== undefined && variants && typeof variants === 'object') {
-        post.variants = Object.fromEntries(
-          Object.entries(variants).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string' && v.trim()),
-        )
-        if (Object.keys(post.variants).length === 0) delete post.variants
+    async run({ id, title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, addChecklist, tickChecklist, variants }) {
+      const task = await fetchTask(id)
+      const wasDone = task.status === 'done'
+      if (title !== undefined) task.title = String(title)
+      if (description !== undefined) task.description = String(description)
+      if (projectId !== undefined) task.projectId = String(projectId) || undefined
+      if (priority !== undefined) task.priority = oneOf(priority, PRIORITIES, 'priority')
+      if (dueAt !== undefined) task.dueAt = dueAt ? isoOrThrow(dueAt, 'dueAt') : undefined
+      if (tags !== undefined) task.tags = Array.isArray(tags) ? tags.map(String) : task.tags
+      if (notes !== undefined) task.notes = String(notes) || undefined
+      if (link !== undefined) task.link = String(link) || undefined
+      if (githubUrl !== undefined) task.githubUrl = String(githubUrl) || undefined
+      if (Array.isArray(addChecklist) && addChecklist.length > 0) {
+        task.checklist = [...(task.checklist ?? []), ...addChecklist.map(text => ({ id: newId(), text: String(text), done: false }))]
       }
-      post.updatedAt = newerStamp(post.updatedAt)
-      await writePost(post)
-      return { updated: summarize(post) }
-    },
-  },
-  {
-    name: 'schedule_post',
-    description: 'Schedule a post (any non-posted status) for an ISO datetime. Use this to promote drafts and ideas onto the calendar.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        scheduledFor: { type: 'string', description: 'ISO datetime, e.g. 2026-09-01T09:00:00Z' },
-      },
-      required: ['id', 'scheduledFor'],
-    },
-    async run({ id, scheduledFor }) {
-      const post = await fetchPost(id)
-      if (post.status === 'posted') throw new Error('Post is already posted; scheduling it again is not allowed.')
-      post.status = 'scheduled'
-      post.scheduledFor = isoOrThrow(scheduledFor, 'scheduledFor')
-      post.updatedAt = newerStamp(post.updatedAt)
-      await writePost(post)
-      return { scheduled: summarize(post) }
-    },
-  },
-  {
-    name: 'mark_posted',
-    description:
-      'Mark a post as published. Optionally record when (postedAt, default now) and initial per-platform metrics. If the post repeats, its next occurrence is created automatically.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        postedAt: { type: 'string', description: 'ISO datetime (default: now)' },
-        metrics: {
-          type: 'object',
-          description: 'Per-platform metrics, e.g. {"x": {"likes": 10, "comments": 2, "shares": 1, "impressions": 900}}',
-          additionalProperties: { type: 'object' },
-        },
-      },
-      required: ['id'],
-    },
-    async run({ id, postedAt, metrics }) {
-      const post = await fetchPost(id)
-      const wasPosted = post.status === 'posted'
-      post.status = 'posted'
-      post.postedAt = postedAt ? isoOrThrow(postedAt, 'postedAt') : (post.postedAt ?? post.scheduledFor ?? now())
-      if (metrics && typeof metrics === 'object') {
-        post.metrics = post.metrics ?? {}
-        for (const [pl, m] of Object.entries(metrics)) {
-          if (PLATFORMS.includes(pl) && m && typeof m === 'object') {
-            post.metrics[pl] = { ...post.metrics[pl], ...cleanMetrics(m) }
-          }
+      if (Array.isArray(tickChecklist) && tickChecklist.length > 0) {
+        const wanted = tickChecklist.map(x => String(x).toLowerCase())
+        for (const c of task.checklist ?? []) {
+          if (wanted.includes(c.id) || wanted.includes(c.text.toLowerCase())) c.done = true
         }
       }
-      post.updatedAt = newerStamp(post.updatedAt)
-      const writes = [post]
+      if (variants !== undefined && task.social) {
+        task.social.variants = Object.fromEntries(Object.entries(variants ?? {}).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string' && v.trim()))
+        if (Object.keys(task.social.variants).length === 0) delete task.social.variants
+      }
+      if (status !== undefined) applyStatus(task, status)
+      task.updatedAt = newerStamp(task.updatedAt)
+      const writes = [task]
       let spawned = null
-      if (!wasPosted && post.recurrence) {
-        spawned = nextOccurrence(post)
-        delete post.recurrence
+      if (!wasDone && task.status === 'done' && task.recurrence) {
+        spawned = nextOccurrence(task, newId)
+        delete task.recurrence
         if (spawned) writes.push(spawned)
       }
       const all = await syncWrite(writes)
-      const stored = all.find(p => p.id === post.id)
-      if (!stored || stored.updatedAt !== post.updatedAt) {
-        throw new Error('Write was rejected by the last-write-wins merge (a newer copy exists). Re-read the post and retry.')
+      const stored = all.find(p => p.id === task.id)
+      if (!stored || stored.updatedAt !== task.updatedAt) {
+        throw new Error('Write was rejected by the last-write-wins merge (a newer copy exists). Re-read the task and retry.')
       }
-      return { posted: summarize(post), nextOccurrence: spawned ? summarize(spawned) : null }
+      return { updated: summarizeTask(task), nextOccurrence: spawned ? summarizeTask(spawned) : null }
     },
   },
   {
-    name: 'cancel_post',
-    description: 'Cancel (deny/discard) a post — the editorial "no". Keeps it visible in the Canceled lane; prefer this over delete_post.',
+    name: 'complete_task',
+    description: 'Mark a task done (optionally with a closing comment and, for social posts, per-platform metrics). Repeating tasks spawn their next occurrence.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string' },
-        reason: { type: 'string', description: 'Why it was canceled; appended to the post notes' },
+        comment: { type: 'string', description: 'Closing note appended to the comment trail' },
+        completedAt: { type: 'string', description: 'ISO datetime (default: now)' },
+        metrics: { type: 'object', description: 'Social posts only: {"x": {"likes": 10, "impressions": 900}}', additionalProperties: { type: 'object' } },
       },
       required: ['id'],
     },
-    async run({ id, reason }) {
-      const post = await fetchPost(id)
-      post.status = 'canceled'
-      if (reason) post.notes = [post.notes, `Canceled: ${reason}`].filter(Boolean).join('\n')
-      post.updatedAt = newerStamp(post.updatedAt)
-      await writePost(post)
-      return { canceled: summarize(post) }
+    async run({ id, comment, completedAt, metrics }) {
+      const task = await fetchTask(id)
+      const wasDone = task.status === 'done'
+      task.status = 'done'
+      task.completedAt = completedAt ? isoOrThrow(completedAt, 'completedAt') : (task.completedAt ?? now())
+      if (comment) task.comments = [...(task.comments ?? []), { id: newId(), body: String(comment), createdAt: now() }]
+      if (metrics && typeof metrics === 'object' && task.social) {
+        task.social.metrics = task.social.metrics ?? {}
+        for (const [pl, m] of Object.entries(metrics)) {
+          if (PLATFORMS.includes(pl) && m && typeof m === 'object') task.social.metrics[pl] = { ...task.social.metrics[pl], ...cleanMetrics(m) }
+        }
+      }
+      task.updatedAt = newerStamp(task.updatedAt)
+      const writes = [task]
+      let spawned = null
+      if (!wasDone && task.recurrence) {
+        spawned = nextOccurrence(task, newId)
+        delete task.recurrence
+        if (spawned) writes.push(spawned)
+      }
+      const all = await syncWrite(writes)
+      const stored = all.find(p => p.id === task.id)
+      if (!stored || stored.updatedAt !== task.updatedAt) {
+        throw new Error('Write was rejected by the last-write-wins merge (a newer copy exists). Re-read the task and retry.')
+      }
+      return { completed: summarizeTask(task), nextOccurrence: spawned ? summarizeTask(spawned) : null }
+    },
+  },
+  {
+    name: 'add_comment',
+    description: 'Append a comment to a task’s trail: progress notes, decisions, blockers, links. Comments are timestamped and never overwrite each other.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, body: { type: 'string' } }, required: ['id', 'body'] },
+    async run({ id, body }) {
+      if (!body || !String(body).trim()) throw new Error('body must not be empty')
+      const task = await fetchTask(id)
+      const comment = { id: newId(), body: String(body).trim(), createdAt: now() }
+      task.comments = [...(task.comments ?? []), comment]
+      task.updatedAt = newerStamp(task.updatedAt)
+      await writeItem(task)
+      return { added: comment, commentCount: task.comments.length }
     },
   },
   {
     name: 'log_metrics',
-    description: 'Add or update engagement metrics (likes, comments, shares, impressions) for one platform on a posted post.',
+    description: 'Social posts only: add or update engagement metrics (likes, comments, shares, impressions) for one platform on a completed post.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -404,60 +520,50 @@ const TOOLS = [
     },
     async run({ id, platform, likes, comments, shares, impressions }) {
       if (!PLATFORMS.includes(platform)) throw new Error(`Unknown platform "${platform}"`)
-      const post = await fetchPost(id)
-      post.metrics = post.metrics ?? {}
-      post.metrics[platform] = { ...post.metrics[platform], ...cleanMetrics({ likes, comments, shares, impressions }) }
-      post.updatedAt = newerStamp(post.updatedAt)
-      await writePost(post)
-      return { updated: { id: post.id, metrics: post.metrics } }
+      const task = await fetchTask(id)
+      if (!task.social) throw new Error('This task is not a social post.')
+      task.social.metrics = task.social.metrics ?? {}
+      task.social.metrics[platform] = { ...task.social.metrics[platform], ...cleanMetrics({ likes, comments, shares, impressions }) }
+      task.updatedAt = newerStamp(task.updatedAt)
+      await writeItem(task)
+      return { updated: { id: task.id, metrics: task.social.metrics } }
     },
   },
   {
-    name: 'delete_post',
-    description: 'Soft-delete a post (tombstone). Reserved for true junk — for editorial rejection use cancel_post instead.',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string' } },
-      required: ['id'],
-    },
+    name: 'delete_task',
+    description: 'Soft-delete a task (tombstone). Reserved for true junk — to drop something on purpose set status "canceled" with update_task instead.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     async run({ id }) {
-      const post = await fetchPost(id)
-      post.deletedAt = now()
-      post.updatedAt = newerStamp(post.updatedAt)
-      await writePost(post)
+      const task = await fetchTask(id)
+      task.deletedAt = now()
+      task.updatedAt = newerStamp(task.updatedAt)
+      await writeItem(task)
       return { deleted: id }
     },
   },
   {
-    name: 'get_stats',
-    description: 'Pipeline overview: counts by status, what’s upcoming and overdue, when the last post went out, and 30-day output. Same numbers as the app’s dashboard.',
+    name: 'get_overview',
+    description: 'The Today page as data: counts by status, overdue / due today / due this week, blocked items, per-project progress, and what was completed in the last 7 days.',
     inputSchema: { type: 'object', properties: {} },
     async run() {
-      const posts = (await api('/rest/v1/posts?select=data&deleted=is.false')).map(r => r.data)
+      const all = await fetchAll()
+      const tasks = all.filter(i => i.kind === 'task')
+      const projects = all.filter(i => i.kind === 'project' && i.status !== 'archived')
       const nowMs = Date.now()
+      const startOfToday = new Date()
+      startOfToday.setHours(0, 0, 0, 0)
+      const endOfToday = startOfToday.getTime() + DAY
       const at = iso => (iso ? new Date(iso).getTime() : NaN)
-      const of = status => posts.filter(p => p.status === status)
-      const scheduled = of('scheduled')
-      const upcoming = scheduled
-        .filter(p => p.scheduledFor && at(p.scheduledFor) > nowMs)
-        .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
-      const overdue = scheduled.filter(p => p.scheduledFor && at(p.scheduledFor) <= nowMs)
-      const posted = of('posted')
-        .filter(p => p.postedAt)
-        .sort((a, b) => b.postedAt.localeCompare(a.postedAt))
+      const open = tasks.filter(t => OPEN.includes(t.status))
+      const counts = Object.fromEntries(TASK_STATUSES.map(s => [s, tasks.filter(t => t.status === s).length]))
       return {
-        counts: {
-          idea: of('idea').length,
-          draft: of('draft').length,
-          scheduled: scheduled.length,
-          posted: posted.length,
-          canceled: of('canceled').length,
-        },
-        upcoming: upcoming.slice(0, 3).map(summarize),
-        overdue: overdue.map(summarize),
-        unscheduled: scheduled.filter(p => !p.scheduledFor).length,
-        lastPostedAt: posted[0]?.postedAt ?? null,
-        postedLast30Days: posted.filter(p => nowMs - at(p.postedAt) < 30 * DAY).length,
+        counts,
+        overdue: open.filter(t => t.dueAt && at(t.dueAt) < startOfToday.getTime()).map(summarizeTask),
+        dueToday: open.filter(t => t.dueAt && at(t.dueAt) >= startOfToday.getTime() && at(t.dueAt) < endOfToday).map(summarizeTask),
+        dueThisWeek: open.filter(t => t.dueAt && at(t.dueAt) >= endOfToday && at(t.dueAt) < endOfToday + 7 * DAY).map(summarizeTask),
+        blocked: open.filter(t => t.status === 'blocked').map(summarizeTask),
+        projects: projects.map(p => summarizeProject(p, tasks.filter(t => t.projectId === p.id))),
+        completedLast7Days: tasks.filter(t => t.status === 'done' && t.completedAt && nowMs - at(t.completedAt) < 7 * DAY).length,
       }
     },
   },
@@ -496,7 +602,7 @@ async function handle(msg) {
       reply(id, {
         protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
         capabilities: { tools: {} },
-        serverInfo: { name: 'drafter', version: '1.0.0' },
+        serverInfo: { name: 'drafter', version: '2.0.0' },
       })
       return
     }

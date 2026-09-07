@@ -20,7 +20,7 @@ export function ImportArchiveDialog({ store, onClose }: Props) {
     try {
       const buf = await file.arrayBuffer()
       const r = importArchiveFile(file.name, buf)
-      const summary = store.importPosts(r.posts)
+      const summary = store.importItems(r.posts)
       const parts = [
         `${r.source}: found ${r.posts.length} posts — ${summary.added} new, ${summary.updated} updated, ${summary.unchanged} already in your library.`,
       ]

@@ -1,27 +1,33 @@
-import { useEffect, useRef, useState } from 'react'
-import { Post, STATUS_META, Status } from '../types'
-import { usePosts } from '../store'
-import { newerStamp } from '../postops'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
+import { useItems } from '../store'
+import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
+import { projectById } from '../taskutils'
 import { timeAgo } from '../utils'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
-import { Dashboard } from './Dashboard'
-import { PostsTable } from './PostsTable'
+import { Today } from './Today'
+import { Roadmap } from './Roadmap'
+import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
-import { Composer } from './Composer'
+import { TaskEditor } from './TaskEditor'
+import { ProjectEditor } from './ProjectEditor'
 import { Settings } from './Settings'
 
-type View = 'dashboard' | 'board' | 'calendar' | 'posts' | 'insights'
+type View = 'today' | 'board' | 'roadmap' | 'calendar' | 'tasks' | 'insights'
 
 const VIEW_LABELS: Record<View, string> = {
-  dashboard: 'Dashboard',
+  today: 'Today',
   board: 'Board',
+  roadmap: 'Roadmap',
   calendar: 'Calendar',
-  posts: 'Posts',
+  tasks: 'Tasks',
   insights: 'Insights',
 }
+
+const FILTER_KEY = 'drafter:project-filter'
 
 interface Toast {
   msg: string
@@ -29,13 +35,38 @@ interface Toast {
 }
 
 export default function Planner() {
-  const store = usePosts()
-  const [view, setView] = useState<View>('dashboard')
-  const [composer, setComposer] = useState<{ post?: Post; preset?: Partial<Post> } | null>(null)
+  const store = useItems()
+  const [view, setView] = useState<View>('today')
+  const [projectFilter, setProjectFilter] = useState<string>(() => {
+    try {
+      return localStorage.getItem(FILTER_KEY) ?? 'all'
+    } catch {
+      return 'all'
+    }
+  })
+  const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
+  const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_KEY, projectFilter)
+    } catch {
+      /* ignore */
+    }
+  }, [projectFilter])
+
+  const projectMap = useMemo(() => projectById(store.projects), [store.projects])
+  const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
+  const filteredTasks = useMemo(
+    () => (activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)),
+    [store.tasks, activeFilter],
+  )
+  const posts = useMemo(() => filteredTasks.map(toPost).filter((p): p is Post => p !== null), [filteredTasks])
+  const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
 
   const showToast = (msg: string, undo?: () => void) => {
     window.clearTimeout(toastTimer.current)
@@ -43,10 +74,10 @@ export default function Planner() {
     toastTimer.current = window.setTimeout(() => setToast(null), 6000)
   }
 
-  // due-post reminders while the app is open (device-local, never a store write)
+  // due reminders while the app is open (device-local, never a store write)
   const notifyRef = useRef(() => {})
   notifyRef.current = () => {
-    notifyDue(store.posts)
+    notifyDue(store.tasks)
   }
   useEffect(() => {
     notifyRef.current()
@@ -54,16 +85,28 @@ export default function Planner() {
     return () => window.clearInterval(t)
   }, [])
 
-  const openPost = (post: Post) => setComposer({ post })
-  const newPost = (preset?: Partial<Post>) => setComposer({ preset })
+  const openTask = (task: Task) => setEditor({ task })
+  const newTask = (preset?: Partial<Task>) =>
+    setEditor({ preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset } })
+  const openProject = (project: Project) => setProjectEditor({ project })
+  const newProject = () => setProjectEditor({})
 
-  const deletePost = (p: Post) => {
-    store.remove(p.id)
-    setComposer(null)
-    showToast(`Deleted “${p.title || 'Untitled'}”`, () => store.restore([p.id]))
+  const deleteTask = (t: Task) => {
+    store.remove(t.id)
+    setEditor(null)
+    showToast(`Deleted “${t.title || 'Untitled'}”`, () => store.restore([t.id]))
   }
 
-  const changeStatus = (id: string, status: Status) => {
+  const deleteProject = (p: Project) => {
+    const count = store.tasks.filter(t => t.projectId === p.id).length
+    if (count > 0 && !window.confirm(`Delete “${p.name}”? Its ${count} task${count === 1 ? '' : 's'} stay, unassigned.`)) return
+    store.remove(p.id)
+    setProjectEditor(null)
+    if (activeFilter === p.id) setProjectFilter('all')
+    showToast(`Deleted project “${p.name}”`, () => store.restore([p.id]))
+  }
+
+  const changeStatus = (id: string, status: TaskStatus) => {
     const change = store.setStatus(id, status)
     if (!change) return
     showToast(`Moved to ${STATUS_META[status].label}`, () => {
@@ -73,11 +116,16 @@ export default function Planner() {
   }
 
   const reschedule = (id: string, day: Date) => {
-    const p = store.posts.find(x => x.id === id)
-    if (!p || p.status === 'posted') return
-    const old = p.scheduledFor ? new Date(p.scheduledFor) : null
+    const t = store.tasks.find(x => x.id === id)
+    if (!t || t.status === 'done') return
+    const old = t.dueAt ? new Date(t.dueAt) : null
     const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), old?.getHours() ?? 9, old?.getMinutes() ?? 0)
-    store.upsert({ ...p, status: 'scheduled', scheduledFor: at.toISOString(), updatedAt: newerStamp(p.updatedAt) })
+    store.upsert({
+      ...t,
+      status: t.status === 'wishlist' || t.status === 'canceled' ? 'todo' : t.status,
+      dueAt: at.toISOString(),
+      updatedAt: newerStamp(t.updatedAt),
+    })
   }
 
   const manualSync = async () => {
@@ -85,6 +133,8 @@ export default function Planner() {
     await store.syncNowManual()
     setSyncing(false)
   }
+
+  const filterProject = activeFilter !== 'all' ? projectMap.get(activeFilter) : undefined
 
   return (
     <div className="app">
@@ -101,23 +151,46 @@ export default function Planner() {
           ))}
         </nav>
         <span className="spacer" />
-        <button
-          className="sync-btn"
-          onClick={manualSync}
-          aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}
-        >
+        <button className="sync-btn" onClick={manualSync} aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}>
           <span className={store.syncInfo.online ? 'sync-dot on' : 'sync-dot'} />
-          <span className="sync-label">
-            {syncing ? 'Syncing…' : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
-          </span>
+          <span className="sync-label">{syncing ? 'Syncing…' : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}</span>
         </button>
         <button className="btn subtle" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           ⚙
         </button>
-        <button className="btn primary new-post-btn" onClick={() => newPost()}>
-          + New post
+        <button className="btn primary new-post-btn" onClick={() => newTask()}>
+          + New task
         </button>
       </header>
+
+      {store.loaded && (
+        <div className="project-bar" role="tablist" aria-label="Projects">
+          <button className={activeFilter === 'all' ? 'pchip on' : 'pchip'} onClick={() => setProjectFilter('all')}>
+            All projects
+          </button>
+          {barProjects.map(p => (
+            <button
+              key={p.id}
+              className={activeFilter === p.id ? 'pchip on' : 'pchip'}
+              onClick={() => setProjectFilter(p.id)}
+              onDoubleClick={() => openProject(p)}
+              title="Click to filter · double-click to edit"
+            >
+              <span className="pdot" style={{ background: p.color }} />
+              {p.emoji && <span className="pchip-emoji">{p.emoji}</span>}
+              <span className="pchip-name">{p.name}</span>
+            </button>
+          ))}
+          {filterProject && (
+            <button className="pchip edit" onClick={() => openProject(filterProject)} aria-label="Edit project">
+              ✎
+            </button>
+          )}
+          <button className="pchip add" onClick={newProject}>
+            + Project
+          </button>
+        </div>
+      )}
 
       {store.syncInfo.authError && (
         <div className="auth-banner">
@@ -131,40 +204,87 @@ export default function Planner() {
       <main className="content">
         {store.loaded && (
           <>
-            {view === 'dashboard' && <Dashboard posts={store.posts} onOpen={openPost} />}
+            {view === 'today' && (
+              <Today
+                tasks={filteredTasks}
+                projects={filterProject ? [filterProject] : store.projects}
+                projectMap={projectMap}
+                onOpen={openTask}
+                onOpenProject={openProject}
+                onStatus={changeStatus}
+                onNew={newTask}
+              />
+            )}
             {view === 'board' && (
-              <Board posts={store.posts} onOpen={openPost} onStatus={changeStatus} onNew={s => newPost({ status: s })} />
+              <Board
+                tasks={filteredTasks}
+                projects={projectMap}
+                showProject={activeFilter === 'all'}
+                onOpen={openTask}
+                onStatus={changeStatus}
+                onNew={s => newTask({ status: s })}
+              />
+            )}
+            {view === 'roadmap' && (
+              <Roadmap
+                projects={filterProject ? [filterProject] : store.projects}
+                tasks={store.tasks}
+                onOpenProject={openProject}
+                onNewProject={newProject}
+                onOpenTask={openTask}
+              />
             )}
             {view === 'calendar' && (
               <Calendar
-                posts={store.posts}
-                onOpen={openPost}
-                onNew={d => newPost({ status: 'scheduled', scheduledFor: d })}
+                tasks={filteredTasks}
+                projectMap={projectMap}
+                onOpen={openTask}
+                onNew={d => newTask({ status: 'todo', dueAt: d })}
                 onReschedule={reschedule}
               />
             )}
-            {view === 'posts' && (
-              <PostsTable store={store} onOpen={openPost} onNew={newPost} onDelete={deletePost} />
+            {view === 'tasks' && (
+              <TasksTable store={store} tasks={filteredTasks} projectMap={projectMap} onOpen={openTask} onNew={newTask} onDelete={deleteTask} />
             )}
-            {view === 'insights' && <Insights posts={store.posts} />}
+            {view === 'insights' && <Insights posts={posts} />}
           </>
         )}
       </main>
 
-      {composer && (
-        <Composer
-          post={composer.post}
-          preset={composer.preset}
-          getLatest={id => store.posts.find(x => x.id === id)}
+      {editor && (
+        <TaskEditor
+          task={editor.task}
+          preset={editor.preset}
+          projects={store.projects}
+          getLatest={id => store.tasks.find(x => x.id === id)}
+          onSave={t => {
+            store.upsert(t)
+            setEditor(null)
+          }}
+          onCommit={t => store.upsert(t)}
+          onDelete={id => {
+            const t = store.tasks.find(x => x.id === id)
+            if (t) deleteTask(t)
+          }}
+          onClose={() => setEditor(null)}
+        />
+      )}
+
+      {projectEditor && (
+        <ProjectEditor
+          project={projectEditor.project}
+          tasks={projectEditor.project ? store.tasks.filter(t => t.projectId === projectEditor.project!.id) : []}
+          getLatest={id => store.projects.find(x => x.id === id)}
           onSave={p => {
             store.upsert(p)
-            setComposer(null)
+            setProjectEditor(null)
+            if (!projectEditor.project) setProjectFilter(p.id)
           }}
           onDelete={id => {
-            const p = store.posts.find(x => x.id === id)
-            if (p) deletePost(p)
+            const p = store.projects.find(x => x.id === id)
+            if (p) deleteProject(p)
           }}
-          onClose={() => setComposer(null)}
+          onClose={() => setProjectEditor(null)}
         />
       )}
 

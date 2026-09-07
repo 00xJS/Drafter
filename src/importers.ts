@@ -1,6 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate'
 import { Metrics, Platform, Post } from './types'
-import { hashId } from './postops'
+import { hashId } from './itemops'
 
 // ---------------------------------------------------------------------------
 // Generic CSV

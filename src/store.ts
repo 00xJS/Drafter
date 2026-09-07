@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Post, Status } from './types'
-import { migrateStored, sanitizePost, STORAGE_VERSION } from './schema'
-import { mergePosts, newerStamp, nextOccurrence, purgeTombstones } from './postops'
+import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
+import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
+import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
 import { syncNow } from './sync'
 import { idbGet, idbSet } from './idb'
@@ -9,9 +9,9 @@ import { idbGet, idbSet } from './idb'
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 const CURSOR_KEY = 'drafter:sync-cursor'
 
-async function loadCache(): Promise<Post[]> {
+async function loadCache(): Promise<Item[]> {
   try {
-    const cached = await idbGet<{ version: number; posts: unknown[] }>('posts', 'all')
+    const cached = await idbGet<{ version: number; items?: unknown[]; posts?: unknown[] }>('posts', 'all')
     if (cached) {
       const migrated = migrateStored(cached)
       // an empty cache must not shadow a legacy localStorage store (e.g. an
@@ -47,48 +47,75 @@ export interface ImportSummary {
 }
 
 export interface StatusChange {
-  prev: Post
+  prev: Task
   spawnedId?: string
 }
 
 export interface Store {
-  /** Live posts (tombstoned ones filtered out) — what every view renders. */
-  posts: Post[]
+  /** Live tasks (tombstoned ones filtered out) — what every view renders. */
+  tasks: Task[]
+  /** Live projects. */
+  projects: Project[]
   /** Everything including tombstones — for export and sync. */
-  allPosts: Post[]
+  allItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
   syncInfo: SyncInfo
-  upsert(p: Post): void
+  upsert(item: Item): void
   remove(id: string): void
   restore(ids: string[]): void
   /** Returns what changed so the caller can offer Undo. */
-  setStatus(id: string, status: Status): StatusChange | null
-  importPosts(incoming: unknown[]): ImportSummary
+  setStatus(id: string, status: TaskStatus): StatusChange | null
+  importItems(incoming: unknown[]): ImportSummary
   syncNowManual(): Promise<boolean>
 }
 
-function stampStatus(p: Post, status: Status): Post {
-  const next: Post = { ...p, status, updatedAt: newerStamp(p.updatedAt) }
-  if (status === 'posted') next.postedAt = next.postedAt ?? next.scheduledFor ?? new Date().toISOString()
-  else next.postedAt = undefined
+export function stampStatus(t: Task, status: TaskStatus): Task {
+  const next: Task = { ...t, status, updatedAt: newerStamp(t.updatedAt) }
+  if (status === 'done') next.completedAt = next.completedAt ?? new Date().toISOString()
+  else next.completedAt = undefined
   return next
+}
+
+/** The project migrated social posts live in; created on demand so every device agrees on it. */
+function socialProject(): Project {
+  const now = new Date().toISOString()
+  return {
+    kind: 'project',
+    id: SOCIAL_PROJECT_ID,
+    name: 'Social media',
+    emoji: '📣',
+    color: '#0891b2',
+    status: 'active',
+    description: 'Posts, drafts and results across your social platforms.',
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+/** Make sure every referenced built-in project exists (the social project after a migration). */
+function ensureProjects(items: Item[]): Item[] {
+  const hasSocialTask = items.some(i => i.kind === 'task' && i.projectId === SOCIAL_PROJECT_ID && !i.deletedAt)
+  const hasSocialProject = items.some(i => i.kind === 'project' && i.id === SOCIAL_PROJECT_ID)
+  return hasSocialTask && !hasSocialProject ? [...items, socialProject()] : items
 }
 
 const PROVENANCE_TAGS = ['x-archive', 'ig-archive', 'imported']
 
 /** Posts that came from an archive/CSV may have their metrics refreshed by a re-import. */
-function isImported(p: Post): boolean {
-  return p.tags.some(t => PROVENANCE_TAGS.includes(t))
+function isImported(t: Task): boolean {
+  return t.tags.some(tag => PROVENANCE_TAGS.includes(tag))
 }
 
+type MetricsMap = NonNullable<NonNullable<Task['social']>['metrics']>
+
 /** Per-field max: engagement counts only grow, so a refresh never lowers a manual fix. */
-function maxMetrics(a: Post['metrics'], b: Post['metrics']): { merged: NonNullable<Post['metrics']>; changed: boolean } {
-  const merged: NonNullable<Post['metrics']> = JSON.parse(JSON.stringify(a ?? {}))
+function maxMetrics(a: MetricsMap | undefined, b: MetricsMap | undefined): { merged: MetricsMap; changed: boolean } {
+  const merged: MetricsMap = JSON.parse(JSON.stringify(a ?? {}))
   let changed = false
   for (const [pl, m] of Object.entries(b ?? {})) {
     if (!m) continue
-    const target = (merged[pl as keyof typeof merged] ??= {})
+    const target = (merged[pl as keyof MetricsMap] ??= {})
     for (const key of ['likes', 'comments', 'shares', 'impressions'] as const) {
       const incoming = m[key]
       if (incoming !== undefined && incoming > (target[key] ?? -1)) {
@@ -100,12 +127,12 @@ function maxMetrics(a: Post['metrics'], b: Post['metrics']): { merged: NonNullab
   return { merged, changed }
 }
 
-export function usePosts(): Store {
-  const [posts, setPosts] = useState<Post[]>([])
+export function useItems(): Store {
+  const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
   const [syncInfo, setSyncInfo] = useState<SyncInfo>({ online: false, authError: false })
-  const postsRef = useRef(posts)
-  postsRef.current = posts
+  const itemsRef = useRef(items)
+  itemsRef.current = items
   const loadedRef = useRef(false)
   const pushTimer = useRef<number | undefined>(undefined)
   const persistTimer = useRef<number | undefined>(undefined)
@@ -132,21 +159,21 @@ export function usePosts(): Store {
     try {
       const since = readCursor()
       // push only what's newer than the cursor; everything on a full sync
-      const local = postsRef.current
+      const local = itemsRef.current
       const outgoing = since ? local.filter(p => p.updatedAt > since) : local
       const result = await syncNow(outgoing, since)
-      if (result.posts === null) {
+      if (result.items === null) {
         setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError }))
         return false
       }
       setSyncInfo({ online: true, lastAt: new Date().toISOString(), authError: false })
-      const combined = purgeTombstones(mergePosts(local, result.posts))
+      const combined = ensureProjects(purgeTombstones(mergeItems(local, result.items)))
       let maxSeen = since ?? ''
-      for (const p of result.posts) if (p.updatedAt > maxSeen) maxSeen = p.updatedAt
+      for (const p of result.items) if (p.updatedAt > maxSeen) maxSeen = p.updatedAt
       for (const p of outgoing) if (p.updatedAt > maxSeen) maxSeen = p.updatedAt
       if (maxSeen) writeCursor(maxSeen)
-      const signature = (list: Post[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
-      if (signature(combined) !== signature(local)) setPosts(combined)
+      const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
+      if (signature(combined) !== signature(local)) setItems(combined)
       return true
     } finally {
       syncBusy.current = false
@@ -160,7 +187,7 @@ export function usePosts(): Store {
     let live = true
     loadCache().then(cached => {
       if (!live) return
-      setPosts(cached)
+      setItems(ensureProjects(cached))
       loadedRef.current = true
       setLoaded(true)
       doSyncRef.current()
@@ -192,8 +219,8 @@ export function usePosts(): Store {
     if (!loaded) return
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
-      const snapshot = postsRef.current
-      idbSet('posts', 'all', { version: STORAGE_VERSION, posts: snapshot })
+      const snapshot = itemsRef.current
+      idbSet('posts', 'all', { version: STORAGE_VERSION, items: snapshot })
         .then(() => {
           // legacy cache retired only once the new cache holds real data
           if (snapshot.length > 0) localStorage.removeItem(LEGACY_LS_KEY)
@@ -206,57 +233,65 @@ export function usePosts(): Store {
       window.clearTimeout(persistTimer.current)
       window.clearTimeout(pushTimer.current)
     }
-  }, [posts, loaded])
+  }, [items, loaded])
 
-  const live = useMemo(() => posts.filter(p => !p.deletedAt), [posts])
+  const tasks = useMemo(() => items.filter((i): i is Task => i.kind === 'task' && !i.deletedAt), [items])
+  const projects = useMemo(
+    () =>
+      items
+        .filter((i): i is Project => i.kind === 'project' && !i.deletedAt)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [items],
+  )
 
   return {
-    posts: live,
-    allPosts: posts,
+    tasks,
+    projects,
+    allItems: items,
     loaded,
     syncInfo,
-    upsert: p =>
-      setPosts(ps => {
-        const old = ps.find(x => x.id === p.id)
-        let next = old ? ps.map(x => (x.id === p.id ? p : x)) : [...ps, p]
-        if (p.status === 'posted' && old?.status !== 'posted' && p.recurrence) {
-          const spawn = nextOccurrence(p, uid)
-          if (spawn) next = next.map(x => (x.id === p.id ? { ...p, recurrence: undefined } : x)).concat(spawn)
+    upsert: item =>
+      setItems(list => {
+        const old = list.find(x => x.id === item.id)
+        let next = old ? list.map(x => (x.id === item.id ? item : x)) : [...list, item]
+        if (item.kind === 'task' && item.status === 'done' && old?.kind === 'task' && old.status !== 'done' && item.recurrence) {
+          const spawn = nextOccurrence(item, uid)
+          if (spawn) next = next.map(x => (x.id === item.id ? { ...item, recurrence: undefined } : x)).concat(spawn)
         }
-        return next
+        return ensureProjects(next)
       }),
     remove: id =>
-      setPosts(ps =>
-        ps.map(p => (p.id === id ? { ...p, deletedAt: new Date().toISOString(), updatedAt: newerStamp(p.updatedAt) } : p)),
+      setItems(list =>
+        list.map(p => (p.id === id ? { ...p, deletedAt: new Date().toISOString(), updatedAt: newerStamp(p.updatedAt) } : p)),
       ),
     restore: ids =>
-      setPosts(ps => {
+      setItems(list => {
         const set = new Set(ids)
-        return ps.map(p => (set.has(p.id) ? { ...p, deletedAt: undefined, updatedAt: newerStamp(p.updatedAt) } : p))
+        return list.map(p => (set.has(p.id) ? { ...p, deletedAt: undefined, updatedAt: newerStamp(p.updatedAt) } : p))
       }),
     setStatus: (id, status) => {
-      const old = postsRef.current.find(x => x.id === id)
-      if (!old || old.status === status) return null
+      const old = itemsRef.current.find(x => x.id === id)
+      if (!old || old.kind !== 'task' || old.status === status) return null
       const updated = stampStatus(old, status)
-      let spawned: Post | null = null
-      if (status === 'posted' && old.status !== 'posted' && updated.recurrence) {
+      let spawned: Task | null = null
+      if (status === 'done' && old.status !== 'done' && updated.recurrence) {
         spawned = nextOccurrence(updated, uid)
       }
-      setPosts(ps => {
-        let next = ps.map(x => (x.id === id ? (spawned ? { ...updated, recurrence: undefined } : updated) : x))
+      setItems(list => {
+        let next: Item[] = list.map(x => (x.id === id ? (spawned ? { ...updated, recurrence: undefined } : updated) : x))
         if (spawned) next = next.concat(spawned)
         return next
       })
       return { prev: old, spawnedId: spawned?.id }
     },
-    importPosts: incoming => {
-      const clean = incoming.map(sanitizePost).filter((p): p is Post => p !== null)
-      const byId = new Map(postsRef.current.map(p => [p.id, p]))
+    importItems: incoming => {
+      const clean = incoming.map(sanitizeItem).filter((p): p is Item => p !== null)
+      const byId = new Map(itemsRef.current.map(p => [p.id, p]))
       let added = 0
       let updated = 0
       let unchanged = 0
       let metricsRefreshed = 0
-      const toMerge: Post[] = []
+      const toMerge: Item[] = []
       for (const p of clean) {
         const existing = byId.get(p.id)
         if (!existing) {
@@ -265,13 +300,17 @@ export function usePosts(): Store {
         } else if (p.updatedAt > existing.updatedAt) {
           updated++
           toMerge.push(p)
-        } else if (isImported(existing) && p.metrics) {
+        } else if (existing.kind === 'task' && p.kind === 'task' && isImported(existing) && p.social?.metrics) {
           // a fresh archive re-import carries newer counts on an equal-or-older
           // timestamp: take per-field maxes and bump the stamp so it syncs
-          const { merged, changed } = maxMetrics(existing.metrics, p.metrics)
+          const { merged, changed } = maxMetrics(existing.social?.metrics, p.social.metrics)
           if (changed) {
             metricsRefreshed++
-            toMerge.push({ ...existing, metrics: merged, updatedAt: newerStamp(existing.updatedAt) })
+            toMerge.push({
+              ...existing,
+              social: { platforms: existing.social?.platforms ?? p.social.platforms, variants: existing.social?.variants, metrics: merged },
+              updatedAt: newerStamp(existing.updatedAt),
+            })
           } else {
             unchanged++
           }
@@ -279,7 +318,7 @@ export function usePosts(): Store {
           unchanged++
         }
       }
-      if (toMerge.length > 0) setPosts(ps => mergePosts(ps, toMerge))
+      if (toMerge.length > 0) setItems(list => ensureProjects(mergeItems(list, toMerge)))
       return { added, updated, unchanged, metricsRefreshed }
     },
     syncNowManual: () => doSyncRef.current(),

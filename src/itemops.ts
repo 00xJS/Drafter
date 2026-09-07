@@ -1,10 +1,10 @@
-import { Post } from './types'
+import { Item } from './types'
 
 export { newerStamp, nextOccurrence } from '../shared/domain.mjs'
 
-/** Last-write-wins merge by post id, using updatedAt (ISO strings compare lexically). */
-export function mergePosts(a: Post[], b: Post[]): Post[] {
-  const byId = new Map<string, Post>()
+/** Last-write-wins merge by id, using updatedAt (ISO strings compare lexically). */
+export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {
+  const byId = new Map<string, T>()
   for (const p of a) byId.set(p.id, p)
   for (const p of b) {
     const cur = byId.get(p.id)
@@ -16,8 +16,8 @@ export function mergePosts(a: Post[], b: Post[]): Post[] {
 const TOMBSTONE_TTL_MS = 90 * 86_400_000
 
 /** Drop tombstones old enough that every device has surely seen the deletion. */
-export function purgeTombstones(posts: Post[], now = Date.now()): Post[] {
-  return posts.filter(p => !p.deletedAt || now - new Date(p.deletedAt).getTime() < TOMBSTONE_TTL_MS)
+export function purgeTombstones<T extends Item>(items: T[], now = Date.now()): T[] {
+  return items.filter(p => !p.deletedAt || now - new Date(p.deletedAt).getTime() < TOMBSTONE_TTL_MS)
 }
 
 /** Small stable hash for building deterministic import ids (djb2). */

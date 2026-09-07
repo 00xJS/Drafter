@@ -48,8 +48,8 @@ export function Settings({ store, onClose }: Props) {
             </p>
             <p className="field-hint">
               {supabaseOn
-                ? 'Your data lives in Supabase Postgres, shared with every signed-in device and your bots. Images sync through Supabase Storage.'
-                : 'No backend configured — data stays in this browser. Use Export in the Posts tab for backups.'}
+                ? 'Your projects and tasks live in Supabase Postgres, shared with every signed-in device and your AI agents. Images sync through Supabase Storage.'
+                : 'No backend configured — data stays in this browser. Use Export in the Tasks tab for backups.'}
             </p>
             <button
               className="btn"
@@ -83,7 +83,7 @@ export function Settings({ store, onClose }: Props) {
           <section className="settings-section">
             <h3>Reminders</h3>
             <p className="field-hint">
-              Get a notification when a scheduled post's time arrives. Reminders fire while Drafter is open on this
+              Get a notification when a task's due time arrives. Reminders fire while Drafter is open on this
               device — there is no server-side push (yet).
             </p>
             <p>
@@ -110,9 +110,10 @@ export function Settings({ store, onClose }: Props) {
           <section className="settings-section">
             <h3>AI assist</h3>
             <p className="field-hint">
-              The ✨ features run through the site's server-side proxy — configure <code>NVIDIA_API_KEY</code> (free
-              from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). No key is ever
-              stored in the browser.
+              The ✨ features (break a task into steps, suggest tags, platform variants, post analysis) run through the
+              site's server-side proxy — configure <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or{' '}
+              <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). GitHub link cards use{' '}
+              <code>GITHUB_TOKEN</code> the same way. No key is ever stored in the browser.
             </p>
           </section>
         </div>

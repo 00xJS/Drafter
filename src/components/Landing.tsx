@@ -5,12 +5,12 @@ interface Props {
 }
 
 const FEATURES: { icon: string; title: string; text: string }[] = [
-  { icon: '📋', title: 'Kanban pipeline', text: 'Idea → draft → scheduled → posted, with a canceled lane for the ones that didn’t make it.' },
-  { icon: '🗓', title: 'Content calendar', text: 'See the month at a glance, click a day to schedule, drag to reschedule.' },
-  { icon: '📈', title: 'Insights', text: 'Engagement by platform, best time to post, what performs by tag — with a table view for every chart.' },
-  { icon: '📦', title: 'Own your history', text: 'Import your full X and Instagram archives — free official exports, no platform APIs required.' },
-  { icon: '✨', title: 'AI assist', text: 'Platform-native variants, tag suggestions, and an analysis of what your best posts have in common.' },
-  { icon: '🤖', title: 'Automation-ready', text: 'A clean REST backend lets your bots draft, schedule, and log results around the clock.' },
+  { icon: '🗂', title: 'Projects & tasks', text: 'Wishlist → to do → doing → done. Due dates, priorities, checklists and a comment trail on everything.' },
+  { icon: '🛣', title: 'Roadmap', text: 'Projects and milestones on a timeline, so the kitchen refresh and the side app both have an end in sight.' },
+  { icon: '☀️', title: 'Today', text: 'Overdue, due today, this week, blocked — the one page to open every morning.' },
+  { icon: '🐙', title: 'GitHub-linked', text: 'Paste an issue, PR, repo or Projects URL onto a task and see its live state without leaving the plan.' },
+  { icon: '✨', title: 'AI assist', text: 'Break a task into steps, suggest tags, draft platform variants for social posts.' },
+  { icon: '🤖', title: 'Agent-ready', text: 'An MCP server and REST gateway let your AI agents create tasks, comment, and close things out.' },
 ]
 
 export function Landing({ configured, onSignIn }: Props) {
@@ -30,11 +30,11 @@ export function Landing({ configured, onSignIn }: Props) {
 
       <section className="landing-hero">
         <h1>
-          Plan it. Draft it. <span className="hero-accent">Ship it.</span>
+          Run your life like a <span className="hero-accent">well-run project.</span>
         </h1>
         <p>
-          Drafter is a personal command center for social posting — a kanban board, calendar, and analytics for
-          everything you publish on X, Instagram, and beyond.
+          Drafter is a personal project manager — projects, tasks with due dates, a roadmap and a daily view — with
+          GitHub links and a social-posting mode built in.
         </p>
         {configured ? (
           <button className="btn primary landing-cta" onClick={onSignIn}>
@@ -59,7 +59,7 @@ export function Landing({ configured, onSignIn }: Props) {
       </section>
 
       <footer className="landing-footer">
-        Private beta — accounts are provisioned by the site owner. Your drafts stay yours.
+        Private beta — accounts are provisioned by the site owner. Your plans stay yours.
       </footer>
     </div>
   )

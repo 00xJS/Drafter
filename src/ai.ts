@@ -1,5 +1,5 @@
 import { Platform, PLATFORM_META, Post, engagement, impressions } from './types'
-import { getSupabase } from './supabase'
+import { apiFetch } from './api'
 import { fmtDate } from './utils'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -8,22 +8,16 @@ import { fmtDate } from './utils'
 class AIError extends Error {}
 
 async function complete(system: string, prompt: string, maxTokens = 2048): Promise<string> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  const sb = getSupabase()
-  if (sb) {
-    const { data } = await sb.auth.getSession()
-    if (data.session) headers.authorization = `Bearer ${data.session.access_token}`
-  }
   let res: Response
   try {
-    res = await fetch('/api/ai', {
+    res = await apiFetch('/api/ai', {
       method: 'POST',
-      headers,
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ system, prompt, maxTokens }),
-      signal: AbortSignal.timeout(180_000),
+      timeoutMs: 180_000,
     })
-  } catch {
-    throw new AIError('AI is unreachable from here — it runs on the hosted site (or via `netlify dev` locally).')
+  } catch (e) {
+    throw new AIError((e as Error).message)
   }
   if (res.status === 401) throw new AIError('Session expired — sign in again and retry.')
   if (!res.ok) {
@@ -95,4 +89,19 @@ export async function analyzeTopPosts(posts: Post[]): Promise<string> {
     `Here are my recent top posts by engagement:\n\n${rows}\n\nIn plain text (short paragraphs and "-" bullets only, no markdown headings): 1) what the strongest posts have in common, 2) any pattern in what underperforms relative to reach, 3) three concrete things to try next, based only on this data.`,
     1500,
   )
+}
+
+/** Break a task into concrete checklist steps. */
+export async function suggestChecklist(title: string, description: string): Promise<string[]> {
+  const text = await complete(
+    'You are a pragmatic project planner for personal and household projects. Break work into small, concrete, actionable steps a single person can tick off. No fluff.',
+    `Break this task into 3–8 checklist steps. Respond with ONLY a JSON array of short strings (imperative, under 80 characters each).\n\nTask: ${title}\n${description ? `Details:\n"""\n${description}\n"""` : ''}`,
+    768,
+  )
+  const raw = extractJSON<unknown[]>(text)
+  return raw
+    .filter((t): t is string => typeof t === 'string')
+    .map(t => t.trim())
+    .filter(Boolean)
+    .slice(0, 8)
 }
