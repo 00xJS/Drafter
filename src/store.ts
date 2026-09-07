@@ -3,7 +3,7 @@ import { CalendarSource, Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } fr
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
-import { syncNow } from './sync'
+import { purgeRemote, syncNow } from './sync'
 import { idbGet, idbSet } from './idb'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
@@ -66,6 +66,8 @@ export interface Store {
   upsert(item: Item): void
   remove(id: string): void
   restore(ids: string[]): void
+  /** Hard-delete: gone from this device and from the database, no undo. */
+  purge(ids: string[]): Promise<void>
   /** Returns what changed so the caller can offer Undo. */
   setStatus(id: string, status: TaskStatus): StatusChange | null
   importItems(incoming: unknown[]): ImportSummary
@@ -279,6 +281,11 @@ export function useItems(): Store {
         const set = new Set(ids)
         return list.map(p => (set.has(p.id) ? { ...p, deletedAt: undefined, updatedAt: newerStamp(p.updatedAt) } : p))
       }),
+    purge: async ids => {
+      const set = new Set(ids)
+      setItems(list => list.filter(p => !set.has(p.id)))
+      await purgeRemote(ids)
+    },
     setStatus: (id, status) => {
       const old = itemsRef.current.find(x => x.id === id)
       if (!old || old.kind !== 'task' || old.status === status) return null

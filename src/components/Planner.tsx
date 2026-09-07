@@ -392,6 +392,12 @@ export default function Planner() {
             store.restore([id])
             showToast('Restored')
           }}
+          onPurge={id => {
+            store.purge([id]).then(
+              () => showToast('Deleted forever'),
+              e => showToast(`Removed here, but the server refused: ${(e as Error).message}`),
+            )
+          }}
           onClose={() => setTrashOpen(false)}
         />
       )}

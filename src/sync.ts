@@ -28,3 +28,11 @@ export async function syncNow(outgoing: Item[], since: string | null): Promise<S
   if (!Array.isArray(data)) return { items: null, authError: false }
   return { items: data.map(sanitizeItem).filter((p): p is Item => p !== null), authError: false }
 }
+
+/** Delete rows outright (the owner policy allows it). Local mode: nothing to do. */
+export async function purgeRemote(ids: string[]): Promise<void> {
+  const sb = getSupabase()
+  if (!sb || ids.length === 0) return
+  const { error } = await sb.from('posts').delete().in('id', ids)
+  if (error) throw new Error(error.message)
+}

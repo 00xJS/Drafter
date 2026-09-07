@@ -29,9 +29,9 @@ If both keys are set NVIDIA wins; force one with `AI_PROVIDER=nvidia|anthropic`.
 - **Project** — a container with a name, color, status (active / paused / done / archived), optional start and target dates, milestones, and an optional GitHub repo or Projects URL.
 - **Task** — title, description, status (Wishlist → To do → Doing → Blocked → Done, plus Canceled), priority (low / normal / high / urgent), due date, tags, a checklist, a timestamped comment trail, notes, images, an optional GitHub link, and recurrence (daily / weekly / biweekly / monthly — completing one spawns the next). A task with `social` set is a post: platforms, per-platform overrides, and results.
 
-The **project bar** under the header filters every view to one project (double-click a chip to edit it). The **Notes** tab is the project's notes pad (with "All projects" selected it shows an index of every project's notes): a Markdown brainstorm space with a formatting toolbar (bold, italic, headings, lists, checklists, quotes, inline code, code blocks, links, dividers), an emoji picker, keyboard shortcuts, list continuation on Enter, and a live preview. It autosaves as you type and syncs like everything else.
+The **project bar** under the header filters every view to one project (double-click a chip to edit it). The **Notes** tab is the project's notepad (with "All projects" selected it shows an index of every project's notes): one running page you type straight into, with a formatting bar (bold, italic, underline, strikethrough, headings, lists, checklists, quotes, inline code, code blocks, links, dividers), an emoji picker, and photos pasted, dropped or picked from the 📷 button and shown inline. Notes are stored as a sanitized HTML subset; photos go to the synced media store and are referenced by id. It autosaves as you type. Older Markdown notes convert automatically on first open.
 
-**Deleting is two-step everywhere:** the first click arms the button, a second click within four seconds confirms. Deleted tasks, projects and calendars go to the **Trash** (Tasks → Trash) for 90 days, where one click restores them; the undo toast still works too.
+**Deleting is two-step everywhere:** the first click arms the button, a second click within four seconds confirms. Deleted tasks, projects and calendars go to the **Trash** (Tasks → Trash) for 90 days, where one click restores them or a two-step *Delete forever* removes the record from the database outright; the undo toast still works too.
 
 ## Views
 
@@ -40,7 +40,7 @@ The **project bar** under the header filters every view to one project (double-c
 - **Calendar → Timeline** — projects as bars across months (dashed when the span is inferred — set start/target dates to pin it), milestones as ◆, due tasks as dots, a today line. Click anything to open it.
 - **Calendar → Month** — month view by due date (done tasks show on their completion day). Click a day to add; drag a pill to move its due date.
 - **Tasks** — searchable, filterable, sortable list of everything, plus JSON backup/export, social archive / CSV import, and undo-able deletes.
-- **Notes** — the selected project's Markdown notes pad, or an index of all projects' notes.
+- **Notes** — the selected project's notepad (rich text with inline photos), or an index of all projects' notes.
 - **Insights** — analytics for the social posts: engagement by platform, best time to post, per-tag performance, top posts, and an optional AI analysis. Every chart has a table view.
 
 The task editor's ✨ buttons break a task into checklist steps, suggest tags, and (for posts) draft platform variants.

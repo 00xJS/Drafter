@@ -240,8 +240,8 @@ const TOOLS = [
         startAt: { type: 'string' },
         targetAt: { type: 'string' },
         githubUrl: { type: 'string' },
-        notes: { type: 'string', description: 'Replace the project notes (Markdown)' },
-        appendNotes: { type: 'string', description: 'Append a Markdown paragraph to the project notes' },
+        notes: { type: 'string', description: 'Replace the project notes (plain text; blank lines separate paragraphs)' },
+        appendNotes: { type: 'string', description: 'Append a paragraph to the project notes' },
         addMilestone: { type: 'object', properties: { name: { type: 'string' }, dueAt: { type: 'string' } }, required: ['name'] },
         completeMilestone: { type: 'string', description: 'Name (or id) of a milestone to mark reached' },
       },
@@ -255,8 +255,16 @@ const TOOLS = [
       if (startAt !== undefined) project.startAt = startAt ? isoOrThrow(startAt, 'startAt') : undefined
       if (targetAt !== undefined) project.targetAt = targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined
       if (githubUrl !== undefined) project.githubUrl = String(githubUrl) || undefined
-      if (notes !== undefined) project.notes = String(notes) || undefined
-      if (appendNotes) project.notes = [project.notes, String(appendNotes)].filter(Boolean).join('\n\n')
+      const escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const toHtml = text => String(text).split(/\n{2,}/).map(par => `<p>${escapeHtml(par).replace(/\n/g, '<br>')}</p>`).join('')
+      if (notes !== undefined) {
+        project.notes = String(notes) || undefined
+        project.notesHtml = notes ? toHtml(notes) : ''
+      }
+      if (appendNotes) {
+        project.notes = [project.notes, String(appendNotes)].filter(Boolean).join('\n\n')
+        project.notesHtml = (project.notesHtml ?? '') + toHtml(appendNotes)
+      }
       if (addMilestone?.name) {
         project.milestones = [...(project.milestones ?? []), { id: newId(), name: String(addMilestone.name), dueAt: addMilestone.dueAt ? isoOrThrow(addMilestone.dueAt, 'dueAt') : undefined }]
       }

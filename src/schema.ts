@@ -209,6 +209,7 @@ export function sanitizeProject(raw: unknown): Project | null {
     milestones: milestones(r.milestones),
     githubUrl: urlOrUndefined(r.githubUrl),
     notes: str(r.notes) || undefined,
+    notesHtml: str(r.notesHtml) || undefined,
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),

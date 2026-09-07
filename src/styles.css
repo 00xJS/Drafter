@@ -2954,3 +2954,70 @@ textarea {
   font-size: 14px;
   margin: 4px 0;
 }
+
+/* rich notepad */
+.notes-editable {
+  flex: 1;
+  min-height: calc(100vh - 290px);
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  outline: none;
+  line-height: 1.6;
+  font-size: 14.5px;
+  overflow: auto;
+  caret-color: var(--accent);
+}
+.notes-editable:focus {
+  border-color: var(--accent);
+}
+.notes.dragging .notes-editable {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.notes-editable:empty::before,
+.notes-editable[data-empty='true']::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+.notes-editable img {
+  max-width: min(100%, 720px);
+  max-height: 480px;
+  border-radius: 8px;
+  display: block;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+}
+.notes-editable ul.checklist {
+  list-style: none;
+  padding-left: 4px;
+}
+.notes-editable ul.checklist input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.notes-editable h1 {
+  font-size: 24px;
+}
+.notes-editable h2 {
+  font-size: 19px;
+}
+.notes-editable a {
+  cursor: text;
+}
+.notes-tool input[type='file'] {
+  display: none;
+}
+.notes-card-preview {
+  white-space: pre-wrap;
+}
+
+.trash-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}

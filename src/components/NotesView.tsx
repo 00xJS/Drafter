@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { Project } from '../types'
 import { newerStamp } from '../itemops'
-import { renderMarkdown, wordCount } from '../markdown'
+import { renderMarkdown } from '../markdown'
+import { htmlToText, wordCountHtml } from '../richtext'
 import { excerpt, timeAgo } from '../utils'
-import { NotesEditor } from './NotesEditor'
+import { RichNotes } from './RichNotes'
+
+/** The note's HTML, converting legacy Markdown notes on the fly. */
+export function noteHtml(p: Project): string {
+  if (p.notesHtml !== undefined) return p.notesHtml
+  return p.notes ? renderMarkdown(p.notes) : ''
+}
 
 interface PaneProps {
   project: Project
@@ -13,7 +20,7 @@ interface PaneProps {
 
 /** One project's notes pad, autosaving as you type (debounced). */
 function NotesPane({ project, getLatest, onSave }: PaneProps) {
-  const [text, setText] = useState(project.notes ?? '')
+  const [text, setText] = useState(() => noteHtml(project))
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
   const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
@@ -26,8 +33,9 @@ function NotesPane({ project, getLatest, onSave }: PaneProps) {
     const current = getLatest(project.id) ?? project
     dirtyRef.current = false
     setDirty(false)
-    if ((current.notes ?? '') === textRef.current) return
-    onSave({ ...current, notes: textRef.current || undefined, updatedAt: newerStamp(current.updatedAt) })
+    if (noteHtml(current) === textRef.current) return
+    // the markdown field is retired once rich notes exist; keep a plain-text copy for agents/search
+    onSave({ ...current, notesHtml: textRef.current, notes: htmlToText(textRef.current) || undefined, updatedAt: newerStamp(current.updatedAt) })
     setSavedAt(new Date().toISOString())
   }
 
@@ -55,8 +63,9 @@ function NotesPane({ project, getLatest, onSave }: PaneProps) {
 
   // another device edited the notes while this pane was idle: take theirs
   useEffect(() => {
-    if (!dirtyRef.current && (project.notes ?? '') !== textRef.current) setText(project.notes ?? '')
-  }, [project.notes])
+    const incoming = noteHtml(project)
+    if (!dirtyRef.current && incoming !== textRef.current) setText(incoming)
+  }, [project.notesHtml, project.notes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="notes-page">
@@ -66,7 +75,7 @@ function NotesPane({ project, getLatest, onSave }: PaneProps) {
           {project.name} · Notes
         </h2>
       </header>
-      <NotesEditor value={text} onChange={change} status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} />
+      <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} />
     </div>
   )
 }
@@ -89,7 +98,7 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
     return (
       <div className="empty-hero">
         <h2>Notes live inside projects</h2>
-        <p>Create a project and its notes pad appears here: a place to brainstorm with headings, lists, links, code and emoji.</p>
+        <p>Create a project and its notepad appears here: brainstorm with headings, lists, checklists, links, code, emoji and photos dropped straight in.</p>
         <p>
           <button className="btn primary" onClick={onNewProject}>
             + New project
@@ -107,7 +116,9 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
       </div>
       <div className="project-cards notes-cards">
         {visible.map(p => {
-          const words = p.notes ? wordCount(p.notes) : 0
+          const html = noteHtml(p)
+          const words = html ? wordCountHtml(html) : 0
+          const photos = (html.match(/data-media=/g) ?? []).length
           return (
             <button key={p.id} className="project-card notes-card" onClick={() => onSelectProject(p.id)}>
               <span className="project-card-head">
@@ -116,10 +127,13 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
                   {p.emoji && <span>{p.emoji} </span>}
                   {p.name}
                 </span>
-                <span className="project-card-pct">{words ? `${words} words` : 'empty'}</span>
+                <span className="project-card-pct">
+                  {words ? `${words} words` : 'empty'}
+                  {photos ? ` · ${photos} photo${photos === 1 ? '' : 's'}` : ''}
+                </span>
               </span>
-              {p.notes ? (
-                <span className="notes-card-preview md" dangerouslySetInnerHTML={{ __html: renderMarkdown(excerpt(p.notes, 400)) }} />
+              {html ? (
+                <span className="notes-card-preview">{excerpt(htmlToText(html), 260)}</span>
               ) : (
                 <span className="project-card-sub">No notes yet — click to start.</span>
               )}

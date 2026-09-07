@@ -221,9 +221,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
                   onOpenNotes(getLatest(project.id) ?? project)
                 }}
               >
-                Open the notes pad{project.notes ? ` (${project.notes.split(/\s+/).filter(Boolean).length} words)` : ''}
+                Open the notepad{project.notes ? ` (${project.notes.split(/\s+/).filter(Boolean).length} words)` : ''}
               </button>
-              <small className="field-hint">Brainstorm with bold, links, code blocks, emoji and lists. Autosaves.</small>
+              <small className="field-hint">A running notepad with formatting, checklists, links, code, emoji and inline photos. Autosaves.</small>
             </div>
           )}
           {project && (

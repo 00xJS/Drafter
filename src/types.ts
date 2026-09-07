@@ -83,8 +83,10 @@ export interface Project {
   targetAt?: string
   milestones?: Milestone[]
   githubUrl?: string
-  /** Free-form Markdown notes: brainstorms, links, decisions. */
+  /** Legacy Markdown notes (pre rich text); converted into notesHtml on first open. */
   notes?: string
+  /** Rich-text notes as a sanitized HTML subset; photos reference the media store by id. */
+  notesHtml?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string

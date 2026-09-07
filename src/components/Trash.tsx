@@ -1,17 +1,20 @@
 import { Item, Project, STATUS_META, Task } from '../types'
 import { excerpt, fmtDateTime, timeAgo } from '../utils'
+import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
   items: Item[]
   projectMap: Map<string, Project>
   onRestore(id: string): void
+  /** Permanent: removes the record from every device and the database. */
+  onPurge(id: string): void
   onClose(): void
 }
 
 const RETENTION_DAYS = 90
 
 /** Everything deleted in the last 90 days, restorable with one click. */
-export function Trash({ items, projectMap, onRestore, onClose }: Props) {
+export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props) {
   const deleted = items.filter(i => i.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
   const label = (i: Item) => (i.kind === 'task' ? i.title || excerpt(i.description, 50) || 'Untitled task' : i.name)
   return (
@@ -25,8 +28,8 @@ export function Trash({ items, projectMap, onRestore, onClose }: Props) {
         </header>
         <div className="modal-body">
           <p className="field-hint">
-            Deleted items stay here for {RETENTION_DAYS} days, then disappear for good. Restoring puts everything back exactly as it
-            was, on every device.
+            Deleted items stay here for {RETENTION_DAYS} days, then disappear for good. Restore puts everything back exactly as it
+            was, on every device. Delete forever removes it now, from the database too — there is no undo.
           </p>
           {deleted.length === 0 ? (
             <p className="empty">The trash is empty.</p>
@@ -54,9 +57,14 @@ export function Trash({ items, projectMap, onRestore, onClose }: Props) {
                         </small>
                       </span>
                     </div>
-                    <button className="btn" onClick={() => onRestore(i.id)}>
-                      Restore
-                    </button>
+                    <span className="trash-actions">
+                      <button className="btn" onClick={() => onRestore(i.id)}>
+                        Restore
+                      </button>
+                      <ConfirmButton className="btn subtle danger" confirmLabel="Forever? Click again" onConfirm={() => onPurge(i.id)}>
+                        Delete forever
+                      </ConfirmButton>
+                    </span>
                   </li>
                 )
               })}
