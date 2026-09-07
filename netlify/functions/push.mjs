@@ -15,20 +15,36 @@ export function configureWebPush() {
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY)
 }
 
-/** Send to every subscription; returns the endpoints that are gone and should be dropped. */
+/**
+ * Send to every subscription. Returns `gone` (expired endpoints to drop) and
+ * `failed` (everything else that errored). Failures must be surfaced, not
+ * swallowed: a well-formed but MISMATCHED VAPID pair fails with 403 on every
+ * send, and reporting that as success would leave push silently broken.
+ */
 export async function sendToAll(subscriptions, payload) {
   configureWebPush()
   const gone = []
+  const failed = []
   await Promise.all(
     (subscriptions ?? []).map(async sub => {
       try {
         await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600 })
       } catch (e) {
         if (e?.statusCode === 404 || e?.statusCode === 410) gone.push(sub.endpoint)
+        else failed.push({ endpoint: sub.endpoint, statusCode: e?.statusCode ?? 0, body: String(e?.body ?? e?.message ?? '').slice(0, 200) })
       }
     }),
   )
-  return gone
+  return { gone, failed }
+}
+
+function explainPushFailure(failed) {
+  const codes = [...new Set(failed.map(f => f.statusCode))]
+  if (codes.includes(403) || codes.includes(401)) {
+    return 'The push service rejected the VAPID credentials (403). VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be the matching pair from a single `npx web-push generate-vapid-keys` run — regenerate both, set both, redeploy, then turn push off and on again here.'
+  }
+  if (codes.includes(413)) return 'The notification payload was too large for the push service.'
+  return `The push service refused the message (HTTP ${codes.join(', ') || 'unknown'}).`
 }
 
 export default async req => {
@@ -47,6 +63,9 @@ export default async req => {
         publicKey: process.env.VAPID_PUBLIC_KEY ?? null,
         subscriptions: (s?.push_subscriptions ?? []).map(x => x.endpoint),
         digestEmail: !!s?.digest_email,
+        // the client must render the SAVED hour, else an unrelated toggle
+        // writes its default back over the user's choice
+        digestHour: Number.isInteger(s?.digest_hour) ? s.digest_hour : 8,
         timezone: s?.timezone ?? null,
         email: user.email,
       })
@@ -70,9 +89,12 @@ export default async req => {
       return Response.json({ ok: true, subscriptions: next.map(x => x.endpoint) })
     }
     if (body.action === 'test') {
-      const gone = await sendToAll(subs, { title: 'Drafter', body: 'Push reminders are on. You will get a digest each morning and a nudge when timed tasks come due.', tag: 'test' })
+      const { gone, failed } = await sendToAll(subs, { title: 'Drafter', body: 'Push reminders are on. You will get a digest each morning and a nudge when timed tasks come due.', tag: 'test' })
       if (gone.length) await settingsSet(user.id, { push_subscriptions: subs.filter(x => !gone.includes(x.endpoint)) })
-      return Response.json({ ok: true, sent: subs.length - gone.length })
+      if (failed.length) return Response.json({ error: explainPushFailure(failed) }, { status: 502 })
+      const sent = subs.length - gone.length
+      if (sent === 0) return Response.json({ error: 'No live subscriptions — turn push off and on again on this device.' }, { status: 409 })
+      return Response.json({ ok: true, sent })
     }
     if (body.action === 'prefs') {
       await settingsSet(user.id, {

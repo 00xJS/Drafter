@@ -58,7 +58,13 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
   const [thisEndpoint, setThisEndpoint] = useState<string | null>(null)
   const [digestHour, setDigestHour] = useState(8)
   useEffect(() => {
-    fetchPushInfo().then(setPush).catch(e => setPushError((e as Error).message))
+    fetchPushInfo()
+      .then(info => {
+        setPush(info)
+        // render the SAVED hour, never the local default
+        if (Number.isInteger(info.digestHour)) setDigestHour(info.digestHour)
+      })
+      .catch(e => setPushError((e as Error).message))
     currentEndpoint().then(setThisEndpoint)
   }, [])
   const runPush = async (fn: () => Promise<unknown>, after?: () => void) => {
@@ -305,7 +311,13 @@ export function Settings({ store, calendars, googlePush, household, onClose }: P
                       <button className="btn primary" disabled={pushBusy || !pushSupported()} onClick={() => runPush(() => enablePush(push.publicKey!))}>
                         {pushBusy ? 'Enabling…' : 'Enable on this device'}
                       </button>
-                      <small>{pushSupported() ? 'A morning digest plus a nudge when timed tasks come due.' : 'Not supported in this browser (on iPhone, install the app to the Home Screen first).'}</small>
+                      <small>
+                        {!pushSupported()
+                          ? 'Not supported in this browser (on iPhone, install the app to the Home Screen first).'
+                          : push.subscriptions.length > 0
+                            ? `On for ${push.subscriptions.length} other device${push.subscriptions.length === 1 ? '' : 's'} — turn it on here too.`
+                            : 'A morning digest plus a nudge when timed tasks come due.'}
+                      </small>
                     </>
                   )}
                 </p>

@@ -8,9 +8,6 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
-      workbox: {
-        importScripts: ['sw-push.js'],
-      },
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',
@@ -31,7 +28,10 @@ export default defineConfig({
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
+      // one workbox block only — a second key would silently replace this one
+      // and drop importScripts, leaving the service worker with no push handler
       workbox: {
+        importScripts: ['sw-push.js'],
         navigateFallbackDenylist: [/^\/api\//],
       },
     }),

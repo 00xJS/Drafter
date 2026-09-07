@@ -9,6 +9,7 @@ export interface PushInfo {
   publicKey: string | null
   subscriptions: string[]
   digestEmail: boolean
+  digestHour: number
   timezone: string | null
   email: string
 }
@@ -41,11 +42,26 @@ export async function currentEndpoint(): Promise<string | null> {
   return sub?.endpoint ?? null
 }
 
+/**
+ * A registration with an ACTIVE worker. getRegistration() resolves as soon as
+ * register() is called — while the worker may still be installing — and
+ * pushManager.subscribe() on such a registration fails; `ready` waits for
+ * activation. Raced with a timeout so a page with no worker cannot hang.
+ */
+async function activeRegistration(): Promise<ServiceWorkerRegistration> {
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('The service worker is not ready yet. Reload the page and try again.')), 10_000),
+    ),
+  ])
+}
+
 export async function enablePush(publicKey: string): Promise<string[]> {
   if (!pushSupported()) throw new Error('This browser does not support push notifications.')
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') throw new Error('Notifications were not allowed.')
-  const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.ready)
+  const reg = await activeRegistration()
   const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }))
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const r = await apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'subscribe', subscription: sub.toJSON(), timezone }) }).then(json<{ subscriptions: string[] }>)
