@@ -236,17 +236,38 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 ? 'Your projects and tasks live in Supabase Postgres, shared with every signed-in device and your AI agents. Images sync through Supabase Storage.'
                 : 'No backend configured — data stays in this browser. Use Export in the Tasks tab for backups.'}
             </p>
-            <button
-              className="btn"
-              disabled={syncing}
-              onClick={async () => {
-                setSyncing(true)
-                await store.syncNowManual()
-                setSyncing(false)
-              }}
-            >
-              {syncing ? 'Syncing…' : 'Sync now'}
-            </button>
+            {!!store.syncInfo.pending && (
+              <p className="warn">
+                {store.syncInfo.pending} change{store.syncInfo.pending === 1 ? '' : 's'} not confirmed by the server yet — they are kept and
+                retried on every sync.
+              </p>
+            )}
+            <p className="sync-line">
+              <button
+                className="btn"
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true)
+                  await store.syncNowManual()
+                  setSyncing(false)
+                }}
+              >
+                {syncing ? 'Syncing…' : 'Sync now'}
+              </button>
+              <button
+                className="btn subtle"
+                disabled={syncing}
+                title="Forget where this device got to and fetch everything again"
+                onClick={async () => {
+                  setSyncing(true)
+                  await store.fullResync()
+                  setSyncing(false)
+                }}
+              >
+                Full resync
+              </button>
+              <small>Use a full resync if a device looks out of date.</small>
+            </p>
           </section>
 
           {supabaseOn && (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeItems, nextOccurrence, purgeTombstones } from '../itemops'
+import { applySync, mergeItems, nextOccurrence, purgeTombstones } from '../itemops'
 import { Task } from '../types'
 
 function task(id: string, updatedAt: string, over: Partial<Task> = {}): Task {
@@ -95,5 +95,49 @@ describe('nextOccurrence', () => {
 
   it('returns null without recurrence', () => {
     expect(nextOccurrence(task('a', '2026-01-01T00:00:00.000Z'), uid)).toBeNull()
+  })
+})
+
+describe('applySync', () => {
+  const T = '2026-09-10T10:00:00.000Z'
+
+  it('merges onto CURRENT state, so an edit made during the request survives', () => {
+    // the snapshot the request was built from
+    const before = [task('a', '2026-09-10T09:00:00.000Z', { title: 'old' })]
+    // …but by the time the response lands the user has edited it
+    const current = [task('a', '2026-09-10T09:30:00.000Z', { title: 'edited while syncing' })]
+    const remote = [task('b', T)]
+    const d = applySync(current, before, remote, null)
+    const kept = d.merged.find(i => i.id === 'a')
+    expect(kept?.kind === 'task' && kept.title).toBe('edited while syncing')
+    expect(d.merged.map(i => i.id).sort()).toEqual(['a', 'b'])
+  })
+
+  it('advances the cursor only over what the server actually returned', () => {
+    // we optimistically sent a stamp far in the future; the server stored it as "now"
+    const sent = [task('a', '2027-01-01T00:00:00.000Z')]
+    const remote = [task('a', T)]
+    const d = applySync([], sent, remote, null)
+    // never jump to 2027 — rows written between now and then would be skipped forever
+    expect(d.cursor).toBe(T)
+  })
+
+  it('holds the cursor below a change the server did not confirm, so it is retried', () => {
+    const sent = [task('a', '2026-09-10T09:00:00.000Z'), task('rejected', '2026-09-10T09:05:00.000Z')]
+    const remote = [task('a', '2026-09-10T09:00:00.000Z')] // 'rejected' never came back
+    const d = applySync([], sent, remote, '2026-09-10T08:00:00.000Z')
+    expect(d.unconfirmed).toEqual(['rejected'])
+    expect(d.cursor! < '2026-09-10T09:05:00.000Z').toBe(true)
+  })
+
+  it('leaves the cursor alone when the server returned nothing', () => {
+    expect(applySync([], [], [], '2026-09-10T08:00:00.000Z').cursor).toBeNull()
+  })
+
+  it('confirms a push that comes back at the same stamp', () => {
+    const sent = [task('a', T)]
+    const d = applySync([], sent, [task('a', T)], null)
+    expect(d.unconfirmed).toEqual([])
+    expect(d.cursor).toBe(T)
   })
 })

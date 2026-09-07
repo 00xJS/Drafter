@@ -343,7 +343,9 @@ export default function Planner() {
         <span className="spacer" />
         <button className="sync-btn" onClick={manualSync} aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}>
           <span className={store.syncInfo.online ? 'sync-dot on' : 'sync-dot'} />
-          <span className="sync-label">{syncing ? 'Syncing…' : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}</span>
+          <span className="sync-label">
+            {syncing ? 'Syncing…' : store.syncInfo.pending ? `${store.syncInfo.pending} unsynced` : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
+          </span>
         </button>
         <button className="btn subtle" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
           🔍

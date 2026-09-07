@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarSource, Item, Person, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
+import { applySync, mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
 import { purgeRemote, syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
@@ -42,6 +42,8 @@ export interface SyncInfo {
   lastAt?: string
   /** The session is expired/invalid — the fix is signing in, not waiting. */
   authError: boolean
+  /** Changes the server did not confirm; they are retried on the next round. */
+  pending?: number
 }
 
 export interface ImportSummary {
@@ -81,6 +83,8 @@ export interface Store {
   setStatus(id: string, status: TaskStatus): StatusChange | null
   importItems(incoming: unknown[]): ImportSummary
   syncNowManual(): Promise<boolean>
+  /** Forget the delta cursor so the next sync is a full exchange. */
+  fullResync(): Promise<boolean>
 }
 
 /** Tasks blocked only by done tasks move to To do once their last blocker completes. */
@@ -191,17 +195,21 @@ export function useItems(myId: string | null = null): Store {
       const outgoing = since ? local.filter(p => p.updatedAt > since) : local
       const result = await syncNow(outgoing, since)
       if (result.items === null) {
-        setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError }))
+        setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError, pending: s.pending }))
         return false
       }
-      setSyncInfo({ online: true, lastAt: new Date().toISOString(), authError: false })
-      const combined = ensureProjects(purgeTombstones(mergeItems(local, result.items)))
-      let maxSeen = since ?? ''
-      for (const p of result.items) if (p.updatedAt > maxSeen) maxSeen = p.updatedAt
-      for (const p of outgoing) if (p.updatedAt > maxSeen) maxSeen = p.updatedAt
-      if (maxSeen) writeCursor(maxSeen)
-      const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
-      if (signature(combined) !== signature(local)) setItems(combined)
+      // merge onto whatever state is current when the response lands, never the
+      // snapshot taken before the request — see applySync
+      let decision: ReturnType<typeof applySync> | null = null
+      setItems(cur => {
+        decision = applySync(cur, outgoing, result.items!, since)
+        const next = ensureProjects(purgeTombstones(decision.merged))
+        const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
+        return signature(next) === signature(cur) ? cur : next
+      })
+      const applied = decision as ReturnType<typeof applySync> | null
+      if (applied?.cursor) writeCursor(applied.cursor)
+      setSyncInfo({ online: true, lastAt: new Date().toISOString(), authError: false, pending: applied?.unconfirmed.length ?? 0 })
       return true
     } finally {
       syncBusy.current = false
@@ -387,5 +395,13 @@ export function useItems(myId: string | null = null): Store {
       return { added, updated, unchanged, metricsRefreshed }
     },
     syncNowManual: () => doSyncRef.current(),
+    fullResync: () => {
+      try {
+        localStorage.removeItem(CURSOR_KEY)
+      } catch {
+        /* ignore */
+      }
+      return doSyncRef.current()
+    },
   }
 }
