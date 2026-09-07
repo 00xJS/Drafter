@@ -91,7 +91,7 @@ function buildDigest(items, tz, now) {
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
-  if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.join(', ')}`)
+  if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.slice(0, 3).join(', ')}${peopleDue.length > 3 ? `, +${peopleDue.length - 3} more` : ''}`)
   return { overdue, dueToday, occasions, peopleDue, lines }
 }
 

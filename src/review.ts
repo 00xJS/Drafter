@@ -51,6 +51,8 @@ export function shiftRange(r: Range, delta: number): Range {
 export interface ReviewData {
   range: Range
   done: Task[]
+  /** Logged visits in the range — real, but not work finished. */
+  visitsDone: Task[]
   /** Open tasks whose due date fell inside the range and passed without completion. */
   slipped: Task[]
   created: Task[]
@@ -67,13 +69,18 @@ export interface ReviewData {
   doneByDay: number[]
 }
 
+/** A logged get-together, not a piece of work: counted separately everywhere. */
+export const isVisit = (t: Task): boolean => t.tags.includes('visit')
+
 const inRange = (iso: string | undefined, r: Range) => !!iso && Date.parse(iso) >= r.start.getTime() && Date.parse(iso) < r.end.getTime()
 
 export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date()): ReviewData {
   const nowMs = now.getTime()
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
-  const done = tasks.filter(t => t.status === 'done' && inRange(t.completedAt, range)).sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
+  const doneAll = tasks.filter(t => t.status === 'done' && inRange(t.completedAt, range)).sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
+  const done = doneAll.filter(t => !isVisit(t))
+  const visitsDone = doneAll.filter(isVisit)
   const slipped = open.filter(t => inRange(t.dueAt, range) && Date.parse(t.dueAt!) < nowMs)
   const created = tasks.filter(t => inRange(t.createdAt, range) && !t.tags.includes('visit'))
   const upcoming = open.filter(t => inRange(t.dueAt, next)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
@@ -104,7 +111,7 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
     const i = Math.floor((Date.parse(t.completedAt!) - range.start.getTime()) / DAY_MS)
     if (i >= 0 && i < days) doneByDay[i]++
   }
-  return { range, done, slipped, created, upcoming, overdueNow, people: peopleSeen, projects: projectRows, stalled, costs, doneByDay }
+  return { range, done, visitsDone, slipped, created, upcoming, overdueNow, people: peopleSeen, projects: projectRows, stalled, costs, doneByDay }
 }
 
 /** Done-per-week for the last n weeks (oldest first), for the Today sparkline. */
@@ -113,7 +120,7 @@ export function doneByWeek(tasks: Task[], weeks = 12, now = new Date()): number[
   const out = Array.from({ length: weeks }, () => 0)
   const firstStart = thisWeek.start.getTime() - (weeks - 1) * 7 * DAY_MS
   for (const t of tasks) {
-    if (t.status !== 'done' || !t.completedAt) continue
+    if (t.status !== 'done' || !t.completedAt || isVisit(t)) continue
     const i = Math.floor((Date.parse(t.completedAt) - firstStart) / (7 * DAY_MS))
     if (i >= 0 && i < weeks) out[i]++
   }
@@ -127,4 +134,74 @@ export function stalledProjects(projects: Project[], tasks: Task[], days = 14, n
   for (const p of projects) last.set(p.id, Date.parse(p.updatedAt))
   for (const t of tasks) if (t.projectId) last.set(t.projectId, Math.max(last.get(t.projectId) ?? 0, Date.parse(t.updatedAt)))
   return projects.filter(p => p.status === 'active' && (last.get(p.id) ?? 0) < cutoff && Date.parse(p.createdAt) < cutoff)
+}
+
+/**
+ * The single most useful list on Today: what to do next, drawn from ALL open
+ * work. Previously Today derived every section from tasks that had a due date,
+ * so anything filed into a project without one was invisible for a fortnight —
+ * and dating every home task is exactly the discipline this app exists to
+ * replace. Ranking is deliberate and explainable, never a black box.
+ */
+export interface NextUp {
+  task: Task
+  /** Why it is here, shown to the user. */
+  reason: string
+  score: number
+}
+
+export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new Date()): NextUp[] {
+  const nowMs = now.getTime()
+  const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
+  const prio: Record<string, number> = { urgent: 3, high: 2, normal: 1, low: 0 }
+  // a project touched recently is one you are actually in the middle of
+  const projectTouched = new Map<string, number>()
+  for (const t of tasks) {
+    if (!t.projectId) continue
+    const at = Date.parse(t.updatedAt)
+    if (Number.isFinite(at)) projectTouched.set(t.projectId, Math.max(projectTouched.get(t.projectId) ?? 0, at))
+  }
+  const active = new Set(projects.filter(p => p.status === 'active').map(p => p.id))
+
+  const scored = open.map(t => {
+    let score = 0
+    let reason = ''
+    const due = t.dueAt ? Date.parse(t.dueAt) : NaN
+    const days = Number.isFinite(due) ? Math.round((due - nowMs) / DAY_MS) : null
+
+    if (days !== null && days < 0) {
+      score += 1000 - Math.min(days * -1, 60)
+      reason = `overdue ${-days}d`
+    } else if (days !== null && days <= 1) {
+      score += 900
+      reason = days === 0 ? 'due today' : 'due tomorrow'
+    } else if (days !== null && days <= 7) {
+      score += 700 - days * 10
+      reason = `due in ${days}d`
+    } else if (t.status === 'doing') {
+      score += 600
+      reason = 'in progress'
+    } else if (days !== null) {
+      score += 200 - Math.min(days, 90)
+      reason = `due in ${days}d`
+    } else {
+      // undated: the backlog this list exists to surface
+      const touched = t.projectId ? projectTouched.get(t.projectId) ?? 0 : 0
+      const projectIsMoving = touched > nowMs - 14 * DAY_MS
+      const idleDays = Math.floor((nowMs - Date.parse(t.updatedAt)) / DAY_MS)
+      score += 300 + (projectIsMoving ? 80 : 0) + Math.min(idleDays, 60)
+      reason = projectIsMoving ? 'project is moving' : idleDays > 21 ? `untouched ${idleDays}d` : 'no date yet'
+    }
+
+    if (t.status === 'blocked') {
+      score -= 250
+      reason = 'blocked'
+    }
+    score += prio[t.priority] * 40
+    if (t.projectId && active.has(t.projectId)) score += 25
+    return { task: t, reason, score }
+  })
+
+  scored.sort((a, b) => b.score - a.score || (a.task.dueAt ?? '9').localeCompare(b.task.dueAt ?? '9'))
+  return scored.slice(0, limit)
 }

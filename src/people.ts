@@ -58,29 +58,32 @@ export function personStats(person: Person, tasks: Task[], now: Date = new Date(
   }
 
   const cadence = person.cadenceDays
+  // Without a target, every state used to be gated off and ANYONE — even
+  // someone last seen 400 days ago — showed a green "On track". Fall back to a
+  // generous default so drift is still noticed; the badge says it is inferred.
+  const effective = cadence ?? DEFAULT_CADENCE_DAYS
   let status: SeenStatus
   let reason: string
   if (!lastSeen) {
     status = 'never'
     reason = 'No visits logged yet'
-  } else if (cadence && daysSince !== undefined && daysSince > cadence * 1.5) {
+  } else if (daysSince !== undefined && daysSince > effective * 1.5) {
     status = 'overdue'
-    reason = `Last seen ${daysSince} days ago — you aimed for every ${cadence} days`
-  } else if (cadence && daysSince !== undefined && daysSince > cadence) {
+    reason = cadence
+      ? `Last seen ${daysSince} days ago — you aimed for every ${cadence} days`
+      : `Last seen ${daysSince} days ago — longest gap of anyone you track`
+  } else if (daysSince !== undefined && daysSince > effective) {
     status = 'due'
-    reason = `It's been ${daysSince} days; you aimed for every ${cadence} days`
-  } else if (cadence && count30 >= Math.max(3, Math.ceil((30 / cadence) * 2))) {
-    status = 'often'
-    reason = `${count30} times in 30 days — about double your usual rhythm`
-  } else if (!cadence && count30 >= 6) {
-    status = 'often'
-    reason = `${count30} times in the last 30 days`
+    reason = cadence ? `It's been ${daysSince} days; you aimed for every ${cadence} days` : `It's been ${daysSince} days`
   } else {
     status = 'ok'
     reason = daysSince === 0 ? 'Seen today' : `Last seen ${daysSince} day${daysSince === 1 ? '' : 's'} ago`
   }
   return { person, visits, lastSeen, daysSince, count30, count90, avgGapDays, weekly, status, reason }
 }
+
+/** Used when someone has no declared rhythm, so drift is still visible. */
+export const DEFAULT_CADENCE_DAYS = 90
 
 export const SEEN_META: Record<SeenStatus, { label: string; color: string; bg: string }> = {
   never: { label: 'No visits yet', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },

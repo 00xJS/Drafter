@@ -116,6 +116,12 @@ export function nextOccurrence(task, uidFn) {
     dueAt: next.toISOString(),
     tags: [...(task.tags ?? [])],
     notes: task.notes,
+    // carry the context forward, or a recurring "Sunday lunch with Mum" records
+    // exactly one visit ever and her last-seen date freezes on the first one
+    peopleIds: task.peopleIds ? [...task.peopleIds] : undefined,
+    link: task.link,
+    githubUrl: task.githubUrl,
+    estimateCost: task.estimateCost,
     checklist: task.checklist ? task.checklist.map(c => ({ ...c, done: false })) : undefined,
     social: task.social
       ? { platforms: [...task.social.platforms], variants: task.social.variants ? { ...task.social.variants } : undefined }

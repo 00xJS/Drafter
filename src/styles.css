@@ -3637,3 +3637,17 @@ textarea {
 .ms-account .sync-line {
   margin-top: 0;
 }
+
+/* Next up — the one list that answers "what now?" */
+.next-up {
+  border-color: var(--accent);
+}
+.next-up .why {
+  font-size: 11px;
+  color: var(--muted);
+}
+.stat-aside {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}

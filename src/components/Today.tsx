@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { CalendarEvent, CalendarSource, Person, Project, Task, TaskStatus, projectProgress } from '../types'
 import { SEEN_META, compareStats, personStats, upcomingOccasions } from '../people'
-import { doneByWeek, stalledProjects } from '../review'
+import { NextUp, doneByWeek, isVisit, nextUp, stalledProjects } from '../review'
 import { DAY_MS, compareTasks, dayOffset, isOpen } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { excerpt, fmtTime, timeAgo } from '../utils'
@@ -104,6 +104,8 @@ function eventWhen(ev: CalendarEvent): string {
 
 export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, projects, projectMap, events, sourceMap, onPlan, onOpen, onOpenProject, onStatus, onNew }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
+  // ranked over ALL open work — the dated sections below only ever saw a slice of it
+  const upNext: NextUp[] = useMemo(() => nextUp(tasks, projects), [tasks, projects])
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
   const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
@@ -142,19 +144,23 @@ export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, pro
       .sort(compareTasks)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
+    // no age cut-off: something captured and never filed must not vanish
     const inbox = open
-      .filter(t => !t.projectId && !t.dueAt && t.status === 'todo' && nowMs - new Date(t.createdAt).getTime() < 7 * DAY_MS)
+      .filter(t => !t.projectId && !t.dueAt && t.status === 'todo')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const stale = open
       .filter(t => !t.dueAt && t.status === 'todo' && nowMs - new Date(t.updatedAt).getTime() > STALE_DAYS * DAY_MS)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-    const doneRecent = tasks
+    const doneRecentAll = tasks
       .filter(t => t.status === 'done' && t.completedAt && nowMs - new Date(t.completedAt).getTime() < 7 * DAY_MS)
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
+    // a logged get-together is not work finished; counting it as such inflated every progress number
+    const doneRecent = doneRecentAll.filter(t => !isVisit(t))
+    const visitsRecent = doneRecentAll.filter(isVisit)
     const activeProjects = projects
       .filter(p => p.status === 'active')
       .map(p => ({ project: p, progress: projectProgress(tasks.filter(t => t.projectId === p.id)) }))
-    return { open, overdue, today, week, doing, blocked, stale, inbox, doneRecent, activeProjects }
+    return { open, overdue, today, week, doing, blocked, stale, inbox, doneRecent, visitsRecent, activeProjects }
   }, [tasks, projects])
 
   if (tasks.length === 0 && projects.length === 0) {
@@ -193,7 +199,10 @@ export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, pro
         <StatTile label="Open" value={String(s.open.length)} sub="to do, doing or blocked" />
         <div className="stat-tile">
           <div className="stat-label">Done this week</div>
-          <div className="stat-value">{s.doneRecent.length}</div>
+          <div className="stat-value">
+            {s.doneRecent.length}
+            {s.visitsRecent.length > 0 && <small className="stat-aside"> · {s.visitsRecent.length} visits</small>}
+          </div>
           <div className="spark" aria-hidden title="Done per week, last 12 weeks">
             {weekly.map((n, i) => (
               <span key={i} className={i === weekly.length - 1 ? 'spark-bar now' : 'spark-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / Math.max(...weekly, 1)) * 80}%` }} />
@@ -201,6 +210,41 @@ export function Today({ tasks, allTasks, people, onPlanWith, onPlanOccasion, pro
           </div>
         </div>
       </div>
+
+      {upNext.length > 0 && (
+        <section className="chart-card next-up">
+          <header className="chart-head">
+            <div>
+              <h3>Next up</h3>
+              <p className="chart-sub">Ranked across every open task, dated or not</p>
+            </div>
+          </header>
+          <ul className="dash-list tlist">
+            {upNext.map(({ task, reason }) => (
+              <li key={task.id} className="trow" onClick={() => onOpen(task)}>
+                <input
+                  type="checkbox"
+                  className="tcheck"
+                  checked={false}
+                  aria-label="Mark done"
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => onStatus(task.id, 'done')}
+                />
+                <div className="dash-main">
+                  <span className="dash-title">
+                    <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 60) || 'Untitled'}
+                  </span>
+                  <span className="dash-meta">
+                    {task.projectId && projectMap.get(task.projectId) && <ProjectChip project={projectMap.get(task.projectId)!} />}
+                    <span className="why">{reason}</span>
+                  </span>
+                </div>
+                <DueBadge task={task} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {stalled.length > 0 && (
         <p className="stalled-line">
