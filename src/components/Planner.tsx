@@ -15,6 +15,8 @@ import { TasksTable } from './TasksTable'
 import { Insights } from './Insights'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
+import { ProjectNotes } from './ProjectNotes'
+import { Trash } from './Trash'
 import { Settings } from './Settings'
 
 type View = 'today' | 'tasks' | 'board' | 'calendar' | 'insights'
@@ -55,6 +57,8 @@ export default function Planner() {
   })
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
+  const [notesFor, setNotesFor] = useState<Project | null>(null)
+  const [trashOpen, setTrashOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -229,9 +233,14 @@ export default function Planner() {
             </button>
           ))}
           {filterProject && (
-            <button className="pchip edit" onClick={() => openProject(filterProject)} aria-label="Edit project">
-              ✎
-            </button>
+            <>
+              <button className="pchip edit" onClick={() => openProject(filterProject)} aria-label="Edit project">
+                ✎
+              </button>
+              <button className="pchip edit" onClick={() => setNotesFor(filterProject)} title="Project notes">
+                Notes{filterProject.notes ? ' •' : ''}
+              </button>
+            </>
           )}
           <button className="pchip add" onClick={newProject}>
             + Project
@@ -310,7 +319,16 @@ export default function Planner() {
               </>
             )}
             {view === 'tasks' && (
-              <TasksTable store={store} tasks={filteredTasks} projectMap={projectMap} onOpen={openTask} onNew={newTask} onDelete={deleteTask} />
+              <TasksTable
+                store={store}
+                tasks={filteredTasks}
+                projectMap={projectMap}
+                onOpen={openTask}
+                onNew={newTask}
+                onDelete={deleteTask}
+                onOpenTrash={() => setTrashOpen(true)}
+                trashCount={store.allItems.filter(i => i.deletedAt).length}
+              />
             )}
             {view === 'insights' && <Insights posts={posts} />}
           </>
@@ -351,6 +369,31 @@ export default function Planner() {
             if (p) deleteProject(p)
           }}
           onClose={() => setProjectEditor(null)}
+          onOpenNotes={p => {
+            setProjectEditor(null)
+            setNotesFor(p)
+          }}
+        />
+      )}
+
+      {notesFor && (
+        <ProjectNotes
+          project={store.projects.find(p => p.id === notesFor.id) ?? notesFor}
+          getLatest={id => store.projects.find(x => x.id === id)}
+          onSave={p => store.upsert(p)}
+          onClose={() => setNotesFor(null)}
+        />
+      )}
+
+      {trashOpen && (
+        <Trash
+          items={store.allItems}
+          projectMap={projectMap}
+          onRestore={id => {
+            store.restore([id])
+            showToast('Restored')
+          }}
+          onClose={() => setTrashOpen(false)}
         />
       )}
 

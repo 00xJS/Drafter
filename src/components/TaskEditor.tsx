@@ -23,6 +23,7 @@ import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
 import { REFINE_META, RefineMode, generateVariants, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { GithubCard } from './GithubCard'
+import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
   task?: Task
@@ -633,9 +634,9 @@ export function TaskEditor({ task, preset, projects, getLatest, onSave, onCommit
 
         <footer className="modal-foot">
           {task && (
-            <button className="btn danger" onClick={() => onDelete(task.id)}>
+            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
               Delete
-            </button>
+            </ConfirmButton>
           )}
           <span className="spacer" />
           {project && <small className="muted">in {project.name}</small>}

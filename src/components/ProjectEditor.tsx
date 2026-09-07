@@ -3,6 +3,7 @@ import { Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Proje
 import { newerStamp } from '../itemops'
 import { fromLocalInput, uid } from '../utils'
 import { GithubCard } from './GithubCard'
+import { ConfirmButton } from './ConfirmButton'
 import { ProgressBar } from './bits'
 
 interface Props {
@@ -12,12 +13,13 @@ interface Props {
   onSave(p: Project): void
   onDelete(id: string): void
   onClose(): void
+  onOpenNotes?(p: Project): void
 }
 
 const toDateInput = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 10) : '')
 const fromDateInput = (v: string) => (v ? fromLocalInput(`${v}T12:00`) : undefined)
 
-export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose }: Props) {
+export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose, onOpenNotes }: Props) {
   const [base] = useState<Project>(() => {
     const now = new Date().toISOString()
     return (
@@ -207,6 +209,23 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
           </label>
           {githubUrl.trim() && <GithubCard url={githubUrl.trim()} />}
 
+          {project && onOpenNotes && (
+            <div className="field">
+              <span>Notes</span>
+              <button
+                type="button"
+                className="btn notes-open"
+                onClick={() => {
+                  if (isDirty()) save()
+                  else onClose()
+                  onOpenNotes(getLatest(project.id) ?? project)
+                }}
+              >
+                Open the notes pad{project.notes ? ` (${project.notes.split(/\s+/).filter(Boolean).length} words)` : ''}
+              </button>
+              <small className="field-hint">Brainstorm with bold, links, code blocks, emoji and lists. Autosaves.</small>
+            </div>
+          )}
           {project && (
             <div className="field">
               <span>Progress</span>
@@ -222,9 +241,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <footer className="modal-foot">
           {project && (
-            <button className="btn danger" onClick={() => onDelete(project.id)}>
+            <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
               Delete
-            </button>
+            </ConfirmButton>
           )}
           <span className="spacer" />
           <button className="btn" onClick={requestClose}>

@@ -29,7 +29,9 @@ If both keys are set NVIDIA wins; force one with `AI_PROVIDER=nvidia|anthropic`.
 - **Project** — a container with a name, color, status (active / paused / done / archived), optional start and target dates, milestones, and an optional GitHub repo or Projects URL.
 - **Task** — title, description, status (Wishlist → To do → Doing → Blocked → Done, plus Canceled), priority (low / normal / high / urgent), due date, tags, a checklist, a timestamped comment trail, notes, images, an optional GitHub link, and recurrence (daily / weekly / biweekly / monthly — completing one spawns the next). A task with `social` set is a post: platforms, per-platform overrides, and results.
 
-The **project bar** under the header filters every view to one project (double-click a chip to edit it).
+The **project bar** under the header filters every view to one project (double-click a chip to edit it). With a project selected, **Notes** opens its notes pad: a Markdown brainstorm space with a formatting toolbar (bold, italic, headings, lists, checklists, quotes, inline code, code blocks, links, dividers), an emoji picker, keyboard shortcuts, list continuation on Enter, and a live preview. It autosaves as you type and syncs like everything else.
+
+**Deleting is two-step everywhere:** the first click arms the button, a second click within four seconds confirms. Deleted tasks, projects and calendars go to the **Trash** (Tasks → Trash) for 90 days, where one click restores them; the undo toast still works too.
 
 ## Views
 

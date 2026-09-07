@@ -8,6 +8,7 @@ import { excerpt } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
 import { ImportArchiveDialog } from './ImportArchiveDialog'
 import { DueBadge, PriorityMark, ProjectChip } from './bits'
+import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
   store: Store
@@ -16,11 +17,13 @@ interface Props {
   onOpen(t: Task): void
   onNew(preset?: Partial<Task>): void
   onDelete(t: Task): void
+  onOpenTrash(): void
+  trashCount: number
 }
 
 type SortKey = 'due' | 'priority' | 'updated'
 
-export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete }: Props) {
+export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, onOpenTrash, trashCount }: Props) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<TaskStatus | 'all' | 'open'>('open')
   const [priority, setPriority] = useState<Priority | 'all'>('all')
@@ -99,6 +102,9 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete }
       </button>
       <button className="btn" onClick={exportJSON}>
         Export JSON
+      </button>
+      <button className="btn" onClick={onOpenTrash}>
+        Trash{trashCount > 0 ? ` (${trashCount})` : ''}
       </button>
     </>
   )
@@ -195,15 +201,9 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete }
                   {project && <ProjectChip project={project} />}
                   <DueBadge task={t} />
                   <span className="spacer" />
-                  <button
-                    className="btn subtle danger"
-                    onClick={e => {
-                      e.stopPropagation()
-                      onDelete(t)
-                    }}
-                  >
+                  <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
                     Delete
-                  </button>
+                  </ConfirmButton>
                 </div>
               </li>
             )
@@ -255,16 +255,10 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete }
                     </td>
                     <td className="cell-date">{t.dueAt ? <DueBadge task={t} /> : '—'}</td>
                     <td className="cell-date">{new Date(t.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
-                    <td>
-                      <button
-                        className="btn subtle danger"
-                        onClick={e => {
-                          e.stopPropagation()
-                          onDelete(t)
-                        }}
-                      >
+                    <td onClick={e => e.stopPropagation()}>
+                      <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
                         Delete
-                      </button>
+                      </ConfirmButton>
                     </td>
                   </tr>
                 )

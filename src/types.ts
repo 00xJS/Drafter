@@ -83,6 +83,8 @@ export interface Project {
   targetAt?: string
   milestones?: Milestone[]
   githubUrl?: string
+  /** Free-form Markdown notes: brainstorms, links, decisions. */
+  notes?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string

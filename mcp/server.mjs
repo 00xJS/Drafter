@@ -165,6 +165,7 @@ function summarizeProject(p, tasks = []) {
     targetAt: p.targetAt ?? null,
     milestones: p.milestones ?? [],
     githubUrl: p.githubUrl ?? null,
+    notes: p.notes ? (p.notes.length > 200 ? p.notes.slice(0, 200) + '…' : p.notes) : null,
     tasks: { total: live.length, done, open: live.filter(t => OPEN.includes(t.status)).length },
   }
 }
@@ -228,7 +229,7 @@ const TOOLS = [
   },
   {
     name: 'update_project',
-    description: 'Edit a project: name, description, status (active|paused|done|archived), dates, GitHub URL, or add a milestone.',
+    description: 'Edit a project: name, description, status (active|paused|done|archived), dates, GitHub URL, Markdown notes (replace or append), or add a milestone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -239,12 +240,14 @@ const TOOLS = [
         startAt: { type: 'string' },
         targetAt: { type: 'string' },
         githubUrl: { type: 'string' },
+        notes: { type: 'string', description: 'Replace the project notes (Markdown)' },
+        appendNotes: { type: 'string', description: 'Append a Markdown paragraph to the project notes' },
         addMilestone: { type: 'object', properties: { name: { type: 'string' }, dueAt: { type: 'string' } }, required: ['name'] },
         completeMilestone: { type: 'string', description: 'Name (or id) of a milestone to mark reached' },
       },
       required: ['id'],
     },
-    async run({ id, name, description, status, startAt, targetAt, githubUrl, addMilestone, completeMilestone }) {
+    async run({ id, name, description, status, startAt, targetAt, githubUrl, notes, appendNotes, addMilestone, completeMilestone }) {
       const project = await fetchProject(id)
       if (name !== undefined) project.name = String(name).trim() || project.name
       if (description !== undefined) project.description = String(description) || undefined
@@ -252,6 +255,8 @@ const TOOLS = [
       if (startAt !== undefined) project.startAt = startAt ? isoOrThrow(startAt, 'startAt') : undefined
       if (targetAt !== undefined) project.targetAt = targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined
       if (githubUrl !== undefined) project.githubUrl = String(githubUrl) || undefined
+      if (notes !== undefined) project.notes = String(notes) || undefined
+      if (appendNotes) project.notes = [project.notes, String(appendNotes)].filter(Boolean).join('\n\n')
       if (addMilestone?.name) {
         project.milestones = [...(project.milestones ?? []), { id: newId(), name: String(addMilestone.name), dueAt: addMilestone.dueAt ? isoOrThrow(addMilestone.dueAt, 'dueAt') : undefined }]
       }

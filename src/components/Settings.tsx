@@ -6,6 +6,7 @@ import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
 import { PROJECT_COLORS } from '../types'
 import { fmtDateTime, timeAgo, uid } from '../utils'
+import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
   store: Store
@@ -300,9 +301,9 @@ export function Settings({ store, calendars, googlePush, onClose }: Props) {
                         <small>{calendars.events.filter(e => e.sourceId === c.id).length} events</small>
                       )}
                     </span>
-                    <button className="btn subtle danger" onClick={() => store.remove(c.id)}>
+                    <ConfirmButton className="btn subtle danger" confirmLabel="Sure?" onConfirm={() => store.remove(c.id)}>
                       Remove
-                    </button>
+                    </ConfirmButton>
                   </li>
                 ))}
               </ul>
