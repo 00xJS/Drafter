@@ -27,6 +27,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/push"
+  to = "/.netlify/functions/push"
+  status = 200
+
+[[redirects]]
   from = "/api/google"
   to = "/.netlify/functions/google"
   status = 200

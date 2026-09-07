@@ -7,6 +7,7 @@ import { getSupabase, isSupabaseConfigured } from '../supabase'
 import { PROJECT_COLORS } from '../types'
 import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
+import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 
 interface Props {
   store: Store
@@ -31,6 +32,29 @@ export function Settings({ store, calendars, googlePush, onClose }: Props) {
   const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
   const [googleBusy, setGoogleBusy] = useState(false)
   const supabaseOn = isSupabaseConfigured()
+  const [push, setPush] = useState<PushInfo | null>(null)
+  const [pushError, setPushError] = useState('')
+  const [pushBusy, setPushBusy] = useState(false)
+  const [thisEndpoint, setThisEndpoint] = useState<string | null>(null)
+  const [digestHour, setDigestHour] = useState(8)
+  useEffect(() => {
+    fetchPushInfo().then(setPush).catch(e => setPushError((e as Error).message))
+    currentEndpoint().then(setThisEndpoint)
+  }, [])
+  const runPush = async (fn: () => Promise<unknown>, after?: () => void) => {
+    setPushBusy(true)
+    setPushError('')
+    try {
+      await fn()
+      after?.()
+      setPush(await fetchPushInfo())
+      setThisEndpoint(await currentEndpoint())
+    } catch (e) {
+      setPushError((e as Error).message)
+    } finally {
+      setPushBusy(false)
+    }
+  }
   const pushSource = store.calendars.find(c => c.id === GOOGLE_PUSH_ID)
   const mirroring = !!pushSource?.enabled
 
@@ -184,10 +208,59 @@ export function Settings({ store, calendars, googlePush, onClose }: Props) {
 
           <section className="settings-section">
             <h3>Reminders</h3>
-            <p className="field-hint">
-              Get a notification when a task's due time arrives. Reminders fire while Drafter is open on this
-              device — there is no server-side push (yet).
-            </p>
+            <h4>Push notifications (works with the app closed)</h4>
+            {push?.configured ? (
+              <>
+                <p className="sync-line">
+                  {thisEndpoint && push.subscriptions.includes(thisEndpoint) ? (
+                    <>
+                      <span>On for this device{push.subscriptions.length > 1 ? ` (+${push.subscriptions.length - 1} other${push.subscriptions.length > 2 ? 's' : ''})` : ''}.</span>
+                      <button className="btn" disabled={pushBusy} onClick={() => runPush(testPush)}>
+                        Send a test
+                      </button>
+                      <button className="btn subtle" disabled={pushBusy} onClick={() => runPush(disablePush)}>
+                        Turn off here
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn primary" disabled={pushBusy || !pushSupported()} onClick={() => runPush(() => enablePush(push.publicKey!))}>
+                        {pushBusy ? 'Enabling…' : 'Enable on this device'}
+                      </button>
+                      <small>{pushSupported() ? 'A morning digest plus a nudge when timed tasks come due.' : 'Not supported in this browser (on iPhone, install the app to the Home Screen first).'}</small>
+                    </>
+                  )}
+                </p>
+                <p className="sync-line">
+                  <label className="cal-source mirror-row">
+                    <input
+                      type="checkbox"
+                      checked={push.digestEmail}
+                      onChange={e => runPush(() => savePushPrefs({ digestEmail: e.target.checked, digestHour }))}
+                    />
+                    <span className="cal-source-name">Also email me the morning digest ({push.email})</span>
+                  </label>
+                  <label className="digest-hour">
+                    at
+                    <select value={digestHour} onChange={e => { setDigestHour(Number(e.target.value)); runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour: Number(e.target.value) })) }}>
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>
+                          {String(h).padStart(2, '0')}:00
+                        </option>
+                      ))}
+                    </select>
+                    <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
+                  </label>
+                </p>
+              </>
+            ) : push ? (
+              <p className="field-hint">Not configured on the host: set {push.missing.join(', ')} on Netlify (run <code>npx web-push generate-vapid-keys</code> for the VAPID pair).</p>
+            ) : (
+              <p className="field-hint">{pushError ? `Push status unavailable: ${pushError}` : 'Checking push…'}</p>
+            )}
+            {pushError && push && <p className="warn">{pushError}</p>}
+            <h4>While the app is open</h4>
+            <p className="field-hint">Browser notifications when a task's due time arrives on this device.</p>
             <p>
               {notif === 'granted'
                 ? 'Notifications are on.'

@@ -8,6 +8,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
+      workbox: {
+        importScripts: ['sw-push.js'],
+      },
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',

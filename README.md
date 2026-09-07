@@ -76,7 +76,8 @@ All integration secrets are **per user**: each signed-in account's Google tokens
 
 ## Reminders, backup, PWA
 
-- **Reminders:** enable notifications in Settings to get pinged when a task's due time arrives (while the app is open).
+- **Push reminders (app closed):** Settings → Reminders → *Enable on this device*. An hourly scheduled function sends a morning digest at your chosen local hour (overdue, due today, occasions, people due a catch-up) and a nudge when a timed task comes due (hourly granularity). Optionally the digest goes by email too. Host setup: `npx web-push generate-vapid-keys` → `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` on Netlify; for email, `RESEND_API_KEY` (and `DIGEST_FROM`). iPhone needs the app installed to the Home Screen.
+- **Reminders while open:** browser notifications on this device when a task's due time arrives.
 - **Auto-backup:** pick a backup file in Settings (Chromium browsers) and every change is written to it automatically.
 - **PWA:** the production build is installable and works offline.
 
