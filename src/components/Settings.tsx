@@ -8,6 +8,7 @@ import { PROJECT_COLORS } from '../types'
 import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
+import { clearLocalData } from '../idb'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
 
@@ -316,8 +317,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
               <button
                 className="btn"
                 onClick={async () => {
+                  // stop notifications and wipe the local copy BEFORE dropping the
+                  // session, while the token is still valid to deregister with
+                  await disablePush().catch(() => {})
                   await getSupabase()?.auth.signOut()
+                  await clearLocalData()
                   onClose()
+                  window.location.reload()
                 }}
               >
                 Sign out

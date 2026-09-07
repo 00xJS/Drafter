@@ -4,14 +4,19 @@ import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
 import { uid } from './utils'
 import { purgeRemote, syncNow } from './sync'
-import { idbGet, idbSet } from './idb'
+import { clearLocalData, idbGet, idbSet } from './idb'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 const CURSOR_KEY = 'drafter:sync-cursor'
 
-async function loadCache(): Promise<Item[]> {
+async function loadCache(myId: string | null): Promise<Item[]> {
   try {
-    const cached = await idbGet<{ version: number; items?: unknown[]; posts?: unknown[] }>('posts', 'all')
+    const cached = await idbGet<{ version: number; userId?: string | null; items?: unknown[]; posts?: unknown[] }>('posts', 'all')
+    // a cache written by a different account must never be adopted or re-synced
+    if (cached && myId && cached.userId && cached.userId !== myId) {
+      await clearLocalData()
+      return []
+    }
     if (cached) {
       const migrated = migrateStored(cached)
       // an empty cache must not shadow a legacy localStorage store (e.g. an
@@ -208,7 +213,7 @@ export function useItems(myId: string | null = null): Store {
   // boot: read the IndexedDB cache, then do a first sync
   useEffect(() => {
     let live = true
-    loadCache().then(cached => {
+    loadCache(myId).then(cached => {
       if (!live) return
       setItems(ensureProjects(cached))
       loadedRef.current = true
@@ -218,7 +223,8 @@ export function useItems(myId: string | null = null): Store {
     return () => {
       live = false
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myId])
 
   // periodic sync + sync when the app returns to the foreground
   useEffect(() => {
@@ -243,7 +249,7 @@ export function useItems(myId: string | null = null): Store {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
       const snapshot = itemsRef.current
-      idbSet('posts', 'all', { version: STORAGE_VERSION, items: snapshot })
+      idbSet('posts', 'all', { version: STORAGE_VERSION, userId: myId, items: snapshot })
         .then(() => {
           // legacy cache retired only once the new cache holds real data
           if (snapshot.length > 0) localStorage.removeItem(LEGACY_LS_KEY)

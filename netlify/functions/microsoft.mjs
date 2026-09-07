@@ -8,7 +8,8 @@
 // https://<site>/api/microsoft/callback -> MICROSOFT_CLIENT_ID and a client
 // secret in MICROSOFT_CLIENT_SECRET.
 
-import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
+import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
+import { clearCookieHeader, cookieHeader, newVerifier, stateFor, verifyState } from './lib/oauth.mjs'
 import {
   authUrl,
   connectAccount,
@@ -22,20 +23,23 @@ import {
   publicAccount,
   pullChanges,
   pushTask,
-  randomState,
 } from './lib/microsoft.mjs'
 
 const redirectUriFor = origin => `${origin}/api/microsoft/callback`
 const STATE_TTL_MS = 10 * 60_000
 
-async function callback(url) {
-  const back = q => Response.redirect(`${url.origin}/?${q}`, 302)
+const MS_COOKIE = 'drafter_ms_oauth'
+
+async function callback(req, url) {
+  const back = q => new Response(null, { status: 302, headers: { location: `${url.origin}/?${q}`, 'set-cookie': clearCookieHeader(MS_COOKIE) } })
   if (!microsoftConfigured()) return back('microsoft=error&reason=not_configured')
   if (url.searchParams.get('error')) return back(`microsoft=error&reason=${encodeURIComponent(url.searchParams.get('error_description') ?? url.searchParams.get('error'))}`)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   if (!code || !state) return back('microsoft=error&reason=bad_state')
-  // the state was minted for exactly one user by a session-gated call
+  // the state must match BOTH the user row it was minted into and the cookie
+  // set in this browser, so a consent URL cannot be handed to someone else
+  if (!verifyState(req, MS_COOKIE, state)) return back('microsoft=error&reason=state_mismatch')
   const row = await settingsFind('ms_oauth_state', state).catch(() => null)
   if (!row || !row.ms_state_at || Date.now() - Date.parse(row.ms_state_at) > STATE_TTL_MS) return back('microsoft=error&reason=bad_state')
   await settingsSet(row.user_id, { ms_oauth_state: null, ms_state_at: null })
@@ -53,7 +57,7 @@ export default async req => {
   const url = new URL(req.url)
   if (url.pathname.endsWith('/callback')) {
     if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
-    return callback(url)
+    return callback(req, url)
   }
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   const { user, response, unconfigured } = await getUser(req)
@@ -77,9 +81,13 @@ export default async req => {
     if (!microsoftConfigured()) return Response.json({ error: `Outlook is not configured on the host: set ${missingMicrosoftEnv().join(', ')}` }, { status: 501 })
 
     if (action === 'auth') {
-      const state = randomState()
+      const verifier = newVerifier()
+      const state = stateFor(verifier)
       await settingsSet(user.id, { ms_oauth_state: state, ms_state_at: new Date().toISOString() })
-      return Response.json({ url: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state, body.loginHint) })
+      return Response.json(
+        { url: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state, body.loginHint) },
+        { headers: { 'set-cookie': cookieHeader(MS_COOKIE, verifier) } },
+      )
     }
     if (action === 'disconnect') {
       await disconnectAccount(user.id, String(body.accountId ?? ''))

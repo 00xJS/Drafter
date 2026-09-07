@@ -114,7 +114,9 @@ function parseRRule(v) {
     interval: Math.max(1, parseInt(rule.INTERVAL ?? '1', 10) || 1),
     count: rule.COUNT ? parseInt(rule.COUNT, 10) : undefined,
     until: rule.UNTIL ? parseDateValue(rule.UNTIL)?.ms : undefined,
-    byDay: rule.BYDAY ? rule.BYDAY.split(',') : undefined,
+    // there are only 7 weekdays; a feed repeating one 200,000 times is an
+    // attack, and de-duplicating is lossless
+    byDay: rule.BYDAY ? [...new Set(rule.BYDAY.split(','))].slice(0, 7) : undefined,
     byMonthDay: rule.BYMONTHDAY ? rule.BYMONTHDAY.split(',').map(Number) : undefined,
     byMonth: rule.BYMONTH ? rule.BYMONTH.split(',').map(Number) : undefined,
   }
@@ -222,13 +224,13 @@ function occurrences(ev, fromMs, toMs) {
   if (r.freq === 'DAILY') {
     for (let i = 0, ms = start; i < MAX && ms <= until; i++, ms = start + i * r.interval * DAY) if (!push(ms)) break
   } else if (r.freq === 'WEEKLY') {
-    const days = r.byDay ? r.byDay.map(d => WEEKDAYS.indexOf(d.slice(-2))).filter(i => i >= 0) : [new Date(start).getUTCDay()]
+    const days = (r.byDay ? r.byDay.map(d => WEEKDAYS.indexOf(d.slice(-2))).filter(i => i >= 0) : [new Date(start).getUTCDay()]).sort((a, b) => a - b)
     const startDow = new Date(start).getUTCDay()
     const weekStart = start - startDow * DAY // Sunday of the first week
     outer: for (let w = 0; w < MAX; w++) {
       const base = weekStart + w * r.interval * 7 * DAY
       if (base > until) break
-      for (const dow of [...days].sort((a, b) => a - b)) {
+      for (const dow of days) {
         const ms = base + dow * DAY
         if (ms < start) continue
         if (ms > until) break outer
@@ -264,6 +266,11 @@ function occurrences(ev, fromMs, toMs) {
  * Instances: { id, uid, title, start (ISO), end (ISO), allDay, location }.
  * All-day instances use YYYY-MM-DD strings; end is exclusive per RFC 5545.
  */
+/** Total instances one feed may produce. Beyond this the feed is malicious or broken. */
+const MAX_INSTANCES = 20_000
+/** Events one feed may contain. A personal calendar is far below this. */
+const MAX_EVENTS = 10_000
+
 export function expandEvents(parsed, fromMs, toMs) {
   const overrides = new Map() // uid -> Set of recurrence-id ms replaced by a detached event
   for (const ev of parsed.events) {
@@ -273,15 +280,19 @@ export function expandEvents(parsed, fromMs, toMs) {
     }
   }
   const out = []
-  for (const ev of parsed.events) {
+  for (const ev of parsed.events.slice(0, MAX_EVENTS)) {
+    if (out.length >= MAX_INSTANCES) break
     if (ev.status === 'CANCELLED') continue
+    // EXDATE lookup as a set: a long EXDATE list must not make this quadratic
+    const excluded = ev.exdates.length > 8 ? new Set(ev.exdates.map(x => Math.round(x / 1000))) : null
     const allDay = ev.start.allDay
     const durationMs = ev.end ? Math.max(ev.end.ms - ev.start.ms, 0) : ev.duration ?? (allDay ? DAY : 0)
     const starts = ev.recurrenceId !== undefined ? (ev.start.ms < toMs && ev.start.ms + durationMs > fromMs ? [ev.start.ms] : []) : occurrences(ev, fromMs - durationMs, toMs)
     const replaced = overrides.get(ev.uid)
     for (const s of starts) {
+      if (out.length >= MAX_INSTANCES) break
       if (ev.recurrenceId === undefined && replaced?.has(s)) continue
-      if (ev.exdates.some(x => Math.abs(x - s) < 1000)) continue
+      if (excluded ? excluded.has(Math.round(s / 1000)) : ev.exdates.some(x => Math.abs(x - s) < 1000)) continue
       const e = s + durationMs
       if (e <= fromMs && !(allDay && s >= fromMs)) continue
       out.push({

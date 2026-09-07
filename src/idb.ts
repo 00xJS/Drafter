@@ -37,3 +37,32 @@ export function idbSet(store: string, key: string, value: unknown): Promise<unkn
 export function idbDel(store: string, key: string): Promise<unknown> {
   return withStore(store, 'readwrite', s => s.delete(key))
 }
+
+/**
+ * Remove every trace of the signed-in person from this device: the cached
+ * records, the photos, and every drafter:* preference. Signing out has to do
+ * this — otherwise the whole planner stays readable in DevTools on a shared,
+ * sold or stolen device, and the next account to sign in inherits it.
+ */
+export async function clearLocalData(): Promise<void> {
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('drafter:')) keys.push(k)
+    }
+    for (const k of keys) localStorage.removeItem(k)
+  } catch {
+    /* storage may be unavailable; carry on and still drop the database */
+  }
+  await new Promise<void>(resolve => {
+    try {
+      const req = indexedDB.deleteDatabase(DB_NAME)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+      req.onblocked = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
+}

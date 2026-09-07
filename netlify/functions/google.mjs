@@ -7,19 +7,24 @@
 // GOOGLE_CLIENT_SECRET on the host. SUPABASE_SERVICE_KEY stores tokens per user.
 
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
+import { clearCookieHeader, cookieHeader, newVerifier, stateFor, verifyState } from './lib/oauth.mjs'
 import { SCOPES, drafterCalendarId, exchangeCode, googleConfigured, listCalendars, missingGoogleEnv, pushTask, randomToken, revoke } from './lib/google.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`
 const STATE_TTL_MS = 10 * 60_000
 
-async function callback(url) {
-  const back = q => Response.redirect(`${url.origin}/?${q}`, 302)
+const GOOGLE_COOKIE = 'drafter_google_oauth'
+
+async function callback(req, url) {
+  const back = q => new Response(null, { status: 302, headers: { location: `${url.origin}/?${q}`, 'set-cookie': clearCookieHeader(GOOGLE_COOKIE) } })
   if (!googleConfigured()) return back('google=error&reason=not_configured')
   if (url.searchParams.get('error')) return back(`google=error&reason=${encodeURIComponent(url.searchParams.get('error'))}`)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   if (!code || !state) return back('google=error&reason=bad_state')
-  // the state was minted for exactly one user by a session-gated call
+  // the state must match BOTH the user row it was minted into and the cookie
+  // set in this browser, so a consent URL cannot be handed to someone else
+  if (!verifyState(req, GOOGLE_COOKIE, state)) return back('google=error&reason=state_mismatch')
   const row = await settingsFind('google_oauth_state', state).catch(() => null)
   if (!row || !row.google_state_at || Date.now() - Date.parse(row.google_state_at) > STATE_TTL_MS) return back('google=error&reason=bad_state')
   await settingsSet(row.user_id, { google_oauth_state: null, google_state_at: null })
@@ -44,7 +49,7 @@ export default async req => {
   const url = new URL(req.url)
   if (url.pathname.endsWith('/callback')) {
     if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
-    return callback(url)
+    return callback(req, url)
   }
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   const { user, response, unconfigured } = await getUser(req)
@@ -68,7 +73,8 @@ export default async req => {
     if (!googleConfigured()) return Response.json({ error: `Google Calendar is not configured on the host: set ${missingGoogleEnv().join(', ')}` }, { status: 501 })
 
     if (action === 'auth') {
-      const state = randomToken(30)
+      const verifier = newVerifier()
+      const state = stateFor(verifier)
       await settingsSet(user.id, { google_oauth_state: state, google_state_at: new Date().toISOString() })
       const q = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -81,7 +87,7 @@ export default async req => {
         login_hint: user.email,
         state,
       })
-      return Response.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` })
+      return Response.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` }, { headers: { 'set-cookie': cookieHeader(GOOGLE_COOKIE, verifier) } })
     }
     if (action === 'disconnect') {
       await revoke(user.id)

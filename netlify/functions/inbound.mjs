@@ -57,7 +57,9 @@ export default async req => {
   const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
     method: 'POST',
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ incoming: [task] }),
+    // a future cursor means the RPC returns nothing: without it every inbound
+    // email makes Postgres aggregate the entire table into one json document
+    body: JSON.stringify({ incoming: [task], since: new Date(Date.now() + 86_400_000).toISOString() }),
   })
   if (!res.ok) return new Response('store failed', { status: 502 })
   // sync_posts runs under the service key, so auth.uid() is null and the row

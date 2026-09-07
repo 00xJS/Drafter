@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { getSupabase, isSupabaseConfigured } from './supabase'
+import { clearLocalData } from './idb'
 import { Landing } from './components/Landing'
 import { Login } from './components/Login'
 
@@ -37,7 +38,12 @@ export default function App() {
       setSession(data.session)
       setAuthReady(true)
     })
-    const { data: sub } = sb.auth.onAuthStateChange((_event, s) => setSession(s))
+    const { data: sub } = sb.auth.onAuthStateChange((event, s) => {
+      // a session ending for ANY reason (sign-out here, elsewhere, or revoked)
+      // must take the local copy of the data with it
+      if (event === 'SIGNED_OUT') clearLocalData().catch(() => {})
+      setSession(s)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 

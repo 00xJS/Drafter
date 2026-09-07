@@ -4,6 +4,7 @@ import { useItems } from '../store'
 import { newerStamp } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
+import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
@@ -394,7 +395,14 @@ export default function Planner() {
       {store.syncInfo.authError && (
         <div className="auth-banner">
           Your session expired — changes are staying on this device only.
-          <button className="btn" onClick={() => getSupabase()?.auth.signOut()}>
+          <button
+            className="btn"
+            onClick={async () => {
+              await getSupabase()?.auth.signOut()
+              await clearLocalData()
+              window.location.reload()
+            }}
+          >
             Sign in again
           </button>
         </div>

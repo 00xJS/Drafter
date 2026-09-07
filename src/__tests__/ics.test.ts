@@ -76,3 +76,24 @@ describe('buildICS', () => {
     expect(back.map(e => e.title)).toEqual(['Fix, the; tap', 'Cabinets in'])
   })
 })
+
+describe('resource bounds against a hostile feed', () => {
+  it('caps BYDAY repetition instead of multiplying it', () => {
+    const byday = Array.from({ length: 20000 }, () => 'MO').join(',')
+    const ics = wrap(`BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:x\r\nDTSTART:20260101T090000Z\r\nRRULE:FREQ=WEEKLY;BYDAY=${byday}\r\nEND:VEVENT`)
+    const started = 0
+    const out = expandEvents(parseICS(ics), Date.UTC(2026, 0, 1), Date.UTC(2027, 0, 1))
+    expect(started).toBe(0)
+    // one weekday, ~52 weeks — not 20000x that
+    expect(out.length).toBeLessThan(120)
+  })
+
+  it('caps the total instances one feed can produce', () => {
+    const events = Array.from(
+      { length: 3000 },
+      (_, i) => `BEGIN:VEVENT\r\nUID:e${i}\r\nSUMMARY:e\r\nDTSTART:20260101T090000Z\r\nRRULE:FREQ=DAILY\r\nEND:VEVENT`,
+    ).join('\r\n')
+    const out = expandEvents(parseICS(wrap(events)), Date.UTC(2026, 0, 1), Date.UTC(2027, 0, 1))
+    expect(out.length).toBeLessThanOrEqual(20000)
+  })
+})
