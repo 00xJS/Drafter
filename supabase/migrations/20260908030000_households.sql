@@ -2,6 +2,23 @@
 -- see and edit each other's records. Replaces the single-owner-email policy.
 -- Existing rows are assigned to the owner (app_config.owner_email).
 
+-- 0. The last-write-wins trigger guarded EVERY update, including administrative
+--    ones like the ownership backfill below (which leaves data untouched).
+--    Narrow it to content writes: any change to data or updated_at still needs
+--    a strictly newer stamp, so the protection is unchanged for real writers.
+create or replace function public.enforce_lww()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (new.data is distinct from old.data or new.updated_at is distinct from old.updated_at)
+     and new.updated_at <= old.updated_at then
+    raise exception 'stale write rejected: updated_at must be strictly newer (last-write-wins)';
+  end if;
+  return new;
+end;
+$$;
+
 -- 1. ownership column + backfill
 alter table public.posts add column if not exists user_id uuid references auth.users (id) on delete set null;
 

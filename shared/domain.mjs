@@ -70,6 +70,7 @@ export function legacyPostToTask(raw) {
   const task = {
     kind: 'task',
     id: raw.id,
+    ownerId: raw.ownerId,
     title: raw.title ?? '',
     description: raw.body ?? '',
     status: LEGACY_STATUS[raw.status] ?? (raw.postedAt ? 'done' : 'todo'),
