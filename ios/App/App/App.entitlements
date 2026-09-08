@@ -2,7 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>aps-environment</key>
-	<string>development</string>
+	<!-- Empty on purpose. A free personal team cannot provision the Push
+	     Notifications capability, so `aps-environment` here fails the build
+	     with "Personal development teams do not support the Push
+	     Notifications capability". Local (on-device) reminders need no
+	     entitlement and are unaffected.
+
+	     With an Apple Developer Program membership, add back:
+	         <key>aps-environment</key><string>development</string>
+	     (or `production` for TestFlight/App Store) and set the APNS_* vars. -->
 </dict>
 </plist>

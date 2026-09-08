@@ -36,6 +36,18 @@ const storedApnsToken = (): string | null => {
   }
 }
 
+/**
+ * A build signed by a free personal team carries no `aps-environment`
+ * entitlement, so Apple refuses registration with a message about the missing
+ * entitlement string. Say what that actually means for this app.
+ */
+export function apnsRegistrationError(raw: string): string {
+  if (/aps-environment|entitlement/i.test(raw)) {
+    return 'This build cannot receive server push: Apple only issues device tokens to apps signed by an Apple Developer Program team. Reminders scheduled on this iPhone still work.'
+  }
+  return raw
+}
+
 /** Ask iOS for permission and a device token. */
 async function nativeToken(): Promise<string> {
   const { PushNotifications } = await import('@capacitor/push-notifications')
@@ -50,7 +62,7 @@ async function nativeToken(): Promise<string> {
     })
     void PushNotifications.addListener('registrationError', e => {
       clearTimeout(timer)
-      reject(new Error(e.error))
+      reject(new Error(apnsRegistrationError(e.error)))
     })
     void PushNotifications.register()
   })
