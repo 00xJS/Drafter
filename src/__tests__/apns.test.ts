@@ -33,8 +33,14 @@ describe('APNs payload', () => {
 
   it('knows which of Apple\'s answers mean "stop sending to this device"', () => {
     expect(isGoneReason(410, 'Unregistered')).toBe(true)
-    expect(isGoneReason(400, 'BadDeviceToken')).toBe(true)
+    expect(isGoneReason(400, 'DeviceTokenNotForTopic')).toBe(true)
+    // BadDeviceToken is a host mismatch, not a gone device
+    expect(isGoneReason(400, 'BadDeviceToken')).toBe(false)
     expect(isGoneReason(403, 'InvalidProviderToken')).toBe(false)
     expect(isGoneReason(200, '')).toBe(false)
+  })
+
+  it('can carry a badge count for the home-screen icon', () => {
+    expect(apnsPayload({ title: 'Hi', body: 'There', badge: 3 }).aps.badge).toBe(3)
   })
 })

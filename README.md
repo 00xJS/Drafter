@@ -117,7 +117,7 @@ What the shell adds over the installed web app:
 - **A URL scheme for capture.** `drafter://new?title=…`, `drafter://open?task=<id>`
   and `drafter://open?view=review` all work from anywhere on the phone. A
   two-step Shortcut ("Receive text/URLs from Share Sheet" → "Open URL"
-  `drafter://new?title=[Shortcut Input]`) puts Drafter in every share sheet.
+  `drafter://new?url=[URL-encoded Shortcut Input]`) puts Drafter in every share sheet.
 - Syncs whenever the app comes to the foreground, haptics on completion, dark
   system UI, and the status bar tucked into the app's own header.
 

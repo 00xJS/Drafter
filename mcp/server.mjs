@@ -30,6 +30,7 @@ import {
   newerStamp,
   nextOccurrence,
 } from '../shared/domain.mjs'
+import { seenStatus, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 
 const BASE = process.env.SUPABASE_URL
 const KEY = process.env.SUPABASE_SERVICE_KEY
@@ -566,27 +567,18 @@ const TOOLS = [
         people: all
           .filter(i => i.kind === 'person')
           .map(p => {
-            const visits = tasks
-              .filter(t => t.status === 'done' && t.completedAt && (t.peopleIds ?? []).includes(p.id))
-              .map(t => t.completedAt)
-              .sort()
-              .reverse()
-            const daysSince = visits[0] ? Math.floor((nowMs - Date.parse(visits[0])) / DAY) : null
-            // no declared rhythm is measured against the app's 90-day default, as the
-            // People page does — otherwise a 400-day gap would read as fine
-            const c = p.cadenceDays ?? 90
-            const status = !visits[0] ? 'never' : daysSince > c * 1.5 ? 'overdue' : daysSince > c ? 'due' : 'ok'
+            const s = seenStatus(p, tasks, new Date(nowMs))
             return {
               id: p.id,
               name: p.name,
               group: p.group,
               cadenceDays: p.cadenceDays ?? null,
-              effectiveCadenceDays: c,
-              lastSeen: visits[0] ?? null,
-              daysSince,
-              visitsLast30Days: visits.filter(v => nowMs - Date.parse(v) < 30 * DAY).length,
-              visitsLast90Days: visits.filter(v => nowMs - Date.parse(v) < 90 * DAY).length,
-              status,
+              effectiveCadenceDays: s.effectiveCadenceDays ?? DEFAULT_CADENCE_DAYS,
+              lastSeen: s.lastSeen ?? null,
+              daysSince: s.daysSince ?? null,
+              visitsLast30Days: s.visits.filter(v => nowMs - Date.parse(v.at) < 30 * DAY).length,
+              visitsLast90Days: s.visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY).length,
+              status: s.status,
               notes: p.notes ?? null,
             }
           }),

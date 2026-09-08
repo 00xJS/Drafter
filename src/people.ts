@@ -1,5 +1,14 @@
 import { Person, Task } from './types'
-import { DAY_MS, startOfDay } from './taskutils'
+import { startOfDay } from './taskutils'
+import {
+  DEFAULT_CADENCE_DAYS,
+  DAY_MS,
+  visitsFor as sharedVisitsFor,
+  plannedVisit as sharedPlannedVisit,
+  plannedGift as sharedPlannedGift,
+  seenStatus as sharedSeenStatus,
+  upcomingOccasions as sharedOccasions,
+} from '../shared/people.mjs'
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
 // a dinner you planned, a task you did together. Everything below derives
@@ -10,7 +19,7 @@ export interface Visit {
   at: string
 }
 
-export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'often'
+export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok'
 
 export interface PersonStats {
   person: Person
@@ -26,24 +35,30 @@ export interface PersonStats {
   status: SeenStatus
   /** Human explanation of the status. */
   reason: string
+  /** Soonest open visit/catch-up task, if one exists. */
+  planned?: Task
 }
 
 export function visitsFor(personId: string, tasks: Task[]): Visit[] {
-  return tasks
-    .filter(t => t.status === 'done' && t.completedAt && t.peopleIds?.includes(personId))
-    .map(t => ({ task: t, at: t.completedAt! }))
-    .sort((a, b) => b.at.localeCompare(a.at))
+  return sharedVisitsFor(personId, tasks) as Visit[]
 }
 
-export function personStats(person: Person, tasks: Task[], now: Date = new Date()): PersonStats {
-  const visits = visitsFor(person.id, tasks)
+/** Shared last/gap/weekly rollup used by people and places. */
+export function visitSummary(visits: Visit[], now: Date = new Date()) {
   const nowMs = now.getTime()
-  const lastSeen = visits[0]?.at
-  const daysSince = lastSeen ? Math.floor((nowMs - Date.parse(lastSeen)) / DAY_MS) : undefined
+  const lastAt = visits[0]?.at
+  const daysSince =
+    lastAt !== undefined
+      ? Math.floor((startOfDay(now).getTime() - startOfDay(new Date(lastAt)).getTime()) / DAY_MS)
+      : undefined
   const count30 = visits.filter(v => nowMs - Date.parse(v.at) < 30 * DAY_MS).length
   const count90 = visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS).length
+  const count365 = visits.filter(v => nowMs - Date.parse(v.at) < 365 * DAY_MS).length
 
-  const yearVisits = visits.filter(v => nowMs - Date.parse(v.at) < 365 * DAY_MS).map(v => Date.parse(v.at)).sort((a, b) => a - b)
+  const yearVisits = visits
+    .filter(v => nowMs - Date.parse(v.at) < 365 * DAY_MS)
+    .map(v => Date.parse(v.at))
+    .sort((a, b) => a - b)
   let avgGapDays: number | undefined
   if (yearVisits.length >= 2) {
     const gaps = yearVisits.slice(1).map((t, i) => t - yearVisits[i])
@@ -57,45 +72,50 @@ export function personStats(person: Person, tasks: Task[], now: Date = new Date(
     if (idx >= 0 && idx < 12) weekly[idx]++
   }
 
-  const cadence = person.cadenceDays
-  // Without a target, every state used to be gated off and ANYONE — even
-  // someone last seen 400 days ago — showed a green "On track". Fall back to a
-  // generous default so drift is still noticed; the badge says it is inferred.
-  const effective = cadence ?? DEFAULT_CADENCE_DAYS
-  let status: SeenStatus
-  let reason: string
-  if (!lastSeen) {
-    status = 'never'
-    reason = 'No visits logged yet'
-  } else if (daysSince !== undefined && daysSince > effective * 1.5) {
-    status = 'overdue'
-    reason = cadence
-      ? `Last seen ${daysSince} days ago — you aimed for every ${cadence} days`
-      : `Last seen ${daysSince} days ago — longest gap of anyone you track`
-  } else if (daysSince !== undefined && daysSince > effective) {
-    status = 'due'
-    reason = cadence ? `It's been ${daysSince} days; you aimed for every ${cadence} days` : `It's been ${daysSince} days`
-  } else {
-    status = 'ok'
-    reason = daysSince === 0 ? 'Seen today' : `Last seen ${daysSince} day${daysSince === 1 ? '' : 's'} ago`
+  return { lastAt, daysSince, count30, count90, count365, avgGapDays, weekly }
+}
+
+export function personStats(person: Person, tasks: Task[], now: Date = new Date()): PersonStats {
+  const base = sharedSeenStatus(person, tasks, now)
+  const visits = base.visits as Visit[]
+  const summary = visitSummary(visits, now)
+  const planned = (sharedPlannedVisit(person.id, tasks) as Task | null) ?? undefined
+
+  return {
+    person,
+    visits,
+    lastSeen: base.lastSeen,
+    daysSince: base.daysSince,
+    count30: summary.count30,
+    count90: summary.count90,
+    avgGapDays: summary.avgGapDays,
+    weekly: summary.weekly,
+    status: base.status as SeenStatus,
+    reason: base.reason,
+    planned,
   }
-  return { person, visits, lastSeen, daysSince, count30, count90, avgGapDays, weekly, status, reason }
+}
+
+export function plannedGift(personId: string, kind: 'birthday' | 'anniversary', at: Date, tasks: Task[]): Task | null {
+  return sharedPlannedGift(personId, kind, at, tasks) as Task | null
 }
 
 /** Used when someone has no declared rhythm, so drift is still visible. */
-export const DEFAULT_CADENCE_DAYS = 90
+export { DEFAULT_CADENCE_DAYS }
 
 export const SEEN_META: Record<SeenStatus, { label: string; color: string; bg: string }> = {
   never: { label: 'No visits yet', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
   overdue: { label: 'Overdue', color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
   due: { label: 'Due a catch-up', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
   ok: { label: 'On track', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
-  often: { label: 'Seeing a lot', color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
 }
 
-/** Sort: the people who need attention first, then by how long since. */
+/** Sort: the people who need attention first, then by how long since. Planned catch-ups sort below true drift. */
 export function compareStats(a: PersonStats, b: PersonStats): number {
-  const rank: Record<SeenStatus, number> = { overdue: 0, due: 1, never: 2, often: 3, ok: 4 }
+  const aPlanned = a.planned ? 1 : 0
+  const bPlanned = b.planned ? 1 : 0
+  if (aPlanned !== bPlanned) return aPlanned - bPlanned
+  const rank: Record<SeenStatus, number> = { overdue: 0, due: 1, never: 2, ok: 3 }
   if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status]
   return (b.daysSince ?? 0) - (a.daysSince ?? 0)
 }
@@ -112,23 +132,7 @@ export interface Occasion {
 
 /** Birthdays and anniversaries coming up within `days` (today included). */
 export function upcomingOccasions(people: Person[], days = 14, now: Date = new Date()): Occasion[] {
-  const today = startOfDay(now)
-  const out: Occasion[] = []
-  for (const person of people) {
-    for (const kind of ['birthday', 'anniversary'] as const) {
-      const raw = person[kind]
-      if (!raw) continue
-      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-      if (!m) continue
-      const year = Number(m[1])
-      let next = new Date(today.getFullYear(), Number(m[2]) - 1, Number(m[3]))
-      if (next < today) next = new Date(today.getFullYear() + 1, Number(m[2]) - 1, Number(m[3]))
-      const daysUntil = Math.round((next.getTime() - today.getTime()) / DAY_MS)
-      if (daysUntil > days) continue
-      out.push({ person, kind, at: next, daysUntil, years: year > 1900 ? next.getFullYear() - year : undefined })
-    }
-  }
-  return out.sort((a, b) => a.daysUntil - b.daysUntil)
+  return sharedOccasions(people, days, now) as Occasion[]
 }
 
 export interface YearRow {

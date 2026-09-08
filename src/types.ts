@@ -74,6 +74,8 @@ export interface Task extends Owned {
   social?: Social
   /** People this task involves; when it's done, it counts as seeing them. */
   peopleIds?: string[]
+  /** Where this happened; when the task is done it counts as an outing there. */
+  placeId?: string
   /** Files (any type) in the media store. */
   attachments?: Attachment[]
   estimateCost?: number
@@ -173,6 +175,33 @@ export interface Person extends Owned {
   deletedAt?: string
 }
 
+export type PlaceCategory = 'restaurant' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
+export const PLACE_CATEGORIES: PlaceCategory[] = ['restaurant', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
+export const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }> = {
+  restaurant: { label: 'Restaurant', emoji: '🍽️' },
+  cafe: { label: 'Café', emoji: '☕' },
+  bar: { label: 'Bar', emoji: '🍸' },
+  outdoors: { label: 'Outdoors', emoji: '🌳' },
+  venue: { label: 'Venue', emoji: '🎭' },
+  shop: { label: 'Shop', emoji: '🛍️' },
+  home: { label: 'Home', emoji: '🏠' },
+  other: { label: 'Other', emoji: '📍' },
+}
+
+/** Somewhere you go. Outings are done tasks with the place attached — same rule as people. */
+export interface Place extends Owned {
+  kind: 'place'
+  id: string
+  name: string
+  emoji?: string
+  color: string
+  category: PlaceCategory
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
 /** A saved weekly/monthly review: top priorities, reflections, the AI summary. */
 export interface Review extends Owned {
   kind: 'review'
@@ -181,6 +210,8 @@ export interface Review extends Owned {
   /** 2026-W37 or 2026-09 */
   key: string
   top: string[]
+  /** Per Top-3 line: ticked off on Today / in the following review. */
+  topDone?: boolean[]
   reflections?: string
   summary?: string
   createdAt: string
@@ -221,7 +252,7 @@ export interface Template extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Review | Template
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template
 
 /**
  * The legacy post shape. Still the lingua franca of the importers, the

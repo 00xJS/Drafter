@@ -65,7 +65,7 @@ describe('buildICS', () => {
       { uid: 't1', title: 'Fix, the; tap', start: Date.UTC(2026, 8, 10, 9), allDay: false, description: 'line1\nline2' },
       { uid: 'm1', title: 'Cabinets in', start: Date.UTC(2026, 9, 20), allDay: true },
     ])
-    expect(ics).toContain('SUMMARY:Fix\\, the\; tap')
+    expect(ics).toContain('SUMMARY:Fix\\, the; tap')
     expect(ics).toContain('DTSTART:20260910T090000Z')
     expect(ics).toContain('DTEND:20260910T100000Z')
     expect(ics).toContain('DTSTART;VALUE=DATE:20261020')
@@ -74,6 +74,21 @@ describe('buildICS', () => {
     // round trip
     const back = expandEvents(parseICS(ics), from, to)
     expect(back.map(e => e.title)).toEqual(['Fix, the; tap', 'Cabinets in'])
+  })
+})
+
+describe('DST wall-clock recurrence', () => {
+  it('keeps Europe/London weekly 18:00 across the autumn change', () => {
+    // 2026-10-18 is BST (UTC+1); 2026-10-25 is GMT (UTC+0)
+    const ics = wrap(
+      'BEGIN:VEVENT\r\nUID:dinner\r\nSUMMARY:Sunday dinner\r\nDTSTART;TZID=Europe/London:20261018T180000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU;COUNT=3\r\nEND:VEVENT',
+    )
+    const out = expandEvents(parseICS(ics), Date.UTC(2026, 9, 1), Date.UTC(2026, 10, 15))
+    expect(out).toHaveLength(3)
+    // wall 18:00 BST → 17:00Z; wall 18:00 GMT → 18:00Z
+    expect(out[0].start).toBe('2026-10-18T17:00:00.000Z')
+    expect(out[1].start).toBe('2026-10-25T18:00:00.000Z')
+    expect(out[2].start).toBe('2026-11-01T18:00:00.000Z')
   })
 })
 

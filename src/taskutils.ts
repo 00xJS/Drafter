@@ -17,13 +17,13 @@ export function isOpen(t: Task): boolean {
   return OPEN_STATUSES.includes(t.status)
 }
 
-export type DueTone = 'overdue' | 'today' | 'soon' | 'later' | 'none'
+export type DueTone = 'overdue' | 'late' | 'today' | 'soon' | 'later' | 'none'
 
 export function dueTone(t: Task, now: Date = new Date()): DueTone {
   if (!t.dueAt || !isOpen(t)) return 'none'
   const due = new Date(t.dueAt).getTime()
-  if (due < now.getTime()) return dayOffset(t.dueAt, now) === 0 ? 'today' : 'overdue'
   const off = dayOffset(t.dueAt, now)
+  if (due < now.getTime()) return off === 0 ? 'late' : 'overdue'
   if (off === 0) return 'today'
   if (off <= 7) return 'soon'
   return 'later'
@@ -31,16 +31,18 @@ export function dueTone(t: Task, now: Date = new Date()): DueTone {
 
 const WEEKDAY_FMT = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
 
-/** Compact human due label: "Overdue 2d", "Today 3:00 PM", "Tomorrow", "Fri", "Sep 20". */
+/** Compact human due label: "Overdue 2d", "Was 3:00 PM", "Today 3:00 PM", "Tomorrow", "Fri". */
 export function dueLabel(t: Task, now: Date = new Date()): string {
   if (!t.dueAt) return ''
   const off = dayOffset(t.dueAt, now)
-  const hasTime = !/T00:00:00/.test(new Date(t.dueAt).toISOString()) && new Date(t.dueAt).getHours() + new Date(t.dueAt).getMinutes() > 0
+  const dueDate = new Date(t.dueAt)
+  const hasTime = dueDate.getHours() + dueDate.getMinutes() > 0
   const time = hasTime ? ` ${fmtTime(t.dueAt)}` : ''
   if (isOpen(t) && off < 0) return `Overdue ${-off}d`
+  if (isOpen(t) && off === 0 && dueDate.getTime() < now.getTime()) return hasTime ? `Was${time}` : 'Was earlier'
   if (off === 0) return `Today${time}`
   if (off === 1) return `Tomorrow${time}`
-  if (off > 1 && off <= 6) return `${WEEKDAY_FMT.format(new Date(t.dueAt))}${time}`
+  if (off > 1 && off <= 6) return `${WEEKDAY_FMT.format(dueDate)}${time}`
   return fmtDate(t.dueAt)
 }
 

@@ -73,7 +73,7 @@ describe('nextOccurrence', () => {
     })
     const next = nextOccurrence(src, uid)
     expect(next).not.toBeNull()
-    expect(next?.id).toBe('new-id')
+    expect(next?.id).toBe('a~weekly~2026-03-13')
     expect(next?.status).toBe('todo')
     expect(next?.projectId).toBe('home')
     expect(next?.priority).toBe('high')
@@ -83,6 +83,28 @@ describe('nextOccurrence', () => {
     expect(next?.checklist).toEqual([{ id: 'c', text: 'vacuum', done: false }])
     expect(next?.social?.variants).toEqual({ x: 'short' })
     expect(next?.completedAt).toBeUndefined()
+  })
+
+  it('copies peopleIds and placeId so recurring outings keep counting', () => {
+    const src = task('a', '2026-01-01T00:00:00.000Z', {
+      status: 'done',
+      completedAt: '2026-03-06T09:00:00.000Z',
+      recurrence: { freq: 'weekly' },
+      peopleIds: ['mum'],
+      placeId: 'franco',
+    })
+    const next = nextOccurrence(src, uid)
+    expect(next?.peopleIds).toEqual(['mum'])
+    expect(next?.placeId).toBe('franco')
+  })
+
+  it('two devices agree on the spawn id', () => {
+    const src = task('chore', '2026-01-01T00:00:00.000Z', {
+      status: 'done',
+      completedAt: '2026-03-06T09:00:00.000Z',
+      recurrence: { freq: 'weekly' },
+    })
+    expect(nextOccurrence(src, () => 'a')?.id).toBe(nextOccurrence(src, () => 'b')?.id)
   })
 
   it('supports daily, biweekly and monthly', () => {
@@ -114,32 +136,44 @@ describe('applySync', () => {
     expect(d.merged.map(i => i.id).sort()).toEqual(['a', 'b'])
   })
 
-  it('advances the cursor only over what the server actually returned', () => {
-    // we optimistically sent a stamp far in the future; the server stored it as "now"
-    const sent = [task('a', '2027-01-01T00:00:00.000Z')]
-    const remote = [task('a', T)]
-    const d = applySync([], sent, remote, null)
-    // never jump to 2027 — rows written between now and then would be skipped forever
+  it('advances the cursor over syncedAt when present', () => {
+    const remote = [{ ...task('a', '2026-09-10T09:00:00.000Z'), syncedAt: T }]
+    const d = applySync([], [], remote, null)
     expect(d.cursor).toBe(T)
   })
 
-  it('holds the cursor below a change the server did not confirm, so it is retried', () => {
+  it('merges a stamp earlier than since when syncedAt is newer', () => {
+    const early = task('late', '2026-09-10T09:58:00.000Z', { title: 'offline edit' })
+    const d = applySync([], [], [{ ...early, syncedAt: '2026-09-10T10:05:00.000Z' }], '2026-09-10T10:00:00.000Z')
+    expect((d.merged.find(i => i.id === 'late') as Task | undefined)?.title).toBe('offline edit')
+    expect(d.cursor).toBe('2026-09-10T10:05:00.000Z')
+  })
+
+  it('does not clamp the cursor for rejected ids', () => {
     const sent = [task('a', '2026-09-10T09:00:00.000Z'), task('rejected', '2026-09-10T09:05:00.000Z')]
-    const remote = [task('a', '2026-09-10T09:00:00.000Z')] // 'rejected' never came back
+    const remote = [task('a', '2026-09-10T09:00:00.000Z')]
+    const d = applySync([], sent, remote, '2026-09-10T08:00:00.000Z', ['rejected'])
+    expect(d.rejected).toEqual(['rejected'])
+    expect(d.unconfirmed).toEqual([])
+    expect(d.cursor).toBe('2026-09-10T09:00:00.000Z')
+  })
+
+  it('lists unconfirmed when not rejected and not returned', () => {
+    const sent = [task('a', '2026-09-10T09:00:00.000Z'), task('pending', '2026-09-10T09:05:00.000Z')]
+    const remote = [task('a', '2026-09-10T09:00:00.000Z')]
     const d = applySync([], sent, remote, '2026-09-10T08:00:00.000Z')
-    expect(d.unconfirmed).toEqual(['rejected'])
-    expect(d.cursor! < '2026-09-10T09:05:00.000Z').toBe(true)
+    expect(d.unconfirmed).toEqual(['pending'])
   })
 
   it('leaves the cursor alone when the server returned nothing', () => {
     expect(applySync([], [], [], '2026-09-10T08:00:00.000Z').cursor).toBeNull()
   })
 
-  it('confirms a push that comes back at the same stamp', () => {
-    const sent = [task('a', T)]
-    const d = applySync([], sent, [task('a', T)], null)
-    expect(d.unconfirmed).toEqual([])
-    expect(d.cursor).toBe(T)
+  it('on a full exchange drops local ghosts that were neither returned nor sent', () => {
+    const ghost = task('peer', '2026-09-10T09:00:00.000Z', { title: 'partner chore' })
+    const mine = task('a', '2026-09-10T09:00:00.000Z')
+    const d = applySync([ghost, mine], [mine], [mine], null)
+    expect(d.merged.map(i => i.id).sort()).toEqual(['a'])
   })
 })
 

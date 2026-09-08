@@ -14,4 +14,9 @@ export declare function cleanMetrics(raw: unknown): Metrics
 export declare function newerStamp(prevIso?: string): string
 export declare function isLegacyPost(raw: unknown): boolean
 export declare function legacyPostToTask(raw: unknown): unknown
+export declare function localDate(iso: string | number, tz?: string | null): string | null
+export declare function isUntimed(iso: string, tz?: string | null): boolean
+export declare function localMidnightIso(dateKey: string): string | null
+export declare function spawnId(taskId: string, freq: string, nextDueIso: string): string
 export declare function nextOccurrence(task: Task, uidFn: () => string): Task | null
+export declare function isMineTask(task: { kind?: string; ownerId?: string; assigneeId?: string }, myId?: string | null): boolean

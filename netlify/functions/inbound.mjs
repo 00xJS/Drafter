@@ -4,8 +4,12 @@
 // Parse (multipart: subject, text, from), Cloudflare Email Workers / Zapier /
 // Make (JSON: { subject, text, from }). The token is the only auth, so it is
 // long, per user, and rotatable from Settings.
+//
+// After the raw task is safely stored, a best-effort AI second pass may refine
+// title / due / priority / tags without blocking the webhook.
 
 import { newerStamp } from '../../shared/domain.mjs'
+import { complete, resolveProvider } from './lib/ai.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 
 const MAX_BODY = 4000
@@ -23,6 +27,34 @@ async function parseBody(req) {
   }
   const text = await req.text().catch(() => '')
   return { subject: '', text, from: '' }
+}
+
+async function triageTask(task, { subject, text, from }) {
+  if (!resolveProvider()) return null
+  const ai = await complete({
+    system:
+      'You triage personal email into a single planner task. Respond with ONLY a JSON object: {"title":"short imperative under 80 chars","dueAt":"ISO datetime or null","priority":"low|normal|high|urgent","projectHint":"short name or null","tags":["optional"]}. Prefer a concrete due when the email mentions a day or time; otherwise null. Never invent facts.',
+    prompt: `From: ${from || '(unknown)'}\nSubject: ${subject || '(none)'}\n\n${text.slice(0, 2500)}\n\nCurrent title: ${task.title}`,
+    maxTokens: 400,
+    json: true,
+  })
+  if (ai.error || !ai.text) return null
+  let raw
+  try {
+    raw = JSON.parse(ai.text.replace(/^```json\s*|\s*```$/g, '').trim())
+  } catch {
+    return null
+  }
+  if (!raw || typeof raw !== 'object') return null
+  const patch = {}
+  const title = String(raw.title ?? '').trim().slice(0, 140)
+  if (title) patch.title = title
+  const due = raw.dueAt ? Date.parse(raw.dueAt) : NaN
+  if (Number.isFinite(due)) patch.dueAt = new Date(due).toISOString()
+  if (['low', 'normal', 'high', 'urgent'].includes(raw.priority)) patch.priority = raw.priority
+  const tags = Array.isArray(raw.tags) ? raw.tags.map(String).filter(Boolean).slice(0, 6) : []
+  if (tags.length) patch.tags = [...new Set([...(task.tags ?? []), ...tags])]
+  return Object.keys(patch).length ? patch : null
 }
 
 export default async req => {
@@ -70,5 +102,31 @@ export default async req => {
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
     body: JSON.stringify({ user_id: row.user_id }),
   }).catch(() => {})
-  return Response.json({ ok: true, id: task.id, title })
+
+  // Second pass: refine title/due after the raw task is safely stored.
+  let triaged = false
+  try {
+    const patch = await triageTask(task, { subject, text: body, from })
+    if (patch) {
+      const next = { ...task, ...patch, updatedAt: newerStamp(task.updatedAt) }
+      const up = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
+        method: 'POST',
+        headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ incoming: [next], since: new Date(Date.now() + 86_400_000).toISOString() }),
+      })
+      if (up.ok) {
+        await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(task.id)}`, {
+          method: 'PATCH',
+          headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+          body: JSON.stringify({ user_id: row.user_id }),
+        }).catch(() => {})
+        triaged = true
+        Object.assign(task, patch)
+      }
+    }
+  } catch {
+    /* triage is best-effort */
+  }
+
+  return Response.json({ ok: true, id: task.id, title: task.title, triaged })
 }

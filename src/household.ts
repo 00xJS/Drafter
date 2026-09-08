@@ -76,7 +76,6 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
       if (data.session) setMyId(data.session.user.id)
     })
     refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { info, myId, refresh, error }

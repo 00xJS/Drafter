@@ -1,6 +1,6 @@
 import { Item } from './types'
 
-export { newerStamp, nextOccurrence } from '../shared/domain.mjs'
+export { newerStamp, nextOccurrence, spawnId, isUntimed, localDate, localMidnightIso } from '../shared/domain.mjs'
 
 /** Last-write-wins merge by id, using updatedAt (ISO strings compare lexically). */
 export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {
@@ -13,11 +13,16 @@ export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {
   return [...byId.values()]
 }
 
-const TOMBSTONE_TTL_MS = 90 * 86_400_000
+export const TOMBSTONE_TTL_MS = 90 * 86_400_000
 
 /** Drop tombstones old enough that every device has surely seen the deletion. */
 export function purgeTombstones<T extends Item>(items: T[], now = Date.now()): T[] {
-  return items.filter(p => !p.deletedAt || now - new Date(p.deletedAt).getTime() < TOMBSTONE_TTL_MS)
+  return items.filter(p => {
+    if (!p.deletedAt) return true
+    // purged tombstones stay until the server daily job hard-deletes them;
+    // locally we still drop anything past the TTL so caches stay bounded
+    return now - new Date(p.deletedAt).getTime() < TOMBSTONE_TTL_MS
+  })
 }
 
 /** Small stable hash for building deterministic import ids (djb2). */
@@ -27,6 +32,13 @@ export function hashId(s: string): string {
   return h.toString(36)
 }
 
+export interface SyncRemote {
+  id: string
+  updatedAt: string
+  /** Server arrival time — the delta cursor keys on this when present. */
+  syncedAt?: string
+}
+
 export interface SyncDecision {
   /** What local state should become. */
   merged: Item[]
@@ -34,48 +46,78 @@ export interface SyncDecision {
   cursor: string | null
   /** Ids we sent that the server did not confirm — these must be sent again. */
   unconfirmed: string[]
-}
-
-/** One millisecond earlier, so an unconfirmed record is included in the next push. */
-function justBefore(iso: string): string {
-  const t = Date.parse(iso)
-  return Number.isFinite(t) ? new Date(t - 1).toISOString() : iso
+  /** Ids the server rejected (validation/RLS) — drop from the dirty set; do not clamp. */
+  rejected: string[]
 }
 
 /**
  * Decide the outcome of one sync round.
  *
- * Two rules earn their keep here, both learned the hard way:
- *
- * 1. `current` is the state as it is NOW, not a snapshot taken before the
- *    request. Merging onto a stale snapshot silently erases any edit made
- *    while the request was in flight — and because that edit was not in the
- *    push either, it is gone from memory, from IndexedDB and from the server.
- *
- * 2. The cursor advances ONLY over records the server actually sent back.
- *    Advancing it over what we merely *sent* is what makes a device go quiet:
- *    the server skips records it cannot store, and clamps stamps more than
- *    five minutes in the future, so a cursor set from our own optimistic
- *    stamps can jump past rows we never received. Those rows are then never
- *    requested again, and the device looks up to date while missing data —
- *    until a sign-out clears the cursor and a full exchange repairs it.
+ * Cursor advances over `syncedAt` (server arrival) when the server provides it,
+ * otherwise falls back to `updatedAt`. Rejected ids never clamp the cursor —
+ * they are dead writes. Unconfirmed (not rejected, not returned) still hold the
+ * cursor only when we have no dirty-set (legacy path); with a dirty set the
+ * caller clears confirmed ids and retries the rest.
  */
-export function applySync(current: Item[], sent: Item[], remote: Item[], since: string | null): SyncDecision {
-  const merged = mergeItems(current, remote)
-
-  let cursor = since
-  for (const r of remote) if (!cursor || r.updatedAt > cursor) cursor = r.updatedAt
-
-  // anything we pushed that did not come back at least as new as we sent it
-  const returned = new Map(remote.map(r => [r.id, r.updatedAt]))
-  const unconfirmed = sent.filter(s => (returned.get(s.id) ?? '') < s.updatedAt)
-
-  if (unconfirmed.length > 0 && cursor) {
-    let earliest = unconfirmed[0].updatedAt
-    for (const u of unconfirmed) if (u.updatedAt < earliest) earliest = u.updatedAt
-    // never let the cursor pass an unsent change, or it is never offered again
-    if (cursor >= earliest) cursor = justBefore(earliest)
+export function applySync(
+  current: Item[],
+  sent: Item[],
+  remote: SyncRemote[],
+  since: string | null,
+  rejected: string[] = [],
+): SyncDecision {
+  const rejectedSet = new Set(rejected)
+  let merged: Item[]
+  if (since === null) {
+    // Full exchange is authoritative for ids the server still returns. Keep
+    // local creates that were pushed but not echoed, and prefer a current edit
+    // that raced ahead of the request snapshot — but drop ghosts that are
+    // neither on the server nor in this push (e.g. after retainMine + resync).
+    const byId = new Map<string, Item>()
+    for (const r of remote as Item[]) byId.set(r.id, r)
+    const sentIds = new Set(sent.map(s => s.id))
+    for (const c of current) {
+      if (rejectedSet.has(c.id)) continue
+      const r = byId.get(c.id)
+      if (r) {
+        if (c.updatedAt > r.updatedAt) byId.set(c.id, c)
+      } else if (sentIds.has(c.id)) {
+        byId.set(c.id, c)
+      }
+    }
+    for (const s of sent) {
+      if (rejectedSet.has(s.id) || byId.has(s.id)) continue
+      byId.set(s.id, s)
+    }
+    merged = [...byId.values()]
+  } else {
+    merged = mergeItems(current, remote as Item[])
   }
 
-  return { merged, cursor: cursor === since ? null : cursor, unconfirmed: unconfirmed.map(u => u.id) }
+  let cursor = since
+  for (const r of remote) {
+    const stamp = r.syncedAt ?? r.updatedAt
+    if (!cursor || stamp > cursor) cursor = stamp
+  }
+
+  const returned = new Map(remote.map(r => [r.id, r.updatedAt]))
+  const unconfirmed = sent
+    .filter(s => !rejectedSet.has(s.id))
+    .filter(s => (returned.get(s.id) ?? '') < s.updatedAt)
+
+  // rejected rows must NOT pin the cursor (that was the old bug)
+  return {
+    merged,
+    cursor: cursor === since ? null : cursor,
+    unconfirmed: unconfirmed.map(u => u.id),
+    rejected: [...rejectedSet],
+  }
+}
+
+/** Pull overlap: ask for records from 10s before the cursor to cover commit-order skew. */
+export function pullSince(cursor: string | null): string | null {
+  if (!cursor) return null
+  const t = Date.parse(cursor)
+  if (!Number.isFinite(t)) return cursor
+  return new Date(t - 10_000).toISOString()
 }

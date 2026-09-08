@@ -10,7 +10,8 @@ interface Props {
   onOpenTask(t: Task): void
   onOpenProject(p: Project): void
   onOpenPerson(p: Person): void
-  onCreateTask(title: string): void
+  onSaw?(p: Person): void
+  onCreateTask(title: string, openEditor?: boolean): void
   onClose(): void
 }
 
@@ -19,6 +20,7 @@ type Hit =
   | { kind: 'project'; score: number; project: Project; where: string }
   | { kind: 'person'; score: number; person: Person; where: string }
   | { kind: 'create'; score: number; title: string }
+  | { kind: 'recent'; score: number; task: Task }
 
 function score(haystack: string, needle: string, weight: number): number {
   const h = haystack.toLowerCase()
@@ -30,8 +32,10 @@ function score(haystack: string, needle: string, weight: number): number {
   return weight * (wordStart ? 2 : 1) + (i === 0 ? weight : 0)
 }
 
+const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
+
 /** Cmd/Ctrl+K palette: find anything, or create a task from what you typed. */
-export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onOpenPerson, onCreateTask, onClose }: Props) {
+export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onOpenPerson, onSaw, onCreateTask, onClose }: Props) {
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -43,7 +47,14 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
 
   const hits = useMemo<Hit[]>(() => {
     const needle = q.trim().toLowerCase()
-    if (!needle) return []
+    if (!needle) {
+      // empty query: 6 most recently updated open tasks
+      return [...tasks]
+        .filter(t => OPEN.has(t.status))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 6)
+        .map(task => ({ kind: 'recent' as const, score: 0, task }))
+    }
     const out: Hit[] = []
     for (const t of tasks) {
       const s =
@@ -69,18 +80,21 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
     }
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
-    top.push({ kind: 'create', score: -1, title: q.trim() })
+    const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }
+    const exactTaskTitle = tasks.some(t => t.title.trim().toLowerCase() === needle)
+    if (exactTaskTitle) top.push(createHit)
+    else top.unshift(createHit)
     return top
   }, [q, tasks, projects, people, projectName])
 
   useEffect(() => setCursor(0), [q])
 
-  const pick = (h: Hit) => {
+  const pick = (h: Hit, openEditor = false) => {
     onClose()
-    if (h.kind === 'task') onOpenTask(h.task)
+    if (h.kind === 'task' || h.kind === 'recent') onOpenTask(h.task)
     else if (h.kind === 'project') onOpenProject(h.project)
     else if (h.kind === 'person') onOpenPerson(h.person)
-    else if (h.title) onCreateTask(h.title)
+    else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
   }
 
   return (
@@ -90,21 +104,41 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
           ref={input}
           className="search-input"
           value={q}
-          placeholder="Search tasks, notes, projects, people… or type a new task and press Enter"
+          placeholder="Search tasks, notes, projects, people… or create task… Enter"
           onChange={e => setQ(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Escape') onClose()
             else if (e.key === 'ArrowDown') {
               e.preventDefault()
-              setCursor(c => Math.min(c + 1, hits.length - 1))
+              setCursor(c => Math.min(c + 1, Math.max(hits.length - 1, 0)))
             } else if (e.key === 'ArrowUp') {
               e.preventDefault()
               setCursor(c => Math.max(c - 1, 0))
-            } else if (e.key === 'Enter' && hits[cursor]) pick(hits[cursor])
+            } else if (e.key === 'Enter' && hits[cursor]) {
+              const h = hits[cursor]
+              if (h.kind === 'create' && h.title) pick(h, e.shiftKey)
+              else pick(h)
+            }
           }}
         />
+        {hits.length === 0 && q.trim() && <p className="empty search-empty">No matches. Keep typing to create “{q.trim()}”.</p>}
+        {hits.length === 0 && !q.trim() && (
+          <p className="empty search-empty">
+            No open tasks yet.{' '}
+            <button type="button" className="btn subtle" onClick={() => { onClose(); onCreateTask('', true) }}>
+              + New task
+            </button>
+          </p>
+        )}
         {hits.length > 0 && (
           <ul className="search-results">
+            {!q.trim() && (
+              <li className="search-hit muted-head" aria-hidden>
+                <span className="search-main">
+                  <small>Recent</small>
+                </span>
+              </li>
+            )}
             {hits.map((h, i) => {
               const active = i === cursor
               if (h.kind === 'create')
@@ -112,11 +146,11 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
                   <li key="create" className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                     <span className="search-kind">＋</span>
                     <span className="search-main">
-                      Create task “{h.title}”<small>Enter</small>
+                      Create task “{h.title}”<small>Enter to edit · Shift+Enter same</small>
                     </span>
                   </li>
                 )
-              if (h.kind === 'task')
+              if (h.kind === 'task' || h.kind === 'recent')
                 return (
                   <li key={h.task.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                     <span className="search-kind">☐</span>
@@ -124,7 +158,7 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
                       {h.task.title || 'Untitled'}
                       <small>
                         {h.task.projectId ? projectName.get(h.task.projectId) : 'No project'}
-                        {h.where ? ` · ${h.where}` : ''}
+                        {h.kind === 'task' && h.where ? ` · ${h.where}` : ''}
                       </small>
                     </span>
                     <span className="badge" style={{ background: STATUS_META[h.task.status].bg, color: STATUS_META[h.task.status].color }}>
@@ -156,14 +190,24 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
                     {h.person.name}
                     <small>Person{h.where ? ` · ${h.where}` : ''}</small>
                   </span>
+                  {onSaw && (
+                    <button
+                      type="button"
+                      className="btn subtle"
+                      onClick={e => {
+                        e.stopPropagation()
+                        onClose()
+                        onSaw(h.person)
+                      }}
+                    >
+                      Saw {h.person.name.split(' ')[0]} today
+                    </button>
+                  )}
                 </li>
               )
             })}
           </ul>
         )}
-        <div className="search-foot">
-          <small>↑↓ to move · Enter to open · Esc to close</small>
-        </div>
       </div>
     </div>
   )

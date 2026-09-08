@@ -33,7 +33,7 @@ const MS_COOKIE = 'drafter_ms_oauth'
 
 /** Safari, opened by the iOS app with a one-time handoff: set the cookie here, then on to Microsoft. */
 async function start(url) {
-  const fail = reason => new Response(null, { status: 302, headers: { location: `${url.origin}/?microsoft=error&reason=${reason}` } })
+  const fail = reason => new Response(null, { status: 302, headers: { location: `drafter://oauth?microsoft=error&reason=${encodeURIComponent(reason)}` } })
   if (!microsoftConfigured()) return fail('not_configured')
   const handoff = url.searchParams.get('h') ?? ''
   const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null

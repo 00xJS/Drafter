@@ -2064,6 +2064,10 @@ textarea {
   background: rgba(244, 63, 94, 0.2);
   color: #fda4af;
 }
+.due-late {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fdba74;
+}
 .due-today {
   background: rgba(245, 158, 11, 0.18);
   color: #fcd34d;
@@ -2117,10 +2121,101 @@ textarea {
 }
 .tlist .trow {
   align-items: center;
+  position: relative;
+  overflow: hidden;
 }
 .tlist .dash-main {
   flex: 1;
   min-width: 0;
+}
+.trow-defer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  z-index: 0;
+}
+.trow-defer-btn {
+  border: 0;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(14, 165, 233, 0.25);
+  color: #7dd3fc;
+  cursor: pointer;
+}
+.trow-defer-btn.next {
+  background: rgba(99, 102, 241, 0.28);
+  color: #a5b4fc;
+}
+.tlist .trow > *:not(.trow-defer) {
+  position: relative;
+  z-index: 1;
+  background: inherit;
+}
+.due-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.due-chips .btn {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.review-top-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.review-top-row input {
+  flex: 1;
+}
+.you-said-reflections {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.versions {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.versions summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.versions-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.versions-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.capture-fields {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 13px;
+}
+.capture-fields li {
+  margin: 4px 0;
 }
 .tlist .trow.done .dash-title {
   text-decoration: line-through;
@@ -3730,8 +3825,26 @@ textarea {
 .settings-body.showing-calendars .g-calendars,
 .settings-body.showing-reminders .g-reminders,
 .settings-body.showing-household .g-household,
-.settings-body.showing-data .g-data {
+.settings-body.showing-data .g-data,
+.settings-body.showing-users .g-users,
+.settings-body.showing-integrations .g-integrations,
+.settings-body.showing-domains .g-domains {
   display: block;
+}
+
+.admin-health {
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.admin-health:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.admin-users .cal-source-name {
+  flex: 1;
+  min-width: 0;
 }
 
 /* on a phone the toast spanned a narrow column and sat under the New task

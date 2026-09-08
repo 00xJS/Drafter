@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Attachment,
   ChecklistItem,
@@ -6,9 +6,11 @@ import {
   Metrics,
   PLATFORMS,
   Person,
+  Place,
   PLATFORM_META,
   PRIORITIES,
   PRIORITY_META,
+  PROJECT_COLORS,
   Platform,
   Priority,
   Project,
@@ -23,7 +25,8 @@ import {
 import { newerStamp } from '../itemops'
 import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
-import { REFINE_META, RefineMode, generateVariants, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { REFINE_META, RefineMode, CapturedFields, generateVariants, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { getSupabase } from '../supabase'
 import { GithubCard } from './GithubCard'
 import { createIssue, parseGithubUrl } from '../github'
 import { ConfirmButton } from './ConfirmButton'
@@ -31,8 +34,12 @@ import { ConfirmButton } from './ConfirmButton'
 interface Props {
   task?: Task
   preset?: Partial<Task>
+  /** Run sentence capture (AI + deterministic) on open for new tasks. */
+  capture?: boolean
   projects: Project[]
   people: Person[]
+  places?: Place[]
+  onSavePlace?(p: Place): void
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
   /** Open tasks that could block this one (same project preferred). */
@@ -54,7 +61,23 @@ const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impres
 type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
 type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
-export function TaskEditor({ task, preset, projects, people, members, candidates, getLatest, onSave, onDiscard, onCommit, onDelete, onClose }: Props) {
+export function TaskEditor({
+  task,
+  preset,
+  capture = false,
+  projects,
+  people,
+  places = [],
+  onSavePlace,
+  members,
+  candidates,
+  getLatest,
+  onSave,
+  onDiscard,
+  onCommit,
+  onDelete,
+  onClose,
+}: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
     const now = new Date().toISOString()
@@ -93,6 +116,8 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
   const [mediaIds, setMediaIds] = useState<string[]>(base.mediaIds ?? [])
   const [peopleIds, setPeopleIds] = useState<string[]>(base.peopleIds ?? [])
   const [peopleQuery, setPeopleQuery] = useState('')
+  const [placeId, setPlaceId] = useState<string | undefined>(base.placeId)
+  const [placeQuery, setPlaceQuery] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>(base.attachments ?? [])
   const [estimateCost, setEstimateCost] = useState(base.estimateCost !== undefined ? String(base.estimateCost) : '')
   const [actualCost, setActualCost] = useState(base.actualCost !== undefined ? String(base.actualCost) : '')
@@ -129,11 +154,102 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
   const [platforms, setPlatforms] = useState<Platform[]>(base.social?.platforms?.length ? base.social.platforms : ['x'])
   const [variants, setVariants] = useState<Variants>(base.social?.variants ?? {})
   const [metrics, setMetrics] = useState<Metric>(base.social?.metrics ?? {})
-  const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | 'checklist' | RefineMode | null>(null)
+  const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | 'checklist' | 'capture' | RefineMode | null>(null)
   const [aiError, setAiError] = useState('')
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<{ mode: RefineMode; text: string } | null>(null)
+  const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
+  const [versions, setVersions] = useState<{ replaced_at: string; data: Task; updated_at: string }[] | null>(null)
+  const [versionsBusy, setVersionsBusy] = useState(false)
   const mediaInput = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (task || !capture || !base.title.trim()) return
+    let live = true
+    ;(async () => {
+      setAiBusy('capture')
+      try {
+        const parsed = await parseCapture(base.title, {
+          projectNames: projects.filter(p => p.status === 'active').map(p => p.name),
+          personNames: people.map(p => p.name),
+        })
+        if (!live) return
+        // only surface when something beyond the raw title was found
+        if (parsed.dueAt || parsed.priority || parsed.projectName || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence || parsed.title !== base.title) {
+          setCaptureProposal(parsed)
+        }
+      } catch {
+        /* offline / no key — deterministic path already inside parseCapture */
+      } finally {
+        if (live) setAiBusy(null)
+      }
+    })()
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function applyCapture(c: CapturedFields) {
+    if (c.title) setTitle(c.title)
+    if (c.dueAt) setDueAt(toLocalInput(c.dueAt))
+    if (c.priority) setPriority(c.priority)
+    if (c.projectName) {
+      const p = projects.find(x => x.name.toLowerCase() === c.projectName!.toLowerCase())
+      if (p) setProjectId(p.id)
+    }
+    if (c.peopleNames?.length) {
+      const ids = c.peopleNames.map(n => people.find(p => p.name.toLowerCase() === n.toLowerCase())?.id).filter((id): id is string => !!id)
+      if (ids.length) setPeopleIds(cur => [...new Set([...cur, ...ids])])
+    }
+    if (c.tags?.length) setTags(cur => [...new Set([...cur.split(',').map(t => t.trim()).filter(Boolean), ...c.tags!])].join(', '))
+    if (c.recurrence) setFreq(c.recurrence)
+    setCaptureProposal(null)
+  }
+
+  async function loadVersions() {
+    if (!task || versions !== null || versionsBusy) return
+    const sb = getSupabase()
+    if (!sb) {
+      setVersions([])
+      return
+    }
+    setVersionsBusy(true)
+    try {
+      const { data, error } = await sb
+        .from('posts_history')
+        .select('replaced_at, updated_at, data')
+        .eq('id', task.id)
+        .order('replaced_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      setVersions(
+        (data ?? [])
+          .map(row => ({
+            replaced_at: row.replaced_at as string,
+            updated_at: row.updated_at as string,
+            data: row.data as Task,
+          }))
+          .filter(v => v.data && typeof v.data === 'object'),
+      )
+    } catch {
+      setVersions([])
+    } finally {
+      setVersionsBusy(false)
+    }
+  }
+
+  function restoreVersion(v: Task) {
+    if (!task) return
+    const current = getLatest(task.id) ?? task
+    onCommit({ ...v, id: current.id, updatedAt: newerStamp(current.updatedAt), ownerId: current.ownerId })
+    onClose()
+  }
+
+  function setDueChip(d: Date | null) {
+    setDueAt(d ? toLocalInput(d.toISOString()) : '')
+  }
 
   useEffect(() => {
     let live = true
@@ -230,13 +346,18 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
       notes: notes.trim() || undefined,
       link: link.trim() || undefined,
       githubUrl: githubUrl.trim() || undefined,
-      checklist: checklist.length > 0 ? checklist.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text) : undefined,
-      // comments on a persisted task are committed as they're written
+      checklist: persisted
+        ? base.checklist
+        : checklist.length > 0
+          ? checklist.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text)
+          : undefined,
+      // comments and checklist ticks on a persisted task are committed as they're written
       comments: persisted ? base.comments : comments.length > 0 ? comments : undefined,
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
       social,
       peopleIds: peopleIds.length > 0 ? peopleIds : undefined,
+      placeId: placeId || undefined,
       attachments: attachments.length > 0 ? attachments : undefined,
       estimateCost: money(estimateCost),
       actualCost: money(actualCost),
@@ -264,6 +385,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
       recurrence: base.recurrence,
       social: base.social,
       peopleIds: base.peopleIds,
+      placeId: base.placeId,
       attachments: base.attachments,
       estimateCost: base.estimateCost,
       actualCost: base.actualCost,
@@ -306,6 +428,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
       !(t.checklist?.length) &&
       !(t.comments?.length) &&
       !(t.peopleIds?.length) &&
+      !t.placeId &&
       !(t.attachments?.length) &&
       !(t.mediaIds?.length) &&
       !t.dueAt &&
@@ -356,6 +479,18 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
     setNewCheck('')
   }
 
+  function toggleCheckItem(id: string, done: boolean) {
+    setChecklist(cur => {
+      const next = cur.map(x => (x.id === id ? { ...x, done } : x))
+      if (persisted) {
+        const current = getLatest(base.id) ?? base
+        const cleaned = next.length > 0 ? next.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text) : undefined
+        onCommit({ ...current, checklist: cleaned, updatedAt: newerStamp(current.updatedAt) })
+      }
+      return next
+    })
+  }
+
   const overLimit = isSocial ? platforms.filter(pl => effectiveLength(pl) > PLATFORM_META[pl].charLimit) : []
   const checkDone = checklist.filter(c => c.done).length
   const project = projects.find(p => p.id === projectId)
@@ -367,7 +502,28 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
         if (e.target === e.currentTarget) requestClose()
       }}
     >
-      <div className="modal wide" role="dialog" aria-modal="true">
+      <div
+        className="modal wide"
+        role="dialog"
+        aria-modal="true"
+        ref={modalRef}
+        tabIndex={-1}
+        onKeyDown={e => {
+          const target = e.target as HTMLElement
+          const tag = target.tagName
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            requestClose()
+            return
+          }
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            // comment box keeps Cmd+Enter for adding a comment
+            if (tag === 'TEXTAREA' && target.closest('.comments')) return
+            e.preventDefault()
+            save()
+          }
+        }}
+      >
         <header className="modal-head">
           <h2>{task ? 'Edit task' : 'New task'}</h2>
           <button className="btn primary modal-head-save" onClick={save}>
@@ -382,8 +538,72 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
           <div className="editor-main">
             <label className="field">
               <span>Title</span>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Book the electrician" autoFocus={!task} />
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="e.g. Book the electrician"
+                autoFocus={!task}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !task && !e.metaKey && !e.ctrlKey) {
+                    e.preventDefault()
+                    save()
+                  }
+                }}
+              />
             </label>
+
+            {captureProposal && (
+              <div className="ai-proposal" onClick={e => e.preventDefault()}>
+                <div className="ai-proposal-head">
+                  <strong>Capture suggestion</strong>
+                  <small>{aiBusy === 'capture' ? 'Parsing…' : 'Review, then apply or dismiss'}</small>
+                </div>
+                <ul className="capture-fields">
+                  <li>
+                    <strong>Title</strong> {captureProposal.title}
+                  </li>
+                  {captureProposal.dueAt && (
+                    <li>
+                      <strong>Due</strong> {fmtDateTime(captureProposal.dueAt)}
+                    </li>
+                  )}
+                  {captureProposal.priority && (
+                    <li>
+                      <strong>Priority</strong> {captureProposal.priority}
+                    </li>
+                  )}
+                  {captureProposal.projectName && (
+                    <li>
+                      <strong>Project</strong> {captureProposal.projectName}
+                    </li>
+                  )}
+                  {captureProposal.peopleNames?.length ? (
+                    <li>
+                      <strong>People</strong> {captureProposal.peopleNames.join(', ')}
+                    </li>
+                  ) : null}
+                  {captureProposal.tags?.length ? (
+                    <li>
+                      <strong>Tags</strong> {captureProposal.tags.join(', ')}
+                    </li>
+                  ) : null}
+                  {captureProposal.recurrence && (
+                    <li>
+                      <strong>Repeat</strong> {captureProposal.recurrence}
+                    </li>
+                  )}
+                </ul>
+                <div className="ai-row">
+                  <button type="button" className="btn primary" onClick={() => applyCapture(captureProposal)}>
+                    Apply
+                  </button>
+                  <button type="button" className="btn subtle" onClick={() => setCaptureProposal(null)}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+            {aiBusy === 'capture' && !captureProposal && <p className="muted">Parsing capture…</p>}
 
             <label className="field">
               <span>Description</span>
@@ -461,7 +681,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
               <ul className="checklist">
                 {checklist.map(c => (
                   <li key={c.id} className={c.done ? 'check-item done' : 'check-item'}>
-                    <input type="checkbox" checked={c.done} onChange={e => setChecklist(cur => cur.map(x => (x.id === c.id ? { ...x, done: e.target.checked } : x)))} aria-label="Done" />
+                    <input type="checkbox" checked={c.done} onChange={e => toggleCheckItem(c.id, e.target.checked)} aria-label="Done" />
                     <input className="check-text" value={c.text} onChange={e => setChecklist(cur => cur.map(x => (x.id === c.id ? { ...x, text: e.target.value } : x)))} />
                     <button type="button" className="btn subtle" aria-label="Remove" onClick={() => setChecklist(cur => cur.filter(x => x.id !== c.id))}>
                       ✕
@@ -681,6 +901,60 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
             <label className="field">
               <span>Due</span>
               <input type="datetime-local" value={dueAt} onChange={e => setDueAt(e.target.value)} />
+              <div className="due-chips">
+                <button
+                  type="button"
+                  className="btn subtle"
+                  onClick={() => {
+                    const d = new Date()
+                    d.setHours(18, 0, 0, 0)
+                    setDueChip(d)
+                  }}
+                >
+                  Today 18:00
+                </button>
+                <button
+                  type="button"
+                  className="btn subtle"
+                  onClick={() => {
+                    const d = new Date()
+                    d.setDate(d.getDate() + 1)
+                    d.setHours(9, 0, 0, 0)
+                    setDueChip(d)
+                  }}
+                >
+                  Tomorrow 09:00
+                </button>
+                <button
+                  type="button"
+                  className="btn subtle"
+                  onClick={() => {
+                    const d = new Date()
+                    const delta = (6 - d.getDay() + 7) % 7 || 7
+                    d.setDate(d.getDate() + delta)
+                    d.setHours(10, 0, 0, 0)
+                    setDueChip(d)
+                  }}
+                >
+                  Weekend
+                </button>
+                <button
+                  type="button"
+                  className="btn subtle"
+                  onClick={() => {
+                    const d = new Date()
+                    const delta = (1 - d.getDay() + 7) % 7 || 7
+                    d.setDate(d.getDate() + delta)
+                    d.setHours(9, 0, 0, 0)
+                    setDueChip(d)
+                  }}
+                >
+                  Next Monday
+                </button>
+                <button type="button" className="btn subtle" onClick={() => setDueChip(null)}>
+                  Clear
+                </button>
+              </div>
             </label>
 
             {status === 'done' && (
@@ -776,6 +1050,84 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
                 )}
               </div>
             )}
+
+            <div className="field">
+              <span>
+                Where <small>(marking this done counts as an outing there)</small>
+              </span>
+              {placeId && (
+                <div className="platform-toggles attendees">
+                  {(() => {
+                    const p = places.find(x => x.id === placeId)
+                    return (
+                      <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Remove">
+                        {p?.emoji ? `${p.emoji} ` : ''}
+                        {p?.name ?? 'Unknown'} ✕
+                      </button>
+                    )
+                  })()}
+                </div>
+              )}
+              {!placeId && (
+                <>
+                  <input
+                    className="people-picker-search"
+                    value={placeQuery}
+                    onChange={e => setPlaceQuery(e.target.value)}
+                    placeholder="Search places…"
+                  />
+                  {placeQuery.trim() && (
+                    <div className="platform-toggles picker-results">
+                      {places
+                        .filter(p => p.name.toLowerCase().includes(placeQuery.trim().toLowerCase()))
+                        .slice(0, 8)
+                        .map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="toggle"
+                            onClick={() => {
+                              setPlaceId(p.id)
+                              setPlaceQuery('')
+                            }}
+                          >
+                            {p.emoji ? `${p.emoji} ` : ''}
+                            {p.name}
+                          </button>
+                        ))}
+                      {onSavePlace &&
+                        !places.some(p => p.name.toLowerCase() === placeQuery.trim().toLowerCase()) && (
+                          <button
+                            type="button"
+                            className="toggle"
+                            onClick={() => {
+                              const now = new Date().toISOString()
+                              const p: Place = {
+                                kind: 'place',
+                                id: uid(),
+                                name: placeQuery.trim(),
+                                color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
+                                category: 'other',
+                                createdAt: now,
+                                updatedAt: now,
+                              }
+                              onSavePlace(p)
+                              setPlaceId(p.id)
+                              setPlaceQuery('')
+                            }}
+                          >
+                            Create place “{placeQuery.trim()}”
+                          </button>
+                        )}
+                      {!onSavePlace &&
+                        places.filter(p => p.name.toLowerCase().includes(placeQuery.trim().toLowerCase())).length === 0 && (
+                          <small className="muted">No match.</small>
+                        )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             <label className="field">
               <span>GitHub</span>
@@ -874,6 +1226,34 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
               </button>
             )}
             {aiError && <p className="warn">{aiError}</p>}
+
+            {task && (
+              <details
+                className="versions"
+                onToggle={e => {
+                  if ((e.target as HTMLDetailsElement).open) void loadVersions()
+                }}
+              >
+                <summary>Versions</summary>
+                {versionsBusy && <p className="muted">Loading…</p>}
+                {versions && versions.length === 0 && <p className="empty">No earlier versions yet.</p>}
+                {versions && versions.length > 0 && (
+                  <ul className="versions-list">
+                    {versions.map(v => (
+                      <li key={v.replaced_at}>
+                        <div className="dash-main">
+                          <span className="dash-title">{v.data.title || 'Untitled'}</span>
+                          <span className="dash-reason">{fmtDateTime(v.replaced_at)}</span>
+                        </div>
+                        <button type="button" className="btn" onClick={() => restoreVersion(v.data)}>
+                          Restore
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </details>
+            )}
           </aside>
         </div>
 
@@ -884,6 +1264,7 @@ export function TaskEditor({ task, preset, projects, people, members, candidates
             </ConfirmButton>
           )}
           <span className="spacer" />
+          <small className="muted">⌘↩ to save</small>
           {project && <small className="muted">in {project.name}</small>}
           {overLimit.length > 0 && <span className="warn">Over the limit for {overLimit.map(pl => PLATFORM_META[pl].short).join(', ')}</span>}
           <button className="btn" onClick={requestClose}>

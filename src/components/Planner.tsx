@@ -1,24 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Person, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
+import { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react'
+import { CalendarEvent, Person, Place, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
 import { useItems } from '../store'
-import { newerStamp } from '../itemops'
+import { newerStamp, localMidnightIso } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { GOOGLE_PUSH_ID, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
+import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
-import { closeExternal, initNative, isNative, localRemindersEnabled, scheduleLocalReminders } from '../native'
-import { buildLocalReminders } from '../reminders'
+import { closeExternal, initNative, isNative, localRemindersEnabled, scheduleLocalReminders, clearAppBadge } from '../native'
+import { buildLocalReminders, deviceHasServerPush } from '../reminders'
+import { fetchPushInfo } from '../push'
+import { paramsOf, parseLink } from '../links'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
 import { Today } from './Today'
 import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
-import { Insights } from './Insights'
 import { People } from './People'
+import { Places } from './Places'
 import { Review } from './Review'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
@@ -27,11 +29,16 @@ import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { Settings } from './Settings'
+import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
+import { fetchAdminMe } from '../admin'
+
+const Insights = lazy(() => import('./Insights').then(m => ({ default: m.Insights })))
 
 type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'review' | 'social'
 const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'review', 'social']
 type CalendarMode = 'month' | 'timeline'
+type PeopleTab = 'people' | 'places'
 
 const VIEW_LABELS: Record<View, string> = {
   today: 'Today',
@@ -46,6 +53,7 @@ const VIEW_LABELS: Record<View, string> = {
 
 const FILTER_KEY = 'drafter:project-filter'
 const CAL_MODE_KEY = 'drafter:calendar-mode'
+const PEOPLE_TAB_KEY = 'drafter:people-tab'
 
 interface Toast {
   msg: string
@@ -70,7 +78,14 @@ export default function Planner() {
       return 'month'
     }
   })
-  const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task> } | null>(null)
+  const [peopleTab, setPeopleTab] = useState<PeopleTab>(() => {
+    try {
+      return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
+    } catch {
+      return 'people'
+    }
+  })
+  const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -92,6 +107,8 @@ export default function Planner() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
@@ -114,13 +131,18 @@ export default function Planner() {
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const calendars = useCalendarEvents(store.calendars)
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
-  const mirroring = store.calendars.some(c => c.id === GOOGLE_PUSH_ID && c.enabled)
+  const myPushId = household.myId ? googlePushId(household.myId) : GOOGLE_PUSH_ID
+  const mirroring = store.calendars.some(c => (c.id === myPushId || c.id === GOOGLE_PUSH_ID) && c.enabled)
   const msMirrorIds = useMemo(
     () => store.calendars.filter(c => c.enabled && c.url.startsWith('ms-push:')).map(c => c.url.slice('ms-push:'.length)),
     [store.calendars],
   )
-  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, changes =>
-    applyMirrorChanges(changes, 'Google Calendar'),
+  const googlePush = useGooglePush(
+    store.allItems,
+    store.projects,
+    store.loaded && mirroring,
+    changes => applyMirrorChanges(changes, 'Google Calendar'),
+    household.myId,
   )
 
   // Cmd/Ctrl+K opens search from anywhere
@@ -135,71 +157,127 @@ export default function Planner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Site-owner Admin entry: JWT email vs app_config.owner_email (server-side).
+  useEffect(() => {
+    const sb = getSupabase()
+    if (!sb) return
+    let cancelled = false
+    const check = () => {
+      fetchAdminMe()
+        .then(r => {
+          if (!cancelled) setIsOwner(!!r.isOwner)
+        })
+        .catch(() => {
+          if (!cancelled) setIsOwner(false)
+        })
+    }
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) check()
+    })
+    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+      if (session) check()
+      else setIsOwner(false)
+    })
+    return () => {
+      cancelled = true
+      sub.subscription.unsubscribe()
+    }
+  }, [])
+
   // Every way in, understood in one place: the PWA share target, ?new=, ?task=,
   // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
   // consent screen. Anything that needs data waits for the store to load.
-  const pendingLink = useRef<URLSearchParams | null>(null)
-  const applyLink = (params: URLSearchParams) => {
-    const ms = params.get('microsoft')
-    const google = params.get('google')
-    if (ms || google) {
+  const pendingLink = useRef<{ host: string; params: URLSearchParams } | null>(null)
+  const applyLink = (raw: string | URLSearchParams | { host: string; params: URLSearchParams }, hostHint = '') => {
+    const { host, params } =
+      raw instanceof URLSearchParams
+        ? { host: hostHint, params: raw }
+        : typeof raw === 'object' && raw && 'params' in raw
+          ? raw
+          : paramsOf(typeof raw === 'string' ? raw : String(raw))
+    const parsed = parseLink(params, { host })
+    if (parsed.oauth) {
       void closeExternal()
-      const who = ms ? 'Outlook' : 'Google Calendar'
-      const ok = (ms ?? google) === 'connected'
-      showToast(ok ? `${who} connected — pick the calendars to show in Settings.` : `${who} could not be connected (${(params.get('reason') ?? 'unknown error').replace(/_/g, ' ')}).`)
+      const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+      showToast(
+        parsed.oauth.ok
+          ? `${who} connected — pick the calendars to show in Settings.`
+          : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
+      )
       setSettingsNonce(n => n + 1)
       setSettingsOpen(true)
       return
     }
     if (!store.loaded) {
-      pendingLink.current = params
+      pendingLink.current = { host, params }
       return
     }
-    const view = params.get('view')
-    if (view && (VIEWS as string[]).includes(view)) setView(view as View)
-    const taskId = params.get('task')
-    if (taskId) {
-      const t = store.tasks.find(x => x.id === taskId)
+    if (parsed.view === 'admin') {
+      setAdminOpen(true)
+      return
+    }
+    if (parsed.view && (VIEWS as string[]).includes(parsed.view)) setView(parsed.view as View)
+    if (parsed.tab) {
+      setPeopleTab(parsed.tab)
+      try {
+        localStorage.setItem(PEOPLE_TAB_KEY, parsed.tab)
+      } catch {
+        /* ignore */
+      }
+      setView('people')
+    }
+    if (parsed.saw) {
+      const person = store.people.find(p => p.id === parsed.saw)
+      if (person) {
+        const now = new Date().toISOString()
+        const id = crypto.randomUUID()
+        store.upsert({
+          kind: 'task',
+          id,
+          title: `Saw ${person.name}`,
+          description: '',
+          status: 'done',
+          priority: 'normal',
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          tags: ['visit'],
+          peopleIds: [person.id],
+        })
+        showToast(`Logged a visit with ${person.name}`, () => store.remove(id))
+        setView('people')
+      } else showToast('That person is not on this device yet.')
+      return
+    }
+    if (parsed.task) {
+      const t = store.tasks.find(x => x.id === parsed.task)
       if (t) setEditor({ task: t })
       else showToast('That task is not on this device yet — it will appear after the next sync.')
       return
     }
-    const title = params.get('title') ?? params.get('new')
-    const text = params.get('text')
-    const url = params.get('url')
-    if (!title && !text && !url) return
-    const looksLikeUrl = (s: string | null) => !!s && /^https?:\/\//.test(s)
-    const link = url ?? (looksLikeUrl(text) ? text! : undefined)
-    // an optional due time, so a Shortcut can say "remind me at …"
-    const due = Date.parse(params.get('due') ?? '')
-    setEditor({
-      preset: {
-        title: (title ?? (looksLikeUrl(text) ? '' : text) ?? '').slice(0, 140),
-        description: text && text !== link ? text : '',
-        link,
-        status: 'todo',
-        ...(Number.isFinite(due) ? { dueAt: new Date(due).toISOString() } : {}),
-      },
-    })
+    if (parsed.capture) {
+      setEditor({
+        preset: {
+          title: parsed.capture.title,
+          description: parsed.capture.description ?? '',
+          link: parsed.capture.link,
+          status: 'todo',
+          ...(parsed.capture.dueAt ? { dueAt: parsed.capture.dueAt } : {}),
+        },
+        capture: !parsed.capture.dueAt && !!parsed.capture.title.trim(),
+      })
+    }
   }
   const applyLinkRef = useRef(applyLink)
   applyLinkRef.current = applyLink
-  const paramsOf = (raw: string): URLSearchParams => {
-    try {
-      return new URL(raw, window.location.origin).searchParams
-    } catch {
-      return new URLSearchParams()
-    }
-  }
 
-  // the page's own URL, once
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if ([...params.keys()].length === 0) return
-    window.history.replaceState({}, '', window.location.pathname)
-    applyLinkRef.current(params)
+    if ([...params.keys()].length) {
+      applyLinkRef.current(params)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }, [])
-  // whatever arrived before the data did
   useEffect(() => {
     if (!store.loaded || !pendingLink.current) return
     const p = pendingLink.current
@@ -210,10 +288,11 @@ export default function Planner() {
   useEffect(() => {
     let dispose = () => {}
     void initNative({
-      onUrl: url => applyLinkRef.current(paramsOf(url)),
+      onUrl: url => applyLinkRef.current(url),
       onResume: () => {
         void store.syncNowManual()
         remindersRef.current()
+        void clearAppBadge()
       },
     }).then(d => {
       dispose = d
@@ -223,21 +302,50 @@ export default function Planner() {
   }, [])
 
   /** A mirrored task moved (or was deleted) in an external calendar. */
-  const applyMirrorChanges = (changes: { taskId: string; deleted: boolean; start: string | null; updated: string }[], source: string) => {
+  const applyMirrorChanges = (
+    changes: { taskId: string; deleted: boolean; start: string | null; updated: string; allDay?: boolean }[],
+    source: string,
+  ) => {
     let moved = 0
+    const undone: { id: string; status: TaskStatus }[] = []
     for (const c of changes) {
       const t = store.tasks.find(x => x.id === c.taskId)
-      if (!t || c.updated <= t.updatedAt || c.deleted || !c.start) continue
-      const next = new Date(c.start).toISOString()
-      if (next === t.dueAt) continue
+      if (!t || c.updated <= t.updatedAt) continue
+      if (c.deleted) {
+        if (t.status === 'done' || t.status === 'canceled') continue
+        const change = store.setStatus(t.id, 'done')
+        if (change) undone.push({ id: t.id, status: change.prev.status })
+        continue
+      }
+      if (!c.start) continue
+      const next = c.allDay
+        ? localMidnightIso(/^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10))
+        : new Date(c.start).toISOString()
+      if (!next || next === t.dueAt) continue
+      // compare all-day by local date key so a 09:00 rewrite is ignored
+      if (c.allDay && t.dueAt) {
+        const localKey = (iso: string) => {
+          const d = new Date(iso)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        }
+        if (localKey(t.dueAt) === next.slice(0, 10) || localKey(t.dueAt) === c.start.slice(0, 10)) continue
+      }
       store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
       moved++
     }
     if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from ${source}`)
+    if (undone.length)
+      showToast(`${undone.length} task${undone.length === 1 ? '' : 's'} marked done from ${source}`, () => {
+        for (const u of undone) store.setStatus(u.id, u.status)
+      })
   }
 
-  const microsoftSync = useMicrosoftSync(store.allItems, store.projects, store.loaded ? msMirrorIds : [], changes =>
-    applyMirrorChanges(changes, 'Outlook'),
+  const microsoftSync = useMicrosoftSync(
+    store.allItems,
+    store.projects,
+    store.loaded ? msMirrorIds : [],
+    changes => applyMirrorChanges(changes, 'Outlook'),
+    household.myId,
   )
 
   const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
@@ -273,7 +381,16 @@ export default function Planner() {
   const remindersRef = useRef(() => {})
   remindersRef.current = () => {
     if (!isNative() || !localRemindersEnabled()) return
-    void scheduleLocalReminders(buildLocalReminders(store.tasks, store.people))
+    void (async () => {
+      let skipTaskDue = false
+      try {
+        const info = await fetchPushInfo()
+        skipTaskDue = await deviceHasServerPush(info.subscriptions ?? [])
+      } catch {
+        /* offline / unsigned — keep local due reminders */
+      }
+      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue }))
+    })()
   }
   useEffect(() => {
     if (!store.loaded) return
@@ -282,26 +399,61 @@ export default function Planner() {
   }, [store.loaded, store.tasks, store.people])
 
   const openTask = (task: Task) => setEditor({ task })
-  const newTask = (preset?: Partial<Task>) =>
-    setEditor({ preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset } })
+  const newTask = (preset?: Partial<Task>, opts?: { capture?: boolean }) =>
+    setEditor({
+      preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset },
+      capture: opts?.capture ?? (!!preset?.title && !preset?.dueAt),
+    })
   const openProject = (project: Project) => setProjectEditor({ project })
-  /** A done task dated at the visit is what "seeing someone" is made of. */
-  const logVisit = (person: Person, atIso: string, note: string) => {
+  /** One-tap "Saw them" with undo — used from Today, Search, and ?saw=. */
+  const sawThem = (person: Person) => {
     const now = new Date().toISOString()
+    const id = crypto.randomUUID()
     store.upsert({
       kind: 'task',
-      id: crypto.randomUUID(),
-      title: note || `Saw ${person.name}`,
+      id,
+      title: `Saw ${person.name}`,
       description: '',
       status: 'done',
       priority: 'normal',
-      completedAt: atIso,
+      completedAt: now,
       createdAt: now,
       updatedAt: now,
       tags: ['visit'],
       peopleIds: [person.id],
     })
-    showToast(`Logged a visit with ${person.name}`)
+    showToast(`Logged a visit with ${person.name}`, () => store.remove(id))
+  }
+  /** A done task dated at the outing is what "seeing someone / going somewhere" is made of. */
+  const logOuting = (o: { at: string; title: string; peopleIds?: string[]; placeId?: string; description?: string }) => {
+    const now = new Date().toISOString()
+    store.upsert({
+      kind: 'task',
+      id: crypto.randomUUID(),
+      title: o.title,
+      description: o.description ?? '',
+      status: 'done',
+      priority: 'normal',
+      completedAt: o.at,
+      createdAt: now,
+      updatedAt: now,
+      tags: ['visit'],
+      peopleIds: o.peopleIds?.length ? o.peopleIds : undefined,
+      placeId: o.placeId,
+    })
+    const who = (o.peopleIds ?? []).map(id => store.people.find(p => p.id === id)?.name).filter(Boolean)
+    const where = o.placeId ? store.places.find(p => p.id === o.placeId)?.name : undefined
+    const bits = [where, who.length ? `with ${who.join(', ')}` : ''].filter(Boolean)
+    showToast(bits.length ? `Logged ${bits.join(' ')}` : `Logged “${o.title}”`)
+  }
+  const logVisit = (person: Person, atIso: string, note: string, placeId?: string) => {
+    const placeName = placeId ? store.places.find(p => p.id === placeId)?.name : undefined
+    logOuting({
+      at: atIso,
+      title: note || (placeName ? `${person.name} at ${placeName}` : `Saw ${person.name}`),
+      peopleIds: [person.id],
+      placeId,
+    })
   }
   const planOccasion = (person: Person, kind: 'birthday' | 'anniversary', at: Date) => {
     const due = new Date(at.getFullYear(), at.getMonth(), at.getDate() - 5, 9, 0, 0)
@@ -318,13 +470,16 @@ export default function Planner() {
   const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
   const logAttendance = (ev: CalendarEvent, peopleIds: string[]) => {
     if (peopleIds.length === 0) return
-    const now = new Date().toISOString()
     const at = ev.allDay ? new Date(`${ev.start}T12:00`).toISOString() : new Date(ev.start).toISOString()
-    store.upsert({ kind: 'task', id: crypto.randomUUID(), title: ev.title, description: ev.location ? `At ${ev.location}` : '', status: 'done', priority: 'normal', completedAt: at, createdAt: now, updatedAt: now, tags: ['visit'], peopleIds })
-    const names = peopleIds.map(id => store.people.find(p => p.id === id)?.name ?? '').filter(Boolean)
-    showToast(`Logged ${names.join(', ')} at “${ev.title}”`)
+    logOuting({
+      at,
+      title: ev.title,
+      description: ev.location ? `At ${ev.location}` : '',
+      peopleIds,
+    })
   }
   const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
+  const planAt = (place: Place) => newTask({ title: `Go to ${place.name}`, status: 'todo', placeId: place.id, tags: ['visit'] })
   /** Turn an external event into a prep task due the morning before. */
   const planForEvent = (ev: CalendarEvent) => {
     const when = eventStartDate(ev).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
@@ -370,7 +525,8 @@ export default function Planner() {
 
   const reschedule = (id: string, day: Date) => {
     const t = store.tasks.find(x => x.id === id)
-    if (!t || t.status === 'done') return
+    if (!t || t.status === 'done') return null
+    const prev = { ...t }
     const old = t.dueAt ? new Date(t.dueAt) : null
     const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), old?.getHours() ?? 9, old?.getMinutes() ?? 0)
     store.upsert({
@@ -378,6 +534,27 @@ export default function Planner() {
       status: t.status === 'wishlist' || t.status === 'canceled' ? 'todo' : t.status,
       dueAt: at.toISOString(),
       updatedAt: newerStamp(t.updatedAt),
+    })
+    return prev
+  }
+
+  const defer = (id: string, day: Date) => {
+    const prev = reschedule(id, day)
+    if (!prev) return
+    const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    showToast(`Moved to ${label}`, () => store.upsert({ ...prev, updatedAt: newerStamp(prev.updatedAt) }))
+  }
+
+  const deferAll = (ids: string[], day: Date) => {
+    const undos: Task[] = []
+    for (const id of ids) {
+      const prev = reschedule(id, day)
+      if (prev) undos.push(prev)
+    }
+    if (!undos.length) return
+    const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    showToast(`Moved ${undos.length} to ${label}`, () => {
+      for (const p of undos) store.upsert({ ...p, updatedAt: newerStamp(p.updatedAt) })
     })
   }
 
@@ -418,6 +595,11 @@ export default function Planner() {
         <button className="btn subtle" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           ⚙
         </button>
+        {isOwner && (
+          <button className="btn subtle" aria-label="Admin" title="Admin" onClick={() => setAdminOpen(true)}>
+            Admin
+          </button>
+        )}
         <button className="btn primary new-post-btn" onClick={() => newTask()}>
           + New task
         </button>
@@ -488,8 +670,11 @@ export default function Planner() {
                 tasks={filteredTasks}
                 allTasks={store.tasks}
                 people={store.people}
+                reviews={store.reviews}
                 onPlanWith={planWith}
                 onPlanOccasion={planOccasion}
+                onSaw={sawThem}
+                onSaveReview={r => store.upsert(r)}
                 projects={filterProject ? [filterProject] : store.projects}
                 projectMap={projectMap}
                 events={calendars.events}
@@ -498,6 +683,8 @@ export default function Planner() {
                 onOpen={openTask}
                 onOpenProject={openProject}
                 onStatus={changeStatus}
+                onDefer={defer}
+                onDeferAll={deferAll}
                 onNew={newTask}
               />
             )}
@@ -588,23 +775,87 @@ export default function Planner() {
                   showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
                 }}
                 onOpenProject={openProject}
+                onNew={preset => newTask(preset)}
               />
             )}
             {view === 'people' && (
-              <People
-                people={store.people}
-                tasks={store.tasks}
-                onSave={p => store.upsert(p)}
-                onDelete={id => {
-                  store.remove(id)
-                  showToast('Removed', () => store.restore([id]))
-                }}
-                onLogVisit={logVisit}
-                onPlan={planWith}
-                onOpenTask={openTask}
-              />
+              <>
+                <div className="people-tab-seg" style={{ padding: '0.5rem 0 0' }}>
+                  <span className="segmented">
+                    <button
+                      type="button"
+                      className={peopleTab === 'people' ? 'seg on' : 'seg'}
+                      onClick={() => {
+                        setPeopleTab('people')
+                        try {
+                          localStorage.setItem(PEOPLE_TAB_KEY, 'people')
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      People
+                    </button>
+                    <button
+                      type="button"
+                      className={peopleTab === 'places' ? 'seg on' : 'seg'}
+                      onClick={() => {
+                        setPeopleTab('places')
+                        try {
+                          localStorage.setItem(PEOPLE_TAB_KEY, 'places')
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      Places
+                    </button>
+                  </span>
+                </div>
+                {peopleTab === 'places' ? (
+                  <Places
+                    places={store.places}
+                    people={store.people}
+                    tasks={store.tasks}
+                    onSave={p => store.upsert(p)}
+                    onDelete={id => {
+                      store.remove(id)
+                      showToast('Removed', () => store.restore([id]))
+                    }}
+                    onLogOuting={(place, at, note, peopleIds) =>
+                      logOuting({
+                        at,
+                        title: note || `Went to ${place.name}`,
+                        placeId: place.id,
+                        peopleIds,
+                      })
+                    }
+                    onPlan={planAt}
+                    onOpenTask={openTask}
+                  />
+                ) : (
+                  <People
+                    people={store.people}
+                    places={store.places}
+                    tasks={store.tasks}
+                    onSave={p => store.upsert(p)}
+                    onDelete={id => {
+                      store.remove(id)
+                      showToast('Removed', () => store.restore([id]))
+                    }}
+                    onSavePlace={p => store.upsert(p)}
+                    onLogVisit={logVisit}
+                    onPlan={planWith}
+                    onOpenTask={openTask}
+                  />
+                )}
+              </>
             )}
-            {view === 'social' && <Insights posts={posts} />}
+            {view === 'social' && (
+              <Suspense fallback={<p className="empty">Loading insights…</p>}>
+                <Insights posts={posts} />
+              </Suspense>
+            )}
           </ErrorBoundary>
         )}
       </main>
@@ -613,8 +864,11 @@ export default function Planner() {
         <TaskEditor
           task={editor.task}
           preset={editor.preset}
+          capture={editor.capture}
           projects={store.projects}
           people={store.people}
+          places={store.places}
+          onSavePlace={p => store.upsert(p)}
           members={inHousehold ? household.info!.members : []}
           candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
           getLatest={id => store.tasks.find(x => x.id === id)}
@@ -691,7 +945,12 @@ export default function Planner() {
           onOpenTask={openTask}
           onOpenProject={openProject}
           onOpenPerson={() => setView('people')}
-          onCreateTask={title => newTask({ title, status: 'todo' })}
+          onSaw={sawThem}
+          onCreateTask={(title, openEditor) => {
+            // always open the editor so parseCapture can propose fields; Shift+Enter same path
+            void openEditor
+            newTask({ title, status: 'todo' }, { capture: true })
+          }}
           onClose={() => setSearchOpen(false)}
         />
       )}
@@ -715,6 +974,7 @@ export default function Planner() {
       )}
 
       {settingsOpen && <Settings key={settingsNonce} store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
+      {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
 
       {toast && (
         <div className="toast" role="status">

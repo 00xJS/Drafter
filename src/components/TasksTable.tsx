@@ -272,7 +272,14 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
           Show all {filtered.length} tasks
         </button>
       )}
-      {filtered.length === 0 && <p className="empty">No tasks match.</p>}
+      {filtered.length === 0 && (
+        <p className="empty">
+          No tasks match.{' '}
+          <button type="button" className="btn subtle" onClick={() => onNew()}>
+            + New task
+          </button>
+        </p>
+      )}
 
       {archiveOpen && <ImportArchiveDialog store={store} onClose={() => setArchiveOpen(false)} />}
     </div>

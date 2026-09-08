@@ -8,7 +8,10 @@
 // to the owner). The service key bypasses RLS, so that filtering happens here
 // and must stay in step with public.household_user_ids().
 
-import { legacyPostToTask } from '../../shared/domain.mjs'
+import { legacyPostToTask, newerStamp } from '../../shared/domain.mjs'
+import { seenStatus, upcomingOccasions, plannedVisit } from '../../shared/people.mjs'
+import { bucketByDue } from '../../shared/today.mjs'
+import { complete, resolveProvider } from './lib/ai.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -17,7 +20,11 @@ const DAY = 86_400_000
 const HOUR = 3_600_000
 /** Cap the catch-up window so an outage can't unleash a flood of stale nudges. */
 const MAX_NUDGE_WINDOW = 6 * HOUR
+/** Don't re-nag the same person more often than this. */
+const PERSON_NUDGE_GAP_DAYS = 7
+const NEVER_MIN_AGE_DAYS = 30
 const OPEN = ['todo', 'doing', 'blocked']
+const TOMBSTONE_TTL_MS = 90 * DAY
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -29,7 +36,7 @@ async function rest(path, init = {}) {
 }
 
 /** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
-function localParts(date, tz) {
+export function localParts(date, tz) {
   const ms = date instanceof Date ? date.getTime() : Date.parse(date)
   if (!Number.isFinite(ms)) return { hour: null, day: null, weekday: null }
   try {
@@ -47,52 +54,140 @@ function localParts(date, tz) {
 
 const dayKeyIn = (iso, tz) => localParts(iso, tz).day
 
-function buildDigest(items, tz, now) {
+/** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
+export function visibleItemsFor(rows, userId, peerIds, ownerId) {
+  const visible = new Set([userId, ...(peerIds ?? [])])
+  return (rows ?? [])
+    .filter(r => visible.has(r.user_id) || (r.user_id === null && userId === ownerId))
+    .map(r => legacyPostToTask(r.data))
+}
+
+/**
+ * Morning digest lines. `nudged` is { personId: dayKey } — a name repeats at
+ * most every PERSON_NUDGE_GAP_DAYS. Returns { …, nudgedNext } to persist.
+ */
+export function buildDigest(items, tz, now, nudged = {}) {
   const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
   const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
   const today = localParts(now, tz).day
-  const open = tasks.filter(t => OPEN.includes(t.status))
-  // a task whose dueAt is unparseable yields a null day key and is simply skipped
-  const overdue = open.filter(t => t.dueAt && dayKeyIn(t.dueAt, tz) && dayKeyIn(t.dueAt, tz) < today)
-  const dueToday = open.filter(t => t.dueAt && dayKeyIn(t.dueAt, tz) === today)
+  const { overdue, dueToday } = bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) })
   const nowMs = now.getTime()
+  const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 
-  const peopleDue = people
-    .map(p => {
-      if (!p.cadenceDays) return null
-      const last = tasks
-        .filter(t => t.status === 'done' && t.completedAt && (t.peopleIds ?? []).includes(p.id))
-        .map(t => Date.parse(t.completedAt))
-        .filter(Number.isFinite)
-        .sort((a, b) => b - a)[0]
-      // never seen: surface them too, rather than hiding them forever
-      if (last === undefined) return `${p.name} (no visit logged)`
-      const days = Math.floor((nowMs - last) / DAY)
-      return days > p.cadenceDays ? `${p.name} (${days}d)` : null
-    })
-    .filter(Boolean)
-
-  const occasions = []
-  const [ty, tm, td] = (today ?? '').split('-').map(Number)
-  if (Number.isFinite(ty)) {
-    for (const p of people) {
-      for (const kind of ['birthday', 'anniversary']) {
-        const m = (p[kind] ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-        if (!m) continue
-        let next = Date.UTC(ty, Number(m[2]) - 1, Number(m[3]))
-        if (next < Date.UTC(ty, tm - 1, td)) next = Date.UTC(ty + 1, Number(m[2]) - 1, Number(m[3]))
-        const inDays = Math.round((next - Date.UTC(ty, tm - 1, td)) / DAY)
-        if (inDays <= 7) occasions.push(`${p.name}'s ${kind}${inDays === 0 ? ' today' : ` in ${inDays}d`}`)
-      }
+  const peopleDue = []
+  for (const p of people) {
+    // an open planned visit means the nudge already did its job
+    if (plannedVisit(p.id, tasks)) continue
+    const { status, daysSince, lastSeen } = seenStatus(p, tasks, now)
+    if (status !== 'overdue' && status !== 'never') continue
+    if (status === 'never') {
+      const created = Date.parse(p.createdAt ?? '')
+      if (!Number.isFinite(created) || nowMs - created < NEVER_MIN_AGE_DAYS * DAY) continue
     }
+    const lastNudge = nudgedNext[p.id]
+    if (lastNudge && today) {
+      const gap = (Date.parse(today) - Date.parse(lastNudge)) / DAY
+      if (Number.isFinite(gap) && gap < PERSON_NUDGE_GAP_DAYS) continue
+    }
+    const label =
+      status === 'never'
+        ? `${p.name} (no visit logged)`
+        : `${p.name} (${daysSince ?? '?'}d)`
+    peopleDue.push(label)
+    if (today) nudgedNext[p.id] = today
   }
+
+  const occasions = upcomingOccasions(people, 21, now, today).map(
+    o => `${o.person.name}'s ${o.kind}${o.daysUntil === 0 ? ' today' : ` in ${o.daysUntil}d`}`,
+  )
 
   const lines = []
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
   if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.slice(0, 3).join(', ')}${peopleDue.length > 3 ? `, +${peopleDue.length - 3} more` : ''}`)
-  return { overdue, dueToday, occasions, peopleDue, lines }
+  return { overdue, dueToday, occasions, peopleDue, lines, nudgedNext }
+}
+
+/** Sunday-start week key matching src/review.ts weekRange (for previous week on Sunday). */
+function previousWeekMeta(now) {
+  const s = new Date(now)
+  s.setHours(0, 0, 0, 0)
+  s.setDate(s.getDate() - s.getDay() - 7) // start of last week
+  const e = new Date(s)
+  e.setDate(e.getDate() + 7)
+  const jan1 = new Date(s.getFullYear(), 0, 1)
+  const week = Math.floor((s.getTime() - jan1.getTime()) / (7 * DAY)) + 1
+  const fmt = x => x.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
+  const last = new Date(e.getTime() - DAY)
+  return {
+    key: `${s.getFullYear()}-W${String(week).padStart(2, '0')}`,
+    label: `${fmt(s)} – ${fmt(last)}`,
+    start: s,
+    end: e,
+  }
+}
+
+/**
+ * Draft a weekly review summary into posts when the owner hasn't written one.
+ * Never clobbers reflections or an existing summary.
+ */
+export async function upsertSundayReview(userId, items, now = new Date()) {
+  if (!resolveProvider()) return null
+  const meta = previousWeekMeta(now)
+  const existing = (items ?? []).find(i => i.kind === 'review' && i.period === 'week' && i.key === meta.key && !i.deletedAt)
+  if (existing?.summary?.trim() || existing?.reflections?.trim()) return null
+
+  const tasks = (items ?? []).filter(i => i.kind === 'task' && !i.deletedAt)
+  const inRange = iso => {
+    const t = Date.parse(iso ?? '')
+    return Number.isFinite(t) && t >= meta.start.getTime() && t < meta.end.getTime()
+  }
+  const done = tasks.filter(t => t.status === 'done' && inRange(t.completedAt) && !(t.tags ?? []).includes('visit')).map(t => t.title).slice(0, 40)
+  const slipped = tasks.filter(t => OPEN.includes(t.status) && inRange(t.dueAt)).map(t => t.title).slice(0, 40)
+  const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
+  const seen = people
+    .filter(p => tasks.some(t => t.status === 'done' && inRange(t.completedAt) && (t.peopleIds ?? []).includes(p.id)))
+    .map(p => p.name)
+    .slice(0, 20)
+
+  const list = xs => (xs.length ? xs.map(x => `- ${x}`).join('\n') : '- none')
+  const ai = await complete({
+    system:
+      'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. Never invent anything not in the data.',
+    prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}\n\nWrite the review in 120–220 words.`,
+    maxTokens: 900,
+  })
+  if (ai.error || !ai.text?.trim()) return null
+
+  const stamp = newerStamp(existing?.updatedAt)
+  const review = {
+    kind: 'review',
+    id: existing?.id ?? `review-${meta.key}`,
+    period: 'week',
+    key: meta.key,
+    top: existing?.top ?? [],
+    topDone: existing?.topDone,
+    reflections: existing?.reflections,
+    summary: ai.text.trim(),
+    createdAt: existing?.createdAt ?? stamp,
+    updatedAt: stamp,
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
+    method: 'POST',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ incoming: [review], since: new Date(Date.now() + 86_400_000).toISOString() }),
+  })
+  if (!res.ok) return null
+  await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
+    method: 'PATCH',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+    body: JSON.stringify({ user_id: userId }),
+  }).catch(() => {})
+  return review.id
 }
 
 async function userEmail(userId) {
@@ -151,10 +246,7 @@ export default async () => {
 
   for (const u of active) {
     try {
-      const visible = new Set([u.user_id, ...(peers.get(u.user_id) ?? [])])
-      const items = (rows ?? [])
-        .filter(r => visible.has(r.user_id) || (r.user_id === null && u.user_id === ownerId))
-        .map(r => legacyPostToTask(r.data))
+      const items = visibleItemsFor(rows, u.user_id, peers.get(u.user_id), ownerId)
 
       const tz = u.timezone || 'UTC'
       const { hour, day, weekday } = localParts(now, tz)
@@ -163,18 +255,30 @@ export default async () => {
       const patch = {}
       let liveSubs = subs
 
+      const applySend = async (payload) => {
+        const { gone, failed, updated } = await sendToAll(liveSubs, payload)
+        if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
+        if (updated?.length) {
+          const byEp = new Map(updated.map(x => [x.endpoint, x]))
+          liveSubs = liveSubs.map(s => byEp.get(s.endpoint) ?? s)
+        }
+        return { failed }
+      }
+
       // 1. morning digest — once per local day, at or after the chosen hour so a
       //    skipped or delayed run still delivers instead of silently dropping the day
       const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
       if (hour >= wantHour && u.last_digest_day !== day) {
-        const digest = buildDigest(items, tz, now)
+        const digest = buildDigest(items, tz, now, u.nudged ?? {})
         // Sunday's digest is the doorway to the weekly review
         const sunday = weekday === 'Sun'
-        if (sunday) digest.lines.push('Sunday: your weekly review is ready.')
+        if (sunday) {
+          digest.lines.push('Sunday: your weekly review is ready.')
+          await upsertSundayReview(u.user_id, items, now).catch(() => null)
+        }
         if (digest.lines.length > 0) {
           if (liveSubs.length && pushConfigured()) {
-            const { gone, failed } = await sendToAll(liveSubs, { title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}/${sunday ? '?view=review' : ''}` })
-            if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
+            const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}/${sunday ? '?view=review' : ''}`, badge: digest.overdue.length + digest.dueToday.length })
             if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
             sent += Math.max(0, liveSubs.length - failed.length)
           }
@@ -184,6 +288,7 @@ export default async () => {
           }
         }
         patch.last_digest_day = day
+        patch.nudged = digest.nudgedNext
       }
 
       // 2. timed tasks that came due since the last check (watermarked, so a
@@ -197,8 +302,7 @@ export default async () => {
           return Number.isFinite(at) && at <= now.getTime() && at > from
         })
         for (const t of due.slice(0, 5)) {
-          const { gone, failed } = await sendToAll(liveSubs, { title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}` })
-          if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
+          const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 })
           if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
           sent += Math.max(0, liveSubs.length - failed.length)
         }
@@ -214,6 +318,18 @@ export default async () => {
       failures.push(`${u.user_id}: ${e?.message ?? e}`)
     }
   }
+
+  // hard-delete purged tombstones older than the TTL (peers have had time to see them)
+  try {
+    const cutoff = new Date(Date.now() - TOMBSTONE_TTL_MS).toISOString()
+    await rest(`posts?deleted=eq.true&updated_at=lt.${encodeURIComponent(cutoff)}&data->>purged=eq.true`, {
+      method: 'DELETE',
+      headers: { prefer: 'return=minimal' },
+    }).catch(() => null)
+  } catch {
+    /* best-effort */
+  }
+
   const report = `sent ${sent}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
   if (failures.length) console.error('digest:', report)
   return new Response(report, { status: 200 })

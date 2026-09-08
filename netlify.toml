@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "npm run check"
   publish = "dist"
 
 [functions]
@@ -29,6 +29,11 @@
 [[redirects]]
   from = "/api/household"
   to = "/.netlify/functions/household"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin"
+  to = "/.netlify/functions/admin"
   status = 200
 
 [[redirects]]

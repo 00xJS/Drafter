@@ -45,6 +45,14 @@ export function idbDel(store: string, key: string): Promise<unknown> {
  * sold or stolen device, and the next account to sign in inherits it.
  */
 export async function clearLocalData(): Promise<void> {
+  // cancel local reminders before wiping the flag that would otherwise leave
+  // up to 60 pending notifications with task titles after sign-out
+  try {
+    const { scheduleLocalReminders } = await import('./native')
+    await scheduleLocalReminders([])
+  } catch {
+    /* native bridge may be unavailable */
+  }
   try {
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {

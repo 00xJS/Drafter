@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CADENCE_META, Cadence, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Task } from '../types'
+import { CADENCE_META, Cadence, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
 import { PersonStats, SEEN_META, compareStats, personStats, yearReport } from '../people'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -8,11 +8,14 @@ import { CatchUpIdea, suggestCatchUp } from '../ai'
 
 interface Props {
   people: Person[]
+  places?: Place[]
   tasks: Task[]
   onSave(p: Person): void
   onDelete(id: string): void
   /** Create a done "visit" task for a person on a date. */
-  onLogVisit(person: Person, atIso: string, note: string): void
+  onLogVisit(person: Person, atIso: string, note: string, placeId?: string): void
+  /** Persist a new place (inline create from the Where picker). */
+  onSavePlace?(p: Place): void
   /** Start planning something with a person (opens a new task with them attached). */
   onPlan(person: Person, title?: string): void
   onOpenTask(t: Task): void
@@ -148,10 +151,29 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   )
 }
 
-function LogVisit({ person, onLog, onClose }: { person: Person; onLog(atIso: string, note: string): void; onClose(): void }) {
+function LogVisit({
+  person,
+  places,
+  onLog,
+  onSavePlace,
+  onClose,
+}: {
+  person: Person
+  places: Place[]
+  onLog(atIso: string, note: string, placeId?: string): void
+  onSavePlace?(p: Place): void
+  onClose(): void
+}) {
   const today = new Date()
   const [date, setDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
   const [note, setNote] = useState('')
+  const [placeId, setPlaceId] = useState<string | undefined>()
+  const [placeQuery, setPlaceQuery] = useState('')
+  const selected = placeId ? places.find(p => p.id === placeId) : undefined
+  const matches = placeQuery.trim()
+    ? places.filter(p => p.id !== placeId && p.name.toLowerCase().includes(placeQuery.trim().toLowerCase())).slice(0, 8)
+    : []
+  const canCreate = !!placeQuery.trim() && !places.some(p => p.name.toLowerCase() === placeQuery.trim().toLowerCase()) && !!onSavePlace
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal narrow" role="dialog" aria-modal="true">
@@ -170,6 +192,71 @@ function LogVisit({ person, onLog, onClose }: { person: Person; onLog(atIso: str
             <span>What did you do?</span>
             <input value={note} onChange={e => setNote(e.target.value)} placeholder="Sunday lunch, walk in the park…" autoFocus />
           </label>
+          {(places.length > 0 || onSavePlace) && (
+            <div className="field">
+              <span>Where?</span>
+              {selected && (
+                <div className="platform-toggles attendees">
+                  <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Remove">
+                    {selected.emoji ? `${selected.emoji} ` : ''}
+                    {selected.name} ✕
+                  </button>
+                </div>
+              )}
+              {!selected && (
+                <>
+                  <input
+                    className="people-picker-search"
+                    value={placeQuery}
+                    onChange={e => setPlaceQuery(e.target.value)}
+                    placeholder="Search places…"
+                  />
+                  {(placeQuery.trim() || canCreate) && (
+                    <div className="platform-toggles picker-results">
+                      {matches.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="toggle"
+                          onClick={() => {
+                            setPlaceId(p.id)
+                            setPlaceQuery('')
+                          }}
+                        >
+                          {p.emoji ? `${p.emoji} ` : ''}
+                          {p.name}
+                        </button>
+                      ))}
+                      {canCreate && (
+                        <button
+                          type="button"
+                          className="toggle"
+                          onClick={() => {
+                            const now = new Date().toISOString()
+                            const p: Place = {
+                              kind: 'place',
+                              id: uid(),
+                              name: placeQuery.trim(),
+                              color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
+                              category: 'other',
+                              createdAt: now,
+                              updatedAt: now,
+                            }
+                            onSavePlace!(p)
+                            setPlaceId(p.id)
+                            setPlaceQuery('')
+                          }}
+                        >
+                          Create place “{placeQuery.trim()}”
+                        </button>
+                      )}
+                      {!canCreate && matches.length === 0 && placeQuery.trim() && <small className="muted">No match.</small>}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
         <footer className="modal-foot">
           <span className="spacer" />
@@ -180,7 +267,7 @@ function LogVisit({ person, onLog, onClose }: { person: Person; onLog(atIso: str
             className="btn primary"
             disabled={!date}
             onClick={() => {
-              onLog(fromLocalInput(`${date}T12:00`)!, note.trim())
+              onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
               onClose()
             }}
           >
@@ -202,6 +289,8 @@ function Bars({ weekly, color }: { weekly: number[]; color: string }) {
     </span>
   )
 }
+
+export { Bars }
 
 /**
  * One person as a compact row. Details and the action buttons live behind the
@@ -289,7 +378,7 @@ function PersonRow({
                 <small>avg gap</small>
               </span>
               <span>
-                <strong>{person.cadenceDays ?? '—'}</strong>
+                <strong>{person.cadenceDays ?? '90 (default)'}</strong>
                 <small>target</small>
               </span>
               <span>
@@ -344,7 +433,7 @@ function PersonRow({
   )
 }
 
-export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, onOpenTask }: Props) {
+export function People({ people, places = [], tasks, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
   const [group, setGroup] = useState<GroupFilter>('all')
@@ -384,8 +473,8 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
       occasions.add(t.id)
       personVisits += involved.length
     }
-    const attention = { overdue: 0, due: 0, often: 0 }
-    for (const s of shown) if (s.status === 'overdue' || s.status === 'due' || s.status === 'often') attention[s.status]++
+    const attention = { overdue: 0, due: 0 }
+    for (const s of shown) if (s.status === 'overdue' || s.status === 'due') attention[s.status]++
     return { occasions: occasions.size, personVisits, attention }
   }, [shown, tasks])
 
@@ -408,8 +497,7 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
       {people.length === 0 ? (
         <div className="chart-card">
           <p className="empty">
-            Add the people you want to keep close. Give each a rhythm ("every 2 weeks") and Today will nudge you when it slips, and
-            flag when you're seeing someone a lot.
+            Add the people you want to keep close. Give each a rhythm ("every 2 weeks") and Today will nudge you when it slips.
           </p>
         </div>
       ) : (
@@ -461,10 +549,6 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
             <div className="stat-tile">
               <div className="stat-label">Due a catch-up</div>
               <div className="stat-value">{counts.attention.due}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Seeing a lot</div>
-              <div className="stat-value">{counts.attention.often}</div>
             </div>
           </div>
 
@@ -533,7 +617,7 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
                       </td>
                       <td>
                         {r.trend > 0 ? (
-                          <span className="badge" style={{ background: SEEN_META.often.bg, color: SEEN_META.often.color }}>
+                          <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
                             ↑ more lately
                           </span>
                         ) : r.trend < 0 ? (
@@ -554,7 +638,15 @@ export function People({ people, tasks, onSave, onDelete, onLogVisit, onPlan, on
       )}
 
       {editing && <PersonForm person={editing.person} onSave={onSave} onDelete={onDelete} onClose={() => setEditing(null)} />}
-      {logging && <LogVisit person={logging} onLog={(at, note) => onLogVisit(logging, at, note)} onClose={() => setLogging(null)} />}
+      {logging && (
+        <LogVisit
+          person={logging}
+          places={places}
+          onSavePlace={onSavePlace}
+          onLog={(at, note, placeId) => onLogVisit(logging, at, note, placeId)}
+          onClose={() => setLogging(null)}
+        />
+      )}
     </section>
   )
 }

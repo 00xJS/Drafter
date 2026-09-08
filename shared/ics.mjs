@@ -76,9 +76,11 @@ function zonedToUtc(y, mo, d, h, mi, s, tz) {
 }
 
 /**
- * Parse a DATE or DATE-TIME value into { allDay, ms } where ms is UTC for
- * timed values, and the UTC midnight of the calendar date for all-day values
- * (all-day dates are handled as dates, never shifted by zones).
+ * Parse a DATE or DATE-TIME value into { allDay, ms, tz?, wall? } where ms is
+ * UTC for timed values, and the UTC midnight of the calendar date for all-day
+ * values (all-day dates are handled as dates, never shifted by zones).
+ * When TZID is present, wall holds Y-M-D h:m:s in that zone so recurrence can
+ * step on wall-clock days across DST.
  */
 export function parseDateValue(value, params = {}, defaultTz) {
   const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/)
@@ -89,7 +91,10 @@ export function parseDateValue(value, params = {}, defaultTz) {
   }
   if (z) return { allDay: false, ms: Date.UTC(+y, +mo - 1, +d, +h, +mi, +(s ?? 0)) }
   const tz = params.TZID ?? defaultTz
-  if (tz) return { allDay: false, ms: zonedToUtc(+y, +mo, +d, +h, +mi, +(s ?? 0), tz) }
+  if (tz) {
+    const wall = { y: +y, mo: +mo, d: +d, h: +h, mi: +mi, s: +(s ?? 0) }
+    return { allDay: false, ms: zonedToUtc(wall.y, wall.mo, wall.d, wall.h, wall.mi, wall.s, tz), tz, wall }
+  }
   // floating time: treat as UTC (rare in exported personal calendars)
   return { allDay: false, ms: Date.UTC(+y, +mo - 1, +d, +h, +mi, +(s ?? 0)) }
 }
@@ -206,6 +211,50 @@ function addMonthsUTC(ms, n, dayOfMonth) {
   return target.getTime()
 }
 
+/** Add calendar months to a wall-clock Y-M-D, clamping the day. */
+function addMonthsWall(wall, n) {
+  const m0 = wall.mo - 1 + n
+  const y = wall.y + Math.floor(m0 / 12)
+  const mo = ((m0 % 12) + 12) % 12
+  const last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate()
+  return { ...wall, y, mo: mo + 1, d: Math.min(wall.d, last) }
+}
+
+/** Wall parts of a UTC instant in an IANA zone (for recovering TZID starts without wall). */
+function wallInZone(utcMs, tz) {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      weekday: 'short',
+    })
+    const p = Object.fromEntries(dtf.formatToParts(new Date(utcMs)).map(x => [x.type, x.value]))
+    const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[p.weekday] ?? 0
+    return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, s: +p.second, wd }
+  } catch {
+    const d = new Date(utcMs)
+    return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds(), wd: d.getUTCDay() }
+  }
+}
+
+/** Day-of-week for a wall Y-M-D (UTC date maths — calendar date, not zone). */
+function wallDow(wall) {
+  return new Date(Date.UTC(wall.y, wall.mo - 1, wall.d)).getUTCDay()
+}
+
+/** Add days to a wall Y-M-D. */
+function addDaysWall(wall, days) {
+  const t = Date.UTC(wall.y, wall.mo - 1, wall.d) + days * DAY
+  const d = new Date(t)
+  return { ...wall, y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate() }
+}
+
 /** Starts (UTC ms) of every occurrence of an event between from and to. */
 function occurrences(ev, fromMs, toMs) {
   const start = ev.start.ms
@@ -221,6 +270,60 @@ function occurrences(ev, fromMs, toMs) {
     return true
   }
   const MAX = 5000
+  const tz = !ev.start.allDay ? ev.start.tz : undefined
+  const wall0 = tz ? ev.start.wall ?? wallInZone(start, tz) : null
+
+  // Zoned timed events: step on wall-clock dates, convert each with zonedToUtc
+  // so a Europe/London 18:00 weekly stays 18:00 after the autumn DST change.
+  if (tz && wall0) {
+    const toUtc = w => zonedToUtc(w.y, w.mo, w.d, w.h, w.mi, w.s, tz)
+    if (r.freq === 'DAILY') {
+      for (let i = 0; i < MAX; i++) {
+        const w = addDaysWall(wall0, i * r.interval)
+        const ms = toUtc(w)
+        if (ms > until) break
+        if (ms < start) continue
+        if (!push(ms)) break
+      }
+    } else if (r.freq === 'WEEKLY') {
+      const days = (r.byDay ? r.byDay.map(d => WEEKDAYS.indexOf(d.slice(-2))).filter(i => i >= 0) : [wallDow(wall0)]).sort((a, b) => a - b)
+      const startDow = wallDow(wall0)
+      const week0 = addDaysWall(wall0, -startDow) // Sunday of first week
+      outer: for (let w = 0; w < MAX; w++) {
+        const base = addDaysWall(week0, w * r.interval * 7)
+        for (const dow of days) {
+          const day = addDaysWall(base, dow)
+          const ms = toUtc({ ...wall0, y: day.y, mo: day.mo, d: day.d })
+          if (ms < start) continue
+          if (ms > until) break outer
+          if (!push(ms)) break outer
+        }
+      }
+    } else if (r.freq === 'MONTHLY') {
+      const dom = r.byMonthDay?.[0] ?? wall0.d
+      for (let i = 0; i < MAX; i++) {
+        const w = addMonthsWall({ ...wall0, d: dom }, i * r.interval)
+        const ms = toUtc(w)
+        if (ms > until) break
+        if (ms < start) continue
+        if (!push(ms)) break
+      }
+    } else if (r.freq === 'YEARLY') {
+      for (let i = 0; i < MAX; i++) {
+        const y = wall0.y + i * r.interval
+        const month = r.byMonth?.[0] ? r.byMonth[0] : wall0.mo
+        const last = new Date(Date.UTC(y, month, 0)).getUTCDate()
+        const w = { ...wall0, y, mo: month, d: Math.min(wall0.d, last) }
+        const ms = toUtc(w)
+        if (ms > until) break
+        if (!push(ms)) break
+      }
+    } else {
+      return start < toMs ? [start] : []
+    }
+    return out
+  }
+
   if (r.freq === 'DAILY') {
     for (let i = 0, ms = start; i < MAX && ms <= until; i++, ms = start + i * r.interval * DAY) if (!push(ms)) break
   } else if (r.freq === 'WEEKLY') {

@@ -7,7 +7,7 @@
 import { withCors } from './lib/cors.mjs'
 import webpush from 'web-push'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
-import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApns } from './lib/apns.mjs'
+import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApnsWithRetry } from './lib/apns.mjs'
 
 // Two channels, one list: browser subscriptions carry an endpoint + keys and go
 // through web-push; the iOS app's entries are { type: 'apns', token } and go
@@ -25,23 +25,30 @@ export function configureWebPush() {
 const isApns = sub => sub?.type === 'apns' && typeof sub.token === 'string'
 
 /**
- * Send to every subscription. Returns `gone` (expired endpoints to drop) and
- * `failed` (everything else that errored). Failures must be surfaced, not
- * swallowed: a well-formed but MISMATCHED VAPID pair fails with 403 on every
- * send, and reporting that as success would leave push silently broken.
+ * Send to every subscription. Returns `gone` (expired endpoints to drop),
+ * `failed` (everything else that errored), and `updated` (APNs entries whose
+ * sandbox/production env was discovered and should be persisted).
  */
 export async function sendToAll(subscriptions, payload) {
   const subs = subscriptions ?? []
   if (subs.some(sub => !isApns(sub)) && webPushConfigured()) configureWebPush()
   const gone = []
   const failed = []
+  const updated = []
   await Promise.all(
     subs.map(async sub => {
       if (isApns(sub)) {
         if (!apnsConfigured()) return failed.push({ endpoint: sub.endpoint, kind: 'apns', statusCode: 501, body: `APNs is not configured on the host: set ${missingApnsEnv().join(', ')}` })
         try {
-          const { status, reason } = await sendApns(sub.token, apnsPayload(payload), { collapseId: payload.tag })
-          if (status >= 200 && status < 300) return
+          const badge = Number.isFinite(payload.badge) ? payload.badge : undefined
+          const { status, reason, env, envUpdated } = await sendApnsWithRetry(sub.token, apnsPayload({ ...payload, badge }), {
+            collapseId: payload.tag,
+            env: sub.env,
+          })
+          if (status >= 200 && status < 300) {
+            if (envUpdated || (env && env !== sub.env)) updated.push({ ...sub, env })
+            return
+          }
           if (isGoneReason(status, reason)) gone.push(sub.endpoint)
           else failed.push({ endpoint: sub.endpoint, kind: 'apns', statusCode: status, body: reason })
         } catch (e) {
@@ -58,7 +65,7 @@ export async function sendToAll(subscriptions, payload) {
       }
     }),
   )
-  return { gone, failed }
+  return { gone, failed, updated }
 }
 
 function explainPushFailure(failed) {
@@ -137,10 +144,16 @@ const handler = async req => {
       return Response.json({ ok: true, subscriptions: next.map(x => x.endpoint) })
     }
     if (body.action === 'test') {
-      const { gone, failed } = await sendToAll(subs, { title: 'Drafter', body: 'Push reminders are on. You will get a digest each morning and a nudge when timed tasks come due.', tag: 'test' })
-      if (gone.length) await settingsSet(user.id, { push_subscriptions: subs.filter(x => !gone.includes(x.endpoint)) })
+      const { gone, failed, updated } = await sendToAll(subs, { title: 'Drafter', body: 'Push reminders are on. You will get a digest each morning and a nudge when timed tasks come due.', tag: 'test' })
+      let next = subs
+      if (gone.length) next = next.filter(x => !gone.includes(x.endpoint))
+      if (updated?.length) {
+        const byEp = new Map(updated.map(u => [u.endpoint, u]))
+        next = next.map(s => byEp.get(s.endpoint) ?? s)
+      }
+      if (next !== subs) await settingsSet(user.id, { push_subscriptions: next })
       if (failed.length) return Response.json({ error: explainPushFailure(failed) }, { status: 502 })
-      const sent = subs.length - gone.length
+      const sent = next.length
       if (sent === 0) return Response.json({ error: 'No live subscriptions — turn push off and on again on this device.' }, { status: 409 })
       return Response.json({ ok: true, sent })
     }

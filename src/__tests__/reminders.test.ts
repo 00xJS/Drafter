@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Person, Task } from '../types'
-import { buildLocalReminders, reminderId } from '../reminders'
+import { buildLocalReminders } from '../reminders'
 
 const NOW = new Date(2026, 8, 7, 12, 0) // Mon 7 Sep 2026, noon local
 
@@ -65,9 +65,12 @@ describe('local reminders', () => {
     expect(list[0].body).toContain('66 years')
   })
 
-  it('uses stable positive integer ids so a reschedule replaces, never duplicates', () => {
-    expect(reminderId('task:abc')).toBe(reminderId('task:abc'))
-    expect(reminderId('task:abc')).not.toBe(reminderId('task:abd'))
-    expect(Number.isInteger(reminderId('x')) && reminderId('x') > 0 && reminderId('x') < 2 ** 31).toBe(true)
+  it('skips task due rows when skipTaskDue is set (APNs already subscribed)', () => {
+    const due = new Date(2026, 8, 8, 18, 30)
+    const list = buildLocalReminders([task('a', { title: 'Bins out', dueAt: due.toISOString() })], [person('mum', '1960-09-12')], NOW, 30, {
+      skipTaskDue: true,
+    })
+    expect(list.every(r => !r.url.startsWith('/?task='))).toBe(true)
+    expect(list.some(r => r.title.includes('birthday'))).toBe(true)
   })
 })

@@ -5,6 +5,8 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
+import { isUntimed, localDate } from '../../../shared/domain.mjs'
+import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
 
@@ -146,23 +148,25 @@ export async function drafterCalendarId(userId) {
 }
 
 const OPEN = ['todo', 'doing', 'blocked']
-const hasClock = iso => {
-  const d = new Date(iso)
-  return d.getUTCHours() + d.getUTCMinutes() > 0
-}
 
-function eventBodyFor(task, projectName, site) {
-  const timed = hasClock(task.dueAt)
+function eventBodyFor(task, projectName, site, tz) {
+  const timed = !isUntimed(task.dueAt, tz)
   const start = new Date(task.dueAt)
-  const dateOnly = d => d.toISOString().slice(0, 10)
+  const dateOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
   return {
     summary: `${prefix}${task.title || 'Untitled task'}`,
     description: [task.description, projectName ? `Project: ${projectName}` : '', `Status: ${task.status} · Priority: ${task.priority}`, site ? `Open in Drafter: ${site}` : '']
       .filter(Boolean)
       .join('\n\n'),
-    start: timed ? { dateTime: start.toISOString() } : { date: dateOnly(start) },
-    end: timed ? { dateTime: new Date(start.getTime() + 3_600_000).toISOString() } : { date: dateOnly(new Date(start.getTime() + 86_400_000)) },
+    start: timed ? { dateTime: start.toISOString() } : { date: dateOnly },
+    end: timed
+      ? { dateTime: new Date(start.getTime() + 3_600_000).toISOString() }
+      : { date: (() => {
+          const [y, m, d] = dateOnly.split('-').map(Number)
+          const next = new Date(Date.UTC(y, m - 1, d + 1))
+          return next.toISOString().slice(0, 10)
+        })() },
     transparency: 'transparent',
     reminders: { useDefault: false, overrides: timed ? [{ method: 'popup', minutes: 30 }] : [{ method: 'popup', minutes: 9 * 60 }] },
     extendedProperties: { private: { drafter: '1', taskId: task.id } },
@@ -170,8 +174,9 @@ function eventBodyFor(task, projectName, site) {
 }
 
 async function findMirrored(userId, calendarId, taskId) {
-  const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`taskId=${taskId}`)}&showDeleted=false&maxResults=5`)
-  return page.items?.[0] ?? null
+  // showDeleted so we don't recreate an event the user deleted in Google
+  const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`taskId=${taskId}`)}&showDeleted=true&maxResults=5`)
+  return (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
 }
 
 /** Mirror one task into the Drafter calendar: upsert when open with a due date, otherwise remove. */
@@ -180,7 +185,7 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
   const existing = await findMirrored(userId, calendarId, task.id)
   const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
   if (!wanted) {
-    if (existing) {
+    if (existing && existing.status !== 'cancelled') {
       await gapi(userId, evPath(existing.id), { method: 'DELETE' }).catch(e => {
         if (e.status !== 404 && e.status !== 410) throw e
       })
@@ -188,7 +193,13 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
     }
     return 'skipped'
   }
-  const body = eventBodyFor(task, projectName, site)
+  if (existing?.status === 'cancelled') {
+    // user deleted it in Google — leave it gone rather than recreating
+    return 'skipped'
+  }
+  const settings = await settingsGet(userId).catch(() => null)
+  const tz = settings?.timezone ?? undefined
+  const body = eventBodyFor(task, projectName, site, tz)
   if (existing) {
     await gapi(userId, evPath(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'

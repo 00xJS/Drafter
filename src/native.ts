@@ -17,6 +17,19 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
+/**
+ * Start an OAuth consent flow. On native, opens Safari's sheet and returns
+ * 'native' so the caller can clear busy state; on web, navigates away.
+ */
+export async function startOAuth(url: string): Promise<'native' | 'redirect'> {
+  if (isNative()) {
+    await openExternal(url)
+    return 'native'
+  }
+  window.location.href = url
+  return 'redirect'
+}
+
 /** Dismiss the sheet opened by openExternal, e.g. once an OAuth flow has come back. */
 export async function closeExternal(): Promise<void> {
   if (!isNative()) return
@@ -114,6 +127,7 @@ export interface PendingReminder {
   body: string
   at: Date
   url: string
+  badge?: number
 }
 
 /**
@@ -133,8 +147,31 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
     .slice(0, 60)
   if (upcoming.length) {
     await LocalNotifications.schedule({
-      notifications: upcoming.map(i => ({ id: i.id, title: i.title, body: i.body, schedule: { at: i.at, allowWhileIdle: true }, extra: { url: i.url }, sound: 'default' })),
+      notifications: upcoming.map(i => ({
+        id: i.id,
+        title: i.title,
+        body: i.body,
+        schedule: { at: i.at, allowWhileIdle: true },
+        extra: { url: i.url },
+        sound: 'default',
+        ...(i.badge != null ? { badge: i.badge } : {}),
+      })),
     })
   }
   return upcoming.length
+}
+
+/** Clear the home-screen badge when the app comes forward. */
+export async function clearAppBadge(): Promise<void> {
+  if (!isNative()) return
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications')
+    // Capacitor 8: setting badge via a delivered notification isn't required —
+    // cancel pending already ran; zero via PushNotifications when available.
+    const { PushNotifications } = await import('@capacitor/push-notifications')
+    await PushNotifications.removeAllDeliveredNotifications?.()
+    void LocalNotifications
+  } catch {
+    /* plugin may be unavailable in simulator builds without push */
+  }
 }

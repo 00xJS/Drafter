@@ -33,7 +33,7 @@ function consentUrl(origin, state, loginHint) {
 
 /** Safari, opened by the iOS app with a one-time handoff: set the cookie here, then on to Google. */
 async function start(url) {
-  const fail = reason => new Response(null, { status: 302, headers: { location: `${url.origin}/?google=error&reason=${reason}` } })
+  const fail = reason => new Response(null, { status: 302, headers: { location: `drafter://oauth?google=error&reason=${encodeURIComponent(reason)}` } })
   if (!googleConfigured()) return fail('not_configured')
   const handoff = url.searchParams.get('h') ?? ''
   const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
@@ -142,7 +142,8 @@ const handler = async req => {
         .map(ev => ({
           taskId: ev.extendedProperties.private.taskId,
           deleted: ev.status === 'cancelled',
-          start: ev.start?.dateTime ?? (ev.start?.date ? `${ev.start.date}T09:00:00` : null),
+          // date-only for all-day; client writes local midnight
+          start: ev.start?.dateTime ?? ev.start?.date ?? null,
           allDay: !!ev.start?.date,
           updated: ev.updated,
         }))

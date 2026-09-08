@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isMineTask } from '../shared/domain.mjs'
 import { CalendarEvent, CalendarSource, Item, Project } from './types'
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
@@ -68,10 +69,13 @@ export function googleAction<T>(action: string, payload: Record<string, unknown>
 
 /** The pseudo-source that turns on mirroring tasks into the connected Google account. */
 export const GOOGLE_PUSH_URL = 'google:push'
+/** Legacy fixed id — migrated to googlePushId(myId) so household members don't collide. */
 export const GOOGLE_PUSH_ID = 'google-push'
+export const googlePushId = (userId: string) => `google-push-${userId}`
 export const isGoogleSource = (s: CalendarSource) => s.url.startsWith('google:')
 
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
+const pushCursorKey = (userId?: string | null) => (userId ? `${PUSH_CURSOR_KEY}:${userId}` : PUSH_CURSOR_KEY)
 
 export interface GooglePushState {
   lastAt?: string
@@ -111,8 +115,15 @@ export async function pullGoogleChanges(): Promise<GoogleChange[]> {
  * Mirror tasks into the Google "Drafter" calendar: after every local change,
  * push the tasks whose updatedAt passed the cursor. Server-side the push is
  * idempotent (upsert by task id, delete when no longer open/dated).
+ * Only `isMineTask` rows are pushed so a partner's chores stay out of my calendar.
  */
-export function useGooglePush(items: Item[], projects: Project[], enabled: boolean, onPulled?: (changes: GoogleChange[]) => void): GooglePushState {
+export function useGooglePush(
+  items: Item[],
+  projects: Project[],
+  enabled: boolean,
+  onPulled?: (changes: GoogleChange[]) => void,
+  myId?: string | null,
+): GooglePushState {
   const [state, setState] = useState<{ lastAt?: string; error?: string; pending: boolean }>({ pending: false })
   const busy = useRef(false)
   const timer = useRef<number | undefined>(undefined)
@@ -120,18 +131,21 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
   itemsRef.current = items
   const projectsRef = useRef(projects)
   projectsRef.current = projects
+  const myIdRef = useRef(myId)
+  myIdRef.current = myId
   const onPulledRef = useRef(onPulled)
   onPulledRef.current = onPulled
 
   const pushNow = useCallback(async () => {
     if (busy.current) return
+    const cursorKey = pushCursorKey(myIdRef.current)
     let cursor = ''
     try {
-      cursor = localStorage.getItem(PUSH_CURSOR_KEY) ?? ''
+      cursor = localStorage.getItem(cursorKey) ?? localStorage.getItem(PUSH_CURSOR_KEY) ?? ''
     } catch {
       /* ignore */
     }
-    const tasks = itemsRef.current.filter(i => i.kind === 'task' && i.updatedAt > cursor)
+    const tasks = itemsRef.current.filter(i => i.kind === 'task' && isMineTask(i, myIdRef.current) && i.updatedAt > cursor)
     if (tasks.length === 0) return
     busy.current = true
     setState(s => ({ ...s, pending: true }))
@@ -144,7 +158,7 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
       }
       const maxSeen = tasks.slice(0, 200).reduce((m, t) => (t.updatedAt > m ? t.updatedAt : m), cursor)
       try {
-        localStorage.setItem(PUSH_CURSOR_KEY, maxSeen)
+        localStorage.setItem(cursorKey, maxSeen)
       } catch {
         /* ignore */
       }
@@ -191,9 +205,10 @@ export function useGooglePush(items: Item[], projects: Project[], enabled: boole
 }
 
 /** Forget the push cursor so the next push re-mirrors everything (after connecting or reconnecting). */
-export function resetGooglePushCursor(): void {
+export function resetGooglePushCursor(userId?: string | null): void {
   try {
-    localStorage.removeItem(PUSH_CURSOR_KEY)
+    localStorage.removeItem(pushCursorKey(userId))
+    if (!userId) localStorage.removeItem(PUSH_CURSOR_KEY)
   } catch {
     /* ignore */
   }
@@ -391,6 +406,7 @@ export function useMicrosoftSync(
   projects: Project[],
   accountIds: string[],
   onPulled?: (changes: GoogleChange[]) => void,
+  myId?: string | null,
 ): GooglePushState {
   const [state, setState] = useState<{ lastAt?: string; error?: string; pending: boolean }>({ pending: false })
   const busy = useRef(false)
@@ -401,6 +417,8 @@ export function useMicrosoftSync(
   projectsRef.current = projects
   const idsRef = useRef(accountIds)
   idsRef.current = accountIds
+  const myIdRef = useRef(myId)
+  myIdRef.current = myId
   const onPulledRef = useRef(onPulled)
   onPulledRef.current = onPulled
 
@@ -413,7 +431,7 @@ export function useMicrosoftSync(
       for (const accountId of idsRef.current) {
         const cursorKey = `${MS_PUSH_CURSOR}:${accountId}`
         const cursor = readCursor(cursorKey)
-        const tasks = itemsRef.current.filter(i => i.kind === 'task' && i.updatedAt > cursor)
+        const tasks = itemsRef.current.filter(i => i.kind === 'task' && isMineTask(i, myIdRef.current) && i.updatedAt > cursor)
         if (tasks.length > 0) {
           const result = await microsoftAction<{ errors: { id: string; error: string }[] }>('push', { accountId, tasks: tasks.slice(0, 200), projects: names })
           if (result.errors.length > 0) {

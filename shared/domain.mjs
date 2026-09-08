@@ -91,6 +91,69 @@ export function legacyPostToTask(raw) {
   return task
 }
 
+/**
+ * Wall-clock date (YYYY-MM-DD) of an instant in `tz` (IANA). Falls back to the
+ * runtime's local zone when tz is missing/invalid.
+ */
+export function localDate(iso, tz) {
+  const ms = typeof iso === 'number' ? iso : Date.parse(iso)
+  if (!Number.isFinite(ms)) return null
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', { timeZone: tz || undefined, year: 'numeric', month: '2-digit', day: '2-digit' })
+        .formatToParts(new Date(ms))
+        .map(p => [p.type, p.value]),
+    )
+    if (parts.year && parts.month && parts.day) return `${parts.year}-${parts.month}-${parts.day}`
+  } catch {
+    /* bad tz — fall through */
+  }
+  const d = new Date(ms)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * True when the instant is "date only" in `tz`: local midnight (no meaningful
+ * wall-clock time). Used so untimed tasks mirror as all-day events.
+ */
+export function isUntimed(iso, tz) {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return false
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: tz || undefined,
+        hourCycle: 'h23',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+        .formatToParts(new Date(ms))
+        .map(p => [p.type, p.value]),
+    )
+    return Number(parts.hour) === 0 && Number(parts.minute) === 0 && Number(parts.second || 0) === 0
+  } catch {
+    const d = new Date(ms)
+    return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0
+  }
+}
+
+/** Local-midnight ISO for a YYYY-MM-DD calendar day in the runtime's local zone. */
+export function localMidnightIso(dateKey) {
+  const m = String(dateKey ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).toISOString()
+}
+
+/** Deterministic id for the next occurrence of a recurring task. */
+export function spawnId(taskId, freq, nextDueIso) {
+  const day = (nextDueIso ?? '').slice(0, 10)
+  return `${taskId}~${freq}~${day}`
+}
+
 /** The next occurrence of a recurring task, cloned from the one just completed. */
 export function nextOccurrence(task, uidFn) {
   if (!task.recurrence) return null
@@ -103,9 +166,12 @@ export function nextOccurrence(task, uidFn) {
   else if (freq === 'biweekly') next.setDate(next.getDate() + 14)
   else next.setMonth(next.getMonth() + 1)
   const now = new Date().toISOString()
+  const dueAt = next.toISOString()
+  // uidFn kept for call-site compatibility; id is deterministic so two devices agree
+  void uidFn
   return {
     kind: 'task',
-    id: uidFn(),
+    id: spawnId(task.id, freq, dueAt),
     title: task.title,
     description: task.description,
     status: 'todo',
@@ -113,12 +179,13 @@ export function nextOccurrence(task, uidFn) {
     projectId: task.projectId,
     createdAt: now,
     updatedAt: now,
-    dueAt: next.toISOString(),
+    dueAt,
     tags: [...(task.tags ?? [])],
     notes: task.notes,
     // carry the context forward, or a recurring "Sunday lunch with Mum" records
     // exactly one visit ever and her last-seen date freezes on the first one
     peopleIds: task.peopleIds ? [...task.peopleIds] : undefined,
+    placeId: task.placeId,
     link: task.link,
     githubUrl: task.githubUrl,
     estimateCost: task.estimateCost,
@@ -127,5 +194,19 @@ export function nextOccurrence(task, uidFn) {
       ? { platforms: [...task.social.platforms], variants: task.social.variants ? { ...task.social.variants } : undefined }
       : undefined,
     recurrence: { ...task.recurrence },
+    spawnedFrom: task.id,
   }
+}
+
+/**
+ * Tasks that belong on *my* calendar mirror / ICS feed. Household peers' chores
+ * must not land in the owner's Google/Outlook. Unowned rows (local-only /
+ * pre-household) count as mine. Assignees win when set.
+ */
+export function isMineTask(task, myId) {
+  if (!task || task.kind !== 'task') return false
+  if (!myId) return true
+  if (task.assigneeId) return task.assigneeId === myId
+  if (task.ownerId) return task.ownerId === myId
+  return true
 }

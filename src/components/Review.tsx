@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Person, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
-import { Period, ReviewData, buildReview, rangeFor, shiftRange } from '../review'
+import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
 import { fmtDate, uid } from '../utils'
@@ -18,6 +18,7 @@ interface Props {
   /** Move a set of tasks to a new due date (bulk reschedule). */
   onReschedule(ids: string[], dueAtIso: string): void
   onOpenProject(p: Project): void
+  onNew(preset?: Partial<Task>): void
 }
 
 function nextMonday(from = new Date()): string {
@@ -53,12 +54,14 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
   )
 }
 
-export function Review({ tasks, projects, projectMap, people, reviews, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject }: Props) {
+export function Review({ tasks, projects, projectMap, people, reviews, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
   const [period, setPeriod] = useState<Period>('week')
-  const [anchor, setAnchor] = useState(() => new Date())
+  const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
   const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people), [range, tasks, projects, people])
   const saved = reviews.find(r => r.period === period && r.key === range.key)
+  const prevRange = useMemo(() => shiftRange(range, -1), [range])
+  const prevSaved = reviews.find(r => r.period === period && r.key === prevRange.key)
   const [top, setTop] = useState<string[]>(saved?.top ?? ['', '', ''])
   const [reflections, setReflections] = useState(saved?.reflections ?? '')
   const [summary, setSummary] = useState(saved?.summary ?? '')
@@ -78,10 +81,19 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
     onSaveReview({ ...base, top: top.map(t => t.trim()).filter(Boolean), reflections: reflections.trim() || undefined, summary: summary || undefined, ...patch, updatedAt: saved ? newerStamp(saved.updatedAt) : now })
   }
 
+  const togglePrevTop = (index: number) => {
+    if (!prevSaved) return
+    const next = [...(prevSaved.topDone ?? [])]
+    while (next.length < (prevSaved.top?.length ?? 0)) next.push(false)
+    next[index] = !next[index]
+    onSaveReview({ ...prevSaved, topDone: next, updatedAt: newerStamp(prevSaved.updatedAt) })
+  }
+
   const generate = async () => {
     setBusy(true)
     setError('')
     try {
+      const lastTop = prevSaved?.top?.filter(Boolean) ?? []
       const text = await summarizeReview({
         period,
         label: range.label,
@@ -92,6 +104,8 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
         projects: data.projects.map(p => `${p.project.name}: ${p.done} done, ${p.open} open`),
         stalled: data.stalled.map(p => p.name),
         reflections,
+        lastTop,
+        kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),
       })
       setSummary(text)
       persist({ summary: text })
@@ -103,6 +117,12 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
   }
 
   const isCurrent = range.end.getTime() > Date.now() && range.start.getTime() <= Date.now()
+  const endOfNext = (() => {
+    const d = new Date(range.end)
+    d.setDate(d.getDate() + (period === 'week' ? 6 : 27))
+    d.setHours(17, 0, 0, 0)
+    return d.toISOString()
+  })()
 
   return (
     <div className="insights review">
@@ -132,6 +152,32 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
           {busy ? 'Writing…' : summary ? '✨ Rewrite summary' : '✨ Write my summary'}
         </button>
       </div>
+
+      {prevSaved && (prevSaved.top?.length || prevSaved.reflections) && (
+        <section className="chart-card you-said">
+          <header className="chart-head">
+            <div>
+              <h3>You said</h3>
+              <p className="chart-sub">Last {period}'s Top 3 and reflections — tick what you kept</p>
+            </div>
+          </header>
+          {prevSaved.top?.length ? (
+            <ul className="dash-list">
+              {prevSaved.top.map((line, i) => (
+                <li key={i} className={prevSaved.topDone?.[i] ? 'trow done' : 'trow'}>
+                  <input type="checkbox" className="tcheck" checked={!!prevSaved.topDone?.[i]} onChange={() => togglePrevTop(i)} aria-label="Kept" />
+                  <div className="dash-main">
+                    <span className="dash-title">{line}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty">No Top 3 written last {period}.</p>
+          )}
+          {prevSaved.reflections && <p className="you-said-reflections">{prevSaved.reflections}</p>}
+        </section>
+      )}
 
       <div className="kpi-row">
         <StatTile label="Done" value={String(data.done.length)} sub={`${data.created.length} created`} />
@@ -198,13 +244,19 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
           </header>
           <div className="review-top">
             {top.map((v, i) => (
-              <input
-                key={i}
-                value={v}
-                placeholder={`#${i + 1}`}
-                onChange={e => setTop(cur => cur.map((x, j) => (j === i ? e.target.value : x)))}
-                onBlur={() => persist({})}
-              />
+              <div key={i} className="review-top-row">
+                <input
+                  value={v}
+                  placeholder={`#${i + 1}`}
+                  onChange={e => setTop(cur => cur.map((x, j) => (j === i ? e.target.value : x)))}
+                  onBlur={() => persist({})}
+                />
+                {v.trim() && (
+                  <button type="button" className="btn subtle" title="Create a task" onClick={() => onNew({ title: v.trim(), dueAt: endOfNext, status: 'todo' })}>
+                    → task
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <label className="field">

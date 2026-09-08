@@ -12,7 +12,10 @@ const REQUIRED = ['APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_PRIVATE_KEY', 'APNS_BUNDL
 export const missingApnsEnv = () => REQUIRED.filter(k => !process.env[k])
 export const apnsConfigured = () => missingApnsEnv().length === 0
 
-const host = () => (process.env.APNS_ENV === 'sandbox' ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com')
+export const apnsHostFor = env =>
+  env === 'sandbox' ? 'https://api.sandbox.push.apple.com' : 'https://api.push.apple.com'
+
+const defaultEnv = () => (process.env.APNS_ENV === 'sandbox' ? 'sandbox' : 'production')
 
 const b64url = s => Buffer.from(s).toString('base64url')
 
@@ -35,23 +38,33 @@ function providerToken(force = false) {
 }
 
 /** The web-push payload, translated. `url` rides along for the tap handler. */
-export function apnsPayload({ title, body, tag, url }) {
+export function apnsPayload({ title, body, tag, url, badge }) {
   return {
-    aps: { alert: { title: String(title ?? 'Drafter'), body: String(body ?? '') }, sound: 'default', ...(tag ? { 'thread-id': String(tag) } : {}) },
+    aps: {
+      alert: { title: String(title ?? 'Drafter'), body: String(body ?? '') },
+      sound: 'default',
+      ...(tag ? { 'thread-id': String(tag) } : {}),
+      ...(Number.isFinite(badge) ? { badge: Math.max(0, Math.floor(badge)) } : {}),
+    },
     ...(url ? { url: String(url) } : {}),
   }
 }
 
-/** Apple's way of saying "this device is gone, stop sending". */
-export const isGoneReason = (status, reason) => status === 410 || reason === 'BadDeviceToken' || reason === 'Unregistered' || reason === 'DeviceTokenNotForTopic'
+/**
+ * Apple's way of saying "this device is gone, stop sending".
+ * BadDeviceToken is NOT gone — it usually means sandbox/production host mismatch.
+ */
+export const isGoneReason = (status, reason) =>
+  status === 410 || reason === 'Unregistered' || reason === 'DeviceTokenNotForTopic'
 
 /**
- * One notification to one device. Resolves { status, reason } for any HTTP
+ * One notification to one device. Resolves { status, reason, env } for any HTTP
  * outcome; rejects only when Apple could not be reached at all.
  */
-export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE_ID, collapseId, ttlSeconds = 6 * 3600 } = {}) {
+export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE_ID, collapseId, ttlSeconds = 6 * 3600, env } = {}) {
+  const useEnv = env === 'sandbox' || env === 'production' ? env : defaultEnv()
   return new Promise((resolve, reject) => {
-    const client = http2.connect(host())
+    const client = http2.connect(apnsHostFor(useEnv))
     let settled = false
     const done = (fn, v) => {
       if (settled) return
@@ -88,10 +101,27 @@ export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE
         /* empty body on success */
       }
       if (reason === 'ExpiredProviderToken') providerToken(true)
-      done(resolve, { status, reason })
+      done(resolve, { status, reason, env: useEnv })
     })
     req.on('error', e => done(reject, e))
     req.setTimeout(10_000, () => req.close())
     req.end(JSON.stringify(payload))
   })
+}
+
+/**
+ * Send with automatic sandbox/production retry on BadDeviceToken.
+ * Returns { status, reason, env, envUpdated } — envUpdated when the working host
+ * differs from what was tried first (caller should persist env on the subscription).
+ */
+export async function sendApnsWithRetry(deviceToken, payload, opts = {}) {
+  const preferred = opts.env === 'sandbox' || opts.env === 'production' ? opts.env : defaultEnv()
+  const first = await sendApns(deviceToken, payload, { ...opts, env: preferred })
+  if (first.status >= 200 && first.status < 300) return { ...first, envUpdated: false }
+  if (first.reason !== 'BadDeviceToken') return { ...first, envUpdated: false }
+  const other = preferred === 'sandbox' ? 'production' : 'sandbox'
+  const second = await sendApns(deviceToken, payload, { ...opts, env: other })
+  if (second.status >= 200 && second.status < 300) return { ...second, envUpdated: true }
+  // both failed — surface the first BadDeviceToken as a failure, not gone
+  return { ...first, envUpdated: false }
 }

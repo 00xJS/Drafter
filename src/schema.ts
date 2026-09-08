@@ -5,6 +5,9 @@ import {
   PERSON_GROUPS,
   Person,
   PersonGroup,
+  PLACE_CATEGORIES,
+  Place,
+  PlaceCategory,
   Review,
   Template,
   TemplateMilestone,
@@ -173,9 +176,14 @@ function dateOnly(v: unknown): string | undefined {
   return iso ? iso.slice(0, 10) : undefined
 }
 
-function urlOrUndefined(v: unknown): string | undefined {
+function idOrUndefined(v: unknown): string | undefined {
   const s = str(v)?.trim()
   return s ? s : undefined
+}
+
+function urlOrUndefined(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  return s && /^https?:/.test(s) ? s : undefined
 }
 
 /** Coerce arbitrary data into a valid Task, repairing what it can. */
@@ -203,7 +211,7 @@ export function sanitizeTask(raw: unknown): Task | null {
     description: str(r.description) ?? str(r.body) ?? '',
     status,
     priority: typeof r.priority === 'string' && PRIORITY_SET.has(r.priority) ? (r.priority as Priority) : 'normal',
-    projectId: urlOrUndefined(r.projectId),
+    projectId: idOrUndefined(r.projectId),
     dueAt,
     completedAt,
     createdAt: isoDate(r.createdAt) ?? completedAt ?? now,
@@ -218,12 +226,13 @@ export function sanitizeTask(raw: unknown): Task | null {
     recurrence,
     social: social(r.social),
     peopleIds: idList(r.peopleIds),
+    placeId: idOrUndefined(r.placeId),
     attachments: attachments(r.attachments),
     estimateCost: money(r.estimateCost),
     actualCost: money(r.actualCost),
     blockedBy: idList(r.blockedBy),
-    assigneeId: urlOrUndefined(r.assigneeId),
-    ownerId: urlOrUndefined(r.ownerId),
+    assigneeId: idOrUndefined(r.assigneeId),
+    ownerId: idOrUndefined(r.ownerId),
     deletedAt: isoDate(r.deletedAt),
   }
 }
@@ -251,7 +260,7 @@ export function sanitizeProject(raw: unknown): Project | null {
     githubUrl: urlOrUndefined(r.githubUrl),
     notes: str(r.notes) || undefined,
     notesHtml: str(r.notesHtml) || undefined,
-    ownerId: urlOrUndefined(r.ownerId),
+    ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -274,7 +283,7 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
     url,
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[7],
     enabled: r.enabled !== false,
-    ownerId: urlOrUndefined(r.ownerId),
+    ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -282,6 +291,8 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
 }
 
 const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
+const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
+const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -304,7 +315,32 @@ export function sanitizePerson(raw: unknown): Person | null {
     notes: str(r.notes)?.trim() || undefined,
     birthday: dateOnly(r.birthday),
     anniversary: dateOnly(r.anniversary),
-    ownerId: urlOrUndefined(r.ownerId),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+/** Coerce arbitrary data into a valid Place. */
+export function sanitizePlace(raw: unknown): Place | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const name = str(r.name)?.trim()
+  if (!id || !name) return null
+  const now = new Date().toISOString()
+  const color = str(r.color)?.trim()
+  return {
+    kind: 'place',
+    id,
+    name,
+    emoji: str(r.emoji)?.trim() || undefined,
+    color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
+    category:
+      typeof r.category === 'string' && PLACE_CATEGORY_SET.has(r.category) ? (r.category as PlaceCategory) : 'other',
+    notes: str(r.notes)?.trim() || undefined,
+    ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -325,9 +361,10 @@ export function sanitizeReview(raw: unknown): Review | null {
     period: r.period === 'month' ? 'month' : 'week',
     key,
     top: strList(r.top).slice(0, 5),
+    topDone: Array.isArray(r.topDone) ? r.topDone.map(Boolean).slice(0, 5) : undefined,
     reflections: str(r.reflections)?.trim() || undefined,
     summary: str(r.summary)?.trim() || undefined,
-    ownerId: urlOrUndefined(r.ownerId),
+    ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -383,7 +420,7 @@ export function sanitizeTemplate(raw: unknown): Template | null {
     milestones: milestones.length ? milestones : undefined,
     notesHtml: str(r.notesHtml) || undefined,
     durationDays: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : undefined,
-    ownerId: urlOrUndefined(r.ownerId),
+    ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
@@ -391,8 +428,9 @@ export function sanitizeTemplate(raw: unknown): Template | null {
 }
 
 /**
- * Coerce any record — task, project, calendar, person, review, template, or a pre-v3 post — into a valid Item.
- * Returns null if unusable.
+ * Coerce any record — task, project, calendar, person, place, review, template, or a pre-v3 post — into a valid Item.
+ * Returns null if unusable. Unknown string kinds return null so a stale client never
+ * rewrites a newer kind (e.g. place) into a blank task and LWW-destroys it.
  */
 export function sanitizeItem(raw: unknown): Item | null {
   if (!raw || typeof raw !== 'object') return null
@@ -400,8 +438,10 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'project') return sanitizeProject(converted)
   if (converted.kind === 'calendar') return sanitizeCalendar(converted)
   if (converted.kind === 'person') return sanitizePerson(converted)
+  if (converted.kind === 'place') return sanitizePlace(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
+  if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null
   return sanitizeTask(converted)
 }
 

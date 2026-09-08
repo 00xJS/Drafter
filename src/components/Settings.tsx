@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, googlePushId, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -9,7 +9,7 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
-import { isNative, localRemindersEnabled, openExternal, requestLocalNotificationPermission, scheduleLocalReminders, setLocalRemindersEnabled } from '../native'
+import { isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setLocalRemindersEnabled, startOAuth } from '../native'
 import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
@@ -17,7 +17,7 @@ import type { HouseholdInfo } from '../household'
 /** Settings was one 800-line scroll; these are the four things you come here for. */
 const SETTINGS_GROUPS = [
   { key: 'calendars', label: 'Calendars' },
-  { key: 'reminders', label: 'Reminders & AI' },
+  { key: 'reminders', label: 'Reminders' },
   { key: 'household', label: 'Household' },
   { key: 'data', label: 'Data' },
 ] as const
@@ -45,6 +45,9 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
     try {
       await fn()
       await household.refresh()
+      store.retainMine(household.myId)
+      // leave/remove/accept change which peer rows RLS returns — authoritative full exchange drops ghosts
+      await store.fullResync()
     } catch (e) {
       setHhError((e as Error).message)
     } finally {
@@ -103,7 +106,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
       setPushBusy(false)
     }
   }
-  const pushSource = store.calendars.find(c => c.id === GOOGLE_PUSH_ID)
+  const myPushId = household.myId ? googlePushId(household.myId) : GOOGLE_PUSH_ID
+  const pushSource = store.calendars.find(c => c.id === myPushId) ?? store.calendars.find(c => c.id === GOOGLE_PUSH_ID)
   const mirroring = !!pushSource?.enabled
 
   useEffect(() => {
@@ -145,13 +149,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
     setGoogleError('')
     try {
       const { url } = await googleAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-      if (isNative()) {
-        // consent runs in Safari and comes back through drafter://oauth
-        await openExternal(url)
-        setGoogleBusy(false)
-      } else {
-        window.location.href = url
-      }
+      const mode = await startOAuth(url)
+      if (mode === 'native') setGoogleBusy(false)
     } catch (e) {
       setGoogleError((e as Error).message)
       setGoogleBusy(false)
@@ -188,10 +187,15 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
 
   const setMirroring = (on: boolean) => {
     const now = new Date().toISOString()
-    if (pushSource) store.upsert({ ...pushSource, enabled: on, updatedAt: newerStamp(pushSource.updatedAt) })
-    else if (on) store.upsert({ kind: 'calendar', id: GOOGLE_PUSH_ID, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: now, updatedAt: now })
+    if (pushSource) {
+      // migrate legacy google-push → google-push-${myId} when enabling
+      if (pushSource.id === GOOGLE_PUSH_ID && household.myId && on) {
+        store.remove(GOOGLE_PUSH_ID)
+        store.upsert({ kind: 'calendar', id: myPushId, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: pushSource.createdAt, updatedAt: now })
+      } else store.upsert({ ...pushSource, id: myPushId, enabled: on, updatedAt: newerStamp(pushSource.updatedAt) })
+    } else if (on) store.upsert({ kind: 'calendar', id: myPushId, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: now, updatedAt: now })
     if (on) {
-      resetGooglePushCursor()
+      resetGooglePushCursor(household.myId)
       window.setTimeout(() => googlePush.pushNow(), 500)
     }
   }
@@ -344,8 +348,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     </button>
                   </div>
                   <p className="field-hint">
-                    They need an account first (the site owner creates accounts in the Supabase dashboard). They will see the
-                    invitation in their own Settings and must accept it — nothing is shared until they do.
+                    They need an account first (the site owner creates accounts in Admin). They will see the invitation in
+                    their own Settings and must accept it — nothing is shared until they do.
                   </p>
                 </>
               ) : (
@@ -435,7 +439,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 </p>
               </>
             ) : push ? (
-              <p className="field-hint">Not configured on the host: set {push.missing.join(', ')} on Netlify (run <code>npx web-push generate-vapid-keys</code> for the VAPID pair).</p>
+              <p className="field-hint">Push reminders aren’t available yet.</p>
             ) : !isSupabaseConfigured() ? (
               <p className="field-hint">Push reminders are sent by the server, so they need a signed-in account.</p>
             ) : (
@@ -446,8 +450,9 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
               <>
                 <h4>On this iPhone</h4>
                 <p className="field-hint">
-                  A notification at each task's due time and on the morning of a birthday or anniversary. The phone fires these itself: they work with the app
-                  closed and need no account.
+                  {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
+                    ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Occasion reminders (birthdays) still fire here.'
+                    : 'A notification at each task’s due time and on the morning of a birthday or anniversary. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
                 </p>
                 <p className="sync-line">
                   <label className="cal-source mirror-row">
@@ -463,7 +468,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           }
                           setLocalRemindersEnabled(true)
                           setLocalOn(true)
-                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people))
+                          let skipTaskDue = false
+                          try {
+                            skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
+                          } catch {
+                            /* ignore */
+                          }
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue }))
                         } else {
                           setLocalRemindersEnabled(false)
                           setLocalOn(false)
@@ -471,7 +482,11 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         }
                       }}
                     />
-                    <span className="cal-source-name">Remind me on this iPhone</span>
+                    <span className="cal-source-name">
+                      {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
+                        ? 'Local occasion reminders (due tasks via push)'
+                        : 'Remind me on this iPhone'}
+                    </span>
                   </label>
                 </p>
                 {localErr && <p className="warn">{localErr}</p>}
@@ -563,10 +578,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 <small>Read your calendars and mirror tasks. Tokens stay server-side, per account.</small>
               </p>
             ) : google ? (
-              <p className="field-hint">
-                Not configured on the host yet: set {google.missing.join(', ')} on Netlify. The OAuth client's redirect URI
-                must be <code>{google.redirectUri}</code>.
-              </p>
+              <p className="field-hint">Calendar sync isn’t available yet.</p>
             ) : (
               <p className="field-hint">{googleError ? `Google status unavailable: ${googleError}` : 'Checking Google…'}</p>
             )}
@@ -585,12 +597,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         setMsError('')
                         try {
                           const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                          if (isNative()) {
-                            await openExternal(url)
-                            setMsBusy(false)
-                          } else {
-                            window.location.href = url
-                          }
+                          const mode = await startOAuth(url)
+                          if (mode === 'native') setMsBusy(false)
                         } catch (e) {
                           setMsError((e as Error).message)
                           setMsBusy(false)
@@ -692,14 +700,11 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         disabled={msBusy}
                         onClick={async () => {
                           setMsBusy(true)
+                          setMsError('')
                           try {
                             const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                            if (isNative()) {
-                              await openExternal(url)
-                              setMsBusy(false)
-                            } else {
-                              window.location.href = url
-                            }
+                            const mode = await startOAuth(url)
+                            if (mode === 'native') setMsBusy(false)
                           } catch (e) {
                             setMsError((e as Error).message)
                             setMsBusy(false)
@@ -718,11 +723,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 </p>
               </>
             ) : ms ? (
-              <p className="field-hint">
-                Not configured on the host yet: set {ms.missing.join(', ')} on Netlify. In the Azure portal register an app that
-                allows <em>any organizational directory and personal Microsoft accounts</em>, with the redirect URI{' '}
-                <code>{ms.redirectUri}</code>.
-              </p>
+              <p className="field-hint">Calendar sync isn’t available yet.</p>
             ) : (
               <p className="field-hint">{msError ? `Outlook status unavailable: ${msError}` : 'Checking Outlook…'}</p>
             )}
@@ -829,7 +830,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 <small>Generates a private feed address for your account.</small>
               </p>
             ) : feed ? (
-              <p className="field-hint">Not available: needs {feed.missing.join(' and ')} on the host (Netlify).</p>
+              <p className="field-hint">Subscribe link isn’t available yet.</p>
             ) : (
               <p className="field-hint">{feedError ? `Feed status unavailable: ${feedError}` : 'Checking feed status…'}</p>
             )}
@@ -886,15 +887,6 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             </section>
           )}
 
-          <section className="settings-section g-reminders">
-            <h3>AI assist</h3>
-            <p className="field-hint">
-              The ✨ features (break a task into steps, suggest tags, platform variants, post analysis) run through the
-              site's server-side proxy — configure <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or{' '}
-              <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). GitHub link cards use{' '}
-              <code>GITHUB_TOKEN</code> the same way. No key is ever stored in the browser.
-            </p>
-          </section>
         </div>
 
         <footer className="modal-foot">

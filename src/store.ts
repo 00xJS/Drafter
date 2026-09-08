@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, Item, Person, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
+import { CalendarSource, Item, Person, Place, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, mergeItems, newerStamp, nextOccurrence, purgeTombstones } from './itemops'
+import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
 import { uid } from './utils'
 import { purgeRemote, syncNow } from './sync'
@@ -9,6 +9,26 @@ import { clearLocalData, idbGet, idbSet } from './idb'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 const CURSOR_KEY = 'drafter:sync-cursor'
+const DIRTY_KEY = 'drafter:dirty-ids'
+
+function readDirty(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DIRTY_KEY)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === 'string')) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function writeDirty(ids: Set<string>) {
+  try {
+    localStorage.setItem(DIRTY_KEY, JSON.stringify([...ids]))
+  } catch {
+    /* ignore */
+  }
+}
 
 async function loadCache(myId: string | null): Promise<Item[]> {
   try {
@@ -43,8 +63,10 @@ export interface SyncInfo {
   lastAt?: string
   /** The session is expired/invalid — the fix is signing in, not waiting. */
   authError: boolean
-  /** Changes the server did not confirm; they are retried on the next round. */
+  /** Changes waiting to push (dirty set size). */
   pending?: number
+  /** Ids the server rejected on the last round (validation/RLS) — no longer retried. */
+  rejected?: string[]
 }
 
 export interface ImportSummary {
@@ -68,6 +90,8 @@ export interface Store {
   calendars: CalendarSource[]
   /** People you track visits with. */
   people: Person[]
+  /** Places you track outings at. */
+  places: Place[]
   reviews: Review[]
   templates: Template[]
   /** Everything including tombstones — for export and sync. */
@@ -86,6 +110,8 @@ export interface Store {
   syncNowManual(): Promise<boolean>
   /** Forget the delta cursor so the next sync is a full exchange. */
   fullResync(): Promise<boolean>
+  /** Drop peer-owned rows after leaving a household (keeps unowned + mine). */
+  retainMine(myId: string | null): void
 }
 
 /** Tasks blocked only by done tasks move to To do once their last blocker completes. */
@@ -185,32 +211,49 @@ export function useItems(myId: string | null = null): Store {
       /* ignore */
     }
   }
+  const markDirty = (ids: string | string[]) => {
+    const dirty = readDirty()
+    for (const id of Array.isArray(ids) ? ids : [ids]) dirty.add(id)
+    writeDirty(dirty)
+  }
 
   const doSync = async (): Promise<boolean> => {
     if (syncBusy.current || !loadedRef.current) return false
     syncBusy.current = true
     try {
       const since = readCursor()
-      // push only what's newer than the cursor; everything on a full sync
+      const dirty = readDirty()
       const local = itemsRef.current
-      const outgoing = since ? local.filter(p => p.updatedAt > since) : local
-      const result = await syncNow(outgoing, since)
+      // push the dirty set (not "updatedAt > cursor") so late/offline stamps still go out
+      const outgoing = since ? local.filter(p => dirty.has(p.id)) : local
+      const result = await syncNow(outgoing, pullSince(since))
       if (result.items === null) {
-        setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError, pending: s.pending }))
+        setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError, pending: dirty.size, rejected: s.rejected }))
         return false
       }
-      // merge onto whatever state is current when the response lands, never the
-      // snapshot taken before the request — see applySync
       let decision: ReturnType<typeof applySync> | null = null
       setItems(cur => {
-        decision = applySync(cur, outgoing, result.items!, since)
+        decision = applySync(cur, outgoing, result.items!, since, result.rejected)
         const next = ensureProjects(purgeTombstones(decision.merged))
         const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
         return signature(next) === signature(cur) ? cur : next
       })
       const applied = decision as ReturnType<typeof applySync> | null
       if (applied?.cursor) writeCursor(applied.cursor)
-      setSyncInfo({ online: true, lastAt: new Date().toISOString(), authError: false, pending: applied?.unconfirmed.length ?? 0 })
+      // clear confirmed + rejected from dirty; keep unconfirmed for retry
+      const still = readDirty()
+      for (const id of outgoing.map(o => o.id)) {
+        if (!applied?.unconfirmed.includes(id)) still.delete(id)
+      }
+      for (const id of result.rejected) still.delete(id)
+      writeDirty(still)
+      setSyncInfo({
+        online: true,
+        lastAt: new Date().toISOString(),
+        authError: false,
+        pending: still.size,
+        rejected: result.rejected.length ? result.rejected : undefined,
+      })
       return true
     } finally {
       syncBusy.current = false
@@ -232,7 +275,6 @@ export function useItems(myId: string | null = null): Store {
     return () => {
       live = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myId])
 
   // periodic sync + sync when the app returns to the foreground
@@ -271,7 +313,7 @@ export function useItems(myId: string | null = null): Store {
       window.clearTimeout(persistTimer.current)
       window.clearTimeout(pushTimer.current)
     }
-  }, [items, loaded])
+  }, [items, loaded, myId])
 
   // Calendar subscriptions and reviews are personal: only mine (or unowned,
   // pre-household rows) show. Declared BEFORE every memo that calls it — a
@@ -291,6 +333,13 @@ export function useItems(myId: string | null = null): Store {
     () =>
       items
         .filter((i): i is Person => i.kind === 'person' && !i.deletedAt)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [items],
+  )
+  const places = useMemo(
+    () =>
+      items
+        .filter((i): i is Place => i.kind === 'place' && !i.deletedAt)
         .sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
@@ -314,6 +363,7 @@ export function useItems(myId: string | null = null): Store {
     projects,
     calendars,
     people,
+    places,
     reviews,
     templates,
     allItems: items,
@@ -321,38 +371,49 @@ export function useItems(myId: string | null = null): Store {
     syncInfo,
     upsert: item =>
       setItems(list => {
+        markDirty(item.id)
         const old = list.find(x => x.id === item.id)
         let next = old ? list.map(x => (x.id === item.id ? item : x)) : [...list, item]
         if (item.kind === 'task' && item.status === 'done' && old?.kind === 'task' && old.status !== 'done' && item.recurrence) {
           const spawn = nextOccurrence(item, uid)
-          if (spawn) next = next.map(x => (x.id === item.id ? { ...item, recurrence: undefined } : x)).concat(spawn)
+          if (spawn) {
+            markDirty(spawn.id)
+            next = next.map(x => (x.id === item.id ? { ...item, recurrence: undefined } : x)).concat(spawn)
+          }
         }
         return ensureProjects(releaseBlocked(next))
       }),
     remove: id =>
-      setItems(list =>
-        list.map(p => (p.id === id ? { ...p, deletedAt: new Date().toISOString(), updatedAt: newerStamp(p.updatedAt) } : p)),
-      ),
+      setItems(list => {
+        markDirty(id)
+        return list.map(p => (p.id === id ? { ...p, deletedAt: new Date().toISOString(), updatedAt: newerStamp(p.updatedAt) } : p))
+      }),
     restore: ids =>
       setItems(list => {
+        markDirty(ids)
         const set = new Set(ids)
         return list.map(p => (set.has(p.id) ? { ...p, deletedAt: undefined, updatedAt: newerStamp(p.updatedAt) } : p))
       }),
     purge: async ids => {
+      const snapshot = itemsRef.current
       const set = new Set(ids)
       setItems(list => list.filter(p => !set.has(p.id)))
-      await purgeRemote(ids)
+      const dirty = readDirty()
+      for (const id of ids) dirty.delete(id)
+      writeDirty(dirty)
+      await purgeRemote(ids, snapshot)
     },
     setStatus: (id, status) => {
       const old = itemsRef.current.find(x => x.id === id)
       if (!old || old.kind !== 'task' || old.status === status) return null
       const updated = stampStatus(old, status)
-      // a small physical "done" on the phone; silent everywhere else
       if (status === 'done' && old.status !== 'done') void haptic('success')
       let spawned: Task | null = null
       if (status === 'done' && old.status !== 'done' && updated.recurrence) {
         spawned = nextOccurrence(updated, uid)
       }
+      markDirty(id)
+      if (spawned) markDirty(spawned.id)
       setItems(list => {
         let next: Item[] = list.map(x => (x.id === id ? (spawned ? { ...updated, recurrence: undefined } : updated) : x))
         if (spawned) next = next.concat(spawned)
@@ -377,8 +438,6 @@ export function useItems(myId: string | null = null): Store {
           updated++
           toMerge.push(p)
         } else if (existing.kind === 'task' && p.kind === 'task' && isImported(existing) && p.social?.metrics) {
-          // a fresh archive re-import carries newer counts on an equal-or-older
-          // timestamp: take per-field maxes and bump the stamp so it syncs
           const { merged, changed } = maxMetrics(existing.social?.metrics, p.social.metrics)
           if (changed) {
             metricsRefreshed++
@@ -394,7 +453,10 @@ export function useItems(myId: string | null = null): Store {
           unchanged++
         }
       }
-      if (toMerge.length > 0) setItems(list => ensureProjects(mergeItems(list, toMerge)))
+      if (toMerge.length > 0) {
+        markDirty(toMerge.map(p => p.id))
+        setItems(list => ensureProjects(mergeItems(list, toMerge)))
+      }
       return { added, updated, unchanged, metricsRefreshed }
     },
     syncNowManual: () => doSyncRef.current(),
@@ -405,6 +467,13 @@ export function useItems(myId: string | null = null): Store {
         /* ignore */
       }
       return doSyncRef.current()
+    },
+    retainMine: (uid: string | null) => {
+      if (!uid) return
+      setItems(list => {
+        const next = list.filter(i => !i.ownerId || i.ownerId === uid)
+        return next.length === list.length ? list : next
+      })
     },
   }
 }

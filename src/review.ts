@@ -43,6 +43,15 @@ export function rangeFor(period: Period, d: Date): Range {
   return period === 'week' ? weekRange(d) : monthRange(d)
 }
 
+/** On Sunday (or before a full day of the week has passed), review last week. */
+export function defaultReviewAnchor(now = new Date()): Date {
+  const range = weekRange(now)
+  if (now.getDay() === 0 || now.getTime() - range.start.getTime() < DAY_MS) {
+    return new Date(range.start.getTime() - DAY_MS)
+  }
+  return now
+}
+
 export function shiftRange(r: Range, delta: number): Range {
   if (r.period === 'week') return weekRange(new Date(r.start.getTime() + delta * 7 * DAY_MS + DAY_MS))
   return monthRange(new Date(r.start.getFullYear(), r.start.getMonth() + delta, 1))
@@ -153,7 +162,7 @@ export interface NextUp {
 /** A task created this recently is almost certainly what you are looking at the screen for. */
 const JUST_ADDED_MS = 10 * 60_000
 
-export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new Date()): NextUp[] {
+export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new Date(), pinnedTitles: string[] = []): NextUp[] {
   const nowMs = now.getTime()
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
   const prio: Record<string, number> = { urgent: 3, high: 2, normal: 1, low: 0 }
@@ -165,12 +174,17 @@ export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new 
     if (Number.isFinite(at)) projectTouched.set(t.projectId, Math.max(projectTouched.get(t.projectId) ?? 0, at))
   }
   const active = new Set(projects.filter(p => p.status === 'active').map(p => p.id))
+  const pinSet = new Set(pinnedTitles.map(t => t.trim().toLowerCase()).filter(Boolean))
 
   const scored = open.map(t => {
     let score = 0
     let reason = ''
     const due = t.dueAt ? Date.parse(t.dueAt) : NaN
     const days = Number.isFinite(due) ? Math.round((due - nowMs) / DAY_MS) : null
+
+    if (pinSet.has((t.title || '').trim().toLowerCase())) {
+      return { task: t, reason: 'your top 3', score: 3000 }
+    }
 
     // Ranking otherwise rewards age, so a brand-new task sorts to the BOTTOM and
     // vanishes behind the cut — you save something and the page looks unchanged.
@@ -182,6 +196,11 @@ export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new 
     if (days !== null && days < 0) {
       score += 1000 - Math.min(days * -1, 60)
       reason = `overdue ${-days}d`
+    } else if (Number.isFinite(due) && due < nowMs && days === 0) {
+      // same calendar day, time already past — between overdue and due-today
+      const hoursAgo = Math.max(1, Math.round((nowMs - due) / 3_600_000))
+      score += 950
+      reason = `due ${hoursAgo}h ago`
     } else if (days !== null && days <= 1) {
       score += 900
       reason = days === 0 ? 'due today' : 'due tomorrow'

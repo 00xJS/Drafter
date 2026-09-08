@@ -119,14 +119,32 @@ const handler = async req => {
     if (body.action === 'remove') {
       if (m.role !== 'owner') return Response.json({ error: 'Only the household owner can remove members.' }, { status: 403 })
       if (body.userId === user.id) return Response.json({ error: 'Use leave to remove yourself.' }, { status: 400 })
+      // Keep the household's shared work: re-attribute the removed member's rows to the owner.
+      const [hh] = await rest(`households?id=eq.${m.household_id}&select=created_by`)
+      const ownerId = hh?.created_by ?? user.id
+      await rest(`posts?user_id=eq.${encodeURIComponent(body.userId)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({ user_id: ownerId }),
+      }).catch(() => {})
       await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${body.userId}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
-      return Response.json(await describe(user.id))
+      const epoch = Date.now()
+      const left = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
+      for (const row of [...(left ?? []), { user_id: body.userId }]) {
+        await settingsSet(row.user_id, { household_epoch: epoch }).catch(() => {})
+      }
+      return Response.json({ ...(await describe(user.id)), householdEpoch: epoch })
     }
     if (body.action === 'leave') {
+      const epoch = Date.now()
+      const peers = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
       await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${user.id}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
       const left = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
       if (left.length === 0) await rest(`households?id=eq.${m.household_id}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
-      return Response.json({ household: null, members: [] })
+      for (const row of peers ?? []) {
+        await settingsSet(row.user_id, { household_epoch: epoch }).catch(() => {})
+      }
+      return Response.json({ household: null, members: [], householdEpoch: epoch })
     }
     if (body.action === 'rename') {
       await rest(`households?id=eq.${m.household_id}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ name: String(body.name ?? '').trim().slice(0, 60) || 'Home' }) })

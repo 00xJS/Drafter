@@ -5,6 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
+import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 /** "common" accepts both personal Microsoft accounts and work/school accounts. */
@@ -193,10 +194,6 @@ export async function listEvents(userId, accountId, calendarId, fromIso, toIso) 
 // ----------------------------------------------------------------- writing
 
 const OPEN = ['todo', 'doing', 'blocked']
-const hasClock = iso => {
-  const d = new Date(iso)
-  return d.getUTCHours() + d.getUTCMinutes() > 0
-}
 
 /** The "Drafter" calendar in a connected account, created on first mirror. */
 export async function drafterCalendarId(userId, accountId) {
@@ -216,12 +213,12 @@ export async function drafterCalendarId(userId, accountId) {
   return id
 }
 
-function eventBodyFor(task, projectName, site) {
-  const timed = hasClock(task.dueAt)
+function eventBodyFor(task, projectName, site, tz) {
+  const timed = !isUntimed(task.dueAt, tz)
   const start = new Date(task.dueAt)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
   const stamp = d => d.toISOString().replace(/\.\d{3}Z$/, '')
-  const dayOnly = d => d.toISOString().slice(0, 10)
+  const dayOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
   return {
     subject: `${prefix}${task.title || 'Untitled task'}`,
     body: {
@@ -232,10 +229,16 @@ function eventBodyFor(task, projectName, site) {
     },
     isAllDay: !timed,
     showAs: 'free',
-    start: timed ? { dateTime: stamp(start), timeZone: 'UTC' } : { dateTime: `${dayOnly(start)}T00:00:00`, timeZone: 'UTC' },
+    start: timed ? { dateTime: stamp(start), timeZone: 'UTC' } : { dateTime: `${dayOnly}T00:00:00`, timeZone: 'UTC' },
     end: timed
       ? { dateTime: stamp(new Date(start.getTime() + 3_600_000)), timeZone: 'UTC' }
-      : { dateTime: `${dayOnly(new Date(start.getTime() + 86_400_000))}T00:00:00`, timeZone: 'UTC' },
+      : {
+          dateTime: `${(() => {
+            const [y, m, d] = dayOnly.split('-').map(Number)
+            return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+          })()}T00:00:00`,
+          timeZone: 'UTC',
+        },
     singleValueExtendedProperties: [{ id: TASK_PROP, value: task.id }],
   }
 }
@@ -261,7 +264,8 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     }
     return 'skipped'
   }
-  const body = eventBodyFor(task, projectName, site)
+  const settings = await settingsGet(userId).catch(() => null)
+  const body = eventBodyFor(task, projectName, site, settings?.timezone)
   if (existing) {
     await graph(userId, accountId, path(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
@@ -280,7 +284,14 @@ export async function pullChanges(userId, accountId, calendarId, sinceIso) {
       if (!taskId) return null
       const raw = ev.start?.dateTime
       const iso = raw ? (raw.endsWith('Z') ? raw : `${raw}Z`) : null
-      return { taskId, deleted: !!ev.isCancelled, start: iso, allDay: !!ev.isAllDay, updated: ev.lastModifiedDateTime }
+      const allDay = !!ev.isAllDay
+      return {
+        taskId,
+        deleted: !!ev.isCancelled,
+        start: allDay && iso ? iso.slice(0, 10) : iso,
+        allDay,
+        updated: ev.lastModifiedDateTime,
+      }
     })
     .filter(Boolean)
 }

@@ -7,13 +7,13 @@ import { fmtDate } from './utils'
 
 class AIError extends Error {}
 
-async function complete(system: string, prompt: string, maxTokens = 2048): Promise<string> {
+async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
   let res: Response
   try {
     res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ system, prompt, maxTokens }),
+      body: JSON.stringify({ system, prompt, maxTokens, json }),
       timeoutMs: 180_000,
     })
   } catch (e) {
@@ -49,6 +49,8 @@ export async function generateVariants(body: string, platforms: Platform[]): Pro
   const text = await complete(
     'You adapt social media drafts into platform-native versions. Keep the author\'s voice and message; adjust length, tone, hashtag and emoji conventions to each platform. Never exceed a platform\'s character limit.',
     `Adapt this draft for each platform below.\n\nDraft:\n"""\n${body}\n"""\n\nPlatforms:\n${specs}\n\nRespond with ONLY a JSON object mapping each platform id to its adapted text, e.g. {"x": "...", "instagram": "..."}.`,
+    2048,
+    true,
   )
   const raw = extractJSON<Record<string, unknown>>(text)
   const out: Partial<Record<Platform, string>> = {}
@@ -66,6 +68,7 @@ export async function suggestTags(body: string): Promise<string[]> {
     'You suggest short lowercase content tags (topics/themes, not platform names) for organizing social media posts.',
     `Suggest 3–6 tags for this post. Respond with ONLY a JSON array of lowercase strings without "#", e.g. ["launch","tips"].\n\nPost:\n"""\n${body}\n"""`,
     512,
+    true,
   )
   const raw = extractJSON<unknown[]>(text)
   return raw
@@ -97,6 +100,7 @@ export async function suggestChecklist(title: string, description: string): Prom
     'You are a pragmatic project planner for personal and household projects. Break work into small, concrete, actionable steps a single person can tick off. No fluff.',
     `Break this task into 3–8 checklist steps. Respond with ONLY a JSON array of short strings (imperative, under 80 characters each).\n\nTask: ${title}\n${description ? `Details:\n"""\n${description}\n"""` : ''}`,
     768,
+    true,
   )
   const raw = extractJSON<unknown[]>(text)
   return raw
@@ -155,6 +159,7 @@ export async function suggestCatchUp(input: {
     'You help someone keep up with the people they love. Suggest specific, low-effort, realistic plans — a call, a walk, lunch, an errand done together, a game night — not grand gestures. Vary the ideas. Use what you know about the person; never invent facts about them.',
     `Person: ${input.name} (${input.group})\n${input.daysSince !== undefined ? `Last seen: ${input.daysSince} days ago` : 'Never logged'}\nNotes about them: ${input.notes || '(none)'}\nRecent times together:\n${recent}\n\nSuggest 4 ideas for the next catch-up. Respond with ONLY a JSON array of objects {"title": "short imperative plan, under 60 chars", "why": "one sentence tying it to what you know"}.`,
     768,
+    true,
   )
   const raw = extractJSON<unknown[]>(text)
   return raw
@@ -175,11 +180,21 @@ export async function summarizeReview(input: {
   projects: string[]
   stalled: string[]
   reflections?: string
+  /** Prior period's Top 3 commitments. */
+  lastTop?: string[]
+  /** Which of those Top 3 were kept (done). */
+  kept?: boolean[]
 }): Promise<string> {
   const list = (xs: string[]) => (xs.length ? xs.slice(0, 40).map(x => `- ${x}`).join('\n') : '- none')
+  const last =
+    input.lastTop && input.lastTop.length
+      ? input.lastTop
+          .map((t, i) => `- ${t}${input.kept?.[i] ? ' (done)' : ' (not done)'}`)
+          .join('\n')
+      : '- none recorded'
   return complete(
     'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. Never invent anything not in the data.',
-    `Period: this ${input.period} (${input.label})\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
     900,
   )
 }
@@ -196,6 +211,7 @@ export async function draftPlan(goal: string, name: string, context?: string): P
     'You are a pragmatic project planner for personal and household projects. Produce realistic, well-ordered plans a single person can follow, with sensible lead times (booking before doing, ordering before assembling). Prefer 8–15 tasks. No fluff.',
     `Project: ${name || '(unnamed)'}\nGoal: ${goal}\n${context ? `Context:\n${context}\n` : ''}\nRespond with ONLY a JSON object: {"durationDays": number, "tasks": [{"title": "imperative, under 70 chars", "offsetDays": days from start (0 = start day), "priority": "low|normal|high|urgent", "checklist": ["optional short steps"]}], "milestones": [{"name": "short", "offsetDays": number}] } with 2–4 milestones.`,
     1800,
+    true,
   )
   const raw = extractJSON<{ durationDays?: unknown; tasks?: unknown[]; milestones?: unknown[] }>(text)
   const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : d)
@@ -217,3 +233,132 @@ export async function draftPlan(goal: string, name: string, context?: string): P
   if (tasks.length === 0) throw new AIError('The model returned no tasks.')
   return { durationDays: Math.max(1, num(raw.durationDays, Math.max(...tasks.map(t => t.offsetDays), 7))), tasks, milestones }
 }
+
+export interface CaptureCtx {
+  now?: Date
+  timeZone?: string
+  projectNames?: string[]
+  personNames?: string[]
+}
+
+export interface CapturedFields {
+  title: string
+  dueAt?: string
+  priority?: 'low' | 'normal' | 'high' | 'urgent'
+  projectName?: string
+  peopleNames?: string[]
+  tags?: string[]
+  recurrence?: 'daily' | 'weekly' | 'biweekly' | 'monthly'
+}
+
+const WEEKDAYS: Record<string, number> = {
+  sun: 0,
+  sunday: 0,
+  mon: 1,
+  monday: 1,
+  tue: 2,
+  tues: 2,
+  tuesday: 2,
+  wed: 3,
+  wednesday: 3,
+  thu: 4,
+  thur: 4,
+  thurs: 4,
+  thursday: 4,
+  fri: 5,
+  friday: 5,
+  sat: 6,
+  saturday: 6,
+}
+
+/** Offline pre-pass: today/tomorrow/weekday + h(:mm)(am|pm). Returns null when nothing matches. */
+export function deterministicCapture(text: string, now = new Date()): CapturedFields | null {
+  const raw = text.trim()
+  if (!raw) return null
+  let due: Date | null = null
+  let rest = raw
+
+  const timeRe = /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i
+  const dayRe = /\b(today|tomorrow|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i
+
+  const dayMatch = rest.match(dayRe)
+  if (dayMatch) {
+    const token = dayMatch[1].toLowerCase()
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0)
+    if (token === 'today') {
+      due = base
+    } else if (token === 'tomorrow') {
+      base.setDate(base.getDate() + 1)
+      due = base
+    } else {
+      const want = WEEKDAYS[token]
+      if (want !== undefined) {
+        const delta = (want - base.getDay() + 7) % 7 || 7
+        base.setDate(base.getDate() + delta)
+        due = base
+      }
+    }
+    rest = (rest.slice(0, dayMatch.index) + rest.slice(dayMatch.index! + dayMatch[0].length)).replace(/\s{2,}/g, ' ').trim()
+  }
+
+  const timeMatch = rest.match(timeRe) ?? raw.match(timeRe)
+  if (timeMatch) {
+    let h = Number(timeMatch[1])
+    const m = Number(timeMatch[2] ?? 0)
+    const ap = (timeMatch[3] ?? '').toLowerCase()
+    if (ap === 'pm' && h < 12) h += 12
+    if (ap === 'am' && h === 12) h = 0
+    if (!due) due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0)
+    due.setHours(h, m, 0, 0)
+    if (timeMatch.index !== undefined && rest.includes(timeMatch[0])) {
+      rest = (rest.slice(0, timeMatch.index) + rest.slice(timeMatch.index + timeMatch[0].length)).replace(/\s{2,}/g, ' ').trim()
+    }
+  }
+
+  if (!due) return null
+  const title = rest.replace(/^[\s,.\-–—:]+|[\s,.\-–—:]+$/g, '').trim() || raw
+  return { title, dueAt: due.toISOString() }
+}
+
+/**
+ * Turn a typed sentence into structured task fields. Runs a deterministic
+ * date/time pre-pass first; on network failure that alone is enough.
+ */
+export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<CapturedFields> {
+  const now = ctx.now ?? new Date()
+  const local = deterministicCapture(text, now)
+  const tz = ctx.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const projects = (ctx.projectNames ?? []).slice(0, 40)
+  const people = (ctx.personNames ?? []).slice(0, 40)
+  try {
+    const modelText = await complete(
+      'You parse a single personal-task capture sentence into structured fields. Never invent project or person names that are not in the lists. Prefer imperative short titles. Respond with ONLY JSON.',
+      `Now: ${now.toISOString()} (${tz})\nActive projects: ${JSON.stringify(projects)}\nPeople: ${JSON.stringify(people)}\n\nSentence:\n"""\n${text.trim()}\n"""\n\nRespond with ONLY JSON: {"title":"…","dueAt":"ISO optional","priority":"low|normal|high|urgent optional","projectName":"exact name or omit","peopleNames":["exact names"],"tags":["…"],"recurrence":"daily|weekly|biweekly|monthly optional"}`,
+      300,
+      true,
+    )
+    const raw = extractJSON<Record<string, unknown>>(modelText)
+    const title = String(raw.title ?? '').trim().slice(0, 140) || local?.title || text.trim()
+    const dueRaw = typeof raw.dueAt === 'string' ? Date.parse(raw.dueAt) : NaN
+    const dueAt = Number.isFinite(dueRaw) ? new Date(dueRaw).toISOString() : local?.dueAt
+    const priority = (['low', 'normal', 'high', 'urgent'] as const).find(p => p === raw.priority)
+    const projectRaw = typeof raw.projectName === 'string' ? raw.projectName.trim() : ''
+    const projectName = projectRaw
+      ? projects.find(n => n.toLowerCase() === projectRaw.toLowerCase())
+      : undefined
+    const peopleNames = Array.isArray(raw.peopleNames)
+      ? raw.peopleNames
+          .map(String)
+          .map(n => people.find(p => p.toLowerCase() === n.toLowerCase()))
+          .filter((n): n is string => !!n)
+          .slice(0, 8)
+      : undefined
+    const tags = Array.isArray(raw.tags) ? raw.tags.map(String).map(t => t.trim().toLowerCase()).filter(Boolean).slice(0, 8) : undefined
+    const recurrence = (['daily', 'weekly', 'biweekly', 'monthly'] as const).find(f => f === raw.recurrence)
+    return { title, dueAt, priority, projectName, peopleNames, tags, recurrence }
+  } catch {
+    if (local) return local
+    return { title: text.trim().slice(0, 140) }
+  }
+}
+

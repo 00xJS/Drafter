@@ -1,6 +1,7 @@
 import { OPEN_STATUSES, Person, Task } from './types'
 import { upcomingOccasions } from './people'
 import { excerpt } from './utils'
+import { currentEndpoint } from './push'
 
 // Reminders the phone can fire by itself: one at each task's due time and one
 // on the morning of a birthday or anniversary. No server, no account, works
@@ -16,6 +17,8 @@ export interface LocalReminder {
   at: Date
   /** Where a tap should land, as an in-app query string. */
   url: string
+  /** Home-screen badge when the notification fires (iOS). */
+  badge?: number
 }
 
 /** Stable 31-bit id from a string (djb2), so rescheduling replaces rather than duplicates. */
@@ -35,22 +38,39 @@ function remindAt(dueAt: string): Date {
   return d
 }
 
-export function buildLocalReminders(tasks: Task[], people: Person[], now = new Date(), horizonDays = 30): LocalReminder[] {
+export interface BuildReminderOpts {
+  /**
+   * When this device is already on the server's APNs/web-push list, skip local
+   * "Due now" rows so phone and server don't both fire. Occasion rows stay.
+   */
+  skipTaskDue?: boolean
+}
+
+export function buildLocalReminders(
+  tasks: Task[],
+  people: Person[],
+  now = new Date(),
+  horizonDays = 30,
+  opts: BuildReminderOpts = {},
+): LocalReminder[] {
   const nowMs = now.getTime()
   const until = nowMs + horizonDays * DAY_MS
   const out: LocalReminder[] = []
-  for (const t of tasks) {
-    if (!OPEN_STATUSES.includes(t.status) || !t.dueAt) continue
-    const at = remindAt(t.dueAt)
-    const ms = at.getTime()
-    if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
-    out.push({
-      id: reminderId(`task:${t.id}`),
-      title: `Due now: ${t.title || 'Untitled task'}`,
-      body: t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
-      at,
-      url: `/?task=${encodeURIComponent(t.id)}`,
-    })
+  if (!opts.skipTaskDue) {
+    for (const t of tasks) {
+      if (!OPEN_STATUSES.includes(t.status) || !t.dueAt) continue
+      const at = remindAt(t.dueAt)
+      const ms = at.getTime()
+      if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
+      out.push({
+        id: reminderId(`task:${t.id}`),
+        title: `Due now: ${t.title || 'Untitled task'}`,
+        body: t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
+        at,
+        url: `/?task=${encodeURIComponent(t.id)}`,
+        badge: 1,
+      })
+    }
   }
   for (const o of upcomingOccasions(people, horizonDays, now)) {
     const at = new Date(o.at)
@@ -61,8 +81,15 @@ export function buildLocalReminders(tasks: Task[], people: Person[], now = new D
       title: `${o.person.name}'s ${o.kind} today`,
       body: o.years ? `${o.years} years. Send a message or plan something.` : 'Send a message or plan something.',
       at,
-      url: '/?view=people',
+      url: `/?saw=${encodeURIComponent(o.person.id)}`,
+      badge: 1,
     })
   }
   return out.sort((a, b) => a.at.getTime() - b.at.getTime())
+}
+
+/** True when this device's push endpoint is already registered server-side. */
+export async function deviceHasServerPush(subscriptions: string[]): Promise<boolean> {
+  const ep = await currentEndpoint()
+  return !!ep && subscriptions.includes(ep)
 }

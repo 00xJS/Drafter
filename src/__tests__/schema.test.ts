@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateStored, sanitizeItem, sanitizeProject, sanitizeTask } from '../schema'
+import { migrateStored, sanitizeItem, sanitizePlace, sanitizeProject, sanitizeTask } from '../schema'
 import { Task } from '../types'
 
 function valid(over: Partial<Task> = {}): Task {
@@ -130,6 +130,16 @@ describe('sanitizeItem (legacy posts)', () => {
 
   it('routes projects by kind', () => {
     expect(sanitizeItem({ kind: 'project', id: 'p1', name: 'X' })?.kind).toBe('project')
+  })
+
+  it('routes places and rejects unknown kinds', () => {
+    expect(sanitizePlace({ kind: 'place', id: 'pl1', name: 'Nopi' })?.kind).toBe('place')
+    expect(sanitizeItem({ kind: 'place', id: 'pl1', name: 'Nopi' })?.kind).toBe('place')
+    expect(sanitizeItem({ kind: 'alien', id: 'a1', title: 'nope' })).toBeNull()
+  })
+
+  it('keeps placeId on sanitized tasks', () => {
+    expect(sanitizeTask(valid({ placeId: 'pl1' }))?.placeId).toBe('pl1')
   })
 })
 
