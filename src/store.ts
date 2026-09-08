@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, Item, Person, Place, Project, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
+import { CalendarSource, GroceryList, Item, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
@@ -73,6 +73,9 @@ export interface Store {
   people: Person[]
   /** Places you track outings at. */
   places: Place[]
+  recipes: Recipe[]
+  meals: Meal[]
+  groceries: GroceryList[]
   reviews: Review[]
   templates: Template[]
   /** Everything including tombstones — for export and sync. */
@@ -335,6 +338,21 @@ export function useItems(myId: string | null = null): Store {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
+  const recipes = useMemo(
+    () =>
+      items
+        .filter((i): i is Recipe => i.kind === 'recipe' && !i.deletedAt)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [items],
+  )
+  const meals = useMemo(
+    () => items.filter((i): i is Meal => i.kind === 'meal' && !i.deletedAt).sort((a, b) => a.date.localeCompare(b.date)),
+    [items],
+  )
+  const groceries = useMemo(
+    () => items.filter((i): i is GroceryList => i.kind === 'grocery' && !i.deletedAt),
+    [items],
+  )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt && isMine(i)), [items, myId])
   const templates = useMemo(
@@ -356,6 +374,9 @@ export function useItems(myId: string | null = null): Store {
     calendars,
     people,
     places,
+    recipes,
+    meals,
+    groceries,
     reviews,
     templates,
     allItems: items,

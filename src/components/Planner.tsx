@@ -21,6 +21,7 @@ import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
 import { People } from './People'
 import { Places } from './Places'
+import { Kitchen } from './Kitchen'
 import { Review } from './Review'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
@@ -33,9 +34,10 @@ import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { fetchAdminMe } from '../admin'
 
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'review'
-const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'review']
-type CalendarMode = 'month' | 'timeline'
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'kitchen' | 'review'
+const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'kitchen', 'review']
+type CalendarMode = 'month' | 'week' | 'timeline'
+const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 type PeopleTab = 'people' | 'places'
 
 const VIEW_LABELS: Record<View, string> = {
@@ -45,6 +47,7 @@ const VIEW_LABELS: Record<View, string> = {
   calendar: 'Calendar',
   notes: 'Notes',
   people: 'People',
+  kitchen: 'Kitchen',
   review: 'Review',
 }
 
@@ -70,7 +73,8 @@ export default function Planner() {
   })
   const [calMode, setCalMode] = useState<CalendarMode>(() => {
     try {
-      return localStorage.getItem(CAL_MODE_KEY) === 'timeline' ? 'timeline' : 'month'
+      const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
+      return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
     } catch {
       return 'month'
     }
@@ -592,8 +596,11 @@ export default function Planner() {
             Admin
           </button>
         )}
-        <button className="btn primary new-post-btn" onClick={() => newTask()}>
-          + New task
+        <button className="btn primary new-post-btn" onClick={() => newTask()} aria-label="New task" title="New task">
+          <span className="new-post-plus" aria-hidden>
+            +
+          </span>
+          <span className="new-post-label">New task</span>
         </button>
       </header>
 
@@ -678,6 +685,9 @@ export default function Planner() {
                 onDefer={defer}
                 onDeferAll={deferAll}
                 onNew={newTask}
+                meals={store.meals}
+                recipes={store.recipes}
+                onOpenKitchen={() => setView('kitchen')}
               />
             )}
             {view === 'board' && (
@@ -697,14 +707,21 @@ export default function Planner() {
                   <button className={calMode === 'month' ? 'seg on' : 'seg'} onClick={() => setCalMode('month')}>
                     Month
                   </button>
+                  <button className={calMode === 'week' ? 'seg on' : 'seg'} onClick={() => setCalMode('week')}>
+                    Week
+                  </button>
                   <button className={calMode === 'timeline' ? 'seg on' : 'seg'} onClick={() => setCalMode('timeline')}>
                     Timeline
                   </button>
                 </div>
-                {calMode === 'month' ? (
+                {calMode !== 'timeline' ? (
                   <Calendar
+                    view={calMode}
                     tasks={filteredTasks}
+                    projects={filterProject ? [filterProject] : store.projects}
                     projectMap={projectMap}
+                    people={store.people}
+                    meals={store.meals}
                     events={calendars.events}
                     sourceMap={sourceMap}
                     onOpen={openTask}
@@ -712,6 +729,8 @@ export default function Planner() {
                     onReschedule={reschedule}
                     onPlan={planForEvent}
                     onAttendance={ev => setAttendance(ev)}
+                    onOpenProject={openProject}
+                    onPlanOccasion={planOccasion}
                   />
                 ) : (
                   <Roadmap
@@ -772,7 +791,7 @@ export default function Planner() {
             )}
             {view === 'people' && (
               <>
-                <div className="people-tab-seg" style={{ padding: '0.5rem 0 0' }}>
+                <div className="people-tab-seg">
                   <span className="segmented">
                     <button
                       type="button"
@@ -842,6 +861,18 @@ export default function Planner() {
                   />
                 )}
               </>
+            )}
+            {view === 'kitchen' && (
+              <Kitchen
+                recipes={store.recipes}
+                meals={store.meals}
+                groceries={store.groceries}
+                onSave={item => store.upsert(item)}
+                onDelete={id => {
+                  store.remove(id)
+                  showToast('Removed', () => store.restore([id]))
+                }}
+              />
             )}
           </ErrorBoundary>
         )}

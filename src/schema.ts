@@ -8,7 +8,16 @@ import {
   PLACE_CATEGORIES,
   Place,
   PlaceCategory,
+  Recipe,
+  RecipeIngredient,
   Review,
+  Meal,
+  MealSlot,
+  MEAL_SLOTS,
+  GroceryList,
+  GroceryLine,
+  GroceryState,
+  GROCERY_STATES,
   Template,
   TemplateMilestone,
   TemplateTask,
@@ -292,7 +301,9 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
 
 const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
-const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template'])
+const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
+const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
+const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -340,6 +351,116 @@ export function sanitizePlace(raw: unknown): Place | null {
     category:
       typeof r.category === 'string' && PLACE_CATEGORY_SET.has(r.category) ? (r.category as PlaceCategory) : 'other',
     notes: str(r.notes)?.trim() || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+function sanitizeIngredients(raw: unknown): RecipeIngredient[] {
+  if (!Array.isArray(raw)) return []
+  const out: RecipeIngredient[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const name = str(r.name)?.trim()
+    if (!name) continue
+    const qty = Number(r.qty)
+    out.push({
+      id: str(r.id)?.trim() || `ing-${out.length + 1}`,
+      name,
+      qty: Number.isFinite(qty) && qty > 0 ? Math.round(qty * 100) / 100 : undefined,
+      unit: str(r.unit)?.trim() || undefined,
+    })
+  }
+  return out
+}
+
+export function sanitizeRecipe(raw: unknown): Recipe | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const name = str(r.name)?.trim()
+  if (!id || !name) return null
+  const now = new Date().toISOString()
+  const servings = Number(r.servings)
+  return {
+    kind: 'recipe',
+    id,
+    name,
+    emoji: str(r.emoji)?.trim() || undefined,
+    servings: Number.isFinite(servings) && servings > 0 ? Math.round(servings) : undefined,
+    ingredients: sanitizeIngredients(r.ingredients),
+    steps: strList(r.steps).length ? strList(r.steps) : undefined,
+    tags: strList(r.tags),
+    notes: str(r.notes)?.trim() || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+export function sanitizeMeal(raw: unknown): Meal | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const date = dateOnly(r.date)
+  const title = str(r.title)?.trim()
+  if (!id || !date || !title) return null
+  const now = new Date().toISOString()
+  const slot: MealSlot = typeof r.slot === 'string' && MEAL_SLOT_SET.has(r.slot) ? (r.slot as MealSlot) : 'dinner'
+  return {
+    kind: 'meal',
+    id,
+    date,
+    slot,
+    recipeId: idOrUndefined(r.recipeId),
+    title,
+    notes: str(r.notes)?.trim() || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+  }
+}
+
+function sanitizeGroceryLines(raw: unknown): GroceryLine[] {
+  if (!Array.isArray(raw)) return []
+  const out: GroceryLine[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const name = str(r.name)?.trim()
+    if (!name) continue
+    const qty = Number(r.qty)
+    const state: GroceryState = typeof r.state === 'string' && GROCERY_STATE_SET.has(r.state) ? (r.state as GroceryState) : 'need'
+    out.push({
+      id: str(r.id)?.trim() || `g-${out.length + 1}`,
+      name,
+      qty: Number.isFinite(qty) && qty > 0 ? Math.round(qty * 100) / 100 : undefined,
+      unit: str(r.unit)?.trim() || undefined,
+      state,
+      recipeIds: strList(r.recipeIds),
+      manual: r.manual === true || undefined,
+    })
+  }
+  return out
+}
+
+export function sanitizeGrocery(raw: unknown): GroceryList | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const weekKey = str(r.weekKey)?.trim()
+  if (!id || !weekKey) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'grocery',
+    id,
+    weekKey,
+    items: sanitizeGroceryLines(r.items),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -439,6 +560,9 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'calendar') return sanitizeCalendar(converted)
   if (converted.kind === 'person') return sanitizePerson(converted)
   if (converted.kind === 'place') return sanitizePlace(converted)
+  if (converted.kind === 'recipe') return sanitizeRecipe(converted)
+  if (converted.kind === 'meal') return sanitizeMeal(converted)
+  if (converted.kind === 'grocery') return sanitizeGrocery(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null

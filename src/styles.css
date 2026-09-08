@@ -20,6 +20,10 @@
   --warn-text: #fcd34d;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  /* phone chrome: everything that floats measures itself off these */
+  --tabbar-h: 52px;
+  --fab-size: 52px;
+  --safe-b: env(safe-area-inset-bottom);
   /* chart tokens */
   --viz-grid: #2b303b;
   --viz-baseline: #3d4453;
@@ -134,6 +138,13 @@ button:focus-visible {
 
 .topbar .btn.primary {
   margin-left: auto;
+}
+
+.new-post-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 /* ---------- buttons ---------- */
@@ -792,7 +803,7 @@ textarea {
 
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -823,7 +834,7 @@ textarea {
 
 .charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -1807,15 +1818,29 @@ textarea {
     width: auto;
   }
 
-  /* the new-post button becomes a floating action button */
+  /* the new-post button becomes a round action button parked in the bottom
+     corner, clear of the tab bar; see the phone pass at the end of this file
+     for the matching content padding that keeps rows out from under it */
   .new-post-btn {
     position: fixed;
-    right: 16px;
-    bottom: calc(64px + env(safe-area-inset-bottom));
+    right: 14px;
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
     z-index: 41;
-    border-radius: 999px;
-    padding: 12px 18px;
+    width: var(--fab-size);
+    height: var(--fab-size);
+    padding: 0;
+    margin-left: 0;
+    border-radius: 50%;
+    justify-content: center;
     box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
+  }
+  .new-post-label {
+    display: none;
+  }
+  .new-post-plus {
+    font-size: 27px;
+    line-height: 1;
+    margin-top: -2px;
   }
 
   .modal {
@@ -2146,22 +2171,56 @@ textarea {
   white-space: nowrap;
 }
 .tlist .trow > .due,
+.tlist .swipe-face > .due,
 .dash-list li > .due {
   flex: 0 1 auto;
   max-width: min(42%, 11rem);
 }
-.trow-defer {
+
+/* ---------- swipe-to-defer rows ----------
+   The tray sits behind the row and the face slides off it. The face has to be
+   opaque and painted above: an earlier version left the buttons in normal flow
+   under a transparent row, so every list printed "Tomorrow / Next week" through
+   its own due badges. */
+.tlist .trow.swipe-row {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+.tlist .trow.swipe-row:hover {
+  background: transparent;
+}
+.swipe-face {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  position: relative;
+  z-index: 1;
+  /* matches the card behind it, so the tray can never show through */
+  background: var(--surface);
+  transition: transform 0.18s ease;
+  touch-action: pan-y;
+}
+.tlist .trow.swipe-row:hover .swipe-face {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+.warn-card .swipe-face,
+.next-up .swipe-face {
+  background: var(--surface);
+}
+.swipe-tray {
   position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0 0 0 auto;
   display: flex;
   align-items: stretch;
   z-index: 0;
 }
-.trow-defer-btn {
+.swipe-action {
   border: 0;
-  padding: 0 12px;
+  padding: 0 14px;
+  min-width: 84px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -2169,14 +2228,30 @@ textarea {
   color: #7dd3fc;
   cursor: pointer;
 }
-.trow-defer-btn.next {
+.swipe-action.next {
   background: rgba(99, 102, 241, 0.28);
   color: #a5b4fc;
 }
-.tlist .trow > *:not(.trow-defer) {
-  position: relative;
-  z-index: 1;
-  background: inherit;
+/* the tap-equivalent of the swipe — the gesture alone is not discoverable */
+.swipe-handle {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 4px;
+  border-radius: 8px;
+  opacity: 0;
+}
+.trow.swipe-row:hover .swipe-handle,
+.trow.swipe-row.tray-open .swipe-handle,
+.swipe-handle:focus-visible {
+  opacity: 1;
+}
+.swipe-handle:hover {
+  color: var(--text-2);
+  background: var(--surface-2);
 }
 .due-chips {
   display: flex;
@@ -3527,10 +3602,6 @@ textarea {
   .toast {
     bottom: 72px;
   }
-  .trow {
-    transition: transform 0.15s;
-    touch-action: pan-y;
-  }
 }
 
 /* templates + AI plan */
@@ -3926,21 +3997,18 @@ textarea {
 /* on a phone the toast spanned a narrow column and sat under the New task
    button, so a confirmation could be unreadable and its Undo unreachable */
 @media (max-width: 640px) {
+  /* above the tab bar AND above the action button, so Undo is always reachable */
   .toast {
     left: 12px;
     right: 12px;
     transform: none;
     max-width: none;
-    bottom: calc(76px + env(safe-area-inset-bottom));
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--fab-size) + 22px);
     justify-content: space-between;
   }
   .toast > span:first-child {
     flex: 1;
     min-width: 0;
-  }
-  /* keep the floating button clear of it */
-  .new-post-btn {
-    bottom: calc(132px + env(safe-area-inset-bottom)) !important;
   }
 }
 
@@ -3961,4 +4029,510 @@ textarea {
 .login-wrap {
   padding-top: calc(24px + env(safe-area-inset-top));
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+
+/* ===================== calendar: week view & day sheet =====================
+   One appended block, all of it prefixed .cal-, so the calendar can grow
+   without reaching into the shared layout rules above. */
+
+/* --- week view: seven day cards, stacked on a phone, a row of columns wide --- */
+
+.cal-week {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cal-weekday {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cal-weekday.today {
+  border-color: var(--accent);
+}
+
+.cal-weekday-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-weekday-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+}
+
+.cal-weekday-open:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-2));
+}
+
+.cal-weekday-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.cal-weekday-num {
+  font-size: 15px;
+  font-weight: 700;
+  min-width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.cal-weekday.today .cal-weekday-num {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.cal-weekday-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cal-weekday-add {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cal-daylist {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* a day row: the title wraps rather than being clipped — that cut-off text was
+   the whole complaint about reading events on a phone */
+.cal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.cal-item:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.cal-item-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.cal-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cal-item-title {
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cal-item-title.done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.cal-item-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* --- month cell: the extra pill kinds, and events now open the day --- */
+
+.cal-pill.event {
+  cursor: pointer;
+}
+
+.cal-pill.occasion,
+.cal-pill.mark {
+  background: transparent;
+  border: 1px solid currentColor;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- day sheet: everything on one day, in full --- */
+
+.cal-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.cal-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 540px;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.cal-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-sheet-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.cal-sheet-title h2 {
+  margin: 0;
+  font-size: 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cal-sheet-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cal-sheet-nav,
+.cal-sheet-close {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cal-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 14px;
+}
+
+.cal-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-row:last-child {
+  border-bottom: none;
+}
+
+.cal-row-tap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.cal-row-tap:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.cal-row .cal-item-dot {
+  margin-top: 7px;
+}
+
+.cal-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0;
+}
+
+.cal-row-title {
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cal-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cal-row-action {
+  flex: none;
+  min-height: 44px;
+  align-self: center;
+}
+
+.cal-sheet-foot {
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+
+.cal-sheet-new {
+  width: 100%;
+  min-height: 44px;
+}
+
+/* --- phones: one day card at a time, and a full-height day sheet --- */
+
+@media (min-width: 900px) {
+  .cal-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    align-items: start;
+    gap: 8px;
+  }
+
+  .cal-weekday-open {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .cal-sheet-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .cal-sheet {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+
+  /* clear of the status bar / Dynamic Island, like the other full sheets */
+  .cal-sheet-head {
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .cal-sheet-body {
+    padding: 6px 12px;
+  }
+
+  /* a phone has no room for a button beside the text: stack the action */
+  .cal-row {
+    flex-wrap: wrap;
+  }
+
+  .cal-row-action {
+    width: 100%;
+    align-self: stretch;
+  }
+}
+
+/* ---------- Kitchen ---------- */
+.people-tab-seg {
+  margin: 4px 0 14px;
+}
+.people-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.people-toolbar h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  flex: 1;
+  min-width: 8rem;
+}
+.kitchen-week-label {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.recipe-list,
+.meal-week,
+.grocery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe-card,
+.meal-day,
+.grocery-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.recipe-card {
+  cursor: pointer;
+}
+.recipe-emoji {
+  font-size: 1.4rem;
+  flex: none;
+}
+.meal-day {
+  flex-direction: column;
+  align-items: stretch;
+}
+.meal-day.today {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.meal-day-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 13px;
+}
+.meal-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.meal-slot.dinner {
+  font-weight: 600;
+}
+.meal-slot-label {
+  width: 7.5rem;
+  flex: none;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.meal-slot select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ing-row {
+  display: grid;
+  grid-template-columns: 4.5rem 5rem 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ing-row input {
+  width: 100%;
+}
+.grocery-line {
+  flex-wrap: wrap;
+}
+.grocery-states {
+  margin-left: auto;
+}
+.grocery-line.have .dash-title {
+  color: var(--muted);
+}
+.grocery-line.done .dash-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.kitchen-tonight-title {
+  margin: 0 4px 12px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .meal-slot {
+    flex-wrap: wrap;
+  }
+  .meal-slot-label {
+    width: 100%;
+  }
+  .grocery-states {
+    width: 100%;
+    margin-left: 0;
+  }
+  .ing-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ing-name {
+    grid-column: 1 / -1;
+  }
 }

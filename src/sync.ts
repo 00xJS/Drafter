@@ -73,9 +73,13 @@ export async function purgeRemote(ids: string[], items: Item[]): Promise<void> {
         ? { title: '', description: '', status: 'canceled', priority: 'normal', createdAt: now, tags: [] }
         : kind === 'project'
           ? { name: '', color: '#888', status: 'archived', createdAt: now }
-          : kind === 'person' || kind === 'place'
+          : kind === 'person' || kind === 'place' || kind === 'recipe'
             ? { name: '', createdAt: now }
-            : { createdAt: now }),
+            : kind === 'meal'
+              ? { title: '', date: now.slice(0, 10), slot: 'dinner', createdAt: now }
+              : kind === 'grocery'
+                ? { weekKey: '', items: [], createdAt: now }
+                : { createdAt: now }),
     }
   })
   const { error } = await sb.rpc('sync_posts', { incoming: tombstones, since: null })

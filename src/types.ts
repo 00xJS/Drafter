@@ -252,7 +252,82 @@ export interface Template extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template
+export type RecipeIngredient = {
+  id: string
+  name: string
+  qty?: number
+  unit?: string
+}
+
+export interface Recipe extends Owned {
+  kind: 'recipe'
+  id: string
+  name: string
+  emoji?: string
+  servings?: number
+  ingredients: RecipeIngredient[]
+  steps?: string[]
+  tags: string[]
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner'
+export const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
+export const MEAL_SLOT_META: Record<MealSlot, { label: string; emoji: string }> = {
+  breakfast: { label: 'Breakfast', emoji: '🍳' },
+  lunch: { label: 'Lunch', emoji: '🥪' },
+  dinner: { label: 'Dinner', emoji: '🍽️' },
+}
+
+/** A meal planned for a calendar day. One record per day+slot. */
+export interface Meal extends Owned {
+  kind: 'meal'
+  id: string
+  /** YYYY-MM-DD */
+  date: string
+  slot: MealSlot
+  recipeId?: string
+  title: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type GroceryState = 'need' | 'have' | 'done'
+export const GROCERY_STATES: GroceryState[] = ['need', 'have', 'done']
+export const GROCERY_STATE_META: Record<GroceryState, { label: string }> = {
+  need: { label: 'Need' },
+  have: { label: 'Have' },
+  done: { label: 'Got it' },
+}
+
+export interface GroceryLine {
+  id: string
+  name: string
+  qty?: number
+  unit?: string
+  state: GroceryState
+  /** Recipe ids this line was generated from; empty when added by hand. */
+  recipeIds: string[]
+  manual?: boolean
+}
+
+/** One grocery list per week (`id` = grocery~{weekKey}). */
+export interface GroceryList extends Owned {
+  kind: 'grocery'
+  id: string
+  weekKey: string
+  items: GroceryLine[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList
 
 /**
  * The legacy post shape. Still the lingua franca of the importers, the

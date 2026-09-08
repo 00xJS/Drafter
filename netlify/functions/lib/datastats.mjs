@@ -4,7 +4,7 @@
 // server, only tallies.
 
 /** The kinds sync_posts accepts, plus place which rides along in data. */
-export const KINDS = ['task', 'project', 'person', 'place', 'calendar', 'review', 'template']
+export const KINDS = ['task', 'project', 'person', 'place', 'calendar', 'review', 'template', 'recipe', 'meal', 'grocery']
 
 /** Rows written before `kind` existed are legacy tasks; count them separately. */
 export const UNKNOWN_KIND = 'unknown'

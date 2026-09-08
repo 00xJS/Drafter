@@ -23,6 +23,12 @@ function kindLabel(kind: Item['kind']): string {
       return 'Person'
     case 'place':
       return 'Place'
+    case 'recipe':
+      return 'Recipe'
+    case 'meal':
+      return 'Meal'
+    case 'grocery':
+      return 'Grocery list'
     case 'review':
       return 'Review'
     case 'template':
@@ -36,7 +42,15 @@ function kindLabel(kind: Item['kind']): string {
 export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props) {
   const deleted = items.filter(i => i.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
   const label = (i: Item) =>
-    i.kind === 'task' ? i.title || excerpt(i.description, 50) || 'Untitled task' : i.kind === 'review' ? `${i.period} ${i.key}` : i.name
+    i.kind === 'task'
+      ? i.title || excerpt(i.description, 50) || 'Untitled task'
+      : i.kind === 'review'
+        ? `${i.period} ${i.key}`
+        : i.kind === 'meal'
+          ? i.title
+          : i.kind === 'grocery'
+            ? i.weekKey
+            : i.name
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true">

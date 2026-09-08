@@ -1,12 +1,33 @@
-import { useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, Project, STATUS_META, Task } from '../types'
+import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { CalendarEvent, CalendarSource, Meal, Person, Project, STATUS_META, Task } from '../types'
 import { dateKey, fmtTime } from '../utils'
-import { eventDayKeys } from '../calendars'
+import {
+  DayItem,
+  DaySources,
+  dayItems,
+  daySummary,
+  eventsByDay,
+  hasClock,
+  marksByDay,
+  monthCells,
+  occasionsByMonthDay,
+  tasksByDay,
+  weekDays,
+  weekLabel,
+} from '../calgrid'
+import { mealsByDay } from '../kitchen'
 import { ProjectChip } from './bits'
 
+export type CalendarView = 'month' | 'week'
+
 interface Props {
+  /** Which grid to draw; the Timeline is a separate component. */
+  view: CalendarView
   tasks: Task[]
+  projects: Project[]
   projectMap: Map<string, Project>
+  people: Person[]
+  meals: Meal[]
   events: CalendarEvent[]
   sourceMap: Map<string, CalendarSource>
   onOpen(t: Task): void
@@ -16,267 +37,412 @@ interface Props {
   onPlan(ev: CalendarEvent): void
   /** Log who was at a past event. */
   onAttendance(ev: CalendarEvent): void
+  onOpenProject(p: Project): void
+  onPlanOccasion(person: Person, kind: 'birthday' | 'anniversary', at: Date): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MAX_PILLS = 3
+const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
 
-/** The day a task shows on: its due date, or the day it was completed. */
-function taskDate(t: Task): string | undefined {
-  if (t.status === 'canceled') return undefined
-  if (t.status === 'done') return t.completedAt ?? t.dueAt
-  return t.dueAt
-}
+const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+/** Default time for a task created from a day: 9am, same as the rest of the app. */
+const morningOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0, 0).toISOString()
+const fullDate = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+const isPast = (ev: CalendarEvent) => new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < Date.now()
 
-function hasClock(iso: string): boolean {
-  const d = new Date(iso)
-  return d.getHours() + d.getMinutes() > 0
-}
-
-export function Calendar({ tasks, projectMap, events, sourceMap, onOpen, onNew, onReschedule, onPlan, onAttendance }: Props) {
-  const [cursor, setCursor] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1)
-  })
+export function Calendar({
+  view,
+  tasks,
+  projects,
+  projectMap,
+  people,
+  meals,
+  events,
+  sourceMap,
+  onOpen,
+  onNew,
+  onReschedule,
+  onPlan,
+  onAttendance,
+  onOpenProject,
+  onPlanOccasion,
+}: Props) {
+  // one anchor day drives both grids: its month, or the week around it
+  const [cursor, setCursor] = useState(() => dayStart(new Date()))
   const [sheetDay, setSheetDay] = useState<Date | null>(null)
 
-  const byDay = useMemo(() => {
-    const map = new Map<string, Task[]>()
-    for (const t of tasks) {
-      const d = taskDate(t)
-      if (!d) continue
-      const k = dateKey(d)
-      const arr = map.get(k) ?? []
-      arr.push(t)
-      map.set(k, arr)
-    }
-    for (const arr of map.values()) arr.sort((a, b) => (taskDate(a) ?? '').localeCompare(taskDate(b) ?? ''))
-    return map
-  }, [tasks])
+  const sources: DaySources = useMemo(
+    () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
+    [tasks, events, projects, people, meals],
+  )
 
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const ev of events) {
-      for (const k of eventDayKeys(ev)) {
-        const arr = map.get(k) ?? []
-        arr.push(ev)
-        map.set(k, arr)
-      }
-    }
-    for (const arr of map.values()) arr.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start))
-    return map
-  }, [events])
+  const cells = useMemo(() => monthCells(new Date(cursor.getFullYear(), cursor.getMonth(), 1)), [cursor])
+  const week = useMemo(() => weekDays(cursor), [cursor])
 
-  const cells = useMemo(() => {
-    const offset = cursor.getDay() // Sunday-start week
-    const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
-    const total = Math.ceil((offset + daysInMonth) / 7) * 7
-    const out: Date[] = []
-    for (let i = 0; i < total; i++) out.push(new Date(cursor.getFullYear(), cursor.getMonth(), 1 - offset + i))
-    return out
-  }, [cursor])
+  const closeSheet = useCallback(() => setSheetDay(null), [])
+  useEffect(() => {
+    if (!sheetDay) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSheet()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sheetDay, closeSheet])
 
   const todayKey = dateKey(new Date())
-  const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-  const shift = (delta: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1))
-  const sheetTasks = sheetDay ? (byDay.get(dateKey(sheetDay)) ?? []) : []
-  const sheetEvents = sheetDay ? (eventsByDay.get(dateKey(sheetDay)) ?? []) : []
+  const label = view === 'week' ? weekLabel(cursor) : cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  const shift = (delta: number) =>
+    setCursor(c => (view === 'week' ? addDays(c, delta * 7) : new Date(c.getFullYear(), c.getMonth() + delta, 1)))
+
   const eventColor = (ev: CalendarEvent) => sourceMap.get(ev.sourceId)?.color ?? '#94a3b8'
+  const taskProject = (t: Task) => (t.projectId ? projectMap.get(t.projectId) : undefined)
+
+  /** One line of context under an item's title, shared by the week list and the day sheet. */
+  const itemMeta = (item: DayItem): string => {
+    if (item.kind === 'occasion') {
+      const kind = item.occasion.kind === 'birthday' ? 'Birthday' : 'Anniversary'
+      return item.occasion.years ? `${kind} · ${item.occasion.years} years` : kind
+    }
+    if (item.kind === 'event') {
+      const ev = item.event
+      const when = ev.allDay ? 'All day' : `${fmtTime(ev.start)} – ${fmtTime(ev.end)}`
+      const source = sourceMap.get(ev.sourceId)
+      return [when, ev.location, source?.name].filter(Boolean).join(' · ')
+    }
+    if (item.kind === 'mark') {
+      const what = item.mark.kind === 'target' ? 'Target date' : 'Milestone'
+      return [item.mark.project.name, what, item.mark.done ? 'Done' : ''].filter(Boolean).join(' · ')
+    }
+    if (item.kind === 'meal') {
+      const slot = item.meal.slot[0].toUpperCase() + item.meal.slot.slice(1)
+      return slot
+    }
+    const project = taskProject(item.task)
+    const when = item.at && hasClock(item.at) ? fmtTime(item.at) : 'No time set'
+    return [when, STATUS_META[item.task.status].label, project?.name].filter(Boolean).join(' · ')
+  }
+
+  const itemTitle = (item: DayItem): string => {
+    if (item.kind === 'occasion') return `${item.occasion.person.name}’s ${item.occasion.kind}`
+    if (item.kind === 'event') return item.event.title
+    if (item.kind === 'mark') return item.mark.kind === 'target' ? `${item.mark.project.name} target` : item.mark.milestone?.name || 'Milestone'
+    if (item.kind === 'meal') return item.meal.title
+    return item.task.title || item.task.description.slice(0, 60) || 'Untitled'
+  }
+
+  const itemColor = (item: DayItem): string => {
+    if (item.kind === 'occasion') return item.occasion.person.color
+    if (item.kind === 'event') return eventColor(item.event)
+    if (item.kind === 'mark') return item.mark.project.color
+    if (item.kind === 'meal') return '#f97316'
+    return taskProject(item.task)?.color ?? STATUS_META[item.task.status].color
+  }
+
+  const dropOn = (day: Date) => (e: DragEvent) => {
+    e.preventDefault()
+    const id = e.dataTransfer.getData('text/plain')
+    if (id) onReschedule(id, day)
+  }
+
+  const newTaskOn = (day: Date) => {
+    setSheetDay(null)
+    onNew(morningOf(day))
+  }
+
+  /** A pill inside a month cell: compact, one line, the same shape for every kind. */
+  const monthPill = (item: DayItem, day: Date) => {
+    if (item.kind === 'task') {
+      const t = item.task
+      const project = taskProject(t)
+      const time = item.at && hasClock(item.at) ? fmtTime(item.at) : ''
+      return (
+        <button
+          key={item.id}
+          className={t.status === 'done' ? 'cal-pill done' : 'cal-pill'}
+          style={{ background: project ? project.color + '22' : STATUS_META[t.status].bg, color: project ? project.color : STATUS_META[t.status].color }}
+          draggable={t.status !== 'done'}
+          onDragStart={e => {
+            e.dataTransfer.setData('text/plain', t.id)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onClick={e => {
+            e.stopPropagation()
+            onOpen(t)
+          }}
+          title={`${time ? time + ' · ' : ''}${itemTitle(item)}${project ? ' · ' + project.name : ''}`}
+        >
+          {time && <span className="cal-pill-time">{time}</span>}
+          <span className="cal-pill-title">{itemTitle(item)}</span>
+        </button>
+      )
+    }
+    const color = itemColor(item)
+    const glyph = item.kind === 'occasion' ? OCCASION_GLYPH[item.occasion.kind] : item.kind === 'mark' ? '◆' : item.kind === 'meal' ? '🍽️' : ''
+    const time = item.kind === 'event' && !item.event.allDay ? fmtTime(item.event.start) : ''
+    return (
+      <button
+        key={item.id}
+        className={'cal-pill ' + item.kind}
+        style={{ borderColor: color, color }}
+        title={`${itemTitle(item)} · ${itemMeta(item)}`}
+        // everything that is not a task expands the day rather than editing in place
+        onClick={e => {
+          e.stopPropagation()
+          setSheetDay(day)
+        }}
+      >
+        {glyph && <span className="cal-pill-time">{glyph}</span>}
+        {time && <span className="cal-pill-time">{time}</span>}
+        <span className="cal-pill-title">{itemTitle(item)}</span>
+      </button>
+    )
+  }
+
+  /** A row in the week list: tasks open their editor, everything else expands the day. */
+  const weekRow = (item: DayItem, day: Date) => (
+    <li key={item.id}>
+      <button
+        className="cal-item"
+        draggable={item.kind === 'task' && item.task.status !== 'done'}
+        onDragStart={
+          item.kind === 'task'
+            ? e => {
+                e.dataTransfer.setData('text/plain', item.task.id)
+                e.dataTransfer.effectAllowed = 'move'
+              }
+            : undefined
+        }
+        onClick={() => (item.kind === 'task' ? onOpen(item.task) : setSheetDay(day))}
+      >
+        <span className="cal-item-dot" style={{ background: itemColor(item) }} />
+        <span className="cal-item-main">
+          <span className={item.kind === 'task' && item.task.status === 'done' ? 'cal-item-title done' : 'cal-item-title'}>{itemTitle(item)}</span>
+          <span className="cal-item-meta">{itemMeta(item)}</span>
+        </span>
+      </button>
+    </li>
+  )
+
+  const sheetItems = sheetDay ? dayItems(sheetDay, sources) : []
 
   return (
     <div className="calendar">
       <div className="cal-toolbar">
-        <button className="btn" onClick={() => shift(-1)} aria-label="Previous month">
+        <button className="btn" onClick={() => shift(-1)} aria-label={view === 'week' ? 'Previous week' : 'Previous month'}>
           ‹
         </button>
-        <h2>{monthLabel}</h2>
-        <button className="btn" onClick={() => shift(1)} aria-label="Next month">
+        <h2>{label}</h2>
+        <button className="btn" onClick={() => shift(1)} aria-label={view === 'week' ? 'Next week' : 'Next month'}>
           ›
         </button>
-        <button
-          className="btn subtle"
-          onClick={() =>
-            setCursor(() => {
-              const now = new Date()
-              return new Date(now.getFullYear(), now.getMonth(), 1)
-            })
-          }
-        >
+        <button className="btn subtle" onClick={() => setCursor(dayStart(new Date()))}>
           Today
         </button>
-        <span className="cal-hint">Tap a day for its tasks · drag a pill to move its due date</span>
+        <span className="cal-hint">
+          {view === 'week' ? 'Tap a day header for everything on it · drag a task to move its due date' : 'Tap a day to expand it · drag a pill to move its due date'}
+        </span>
       </div>
 
-      <div className="cal-grid cal-head-row">
-        {WEEKDAYS.map(d => (
-          <div key={d} className="cal-head">
-            {d}
-          </div>
-        ))}
-      </div>
-      <div className="cal-grid cal-body">
-        {cells.map(d => {
-          const k = dateKey(d)
-          const inMonth = d.getMonth() === cursor.getMonth()
-          const dayTasks = byDay.get(k) ?? []
-          const dayEvents = eventsByDay.get(k) ?? []
-          // cells have a fixed height: events first, then tasks; when a day
-          // overflows, trade the last pill for the "+N more" line
-          const total = dayEvents.length + dayTasks.length
-          const budget = total > MAX_PILLS ? MAX_PILLS - 1 : MAX_PILLS
-          const shownEvents = dayEvents.slice(0, Math.min(dayEvents.length, Math.max(1, budget - Math.min(dayTasks.length, budget - 1))))
-          const shown = dayTasks.slice(0, budget - shownEvents.length)
-          const hidden = total - shownEvents.length - shown.length
-          return (
-            <div
-              key={k}
-              className={'cal-cell' + (inMonth ? '' : ' out') + (k === todayKey ? ' today' : '')}
-              onClick={() => setSheetDay(d)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => {
-                e.preventDefault()
-                const id = e.dataTransfer.getData('text/plain')
-                if (id) onReschedule(id, d)
-              }}
-            >
-              <div className="cal-daynum">{d.getDate()}</div>
-              {shownEvents.map(ev => (
-                <button
-                  key={ev.id}
-                  className="cal-pill event"
-                  style={{ borderColor: eventColor(ev), color: eventColor(ev) }}
-                  title={`${ev.allDay ? '' : fmtTime(ev.start) + ' · '}${ev.title}${ev.location ? ' · ' + ev.location : ''}`}
-                  onClick={e => {
-                    e.stopPropagation()
-                    setSheetDay(d)
-                  }}
-                >
-                  {!ev.allDay && <span className="cal-pill-time">{fmtTime(ev.start)}</span>}
-                  <span className="cal-pill-title">{ev.title}</span>
-                </button>
-              ))}
-              {shown.map(t => {
-                const when = taskDate(t)
-                const project = t.projectId ? projectMap.get(t.projectId) : undefined
-                return (
-                  <button
-                    key={t.id}
-                    className={t.status === 'done' ? 'cal-pill done' : 'cal-pill'}
-                    style={{
-                      background: project ? project.color + '22' : STATUS_META[t.status].bg,
-                      color: project ? project.color : STATUS_META[t.status].color,
-                    }}
-                    draggable={t.status !== 'done'}
-                    onDragStart={e => {
-                      e.dataTransfer.setData('text/plain', t.id)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onClick={e => {
-                      e.stopPropagation()
-                      onOpen(t)
-                    }}
-                    title={`${when && hasClock(when) ? fmtTime(when) + ' · ' : ''}${t.title || 'Untitled'}${project ? ' · ' + project.name : ''}`}
-                  >
-                    {when && hasClock(when) && <span className="cal-pill-time">{fmtTime(when)}</span>}
-                    <span className="cal-pill-title">{t.title || 'Untitled'}</span>
+      {view === 'week' ? (
+        <div className="cal-week">
+          {week.map(d => {
+            const k = dateKey(d)
+            const items = dayItems(d, sources)
+            return (
+              <section key={k} className={'cal-weekday' + (k === todayKey ? ' today' : '')} onDragOver={e => e.preventDefault()} onDrop={dropOn(d)}>
+                <div className="cal-weekday-head">
+                  <button className="cal-weekday-open" onClick={() => setSheetDay(d)} aria-label={`Expand ${fullDate(d)}`}>
+                    <span className="cal-weekday-name">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+                    <span className="cal-weekday-num">{d.getDate()}</span>
+                    <span className="cal-weekday-count">{daySummary(items)}</span>
                   </button>
-                )
-              })}
-              {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
-            </div>
-          )
-        })}
-      </div>
+                  <button className="btn subtle cal-weekday-add" onClick={() => newTaskOn(d)} aria-label={`New task on ${fullDate(d)}`} title="New task">
+                    +
+                  </button>
+                </div>
+                {items.length > 0 && <ul className="cal-daylist">{items.map(item => weekRow(item, d))}</ul>}
+              </section>
+            )
+          })}
+        </div>
+      ) : (
+        <>
+          <div className="cal-grid cal-head-row">
+            {WEEKDAYS.map(d => (
+              <div key={d} className="cal-head">
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="cal-grid cal-body">
+            {cells.map(d => {
+              const k = dateKey(d)
+              const inMonth = d.getMonth() === cursor.getMonth()
+              const items = dayItems(d, sources)
+              // cells have a fixed height: when a day overflows, trade the last
+              // pill for the "+N more" line — the day sheet holds the full list
+              const shown = items.length > MAX_PILLS ? items.slice(0, MAX_PILLS - 1) : items
+              const hidden = items.length - shown.length
+              return (
+                <div
+                  key={k}
+                  className={'cal-cell' + (inMonth ? '' : ' out') + (k === todayKey ? ' today' : '')}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${fullDate(d)} — ${daySummary(items)}`}
+                  onClick={() => setSheetDay(d)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSheetDay(d)
+                    }
+                  }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={dropOn(d)}
+                >
+                  <div className="cal-daynum">{d.getDate()}</div>
+                  {shown.map(item => monthPill(item, d))}
+                  {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {sheetDay && (
-        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setSheetDay(null)}>
-          <div className="modal narrow day-sheet" role="dialog" aria-modal="true">
-            <header className="modal-head">
-              <h2>{sheetDay.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
-              <button className="btn subtle" onClick={() => setSheetDay(null)} aria-label="Close">
+        <div className="cal-sheet-backdrop" onMouseDown={e => e.target === e.currentTarget && closeSheet()}>
+          <div className="cal-sheet" role="dialog" aria-modal="true" aria-label={fullDate(sheetDay)}>
+            <header className="cal-sheet-head">
+              <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, -1))} aria-label="Previous day">
+                ‹
+              </button>
+              <div className="cal-sheet-title">
+                <h2>{fullDate(sheetDay)}</h2>
+                <span className="cal-sheet-sub">{daySummary(sheetItems)}</span>
+              </div>
+              <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, 1))} aria-label="Next day">
+                ›
+              </button>
+              <button className="btn subtle cal-sheet-close" onClick={closeSheet} aria-label="Close">
                 ✕
               </button>
             </header>
-            <div className="modal-body">
-              {sheetEvents.length > 0 && (
-                <ul className="dash-list event-list">
-                  {sheetEvents.map(ev => (
-                    <li key={ev.id} className="event-row">
-                      <span className="pdot" style={{ background: eventColor(ev) }} />
-                      <div className="dash-main">
-                        <span className="dash-title">{ev.title}</span>
-                        <span className="dash-reason">
-                          {ev.allDay ? 'All day' : `${fmtTime(ev.start)} – ${fmtTime(ev.end)}`}
-                          {ev.location ? ` · ${ev.location}` : ''}
-                          {sourceMap.get(ev.sourceId) ? ` · ${sourceMap.get(ev.sourceId)!.name}` : ''}
-                        </span>
-                      </div>
-                      {new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < Date.now() ? (
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            setSheetDay(null)
-                            onAttendance(ev)
-                          }}
-                        >
-                          Who was there?
-                        </button>
-                      ) : (
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            setSheetDay(null)
-                            onPlan(ev)
-                          }}
-                        >
-                          Plan for this
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {sheetTasks.length === 0 ? (
-                <p className="empty">{sheetEvents.length > 0 ? 'No tasks on this day yet.' : 'Nothing on this day yet.'}</p>
-              ) : (
-                <ul className="dash-list">
-                  {sheetTasks.map(t => {
-                    const when = taskDate(t)
-                    const project = t.projectId ? projectMap.get(t.projectId) : undefined
+
+            <div className="cal-sheet-body">
+              {sheetItems.length === 0 && <p className="empty">Nothing on this day yet.</p>}
+              <ul className="cal-rows">
+                {sheetItems.map(item => {
+                  if (item.kind === 'occasion') {
+                    const { person, kind } = item.occasion
                     return (
-                      <li
-                        key={t.id}
+                      <li key={item.id} className="cal-row">
+                        <span className="cal-item-dot" style={{ background: person.color }} />
+                        <div className="cal-row-main">
+                          <span className="cal-row-title">
+                            {OCCASION_GLYPH[kind]} {itemTitle(item)}
+                          </span>
+                          <span className="cal-row-meta">{itemMeta(item)}</span>
+                        </div>
+                        <button
+                          className="btn cal-row-action"
+                          onClick={() => {
+                            const at = sheetDay
+                            closeSheet()
+                            onPlanOccasion(person, kind, at)
+                          }}
+                        >
+                          Plan a gift
+                        </button>
+                      </li>
+                    )
+                  }
+                  if (item.kind === 'event') {
+                    const ev = item.event
+                    return (
+                      <li key={item.id} className="cal-row">
+                        <span className="cal-item-dot" style={{ background: eventColor(ev) }} />
+                        <div className="cal-row-main">
+                          <span className="cal-row-title">{ev.title}</span>
+                          <span className="cal-row-meta">{itemMeta(item)}</span>
+                        </div>
+                        <button
+                          className="btn cal-row-action"
+                          onClick={() => {
+                            closeSheet()
+                            if (isPast(ev)) onAttendance(ev)
+                            else onPlan(ev)
+                          }}
+                        >
+                          {isPast(ev) ? 'Who was there?' : 'Plan for this'}
+                        </button>
+                      </li>
+                    )
+                  }
+                  if (item.kind === 'mark') {
+                    const { project } = item.mark
+                    return (
+                      <li key={item.id} className="cal-row">
+                        <button
+                          className="cal-row-tap"
+                          onClick={() => {
+                            closeSheet()
+                            onOpenProject(project)
+                          }}
+                        >
+                          <span className="cal-item-dot" style={{ background: project.color }} />
+                          <span className="cal-row-main">
+                            <span className="cal-row-title">◆ {itemTitle(item)}</span>
+                            <span className="cal-row-meta">{itemMeta(item)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  }
+                  if (item.kind === 'meal') {
+                    return (
+                      <li key={item.id} className="cal-row">
+                        <span className="cal-item-dot" style={{ background: '#f97316' }} />
+                        <div className="cal-row-main">
+                          <span className="cal-row-title">🍽️ {item.meal.title}</span>
+                          <span className="cal-row-meta">{itemMeta(item)}</span>
+                        </div>
+                      </li>
+                    )
+                  }
+                  const t = item.task
+                  const project = taskProject(t)
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <button
+                        className="cal-row-tap"
                         onClick={() => {
-                          setSheetDay(null)
+                          closeSheet()
                           onOpen(t)
                         }}
                       >
-                        <div className="dash-main">
-                          <span className="dash-title">{t.title || t.description.slice(0, 50) || 'Untitled'}</span>
-                          <span className="dash-meta">
+                        <span className="cal-item-dot" style={{ background: project?.color ?? STATUS_META[t.status].color }} />
+                        <span className="cal-row-main">
+                          <span className="cal-row-title">{itemTitle(item)}</span>
+                          <span className="cal-row-meta">
                             <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
                               {STATUS_META[t.status].label}
                             </span>
                             {project && <ProjectChip project={project} />}
+                            {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
                           </span>
-                        </div>
-                        {when && hasClock(when) && <strong className="day-time">{fmtTime(when)}</strong>}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
-            <footer className="modal-foot">
-              <span className="spacer" />
-              <button
-                className="btn primary"
-                onClick={() => {
-                  const at = new Date(sheetDay.getFullYear(), sheetDay.getMonth(), sheetDay.getDate(), 9, 0, 0)
-                  setSheetDay(null)
-                  onNew(at.toISOString())
-                }}
-              >
+
+            <footer className="cal-sheet-foot">
+              <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(sheetDay)}>
                 + New task this day
               </button>
             </footer>

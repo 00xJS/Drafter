@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import { CalendarEvent, CalendarSource, Person, Project, Review as ReviewRecord, Task, TaskStatus, projectProgress } from '../types'
+import { CalendarEvent, CalendarSource, Meal, Person, Project, Recipe, Review as ReviewRecord, Task, TaskStatus, projectProgress } from '../types'
+import { tonightDinner } from './Kitchen'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
 import { NextUp, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
@@ -29,6 +30,9 @@ interface Props {
   onDefer(id: string, day: Date): void
   onDeferAll(ids: string[], day: Date): void
   onNew(preset?: Partial<Task>): void
+  meals: Meal[]
+  recipes: Recipe[]
+  onOpenKitchen(): void
 }
 
 const STALE_DAYS = 14
@@ -54,6 +58,20 @@ function nextWeekday(from: Date, weekday: number): Date {
   return d
 }
 
+/** How far left the row slides to park the two defer buttons in full view. */
+const DEFER_TRAY = -168
+/** Past this much of a left drag, letting go parks the tray open instead of snapping back. */
+const DEFER_LATCH = -56
+/** A right drag this long completes the task on release. */
+const DONE_PULL = 88
+
+/**
+ * A task line that can be swiped. The defer buttons live in a tray that the row
+ * face slides off to reveal: the face is opaque and sits above them, so at rest
+ * the row is an ordinary row and nothing can print through it. The tray is also
+ * only mounted once the row has actually moved, so it is never in the way of a
+ * screen reader or a stray tap.
+ */
 function TaskRow({
   task,
   project,
@@ -70,82 +88,112 @@ function TaskRow({
   onDefer?(id: string, day: Date): void
 }) {
   const done = task.status === 'done'
-  const touch = useRef<{ x: number; y: number } | null>(null)
+  const canDefer = !!onDefer && !done
+  const drag = useRef<{ x: number; y: number; base: number; axis: '?' | 'x' | 'y' } | null>(null)
+  const swiped = useRef(false)
   const [dx, setDx] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const trayOpen = dx <= DEFER_LATCH
+
+  const close = () => {
+    setDx(0)
+    setDragging(false)
+  }
+  const deferTo = (days: number) => {
+    close()
+    onDefer?.(task.id, addDays(new Date(), days))
+  }
+
   return (
-    <li
-      className={done ? 'trow done' : 'trow'}
-      style={dx ? { transform: `translateX(${dx}px)`, transition: 'none' } : undefined}
-      onClick={() => onOpen(task)}
-      onTouchStart={e => {
-        touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-      }}
-      onTouchMove={e => {
-        if (!touch.current || done || !onDefer) {
-          if (!touch.current) return
-          const ddx = e.touches[0].clientX - touch.current.x
-          const ddy = e.touches[0].clientY - touch.current.y
-          if (Math.abs(ddx) > Math.abs(ddy) && ddx > 0) setDx(Math.min(ddx, 120))
-          return
-        }
-        const ddx = e.touches[0].clientX - touch.current.x
-        const ddy = e.touches[0].clientY - touch.current.y
-        if (Math.abs(ddx) <= Math.abs(ddy)) return
-        if (ddx > 0) setDx(Math.min(ddx, 120))
-        else setDx(Math.max(ddx, -160))
-      }}
-      onTouchEnd={() => {
-        if (dx > 80) onStatus(task.id, done ? 'todo' : 'done')
-        else if (dx < -130 && onDefer && !done) onDefer(task.id, addDays(new Date(), 7))
-        else if (dx < -80 && onDefer && !done) onDefer(task.id, addDays(new Date(), 1))
-        setDx(0)
-        touch.current = null
-      }}
-    >
-      {!done && onDefer && (
-        <div className="trow-defer" aria-hidden>
-          <button
-            type="button"
-            className="trow-defer-btn"
-            onClick={e => {
-              e.stopPropagation()
-              onDefer(task.id, addDays(new Date(), 1))
-            }}
-          >
+    <li className={`trow swipe-row${done ? ' done' : ''}${trayOpen ? ' tray-open' : ''}`}>
+      {canDefer && dx < -4 && (
+        <div className="swipe-tray">
+          <button type="button" className="swipe-action" onClick={() => deferTo(1)}>
             Tomorrow
           </button>
-          <button
-            type="button"
-            className="trow-defer-btn next"
-            onClick={e => {
-              e.stopPropagation()
-              onDefer(task.id, addDays(new Date(), 7))
-            }}
-          >
+          <button type="button" className="swipe-action next" onClick={() => deferTo(7)}>
             Next week
           </button>
         </div>
       )}
-      <input
-        type="checkbox"
-        className="tcheck"
-        checked={done}
-        aria-label={done ? 'Reopen' : 'Mark done'}
-        onClick={e => e.stopPropagation()}
-        onChange={() => onStatus(task.id, done ? 'todo' : 'done')}
-      />
-      <div className="dash-main">
-        <span className="dash-title">
-          <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 60) || 'Untitled'}
-        </span>
-        <span className="dash-meta">
-          {project && <ProjectChip project={project} />}
-          {reason && <span className="why">{reason}</span>}
-          {task.status === 'blocked' && <span className="badge badge-blocked">Blocked</span>}
-          {task.status === 'doing' && <span className="badge badge-doing">Doing</span>}
-        </span>
+      <div
+        className="swipe-face"
+        style={dx ? { transform: `translateX(${dx}px)`, ...(dragging ? { transition: 'none' } : null) } : undefined}
+        onClick={() => {
+          // a swipe ends in a click on iOS — never let it open the editor
+          if (swiped.current) {
+            swiped.current = false
+            return
+          }
+          if (dx !== 0) close()
+          else onOpen(task)
+        }}
+        onTouchStart={e => {
+          drag.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, base: dx, axis: '?' }
+        }}
+        onTouchMove={e => {
+          const d = drag.current
+          if (!d) return
+          const ddx = e.touches[0].clientX - d.x
+          const ddy = e.touches[0].clientY - d.y
+          if (d.axis === '?') {
+            if (Math.abs(ddx) < 6 && Math.abs(ddy) < 6) return
+            d.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y'
+            if (d.axis === 'x') setDragging(true)
+          }
+          if (d.axis !== 'x') return
+          swiped.current = true
+          const next = d.base + ddx
+          setDx(Math.max(Math.min(next, DONE_PULL + 32), canDefer ? DEFER_TRAY - 32 : 0))
+        }}
+        onTouchEnd={() => {
+          const axis = drag.current?.axis
+          drag.current = null
+          setDragging(false)
+          if (axis !== 'x') return
+          if (dx >= DONE_PULL) {
+            setDx(0)
+            onStatus(task.id, done ? 'todo' : 'done')
+          } else if (canDefer && dx <= DEFER_LATCH) setDx(DEFER_TRAY)
+          else setDx(0)
+        }}
+      >
+        <input
+          type="checkbox"
+          className="tcheck"
+          checked={done}
+          aria-label={done ? 'Reopen' : 'Mark done'}
+          onClick={e => e.stopPropagation()}
+          onChange={() => onStatus(task.id, done ? 'todo' : 'done')}
+        />
+        <div className="dash-main">
+          <span className="dash-title">
+            <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 60) || 'Untitled'}
+          </span>
+          <span className="dash-meta">
+            {project && <ProjectChip project={project} />}
+            {reason && <span className="why">{reason}</span>}
+            {task.status === 'blocked' && <span className="badge badge-blocked">Blocked</span>}
+            {task.status === 'doing' && <span className="badge badge-doing">Doing</span>}
+          </span>
+        </div>
+        <DueBadge task={task} />
+        {canDefer && (
+          <button
+            type="button"
+            className="swipe-handle"
+            aria-label={trayOpen ? 'Hide defer options' : 'Defer this task'}
+            aria-expanded={trayOpen}
+            title="Defer"
+            onClick={e => {
+              e.stopPropagation()
+              setDx(trayOpen ? 0 : DEFER_TRAY)
+            }}
+          >
+            ⋯
+          </button>
+        )}
       </div>
-      <DueBadge task={task} />
     </li>
   )
 }
@@ -187,6 +235,9 @@ export function Today({
   onDefer,
   onDeferAll,
   onNew,
+  meals,
+  recipes,
+  onOpenKitchen,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -212,6 +263,7 @@ export function Today({
         .slice(0, 6),
     [people, allTasks],
   )
+  const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
@@ -324,6 +376,23 @@ export function Today({
           </div>
         </div>
       </div>
+
+      {dinner && (
+        <section className="chart-card kitchen-tonight">
+          <header className="chart-head">
+            <div>
+              <h3>Tonight’s dinner</h3>
+              <p className="chart-sub">{dinner.recipe ? `${dinner.recipe.ingredients.length} ingredients` : 'Planned on the Kitchen tab'}</p>
+            </div>
+            <button className="btn subtle" onClick={onOpenKitchen}>
+              Kitchen
+            </button>
+          </header>
+          <p className="kitchen-tonight-title">
+            {dinner.recipe?.emoji || '🍽️'} {dinner.meal.title}
+          </p>
+        </section>
+      )}
 
       {top3.length > 0 && (
         <section className="chart-card week-top3">

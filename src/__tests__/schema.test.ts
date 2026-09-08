@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateStored, sanitizeItem, sanitizePlace, sanitizeProject, sanitizeTask } from '../schema'
+import { migrateStored, sanitizeItem, sanitizePlace, sanitizeProject, sanitizeRecipe, sanitizeTask } from '../schema'
 import { Task } from '../types'
 
 function valid(over: Partial<Task> = {}): Task {
@@ -132,9 +132,13 @@ describe('sanitizeItem (legacy posts)', () => {
     expect(sanitizeItem({ kind: 'project', id: 'p1', name: 'X' })?.kind).toBe('project')
   })
 
-  it('routes places and rejects unknown kinds', () => {
+  it('routes places and kitchen kinds, and rejects unknown kinds', () => {
     expect(sanitizePlace({ kind: 'place', id: 'pl1', name: 'Nopi' })?.kind).toBe('place')
     expect(sanitizeItem({ kind: 'place', id: 'pl1', name: 'Nopi' })?.kind).toBe('place')
+    expect(sanitizeRecipe({ kind: 'recipe', id: 'r1', name: 'Pizza', ingredients: [{ id: 'i', name: 'Flour' }] })?.kind).toBe('recipe')
+    expect(sanitizeItem({ kind: 'recipe', id: 'r1', name: 'Pizza' })?.kind).toBe('recipe')
+    expect(sanitizeItem({ kind: 'meal', id: 'm1', date: '2026-09-08', title: 'Pizza', slot: 'dinner' })?.kind).toBe('meal')
+    expect(sanitizeItem({ kind: 'grocery', id: 'g1', weekKey: '2026-W37', items: [] })?.kind).toBe('grocery')
     expect(sanitizeItem({ kind: 'alien', id: 'a1', title: 'nope' })).toBeNull()
   })
 
