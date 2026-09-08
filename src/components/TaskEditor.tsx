@@ -23,6 +23,7 @@ import {
   TaskStatus,
 } from '../types'
 import { newerStamp } from '../itemops'
+import { duplicateTask } from '../taskutils'
 import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
 import { REFINE_META, RefineMode, CapturedFields, generateVariants, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
@@ -53,6 +54,8 @@ interface Props {
   /** Persist without closing (comments and checklist ticks land immediately). */
   onCommit(t: Task): void
   onDelete(id: string): void
+  /** Persist a duplicated task and open it (parent owns store + navigation). */
+  onDuplicate?(copy: Task): void
   onClose(): void
 }
 
@@ -76,6 +79,7 @@ export function TaskEditor({
   onDiscard,
   onCommit,
   onDelete,
+  onDuplicate,
   onClose,
 }: Props) {
   const persisted = !!task
@@ -449,6 +453,13 @@ export function TaskEditor({
       return
     }
     onSave(next)
+  }
+
+  function duplicate() {
+    if (!task || !onDuplicate) return
+    const current = merged()
+    if (isDirty()) onCommit(current)
+    onDuplicate(duplicateTask(current))
   }
 
   function addComment() {
@@ -1259,9 +1270,16 @@ export function TaskEditor({
 
         <footer className="modal-foot">
           {task && (
-            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
-              Delete
-            </ConfirmButton>
+            <>
+              <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
+                Delete
+              </ConfirmButton>
+              {onDuplicate && (
+                <button type="button" className="btn subtle" onClick={duplicate}>
+                  Duplicate
+                </button>
+              )}
+            </>
           )}
           <span className="spacer" />
           <small className="muted">⌘↩ to save</small>

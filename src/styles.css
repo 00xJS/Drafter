@@ -238,7 +238,7 @@ button:focus-visible {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
   gap: 12px;
   align-items: start;
   overflow-x: auto;
@@ -308,6 +308,8 @@ button:focus-visible {
 
 .card-title {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-body {
@@ -318,9 +320,11 @@ button:focus-visible {
 .card-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 12px;
   color: var(--muted);
+  min-width: 0;
 }
 
 .card-date {
@@ -575,6 +579,8 @@ button:focus-visible {
 .cell-date {
   white-space: nowrap;
   color: var(--text-2);
+  max-width: 9rem;
+  overflow: hidden;
 }
 
 .empty {
@@ -2057,6 +2063,12 @@ textarea {
   padding: 2px 7px;
   border-radius: 999px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+  box-sizing: border-box;
   background: var(--surface-2);
   color: var(--text-2);
 }
@@ -2127,6 +2139,16 @@ textarea {
 .tlist .dash-main {
   flex: 1;
   min-width: 0;
+}
+.tlist .dash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tlist .trow > .due,
+.dash-list li > .due {
+  flex: 0 1 auto;
+  max-width: min(42%, 11rem);
 }
 .trow-defer {
   position: absolute;

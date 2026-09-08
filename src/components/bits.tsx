@@ -25,7 +25,12 @@ export function PriorityMark({ priority, withLabel }: { priority: Priority; with
 export function DueBadge({ task }: { task: Task }) {
   if (!task.dueAt) return null
   const tone = dueTone(task)
-  return <span className={`due due-${tone}`}>{dueLabel(task)}</span>
+  const label = dueLabel(task)
+  return (
+    <span className={`due due-${tone}`} title={label}>
+      {label}
+    </span>
+  )
 }
 
 export function ProgressBar({ pct, color }: { pct: number; color?: string }) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deterministicCapture } from '../ai'
-import { dueLabel, dueTone } from '../taskutils'
+import { dueLabel, dueTone, duplicateTask } from '../taskutils'
 import { plannedGift, personStats } from '../people'
 import { nextUp } from '../review'
 import { plannedVisit } from '../../shared/people.mjs'
@@ -24,6 +24,46 @@ describe('dueTone late', () => {
     const t = baseTask({ id: 'a', dueAt: new Date(2026, 8, 7, 15, 0, 0).toISOString() })
     expect(dueTone(t, now)).toBe('late')
     expect(dueLabel(t, now)).toMatch(/^Was/)
+  })
+})
+
+describe('duplicateTask', () => {
+  it('copies fields with a new id, unchecked checklist, and no comments/completion', () => {
+    const source = baseTask({
+      id: 'src',
+      title: 'Paint fence',
+      description: 'Back garden',
+      status: 'done',
+      priority: 'high',
+      projectId: 'p1',
+      dueAt: '2026-09-10T12:00:00.000Z',
+      completedAt: '2026-09-07T12:00:00.000Z',
+      tags: ['home'],
+      notes: 'buy paint',
+      checklist: [
+        { id: 'c1', text: 'Sand', done: true },
+        { id: 'c2', text: 'Prime', done: false },
+      ],
+      comments: [{ id: 'm1', body: 'started', createdAt: '2026-09-01T00:00:00.000Z' }],
+      peopleIds: ['person-1'],
+      placeId: 'place-1',
+      actualCost: 40,
+    })
+    const copy = duplicateTask(source)
+    expect(copy.id).not.toBe(source.id)
+    expect(copy.title).toBe('Paint fence')
+    expect(copy.status).toBe('todo')
+    expect(copy.completedAt).toBeUndefined()
+    expect(copy.comments).toBeUndefined()
+    expect(copy.actualCost).toBeUndefined()
+    expect(copy.checklist).toEqual([
+      { id: expect.any(String), text: 'Sand', done: false },
+      { id: expect.any(String), text: 'Prime', done: false },
+    ])
+    expect(copy.checklist![0].id).not.toBe('c1')
+    expect(copy.peopleIds).toEqual(['person-1'])
+    expect(copy.placeId).toBe('place-1')
+    expect(copy.createdAt).not.toBe(source.createdAt)
   })
 })
 

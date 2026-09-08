@@ -1,5 +1,5 @@
 import { OPEN_STATUSES, PRIORITY_META, Project, Task } from './types'
-import { fmtDate, fmtTime } from './utils'
+import { fmtDate, fmtTime, uid } from './utils'
 
 export const DAY_MS = 86_400_000
 
@@ -63,4 +63,42 @@ export function projectById(projects: Project[]): Map<string, Project> {
 export function checklistProgress(t: Task): { done: number; total: number } | null {
   if (!t.checklist || t.checklist.length === 0) return null
   return { done: t.checklist.filter(c => c.done).length, total: t.checklist.length }
+}
+
+/** Fresh copy of a task for Duplicate — new id/timestamps, no comments/completion. */
+export function duplicateTask(source: Task): Task {
+  const now = new Date().toISOString()
+  const status = source.status === 'done' || source.status === 'canceled' ? 'todo' : source.status
+  return {
+    kind: 'task',
+    id: uid(),
+    title: source.title,
+    description: source.description,
+    status,
+    priority: source.priority,
+    projectId: source.projectId,
+    dueAt: source.dueAt,
+    createdAt: now,
+    updatedAt: now,
+    tags: [...source.tags],
+    notes: source.notes,
+    link: source.link,
+    githubUrl: source.githubUrl,
+    checklist: source.checklist?.map(c => ({ id: uid(), text: c.text, done: false })),
+    mediaIds: source.mediaIds ? [...source.mediaIds] : undefined,
+    recurrence: source.recurrence ? { ...source.recurrence } : undefined,
+    social: source.social
+      ? {
+          platforms: [...source.social.platforms],
+          variants: source.social.variants ? { ...source.social.variants } : undefined,
+        }
+      : undefined,
+    peopleIds: source.peopleIds ? [...source.peopleIds] : undefined,
+    placeId: source.placeId,
+    attachments: source.attachments?.map(a => ({ ...a })),
+    estimateCost: source.estimateCost,
+    blockedBy: source.blockedBy ? [...source.blockedBy] : undefined,
+    assigneeId: source.assigneeId,
+    ownerId: source.ownerId,
+  }
 }

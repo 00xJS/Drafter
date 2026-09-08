@@ -1,4 +1,4 @@
-import { PRIORITY_META, Project, TASK_STATUSES, STATUS_META, Task, TaskStatus } from '../types'
+import { BOARD_STATUSES, PRIORITY_META, Project, STATUS_META, Task, TaskStatus } from '../types'
 import { compareTasks } from '../taskutils'
 import { TaskCard } from './TaskCard'
 
@@ -18,7 +18,6 @@ function sortForColumn(list: Task[], s: TaskStatus): Task[] {
   if (s === 'done') copy.sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
   else if (s === 'wishlist')
     copy.sort((a, b) => PRIORITY_META[b.priority].rank - PRIORITY_META[a.priority].rank || b.updatedAt.localeCompare(a.updatedAt))
-  else if (s === 'canceled') copy.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   else copy.sort(compareTasks)
   return copy
 }
@@ -38,7 +37,7 @@ export function Board({ tasks, projects, members, showProject, onOpen, onStatus,
         </div>
       )}
       <div className="board">
-        {TASK_STATUSES.map(s => {
+        {BOARD_STATUSES.map(s => {
           const list = sortForColumn(
             tasks.filter(t => t.status === s),
             s,

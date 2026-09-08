@@ -886,6 +886,14 @@ export default function Planner() {
             const t = store.tasks.find(x => x.id === id)
             if (t) deleteTask(t)
           }}
+          onDuplicate={copy => {
+            store.upsert(copy)
+            setEditor({ task: copy })
+            showToast(`Duplicated “${copy.title || 'Untitled'}”`, () => {
+              store.remove(copy.id)
+              setEditor(cur => (cur?.task?.id === copy.id ? null : cur))
+            })
+          }}
           onClose={() => setEditor(null)}
         />
       )}
