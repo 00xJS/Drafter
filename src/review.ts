@@ -1,6 +1,9 @@
-import { Person, Project, Task } from './types'
+import { Person, Place, Project, Task } from './types'
 import { DAY_MS, startOfDay } from './taskutils'
 import { visitsFor } from './people'
+import { outingsAt } from './places'
+import { dateKey } from './utils'
+import { weekKeyOf } from '../shared/weeks.mjs'
 
 export type Period = 'week' | 'month'
 
@@ -20,11 +23,12 @@ export function weekRange(d: Date): Range {
   s.setDate(s.getDate() - s.getDay())
   const e = new Date(s)
   e.setDate(e.getDate() + 7)
-  const jan1 = new Date(s.getFullYear(), 0, 1)
-  const week = Math.floor((s.getTime() - jan1.getTime()) / (7 * DAY_MS)) + 1
+  // calendar arithmetic on the date, never on milliseconds: a DST hour used to
+  // shift the week number in years that start on a Sunday
+  const key = weekKeyOf(dateKey(s)) ?? `${s.getFullYear()}-W00`
   const fmt = (x: Date) => x.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const last = new Date(e.getTime() - DAY_MS)
-  return { period: 'week', key: `${s.getFullYear()}-W${String(week).padStart(2, '0')}`, start: s, end: e, label: `${fmt(s)} – ${fmt(last)}` }
+  return { period: 'week', key, start: s, end: e, label: `${fmt(s)} – ${fmt(last)}` }
 }
 
 export function monthRange(d: Date): Range {
@@ -70,6 +74,8 @@ export interface ReviewData {
   overdueNow: Task[]
   /** Visits in the range, per person. */
   people: { person: Person; visits: Task[] }[]
+  /** Outings in the range, per place. */
+  places: { place: Place; visits: Task[] }[]
   /** Per-project done/open counts for the range. */
   projects: { project: Project; done: number; open: number }[]
   /** Projects with nothing touched during the range. */
@@ -83,7 +89,7 @@ export const isVisit = (t: Task): boolean => t.tags.includes('visit')
 
 const inRange = (iso: string | undefined, r: Range) => !!iso && Date.parse(iso) >= r.start.getTime() && Date.parse(iso) < r.end.getTime()
 
-export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date()): ReviewData {
+export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = []): ReviewData {
   const nowMs = now.getTime()
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
@@ -96,6 +102,10 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const overdueNow = open.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   const peopleSeen = people
     .map(p => ({ person: p, visits: visitsFor(p.id, tasks).filter(v => inRange(v.at, range)).map(v => v.task) }))
+    .filter(x => x.visits.length > 0)
+    .sort((a, b) => b.visits.length - a.visits.length)
+  const placesWent = places
+    .map(p => ({ place: p, visits: outingsAt(p.id, tasks).filter(v => inRange(v.at, range)).map(v => v.task) }))
     .filter(x => x.visits.length > 0)
     .sort((a, b) => b.visits.length - a.visits.length)
   const projectRows = projects
@@ -120,7 +130,7 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
     const i = Math.floor((Date.parse(t.completedAt!) - range.start.getTime()) / DAY_MS)
     if (i >= 0 && i < days) doneByDay[i]++
   }
-  return { range, done, visitsDone, slipped, created, upcoming, overdueNow, people: peopleSeen, projects: projectRows, stalled, costs, doneByDay }
+  return { range, done, visitsDone, slipped, created, upcoming, overdueNow, people: peopleSeen, places: placesWent, projects: projectRows, stalled, costs, doneByDay }
 }
 
 /** Done-per-week for the last n weeks (oldest first), for the Today sparkline. */

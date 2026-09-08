@@ -118,6 +118,26 @@ export function setLocalRemindersEnabled(on: boolean): void {
   }
 }
 
+const GENERIC_REMINDERS_KEY = 'drafter:reminders-generic'
+
+/** When on, lock-screen reminders say "Something is due" instead of a task title or a person's name. */
+export function genericRemindersEnabled(): boolean {
+  try {
+    return localStorage.getItem(GENERIC_REMINDERS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setGenericRemindersEnabled(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(GENERIC_REMINDERS_KEY, '1')
+    else localStorage.removeItem(GENERIC_REMINDERS_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Ask iOS once; false if the user said no (the fix is then the Settings app). */
 export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false

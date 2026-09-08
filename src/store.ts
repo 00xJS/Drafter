@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, GroceryList, Item, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
+import { CalendarSource, GroceryList, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
@@ -11,7 +11,9 @@ import { getSupabase } from './supabase'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 /** Kinds the server used to drop silently — keep retrying so they survive a new session. */
-const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery'])
+const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal'])
+/** Kinds that belong to one account even inside a household. */
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar'])
 
 async function loadCache(myId: string | null): Promise<Item[]> {
   try {
@@ -78,10 +80,18 @@ export interface Store {
   recipes: Recipe[]
   meals: Meal[]
   groceries: GroceryList[]
+  /** Your journal entries (personal, newest day first). */
+  journal: JournalEntry[]
   reviews: Review[]
   templates: Template[]
-  /** Everything including tombstones — for export and sync. */
+  /** Everything including tombstones — for sync only. */
   allItems: Item[]
+  /**
+   * Everything I may see: allItems minus other household members' personal
+   * records (journal, review, calendar). Trash, JSON export and counts use this
+   * so a peer's deleted diary never shows up in my bin.
+   */
+  visibleItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
   syncInfo: SyncInfo
@@ -369,6 +379,20 @@ export function useItems(myId: string | null = null): Store {
     () => items.filter((i): i is GroceryList => i.kind === 'grocery' && !i.deletedAt),
     [items],
   )
+  const visibleItems = useMemo(
+    () => items.filter(i => !PERSONAL_KINDS.has(i.kind) || isMine(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
+  // Journal entries are personal, like reviews: only mine (or unowned, local-mode rows).
+  const journal = useMemo(
+    () =>
+      items
+        .filter((i): i is JournalEntry => i.kind === 'journal' && !i.deletedAt && isMine(i))
+        .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt && isMine(i)), [items, myId])
   const templates = useMemo(
@@ -393,9 +417,11 @@ export function useItems(myId: string | null = null): Store {
     recipes,
     meals,
     groceries,
+    journal,
     reviews,
     templates,
     allItems: items,
+    visibleItems,
     loaded,
     syncInfo,
     upsert: item =>
@@ -419,8 +445,10 @@ export function useItems(myId: string | null = null): Store {
       }),
     restore: ids =>
       setItems(list => {
-        markDirty(ids)
-        const set = new Set(ids)
+        // a purged tombstone has nothing left to bring back
+        const set = new Set(ids.filter(id => !list.find(p => p.id === id)?.purged))
+        if (set.size === 0) return list
+        markDirty([...set])
         return list.map(p => (set.has(p.id) ? { ...p, deletedAt: undefined, updatedAt: newerStamp(p.updatedAt) } : p))
       }),
     purge: async ids => {

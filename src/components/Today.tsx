@@ -1,8 +1,25 @@
 import { useMemo, useRef, useState } from 'react'
-import { CalendarEvent, CalendarSource, Meal, Person, Project, Recipe, Review as ReviewRecord, Task, TaskStatus, projectProgress } from '../types'
+import {
+  MEAL_SLOT_META,
+  CalendarEvent,
+  CalendarSource,
+  JournalEntry,
+  Meal,
+  PLACE_CATEGORY_META,
+  Person,
+  Place,
+  Project,
+  Recipe,
+  Review as ReviewRecord,
+  Task,
+  TaskStatus,
+  projectProgress,
+} from '../types'
 import { tonightDinner } from './Kitchen'
+import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
+import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
@@ -14,8 +31,12 @@ interface Props {
   /** Unfiltered tasks — visits are counted across every project. */
   allTasks: Task[]
   people: Person[]
+  /** Only places with a cadence can appear; the rest are never nudged. */
+  places: Place[]
   reviews: ReviewRecord[]
   onPlanWith(p: Person): void
+  onWentTo(p: Place): void
+  onPlanAt(p: Place): void
   onPlanOccasion(p: Person, kind: 'birthday' | 'anniversary', at: Date): void
   onSaw(p: Person): void
   onSaveReview(r: ReviewRecord): void
@@ -35,6 +56,10 @@ interface Props {
   onOpenKitchen(): void
   onOpenReview(): void
   onCookRecipe(r: Recipe): void
+  journal: JournalEntry[]
+  onSaveJournal(e: JournalEntry): void
+  onDeleteJournal(id: string): void
+  onOpenJournal(): void
 }
 
 const STALE_DAYS = 14
@@ -221,8 +246,11 @@ export function Today({
   tasks,
   allTasks,
   people,
+  places,
   reviews,
   onPlanWith,
+  onWentTo,
+  onPlanAt,
   onPlanOccasion,
   onSaw,
   onSaveReview,
@@ -242,6 +270,10 @@ export function Today({
   onOpenKitchen,
   onOpenReview,
   onCookRecipe,
+  journal,
+  onSaveJournal,
+  onDeleteJournal,
+  onOpenJournal,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -273,6 +305,18 @@ export function Today({
         .slice(0, 6),
     [people, allTasks],
   )
+  // Cadence places only: a place without a rhythm has status 'none' and never lands here.
+  const placeNudges = useMemo(() => {
+    const now = new Date()
+    const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
+    for (const place of places) {
+      const s = placeCadenceStatus(place, allTasks, now)
+      if (s.status === 'due' || s.status === 'overdue') out.push({ place, status: s.status, reason: s.reason, daysSince: s.daysSince ?? 0 })
+    }
+    return out
+      .sort((a, b) => (a.status === b.status ? b.daysSince - a.daysSince : a.status === 'overdue' ? -1 : 1))
+      .slice(0, 4)
+  }, [places, allTasks])
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
@@ -399,7 +443,7 @@ export function Today({
         <section className="chart-card kitchen-tonight">
           <header className="chart-head">
             <div>
-              <h3>Tonight’s dinner</h3>
+              <h3>{dinner.meal.slot === 'dinner' ? 'Tonight’s dinner' : `Today’s ${MEAL_SLOT_META[dinner.meal.slot].label.toLowerCase()}`}</h3>
               <p className="chart-sub">{dinner.recipe ? `${dinner.recipe.ingredients.length} ingredients` : 'Planned on the Kitchen tab'}</p>
             </div>
             <button className="btn subtle" onClick={onOpenKitchen}>
@@ -565,6 +609,8 @@ export function Today({
         </div>
       )}
 
+      <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
+
       {occasions.length > 0 && (
         <section className="chart-card occasions">
           <header className="chart-head">
@@ -612,12 +658,12 @@ export function Today({
         </section>
       )}
 
-      {peopleNudges.length > 0 && (
+      {(peopleNudges.length > 0 || placeNudges.length > 0) && (
         <section className="chart-card people-nudges">
           <header className="chart-head">
             <div>
               <h3>People</h3>
-              <p className="chart-sub">Who's due a call or a plan — and who you're seeing a lot</p>
+              <p className="chart-sub">Who's due a call — and where you've meant to go back to</p>
             </div>
           </header>
           <ul className="dash-list event-list">
@@ -648,6 +694,30 @@ export function Today({
                         Plan something
                       </button>
                     )}
+                </div>
+              </li>
+            ))}
+            {placeNudges.map(s => (
+              <li key={s.place.id} className="event-row">
+                <span className="person-avatar small" style={{ background: s.place.color }}>
+                  {s.place.emoji ?? PLACE_CATEGORY_META[s.place.category].emoji}
+                </span>
+                <div className="dash-main">
+                  <span className="dash-title">
+                    {s.place.name}{' '}
+                    <span className="badge" style={{ background: SEEN_META[s.status].bg, color: SEEN_META[s.status].color }}>
+                      Been a while
+                    </span>
+                  </span>
+                  <span className="dash-reason">{s.reason}</span>
+                </div>
+                <div className="event-actions">
+                  <button className="btn subtle" onClick={() => onWentTo(s.place)}>
+                    Went there
+                  </button>
+                  <button className="btn" onClick={() => onPlanAt(s.place)}>
+                    Plan a trip
+                  </button>
                 </div>
               </li>
             ))}

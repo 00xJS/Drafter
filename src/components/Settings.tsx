@@ -9,7 +9,7 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
-import { appLockEnabled, authenticateAppLock, checkAppLock, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setLocalRemindersEnabled, startOAuth } from '../native'
+import { appLockEnabled, authenticateAppLock, checkAppLock, genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setGenericRemindersEnabled, setLocalRemindersEnabled, startOAuth } from '../native'
 import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
@@ -79,6 +79,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const [thisEndpoint, setThisEndpoint] = useState<string | null>(null)
   const [digestHour, setDigestHour] = useState(8)
   const [localOn, setLocalOn] = useState(localRemindersEnabled())
+  const [genericOn, setGenericOn] = useState(genericRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
   const [lockOn, setLockOn] = useState(appLockEnabled())
   const [lockLabel, setLockLabel] = useState('Face ID')
@@ -489,6 +490,17 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
                   </label>
                 </p>
+                <p className="sync-line">
+                  <label className="cal-source mirror-row">
+                    <input
+                      type="checkbox"
+                      checked={!!push.digestJournal}
+                      onChange={e => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: e.target.checked }))}
+                    />
+                    <span className="cal-source-name">Let Sunday’s draft read my journal</span>
+                  </label>
+                  <small className="field-hint">The week’s entries go to the AI provider with the draft. Off by default; the ✨ summary you press for on the Review tab always may.</small>
+                </p>
               </>
             ) : push ? (
               <p className="field-hint">Push reminders aren’t available yet.</p>
@@ -526,7 +538,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           } catch {
                             /* ignore */
                           }
-                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue }))
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
                         } else {
                           setLocalRemindersEnabled(false)
                           setLocalOn(false)
@@ -541,6 +553,25 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     </span>
                   </label>
                 </p>
+                {localOn && (
+                  <p className="sync-line">
+                    <label className="cal-source mirror-row">
+                      <input
+                        type="checkbox"
+                        checked={genericOn}
+                        onChange={async e => {
+                          const on = e.target.checked
+                          setGenericRemindersEnabled(on)
+                          setGenericOn(on)
+                          const skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: on }))
+                        }}
+                      />
+                      <span className="cal-source-name">Hide details on the lock screen</span>
+                    </label>
+                    <small className="field-hint">Reminders say “Something is due” or “An occasion today” instead of a task title or a person's name. Tapping one still opens the right thing.</small>
+                  </p>
+                )}
                 {localErr && <p className="warn">{localErr}</p>}
               </>
             ) : (

@@ -3,11 +3,15 @@
 export interface ParsedLink {
   oauth?: { provider: 'google' | 'microsoft'; ok: boolean; reason?: string }
   view?: string
-  tab?: 'people' | 'places'
+  tab?: 'people' | 'places' | 'journal'
   saw?: string
   task?: string
   capture?: { title: string; description?: string; link?: string; dueAt?: string }
+  /** Text to append to today's journal entry (drafter://journal?text=… or ?journal=…). */
+  journal?: string
 }
+
+const JOURNAL_MAX = 2000
 
 const OAUTH_REASONS = new Set([
   'not_configured',
@@ -61,6 +65,13 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string }): Pa
     return out
   }
 
+  // drafter://journal?text=… — a Shortcut or share that writes a line into today
+  if (host === 'journal') {
+    const text = params.get('text') ?? params.get('journal') ?? params.get('title')
+    if (text && text.trim()) out.journal = text.trim().slice(0, JOURNAL_MAX)
+    return out
+  }
+
   if (host && host !== 'new' && host !== 'open' && host !== '') {
     return out
   }
@@ -69,7 +80,10 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string }): Pa
   if (view) out.view = view
 
   const tab = params.get('tab')
-  if (tab === 'places' || tab === 'people') out.tab = tab
+  if (tab === 'places' || tab === 'people' || tab === 'journal') out.tab = tab
+
+  const journal = params.get('journal')
+  if (journal && journal.trim()) out.journal = journal.trim().slice(0, JOURNAL_MAX)
 
   const sawId = params.get('saw')
   if (sawId) out.saw = sawId

@@ -1,34 +1,27 @@
 import { GroceryLine, GroceryList, Meal, MealSlot, Recipe, RecipeIngredient } from './types'
 import { weekRange } from './review'
 import { dateKey } from './utils'
+import {
+  buildGroceryList as sharedBuildGroceryList,
+  groceryId as sharedGroceryId,
+  ingredientKey as sharedIngredientKey,
+  mealId as sharedMealId,
+  mergeIngredients as sharedMergeIngredients,
+  recipesUsed as sharedRecipesUsed,
+} from '../shared/kitchen.mjs'
 
-export const groceryId = (weekKey: string) => `grocery~${weekKey}`
-export const mealId = (date: string, slot: MealSlot) => `meal~${date}~${slot}`
+// Merging, list building and ids live in shared/kitchen.mjs so an agent adding
+// "milk" through the MCP server and the Kitchen tab produce the same list.
 
-export function ingredientKey(name: string, unit?: string): string {
-  return `${name.trim().toLowerCase().replace(/\s+/g, ' ')}|${(unit ?? '').trim().toLowerCase()}`
-}
+export const groceryId = (weekKey: string): string => sharedGroceryId(weekKey)
+export const mealId = (date: string, slot: MealSlot): string => sharedMealId(date, slot)
+export const ingredientKey = (name: string, unit?: string): string => sharedIngredientKey(name, unit)
+export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
+export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
 
-export function mergeIngredients(recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] {
-  const map = new Map<string, { name: string; qty?: number; unit?: string; recipeIds: string[] }>()
-  for (const recipe of recipes) {
-    for (const ing of recipe.ingredients) {
-      const name = ing.name.trim()
-      if (!name) continue
-      const unit = ing.unit?.trim() || undefined
-      const key = ingredientKey(name, unit)
-      const cur = map.get(key)
-      if (!cur) {
-        map.set(key, { name, qty: ing.qty, unit, recipeIds: [recipe.id] })
-        continue
-      }
-      if (ing.qty != null && cur.qty != null) cur.qty = Math.round((cur.qty + ing.qty) * 100) / 100
-      else if (ing.qty != null && cur.qty == null) cur.qty = ing.qty
-      if (!cur.recipeIds.includes(recipe.id)) cur.recipeIds.push(recipe.id)
-    }
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
-}
+/** Build or refresh a week's list. Keeps have/done/manual lines the user already set. */
+export const buildGroceryList = (weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString()): GroceryList =>
+  sharedBuildGroceryList(weekKey, meals, recipes, prev ?? null, now)
 
 export function mealsInRange(meals: Meal[], start: Date, end: Date): Meal[] {
   const from = dateKey(start)
@@ -39,42 +32,6 @@ export function mealsInRange(meals: Meal[], start: Date, end: Date): Meal[] {
 export function mealsForWeek(meals: Meal[], around = new Date()): Meal[] {
   const { start, end } = weekRange(around)
   return mealsInRange(meals, start, end)
-}
-
-export function recipesUsed(meals: Meal[], recipes: Recipe[]): Recipe[] {
-  const ids = new Set(meals.map(m => m.recipeId).filter((id): id is string => !!id))
-  return recipes.filter(r => ids.has(r.id))
-}
-
-/** Build or refresh a week's list. Keeps have/done/manual lines the user already set. */
-export function buildGroceryList(weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString()): GroceryList {
-  const merged = mergeIngredients(recipesUsed(meals, recipes))
-  const prevByKey = new Map((prev?.items ?? []).map(line => [ingredientKey(line.name, line.unit), line]))
-  const items: GroceryLine[] = merged.map(row => {
-    const key = ingredientKey(row.name, row.unit)
-    const old = prevByKey.get(key)
-    prevByKey.delete(key)
-    return {
-      id: old?.id ?? `g~${key}`,
-      name: row.name,
-      qty: row.qty,
-      unit: row.unit,
-      state: old && !old.manual ? old.state : 'need',
-      recipeIds: row.recipeIds,
-    }
-  })
-  for (const leftover of prevByKey.values()) {
-    if (leftover.manual) items.push(leftover)
-  }
-  items.sort((a, b) => a.name.localeCompare(b.name))
-  return {
-    kind: 'grocery',
-    id: groceryId(weekKey),
-    weekKey,
-    items,
-    createdAt: prev?.createdAt ?? now,
-    updatedAt: now,
-  }
 }
 
 export function mealsByDay(meals: Meal[]): Map<string, Meal[]> {

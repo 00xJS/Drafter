@@ -52,6 +52,40 @@ export async function syncNow(outgoing: Item[], since: string | null): Promise<S
 }
 
 /**
+ * The content-free tombstone "Delete forever" pushes for a kind. Every
+ * sanitizer accepts this shape when deletedAt is set (see schema.ts), or a
+ * device that still holds the live copy would discard the tombstone and keep
+ * showing the record.
+ */
+export function purgeTombstone(kind: Item['kind'], id: string, now: string): Record<string, unknown> {
+  const base = { kind, id, deletedAt: now, purged: true, updatedAt: now, createdAt: now }
+  switch (kind) {
+    case 'task':
+      return { ...base, title: '', description: '', status: 'canceled', priority: 'normal', tags: [] }
+    case 'project':
+      return { ...base, name: '', color: '#888', status: 'archived' }
+    case 'person':
+    case 'place':
+    case 'recipe':
+    case 'template':
+      return { ...base, name: '' }
+    case 'meal':
+      return { ...base, title: '', date: '', slot: 'dinner' }
+    case 'grocery':
+      return { ...base, weekKey: '', items: [] }
+    case 'journal':
+      // the day stays in the id (journal~YYYY-MM-DD~…); the body is gone on purpose
+      return { ...base, date: /^journal~(\d{4}-\d{2}-\d{2})~/.exec(id)?.[1] ?? '', body: '' }
+    case 'review':
+      return { ...base, period: 'week', key: '', top: [] }
+    case 'calendar':
+      return { ...base, name: '', url: '', color: '#888', enabled: false }
+    default:
+      return base
+  }
+}
+
+/**
  * Soft-purge: push stripped tombstones with purged:true so peers see the delete.
  * A nightly job hard-deletes tombstones older than the TTL.
  */
@@ -60,28 +94,7 @@ export async function purgeRemote(ids: string[], items: Item[]): Promise<void> {
   if (!sb || ids.length === 0) return
   const byId = new Map(items.map(i => [i.id, i]))
   const now = new Date().toISOString()
-  const tombstones = ids.map(id => {
-    const cur = byId.get(id)
-    const kind = cur?.kind ?? 'task'
-    return {
-      kind,
-      id,
-      deletedAt: now,
-      purged: true,
-      updatedAt: now,
-      ...(kind === 'task'
-        ? { title: '', description: '', status: 'canceled', priority: 'normal', createdAt: now, tags: [] }
-        : kind === 'project'
-          ? { name: '', color: '#888', status: 'archived', createdAt: now }
-          : kind === 'person' || kind === 'place' || kind === 'recipe'
-            ? { name: '', createdAt: now }
-            : kind === 'meal'
-              ? { title: '', date: now.slice(0, 10), slot: 'dinner', createdAt: now }
-              : kind === 'grocery'
-                ? { weekKey: '', items: [], createdAt: now }
-                : { createdAt: now }),
-    }
-  })
+  const tombstones = ids.map(id => purgeTombstone(byId.get(id)?.kind ?? 'task', id, now))
   const { error } = await sb.rpc('sync_posts', { incoming: tombstones, since: null })
   if (error) throw new Error(error.message)
 }

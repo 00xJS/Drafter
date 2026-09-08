@@ -1,12 +1,40 @@
 import { Person, Place, Task } from './types'
 import { Visit, visitSummary, visitsFor } from './people'
+import { PlaceCadenceState, PlaceCadenceStatus, matchPlace as sharedMatchPlace, normalisePlaceText, placeCadenceStatus, outingsAt as sharedOutingsAt } from '../shared/places.mjs'
 
-/** Done tasks at a place, newest first. Open tasks and tombstones are ignored. */
+export { normalisePlaceText, placeCadenceStatus }
+export type { PlaceCadenceState, PlaceCadenceStatus }
+
+/** The saved place a free-text location (calendar LOCATION, a note) refers to, or undefined. */
+export function matchPlace(text: string | null | undefined, places: Place[]): Place | undefined {
+  return sharedMatchPlace(text, places) ?? undefined
+}
+
+/** How long a loved place can go unvisited before it counts as lapsed. */
+export const LAPSED_AFTER_DAYS = 120
+
+/** Places with at least two outings in the last year, most visited first. */
+export function favourites(places: Place[], tasks: Task[], people: Person[] = [], now: Date = new Date()): PlaceStats[] {
+  return places
+    .map(p => placeStats(p, tasks, people, now))
+    .filter(s => s.count365 >= 2)
+    .sort((a, b) => b.count365 - a.count365 || (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
+}
+
+/**
+ * Places you loved and drifted from: two or more outings ever, and longer since
+ * the last one than both LAPSED_AFTER_DAYS and twice your usual gap there.
+ */
+export function lapsed(places: Place[], tasks: Task[], people: Person[] = [], now: Date = new Date()): PlaceStats[] {
+  return places
+    .map(p => placeStats(p, tasks, people, now))
+    .filter(s => s.visits.length >= 2 && s.daysSince !== undefined && s.daysSince > Math.max(LAPSED_AFTER_DAYS, s.avgGapDays ? 2 * s.avgGapDays : 0))
+    .sort((a, b) => b.visits.length - a.visits.length)
+}
+
+/** Done tasks at a place, newest first. Open tasks and tombstones are ignored (rule in shared/places.mjs). */
 export function outingsAt(placeId: string, tasks: Task[]): Visit[] {
-  return tasks
-    .filter(t => !t.deletedAt && t.status === 'done' && !!t.completedAt && t.placeId === placeId)
-    .map(t => ({ task: t, at: t.completedAt! }))
-    .sort((a, b) => b.at.localeCompare(a.at))
+  return sharedOutingsAt(placeId, tasks) as Visit[]
 }
 
 export interface Companion {
@@ -23,8 +51,10 @@ export interface PlaceStats {
   avgGapDays?: number
   weekly: number[]
   companions: Companion[]
-  /** One-line list reason. */
+  /** One-line list reason; when the place is due/overdue it ends with the rhythm you set. */
   reason: string
+  /** 'none' unless the place has a cadence — a place without one is never due. */
+  status: PlaceCadenceState
 }
 
 function placeReason(lastAt: string | undefined, daysSince: number | undefined, count365: number): string {
@@ -58,6 +88,9 @@ export function companionsAt(placeId: string, people: Person[], tasks: Task[]): 
 export function placeStats(place: Place, tasks: Task[], people: Person[], now: Date = new Date()): PlaceStats {
   const visits = outingsAt(place.id, tasks)
   const summary = visitSummary(visits, now)
+  const cadence = placeCadenceStatus(place, tasks, now)
+  const base = placeReason(summary.lastAt, summary.daysSince, summary.count365)
+  const nagging = cadence.status === 'due' || cadence.status === 'overdue'
   return {
     place,
     visits,
@@ -67,7 +100,8 @@ export function placeStats(place: Place, tasks: Task[], people: Person[], now: D
     avgGapDays: summary.avgGapDays,
     weekly: summary.weekly,
     companions: companionsAt(place.id, people, tasks),
-    reason: placeReason(summary.lastAt, summary.daysSince, summary.count365),
+    reason: nagging ? `${base} — you aimed for every ${cadence.cadenceDays} days` : base,
+    status: cadence.status,
   }
 }
 

@@ -114,11 +114,17 @@ export async function suggestCatchUp(input: {
   notes?: string
   daysSince?: number
   recent: { what: string; when: string }[]
+  /** Places you have been together, most often first. */
+  places?: { name: string; category: string; times: number; lastWent: string }[]
+  /** Your favourite places they have never been to with you. */
+  notYetTogether?: string[]
 }): Promise<CatchUpIdea[]> {
   const recent = input.recent.length ? input.recent.map(r => `- ${r.when}: ${r.what}`).join('\n') : '- nothing logged yet'
+  const together = input.places?.length ? input.places.map(p => `- ${p.name} (${p.category}) ×${p.times}, last ${p.lastWent}`).join('\n') : '- none logged'
+  const untried = input.notYetTogether?.length ? input.notYetTogether.map(n => `- ${n}`).join('\n') : '- none'
   const text = await complete(
-    'You help someone keep up with the people they love. Suggest specific, low-effort, realistic plans — a call, a walk, lunch, an errand done together, a game night — not grand gestures. Vary the ideas. Use what you know about the person; never invent facts about them.',
-    `Person: ${input.name} (${input.group})\n${input.daysSince !== undefined ? `Last seen: ${input.daysSince} days ago` : 'Never logged'}\nNotes about them: ${input.notes || '(none)'}\nRecent times together:\n${recent}\n\nSuggest 4 ideas for the next catch-up. Respond with ONLY a JSON array of objects {"title": "short imperative plan, under 60 chars", "why": "one sentence tying it to what you know"}.`,
+    'You help someone keep up with the people they love. Suggest specific, low-effort, realistic plans — a call, a walk, lunch, an errand done together, a game night — not grand gestures. Vary the ideas. Prefer somewhere from their shared history or a favourite they have not tried, and say when you last went. Use what you know about the person; never invent facts about them.',
+    `Person: ${input.name} (${input.group})\n${input.daysSince !== undefined ? `Last seen: ${input.daysSince} days ago` : 'Never logged'}\nNotes about them: ${input.notes || '(none)'}\nRecent times together:\n${recent}\nPlaces you have been together:\n${together}\nYour favourites you have not taken them to:\n${untried}\n\nSuggest 4 ideas for the next catch-up. Respond with ONLY a JSON array of objects {"title": "short imperative plan, under 60 chars", "why": "one sentence tying it to what you know"}.`,
     768,
     true,
   )
@@ -126,6 +132,41 @@ export async function suggestCatchUp(input: {
   return raw
     .filter((x): x is { title?: unknown; why?: unknown } => !!x && typeof x === 'object')
     .map(x => ({ title: String(x.title ?? '').trim(), why: String(x.why ?? '').trim() }))
+    .filter(x => x.title)
+    .slice(0, 4)
+}
+
+export interface OutingIdea {
+  title: string
+  why: string
+  /** Name of one of your places when the idea is about it. */
+  placeName?: string
+}
+
+/** "Where should we go?" — ideas grounded in your own places: favourites, the ones you drifted from, and what you did lately. */
+export async function suggestOuting(input: {
+  weekday: string
+  favourites: { name: string; category: string; times: number; lastWent: string }[]
+  lapsed: { name: string; category: string; times: number; lastWent: string }[]
+  recent: { name: string; when: string }[]
+  allNames: string[]
+}): Promise<OutingIdea[]> {
+  const rows = (xs: { name: string; category: string; times: number; lastWent: string }[]) =>
+    xs.length ? xs.map(p => `- ${p.name} (${p.category}) ×${p.times}, last ${p.lastWent}`).join('\n') : '- none'
+  const text = await complete(
+    'You suggest where someone could go next, drawn from places they already know and love. Favour places they used to visit often and have not been back to, then variety of category, then a favourite. Say when they last went. Keep ideas realistic for an ordinary week. Never invent places that are not in the lists; an idea may also be a walk or something free.',
+    `It is ${input.weekday}.\nFavourites (most visited this year):\n${rows(input.favourites)}\nDrifted from (used to go, not lately):\n${rows(input.lapsed)}\nRecent outings:\n${input.recent.length ? input.recent.map(r => `- ${r.when}: ${r.name}`).join('\n') : '- none'}\n\nSuggest 4 ideas. Respond with ONLY a JSON array of objects {"title": "short imperative, under 60 chars", "why": "one sentence with the history behind it", "placeName": "exact name from the lists, or omit"}.`,
+    768,
+    true,
+  )
+  const raw = extractJSON<unknown[]>(text)
+  const known = new Set(input.allNames.map(n => n.toLowerCase()))
+  return raw
+    .filter((x): x is { title?: unknown; why?: unknown; placeName?: unknown } => !!x && typeof x === 'object')
+    .map(x => {
+      const placeName = typeof x.placeName === 'string' && known.has(x.placeName.trim().toLowerCase()) ? input.allNames.find(n => n.toLowerCase() === x.placeName!.toString().trim().toLowerCase()) : undefined
+      return { title: String(x.title ?? '').trim(), why: String(x.why ?? '').trim(), placeName }
+    })
     .filter(x => x.title)
     .slice(0, 4)
 }
@@ -138,6 +179,8 @@ export async function summarizeReview(input: {
   slipped: string[]
   upcoming: string[]
   people: string[]
+  /** "Nopi ×2" — where you went this period. */
+  places?: string[]
   projects: string[]
   stalled: string[]
   reflections?: string
@@ -145,6 +188,8 @@ export async function summarizeReview(input: {
   lastTop?: string[]
   /** Which of those Top 3 were kept (done). */
   kept?: boolean[]
+  /** Journal lines from the period ("2026-09-08 (mood 4/5): …"), oldest first. */
+  journal?: string[]
 }): Promise<string> {
   const list = (xs: string[]) => (xs.length ? xs.slice(0, 40).map(x => `- ${x}`).join('\n') : '- none')
   const last =
@@ -154,8 +199,8 @@ export async function summarizeReview(input: {
           .join('\n')
       : '- none recorded'
   return complete(
-    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. Never invent anything not in the data.',
-    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. When the journal explains why the period went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
+    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
     900,
   )
 }

@@ -74,3 +74,17 @@ describe('local reminders', () => {
     expect(list.some(r => r.title.includes('birthday'))).toBe(true)
   })
 })
+
+describe('generic lock-screen reminders', () => {
+  it('keeps titles and names out of the notification but the deep link intact', () => {
+    const due = new Date(2026, 8, 8, 18, 30)
+    const list = buildLocalReminders([task('a', { title: 'Call the bank', dueAt: due.toISOString(), description: 'account 1234' })], [person('mum', '1960-09-12')], NOW, 30, { generic: true })
+    const taskRow = list.find(r => r.url === '/?task=a')!
+    const occasion = list.find(r => r.url === '/?saw=mum')!
+    expect(taskRow.title).toBe('Something is due')
+    expect(taskRow.body).not.toContain('1234')
+    expect(occasion.title).toBe('An occasion today')
+    expect(occasion.body).not.toContain('mum')
+    expect(JSON.stringify(list)).not.toContain('Call the bank')
+  })
+})

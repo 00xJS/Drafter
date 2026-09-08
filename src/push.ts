@@ -14,6 +14,8 @@ export interface PushInfo {
   subscriptions: string[]
   digestEmail: boolean
   digestHour: number
+  /** Sunday's unattended review draft may read the week's journal (off by default). */
+  digestJournal: boolean
   timezone: string | null
   email: string
 }
@@ -158,7 +160,7 @@ export function testPush(): Promise<{ sent: number }> {
   return apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'test' }) }).then(json<{ sent: number }>)
 }
 
-export function savePushPrefs(prefs: { digestEmail: boolean; digestHour: number }): Promise<{ ok: true }> {
+export function savePushPrefs(prefs: { digestEmail: boolean; digestHour: number; digestJournal?: boolean }): Promise<{ ok: true }> {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   return apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'prefs', ...prefs, timezone }) }).then(json<{ ok: true }>)
 }

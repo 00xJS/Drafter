@@ -29,6 +29,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Meal'
     case 'grocery':
       return 'Grocery list'
+    case 'journal':
+      return 'Journal entry'
     case 'review':
       return 'Review'
     case 'template':
@@ -40,7 +42,8 @@ function kindLabel(kind: Item['kind']): string {
 
 /** Everything deleted in the last 90 days, restorable with one click. */
 export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props) {
-  const deleted = items.filter(i => i.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
+  // a purged tombstone has no content left to restore
+  const deleted = items.filter(i => i.deletedAt && !i.purged).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
   const label = (i: Item) =>
     i.kind === 'task'
       ? i.title || excerpt(i.description, 50) || 'Untitled task'
@@ -50,7 +53,9 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
           ? i.title
           : i.kind === 'grocery'
             ? i.weekKey
-            : i.name
+            : i.kind === 'journal'
+              ? `${i.date} · ${excerpt(i.body, 50) || 'no text'}`
+              : i.name
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true">

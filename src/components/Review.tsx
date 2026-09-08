@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Person, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
+import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
+import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
+import { JournalPeople } from './Journal'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
-import { fmtDate, uid } from '../utils'
+import { excerpt, fmtDate, uid } from '../utils'
 import { DueBadge, ProjectChip, StatTile } from './bits'
 
 interface Props {
@@ -12,6 +14,9 @@ interface Props {
   projectMap: Map<string, Project>
   people: Person[]
   reviews: ReviewRecord[]
+  /** Your journal (personal); the period's entries feed the summary. */
+  journal: JournalEntry[]
+  places: Place[]
   onSaveReview(r: ReviewRecord): void
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -54,11 +59,13 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
   )
 }
 
-export function Review({ tasks, projects, projectMap, people, reviews, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
+export function Review({ tasks, projects, projectMap, people, reviews, journal, places, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
-  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people), [range, tasks, projects, people])
+  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places), [range, tasks, projects, people, places])
+  const wrote = useMemo(() => entriesInRange(journal, range), [journal, range])
+  const mood = moodAverage(wrote)
   const saved = reviews.find(r => r.period === period && r.key === range.key)
   const prevRange = useMemo(() => shiftRange(range, -1), [range])
   const prevSaved = reviews.find(r => r.period === period && r.key === prevRange.key)
@@ -101,11 +108,13 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
         slipped: data.slipped.map(t => t.title),
         upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
         people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
+        places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
         projects: data.projects.map(p => `${p.project.name}: ${p.done} done, ${p.open} open`),
         stalled: data.stalled.map(p => p.name),
         reflections,
         lastTop,
         kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),
+        journal: journalLines(wrote, 14, peopleNameMap(people)),
       })
       setSummary(text)
       persist({ summary: text })
@@ -185,6 +194,7 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
         <StatTile label={`Next ${period}`} value={String(data.upcoming.length)} sub="already on the calendar" />
         <StatTile label="People seen" value={String(data.people.length)} sub={`${data.people.reduce((s, p) => s + p.visits.length, 0)} visits`} />
         <StatTile label="Stalled projects" value={String(data.stalled.length)} sub="no activity this period" warn={data.stalled.length > 0} />
+        {wrote.length > 0 && <StatTile label="Journal" value={String(wrote.length)} sub={mood ? `days written · mood ${mood}/5` : 'days written'} />}
       </div>
 
       {(summary || error) && (
@@ -330,6 +340,56 @@ export function Review({ tasks, projects, projectMap, people, reviews, onSaveRev
             </ul>
           )}
         </section>
+
+        {data.places.length > 0 && (
+          <section className="chart-card">
+            <header className="chart-head">
+              <div>
+                <h3>Where you went</h3>
+                <p className="chart-sub">Outings this {period}</p>
+              </div>
+            </header>
+            <ul className="dash-list">
+              {data.places.map(p => (
+                <li key={p.place.id}>
+                  <span className="person-avatar small" style={{ background: p.place.color }}>
+                    {p.place.emoji ?? PLACE_CATEGORY_META[p.place.category].emoji}
+                  </span>
+                  <div className="dash-main">
+                    <span className="dash-title">{p.place.name}</span>
+                    <span className="dash-reason">{p.visits.map(v => v.title).join(' · ')}</span>
+                  </div>
+                  <strong>×{p.visits.length}</strong>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {wrote.length > 0 && (
+          <section className="chart-card review-journal">
+            <header className="chart-head">
+              <div>
+                <h3>What you wrote</h3>
+                <p className="chart-sub">Your journal this {period} — the summary reads it too</p>
+              </div>
+            </header>
+            <ul className="dash-list">
+              {wrote.map(e => (
+                <li key={e.id}>
+                  <span className="journal-mood" aria-hidden>
+                    {e.mood ? MOOD_META[e.mood].emoji : '·'}
+                  </span>
+                  <div className="dash-main">
+                    <span className="dash-title">{excerpt(e.body, 220) || (e.mood ? MOOD_META[e.mood].label : '')}</span>
+                    <span className="dash-reason">{relativeDayLabel(e.date)}</span>
+                  </div>
+                  <JournalPeople entry={e} people={people} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {(data.costs.estimate > 0 || data.costs.actual > 0) && (
           <section className="chart-card">

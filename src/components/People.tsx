@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { CADENCE_META, Cadence, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
+import { CADENCE_META, Cadence, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
 import { PersonStats, SEEN_META, compareStats, personStats, yearReport } from '../people'
+import { PlaceWithPerson, favourites, placesWith } from '../places'
+import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
@@ -10,6 +12,10 @@ interface Props {
   people: Person[]
   places?: Place[]
   tasks: Task[]
+  /** Your journal (personal): a person's card counts the days that were about them. */
+  journal?: JournalEntry[]
+  /** Jump to a day in the journal. */
+  onOpenJournal?(date: string): void
   onSave(p: Person): void
   onDelete(id: string): void
   /** Create a done "visit" task for a person on a date. */
@@ -307,6 +313,10 @@ function PersonRow({
   onLog,
   onPlan,
   onOpenTask,
+  placesTogether,
+  favouriteNames,
+  journal,
+  onOpenJournal,
 }: {
   stats: PersonStats
   open: boolean
@@ -315,12 +325,23 @@ function PersonRow({
   onLog(): void
   onPlan(title?: string): void
   onOpenTask(t: Task): void
+  /** Where you go with this person, most often first. */
+  placesTogether?: PlaceWithPerson[]
+  /** Your favourite places overall — the ones they haven't been to become suggestions. */
+  favouriteNames?: string[]
+  journal?: JournalEntry[]
+  onOpenJournal?(date: string): void
 }) {
   const { person } = stats
   const meta = SEEN_META[stats.status]
   const [ideas, setIdeas] = useState<CatchUpIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
+  const together = placesTogether ?? []
+  // Journal mentions are "this day was about them", not visits: they are shown
+  // on their own line and never reach visitsFor / seenStatus / personStats,
+  // the cadence badge or the digest's people nudges.
+  const inJournal = useMemo(() => (open && journal ? mentions(journal, person.id) : []), [open, journal, person.id])
 
   const getIdeas = async () => {
     setIdeasBusy(true)
@@ -333,6 +354,8 @@ function PersonRow({
           notes: person.notes,
           daysSince: stats.daysSince,
           recent: stats.visits.slice(0, 5).map(v => ({ what: v.task.title || 'a visit', when: fmtDate(v.at) })),
+          places: together.slice(0, 5).map(r => ({ name: r.place.name, category: PLACE_CATEGORY_META[r.place.category].label, times: r.count, lastWent: fmtDate(r.lastAt) })),
+          notYetTogether: (favouriteNames ?? []).filter(n => !together.some(r => r.place.name === n)).slice(0, 3),
         }),
       )
     } catch (e) {
@@ -401,10 +424,37 @@ function PersonRow({
             </ul>
           )}
 
+          {inJournal.length > 0 && (
+            <p className="person-journal">
+              <span className="muted">In your journal: </span>
+              {inJournal.length} {inJournal.length === 1 ? 'entry' : 'entries'} · last {fmtDate(`${inJournal[0].date}T12:00`)}
+              {onOpenJournal && (
+                <button type="button" className="btn subtle" onClick={() => onOpenJournal(inJournal[0].date)}>
+                  Open
+                </button>
+              )}
+            </p>
+          )}
+
+          {together.length > 0 && (
+            <div className="field">
+              <span className="muted">Where we go</span>
+              <div className="platform-toggles attendees">
+                {together.slice(0, 4).map(r => (
+                  <span key={r.place.id} className="toggle on" style={{ cursor: 'default' }} title={`Last ${fmtDate(r.lastAt)}`}>
+                    {r.place.emoji ? `${r.place.emoji} ` : ''}
+                    {r.place.name}
+                    <small className="muted"> ×{r.count}</small>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {ideas && (
             <ul className="person-ideas">
-              {ideas.map(i => (
-                <li key={i.title}>
+              {ideas.map((i, idx) => (
+                <li key={`${idx}:${i.title}`}>
                   <button type="button" className="person-idea" onClick={() => onPlan(i.title)} title="Turn into a task">
                     <strong>{i.title}</strong>
                     <small>{i.why}</small>
@@ -435,7 +485,7 @@ function PersonRow({
   )
 }
 
-export function People({ people, places = [], tasks, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask }: Props) {
+export function People({ people, places = [], tasks, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
   const [group, setGroup] = useState<GroupFilter>('all')
@@ -445,6 +495,7 @@ export function People({ people, places = [], tasks, onSave, onDelete, onLogVisi
   const [year, setYear] = useState(() => new Date().getFullYear())
 
   const allStats = useMemo(() => people.map(p => personStats(p, tasks)), [people, tasks])
+  const favouriteNames = useMemo(() => favourites(places, tasks, people).map(s => s.place.name), [places, tasks, people])
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -577,6 +628,10 @@ export function People({ people, places = [], tasks, onSave, onDelete, onLogVisi
                   onLog={() => setLogging(s.person)}
                   onPlan={title => onPlan(s.person, title)}
                   onOpenTask={onOpenTask}
+                  placesTogether={places.length ? placesWith(s.person.id, places, tasks) : undefined}
+                  favouriteNames={favouriteNames}
+                  journal={journal}
+                  onOpenJournal={onOpenJournal}
                 />
               ))}
             </ul>

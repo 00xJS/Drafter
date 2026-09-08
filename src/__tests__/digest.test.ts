@@ -95,3 +95,82 @@ describe('digest buildDigest + visibility', () => {
     expect(localParts(now, 'Not/AZone').day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
+
+describe('digest places line', () => {
+  const now = new Date('2026-09-08T09:00:00.000Z')
+  const outing = (placeId: string, completedAt: string) => ({ kind: 'task', id: `o-${placeId}`, status: 'done', completedAt, placeId, title: 'Dinner' })
+
+  it('never lists a place without a cadence, and only overdue ones with a cadence', () => {
+    const items = [
+      { kind: 'place', id: 'nopi', name: 'Nopi', category: 'restaurant', createdAt: '2026-01-01T00:00:00.000Z' },
+      { kind: 'place', id: 'parc', name: 'Parc', category: 'outdoors', cadenceDays: 30, createdAt: '2026-01-01T00:00:00.000Z' },
+      { kind: 'place', id: 'cafe', name: 'Cafe', category: 'cafe', cadenceDays: 30, createdAt: '2026-01-01T00:00:00.000Z' },
+      { kind: 'place', id: 'new', name: 'Fresh', category: 'bar', cadenceDays: 30, createdAt: '2026-01-01T00:00:00.000Z' },
+      outing('nopi', '2025-01-01T12:00:00.000Z'),
+      outing('parc', '2026-05-01T12:00:00.000Z'), // 129d: overdue
+      outing('cafe', '2026-08-01T12:00:00.000Z'), // 38d: due, not overdue
+    ]
+    const d = buildDigest(items, 'UTC', now)
+    expect(d.placesDue).toEqual(['Parc (129d)'])
+    expect(d.lines).toContain('Been a while: Parc (129d)')
+    expect(d.lines.join('\n')).not.toContain('Nopi')
+    expect(d.lines.join('\n')).not.toContain('Fresh')
+  })
+
+  it('suppresses a place for a week after it was nudged, keyed by place id', () => {
+    const items = [
+      { kind: 'place', id: 'parc', name: 'Parc', category: 'outdoors', cadenceDays: 30, createdAt: '2026-01-01T00:00:00.000Z' },
+      outing('parc', '2026-05-01T12:00:00.000Z'),
+    ]
+    const first = buildDigest(items, 'UTC', now, {})
+    expect(first.placesDue).toEqual(['Parc (129d)'])
+    expect(first.nudgedNext.parc).toBe('2026-09-08')
+    const second = buildDigest(items, 'UTC', now, first.nudgedNext)
+    expect(second.placesDue).toEqual([])
+    expect(second.lines.some((l: string) => l.startsWith('Been a while'))).toBe(false)
+  })
+
+  it('caps the line at three names', () => {
+    const items = ['a', 'b', 'c', 'd'].flatMap(id => [
+      { kind: 'place', id, name: id.toUpperCase(), category: 'other', cadenceDays: 7, createdAt: '2026-01-01T00:00:00.000Z' },
+      outing(id, '2026-05-01T12:00:00.000Z'),
+    ])
+    const d = buildDigest(items, 'UTC', now)
+    expect(d.lines.find((l: string) => l.startsWith('Been a while'))).toBe('Been a while: A (129d), B (129d), C (129d), +1 more')
+  })
+})
+
+describe('digest kitchen line', () => {
+  it('adds tonight\'s dinner from the household meal plan', () => {
+    const now = new Date('2026-09-08T09:00:00.000Z')
+    const items = [
+      { kind: 'recipe', id: 'r1', name: 'Pasta', ingredients: [{ id: 'a', name: 'Spaghetti' }, { id: 'b', name: 'Garlic' }], tags: [] },
+      { kind: 'meal', id: 'meal~2026-09-08~dinner', date: '2026-09-08', slot: 'dinner', recipeId: 'r1', title: 'Pasta' },
+      { kind: 'meal', id: 'meal~2026-09-09~dinner', date: '2026-09-09', slot: 'dinner', title: 'Leftovers' },
+    ]
+    const d = buildDigest(items, 'UTC', now)
+    expect(d.tonight).toBe('Tonight: Pasta (2 ingredients)')
+    expect(d.lines).toContain('Tonight: Pasta (2 ingredients)')
+    expect(buildDigest([], 'UTC', now).tonight).toBeNull()
+  })
+})
+
+describe('visibleItemsFor carries ownership', () => {
+  it('attaches ownerId from the row so personal kinds can be told apart', () => {
+    const rows = [
+      { user_id: 'u1', data: { kind: 'journal', id: 'j1', date: '2026-09-08', body: 'mine' } },
+      { user_id: 'u2', data: { kind: 'journal', id: 'j2', date: '2026-09-08', body: 'theirs' } },
+      { user_id: null, data: { kind: 'task', id: 't1', title: 'legacy' } },
+    ]
+    const items = visibleItemsFor(rows, 'u1', ['u1', 'u2'], 'u1') as { id: string; kind: string; ownerId?: string }[]
+    expect(items.find(i => i.id === 'j1')?.ownerId).toBe('u1')
+    // a peer's journal never reaches my digest at all — the policy hides it and so does this mirror
+    expect(items.find(i => i.id === 'j2')).toBeUndefined()
+    expect(items.find(i => i.id === 't1')?.ownerId).toBeUndefined()
+    const peerTask = visibleItemsFor([{ user_id: 'u2', data: { kind: 'task', id: 't2', title: 'shared chore' } }], 'u1', ['u1', 'u2'], 'u1')
+    expect(peerTask).toHaveLength(1)
+    // what upsertSundayReview does with it: only my own diary reaches the prompt
+    const mine = items.filter(i => i.kind === 'journal' && (i.ownerId == null || i.ownerId === 'u1'))
+    expect(mine.map(i => i.id)).toEqual(['j1'])
+  })
+})

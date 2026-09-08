@@ -54,7 +54,7 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
   }, [tasks])
 
   function exportJSON() {
-    const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.allItems }
+    const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.visibleItems }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

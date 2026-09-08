@@ -4,11 +4,15 @@
 import { legacyPostToTask } from './domain.mjs'
 import { seenStatus, upcomingOccasions, plannedVisit } from './people.mjs'
 import { bucketByDue } from './today.mjs'
+import { tonightLine } from './kitchen.mjs'
+import { placeCadenceStatus } from './places.mjs'
 
 const DAY = 86_400_000
-/** Don't re-nag the same person more often than this. */
+/** Don't re-nag the same person (or place) more often than this. */
 const PERSON_NUDGE_GAP_DAYS = 7
 const NEVER_MIN_AGE_DAYS = 30
+/** Kinds that belong to one account even inside a household (same set as src/store.ts). */
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar'])
 
 /** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
 export function localParts(date, tz) {
@@ -32,18 +36,26 @@ const dayKeyIn = (iso, tz) => localParts(iso, tz).day
 /** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
 export function visibleItemsFor(rows, userId, peerIds, ownerId) {
   const visible = new Set([userId, ...(peerIds ?? [])])
+  // Mirrors the posts policy: a peer's rows are visible except personal kinds
+  // (journal, review, calendar), which only their owner ever sees. ownerId
+  // rides along (as sync_posts does on read) so callers can tell whose row it is.
   return (rows ?? [])
-    .filter(r => visible.has(r.user_id) || (r.user_id === null && userId === ownerId))
-    .map(r => legacyPostToTask(r.data))
+    .filter(r => {
+      if (r.user_id === userId) return true
+      if (r.user_id === null) return userId === ownerId
+      return visible.has(r.user_id) && !PERSONAL_KINDS.has(r.data?.kind ?? 'task')
+    })
+    .map(r => ({ ...legacyPostToTask(r.data), ownerId: r.user_id ?? undefined }))
 }
 
 /**
- * Morning digest lines. `nudged` is { personId: dayKey } — a name repeats at
- * most every PERSON_NUDGE_GAP_DAYS. Returns { …, nudgedNext } to persist.
+ * Morning digest lines. `nudged` is { personId | placeId: dayKey } — a name
+ * repeats at most every PERSON_NUDGE_GAP_DAYS. Returns { …, nudgedNext } to persist.
  */
 export function buildDigest(items, tz, now, nudged = {}) {
   const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
   const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
+  const places = items.filter(i => i.kind === 'place' && !i.deletedAt)
   const today = localParts(now, tz).day
   const { overdue, dueToday } = bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) })
   const nowMs = now.getTime()
@@ -72,14 +84,33 @@ export function buildDigest(items, tz, now, nudged = {}) {
     if (today) nudgedNext[p.id] = today
   }
 
+  // Places only nag when the user set a rhythm, and only once clearly overdue
+  // (1.5× the cadence) — merely "due" stays on Today, never in the inbox.
+  const placesDue = []
+  for (const p of places) {
+    const { status, daysSince } = placeCadenceStatus(p, tasks, now)
+    if (status !== 'overdue') continue
+    const lastNudge = nudgedNext[p.id]
+    if (lastNudge && today) {
+      const gap = (Date.parse(today) - Date.parse(lastNudge)) / DAY
+      if (Number.isFinite(gap) && gap < PERSON_NUDGE_GAP_DAYS) continue
+    }
+    placesDue.push(`${p.name} (${daysSince ?? '?'}d)`)
+    if (today) nudgedNext[p.id] = today
+  }
+
   const occasions = upcomingOccasions(people, 21, now, today).map(
     o => `${o.person.name}'s ${o.kind}${o.daysUntil === 0 ? ' today' : ` in ${o.daysUntil}d`}`,
   )
+  // the week's meals are household-shared, so tonight's dinner is everyone's line
+  const tonight = today ? tonightLine(items.filter(i => i.kind === 'meal'), items.filter(i => i.kind === 'recipe' && !i.deletedAt), today) : null
 
   const lines = []
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
   if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.slice(0, 3).join(', ')}${peopleDue.length > 3 ? `, +${peopleDue.length - 3} more` : ''}`)
-  return { overdue, dueToday, occasions, peopleDue, lines, nudgedNext }
+  if (placesDue.length) lines.push(`Been a while: ${placesDue.slice(0, 3).join(', ')}${placesDue.length > 3 ? `, +${placesDue.length - 3} more` : ''}`)
+  if (tonight) lines.push(tonight)
+  return { overdue, dueToday, occasions, peopleDue, placesDue, tonight, lines, nudgedNext }
 }

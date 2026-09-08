@@ -107,6 +107,7 @@ const handler = async req => {
         publicKey: process.env.VAPID_PUBLIC_KEY ?? null,
         subscriptions: (s?.push_subscriptions ?? []).map(x => x.endpoint),
         digestEmail: !!s?.digest_email,
+        digestJournal: !!s?.digest_journal,
         // the client must render the SAVED hour, else an unrelated toggle
         // writes its default back over the user's choice
         digestHour: Number.isInteger(s?.digest_hour) ? s.digest_hour : 8,
@@ -160,6 +161,9 @@ const handler = async req => {
     if (body.action === 'prefs') {
       await settingsSet(user.id, {
         digest_email: !!body.digestEmail,
+        // opt-in: Sunday's unattended draft may read the week's journal; only written when sent,
+        // so a toggle saved before migration 20260915 lands does not fail on the missing column
+        ...(typeof body.digestJournal === 'boolean' ? { digest_journal: body.digestJournal } : {}),
         timezone: typeof body.timezone === 'string' ? body.timezone : (s.timezone ?? null),
         digest_hour: Number.isInteger(body.digestHour) ? Math.min(23, Math.max(0, body.digestHour)) : (s.digest_hour ?? 8),
       })

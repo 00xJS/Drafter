@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
+  CADENCE_META,
+  Cadence,
   PLACE_CATEGORIES,
   PLACE_CATEGORY_META,
   PROJECT_COLORS,
@@ -9,7 +11,9 @@ import {
   Task,
 } from '../types'
 import { newerStamp } from '../itemops'
-import { PlaceStats, placeStats } from '../places'
+import { PlaceStats, favourites, lapsed, placeStats } from '../places'
+import { SEEN_META } from '../people'
+import { OutingIdea, suggestOuting } from '../ai'
 import { Bars } from './People'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
@@ -23,19 +27,28 @@ interface Props {
   onLogOuting(place: Place, atIso: string, note: string, peopleIds: string[]): void
   onPlan(place: Place): void
   onOpenTask(t: Task): void
+  /** A row to expand on arrival (from search); consumed once. */
+  openId?: string | null
+  onOpenConsumed?(): void
+  /** Turn an outing idea into a task. */
+  onNewTask?(preset: Partial<Task>): void
 }
 
 type CategoryFilter = 'all' | PlaceCategory
-type SortKey = 'recent' | 'most' | 'az' | 'za' | 'longest'
+type SortKey = 'attention' | 'recent' | 'most' | 'az' | 'za' | 'longest'
 
 // Same wording as the People sort, with "been" instead of "seen".
 const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'attention', label: 'Needs attention' },
   { key: 'az', label: 'A to Z' },
   { key: 'za', label: 'Z to A' },
   { key: 'recent', label: 'Most recently been' },
   { key: 'longest', label: 'Least recently been' },
   { key: 'most', label: 'Most visited' },
 ]
+
+// Needs attention: overdue, due, never (a rhythm but no outing yet), then the rest by most recently been.
+const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3 }
 
 function PlaceForm({
   place,
@@ -52,6 +65,8 @@ function PlaceForm({
   const [emoji, setEmoji] = useState(place?.emoji ?? '')
   const [category, setCategory] = useState<PlaceCategory>(place?.category ?? 'restaurant')
   const [color, setColor] = useState(place?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
+  // No target by default: a place only nags when you ask it to.
+  const [cadence, setCadence] = useState<Cadence | ''>((place?.cadenceDays as Cadence | undefined) ?? '')
   const [notes, setNotes] = useState(place?.notes ?? '')
   const save = () => {
     if (!name.trim()) return
@@ -63,6 +78,7 @@ function PlaceForm({
       emoji: emoji.trim() || undefined,
       category,
       color,
+      cadenceDays: cadence === '' ? undefined : cadence,
       notes: notes.trim() || undefined,
       createdAt: place?.createdAt ?? now,
       updatedAt: place ? newerStamp(place.updatedAt) : now,
@@ -99,6 +115,19 @@ function PlaceForm({
               ))}
             </div>
           </div>
+          <label className="field">
+            <span>
+              How often do you want to go back? <small>(only then does it nudge)</small>
+            </span>
+            <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
+              <option value="">No target — just track it</option>
+              {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
+                <option key={c} value={c}>
+                  {CADENCE_META[c]}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="field">
             <span>Color</span>
             <div className="swatches">
@@ -233,6 +262,8 @@ function PlaceRow({
 }) {
   const { place } = stats
   const cat = PLACE_CATEGORY_META[place.category]
+  // Only a place with a rhythm gets a badge; the rest are just tracked.
+  const meta = stats.status === 'none' ? null : SEEN_META[stats.status]
   return (
     <li className={open ? 'person-row open' : 'person-row'}>
       <button className="person-summary" onClick={onToggle} aria-expanded={open}>
@@ -253,6 +284,11 @@ function PlaceRow({
             <small>90d</small>
           </span>
         </span>
+        {meta && (
+          <span className="badge" style={{ background: meta.bg, color: meta.color }}>
+            {meta.label}
+          </span>
+        )}
         <span className="person-caret" aria-hidden>
           {open ? '▾' : '▸'}
         </span>
@@ -321,15 +357,60 @@ function PlaceRow({
   )
 }
 
-export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask }: Props) {
+export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask }: Props) {
   const [editing, setEditing] = useState<{ place?: Place } | null>(null)
   const [logging, setLogging] = useState<Place | null>(null)
   const [category, setCategory] = useState<CategoryFilter>('all')
-  const [sort, setSort] = useState<SortKey>('recent')
+  // "Needs attention" only earns the default once at least one place has a rhythm.
+  const [sortChoice, setSortChoice] = useState<SortKey | null>(null)
+  const sort: SortKey = sortChoice ?? (places.some(p => p.cadenceDays) ? 'attention' : 'recent')
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
+  const [ideasBusy, setIdeasBusy] = useState(false)
+  const [ideasError, setIdeasError] = useState('')
+
+  useEffect(() => {
+    if (!wantOpen) return
+    setOpenId(wantOpen)
+    setQ('')
+    setCategory('all')
+    onOpenConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantOpen])
 
   const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people)), [places, tasks, people])
+
+  const getIdeas = async () => {
+    setIdeasBusy(true)
+    setIdeasError('')
+    try {
+      const row = (s: PlaceStats) => ({
+        name: s.place.name,
+        category: PLACE_CATEGORY_META[s.place.category].label,
+        times: s.visits.length,
+        lastWent: s.lastAt ? fmtDate(s.lastAt) : 'never',
+      })
+      const recent = tasks
+        .filter(t => t.status === 'done' && t.completedAt && t.placeId)
+        .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
+        .slice(0, 6)
+        .map(t => ({ name: places.find(p => p.id === t.placeId)?.name ?? t.title, when: fmtDate(t.completedAt) }))
+      setIdeas(
+        await suggestOuting({
+          weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
+          favourites: favourites(places, tasks, people).slice(0, 6).map(row),
+          lapsed: lapsed(places, tasks, people).slice(0, 6).map(row),
+          recent,
+          allNames: places.map(p => p.name),
+        }),
+      )
+    } catch (e) {
+      setIdeasError((e as Error).message)
+    } finally {
+      setIdeasBusy(false)
+    }
+  }
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -337,7 +418,14 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
       .filter(s => category === 'all' || s.place.category === category)
       .filter(s => !needle || s.place.name.toLowerCase().includes(needle) || (s.place.notes ?? '').toLowerCase().includes(needle))
     const sorted = [...list]
-    if (sort === 'az') sorted.sort((a, b) => a.place.name.localeCompare(b.place.name))
+    if (sort === 'attention')
+      sorted.sort(
+        (a, b) =>
+          ATTENTION_RANK[a.status] - ATTENTION_RANK[b.status] ||
+          (b.lastAt ?? '').localeCompare(a.lastAt ?? '') ||
+          a.place.name.localeCompare(b.place.name),
+      )
+    else if (sort === 'az') sorted.sort((a, b) => a.place.name.localeCompare(b.place.name))
     else if (sort === 'za') sorted.sort((a, b) => b.place.name.localeCompare(a.place.name))
     else if (sort === 'most') sorted.sort((a, b) => b.visits.length - a.visits.length)
     else if (sort === 'longest')
@@ -345,6 +433,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
     else sorted.sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? '') || a.place.name.localeCompare(b.place.name))
     return sorted
   }, [allStats, category, sort, q])
+
+  const beenAWhile = useMemo(() => shown.filter(s => s.status === 'due' || s.status === 'overdue').length, [shown])
 
   const year = new Date().getFullYear()
   const outingsThisYear = useMemo(() => {
@@ -361,10 +451,54 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
           <p className="chart-sub">Where you've been, how often, and who you usually go with.</p>
         </div>
         <span className="spacer" />
+        {places.length > 0 && (
+          <button className="btn" disabled={ideasBusy} onClick={getIdeas} title="Ideas drawn from your own places">
+            {ideasBusy ? 'Thinking…' : '✨ Where should we go?'}
+          </button>
+        )}
         <button className="btn primary" onClick={() => setEditing({})}>
           + Add place
         </button>
       </div>
+
+      {(ideas || ideasError) && (
+        <section className="chart-card">
+          <header className="chart-head">
+            <div>
+              <h3>Where should we go?</h3>
+              <p className="chart-sub">From your favourites and the places you've drifted from — tap one to plan it</p>
+            </div>
+            <button className="btn subtle" onClick={() => setIdeas(null)} aria-label="Dismiss ideas">
+              ✕
+            </button>
+          </header>
+          {ideasError ? (
+            <p className="warn">{ideasError}</p>
+          ) : (
+            <ul className="person-ideas">
+              {ideas!.map((i, idx) => {
+                const target = i.placeName ? places.find(p => p.name === i.placeName) : undefined
+                return (
+                  <li key={`${idx}:${i.title}`}>
+                    <button
+                      type="button"
+                      className="person-idea"
+                      title="Turn into a task"
+                      onClick={() => onNewTask?.({ title: i.title, status: 'todo', placeId: target?.id, tags: ['visit'] })}
+                    >
+                      <strong>
+                        {target ? `${target.emoji ?? PLACE_CATEGORY_META[target.category].emoji} ` : ''}
+                        {i.title}
+                      </strong>
+                      <small>{i.why}</small>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      )}
 
       {places.length === 0 ? (
         <div className="chart-card">
@@ -393,7 +527,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
             <input className="search people-search" placeholder="Find a place…" value={q} onChange={e => setQ(e.target.value)} />
             <label className="people-sort">
               Sort
-              <select value={sort} onChange={e => setSort(e.target.value as SortKey)}>
+              <select value={sort} onChange={e => setSortChoice(e.target.value as SortKey)}>
                 {SORTS.map(s => (
                   <option key={s.key} value={s.key}>
                     {s.label}
@@ -415,6 +549,10 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
             <div className="stat-tile">
               <div className="stat-label">Outings this year</div>
               <div className="stat-value">{outingsThisYear}</div>
+            </div>
+            <div className="stat-tile" title="Places with a rhythm that are due or overdue a return">
+              <div className="stat-label">Been a while</div>
+              <div className="stat-value">{beenAWhile}</div>
             </div>
           </div>
 

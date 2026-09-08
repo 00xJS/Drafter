@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Person, Project, STATUS_META, Task } from '../types'
+import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
+import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
 
 interface Props {
   tasks: Task[]
   projects: Project[]
   people: Person[]
+  places?: Place[]
+  journal?: JournalEntry[]
   onOpenTask(t: Task): void
   onOpenProject(p: Project): void
   onOpenPerson(p: Person): void
+  onOpenPlace?(p: Place): void
+  onOpenJournal?(e: JournalEntry): void
   onSaw?(p: Person): void
   onCreateTask(title: string, openEditor?: boolean): void
   onClose(): void
@@ -19,6 +24,8 @@ type Hit =
   | { kind: 'task'; score: number; task: Task; where: string }
   | { kind: 'project'; score: number; project: Project; where: string }
   | { kind: 'person'; score: number; person: Person; where: string }
+  | { kind: 'place'; score: number; place: Place; where: string }
+  | { kind: 'journal'; score: number; entry: JournalEntry; where: string }
   | { kind: 'create'; score: number; title: string }
   | { kind: 'recent'; score: number; task: Task }
 
@@ -35,7 +42,7 @@ function score(haystack: string, needle: string, weight: number): number {
 const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
 
 /** Cmd/Ctrl+K palette: find anything, or create a task from what you typed. */
-export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onOpenPerson, onSaw, onCreateTask, onClose }: Props) {
+export function Search({ tasks, projects, people, places = [], journal = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onClose }: Props) {
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -78,6 +85,17 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
       const s = score(p.name, needle, 12) + score(p.notes ?? '', needle, 3)
       if (s > 0) out.push({ kind: 'person', score: s, person: p, where: score(p.name, needle, 1) ? '' : 'in notes' })
     }
+    for (const p of places) {
+      const s = score(p.name, needle, 12) + score(p.notes ?? '', needle, 3)
+      if (s > 0) out.push({ kind: 'place', score: s, place: p, where: score(p.name, needle, 1) ? '' : 'in notes' })
+    }
+    for (const e of journal) {
+      const s = score(e.body, needle, 5)
+      if (s > 0) {
+        const i = e.body.toLowerCase().indexOf(needle)
+        out.push({ kind: 'journal', score: s, entry: e, where: excerpt(e.body.slice(Math.max(0, i - 30)), 90) })
+      }
+    }
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
     const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }
@@ -85,7 +103,7 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
     return top
-  }, [q, tasks, projects, people, projectName])
+  }, [q, tasks, projects, people, places, journal, projectName])
 
   useEffect(() => setCursor(0), [q])
 
@@ -94,6 +112,8 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
     if (h.kind === 'task' || h.kind === 'recent') onOpenTask(h.task)
     else if (h.kind === 'project') onOpenProject(h.project)
     else if (h.kind === 'person') onOpenPerson(h.person)
+    else if (h.kind === 'place') onOpenPlace?.(h.place)
+    else if (h.kind === 'journal') onOpenJournal?.(h.entry)
     else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
   }
 
@@ -104,7 +124,7 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
           ref={input}
           className="search-input"
           value={q}
-          placeholder="Search tasks, notes, projects, people… or create task… Enter"
+          placeholder="Search tasks, notes, projects, people, places, journal… or create task… Enter"
           onChange={e => setQ(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Escape') onClose()
@@ -176,6 +196,33 @@ export function Search({ tasks, projects, people, onOpenTask, onOpenProject, onO
                       {h.project.emoji ? `${h.project.emoji} ` : ''}
                       {h.project.name}
                       <small>Project{h.where ? ` · ${h.where}` : ''}</small>
+                    </span>
+                  </li>
+                )
+              if (h.kind === 'place')
+                return (
+                  <li key={h.place.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                    <span className="search-kind">
+                      <span className="person-avatar small" style={{ background: h.place.color }}>
+                        {h.place.emoji ?? PLACE_CATEGORY_META[h.place.category].emoji}
+                      </span>
+                    </span>
+                    <span className="search-main">
+                      {h.place.name}
+                      <small>
+                        {PLACE_CATEGORY_META[h.place.category].label}
+                        {h.where ? ` · ${h.where}` : ''}
+                      </small>
+                    </span>
+                  </li>
+                )
+              if (h.kind === 'journal')
+                return (
+                  <li key={h.entry.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                    <span className="search-kind">{h.entry.mood ? MOOD_META[h.entry.mood].emoji : '📓'}</span>
+                    <span className="search-main">
+                      {relativeDayLabel(h.entry.date)}
+                      <small>Journal · {h.where}</small>
                     </span>
                   </li>
                 )

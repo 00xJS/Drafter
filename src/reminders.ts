@@ -44,6 +44,11 @@ export interface BuildReminderOpts {
    * "Due now" rows so phone and server don't both fire. Occasion rows stay.
    */
   skipTaskDue?: boolean
+  /**
+   * Keep titles and names off the lock screen: "Something is due" / "An
+   * occasion today" with the detail one tap away inside the app.
+   */
+  generic?: boolean
 }
 
 export function buildLocalReminders(
@@ -64,8 +69,8 @@ export function buildLocalReminders(
       if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
       out.push({
         id: reminderId(`task:${t.id}`),
-        title: `Due now: ${t.title || 'Untitled task'}`,
-        body: t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
+        title: opts.generic ? 'Something is due' : `Due now: ${t.title || 'Untitled task'}`,
+        body: opts.generic ? 'Open Drafter to see what.' : t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
         at,
         url: `/?task=${encodeURIComponent(t.id)}`,
         badge: 1,
@@ -78,8 +83,8 @@ export function buildLocalReminders(
     if (at.getTime() <= nowMs) continue
     out.push({
       id: reminderId(`occasion:${o.person.id}:${o.kind}:${at.getFullYear()}`),
-      title: `${o.person.name}'s ${o.kind} today`,
-      body: o.years ? `${o.years} years. Send a message or plan something.` : 'Send a message or plan something.',
+      title: opts.generic ? 'An occasion today' : `${o.person.name}'s ${o.kind} today`,
+      body: opts.generic ? 'Open Drafter to see whose.' : o.years ? `${o.years} years. Send a message or plan something.` : 'Send a message or plan something.',
       at,
       url: `/?saw=${encodeURIComponent(o.person.id)}`,
       badge: 1,

@@ -162,3 +162,25 @@ describe('migrateStored', () => {
     expect(migrateStored('x')).toBeNull()
   })
 })
+
+describe('purge tombstones survive every sanitizer', () => {
+  const now = '2026-09-08T10:00:00.000Z'
+  const kinds = ['task', 'project', 'person', 'place', 'recipe', 'template', 'meal', 'grocery', 'journal', 'review', 'calendar'] as const
+  it('a content-free tombstone of any kind round-trips with deletedAt intact', async () => {
+    const { purgeTombstone } = await import('../sync')
+    for (const kind of kinds) {
+      const id = kind === 'journal' ? 'journal~2026-09-07~abcd' : `${kind}-1`
+      const out = sanitizeItem(purgeTombstone(kind, id, now))
+      expect(out, kind).not.toBeNull()
+      expect(out?.kind, kind).toBe(kind)
+      expect(out?.deletedAt, kind).toBe(now)
+    }
+    expect((sanitizeItem(purgeTombstone('journal', 'journal~2026-09-07~abcd', now)) as { date: string }).date).toBe('2026-09-07')
+  })
+
+  it('still refuses a live record that lacks its identity field', () => {
+    expect(sanitizeItem({ kind: 'person', id: 'p', updatedAt: now })).toBeNull()
+    expect(sanitizeItem({ kind: 'meal', id: 'm', updatedAt: now, date: '2026-09-08' })).toBeNull()
+    expect(sanitizeItem({ kind: 'journal', id: 'x', updatedAt: now })).toBeNull()
+  })
+})

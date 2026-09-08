@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
-import { outingsAt, placeStats, placesWith } from '../places'
+import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, placeStats, placesWith } from '../places'
 import { Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
@@ -56,6 +56,13 @@ describe('sanitizePlace', () => {
     const p = sanitizePlace({ kind: 'place', id: 'x', name: 'Park', category: 'spaceship', color: 'red' })
     expect(p?.category).toBe('other')
     expect(p?.color).toMatch(/^#/)
+  })
+
+  it('keeps a positive rounded cadence and drops anything else', () => {
+    expect(sanitizePlace(place({ cadenceDays: 30.4 }))?.cadenceDays).toBe(30)
+    expect(sanitizePlace(place({ cadenceDays: 0 }))?.cadenceDays).toBeUndefined()
+    expect(sanitizePlace({ ...place(), cadenceDays: 'monthly' })?.cadenceDays).toBeUndefined()
+    expect(sanitizePlace(place())?.cadenceDays).toBeUndefined()
   })
 
   it('keeps a tombstone with a blank name so deletes still sync', () => {
@@ -125,5 +132,87 @@ describe('places insights', () => {
     const rows = placesWith('mum', [place(), nopi], tasks)
     expect(rows.map(r => r.place.id)).toEqual(['pl1', 'nopi'])
     expect(rows[0].count).toBe(2)
+  })
+})
+
+describe('matchPlace / favourites / lapsed', () => {
+  it('matches an exact name, an alias-free contained name, and refuses a fuzzy guess', () => {
+    const nopi = place({ id: 'nopi', name: 'Nopi' })
+    const parc = place({ id: 'parc', name: 'Parc Sant Joan', category: 'outdoors' })
+    expect(matchPlace('NOPI, 21 Warwick St', [place(), nopi, parc])?.id).toBe('nopi')
+    expect(matchPlace("Franco's", [place(), nopi])?.id).toBe('pl1')
+    expect(matchPlace('Dinner at Parc Sant Joan (main gate)', [nopi, parc])?.id).toBe('parc')
+    expect(matchPlace('Nopisserie bakery', [nopi])).toBeUndefined()
+    expect(matchPlace('', [nopi])).toBeUndefined()
+    expect(normalisePlaceText('  Café  Kafka, 12 ')).toBe('cafe kafka 12')
+  })
+
+  it('favourites need two outings this year; lapsed needs a real gap', () => {
+    const now = new Date('2026-09-08T12:00:00.000Z')
+    const often = place({ id: 'often', name: 'Often' })
+    const once = place({ id: 'once', name: 'Once' })
+    const old = place({ id: 'old', name: 'Old haunt' })
+    const tasks = [
+      task({ id: 'a', placeId: 'often', completedAt: '2026-08-01T12:00:00.000Z' }),
+      task({ id: 'b', placeId: 'often', completedAt: '2026-08-20T12:00:00.000Z' }),
+      task({ id: 'c', placeId: 'once', completedAt: '2026-08-25T12:00:00.000Z' }),
+      task({ id: 'd', placeId: 'old', completedAt: '2026-01-05T12:00:00.000Z' }),
+      task({ id: 'e', placeId: 'old', completedAt: '2026-02-05T12:00:00.000Z' }),
+    ]
+    expect(favourites([often, once, old], tasks, [], now).map(s => s.place.id)).toEqual(['often', 'old'])
+    expect(lapsed([often, once, old], tasks, [], now).map(s => s.place.id)).toEqual(['old'])
+  })
+})
+
+describe('placeCadenceStatus', () => {
+  const now = new Date('2026-09-08T12:00:00.000Z')
+  const went = (daysAgo: number, over: Partial<Task> = {}) =>
+    task({ id: `d${daysAgo}`, completedAt: new Date(now.getTime() - daysAgo * 86_400_000).toISOString(), ...over })
+
+  it('is none (never due) when no cadence is set, however long ago you went', () => {
+    const s = placeCadenceStatus(place(), [went(400)], now)
+    expect(s).toEqual({ status: 'none', reason: '' })
+    expect(placeStats(place(), [went(400)], [], now).status).toBe('none')
+  })
+
+  it('is never when a cadence is set but nothing was logged', () => {
+    const s = placeCadenceStatus(place({ cadenceDays: 30 }), [], now)
+    expect(s.status).toBe('never')
+    expect(s.reason).toBe('No outings yet — you aimed for every 30 days')
+    expect(s.cadenceDays).toBe(30)
+  })
+
+  it('is ok up to the cadence, due past it, overdue past 1.5x', () => {
+    const p = place({ cadenceDays: 30 })
+    expect(placeCadenceStatus(p, [went(30)], now).status).toBe('ok')
+    expect(placeCadenceStatus(p, [went(31)], now)).toMatchObject({ status: 'due', daysSince: 31, reason: "It's been 31 days; you aimed for every 30 days" })
+    expect(placeCadenceStatus(p, [went(45)], now).status).toBe('due')
+    expect(placeCadenceStatus(p, [went(46)], now)).toMatchObject({ status: 'overdue', reason: 'Last went 46 days ago — you aimed for every 30 days' })
+  })
+
+  it('ignores open tasks, tombstones and other places when finding the last outing', () => {
+    const p = place({ cadenceDays: 30 })
+    const tasks = [
+      went(100),
+      went(2, { status: 'todo', completedAt: undefined }),
+      went(3, { deletedAt: '2026-09-07T00:00:00.000Z' }),
+      went(4, { placeId: 'elsewhere' }),
+    ]
+    expect(placeCadenceStatus(p, tasks, now)).toMatchObject({ status: 'overdue', daysSince: 100 })
+  })
+
+  it('appends the rhythm to the list reason only when due or overdue', () => {
+    expect(placeStats(place({ cadenceDays: 30 }), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time this year — you aimed for every 30 days')
+    expect(placeStats(place({ cadenceDays: 30 }), [went(5)], [], now).reason).toBe('Last went 5 days ago · 1 time this year')
+    expect(placeStats(place(), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time this year')
+  })
+})
+
+describe('matchPlace picks the place named first', () => {
+  it('prefers the earliest-named place over a longer one later in the text', () => {
+    const nopi = place({ id: 'nopi', name: 'Nopi' })
+    const soho = place({ id: 'soho', name: 'Soho House', category: 'venue' })
+    expect(matchPlace('Nopi, then drinks at Soho House', [soho, nopi])?.id).toBe('nopi')
+    expect(matchPlace('Soho House then Nopi', [nopi, soho])?.id).toBe('soho')
   })
 })

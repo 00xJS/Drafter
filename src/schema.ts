@@ -18,6 +18,8 @@ import {
   GroceryLine,
   GroceryState,
   GROCERY_STATES,
+  JournalEntry,
+  Mood,
   Template,
   TemplateMilestone,
   TemplateTask,
@@ -242,6 +244,7 @@ export function sanitizeTask(raw: unknown): Task | null {
     assigneeId: idOrUndefined(r.assigneeId),
     ownerId: idOrUndefined(r.ownerId),
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -272,6 +275,7 @@ export function sanitizeProject(raw: unknown): Project | null {
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -281,20 +285,23 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const url = str(r.url)?.trim()
-  if (!id || !url) return null
+  const deletedAt = isoDate(r.deletedAt)
+  // a purge tombstone carries no url; it must still round-trip so peers drop the record
+  if (!id || (!url && !deletedAt)) return null
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   return {
     kind: 'calendar',
     id,
-    name: str(r.name)?.trim() || 'Calendar',
-    url,
+    name: str(r.name)?.trim() || (deletedAt ? '' : 'Calendar'),
+    url: url ?? '',
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[7],
     enabled: r.enabled !== false,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -302,7 +309,7 @@ const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
-const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery'])
+const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -310,14 +317,15 @@ export function sanitizePerson(raw: unknown): Person | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const name = str(r.name)?.trim()
-  if (!id || !name) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!name && !deletedAt)) return null
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   const cadence = Number(r.cadenceDays)
   return {
     kind: 'person',
     id,
-    name,
+    name: name ?? '',
     emoji: str(r.emoji)?.trim() || undefined,
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[5],
     group: typeof r.group === 'string' && PERSON_GROUP_SET.has(r.group) ? (r.group as PersonGroup) : 'family',
@@ -329,6 +337,7 @@ export function sanitizePerson(raw: unknown): Person | null {
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -342,6 +351,7 @@ export function sanitizePlace(raw: unknown): Place | null {
   if (!id || (!name && !deletedAt)) return null
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
+  const cadence = Number(r.cadenceDays)
   return {
     kind: 'place',
     id,
@@ -350,11 +360,13 @@ export function sanitizePlace(raw: unknown): Place | null {
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
     category:
       typeof r.category === 'string' && PLACE_CATEGORY_SET.has(r.category) ? (r.category as PlaceCategory) : 'other',
+    cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
     notes: str(r.notes)?.trim() || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -382,13 +394,14 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const name = str(r.name)?.trim()
-  if (!id || !name) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!name && !deletedAt)) return null
   const now = new Date().toISOString()
   const servings = Number(r.servings)
   return {
     kind: 'recipe',
     id,
-    name,
+    name: name ?? '',
     emoji: str(r.emoji)?.trim() || undefined,
     servings: Number.isFinite(servings) && servings > 0 ? Math.round(servings) : undefined,
     ingredients: sanitizeIngredients(r.ingredients),
@@ -399,6 +412,7 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -408,21 +422,23 @@ export function sanitizeMeal(raw: unknown): Meal | null {
   const id = str(r.id)
   const date = dateOnly(r.date)
   const title = str(r.title)?.trim()
-  if (!id || !date || !title) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || ((!date || !title) && !deletedAt)) return null
   const now = new Date().toISOString()
   const slot: MealSlot = typeof r.slot === 'string' && MEAL_SLOT_SET.has(r.slot) ? (r.slot as MealSlot) : 'dinner'
   return {
     kind: 'meal',
     id,
-    date,
+    date: date ?? '',
     slot,
     recipeId: idOrUndefined(r.recipeId),
-    title,
+    title: title ?? '',
     notes: str(r.notes)?.trim() || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -454,17 +470,45 @@ export function sanitizeGrocery(raw: unknown): GroceryList | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const weekKey = str(r.weekKey)?.trim()
-  if (!id || !weekKey) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!weekKey && !deletedAt)) return null
   const now = new Date().toISOString()
   return {
     kind: 'grocery',
     id,
-    weekKey,
+    weekKey: weekKey ?? '',
     items: sanitizeGroceryLines(r.items),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
+/** Coerce arbitrary data into a valid JournalEntry. A day with no text but a mood is still an entry. */
+export function sanitizeJournal(raw: unknown): JournalEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  // a purge tombstone has no date, but the day is in the id
+  const date = dateOnly(r.date) ?? (id ? /^journal~(\d{4}-\d{2}-\d{2})~/.exec(id)?.[1] : undefined)
+  if (!id || (!date && !deletedAt)) return null
+  const now = new Date().toISOString()
+  const moodN = Number(r.mood)
+  return {
+    kind: 'journal',
+    id,
+    date: date ?? '',
+    body: str(r.body) ?? '',
+    mood: Number.isInteger(moodN) && moodN >= 1 && moodN <= 5 ? (moodN as Mood) : undefined,
+    peopleIds: idList(r.peopleIds),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -474,13 +518,14 @@ export function sanitizeReview(raw: unknown): Review | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const key = str(r.key)
-  if (!id || !key) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!key && !deletedAt)) return null
   const now = new Date().toISOString()
   return {
     kind: 'review',
     id,
     period: r.period === 'month' ? 'month' : 'week',
-    key,
+    key: key ?? '',
     top: strList(r.top).slice(0, 5),
     topDone: Array.isArray(r.topDone) ? r.topDone.map(Boolean).slice(0, 5) : undefined,
     reflections: str(r.reflections)?.trim() || undefined,
@@ -489,6 +534,7 @@ export function sanitizeReview(raw: unknown): Review | null {
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -498,7 +544,8 @@ export function sanitizeTemplate(raw: unknown): Template | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const name = str(r.name)?.trim()
-  if (!id || !name) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!name && !deletedAt)) return null
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   const tasks: TemplateTask[] = []
@@ -533,7 +580,7 @@ export function sanitizeTemplate(raw: unknown): Template | null {
   return {
     kind: 'template',
     id,
-    name,
+    name: name ?? '',
     emoji: str(r.emoji)?.trim() || undefined,
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
     description: str(r.description)?.trim() || undefined,
@@ -545,6 +592,7 @@ export function sanitizeTemplate(raw: unknown): Template | null {
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
     deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
   }
 }
 
@@ -563,6 +611,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'recipe') return sanitizeRecipe(converted)
   if (converted.kind === 'meal') return sanitizeMeal(converted)
   if (converted.kind === 'grocery') return sanitizeGrocery(converted)
+  if (converted.kind === 'journal') return sanitizeJournal(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null

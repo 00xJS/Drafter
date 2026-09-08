@@ -47,6 +47,8 @@ export interface Social {
 /** Set by the server on read: which account the record belongs to. */
 export interface Owned {
   ownerId?: string
+  /** A content-free tombstone from "Delete forever": hidden from Trash, never restorable. */
+  purged?: boolean
 }
 
 export interface Task extends Owned {
@@ -196,6 +198,11 @@ export interface Place extends Owned {
   emoji?: string
   color: string
   category: PlaceCategory
+  /**
+   * Optional return rhythm ("we said monthly"), the same Cadence values people
+   * use. Absent = never nag: a place with no cadence is never due or overdue.
+   */
+  cadenceDays?: number
   notes?: string
   createdAt: string
   updatedAt: string
@@ -327,7 +334,37 @@ export interface GroceryList extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList
+/** How the day felt, 1 (rough) to 5 (great). Optional on every entry. */
+export type Mood = 1 | 2 | 3 | 4 | 5
+export const MOODS: Mood[] = [1, 2, 3, 4, 5]
+export const MOOD_META: Record<Mood, { label: string; emoji: string }> = {
+  1: { label: 'Rough', emoji: '😞' },
+  2: { label: 'Meh', emoji: '😕' },
+  3: { label: 'Okay', emoji: '😐' },
+  4: { label: 'Good', emoji: '🙂' },
+  5: { label: 'Great', emoji: '😄' },
+}
+
+/**
+ * One day's journal entry (`id` = journal~YYYY-MM-DD~random). Personal: like
+ * reviews and calendars it is never shown to other household members. Several
+ * entries for one day can exist (two devices offline) and are all kept.
+ */
+export interface JournalEntry extends Owned {
+  kind: 'journal'
+  id: string
+  /** YYYY-MM-DD */
+  date: string
+  body: string
+  mood?: Mood
+  /** People this day was about (optional). */
+  peopleIds?: string[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

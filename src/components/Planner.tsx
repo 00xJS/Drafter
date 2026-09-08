@@ -10,10 +10,11 @@ import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEv
 import { parseGithubUrl, setIssueState } from '../github'
 import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
-import { closeExternal, initNative, isNative, localRemindersEnabled, scheduleLocalReminders, clearAppBadge } from '../native'
+import { closeExternal, genericRemindersEnabled, initNative, isNative, localRemindersEnabled, scheduleLocalReminders, clearAppBadge } from '../native'
 import { buildLocalReminders, deviceHasServerPush } from '../reminders'
 import { fetchPushInfo } from '../push'
 import { paramsOf, parseLink } from '../links'
+import { appendEntry, entryOn, localDayKey } from '../journal'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
 import { Today } from './Today'
@@ -23,6 +24,7 @@ import { People } from './People'
 import { Places } from './Places'
 import { Kitchen } from './Kitchen'
 import { Review } from './Review'
+import { JournalView } from './Journal'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
@@ -39,6 +41,8 @@ const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people',
 type CalendarMode = 'month' | 'week' | 'timeline'
 const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 type PeopleTab = 'people' | 'places'
+/** The Review tab holds the look-back and the journal, as People holds Places. */
+type ReviewTab = 'review' | 'journal'
 
 const VIEW_LABELS: Record<View, string> = {
   today: 'Today',
@@ -63,16 +67,19 @@ const MORE_VIEWS: { id: View; icon: string; hint: string }[] = [
   { id: 'tasks', icon: '☑', hint: 'Searchable list, import and trash' },
   { id: 'board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
   { id: 'notes', icon: '✎', hint: 'The selected project’s notepad' },
-  { id: 'review', icon: '📊', hint: 'Weekly and monthly look-back' },
+  { id: 'review', icon: '📊', hint: 'Weekly look-back, and your journal' },
 ]
 
 const FILTER_KEY = 'drafter:project-filter'
 const CAL_MODE_KEY = 'drafter:calendar-mode'
 const PEOPLE_TAB_KEY = 'drafter:people-tab'
+const REVIEW_TAB_KEY = 'drafter:review-tab'
 
 interface Toast {
   msg: string
   undo?: () => void
+  /** A confirm step instead of an undo: the button runs `run` (e.g. a web link asking to write into the journal). */
+  action?: { label: string; run: () => void }
 }
 
 export default function Planner() {
@@ -101,6 +108,40 @@ export default function Planner() {
       return 'people'
     }
   })
+  const [reviewTab, setReviewTabState] = useState<ReviewTab>(() => {
+    try {
+      return localStorage.getItem(REVIEW_TAB_KEY) === 'journal' ? 'journal' : 'review'
+    } catch {
+      return 'review'
+    }
+  })
+  const setReviewTab = (tab: ReviewTab) => {
+    setReviewTabState(tab)
+    try {
+      localStorage.setItem(REVIEW_TAB_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }
+  /** A journal day to open for editing (from search or a link); consumed by the view. */
+  const [journalOpenDate, setJournalOpenDate] = useState<string | null>(null)
+  /** A place row to expand (from search); consumed by the Places view. */
+  const [placeOpenId, setPlaceOpenId] = useState<string | null>(null)
+  const openPlace = (id?: string) => {
+    if (id) setPlaceOpenId(id)
+    setPeopleTab('places')
+    try {
+      localStorage.setItem(PEOPLE_TAB_KEY, 'places')
+    } catch {
+      /* ignore */
+    }
+    setView('people')
+  }
+  const openJournal = (date?: string) => {
+    if (date) setJournalOpenDate(date)
+    setReviewTab('journal')
+    setView('review')
+  }
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
@@ -236,7 +277,9 @@ export default function Planner() {
       return
     }
     if (parsed.view && (VIEWS as string[]).includes(parsed.view)) setView(parsed.view as View)
-    if (parsed.tab) {
+    if (parsed.tab === 'journal') {
+      openJournal()
+    } else if (parsed.tab) {
       setPeopleTab(parsed.tab)
       try {
         localStorage.setItem(PEOPLE_TAB_KEY, parsed.tab)
@@ -244,6 +287,27 @@ export default function Planner() {
         /* ignore */
       }
       setView('people')
+    }
+    if (parsed.journal) {
+      // a line from a Shortcut / share lands in today's entry; nothing already written is touched
+      const line = parsed.journal
+      const write = () => {
+        const today = localDayKey()
+        const existing = entryOn(journalRef.current, today)
+        const next = appendEntry(existing, today, line)
+        store.upsert(next)
+        showToast(
+          'Added to today’s journal',
+          existing ? () => store.upsert({ ...existing, updatedAt: newerStamp(next.updatedAt) }) : () => store.remove(next.id),
+        )
+      }
+      // drafter://journal is the owner's own Shortcut and writes at once; any other link — a web
+      // URL, or drafter://new?journal= that a page in Safari could hand the phone — shows the line
+      // first and writes only when the button is pressed
+      if (host === 'journal') write()
+      else showToast(`Add to today’s journal: “${line.length > 80 ? line.slice(0, 79) + '…' : line}”`, undefined, { label: 'Add', run: write })
+      openJournal()
+      return
     }
     if (parsed.saw) {
       const person = store.people.find(p => p.id === parsed.saw)
@@ -289,6 +353,9 @@ export default function Planner() {
   }
   const applyLinkRef = useRef(applyLink)
   applyLinkRef.current = applyLink
+  // the deferred "Add" on a web ?journal= link must append to the entry as it is when pressed
+  const journalRef = useRef(store.journal)
+  journalRef.current = store.journal
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -375,10 +442,10 @@ export default function Planner() {
   }, [store.tasks, activeFilter, mineOnly, inHousehold, household.myId])
   const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
 
-  const showToast = (msg: string, undo?: () => void) => {
+  const showToast = (msg: string, undo?: () => void, action?: Toast['action']) => {
     window.clearTimeout(toastTimer.current)
-    setToast({ msg, undo })
-    toastTimer.current = window.setTimeout(() => setToast(null), 6000)
+    setToast({ msg, undo, action })
+    toastTimer.current = window.setTimeout(() => setToast(null), action ? 15000 : 6000)
   }
 
   // due reminders while the app is open (device-local, never a store write)
@@ -405,7 +472,7 @@ export default function Planner() {
       } catch {
         /* offline / unsigned — keep local due reminders */
       }
-      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue }))
+      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
     })()
   }
   useEffect(() => {
@@ -440,12 +507,13 @@ export default function Planner() {
     })
     showToast(`Logged a visit with ${person.name}`, () => store.remove(id))
   }
-  /** A done task dated at the outing is what "seeing someone / going somewhere" is made of. */
-  const logOuting = (o: { at: string; title: string; peopleIds?: string[]; placeId?: string; description?: string }) => {
+  /** A done task dated at the outing is what "seeing someone / going somewhere" is made of. Returns the task id. */
+  const logOuting = (o: { at: string; title: string; peopleIds?: string[]; placeId?: string; description?: string }): string => {
     const now = new Date().toISOString()
+    const id = crypto.randomUUID()
     store.upsert({
       kind: 'task',
-      id: crypto.randomUUID(),
+      id,
       title: o.title,
       description: o.description ?? '',
       status: 'done',
@@ -460,8 +528,11 @@ export default function Planner() {
     const who = (o.peopleIds ?? []).map(id => store.people.find(p => p.id === id)?.name).filter(Boolean)
     const where = o.placeId ? store.places.find(p => p.id === o.placeId)?.name : undefined
     const bits = [where, who.length ? `with ${who.join(', ')}` : ''].filter(Boolean)
-    showToast(bits.length ? `Logged ${bits.join(' ')}` : `Logged “${o.title}”`)
+    showToast(bits.length ? `Logged ${bits.join(' ')}` : `Logged “${o.title}”`, () => store.remove(id))
+    return id
   }
+  /** One-tap "Went there" from Today's cadence nudge — logged now, undo in the toast. */
+  const wentTo = (place: Place) => logOuting({ at: new Date().toISOString(), title: `Went to ${place.name}`, placeId: place.id })
   const logVisit = (person: Person, atIso: string, note: string, placeId?: string) => {
     const placeName = placeId ? store.places.find(p => p.id === placeId)?.name : undefined
     logOuting({
@@ -484,14 +555,16 @@ export default function Planner() {
     })
   }
   const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
-  const logAttendance = (ev: CalendarEvent, peopleIds: string[]) => {
-    if (peopleIds.length === 0) return
+  const logAttendance = (ev: CalendarEvent, peopleIds: string[], placeId?: string) => {
+    if (peopleIds.length === 0 && !placeId) return
     const at = ev.allDay ? new Date(`${ev.start}T12:00`).toISOString() : new Date(ev.start).toISOString()
     logOuting({
       at,
       title: ev.title,
-      description: ev.location ? `At ${ev.location}` : '',
+      // the place carries the where; free text only when no place was chosen
+      description: ev.location && !placeId ? `At ${ev.location}` : '',
       peopleIds,
+      placeId,
     })
   }
   const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
@@ -715,8 +788,11 @@ export default function Planner() {
                 tasks={filteredTasks}
                 allTasks={store.tasks}
                 people={store.people}
+                places={store.places}
                 reviews={store.reviews}
                 onPlanWith={planWith}
+                onWentTo={wentTo}
+                onPlanAt={planAt}
                 onPlanOccasion={planOccasion}
                 onSaw={sawThem}
                 onSaveReview={r => store.upsert(r)}
@@ -739,6 +815,13 @@ export default function Planner() {
                   setKitchenRecipe(r)
                   setView('kitchen')
                 }}
+                journal={store.journal}
+                onSaveJournal={e => store.upsert(e)}
+                onDeleteJournal={id => {
+                  store.remove(id)
+                  showToast('Journal entry removed', () => store.restore([id]))
+                }}
+                onOpenJournal={() => openJournal()}
               />
             )}
             {view === 'board' && (
@@ -805,7 +888,7 @@ export default function Planner() {
                 onNew={newTask}
                 onDelete={deleteTask}
                 onOpenTrash={() => setTrashOpen(true)}
-                trashCount={store.allItems.filter(i => i.deletedAt).length}
+                trashCount={store.visibleItems.filter(i => i.deletedAt && !i.purged).length}
               />
             )}
             {view === 'notes' && (
@@ -820,12 +903,38 @@ export default function Planner() {
               />
             )}
             {view === 'review' && (
+              <>
+                <div className="people-tab-seg">
+                  <span className="segmented">
+                    <button type="button" className={reviewTab === 'review' ? 'seg on' : 'seg'} onClick={() => setReviewTab('review')}>
+                      Review
+                    </button>
+                    <button type="button" className={reviewTab === 'journal' ? 'seg on' : 'seg'} onClick={() => setReviewTab('journal')}>
+                      Journal
+                    </button>
+                  </span>
+                </div>
+                {reviewTab === 'journal' ? (
+                  <JournalView
+                    entries={store.journal}
+                    people={store.people}
+                    onSave={e => store.upsert(e)}
+                    onDelete={id => {
+                      store.remove(id)
+                      showToast('Journal entry removed', () => store.restore([id]))
+                    }}
+                    openDate={journalOpenDate}
+                    onOpenDateConsumed={() => setJournalOpenDate(null)}
+                  />
+                ) : (
               <Review
                 tasks={store.tasks}
                 projects={store.projects}
                 projectMap={projectMap}
                 people={store.people}
                 reviews={store.reviews}
+                journal={store.journal}
+                places={store.places}
                 onSaveReview={r => store.upsert(r)}
                 onOpen={openTask}
                 onStatus={changeStatus}
@@ -839,6 +948,8 @@ export default function Planner() {
                 onOpenProject={openProject}
                 onNew={preset => newTask(preset)}
               />
+                )}
+              </>
             )}
             {view === 'people' && (
               <>
@@ -894,12 +1005,17 @@ export default function Planner() {
                     }
                     onPlan={planAt}
                     onOpenTask={openTask}
+                    openId={placeOpenId}
+                    onOpenConsumed={() => setPlaceOpenId(null)}
+                    onNewTask={preset => newTask(preset)}
                   />
                 ) : (
                   <People
                     people={store.people}
                     places={store.places}
                     tasks={store.tasks}
+                    journal={store.journal}
+                    onOpenJournal={date => openJournal(date)}
                     onSave={p => store.upsert(p)}
                     onDelete={id => {
                       store.remove(id)
@@ -1008,8 +1124,10 @@ export default function Planner() {
         <AttendancePicker
           event={attendance}
           people={store.people}
-          onDone={ids => {
-            logAttendance(attendance, ids)
+          places={store.places}
+          onSavePlace={p => store.upsert(p)}
+          onDone={(ids, placeId) => {
+            logAttendance(attendance, ids, placeId)
             setAttendance(null)
           }}
           onClose={() => setAttendance(null)}
@@ -1024,6 +1142,10 @@ export default function Planner() {
           onOpenTask={openTask}
           onOpenProject={openProject}
           onOpenPerson={() => setView('people')}
+          places={store.places}
+          onOpenPlace={p => openPlace(p.id)}
+          journal={store.journal}
+          onOpenJournal={e => openJournal(e.date)}
           onSaw={sawThem}
           onCreateTask={(title, openEditor) => {
             // always open the editor so parseCapture can propose fields; Shift+Enter same path
@@ -1036,7 +1158,7 @@ export default function Planner() {
 
       {trashOpen && (
         <Trash
-          items={store.allItems}
+          items={store.visibleItems}
           projectMap={projectMap}
           onRestore={id => {
             store.restore([id])
@@ -1108,6 +1230,17 @@ export default function Planner() {
               }}
             >
               Undo
+            </button>
+          )}
+          {toast.action && (
+            <button
+              className="toast-undo"
+              onClick={() => {
+                toast.action?.run()
+                setToast(null)
+              }}
+            >
+              {toast.action.label}
             </button>
           )}
           <button className="toast-close" aria-label="Dismiss" onClick={() => setToast(null)}>
