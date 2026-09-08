@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Drafter MCP server — purpose-built tools for AI agents to manage the planner:
-// projects, tasks (due dates, priorities, checklists, comments) and the social
-// posting extension.
+// projects, tasks (due dates, priorities, checklists, comments).
 //
 // Zero dependencies: speaks MCP's stdio transport (newline-delimited JSON-RPC 2.0)
 // directly, and talks to the Supabase backend with fetch. Node 18+.
@@ -12,20 +11,17 @@
 //   node mcp/server.mjs
 //
 // Every write goes through the sync_posts RPC, so the same last-write-wins
-// merge that protects the app protects agent edits too. Pre-v3 rows (social
-// posts) are converted to tasks on read, exactly like the app does.
+// merge that protects the app protects agent edits too. Pre-v3 rows (legacy
+// social posts) are converted to tasks on read, exactly like the app does.
 
 import { createInterface } from 'node:readline'
 import { randomBytes } from 'node:crypto'
 import {
-  PLATFORMS,
   PRIORITIES,
   PROJECT_STATUSES,
   RECURRENCE_FREQS,
   SOCIAL_PROJECT_ID,
   TASK_STATUSES,
-  cleanMetrics,
-  engagement,
   legacyPostToTask,
   newerStamp,
   nextOccurrence,
@@ -121,13 +117,6 @@ function oneOf(value, list, field) {
   return value
 }
 
-function checkPlatforms(platforms) {
-  if (!Array.isArray(platforms) || platforms.length === 0) throw new Error('platforms must be a non-empty array')
-  const bad = platforms.filter(p => !PLATFORMS.includes(p))
-  if (bad.length > 0) throw new Error(`Unknown platforms: ${bad.join(', ')}. Valid: ${PLATFORMS.join(', ')}`)
-  return platforms
-}
-
 function applyStatus(task, status) {
   task.status = oneOf(status, TASK_STATUSES, 'status')
   if (status === 'done') task.completedAt = task.completedAt ?? now()
@@ -149,7 +138,6 @@ function summarizeTask(t) {
     comments: t.comments?.length ?? 0,
     githubUrl: t.githubUrl ?? null,
     recurrence: t.recurrence?.freq ?? null,
-    social: t.social ? { platforms: t.social.platforms, engagement: t.status === 'done' ? engagement({ metrics: t.social.metrics }) : null } : null,
   }
 }
 
@@ -316,7 +304,7 @@ const TOOLS = [
   },
   {
     name: 'get_task',
-    description: 'Fetch one task in full (description, checklist, comments, social fields, everything) by id.',
+    description: 'Fetch one task in full (description, checklist, comments, everything) by id.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     async run({ id }) {
       return fetchTask(id)
@@ -325,7 +313,7 @@ const TOOLS = [
   {
     name: 'create_task',
     description:
-      'Create a task. Defaults: status "todo" (or "wishlist" if you say so), priority "normal". Give it a projectId from list_projects when it belongs somewhere. For a social post, pass social.platforms — the description is the post text (keep X within 280 characters; use social.variants for per-platform text).',
+      'Create a task. Defaults: status "todo" (or "wishlist" if you say so), priority "normal". Give it a projectId from list_projects when it belongs somewhere.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -341,19 +329,10 @@ const TOOLS = [
         githubUrl: { type: 'string', description: 'GitHub issue / PR / repo / project URL to link' },
         checklist: { type: 'array', items: { type: 'string' }, description: 'Initial checklist steps' },
         recurrence: { type: 'string', enum: RECURRENCE_FREQS },
-        social: {
-          type: 'object',
-          description: 'Makes this task a social post',
-          properties: {
-            platforms: { type: 'array', items: { type: 'string', enum: PLATFORMS } },
-            variants: { type: 'object', additionalProperties: { type: 'string' } },
-          },
-          required: ['platforms'],
-        },
       },
       required: ['title'],
     },
-    async run({ title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, checklist, recurrence, social }) {
+    async run({ title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, checklist, recurrence }) {
       if (!title || !String(title).trim()) throw new Error('title must not be empty')
       const stamp = now()
       const task = {
@@ -375,17 +354,6 @@ const TOOLS = [
         recurrence: recurrence ? { freq: oneOf(recurrence, RECURRENCE_FREQS, 'recurrence') } : undefined,
       }
       if (task.status === 'done') task.completedAt = stamp
-      if (social) {
-        checkPlatforms(social.platforms)
-        task.social = {
-          platforms: social.platforms,
-          variants:
-            social.variants && typeof social.variants === 'object'
-              ? Object.fromEntries(Object.entries(social.variants).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string'))
-              : undefined,
-        }
-        if (!task.projectId) task.projectId = SOCIAL_PROJECT_ID
-      }
       if (task.projectId) {
         const projects = (await fetchAll()).filter(i => i.kind === 'project')
         if (!projects.some(p => p.id === task.projectId) && task.projectId !== SOCIAL_PROJECT_ID) {
@@ -416,11 +384,10 @@ const TOOLS = [
         githubUrl: { type: 'string' },
         addChecklist: { type: 'array', items: { type: 'string' }, description: 'Steps to append' },
         tickChecklist: { type: 'array', items: { type: 'string' }, description: 'Checklist item texts (or ids) to mark done' },
-        variants: { type: 'object', additionalProperties: { type: 'string' }, description: 'Social per-platform overrides' },
       },
       required: ['id'],
     },
-    async run({ id, title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, addChecklist, tickChecklist, variants }) {
+    async run({ id, title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, addChecklist, tickChecklist }) {
       const task = await fetchTask(id)
       const wasDone = task.status === 'done'
       if (title !== undefined) task.title = String(title)
@@ -441,10 +408,6 @@ const TOOLS = [
           if (wanted.includes(c.id) || wanted.includes(c.text.toLowerCase())) c.done = true
         }
       }
-      if (variants !== undefined && task.social) {
-        task.social.variants = Object.fromEntries(Object.entries(variants ?? {}).filter(([k, v]) => PLATFORMS.includes(k) && typeof v === 'string' && v.trim()))
-        if (Object.keys(task.social.variants).length === 0) delete task.social.variants
-      }
       if (status !== undefined) applyStatus(task, status)
       task.updatedAt = newerStamp(task.updatedAt)
       const writes = [task]
@@ -464,29 +427,22 @@ const TOOLS = [
   },
   {
     name: 'complete_task',
-    description: 'Mark a task done (optionally with a closing comment and, for social posts, per-platform metrics). Repeating tasks spawn their next occurrence.',
+    description: 'Mark a task done (optionally with a closing comment). Repeating tasks spawn their next occurrence.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string' },
         comment: { type: 'string', description: 'Closing note appended to the comment trail' },
         completedAt: { type: 'string', description: 'ISO datetime (default: now)' },
-        metrics: { type: 'object', description: 'Social posts only: {"x": {"likes": 10, "impressions": 900}}', additionalProperties: { type: 'object' } },
       },
       required: ['id'],
     },
-    async run({ id, comment, completedAt, metrics }) {
+    async run({ id, comment, completedAt }) {
       const task = await fetchTask(id)
       const wasDone = task.status === 'done'
       task.status = 'done'
       task.completedAt = completedAt ? isoOrThrow(completedAt, 'completedAt') : (task.completedAt ?? now())
       if (comment) task.comments = [...(task.comments ?? []), { id: newId(), body: String(comment), createdAt: now() }]
-      if (metrics && typeof metrics === 'object' && task.social) {
-        task.social.metrics = task.social.metrics ?? {}
-        for (const [pl, m] of Object.entries(metrics)) {
-          if (PLATFORMS.includes(pl) && m && typeof m === 'object') task.social.metrics[pl] = { ...task.social.metrics[pl], ...cleanMetrics(m) }
-        }
-      }
       task.updatedAt = newerStamp(task.updatedAt)
       const writes = [task]
       let spawned = null
@@ -515,32 +471,6 @@ const TOOLS = [
       task.updatedAt = newerStamp(task.updatedAt)
       await writeItem(task)
       return { added: comment, commentCount: task.comments.length }
-    },
-  },
-  {
-    name: 'log_metrics',
-    description: 'Social posts only: add or update engagement metrics (likes, comments, shares, impressions) for one platform on a completed post.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        platform: { type: 'string', enum: PLATFORMS },
-        likes: { type: 'number' },
-        comments: { type: 'number' },
-        shares: { type: 'number' },
-        impressions: { type: 'number' },
-      },
-      required: ['id', 'platform'],
-    },
-    async run({ id, platform, likes, comments, shares, impressions }) {
-      if (!PLATFORMS.includes(platform)) throw new Error(`Unknown platform "${platform}"`)
-      const task = await fetchTask(id)
-      if (!task.social) throw new Error('This task is not a social post.')
-      task.social.metrics = task.social.metrics ?? {}
-      task.social.metrics[platform] = { ...task.social.metrics[platform], ...cleanMetrics({ likes, comments, shares, impressions }) }
-      task.updatedAt = newerStamp(task.updatedAt)
-      await writeItem(task)
-      return { updated: { id: task.id, metrics: task.social.metrics } }
     },
   },
   {

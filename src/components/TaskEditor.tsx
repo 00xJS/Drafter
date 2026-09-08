@@ -3,20 +3,15 @@ import {
   Attachment,
   ChecklistItem,
   Comment,
-  Metrics,
-  PLATFORMS,
   Person,
   Place,
-  PLATFORM_META,
   PRIORITIES,
   PRIORITY_META,
   PROJECT_COLORS,
-  Platform,
   Priority,
   Project,
   RECURRENCE_META,
   RecurrenceFreq,
-  SOCIAL_PROJECT_ID,
   STATUS_META,
   Task,
   TaskStatus,
@@ -26,7 +21,7 @@ import { newerStamp } from '../itemops'
 import { duplicateTask } from '../taskutils'
 import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
-import { REFINE_META, RefineMode, CapturedFields, generateVariants, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { REFINE_META, RefineMode, CapturedFields, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { getSupabase } from '../supabase'
 import { GithubCard } from './GithubCard'
 import { createIssue, parseGithubUrl } from '../github'
@@ -58,11 +53,6 @@ interface Props {
   onDuplicate?(copy: Task): void
   onClose(): void
 }
-
-const METRIC_FIELDS: (keyof Metrics)[] = ['likes', 'comments', 'shares', 'impressions']
-
-type Metric = NonNullable<NonNullable<Task['social']>['metrics']>
-type Variants = NonNullable<NonNullable<Task['social']>['variants']>
 
 export function TaskEditor({
   task,
@@ -154,11 +144,7 @@ export function TaskEditor({
     return v.trim() && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined
   }
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
-  const [isSocial, setIsSocial] = useState(!!base.social)
-  const [platforms, setPlatforms] = useState<Platform[]>(base.social?.platforms?.length ? base.social.platforms : ['x'])
-  const [variants, setVariants] = useState<Variants>(base.social?.variants ?? {})
-  const [metrics, setMetrics] = useState<Metric>(base.social?.metrics ?? {})
-  const [aiBusy, setAiBusy] = useState<'variants' | 'tags' | 'checklist' | 'capture' | RefineMode | null>(null)
+  const [aiBusy, setAiBusy] = useState<'tags' | 'checklist' | 'capture' | RefineMode | null>(null)
   const [aiError, setAiError] = useState('')
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<{ mode: RefineMode; text: string } | null>(null)
@@ -270,19 +256,6 @@ export function TaskEditor({
     }
   }, [mediaIds])
 
-  const togglePlatform = (pl: Platform) => setPlatforms(cur => (cur.includes(pl) ? cur.filter(x => x !== pl) : [...cur, pl]))
-  const setMetric = (pl: Platform, field: keyof Metrics, value: string) =>
-    setMetrics(cur => ({ ...cur, [pl]: { ...cur[pl], [field]: value === '' ? undefined : Number(value) } }))
-  const effectiveLength = (pl: Platform) => {
-    const v = variants[pl]
-    return v && v.trim() ? v.length : description.length
-  }
-
-  const enableSocial = () => {
-    setIsSocial(true)
-    if (!projectId && projects.some(p => p.id === SOCIAL_PROJECT_ID)) setProjectId(SOCIAL_PROJECT_ID)
-  }
-
   async function addMedia(files: FileList | null) {
     if (!files) return
     const ids: string[] = []
@@ -293,16 +266,13 @@ export function TaskEditor({
     if (ids.length > 0) setMediaIds(cur => [...cur, ...ids])
   }
 
-  async function runAI(kind: 'variants' | 'tags' | 'checklist' | RefineMode) {
+  async function runAI(kind: 'tags' | 'checklist' | RefineMode) {
     setAiError('')
     setAiBusy(kind)
     try {
       if (kind === 'clarify' || kind === 'expand' || kind === 'summarize') {
         const text = await refineDescription(kind, title, description)
         setProposal({ mode: kind, text })
-      } else if (kind === 'variants') {
-        const generated = await generateVariants(description, platforms)
-        setVariants(cur => ({ ...cur, ...generated }))
       } else if (kind === 'tags') {
         const suggested = await suggestTags(description || title)
         const existing = tags
@@ -323,18 +293,6 @@ export function TaskEditor({
 
   /** The form's current value for every editable field, in Task shape. */
   function formValues() {
-    const cleanVariants: Variants = {}
-    for (const pl of platforms) {
-      const v = variants[pl]
-      if (v && v.trim()) cleanVariants[pl] = v
-    }
-    const social: Task['social'] = isSocial
-      ? {
-          platforms,
-          variants: Object.keys(cleanVariants).length > 0 ? cleanVariants : undefined,
-          metrics: Object.keys(metrics).length > 0 ? metrics : undefined,
-        }
-      : undefined
     return {
       title: title.trim(),
       description,
@@ -359,7 +317,7 @@ export function TaskEditor({
       comments: persisted ? base.comments : comments.length > 0 ? comments : undefined,
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
-      social,
+      social: base.social,
       peopleIds: peopleIds.length > 0 ? peopleIds : undefined,
       placeId: placeId || undefined,
       attachments: attachments.length > 0 ? attachments : undefined,
@@ -502,7 +460,6 @@ export function TaskEditor({
     })
   }
 
-  const overLimit = isSocial ? platforms.filter(pl => effectiveLength(pl) > PLATFORM_META[pl].charLimit) : []
   const checkDone = checklist.filter(c => c.done).length
   const project = projects.find(p => p.id === projectId)
 
@@ -618,7 +575,7 @@ export function TaskEditor({
 
             <label className="field">
               <span>Description</span>
-              <textarea rows={5} value={description} onChange={e => setDescription(e.target.value)} placeholder={isSocial ? 'Write the post…' : 'What needs to happen, and why? Links, measurements, context…'} />
+              <textarea rows={5} value={description} onChange={e => setDescription(e.target.value)} placeholder="What needs to happen, and why? Links, measurements, context…" />
               <div className="ai-row desc-ai">
                 {(Object.keys(REFINE_META) as RefineMode[]).map(mode => (
                   <button
@@ -670,19 +627,6 @@ export function TaskEditor({
                   </div>
                 </div>
               )}
-              {isSocial && (
-                <div className="char-counts">
-                  <span className="char-total">{description.length} characters</span>
-                  {platforms.map(pl => {
-                    const left = PLATFORM_META[pl].charLimit - effectiveLength(pl)
-                    return (
-                      <span key={pl} className={left < 0 ? 'char-chip over' : 'char-chip'}>
-                        {PLATFORM_META[pl].short}: {left < 0 ? `${-left} over` : `${left} left`}
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
             </label>
 
             <div className="field">
@@ -720,65 +664,6 @@ export function TaskEditor({
                 </button>
               </div>
             </div>
-
-            {isSocial && (
-              <div className="social-section">
-                <div className="field">
-                  <span>Platforms</span>
-                  <div className="platform-toggles">
-                    {PLATFORMS.map(pl => (
-                      <button key={pl} type="button" className={platforms.includes(pl) ? 'toggle on' : 'toggle'} onClick={() => togglePlatform(pl)}>
-                        {PLATFORM_META[pl].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {platforms.length > 0 && (
-                  <div className="field">
-                    <span>
-                      Per-platform overrides <small>(blank uses the description)</small>
-                    </span>
-                    <div className="variant-list">
-                      {platforms.map(pl => (
-                        <details key={pl} className="variant" open={!!variants[pl]?.trim()}>
-                          <summary>
-                            {PLATFORM_META[pl].label}
-                            {variants[pl]?.trim() ? <em> — customized</em> : null}
-                          </summary>
-                          <textarea rows={3} value={variants[pl] ?? ''} onChange={e => setVariants(cur => ({ ...cur, [pl]: e.target.value }))} placeholder="Uses the description" />
-                        </details>
-                      ))}
-                    </div>
-                    <div className="ai-row">
-                      <button type="button" className="btn" disabled={!description.trim() || aiBusy !== null} onClick={() => runAI('variants')}>
-                        {aiBusy === 'variants' ? 'Generating…' : '✨ Generate platform variants'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {status === 'done' && (
-                  <div className="field">
-                    <span>
-                      Results per platform <small>(fill in what you have)</small>
-                    </span>
-                    {platforms.map(pl => (
-                      <div key={pl} className="metrics-row">
-                        <span className="metrics-platform">{PLATFORM_META[pl].label}</span>
-                        {METRIC_FIELDS.map(f => (
-                          <label key={f} className="metric-input">
-                            <small>{f}</small>
-                            <input type="number" min={0} value={metrics[pl]?.[f] ?? ''} onChange={e => setMetric(pl, f, e.target.value)} />
-                          </label>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button type="button" className="btn subtle" onClick={() => setIsSocial(false)}>
-                  Not a social post after all
-                </button>
-              </div>
-            )}
 
             <div className="field">
               <span>
@@ -1231,11 +1116,6 @@ export function TaskEditor({
               />
             </div>
 
-            {!isSocial && (
-              <button type="button" className="btn subtle" onClick={enableSocial}>
-                📣 This is a social post
-              </button>
-            )}
             {aiError && <p className="warn">{aiError}</p>}
 
             {task && (
@@ -1284,7 +1164,6 @@ export function TaskEditor({
           <span className="spacer" />
           <small className="muted">⌘↩ to save</small>
           {project && <small className="muted">in {project.name}</small>}
-          {overLimit.length > 0 && <span className="warn">Over the limit for {overLimit.map(pl => PLATFORM_META[pl].short).join(', ')}</span>}
           <button className="btn" onClick={requestClose}>
             Cancel
           </button>

@@ -40,10 +40,9 @@ import {
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
 
-// Hand-rolled validation instead of a schema library: imports come from messy
-// real-world files (archives, CSVs, old backups) and pre-v3 records still live
-// in the database, so the goal is coerce-and-repair, not strict rejection.
-// Every entry point into the store goes through sanitizeItem.
+// Hand-rolled validation instead of a schema library: JSON backups and pre-v3
+// records still live in the database, so the goal is coerce-and-repair, not
+// strict rejection. Every entry point into the store goes through sanitizeItem.
 
 export const STORAGE_VERSION = 3
 

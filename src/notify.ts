@@ -71,7 +71,7 @@ export async function notifyDue(tasks: Task[]): Promise<void> {
     const due = new Date(p.dueAt).getTime()
     if (due <= now && now - due < MAX_AGE_MS) {
       const shown = await show(
-        `${p.social ? 'Time to post' : 'Due now'}: ${p.title || 'Untitled'}`,
+        `${p.title || 'Untitled'} is due now`,
         excerpt(p.description, 120) || 'Open Drafter for the details.',
       )
       if (shown) {

@@ -540,7 +540,7 @@ export function Admin({ onClose }: Props) {
 
                 <HealthCard title="AI assist" piece={status.ai}>
                   <p className="field-hint">
-                    The ✨ features (break a task into steps, suggest tags, platform variants, post analysis) run through the site's server-side proxy — configure{' '}
+                    The ✨ features (break a task into steps, suggest tags, refine a description) run through the site's server-side proxy — configure{' '}
                     <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). No key is ever stored in the
                     browser.
                     {status.ai.configured && (

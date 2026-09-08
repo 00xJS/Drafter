@@ -1,6 +1,4 @@
-import { Platform, PLATFORM_META, Post, engagement, impressions } from './types'
 import { apiFetch } from './api'
-import { fmtDate } from './utils'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
@@ -41,32 +39,11 @@ function extractJSON<T>(text: string): T {
   return JSON.parse(text.slice(start, end + 1)) as T
 }
 
-/** Rewrite one draft as platform-native variants, respecting each platform's limit. */
-export async function generateVariants(body: string, platforms: Platform[]): Promise<Partial<Record<Platform, string>>> {
-  const specs = platforms
-    .map(pl => `- "${pl}" (${PLATFORM_META[pl].label}, hard limit ${PLATFORM_META[pl].charLimit} characters)`)
-    .join('\n')
-  const text = await complete(
-    'You adapt social media drafts into platform-native versions. Keep the author\'s voice and message; adjust length, tone, hashtag and emoji conventions to each platform. Never exceed a platform\'s character limit.',
-    `Adapt this draft for each platform below.\n\nDraft:\n"""\n${body}\n"""\n\nPlatforms:\n${specs}\n\nRespond with ONLY a JSON object mapping each platform id to its adapted text, e.g. {"x": "...", "instagram": "..."}.`,
-    2048,
-    true,
-  )
-  const raw = extractJSON<Record<string, unknown>>(text)
-  const out: Partial<Record<Platform, string>> = {}
-  for (const pl of platforms) {
-    const v = raw[pl]
-    if (typeof v === 'string' && v.trim()) out[pl] = v.trim()
-  }
-  if (Object.keys(out).length === 0) throw new AIError('The model returned no usable variants.')
-  return out
-}
-
-/** Suggest a handful of tags for a draft. */
+/** Suggest a handful of tags for a task. */
 export async function suggestTags(body: string): Promise<string[]> {
   const text = await complete(
-    'You suggest short lowercase content tags (topics/themes, not platform names) for organizing social media posts.',
-    `Suggest 3–6 tags for this post. Respond with ONLY a JSON array of lowercase strings without "#", e.g. ["launch","tips"].\n\nPost:\n"""\n${body}\n"""`,
+    'You suggest short lowercase tags (topics/themes) for organizing personal and household tasks.',
+    `Suggest 3–6 tags for this task. Respond with ONLY a JSON array of lowercase strings without "#", e.g. ["home","errands"].\n\nTask:\n"""\n${body}\n"""`,
     512,
     true,
   )
@@ -76,22 +53,6 @@ export async function suggestTags(body: string): Promise<string[]> {
     .map(t => t.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, '-'))
     .filter(Boolean)
     .slice(0, 6)
-}
-
-/** Explain what the account's best posts have in common and what to do next. */
-export async function analyzeTopPosts(posts: Post[]): Promise<string> {
-  const rows = posts
-    .slice(0, 15)
-    .map(p => {
-      const text = (p.body || p.title).replace(/\s+/g, ' ').slice(0, 160)
-      return `- ${fmtDate(p.postedAt)} · ${p.platforms.join('+')} · ${engagement(p)} engagement · ${impressions(p)} impressions · tags: ${p.tags.join(', ') || 'none'}\n  "${text}"`
-    })
-    .join('\n')
-  return complete(
-    'You are a sharp, practical social media analyst. Be specific and concrete; no fluff, no generic advice that could apply to any account.',
-    `Here are my recent top posts by engagement:\n\n${rows}\n\nIn plain text (short paragraphs and "-" bullets only, no markdown headings): 1) what the strongest posts have in common, 2) any pattern in what underperforms relative to reach, 3) three concrete things to try next, based only on this data.`,
-    1500,
-  )
 }
 
 /** Break a task into concrete checklist steps. */

@@ -1,5 +1,5 @@
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
-/** Pre-v3 post statuses; only used by the social "post view" and importers. */
+/** Pre-v3 post statuses; kept so legacy rows still sanitize. */
 export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'posted' | 'canceled'
 export type TaskStatus = 'wishlist' | 'todo' | 'doing' | 'blocked' | 'done' | 'canceled'
 export type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
@@ -330,8 +330,8 @@ export interface GroceryList extends Owned {
 export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList
 
 /**
- * The legacy post shape. Still the lingua franca of the importers, the
- * Insights charts and the AI analysis: `toPost` projects a social task into it.
+ * The legacy post shape. `toPost` still projects a social task into it so
+ * stored posts round-trip without rewriting the database.
  */
 export interface Post {
   id: string

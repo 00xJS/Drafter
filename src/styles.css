@@ -21,7 +21,7 @@
   --radius: 10px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
   /* phone chrome: everything that floats measures itself off these */
-  --tabbar-h: 52px;
+  --tabbar-h: 56px;
   --fab-size: 52px;
   --safe-b: env(safe-area-inset-bottom);
   /* chart tokens */
@@ -119,6 +119,10 @@ button:focus-visible {
   gap: 4px;
 }
 
+.tabs-compact {
+  display: none;
+}
+
 .tab {
   border: none;
   background: transparent;
@@ -211,15 +215,6 @@ button:focus-visible {
 .chips {
   display: inline-flex;
   gap: 4px;
-}
-
-.chip.platform {
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 5px;
-  letter-spacing: 0.02em;
 }
 
 .badge {
@@ -340,11 +335,6 @@ button:focus-visible {
 
 .card-date {
   margin-left: auto;
-}
-
-.card-eng {
-  color: var(--text-2);
-  font-weight: 600;
 }
 
 .card-tags {
@@ -679,27 +669,6 @@ textarea {
   resize: vertical;
 }
 
-.char-counts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.char-chip {
-  background: var(--surface-2);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.char-chip.over {
-  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
-  color: var(--danger);
-  font-weight: 600;
-}
-
 .platform-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -744,51 +713,13 @@ textarea {
   font-weight: 600;
 }
 
-.metrics-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.metrics-platform {
-  font-size: 12px;
-  font-weight: 600;
-  width: 90px;
-  padding-bottom: 8px;
-}
-
-.metric-input {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.metric-input small {
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: capitalize;
-}
-
-.metric-input input {
-  width: 88px;
-  padding: 5px 8px;
-}
-
 .warn {
   color: var(--danger);
   font-size: 12px;
   font-weight: 600;
 }
 
-/* ---------- insights ---------- */
-
-.insights {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+/* ---------- stats ---------- */
 
 .filter-row {
   align-items: center;
@@ -832,19 +763,14 @@ textarea {
   margin-top: 2px;
 }
 
-.charts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  gap: 12px;
-  align-items: start;
-}
-
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
   box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chart-head {
@@ -1274,37 +1200,6 @@ textarea {
 
 /* ---------- composer extras ---------- */
 
-.variant-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.variant {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  background: var(--surface);
-}
-
-.variant summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text-2);
-  user-select: none;
-}
-
-.variant summary em {
-  color: var(--accent);
-  font-style: normal;
-  font-weight: 600;
-}
-
-.variant textarea {
-  width: 100%;
-  margin-top: 8px;
-}
-
 .ai-row {
   display: flex;
   align-items: center;
@@ -1417,110 +1312,9 @@ textarea {
   color: var(--muted);
 }
 
-.archive-help h3 {
-  margin: 10px 0 2px;
-  font-size: 13px;
-}
-
-.archive-help p {
-  margin: 0 0 6px;
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-.archive-help code {
-  background: var(--surface-2);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 12px;
-}
-
-.archive-drop {
-  margin: 10px 0;
-}
-
 .notice.error {
   border-left-color: var(--danger);
   color: var(--danger);
-}
-
-/* ---------- insights extras ---------- */
-
-.stat-delta {
-  font-size: 12px;
-  font-weight: 600;
-  margin-top: 2px;
-}
-
-.stat-delta.up {
-  color: var(--ok);
-}
-
-.stat-delta.down {
-  color: var(--danger);
-}
-
-.stat-delta.neutral {
-  color: var(--muted);
-}
-
-.heatmap-wrap {
-  position: relative;
-  padding: 6px 0;
-}
-
-.heatmap {
-  display: grid;
-  gap: 3px;
-  align-items: center;
-}
-
-.heat-col-label,
-.heat-row-label {
-  font-size: 10px;
-  color: var(--muted);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.heat-row-label {
-  text-align: right;
-  padding-right: 6px;
-}
-
-.heat-cell {
-  border: none;
-  border-radius: 4px;
-  height: 26px;
-  width: 100%;
-  padding: 0;
-  cursor: default;
-}
-
-.heat-legend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.heat-swatch {
-  width: 14px;
-  height: 10px;
-  border-radius: 2px;
-  display: inline-block;
-}
-
-.ai-analysis {
-  white-space: pre-wrap;
-  font-size: 13px;
-  color: var(--text-2);
-  line-height: 1.55;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 /* ---------- dashboard ---------- */
@@ -1789,9 +1583,49 @@ textarea {
 }
 
 @media (max-width: 640px) {
+  html,
+  body,
+  #root,
+  .app {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   .content {
     padding: 12px;
-    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .insights,
+  .today,
+  .today-grid,
+  .kpi-row,
+  .stat-tile,
+  .chart-head,
+  .dash-list,
+  .tlist,
+  .swipe-row,
+  .swipe-face {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .chart-head {
+    flex-wrap: wrap;
+  }
+
+  .dash-title,
+  .tlist .dash-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dash-meta {
+    flex-wrap: wrap;
   }
 
   /* iOS zooms any focused field under 16px — don't let it */
@@ -1801,8 +1635,13 @@ textarea {
     font-size: 16px;
   }
 
-  /* view switcher becomes a fixed bottom tab bar (thumb reach) */
-  .tabs {
+  .tabs-full {
+    display: none;
+  }
+
+  /* five equal slots: Today, Calendar, More, Kitchen, People */
+  .tabs-compact {
+    display: flex;
     position: fixed;
     left: 0;
     right: 0;
@@ -1810,37 +1649,62 @@ textarea {
     z-index: 40;
     background: var(--surface);
     border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: space-around;
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    justify-content: stretch;
+    gap: 0;
+    padding: 4px 2px calc(4px + env(safe-area-inset-bottom));
     margin: 0;
-    order: initial;
-    width: auto;
+    width: 100%;
+    overflow: hidden;
+  }
+  .tabs-compact .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 2px 4px;
+    border-radius: 10px;
+    font-size: 10px;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .tabs-compact .tab-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+  .tabs-compact .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tabs-compact .tab.active {
+    background: transparent;
+    color: var(--accent);
+    font-weight: 700;
   }
 
-  /* the new-post button becomes a round action button parked in the bottom
-     corner, clear of the tab bar; see the phone pass at the end of this file
-     for the matching content padding that keeps rows out from under it */
+  /* keep New task in the header — a floating + covered the last rows */
   .new-post-btn {
-    position: fixed;
-    right: 14px;
-    bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
-    z-index: 41;
-    width: var(--fab-size);
-    height: var(--fab-size);
+    position: static;
+    width: 40px;
+    height: 40px;
     padding: 0;
     margin-left: 0;
-    border-radius: 50%;
+    border-radius: 12px;
     justify-content: center;
-    box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
+    box-shadow: none;
+    flex: none;
   }
   .new-post-label {
     display: none;
   }
   .new-post-plus {
-    font-size: 27px;
+    font-size: 22px;
     line-height: 1;
-    margin-top: -2px;
+    margin-top: -1px;
   }
 
   .modal {
@@ -1885,19 +1749,6 @@ textarea {
 
   .stat-value {
     font-size: 21px;
-  }
-
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .heatmap-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .heatmap {
-    min-width: 430px;
   }
 
   .posts-table {
@@ -1959,10 +1810,6 @@ textarea {
 
   .landing-hero h1 {
     font-size: 32px;
-  }
-
-  .top-posts li {
-    flex-wrap: wrap;
   }
 }
 
@@ -2149,9 +1996,10 @@ textarea {
 /* today */
 .today-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 16px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 .chart-card.warn-card {
   border-color: rgba(244, 63, 94, 0.45);
@@ -2327,9 +2175,10 @@ textarea {
 }
 .project-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: 10px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 .project-card {
   text-align: left;
@@ -2558,14 +2407,6 @@ textarea {
   align-self: flex-start;
   padding: 2px 6px;
   font-size: 12px;
-}
-.social-section {
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .swatches {
   display: flex;
@@ -3573,35 +3414,98 @@ textarea {
   font-family: inherit;
 }
 
-/* mobile: bottom tab bar + swipe */
+/* phone: compact tab bar already defined above; do not let this older
+   rule put eight labels on a sideways-scrolling strip */
 @media (max-width: 640px) {
-  .tabs {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 40;
-    display: flex;
-    justify-content: space-around;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-    margin: 0;
-    overflow-x: auto;
-  }
-  .tabs .tab {
-    flex: 1;
-    text-align: center;
-    padding: 6px 2px;
-    font-size: 12px;
-    white-space: nowrap;
-  }
   .content {
-    padding-bottom: 76px;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
   }
-  .toast {
-    bottom: 72px;
-  }
+}
+
+.more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.more-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+}
+.more-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  margin: 4px auto 10px;
+}
+.more-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.more-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.more-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.more-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 12px 10px;
+  margin: 0 -10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  min-height: 52px;
+}
+.more-item:hover,
+.more-item.on {
+  background: var(--surface-2);
+}
+.more-item.on {
+  color: var(--accent);
+}
+.more-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex: none;
+}
+.more-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.more-item-copy strong {
+  font-size: 15px;
+}
+.more-item-copy small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* templates + AI plan */
@@ -4003,7 +3907,7 @@ textarea {
     right: 12px;
     transform: none;
     max-width: none;
-    bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--fab-size) + 22px);
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
     justify-content: space-between;
   }
   .toast > span:first-child {

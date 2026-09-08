@@ -1,12 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { PRIORITIES, PRIORITY_META, Priority, Project, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
 import { Store } from '../store'
-import { postsFromCSV } from '../importers'
 import { migrateStored, STORAGE_VERSION } from '../schema'
 import { compareTasks } from '../taskutils'
 import { excerpt } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
-import { ImportArchiveDialog } from './ImportArchiveDialog'
 import { DueBadge, PriorityMark, ProjectChip } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -29,10 +27,8 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
   const [priority, setPriority] = useState<Priority | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'due', dir: 1 })
   const [notice, setNotice] = useState('')
-  const [archiveOpen, setArchiveOpen] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const jsonInput = useRef<HTMLInputElement>(null)
-  const csvInput = useRef<HTMLInputElement>(null)
   const isNarrow = useMediaQuery('(max-width: 640px)')
 
   const toggleSort = (key: SortKey) => setSort(cur => (cur.key === key ? { key, dir: cur.dir === -1 ? 1 : -1 } : { key, dir: key === 'due' ? 1 : -1 }))
@@ -75,27 +71,10 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
     }
   }
 
-  async function onCSVFile(file: File) {
-    try {
-      const posts = postsFromCSV(await file.text())
-      if (posts.length === 0) throw new Error('no rows recognized — expected headers like date, platform, text, likes')
-      const s = store.importItems(posts)
-      setNotice(`CSV import: ${s.added} new, ${s.updated} updated, ${s.unchanged} unchanged.`)
-    } catch (e) {
-      setNotice(`CSV import failed: ${(e as Error).message}`)
-    }
-  }
-
   const actions = (
     <>
       <button className="btn" onClick={() => onNew({ status: 'done', completedAt: new Date().toISOString() })}>
         Log something done
-      </button>
-      <button className="btn" onClick={() => setArchiveOpen(true)}>
-        Import social archive
-      </button>
-      <button className="btn" onClick={() => csvInput.current?.click()}>
-        Import CSV
       </button>
       <button className="btn" onClick={() => jsonInput.current?.click()}>
         Import JSON
@@ -149,17 +128,6 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
         ) : (
           actions
         )}
-        <input
-          ref={csvInput}
-          type="file"
-          accept=".csv,text/csv"
-          hidden
-          onChange={e => {
-            const f = e.target.files?.[0]
-            if (f) onCSVFile(f)
-            e.target.value = ''
-          }}
-        />
         <input
           ref={jsonInput}
           type="file"
@@ -280,8 +248,6 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
           </button>
         </p>
       )}
-
-      {archiveOpen && <ImportArchiveDialog store={store} onClose={() => setArchiveOpen(false)} />}
     </div>
   )
 }

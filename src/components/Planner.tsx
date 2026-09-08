@@ -51,6 +51,21 @@ const VIEW_LABELS: Record<View, string> = {
   review: 'Review',
 }
 
+/** Phone tab bar: four daily surfaces and a centre More for the rest. */
+const COMPACT_TABS: { id: View | 'more'; icon: string; label: string }[] = [
+  { id: 'today', icon: '☀', label: 'Today' },
+  { id: 'calendar', icon: '📅', label: 'Calendar' },
+  { id: 'more', icon: '☰', label: 'More' },
+  { id: 'kitchen', icon: '🍽', label: 'Kitchen' },
+  { id: 'people', icon: '👥', label: 'People' },
+]
+const MORE_VIEWS: { id: View; icon: string; hint: string }[] = [
+  { id: 'tasks', icon: '☑', hint: 'Searchable list, import and trash' },
+  { id: 'board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
+  { id: 'notes', icon: '✎', hint: 'The selected project’s notepad' },
+  { id: 'review', icon: '📊', hint: 'Weekly and monthly look-back' },
+]
+
 const FILTER_KEY = 'drafter:project-filter'
 const CAL_MODE_KEY = 'drafter:calendar-mode'
 const PEOPLE_TAB_KEY = 'drafter:people-tab'
@@ -111,6 +126,7 @@ export default function Planner() {
   const [adminOpen, setAdminOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -149,6 +165,7 @@ export default function Planner() {
   // Cmd/Ctrl+K opens search from anywhere
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreOpen(false)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setSearchOpen(o => !o)
@@ -571,12 +588,40 @@ export default function Planner() {
           <span className="brand-mark">✈</span>
           <span>Drafter</span>
         </div>
-        <nav className="tabs">
+        <nav className="tabs tabs-full" aria-label="Views">
           {(Object.keys(VIEW_LABELS) as View[]).map(v => (
             <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => setView(v)}>
               {VIEW_LABELS[v]}
             </button>
           ))}
+        </nav>
+        <nav className="tabs tabs-compact" aria-label="Main">
+          {COMPACT_TABS.map(t => {
+            const onMore = t.id === 'more'
+            const active = onMore ? MORE_VIEWS.some(m => m.id === view) : view === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className={active || (onMore && moreOpen) ? 'tab active' : 'tab'}
+                aria-current={active ? 'page' : undefined}
+                aria-haspopup={onMore ? 'dialog' : undefined}
+                aria-expanded={onMore ? moreOpen : undefined}
+                onClick={() => {
+                  if (t.id === 'more') setMoreOpen(o => !o)
+                  else {
+                    setMoreOpen(false)
+                    setView(t.id)
+                  }
+                }}
+              >
+                <span className="tab-icon" aria-hidden>
+                  {t.icon}
+                </span>
+                <span className="tab-label">{t.label}</span>
+              </button>
+            )
+          })}
         </nav>
         <span className="spacer" />
         <button className="sync-btn" onClick={manualSync} aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}>
@@ -1001,6 +1046,47 @@ export default function Planner() {
 
       {settingsOpen && <Settings key={settingsNonce} store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
       {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
+
+      {moreOpen && (
+        <div
+          className="more-backdrop"
+          onMouseDown={e => {
+            if (e.target === e.currentTarget) setMoreOpen(false)
+          }}
+        >
+          <div className="more-sheet" role="dialog" aria-label="More">
+            <div className="more-handle" aria-hidden />
+            <header className="more-head">
+              <h2>More</h2>
+              <button type="button" className="btn subtle" aria-label="Close" onClick={() => setMoreOpen(false)}>
+                ✕
+              </button>
+            </header>
+            <ul className="more-list">
+              {MORE_VIEWS.map(m => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    className={view === m.id ? 'more-item on' : 'more-item'}
+                    onClick={() => {
+                      setView(m.id)
+                      setMoreOpen(false)
+                    }}
+                  >
+                    <span className="more-item-icon" aria-hidden>
+                      {m.icon}
+                    </span>
+                    <span className="more-item-copy">
+                      <strong>{VIEW_LABELS[m.id]}</strong>
+                      <small>{m.hint}</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="toast" role="status">

@@ -1,5 +1,5 @@
-import { PLATFORM_META, Project, STATUS_META, Task, TaskStatus, engagement, pickerStatuses } from '../types'
-import { excerpt, fmtNum } from '../utils'
+import { Project, STATUS_META, Task, TaskStatus, pickerStatuses } from '../types'
+import { excerpt } from '../utils'
 import { checklistProgress } from '../taskutils'
 import { parseGithubUrl } from '../github'
 import { DueBadge, PriorityMark, ProjectChip } from './bits'
@@ -16,7 +16,6 @@ interface Props {
 export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
   const check = checklistProgress(task)
   const gh = parseGithubUrl(task.githubUrl)
-  const eng = task.social ? engagement({ metrics: task.social.metrics }) : 0
 
   return (
     <article
@@ -60,15 +59,6 @@ export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
               .join('')}
           </span>
         )}
-        {task.social && (
-          <span className="chips">
-            {task.social.platforms.map(pl => (
-              <span key={pl} className="chip platform" style={{ background: PLATFORM_META[pl].color }}>
-                {PLATFORM_META[pl].short}
-              </span>
-            ))}
-          </span>
-        )}
         {check && (
           <span className="card-flag" title="Checklist">
             ☑ {check.done}/{check.total}
@@ -96,7 +86,6 @@ export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
           </span>
         )}
         <DueBadge task={task} />
-        {task.status === 'done' && eng > 0 && <span className="card-eng">♥ {fmtNum(eng)}</span>}
       </div>
       {task.tags.length > 0 && (
         <div className="card-tags">

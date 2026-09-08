@@ -87,12 +87,6 @@ export function duplicateTask(source: Task): Task {
     checklist: source.checklist?.map(c => ({ id: uid(), text: c.text, done: false })),
     mediaIds: source.mediaIds ? [...source.mediaIds] : undefined,
     recurrence: source.recurrence ? { ...source.recurrence } : undefined,
-    social: source.social
-      ? {
-          platforms: [...source.social.platforms],
-          variants: source.social.variants ? { ...source.social.variants } : undefined,
-        }
-      : undefined,
     peopleIds: source.peopleIds ? [...source.peopleIds] : undefined,
     placeId: source.placeId,
     attachments: source.attachments?.map(a => ({ ...a })),

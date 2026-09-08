@@ -9,7 +9,7 @@ const FEATURES: { icon: string; title: string; text: string }[] = [
   { icon: '🛣', title: 'Roadmap', text: 'Projects and milestones on a timeline, so the kitchen refresh and the side app both have an end in sight.' },
   { icon: '☀️', title: 'Today', text: 'Overdue, due today, this week, blocked — the one page to open every morning.' },
   { icon: '🐙', title: 'GitHub-linked', text: 'Paste an issue, PR, repo or Projects URL onto a task and see its live state without leaving the plan.' },
-  { icon: '✨', title: 'AI assist', text: 'Break a task into steps, suggest tags, draft platform variants for social posts.' },
+  { icon: '✨', title: 'AI assist', text: 'Break a task into steps, suggest tags, clarify or expand a description.' },
   { icon: '🤖', title: 'Agent-ready', text: 'An MCP server and REST gateway let your AI agents create tasks, comment, and close things out.' },
 ]
 
@@ -34,7 +34,7 @@ export function Landing({ configured, onSignIn }: Props) {
         </h1>
         <p>
           Drafter is a personal project manager — projects, tasks with due dates, a roadmap and a daily view — with
-          GitHub links and a social-posting mode built in.
+          GitHub links and a kitchen planner built in.
         </p>
         {configured ? (
           <button className="btn primary landing-cta" onClick={onSignIn}>
