@@ -120,7 +120,7 @@ async function userEmail(userId) {
   return (await res.json())?.email ?? null
 }
 
-async function sendEmail(to, subject, text) {
+export async function sendEmail(to, subject, text) {
   if (!process.env.RESEND_API_KEY) return false
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -131,7 +131,7 @@ async function sendEmail(to, subject, text) {
 }
 
 /** userId -> the set of owner ids whose records that user may see (mirrors household_user_ids()). */
-async function buildPeerMap() {
+export async function buildPeerMap() {
   const rows = await rest('household_members?select=household_id,user_id').catch(() => [])
   const byHousehold = new Map()
   for (const r of rows ?? []) {

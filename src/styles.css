@@ -3849,6 +3849,7 @@ textarea {
 .settings-body.showing-household .g-household,
 .settings-body.showing-data .g-data,
 .settings-body.showing-users .g-users,
+.settings-body.showing-backups .g-backups,
 .settings-body.showing-integrations .g-integrations,
 .settings-body.showing-domains .g-domains {
   display: block;
@@ -3867,6 +3868,59 @@ textarea {
 .admin-users .cal-source-name {
   flex: 1;
   min-width: 0;
+}
+
+/* the Data / Backups health lists: label left, figure right, scannable */
+.admin-stats {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.admin-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 13px;
+}
+.admin-stat:last-child {
+  border-bottom: none;
+}
+.admin-stat > span {
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+}
+.admin-stat > strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* zero backups is not a detail — give it the orange it deserves */
+.admin-alarm {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  padding: 10px 12px;
+  margin-bottom: 1.1rem;
+}
+.admin-alarm .field-hint {
+  color: var(--warn-text);
+}
+
+/* inline result of a live integration test */
+.admin-test {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.admin-test small {
+  color: var(--muted);
+}
+.admin-test-error {
+  display: block;
+  color: var(--danger);
+  word-break: break-word;
 }
 
 /* on a phone the toast spanned a narrow column and sat under the New task
