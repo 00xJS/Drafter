@@ -649,7 +649,7 @@ export function Admin({ onClose }: Props) {
                 <span className="warn">Needs webcredentials</span>
               </p>
               <p className="field-hint">
-                Same AASA file can list <code>webcredentials:drafterz.netlify.app</code> so iCloud Keychain offers the saved password on the sign-in screen. No Face ID gate until you opt in.
+                Same AASA file can list <code>webcredentials:drafterz.netlify.app</code> so iCloud Keychain offers the saved password on the sign-in screen. Face ID lock is Settings → Reminders → Lock this iPhone (no paid Apple team required).
               </p>
             </div>
           </section>

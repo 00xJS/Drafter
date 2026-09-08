@@ -338,13 +338,14 @@ export function sanitizePlace(raw: unknown): Place | null {
   const r = raw as Record<string, unknown>
   const id = str(r.id)
   const name = str(r.name)?.trim()
-  if (!id || !name) return null
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!name && !deletedAt)) return null
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   return {
     kind: 'place',
     id,
-    name,
+    name: name || 'Place',
     emoji: str(r.emoji)?.trim() || undefined,
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
     category:

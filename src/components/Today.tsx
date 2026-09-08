@@ -3,7 +3,7 @@ import { CalendarEvent, CalendarSource, Meal, Person, Project, Recipe, Review as
 import { tonightDinner } from './Kitchen'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
-import { NextUp, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
+import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { excerpt, fmtTime, timeAgo } from '../utils'
@@ -33,6 +33,8 @@ interface Props {
   meals: Meal[]
   recipes: Recipe[]
   onOpenKitchen(): void
+  onOpenReview(): void
+  onCookRecipe(r: Recipe): void
 }
 
 const STALE_DAYS = 14
@@ -238,14 +240,22 @@ export function Today({
   meals,
   recipes,
   onOpenKitchen,
+  onOpenReview,
+  onCookRecipe,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
+  const isSunday = new Date().getDay() === 0
   // Top 3 is written during last week's review as "for next week"
   const weekReview = useMemo(() => {
     const prev = shiftRange(thisWeek, -1)
     return reviews.find(r => r.period === 'week' && r.key === prev.key) ?? reviews.find(r => r.period === 'week' && r.key === thisWeek.key)
   }, [reviews, thisWeek])
+  const sundayDraft = useMemo(() => {
+    const anchor = defaultReviewAnchor(new Date())
+    const range = weekRange(anchor)
+    return reviews.find(r => r.period === 'week' && r.key === range.key && r.summary?.trim())
+  }, [reviews])
   const top3 = useMemo(() => (weekReview?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3), [weekReview])
   const topDone = useMemo(() => weekReview?.topDone ?? [], [weekReview])
   const upNext: NextUp[] = useMemo(
@@ -317,7 +327,7 @@ export function Today({
     onSaveReview({ ...weekReview, topDone: next, updatedAt: newerStamp(weekReview.updatedAt) })
   }
 
-  if (tasks.length === 0 && projects.length === 0) {
+  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft) {
     return (
       <div className="empty-hero">
         <h2>Welcome to your planner</h2>
@@ -358,6 +368,14 @@ export function Today({
 
   return (
     <div className="insights today">
+      <header className="today-head">
+        <div>
+          <h2>Today</h2>
+          <p className="chart-sub">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+        </div>
+      </header>
       <div className="kpi-row">
         <StatTile label="Overdue" value={String(s.overdue.length)} sub={s.overdue.length ? 'need a new date or a push' : 'nothing slipped'} warn={s.overdue.length > 0} />
         <StatTile label="Due today" value={String(s.today.length)} sub={s.late.length ? `${s.late.length} already past` : undefined} />
@@ -391,6 +409,37 @@ export function Today({
           <p className="kitchen-tonight-title">
             {dinner.recipe?.emoji || '🍽️'} {dinner.meal.title}
           </p>
+          {dinner.recipe && (
+            <p className="chart-sub kitchen-tonight-ings">
+              {dinner.recipe.ingredients
+                .slice(0, 6)
+                .map(i => i.name)
+                .join(' · ')}
+              {dinner.recipe.ingredients.length > 6 ? '…' : ''}
+            </p>
+          )}
+          {dinner.recipe && (
+            <div className="ai-row" style={{ padding: '0 4px 12px' }}>
+              <button className="btn primary" onClick={() => onCookRecipe(dinner.recipe!)}>
+                Cook
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {sundayDraft?.summary && (
+        <section className="chart-card week-review-ready">
+          <header className="chart-head">
+            <div>
+              <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
+              <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'From Sunday’s digest'}</p>
+            </div>
+            <button className="btn primary" onClick={onOpenReview}>
+              Open review
+            </button>
+          </header>
+          <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
         </section>
       )}
 

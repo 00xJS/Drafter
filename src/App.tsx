@@ -4,6 +4,7 @@ import { getSupabase, isSupabaseConfigured } from './supabase'
 import { clearLocalData } from './idb'
 import { Landing } from './components/Landing'
 import { Login } from './components/Login'
+import { LockGate } from './components/LockGate'
 
 // The planner (and everything it imports) loads only after the gate — the
 // public landing page ships a fraction of the bundle.
@@ -65,6 +66,7 @@ export default function App() {
       <Suspense fallback={null}>
         <Planner />
       </Suspense>
+      {supabaseOn && session && <LockGate />}
       {supabaseOn && !session && (
         <div className="auth-overlay">
           <Login />

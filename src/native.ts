@@ -86,6 +86,12 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
   } catch {
     /* the plugin is optional at runtime */
   }
+  try {
+    const stopKeyboard = await watchKeyboard()
+    handles.push({ remove: async () => stopKeyboard() })
+  } catch {
+    /* optional */
+  }
   return () => {
     for (const h of handles) void h.remove()
   }
@@ -173,5 +179,109 @@ export async function clearAppBadge(): Promise<void> {
     void LocalNotifications
   } catch {
     /* plugin may be unavailable in simulator builds without push */
+  }
+}
+
+// ---- keyboard: lift modal chrome above the software keyboard ----------------
+
+/** Keep `--keyboard-h` in sync so sheets sit above the iOS keyboard. */
+export async function watchKeyboard(): Promise<() => void> {
+  if (!isNative()) return () => {}
+  try {
+    const { Keyboard } = await import('@capacitor/keyboard')
+    const set = (h: number) => document.documentElement.style.setProperty('--keyboard-h', `${Math.max(0, h)}px`)
+    const show = await Keyboard.addListener('keyboardWillShow', e => set(e.keyboardHeight))
+    const hide = await Keyboard.addListener('keyboardWillHide', () => set(0))
+    return () => {
+      void show.remove()
+      void hide.remove()
+      set(0)
+    }
+  } catch {
+    return () => {}
+  }
+}
+
+// ---- Face ID / device passcode lock ----------------------------------------
+
+const APP_LOCK_KEY = 'drafter:app-lock'
+
+export function appLockEnabled(): boolean {
+  try {
+    return localStorage.getItem(APP_LOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setAppLockEnabled(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(APP_LOCK_KEY, '1')
+    else localStorage.removeItem(APP_LOCK_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+export type BiometryStatus = {
+  available: boolean
+  /** Face ID, Touch ID, or device passcode. */
+  label: string
+  reason?: string
+}
+
+export async function checkAppLock(): Promise<BiometryStatus> {
+  try {
+    const { BiometricAuth, BiometryType } = await import('@aparajita/capacitor-biometric-auth')
+    const info = await BiometricAuth.checkBiometry()
+    const type =
+      info.biometryType === BiometryType.faceId
+        ? 'Face ID'
+        : info.biometryType === BiometryType.touchId
+          ? 'Touch ID'
+          : info.deviceIsSecure
+            ? 'device passcode'
+            : 'biometrics'
+    const available = info.isAvailable || info.deviceIsSecure
+    return { available, label: type, reason: available ? undefined : info.reason || undefined }
+  } catch {
+    return { available: false, label: 'biometrics', reason: 'Not available on this device.' }
+  }
+}
+
+/** Prompt Face ID / Touch ID / device passcode. False if cancelled or unavailable. */
+export async function authenticateAppLock(reason = 'Unlock Drafter'): Promise<boolean> {
+  try {
+    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth')
+    await BiometricAuth.authenticate({ reason, allowDeviceCredential: true, cancelTitle: 'Cancel' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Lock when the app returns from the background (native resume, or the tab
+ * hidden for 12s). Does not steal URL / launch events from initNative.
+ */
+export async function watchAppLock(onLock: () => void): Promise<() => void> {
+  let hiddenAt = 0
+  const onVis = () => {
+    if (document.visibilityState === 'hidden') hiddenAt = Date.now()
+    else if (appLockEnabled() && hiddenAt && Date.now() - hiddenAt > 12_000) onLock()
+  }
+  document.addEventListener('visibilitychange', onVis)
+  if (!isNative()) return () => document.removeEventListener('visibilitychange', onVis)
+  try {
+    const { App } = await import('@capacitor/app')
+    const handle = await App.addListener('resume', () => {
+      if (appLockEnabled()) onLock()
+    })
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      void handle.remove()
+    }
+  } catch {
+    return () => document.removeEventListener('visibilitychange', onVis)
   }
 }

@@ -414,7 +414,7 @@ export const PLATFORM_META: Record<Platform, { label: string; short: string; col
 
 export const TASK_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
 
-/** Kanban columns on the Board — blocked/canceled stay in lists & filters only. */
+/** Kanban columns — these are the statuses you pick. Blocked/canceled remain valid on old rows. */
 export const BOARD_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'done']
 
 /** Status picker options: board columns, plus current if it's a legacy blocked/canceled value. */

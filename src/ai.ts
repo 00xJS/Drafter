@@ -212,6 +212,23 @@ export interface CapturedFields {
   recurrence?: 'daily' | 'weekly' | 'biweekly' | 'monthly'
 }
 
+/** Title + optional body for parseCapture; a pasted URL is pulled into `url`. */
+export function captureSeed(title: string, description = '', link?: string): { text: string; url?: string } {
+  const t = title.trim()
+  const fromTitle = /^https?:\/\//i.test(t) ? t : undefined
+  const fromLink = link && /^https?:\/\//i.test(link.trim()) ? link.trim() : undefined
+  const url = fromTitle ?? fromLink
+  const text = [fromTitle ? '' : t, description.trim()].filter(Boolean).join('\n').trim() || t
+  return { text, url }
+}
+
+/** True when the only structured find is a date/time — apply it without a Review tap. */
+export function isSimpleDateCapture(parsed: CapturedFields, original: string, now = new Date()): boolean {
+  if (!parsed.dueAt) return false
+  if (parsed.priority || parsed.projectName || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence) return false
+  return !!deterministicCapture(original, now)?.dueAt
+}
+
 const WEEKDAYS: Record<string, number> = {
   sun: 0,
   sunday: 0,

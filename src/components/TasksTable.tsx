@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { PRIORITIES, PRIORITY_META, Priority, Project, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
+import { BOARD_STATUSES, PRIORITIES, PRIORITY_META, Priority, Project, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
 import { Store } from '../store'
 import { migrateStored, STORAGE_VERSION } from '../schema'
 import { compareTasks } from '../taskutils'
@@ -48,6 +48,10 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
   }, [tasks, q, status, priority, sort, projectMap])
 
   const visible = showAll ? filtered : filtered.slice(0, 200)
+  const statusChoices = useMemo(() => {
+    const leftover = TASK_STATUSES.filter(s => !BOARD_STATUSES.includes(s) && tasks.some(t => t.status === s))
+    return leftover.length ? [...BOARD_STATUSES, ...leftover] : BOARD_STATUSES
+  }, [tasks])
 
   function exportJSON() {
     const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.allItems }
@@ -95,7 +99,7 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
         <select value={status} onChange={e => setStatus(e.target.value as TaskStatus | 'all' | 'open')}>
           <option value="open">Open</option>
           <option value="all">All statuses</option>
-          {TASK_STATUSES.map(s => (
+          {statusChoices.map(s => (
             <option key={s} value={s}>
               {STATUS_META[s].label}
             </option>

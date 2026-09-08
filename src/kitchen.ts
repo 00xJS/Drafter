@@ -95,6 +95,33 @@ export function dinnerOn(meals: Meal[], day: Date): Meal | undefined {
   return meals.find(m => m.date === key && m.slot === 'dinner') ?? meals.find(m => m.date === key)
 }
 
+/** Unique Sunday-start weeks that contain these YYYY-MM-DD meal dates. */
+export function weeksForDates(dates: string[]): { key: string; start: Date }[] {
+  const map = new Map<string, Date>()
+  for (const date of dates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const range = weekRange(new Date(`${date}T12:00:00`))
+    if (!map.has(range.key)) map.set(range.key, range.start)
+  }
+  return [...map.entries()].map(([key, start]) => ({ key, start }))
+}
+
+/**
+ * Rebuild grocery lists for the weeks those meal dates fall in.
+ * Planning a dinner on the phone then writes a list the web grocery tab can sync.
+ */
+export function groceriesForMealDates(
+  meals: Meal[],
+  recipes: Recipe[],
+  groceries: GroceryList[],
+  dates: string[],
+  now = new Date().toISOString(),
+): GroceryList[] {
+  return weeksForDates(dates).map(({ key, start }) =>
+    buildGroceryList(key, mealsForWeek(meals, start), recipes, groceries.find(g => g.weekKey === key), now),
+  )
+}
+
 export function newIngredient(): RecipeIngredient {
   return { id: Math.random().toString(36).slice(2, 10), name: '' }
 }

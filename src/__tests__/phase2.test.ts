@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deterministicCapture } from '../ai'
+import { captureSeed, deterministicCapture, isSimpleDateCapture } from '../ai'
 import { dueLabel, dueTone, duplicateTask } from '../taskutils'
 import { plannedGift, personStats } from '../people'
 import { nextUp } from '../review'
@@ -94,6 +94,25 @@ describe('deterministicCapture', () => {
     const due = new Date(c!.dueAt!)
     expect(due.getDate()).toBe(8)
     expect(due.getHours()).toBe(15)
+    expect(isSimpleDateCapture(c!, 'dentist tomorrow 3pm', now)).toBe(true)
+  })
+
+  it('does not treat a people/project parse as simple', () => {
+    expect(
+      isSimpleDateCapture(
+        { title: 'Call mum', dueAt: '2026-09-11T15:00:00.000Z', peopleNames: ['Mum'] },
+        'call mum Friday 3pm',
+        new Date('2026-09-07T10:00:00'),
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('captureSeed', () => {
+  it('moves a pasted URL out of the title into url', () => {
+    const s = captureSeed('https://example.com/x', 'read this')
+    expect(s.url).toBe('https://example.com/x')
+    expect(s.text).toBe('read this')
   })
 })
 

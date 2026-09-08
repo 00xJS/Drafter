@@ -57,6 +57,18 @@ describe('sanitizePlace', () => {
     expect(p?.category).toBe('other')
     expect(p?.color).toMatch(/^#/)
   })
+
+  it('keeps a tombstone with a blank name so deletes still sync', () => {
+    const p = sanitizePlace({
+      kind: 'place',
+      id: 'pl1',
+      name: '',
+      deletedAt: '2026-09-08T00:00:00.000Z',
+      updatedAt: '2026-09-08T00:00:00.000Z',
+    })
+    expect(p?.deletedAt).toBeTruthy()
+    expect(p?.id).toBe('pl1')
+  })
 })
 
 describe('sanitizeItem places', () => {

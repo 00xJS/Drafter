@@ -9,7 +9,7 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
-import { isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setLocalRemindersEnabled, startOAuth } from '../native'
+import { appLockEnabled, authenticateAppLock, checkAppLock, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setLocalRemindersEnabled, startOAuth } from '../native'
 import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
@@ -80,6 +80,11 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const [digestHour, setDigestHour] = useState(8)
   const [localOn, setLocalOn] = useState(localRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
+  const [lockOn, setLockOn] = useState(appLockEnabled())
+  const [lockLabel, setLockLabel] = useState('Face ID')
+  const [lockAvail, setLockAvail] = useState(false)
+  const [lockErr, setLockErr] = useState('')
+  const [lockBusy, setLockBusy] = useState(false)
   useEffect(() => {
     // push is sent by the server, so without an account there is nothing to ask
     if (!isSupabaseConfigured()) return
@@ -91,6 +96,14 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
       })
       .catch(e => setPushError((e as Error).message))
     currentEndpoint().then(setThisEndpoint)
+  }, [])
+  useEffect(() => {
+    if (!isNative()) return
+    void checkAppLock().then(s => {
+      setLockAvail(s.available)
+      setLockLabel(s.label)
+      if (s.reason) setLockErr(s.reason)
+    })
   }, [])
   const runPush = async (fn: () => Promise<unknown>, after?: () => void) => {
     setPushBusy(true)
@@ -249,7 +262,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             </p>
             <p className="field-hint">
               {supabaseOn
-                ? 'Your projects and tasks live in Supabase Postgres, shared with every signed-in device and your AI agents. Images sync through Supabase Storage.'
+                ? 'Projects, tasks, people, places, recipes, meals and grocery lists live in Supabase Postgres and sync to every signed-in device (phone and web). Images sync through Supabase Storage.'
                 : 'No backend configured — data stays in this browser. Use Export in the Tasks tab for backups.'}
             </p>
             {!!store.syncInfo.pending && (
@@ -285,6 +298,45 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
               <small>Use a full resync if a device looks out of date.</small>
             </p>
           </section>
+
+          {isNative() && (
+            <section className="settings-section g-reminders">
+              <h3>Lock this iPhone</h3>
+              <p className="field-hint">
+                After you leave the app, {lockLabel} is required to see your planner again. Stays on this device — it does
+                not change your Drafter password.
+              </p>
+              <p className="sync-line">
+                <label className="cal-source mirror-row">
+                  <input
+                    type="checkbox"
+                    checked={lockOn}
+                    disabled={lockBusy || !lockAvail}
+                    onChange={async e => {
+                      setLockErr('')
+                      if (e.target.checked) {
+                        setLockBusy(true)
+                        const ok = await authenticateAppLock(`Turn on ${lockLabel} for Drafter`)
+                        setLockBusy(false)
+                        if (!ok) {
+                          setLockErr(`Couldn’t verify ${lockLabel}. Try again.`)
+                          return
+                        }
+                        setAppLockEnabled(true)
+                        setLockOn(true)
+                      } else {
+                        setAppLockEnabled(false)
+                        setLockOn(false)
+                      }
+                    }}
+                  />
+                  <span className="cal-source-name">Require {lockLabel} when opening Drafter</span>
+                </label>
+              </p>
+              {lockErr && <p className="warn">{lockErr}</p>}
+              {!lockAvail && <p className="field-hint">This device has no Face ID, Touch ID, or passcode available for apps.</p>}
+            </section>
+          )}
 
           {supabaseOn && (
             <section className="settings-section g-household">

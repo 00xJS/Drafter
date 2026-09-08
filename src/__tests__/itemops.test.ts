@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applySync, mergeItems, nextOccurrence, purgeTombstones } from '../itemops'
 import { nextUp } from '../review'
-import { Project, Task } from '../types'
+import { Place, Project, Recipe, Task } from '../types'
 
 function task(id: string, updatedAt: string, over: Partial<Task> = {}): Task {
   return {
@@ -42,6 +42,41 @@ describe('mergeItems', () => {
       [task('a', '2026-01-01T00:00:00.000Z', { title: 'stale archive copy' })],
     )
     expect(merged[0].title).toBe('edited locally')
+  })
+
+  it('last-write-wins a recipe the same way as a task (kitchen sync)', () => {
+    const oldR: Recipe = {
+      kind: 'recipe',
+      id: 'pizza',
+      name: 'Pizza',
+      ingredients: [{ id: 'i', name: 'Flour' }],
+      tags: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const newR: Recipe = { ...oldR, name: 'Friday pizza', updatedAt: '2026-01-02T00:00:00.000Z' }
+    const merged = mergeItems([oldR], [newR])
+    expect(merged).toHaveLength(1)
+    expect(merged[0].kind).toBe('recipe')
+    expect((merged[0] as Recipe).name).toBe('Friday pizza')
+  })
+
+  it('last-write-wins a place the same way as a task', () => {
+    const oldP: Place = {
+      kind: 'place',
+      id: 'nopi',
+      name: 'Nopi',
+      color: '#f97316',
+      category: 'restaurant',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const newP: Place = { ...oldP, name: 'Nopi Soho', notes: 'book ahead', updatedAt: '2026-01-02T00:00:00.000Z' }
+    const merged = mergeItems([oldP], [newP])
+    expect(merged).toHaveLength(1)
+    expect(merged[0].kind).toBe('place')
+    expect((merged[0] as Place).name).toBe('Nopi Soho')
+    expect((merged[0] as Place).notes).toBe('book ahead')
   })
 })
 
@@ -213,6 +248,35 @@ describe('applySync', () => {
     expect(d.rejected).toEqual(['x'])
     expect(d.unconfirmed).toEqual([])
     expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('todo')
+  })
+
+  it('keeps a rejected place that the server never stored so the next session can retry', () => {
+    const placeRow = {
+      kind: 'place' as const,
+      id: 'nopi',
+      name: 'Nopi',
+      color: '#f97316',
+      category: 'restaurant' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-09-08T00:00:00.000Z',
+    }
+    const d = applySync([placeRow], [placeRow], [], null, ['nopi'])
+    expect(d.merged.find(i => i.id === 'nopi')).toMatchObject({ kind: 'place', name: 'Nopi' })
+    expect(d.rejected).toEqual(['nopi'])
+  })
+
+  it('keeps a rejected place even when it was not in this push', () => {
+    const placeRow = {
+      kind: 'place' as const,
+      id: 'nopi',
+      name: 'Nopi',
+      color: '#f97316',
+      category: 'restaurant' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-09-08T00:00:00.000Z',
+    }
+    const d = applySync([placeRow], [], [], null, ['nopi'])
+    expect(d.merged.find(i => i.id === 'nopi')).toMatchObject({ kind: 'place', name: 'Nopi' })
   })
 })
 

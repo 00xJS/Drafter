@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGroceryList, ingredientKey, mealId, mealsByDay, mergeIngredients } from '../kitchen'
+import { buildGroceryList, groceriesForMealDates, ingredientKey, mealId, mealsByDay, mergeIngredients } from '../kitchen'
 import { Meal, Recipe } from '../types'
 
 const recipe = (over: Partial<Recipe> & { id: string; name: string; ingredients: Recipe['ingredients'] }): Recipe => ({
@@ -89,5 +89,25 @@ describe('mealsByDay', () => {
       { kind: 'meal', id: 'b', date: '2026-09-08', slot: 'dinner', title: 'Pizza', createdAt: '', updatedAt: '' },
     ])
     expect(map.get('2026-09-08')?.map(m => m.slot)).toEqual(['dinner', 'lunch'])
+  })
+})
+
+describe('groceriesForMealDates', () => {
+  it('writes a grocery list for the week a dinner was planned so it can sync', () => {
+    const pasta = recipe({ id: 'pasta', name: 'Pasta', ingredients: [{ id: '1', name: 'Spaghetti', qty: 400, unit: 'g' }] })
+    const meal: Meal = {
+      kind: 'meal',
+      id: mealId('2026-09-08', 'dinner'),
+      date: '2026-09-08',
+      slot: 'dinner',
+      recipeId: 'pasta',
+      title: 'Pasta',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const lists = groceriesForMealDates([meal], [pasta], [], ['2026-09-08'], '2026-09-07T12:00:00.000Z')
+    expect(lists).toHaveLength(1)
+    expect(lists[0].kind).toBe('grocery')
+    expect(lists[0].items[0]).toMatchObject({ name: 'Spaghetti', qty: 400, state: 'need' })
   })
 })

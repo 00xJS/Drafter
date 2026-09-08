@@ -21,7 +21,7 @@ import { newerStamp } from '../itemops'
 import { duplicateTask } from '../taskutils'
 import { fmtDateTime, fromLocalInput, toLocalInput, uid } from '../utils'
 import { mediaURL, saveMedia } from '../media'
-import { REFINE_META, RefineMode, CapturedFields, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { REFINE_META, RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { getSupabase } from '../supabase'
 import { GithubCard } from './GithubCard'
 import { createIssue, parseGithubUrl } from '../github'
@@ -155,20 +155,33 @@ export function TaskEditor({
   const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (task || !capture || !base.title.trim()) return
+    if (task || !capture) return
+    const seed = captureSeed(base.title, base.description, base.link)
+    if (!seed.text.trim() && !seed.url) return
     let live = true
     ;(async () => {
       setAiBusy('capture')
       try {
-        const parsed = await parseCapture(base.title, {
+        if (seed.url && !base.link) setLink(seed.url)
+        const parsed = await parseCapture(seed.text || seed.url || base.title, {
           projectNames: projects.filter(p => p.status === 'active').map(p => p.name),
           personNames: people.map(p => p.name),
         })
         if (!live) return
-        // only surface when something beyond the raw title was found
-        if (parsed.dueAt || parsed.priority || parsed.projectName || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence || parsed.title !== base.title) {
-          setCaptureProposal(parsed)
+        const extra =
+          parsed.dueAt ||
+          parsed.priority ||
+          parsed.projectName ||
+          parsed.peopleNames?.length ||
+          parsed.tags?.length ||
+          parsed.recurrence ||
+          parsed.title !== base.title
+        if (!extra) return
+        if (isSimpleDateCapture(parsed, seed.text || base.title) && !parsed.priority && !parsed.projectName && !parsed.peopleNames?.length) {
+          applyCapture(parsed)
+          return
         }
+        setCaptureProposal(parsed)
       } catch {
         /* offline / no key — deterministic path already inside parseCapture */
       } finally {

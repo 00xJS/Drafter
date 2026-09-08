@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -14,7 +14,7 @@ import {
 import { newerStamp } from '../itemops'
 import { weekRange, shiftRange } from '../review'
 import { dateKey, uid } from '../utils'
-import { buildGroceryList, dinnerOn, groceryId, mealId, mealsForWeek, newIngredient } from '../kitchen'
+import { buildGroceryList, dinnerOn, groceriesForMealDates, groceryId, mealId, mealsForWeek, newIngredient } from '../kitchen'
 import { ConfirmButton } from './ConfirmButton'
 
 type Seg = 'recipes' | 'week' | 'grocery'
@@ -26,9 +26,12 @@ interface Props {
   groceries: GroceryList[]
   onSave(item: Recipe | Meal | GroceryList): void
   onDelete(id: string): void
+  /** Open this recipe in cook mode (Today → tonight’s dinner). */
+  openRecipe?: Recipe | null
+  onOpenRecipeConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) {
+export function Kitchen({ recipes, meals, groceries, onSave, onDelete, openRecipe, onOpenRecipeConsumed }: Props) {
   const [seg, setSeg] = useState<Seg>(() => {
     try {
       const saved = localStorage.getItem(SEG_KEY) as Seg | null
@@ -39,6 +42,7 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) 
   })
   const [anchor, setAnchor] = useState(() => new Date())
   const [editing, setEditing] = useState<Recipe | 'new' | null>(null)
+  const [cooking, setCooking] = useState<Recipe | null>(null)
   const [q, setQ] = useState('')
 
   const week = useMemo(() => weekRange(anchor), [anchor])
@@ -59,6 +63,34 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) 
       /* ignore */
     }
   }
+
+  const persistGroceries = (nextMeals: Meal[], dates: string[], nextRecipes = recipes) => {
+    for (const g of groceriesForMealDates(nextMeals, nextRecipes, groceries, dates)) onSave(g)
+  }
+  const persistMeal = (m: Meal) => {
+    const nextMeals = [...meals.filter(x => x.id !== m.id), m]
+    onSave(m)
+    persistGroceries(nextMeals, [m.date])
+  }
+  const clearMeal = (id: string) => {
+    const meal = meals.find(m => m.id === id)
+    onDelete(id)
+    if (meal) persistGroceries(meals.filter(x => x.id !== id), [meal.date])
+  }
+  const persistRecipe = (r: Recipe) => {
+    const nextRecipes = [...recipes.filter(x => x.id !== r.id), r]
+    onSave(r)
+    const dates = meals.filter(m => m.recipeId === r.id).map(m => m.date)
+    if (dates.length) persistGroceries(meals, dates, nextRecipes)
+  }
+
+  useEffect(() => {
+    if (!openRecipe) return
+    setCooking(openRecipe)
+    setTab('recipes')
+    onOpenRecipeConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRecipe])
 
   return (
     <div className="kitchen">
@@ -86,16 +118,35 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) 
           ) : (
             <ul className="recipe-list">
               {filtered.map(r => (
-                <li key={r.id} className="recipe-card" onClick={() => setEditing(r)}>
+                <li key={r.id} className="recipe-card" onClick={() => setCooking(r)}>
                   <span className="recipe-emoji">{r.emoji || '🍽️'}</span>
                   <div className="dash-main">
                     <span className="dash-title">{r.name}</span>
                     <span className="dash-meta">
                       {r.servings ? `${r.servings} servings` : 'No yield set'}
-                      {r.ingredients.length > 0 && ` · ${r.ingredients.length} ingredients`}
+                      {r.ingredients.length > 0 && ` · ${r.ingredients.length} ingredient${r.ingredients.length === 1 ? '' : 's'}`}
+                      {r.steps?.length ? ` · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'}` : ''}
                       {r.tags.length > 0 && ` · ${r.tags.join(', ')}`}
                     </span>
+                    {r.ingredients.length > 0 && (
+                      <span className="recipe-preview">
+                        {r.ingredients
+                          .slice(0, 4)
+                          .map(i => i.name)
+                          .join(' · ')}
+                        {r.ingredients.length > 4 ? '…' : ''}
+                      </span>
+                    )}
                   </div>
+                  <button
+                    className="btn subtle"
+                    onClick={e => {
+                      e.stopPropagation()
+                      setEditing(r)
+                    }}
+                  >
+                    Edit
+                  </button>
                 </li>
               ))}
             </ul>
@@ -109,12 +160,9 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) 
           meals={weekMeals}
           recipes={recipes}
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
-          onSaveMeal={m => onSave(m)}
-          onClearMeal={id => onDelete(id)}
-          onOpenRecipe={r => {
-            setEditing(r)
-            setTab('recipes')
-          }}
+          onSaveMeal={persistMeal}
+          onClearMeal={clearMeal}
+          onOpenRecipe={r => setCooking(r)}
         />
       )}
 
@@ -129,18 +177,31 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete }: Props) 
         />
       )}
 
+      {cooking && (
+        <RecipeCook
+          recipe={cooking}
+          onEdit={() => {
+            setEditing(cooking)
+            setCooking(null)
+          }}
+          onClose={() => setCooking(null)}
+        />
+      )}
+
       {editing && (
         <RecipeForm
           recipe={editing === 'new' ? undefined : editing}
           onSave={r => {
-            onSave(r)
+            persistRecipe(r)
             setEditing(null)
+            setCooking(r)
           }}
           onDelete={
             editing !== 'new'
               ? id => {
                   onDelete(id)
                   setEditing(null)
+                  setCooking(null)
                 }
               : undefined
           }
@@ -284,7 +345,7 @@ function MealSlotRow({
             if (r) onOpenRecipe(r)
           }}
         >
-          Open
+          Cook
         </button>
       )}
     </div>
@@ -394,6 +455,73 @@ function GroceryPane({
         </button>
       </div>
     </>
+  )
+}
+
+function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): void; onClose(): void }) {
+  const [done, setDone] = useState<Record<number, boolean>>({})
+  return (
+    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal recipe-cook" role="dialog" aria-modal="true">
+        <header className="modal-head">
+          <h2>
+            {recipe.emoji ? `${recipe.emoji} ` : ''}
+            {recipe.name}
+          </h2>
+          <button className="btn subtle" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </header>
+        <div className="modal-body">
+          <p className="recipe-cook-meta">
+            {recipe.servings ? `${recipe.servings} servings` : 'No yield set'}
+            {recipe.ingredients.length > 0 && ` · ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? '' : 's'}`}
+            {recipe.steps?.length ? ` · ${recipe.steps.length} step${recipe.steps.length === 1 ? '' : 's'}` : ''}
+            {recipe.tags.length > 0 && ` · ${recipe.tags.join(', ')}`}
+          </p>
+          {recipe.ingredients.length > 0 && (
+            <div className="field">
+              <span>Ingredients</span>
+              <ul className="recipe-ings">
+                {recipe.ingredients.map(i => (
+                  <li key={i.id}>
+                    {i.qty != null ? `${i.qty}${i.unit ? ' ' + i.unit : ''} ` : ''}
+                    {i.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {recipe.steps && recipe.steps.length > 0 ? (
+            <div className="field">
+              <span>Steps</span>
+              <ol className="recipe-steps">
+                {recipe.steps.map((step, i) => (
+                  <li key={i} className={done[i] ? 'done' : undefined}>
+                    <button type="button" className="recipe-step" onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}>
+                      <span className="recipe-step-n">{i + 1}</span>
+                      <span>{step}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : (
+            <p className="muted">No steps yet — tap Edit to add how you cook it.</p>
+          )}
+          {recipe.notes && <p className="recipe-notes">{recipe.notes}</p>}
+        </div>
+        <footer className="modal-foot">
+          <button className="btn" onClick={onEdit}>
+            Edit
+          </button>
+          <span className="spacer" />
+          <button className="btn primary" onClick={onClose}>
+            Done
+          </button>
+        </footer>
+      </div>
+    </div>
   )
 }
 

@@ -70,6 +70,8 @@
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

@@ -10,6 +10,8 @@ import { clearSyncCursor, prepareFullResync, readCursor, readDirty, writeCursor,
 import { getSupabase } from './supabase'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
+/** Kinds the server used to drop silently — keep retrying so they survive a new session. */
+const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery'])
 
 async function loadCache(myId: string | null): Promise<Item[]> {
   try {
@@ -215,13 +217,25 @@ export function useItems(myId: string | null = null): Store {
         (decision as ReturnType<typeof applySync> | null) ??
         applySync(itemsRef.current, outgoing, result.items, since, result.rejected)
       if (applied.cursor) writeCursor(applied.cursor)
-      // clear confirmed + rejected from dirty; keep unconfirmed for retry
+      // clear confirmed + rejected from dirty; keep unconfirmed for retry.
+      // Places/kitchen used to be dropped by an older sync_posts allow-list —
+      // leave those ids dirty so the next session pushes them again.
       const still = readDirty()
       const retry = new Set(applied.unconfirmed)
+      const keepRejected = new Set(
+        applied.rejected.filter(id => {
+          const row = outgoing.find(i => i.id === id) ?? itemsRef.current.find(i => i.id === id)
+          return row != null && RETRY_KINDS.has(row.kind)
+        }),
+      )
       for (const o of outgoing) {
-        if (!retry.has(o.id)) still.delete(o.id)
+        if (retry.has(o.id) || keepRejected.has(o.id)) continue
+        still.delete(o.id)
       }
-      for (const id of applied.rejected) still.delete(id)
+      for (const id of keepRejected) still.add(id)
+      for (const id of applied.rejected) {
+        if (!keepRejected.has(id)) still.delete(id)
+      }
       writeDirty(still)
       setSyncInfo({
         online: true,
@@ -247,6 +261,8 @@ export function useItems(myId: string | null = null): Store {
       // while the server still has data (stuck after wipe / sign-out race).
       if (myId && cached.length === 0) prepareFullResync({ clearDirty: true })
       setItems(ensureProjects(cached))
+      const heal = cached.filter(i => RETRY_KINDS.has(i.kind)).map(i => i.id)
+      if (heal.length) markDirty(heal)
       loadedRef.current = true
       setLoaded(true)
       doSyncRef.current()

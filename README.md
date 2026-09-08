@@ -1,6 +1,6 @@
 # Drafter
 
-A local-first personal project manager. Projects hold tasks with due dates, priorities, checklists and a comment trail; a roadmap lays projects and milestones out over time; the Today page tells you what's overdue, due today and due this week. Tasks can link to GitHub issues, pull requests, repos or Projects boards and show their live state.
+A local-first personal project manager. Projects hold tasks with due dates, priorities, checklists and a comment trail; a roadmap lays projects and milestones out over time; the Today page tells you what's overdue, due today and due this week. People and places track who you saw and where you went. A Kitchen tab holds recipes, the week's meals and a grocery list. Tasks can link to GitHub issues, pull requests, repos or Projects boards and show their live state.
 
 ## Run it
 
@@ -17,7 +17,7 @@ npm run dev          # app on http://localhost:5173
 
 ### Deploying to Netlify
 
-`netlify.toml` is ready: build `npm run build`, publish `dist`, plus an `/api/ai` function that proxies the model server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optionally `GITHUB_TOKEN` (see GitHub links), optionally `SUPABASE_SERVICE_KEY` plus `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` (see Calendar sync), and one AI key for the ✨ features:
+`netlify.toml` is ready: build `npm run check`, publish `dist`, plus an `/api/ai` function that proxies the model server-side (session-gated, so visitors can't burn credits). Set these site environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optionally `GITHUB_TOKEN` (see GitHub links), optionally `SUPABASE_SERVICE_KEY` plus `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` (see Calendar sync), and one AI key for the ✨ features:
 
 - `NVIDIA_API_KEY` — a free key from [build.nvidia.com](https://build.nvidia.com) (NVIDIA Developer Program, ~40 requests/min). Uses the OpenAI-compatible NIM endpoint; pick a model with `NVIDIA_MODEL` (default `nvidia/nemotron-3-super-120b-a12b`; list at `https://integrate.api.nvidia.com/v1/models`).
 - `ANTHROPIC_API_KEY` — Claude instead (plus `ANTHROPIC_WORKSPACE_ID` if that key is identity-linked and not scoped to a single workspace; model via `ANTHROPIC_MODEL`).
@@ -27,13 +27,13 @@ If both keys are set NVIDIA wins; force one with `AI_PROVIDER=nvidia|anthropic`.
 ## Model
 
 - **Project** — a container with a name, color, status (active / paused / done / archived), optional start and target dates, milestones, and an optional GitHub repo or Projects URL.
-- **Task** — title, description, status (Wishlist → To do → Doing → Blocked → Done, plus Canceled), priority (low / normal / high / urgent), due date, tags, a checklist, a timestamped comment trail, notes, images, an optional GitHub link, and recurrence (daily / weekly / biweekly / monthly — completing one spawns the next).
+- **Task** — title, description, status (Wishlist → To do → Doing → Done; leftover Blocked / Canceled still display), priority (low / normal / high / urgent), due date, tags, a checklist, a timestamped comment trail, notes, images, an optional GitHub link, and recurrence (daily / weekly / biweekly / monthly — completing one spawns the next).
 
 The **project bar** under the header filters every view to one project (double-click a chip to edit it). The **Notes** tab is the project's notepad (with "All projects" selected it shows an index of every project's notes): one running page you type straight into, with a formatting bar (bold, italic, underline, strikethrough, headings, lists, checklists, quotes, inline code, code blocks, links, dividers), an emoji picker, and photos pasted, dropped or picked from the 📷 button and shown inline. Notes are stored as a sanitized HTML subset; photos go to the synced media store and are referenced by id. It autosaves as you type. Older Markdown notes convert automatically on first open.
 
 **Templates:** a new project can start from a template (built in: holiday/trip, moving house, party, quarterly finances, room makeover — or any project you've saved with *Save as template*). The Start date anchors every task and milestone. **✨ Draft a plan from a goal** asks the model for dated tasks and milestones from one sentence; review the list, then create the project with it or add it to an existing one.
 
-**Search** (🔍 or Cmd/Ctrl+K) finds tasks, notes, comments, checklists, projects and people; typing something new and pressing Enter creates a task. On a phone, the installed app is a **share target**: share a link or text from any app and it opens as a new task. Tasks with no project and no date show in Today's **Inbox** for a week so nothing captured gets lost. Tasks also carry **files** (any type, synced through the media store), an **estimate and actual cost**, and **blocked-by** links: a blocked task moves to To do by itself when its blockers complete. On mobile the tabs sit at the bottom and a right-swipe on a Today row completes it.
+**Search** (🔍 or Cmd/Ctrl+K) finds tasks, notes, comments, checklists, projects and people; typing something new and pressing Enter creates a task. On a phone the installed app is a **share target**: share a link or text from any app and it opens as a new task (a URL lands in the link field, not the title). The phone tab bar is **Today · Calendar · More · Kitchen · People**; More holds Tasks, Board, Notes and Review. Tasks with no project and no date show in Today's **Inbox** for a week so nothing captured gets lost. Tasks also carry **files** (any type, synced through the media store), an **estimate and actual cost**, and **blocked-by** links: a blocked task moves to To do by itself when its blockers complete. On mobile the tabs sit at the bottom and a right-swipe on a Today row completes it.
 
 **Household.** Settings → Household → *Create household*, then add members by their account email (accounts are still created by the site owner in Supabase). Everyone in the household sees the same projects, tasks, notes and people and can assign tasks (*Who's doing it*); the project bar gains a **Mine / Everyone** switch. Calendars, reminders and reviews stay personal. Under the hood every record carries its owner and the database policy grants access to your own records plus your household's, replacing the original single-owner policy; existing data is assigned to the owner on migration.
 
@@ -41,16 +41,17 @@ The **project bar** under the header filters every view to one project (double-c
 
 ## Views
 
-- **Today** — overdue, due today, this week, in-progress-without-a-date, blocked, and going-stale lists with one-tap complete; progress cards per active project; recently done.
+- **Today** — overdue, due today, this week, Next up, this week's Top 3, tonight's dinner, people due a catch-up, and (on Sunday) last week's review excerpt; one-tap complete and defer.
 - **Board** — kanban by status. Drag cards between columns (or use the ⇄ picker on touch). Dropping into Done stamps the completion date and spawns the next occurrence of a repeating task.
 - **Calendar → Timeline** — projects as bars across months (dashed when the span is inferred — set start/target dates to pin it), milestones as ◆, due tasks as dots, a today line. Click anything to open it.
 - **Calendar → Month** — month view by due date (done tasks show on their completion day). Click a day to add; drag a pill to move its due date.
 - **Tasks** — searchable, filterable, sortable list of everything, plus JSON backup/export and undo-able deletes.
 - **Notes** — the selected project's notepad (rich text with inline photos), or an index of all projects' notes. The ☐ Task button turns the selected line into a task in that project.
 - **Review** — weekly or monthly: what got done (with a per-day chart), what slipped (push everything overdue to Monday, or send it back to the wishlist, in one click), what's already planned next, people seen, project movement and stalled projects, spend. Write your Top 3 and reflections, then ✨ write my summary drafts an honest review from the data.
-- **People** — the people you want to keep close. Give each a rhythm ("every 2 weeks"); any completed task they're attached to counts as seeing them, or log a visit in one tap. Cards show last seen, visits in the last 30/90 days, the average gap, a 12-week sparkline, and a status: on track, due a catch-up, overdue, or seeing a lot. Today surfaces the ones that need attention with a **Plan something** button. People also carry a birthday and anniversary: Today lists them three weeks out with **Plan a gift** (a task due five days before, seeded with their notes). On a past calendar event, **Who was there?** logs everyone who came in one tap. The **year with people** table shows visits per month per person, totals and a drifting/more-lately trend.
+- **People** — the people you want to keep close. Give each a rhythm ("every 2 weeks"); any completed task they're attached to counts as seeing them, or log a visit in one tap. Cards show last seen, visits in the last 30/90 days, the average gap, a 12-week sparkline, and a status: on track, due a catch-up, or overdue. Today surfaces the ones that need attention with **Plan something** or **Saw them**. People also carry a birthday and anniversary: Today lists them three weeks out with **Plan a gift** (a task due five days before, seeded with their notes). On a past calendar event, **Who was there?** logs everyone who came in one tap. The **year with people** table shows visits per month per person, totals and a drifting/more-lately trend. **Places** is a segment on the same tab: restaurants, parks, venues. Attach a place on a task or log an outing; the list shows when you last went, how often, and who you usually go with.
+- **Kitchen** — recipes with ingredients and steps, a week of breakfast/lunch/dinner/snack slots, and a grocery list built from whatever is planned (duplicate lines merge; Have / Need / Got it). Cook mode walks the steps. Tonight's dinner also shows on Today.
 
-The task editor's ✨ buttons break a task into checklist steps and suggest tags.
+The task editor's ✨ buttons break a task into checklist steps and suggest tags. Pasting or sharing a sentence can fill a date; a URL goes in the link field.
 
 ## GitHub links and write-back
 
@@ -90,9 +91,12 @@ npm run ios          # builds the bundle for the app, syncs it, opens Xcode
 ```
 
 Then run on a simulator or a phone from Xcode. `npm run build:ios` alone
-rebuilds and syncs without opening Xcode. A free Apple ID installs on your own
-iPhone for a week at a time; a paid developer account is needed for TestFlight,
-the App Store and push notifications.
+rebuilds and syncs without opening Xcode. The installed app does **not**
+pick up a web deploy by itself — run `npm run ios` (or `build:ios` then
+Xcode) after native or plugin changes. A free Apple ID installs on your own
+iPhone for a week at a time; a paid developer account is needed for
+TestFlight, the App Store, push through Apple, widgets, a share extension
+and associated domains. This project currently ships the unpaid path.
 
 What the shell adds over the installed web app:
 
@@ -100,40 +104,46 @@ What the shell adds over the installed web app:
   this iPhone* schedules a notification on the phone itself at each task's due
   time (9am for date-only tasks) and on the morning of a birthday or
   anniversary. No server, no account, works with the app closed.
-- **Push through Apple.** Turn on reminders in Settings → Reminders as usual;
-  the app registers with APNs instead of a browser. On the host set
-  `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` (the `.p8` contents) and
-  `APNS_BUNDLE_ID=app.drafter.ios` (see `.env.example`). Tapping a nudge opens
-  that task; Sunday's digest opens the weekly review.
+- **Lock this iPhone.** Opt-in Face ID / Touch ID / device passcode (Settings
+  → Reminders) before the signed-in cache is shown.
+- **Keyboard.** The task sheet shrinks above the iOS keyboard.
+- **Dark launch screen.** `#0f1115` with orange “Drafter”, matching the app.
+- **Push through Apple.** Needs a paid membership and `APNS_*` on the host.
+  Until then, use on-device reminders. Tapping a nudge opens that task;
+  Sunday's digest opens the weekly review.
 - **Calendar connections that work.** Google and Outlook consent runs in Safari
   and returns to the app through `drafter://oauth` — the API hands the browser
   a one-time token so the cookie-bound state still holds.
-- **A URL scheme for capture.** `drafter://new?title=…`, `drafter://open?task=<id>`
-  and `drafter://open?view=review` all work from anywhere on the phone. A
-  two-step Shortcut ("Receive text/URLs from Share Sheet" → "Open URL"
-  `drafter://new?url=[URL-encoded Shortcut Input]`) puts Drafter in every share sheet.
+- **A URL scheme for capture.** `drafter://new?title=…`, `drafter://new?url=…`,
+  `drafter://open?task=<id>` and `drafter://open?view=review` all work from
+  anywhere on the phone. A two-step Shortcut ("Receive text/URLs from Share
+  Sheet" → "Open URL" `drafter://new?url=[URL-encoded Shortcut Input]`) puts
+  Drafter in every share sheet.
 - Syncs whenever the app comes to the foreground, haptics on completion, dark
   system UI, and the status bar tucked into the app's own header.
 
 Not there yet: a Home Screen widget and a native share extension (both need
-their own Swift targets), and universal links.
+their own Swift targets), universal links, and APNs — all waiting on a paid
+Apple Developer account.
 
 ## Data & sync model
 
-Tasks and projects cache locally in IndexedDB (validated and migrated on load) and sync to Postgres with **delta sync**: only records newer than the last cursor move in either direction. The table is still called `posts`; each row is a task or a project (`data->>'kind'`). **Pre-v3 rows are never rewritten** — every reader (the app, the MCP server) converts a legacy post into a task on read, so the upgrade needs no data migration, only `supabase db push` for the new generated columns and the wider status validation. Sync also fires when the app returns to the foreground. Last-write-wins per post by `updatedAt` is **enforced by a database trigger** for every writer (app, MCP, raw REST), with strictly-increasing stamps on every edit. Deletes are tombstones (undo-able, purged after 90 days). Images upload to Supabase Storage (owner-scoped) with IndexedDB as the offline cache, so they follow you across devices.
+Tasks, projects, people, places, recipes, meals, groceries, calendars, reviews and templates cache locally in IndexedDB (validated and migrated on load) and sync to Postgres with **delta sync**: only dirty ids push, and only records newer than the last `synced_at` cursor move back. The table is still called `posts`; each row's type is `data->>'kind'`. **Pre-v3 rows are never rewritten** — every reader (the app, the MCP server) converts a legacy post into a task on read, so the upgrade needs no data migration, only `supabase db push` for new generated columns and the wider kind/status validation. A new kind must be added to the `sync_posts` allow-list **before** clients write it, or the server rejects the row; the app retries places and kitchen kinds instead of deleting them. Sync also fires when the app returns to the foreground. Last-write-wins per post by `updatedAt` is **enforced by a database trigger** for every writer (app, MCP, raw REST), with strictly-increasing stamps on every edit. Deletes are tombstones (undo-able, purged after 90 days). Images upload to Supabase Storage (owner-scoped) with IndexedDB as the offline cache, so they follow you across devices.
 
 ## Development
 
 ```bash
-npm test             # vitest: schema/legacy migration, merge/recurrence
-npm run build        # type-check + production build (+ PWA service worker)
+npm test             # vitest
+npm run lint         # eslint src --max-warnings 0
+npm run check        # tests + type-check + production build (what Netlify runs)
 ```
 
 ## AI agents
 
 `mcp/server.mjs` is a zero-dependency MCP server with project- and task-shaped tools (`list_projects`, `create_task`, `update_task`, `complete_task`, `add_comment`, `get_overview`, …) that write through the same merge-safe RPC as the app. Registration and the raw HTTP alternative are in the local, unpublished `BOTS.md`.
 
-## Roadmap ideas
+## Later
 
 - Two-way GitHub Projects sync (status/due dates), building on the read-only cards.
-- Server-side push reminders.
+- TestFlight / APNs / widgets / share extension / associated domains — needs a paid Apple Developer account.
+- Places follow-ups: nearby-now, MCP write tools, outing suggestions.

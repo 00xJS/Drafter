@@ -88,11 +88,15 @@ export function applySync(
     for (const r of remote as Item[]) byId.set(r.id, r)
     const sentIds = new Set(sent.map(s => s.id))
     for (const c of current) {
-      if (rejectedSet.has(c.id) && !superseded.has(c.id)) continue
+      // Rejected write the server already has: keep the server copy (unless the
+      // user edited after we sent). Rejected write the server never stored: keep
+      // the local row even if it was not in this push — dropping it here made
+      // places vanish after a full resync.
+      if (rejectedSet.has(c.id) && !superseded.has(c.id) && byId.has(c.id)) continue
       const r = byId.get(c.id)
       if (r) {
         if (c.updatedAt > r.updatedAt) byId.set(c.id, c)
-      } else if (sentIds.has(c.id)) {
+      } else if (sentIds.has(c.id) || rejectedSet.has(c.id)) {
         byId.set(c.id, c)
       }
     }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Person, Place, Project, STATUS_META, Task, TaskStatus } from '../types'
+import { CalendarEvent, Person, Place, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso } from '../itemops'
 import { notifyDue } from '../notify'
@@ -127,6 +127,7 @@ export default function Planner() {
   const [isOwner, setIsOwner] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -282,7 +283,7 @@ export default function Planner() {
           status: 'todo',
           ...(parsed.capture.dueAt ? { dueAt: parsed.capture.dueAt } : {}),
         },
-        capture: !parsed.capture.dueAt && !!parsed.capture.title.trim(),
+        capture: !!(parsed.capture.title.trim() || parsed.capture.link || parsed.capture.description),
       })
     }
   }
@@ -417,7 +418,7 @@ export default function Planner() {
   const newTask = (preset?: Partial<Task>, opts?: { capture?: boolean }) =>
     setEditor({
       preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset },
-      capture: opts?.capture ?? (!!preset?.title && !preset?.dueAt),
+      capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
   const openProject = (project: Project) => setProjectEditor({ project })
   /** One-tap "Saw them" with undo — used from Today, Search, and ?saw=. */
@@ -733,6 +734,11 @@ export default function Planner() {
                 meals={store.meals}
                 recipes={store.recipes}
                 onOpenKitchen={() => setView('kitchen')}
+                onOpenReview={() => setView('review')}
+                onCookRecipe={r => {
+                  setKitchenRecipe(r)
+                  setView('kitchen')
+                }}
               />
             )}
             {view === 'board' && (
@@ -917,6 +923,8 @@ export default function Planner() {
                   store.remove(id)
                   showToast('Removed', () => store.restore([id]))
                 }}
+                openRecipe={kitchenRecipe}
+                onOpenRecipeConsumed={() => setKitchenRecipe(null)}
               />
             )}
           </ErrorBoundary>
