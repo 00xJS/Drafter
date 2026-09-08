@@ -26,13 +26,15 @@ interface Props {
 }
 
 type CategoryFilter = 'all' | PlaceCategory
-type SortKey = 'recent' | 'most' | 'name' | 'longest'
+type SortKey = 'recent' | 'most' | 'az' | 'za' | 'longest'
 
+// Same wording as the People sort, with "been" instead of "seen".
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'recent', label: 'Recent' },
-  { key: 'most', label: 'Most' },
-  { key: 'name', label: 'Name' },
-  { key: 'longest', label: 'Longest ago' },
+  { key: 'az', label: 'A to Z' },
+  { key: 'za', label: 'Z to A' },
+  { key: 'recent', label: 'Most recently been' },
+  { key: 'longest', label: 'Least recently been' },
+  { key: 'most', label: 'Most visited' },
 ]
 
 function PlaceForm({
@@ -335,7 +337,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
       .filter(s => category === 'all' || s.place.category === category)
       .filter(s => !needle || s.place.name.toLowerCase().includes(needle) || (s.place.notes ?? '').toLowerCase().includes(needle))
     const sorted = [...list]
-    if (sort === 'name') sorted.sort((a, b) => a.place.name.localeCompare(b.place.name))
+    if (sort === 'az') sorted.sort((a, b) => a.place.name.localeCompare(b.place.name))
+    else if (sort === 'za') sorted.sort((a, b) => b.place.name.localeCompare(a.place.name))
     else if (sort === 'most') sorted.sort((a, b) => b.visits.length - a.visits.length)
     else if (sort === 'longest')
       sorted.sort((a, b) => (a.lastAt ?? '').localeCompare(b.lastAt ?? '') || a.place.name.localeCompare(b.place.name))

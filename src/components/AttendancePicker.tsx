@@ -22,7 +22,7 @@ export function AttendancePicker({ event, people, onDone, onClose }: Props) {
         </header>
         <div className="modal-body">
           {people.length === 0 ? (
-            <p className="empty">Add people in Insights → People first.</p>
+            <p className="empty">Add people in the People tab first.</p>
           ) : (
             <div className="platform-toggles">
               {people.map(p => (

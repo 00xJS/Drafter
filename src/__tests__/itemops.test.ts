@@ -175,6 +175,45 @@ describe('applySync', () => {
     const d = applySync([ghost, mine], [mine], [mine], null)
     expect(d.merged.map(i => i.id).sort()).toEqual(['a'])
   })
+
+  // The board bounce-back: a column swap made while a round was in flight was
+  // reported as confirmed (the server echoed the copy we sent, which was the
+  // pre-swap one), so the caller dropped it from the dirty set and the new
+  // status was never pushed — the old column came back on the next full pull.
+  it('a status swap made during the request stays unconfirmed so it is pushed again', () => {
+    const wasSent = task('x', '2026-09-10T09:00:00.000Z', { status: 'todo' })
+    const echoed = [{ ...wasSent, syncedAt: '2026-09-10T09:00:02.000Z' }]
+    const current = [task('x', '2026-09-10T09:00:01.000Z', { status: 'doing' })]
+    const d = applySync(current, [wasSent], echoed, null)
+    const kept = d.merged.find(i => i.id === 'x') as Task
+    expect(kept.status).toBe('doing')
+    expect(d.unconfirmed).toEqual(['x'])
+  })
+
+  it('keeps the swap dirty on a delta round too', () => {
+    const wasSent = task('x', '2026-09-10T09:00:00.000Z', { status: 'todo' })
+    const current = [task('x', '2026-09-10T09:00:01.000Z', { status: 'doing' })]
+    const d = applySync(current, [wasSent], [wasSent], '2026-09-10T08:00:00.000Z')
+    expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('doing')
+    expect(d.unconfirmed).toEqual(['x'])
+  })
+
+  it('does not discard a local copy that moved on after the sent version was rejected', () => {
+    const wasSent = task('x', '2026-09-10T09:00:00.000Z', { status: 'todo' })
+    const current = [task('x', '2026-09-10T09:00:01.000Z', { status: 'doing' })]
+    const d = applySync(current, [wasSent], [wasSent], null, ['x'])
+    expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('doing')
+    expect(d.rejected).toEqual([])
+    expect(d.unconfirmed).toEqual(['x'])
+  })
+
+  it('still abandons a rejected write the user has not touched since', () => {
+    const dead = task('x', '2026-09-10T09:00:00.000Z', { status: 'doing' })
+    const d = applySync([dead], [dead], [task('x', '2026-09-10T08:00:00.000Z')], null, ['x'])
+    expect(d.rejected).toEqual(['x'])
+    expect(d.unconfirmed).toEqual([])
+    expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('todo')
+  })
 })
 
 describe('nextUp', () => {

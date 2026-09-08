@@ -22,13 +22,15 @@ interface Props {
 }
 
 type GroupFilter = 'all' | PersonGroup
-type SortKey = 'attention' | 'name' | 'recent' | 'most'
+type SortKey = 'attention' | 'az' | 'za' | 'never' | 'recent' | 'least'
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'attention', label: 'Needs attention' },
-  { key: 'name', label: 'Name' },
-  { key: 'recent', label: 'Last seen' },
-  { key: 'most', label: 'Most seen' },
+  { key: 'az', label: 'A to Z' },
+  { key: 'za', label: 'Z to A' },
+  { key: 'never', label: 'Not seen' },
+  { key: 'recent', label: 'Most recently seen' },
+  { key: 'least', label: 'Least recently seen' },
 ]
 
 function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; onSave(p: Person): void; onDelete?(id: string): void; onClose(): void }) {
@@ -449,10 +451,19 @@ export function People({ people, places = [], tasks, onSave, onDelete, onLogVisi
     const list = allStats
       .filter(s => group === 'all' || s.person.group === group)
       .filter(s => !needle || s.person.name.toLowerCase().includes(needle) || (s.person.notes ?? '').toLowerCase().includes(needle))
+    const byName = (a: PersonStats, b: PersonStats) => a.person.name.localeCompare(b.person.name)
     const sorted = [...list]
-    if (sort === 'name') sorted.sort((a, b) => a.person.name.localeCompare(b.person.name))
-    else if (sort === 'recent') sorted.sort((a, b) => (b.lastSeen ?? '').localeCompare(a.lastSeen ?? ''))
-    else if (sort === 'most') sorted.sort((a, b) => b.visits.length - a.visits.length)
+    if (sort === 'az') sorted.sort(byName)
+    else if (sort === 'za') sorted.sort((a, b) => byName(b, a))
+    // never-logged first, then the ones you have seen least recently
+    else if (sort === 'never') sorted.sort((a, b) => Number(!!a.lastSeen) - Number(!!b.lastSeen) || (a.lastSeen ?? '').localeCompare(b.lastSeen ?? '') || byName(a, b))
+    // a person with no visit on record has no "last seen" to rank, so they sit
+    // at the end of both date sorts — 'Not seen' is the option that surfaces them
+    else if (sort === 'recent' || sort === 'least')
+      sorted.sort((a, b) => {
+        if (!a.lastSeen || !b.lastSeen) return Number(!!b.lastSeen) - Number(!!a.lastSeen) || byName(a, b)
+        return (sort === 'recent' ? b.lastSeen.localeCompare(a.lastSeen) : a.lastSeen.localeCompare(b.lastSeen)) || byName(a, b)
+      })
     else sorted.sort(compareStats)
     return sorted
   }, [allStats, group, sort, q])

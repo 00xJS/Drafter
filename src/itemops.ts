@@ -44,7 +44,10 @@ export interface SyncDecision {
   merged: Item[]
   /** The cursor to store, or null to leave it where it is. */
   cursor: string | null
-  /** Ids we sent that the server did not confirm — these must be sent again. */
+  /**
+   * Ids that must go out again: the server did not confirm them, or the local
+   * copy moved on after `sent` was snapshotted (an edit made mid-round).
+   */
   unconfirmed: string[]
   /** Ids the server rejected (validation/RLS) — drop from the dirty set; do not clamp. */
   rejected: string[]
@@ -58,6 +61,12 @@ export interface SyncDecision {
  * they are dead writes. Unconfirmed (not rejected, not returned) still hold the
  * cursor only when we have no dirty-set (legacy path); with a dirty set the
  * caller clears confirmed ids and retries the rest.
+ *
+ * `sent` is a snapshot taken before the request; anything the user changed while
+ * it was in flight has a newer local copy than the version the server echoed
+ * back. Those ids count as unconfirmed (not confirmed-and-clean) and, when the
+ * server rejected the version we sent, keep their local copy — the rejection
+ * was about the copy we sent, not the one the user is now looking at.
  */
 export function applySync(
   current: Item[],
@@ -67,6 +76,8 @@ export function applySync(
   rejected: string[] = [],
 ): SyncDecision {
   const rejectedSet = new Set(rejected)
+  const localStamp = new Map(current.map(c => [c.id, c.updatedAt]))
+  const superseded = new Set(sent.filter(s => (localStamp.get(s.id) ?? '') > s.updatedAt).map(s => s.id))
   let merged: Item[]
   if (since === null) {
     // Full exchange is authoritative for ids the server still returns. Keep
@@ -77,7 +88,7 @@ export function applySync(
     for (const r of remote as Item[]) byId.set(r.id, r)
     const sentIds = new Set(sent.map(s => s.id))
     for (const c of current) {
-      if (rejectedSet.has(c.id)) continue
+      if (rejectedSet.has(c.id) && !superseded.has(c.id)) continue
       const r = byId.get(c.id)
       if (r) {
         if (c.updatedAt > r.updatedAt) byId.set(c.id, c)
@@ -101,16 +112,16 @@ export function applySync(
   }
 
   const returned = new Map(remote.map(r => [r.id, r.updatedAt]))
-  const unconfirmed = sent
-    .filter(s => !rejectedSet.has(s.id))
-    .filter(s => (returned.get(s.id) ?? '') < s.updatedAt)
+  const unconfirmed = sent.filter(
+    s => superseded.has(s.id) || (!rejectedSet.has(s.id) && (returned.get(s.id) ?? '') < s.updatedAt),
+  )
 
   // rejected rows must NOT pin the cursor (that was the old bug)
   return {
     merged,
     cursor: cursor === since ? null : cursor,
-    unconfirmed: unconfirmed.map(u => u.id),
-    rejected: [...rejectedSet],
+    unconfirmed: [...new Set(unconfirmed.map(u => u.id))],
+    rejected: [...rejectedSet].filter(id => !superseded.has(id)),
   }
 }
 

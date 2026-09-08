@@ -205,21 +205,27 @@ export function useItems(myId: string | null = null): Store {
         const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
         return signature(next) === signature(cur) ? cur : next
       })
-      const applied = decision as ReturnType<typeof applySync> | null
-      if (applied?.cursor) writeCursor(applied.cursor)
+      // React does not promise the updater above ran synchronously; without a
+      // fallback the bookkeeping below would treat every pushed id as confirmed
+      // and drop it from the dirty set.
+      const applied =
+        (decision as ReturnType<typeof applySync> | null) ??
+        applySync(itemsRef.current, outgoing, result.items, since, result.rejected)
+      if (applied.cursor) writeCursor(applied.cursor)
       // clear confirmed + rejected from dirty; keep unconfirmed for retry
       const still = readDirty()
-      for (const id of outgoing.map(o => o.id)) {
-        if (!applied?.unconfirmed.includes(id)) still.delete(id)
+      const retry = new Set(applied.unconfirmed)
+      for (const o of outgoing) {
+        if (!retry.has(o.id)) still.delete(o.id)
       }
-      for (const id of result.rejected) still.delete(id)
+      for (const id of applied.rejected) still.delete(id)
       writeDirty(still)
       setSyncInfo({
         online: true,
         lastAt: new Date().toISOString(),
         authError: false,
         pending: still.size,
-        rejected: result.rejected.length ? result.rejected : undefined,
+        rejected: applied.rejected.length ? applied.rejected : undefined,
       })
       return true
     } finally {
@@ -247,15 +253,17 @@ export function useItems(myId: string | null = null): Store {
     }
   }, [myId])
 
-  // Sign-in: always reset the delta cursor and force a full exchange (same as
-  // Settings → Full resync). Keeps dirty ids when local still has rows so a
-  // mid-session re-auth can still push; empty local drops dirty as stale.
+  // Sign-in: force a full exchange only when this device has nothing locally —
+  // a leftover cursor would delta-pull nothing into an empty UI. With rows
+  // present the cursor is still good, and supabase re-emits SIGNED_IN on every
+  // tab focus: resetting there would re-send the whole store each time and, in
+  // doing so, clear the dirty flag of anything edited mid-round.
   useEffect(() => {
     const sb = getSupabase()
     if (!sb) return
     const { data: sub } = sb.auth.onAuthStateChange(event => {
       if (event !== 'SIGNED_IN') return
-      prepareFullResync({ clearDirty: itemsRef.current.length === 0 })
+      if (itemsRef.current.length === 0) prepareFullResync({ clearDirty: true })
       if (loadedRef.current) void doSyncRef.current()
     })
     return () => sub.subscription.unsubscribe()

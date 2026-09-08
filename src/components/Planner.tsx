@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react'
-import { CalendarEvent, Person, Place, Post, Project, STATUS_META, Task, TaskStatus, toPost } from '../types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarEvent, Person, Place, Project, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso } from '../itemops'
 import { notifyDue } from '../notify'
@@ -33,10 +33,8 @@ import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { fetchAdminMe } from '../admin'
 
-const Insights = lazy(() => import('./Insights').then(m => ({ default: m.Insights })))
-
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'review' | 'social'
-const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'review', 'social']
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'review'
+const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'review']
 type CalendarMode = 'month' | 'timeline'
 type PeopleTab = 'people' | 'places'
 
@@ -48,7 +46,6 @@ const VIEW_LABELS: Record<View, string> = {
   notes: 'Notes',
   people: 'People',
   review: 'Review',
-  social: 'Social',
 }
 
 const FILTER_KEY = 'drafter:project-filter'
@@ -354,9 +351,6 @@ export default function Planner() {
     if (mineOnly && inHousehold && household.myId) list = list.filter(t => (t.assigneeId ? t.assigneeId === household.myId : t.ownerId === household.myId || !t.ownerId))
     return list
   }, [store.tasks, activeFilter, mineOnly, inHousehold, household.myId])
-  const posts = useMemo(() => filteredTasks.map(toPost).filter((p): p is Post => p !== null), [filteredTasks])
-  // the social planner this app grew out of: only shown to someone who still has posts
-  const hasSocial = useMemo(() => store.tasks.some(t => t.social), [store.tasks])
   const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
 
   const showToast = (msg: string, undo?: () => void) => {
@@ -574,13 +568,11 @@ export default function Planner() {
           <span>Drafter</span>
         </div>
         <nav className="tabs">
-          {(Object.keys(VIEW_LABELS) as View[])
-            .filter(v => v !== 'social' || hasSocial)
-            .map(v => (
-              <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => setView(v)}>
-                {VIEW_LABELS[v]}
-              </button>
-            ))}
+          {(Object.keys(VIEW_LABELS) as View[]).map(v => (
+            <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => setView(v)}>
+              {VIEW_LABELS[v]}
+            </button>
+          ))}
         </nav>
         <span className="spacer" />
         <button className="sync-btn" onClick={manualSync} aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}>
@@ -850,11 +842,6 @@ export default function Planner() {
                   />
                 )}
               </>
-            )}
-            {view === 'social' && (
-              <Suspense fallback={<p className="empty">Loading insights…</p>}>
-                <Insights posts={posts} />
-              </Suspense>
             )}
           </ErrorBoundary>
         )}
