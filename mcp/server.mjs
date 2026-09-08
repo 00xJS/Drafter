@@ -16,6 +16,7 @@
 
 import { createInterface } from 'node:readline'
 import { randomBytes } from 'node:crypto'
+import { pathToFileURL } from 'node:url'
 import {
   PRIORITIES,
   PROJECT_STATUSES,
@@ -1095,34 +1096,42 @@ function maybeExit() {
   if (stdinClosed && pending === 0) process.stdout.write('', () => process.exit(0))
 }
 
-const rl = createInterface({ input: process.stdin, terminal: false })
-rl.on('line', line => {
-  const trimmed = line.trim()
-  if (!trimmed) return
-  let msg
-  try {
-    msg = JSON.parse(trimmed)
-  } catch {
-    process.stderr.write(`drafter-mcp: ignoring unparseable line\n`)
-    return
-  }
-  pending++
-  queue = queue
-    .then(() => handle(msg))
-    .catch(e => {
-      // a rejected chain must never poison later requests or the process
-      process.stderr.write(`drafter-mcp: handler error: ${e?.message ?? e}\n`)
-    })
-    .finally(() => {
-      pending--
-      maybeExit()
-    })
-})
-rl.on('close', () => {
-  stdinClosed = true
-  maybeExit()
-})
+/** Serve MCP over stdio. Called only when this file is the entry point, so tests can import the pieces above. */
+export function startStdio() {
+  const rl = createInterface({ input: process.stdin, terminal: false })
+  rl.on('line', line => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    let msg
+    try {
+      msg = JSON.parse(trimmed)
+    } catch {
+      process.stderr.write(`drafter-mcp: ignoring unparseable line\n`)
+      return
+    }
+    pending++
+    queue = queue
+      .then(() => handle(msg))
+      .catch(e => {
+        // a rejected chain must never poison later requests or the process
+        process.stderr.write(`drafter-mcp: handler error: ${e?.message ?? e}\n`)
+      })
+      .finally(() => {
+        pending--
+        maybeExit()
+      })
+  })
+  rl.on('close', () => {
+    stdinClosed = true
+    maybeExit()
+  })
 
-if (!BASE || !KEY) {
-  process.stderr.write('drafter-mcp: warning — SUPABASE_URL / SUPABASE_SERVICE_KEY not set; tools will return a configuration error.\n')
+  if (!BASE || !KEY) {
+    process.stderr.write('drafter-mcp: warning — SUPABASE_URL / SUPABASE_SERVICE_KEY not set; tools will return a configuration error.\n')
+  }
 }
+
+// pieces the tests exercise without a database or a transport
+export { TOOLS, syncWrite, writeItem, fetchJournal, assertDayKey, resolveContext, summarizeTask, summarizePlace }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) startStdio()

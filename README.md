@@ -141,7 +141,10 @@ Tasks, projects, people, places, recipes, meals, groceries, journal entries, cal
 npm test             # vitest
 npm run lint         # eslint src --max-warnings 0
 npm run check        # tests + type-check + production build (what Netlify runs)
+npm run db:smoke     # throwaway Postgres: apply every migration, exercise sync_posts and the policies
 ```
+
+`db:smoke` needs the PostgreSQL binaries on PATH (`brew install postgresql@17`). It stubs what Supabase provides (auth, storage, roles), applies `supabase/migrations` in order, then writes every record kind as a signed-in user, checks a household peer sees shared kinds but not the owner's journal, review or calendar, that the service role writes as the owner, that last-write-wins holds, that history is kept and scoped, and that a purge tombstone is accepted. Run it after any migration: a function can compile and still reject every write.
 
 ## AI agents
 
