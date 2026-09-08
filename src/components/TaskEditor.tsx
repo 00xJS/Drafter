@@ -18,9 +18,9 @@ import {
   RecurrenceFreq,
   SOCIAL_PROJECT_ID,
   STATUS_META,
-  TASK_STATUSES,
   Task,
   TaskStatus,
+  pickerStatuses,
 } from '../types'
 import { newerStamp } from '../itemops'
 import { duplicateTask } from '../taskutils'
@@ -850,7 +850,7 @@ export function TaskEditor({
             <div className="field">
               <span>Status</span>
               <div className="segmented wrap">
-                {TASK_STATUSES.map(s => (
+                {pickerStatuses(status).map(s => (
                   <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => setStatus(s)}>
                     {STATUS_META[s].label}
                   </button>

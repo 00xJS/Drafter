@@ -1,4 +1,4 @@
-import { PLATFORM_META, Project, TASK_STATUSES, STATUS_META, Task, TaskStatus, engagement } from '../types'
+import { PLATFORM_META, Project, STATUS_META, Task, TaskStatus, engagement, pickerStatuses } from '../types'
 import { excerpt, fmtNum } from '../utils'
 import { checklistProgress } from '../taskutils'
 import { parseGithubUrl } from '../github'
@@ -38,7 +38,7 @@ export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
               ⇄
             </span>
             <select value={task.status} aria-label="Change status" onChange={e => onStatus(task.id, e.target.value as TaskStatus)}>
-              {TASK_STATUSES.map(s => (
+              {pickerStatuses(task.status).map(s => (
                 <option key={s} value={s}>
                   {STATUS_META[s].label}
                 </option>

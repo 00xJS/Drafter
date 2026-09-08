@@ -342,6 +342,12 @@ export const TASK_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'blocke
 /** Kanban columns on the Board — blocked/canceled stay in lists & filters only. */
 export const BOARD_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'done']
 
+/** Status picker options: board columns, plus current if it's a legacy blocked/canceled value. */
+export function pickerStatuses(current: TaskStatus): TaskStatus[] {
+  if (BOARD_STATUSES.includes(current)) return BOARD_STATUSES
+  return [...BOARD_STATUSES, current]
+}
+
 export const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string }> = {
   wishlist: { label: 'Wishlist', color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
   todo: { label: 'To do', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
