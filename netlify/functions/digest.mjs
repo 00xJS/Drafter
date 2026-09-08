@@ -8,9 +8,8 @@
 // to the owner). The service key bypasses RLS, so that filtering happens here
 // and must stay in step with public.household_user_ids().
 
-import { legacyPostToTask, newerStamp } from '../../shared/domain.mjs'
-import { seenStatus, upcomingOccasions, plannedVisit } from '../../shared/people.mjs'
-import { bucketByDue } from '../../shared/today.mjs'
+import { newerStamp } from '../../shared/domain.mjs'
+import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
@@ -20,9 +19,6 @@ const DAY = 86_400_000
 const HOUR = 3_600_000
 /** Cap the catch-up window so an outage can't unleash a flood of stale nudges. */
 const MAX_NUDGE_WINDOW = 6 * HOUR
-/** Don't re-nag the same person more often than this. */
-const PERSON_NUDGE_GAP_DAYS = 7
-const NEVER_MIN_AGE_DAYS = 30
 const OPEN = ['todo', 'doing', 'blocked']
 const TOMBSTONE_TTL_MS = 90 * DAY
 
@@ -33,80 +29,6 @@ async function rest(path, init = {}) {
   if (!res.ok) throw new Error(`${path.split('?')[0]}: ${res.status}`)
   const text = await res.text()
   return text ? JSON.parse(text) : null
-}
-
-/** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
-export function localParts(date, tz) {
-  const ms = date instanceof Date ? date.getTime() : Date.parse(date)
-  if (!Number.isFinite(ms)) return { hour: null, day: null, weekday: null }
-  try {
-    const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', hour: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
-        .formatToParts(new Date(ms))
-        .map(x => [x.type, x.value]),
-    )
-    return { hour: Number(p.hour), day: `${p.year}-${p.month}-${p.day}`, weekday: p.weekday ?? null }
-  } catch {
-    const d = new Date(ms)
-    return { hour: d.getUTCHours(), day: d.toISOString().slice(0, 10), weekday: null }
-  }
-}
-
-const dayKeyIn = (iso, tz) => localParts(iso, tz).day
-
-/** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
-export function visibleItemsFor(rows, userId, peerIds, ownerId) {
-  const visible = new Set([userId, ...(peerIds ?? [])])
-  return (rows ?? [])
-    .filter(r => visible.has(r.user_id) || (r.user_id === null && userId === ownerId))
-    .map(r => legacyPostToTask(r.data))
-}
-
-/**
- * Morning digest lines. `nudged` is { personId: dayKey } — a name repeats at
- * most every PERSON_NUDGE_GAP_DAYS. Returns { …, nudgedNext } to persist.
- */
-export function buildDigest(items, tz, now, nudged = {}) {
-  const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
-  const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
-  const today = localParts(now, tz).day
-  const { overdue, dueToday } = bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) })
-  const nowMs = now.getTime()
-  const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
-
-  const peopleDue = []
-  for (const p of people) {
-    // an open planned visit means the nudge already did its job
-    if (plannedVisit(p.id, tasks)) continue
-    const { status, daysSince, lastSeen } = seenStatus(p, tasks, now)
-    if (status !== 'overdue' && status !== 'never') continue
-    if (status === 'never') {
-      const created = Date.parse(p.createdAt ?? '')
-      if (!Number.isFinite(created) || nowMs - created < NEVER_MIN_AGE_DAYS * DAY) continue
-    }
-    const lastNudge = nudgedNext[p.id]
-    if (lastNudge && today) {
-      const gap = (Date.parse(today) - Date.parse(lastNudge)) / DAY
-      if (Number.isFinite(gap) && gap < PERSON_NUDGE_GAP_DAYS) continue
-    }
-    const label =
-      status === 'never'
-        ? `${p.name} (no visit logged)`
-        : `${p.name} (${daysSince ?? '?'}d)`
-    peopleDue.push(label)
-    if (today) nudgedNext[p.id] = today
-  }
-
-  const occasions = upcomingOccasions(people, 21, now, today).map(
-    o => `${o.person.name}'s ${o.kind}${o.daysUntil === 0 ? ' today' : ` in ${o.daysUntil}d`}`,
-  )
-
-  const lines = []
-  if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
-  if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
-  if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
-  if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.slice(0, 3).join(', ')}${peopleDue.length > 3 ? `, +${peopleDue.length - 3} more` : ''}`)
-  return { overdue, dueToday, occasions, peopleDue, lines, nudgedNext }
 }
 
 /** Sunday-start week key matching src/review.ts weekRange (for previous week on Sunday). */

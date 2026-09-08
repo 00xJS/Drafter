@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isUntimed, localDate, localMidnightIso } from '../../shared/domain.mjs'
-import { buildDigest, localParts, visibleItemsFor } from '../../netlify/functions/digest.mjs'
+import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 
 describe('isUntimed / localDate', () => {
   it('treats local midnight in Europe/London July as untimed (BST)', () => {
