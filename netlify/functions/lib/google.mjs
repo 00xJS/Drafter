@@ -6,7 +6,6 @@
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { isUntimed, localDate } from '../../../shared/domain.mjs'
-import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
 
