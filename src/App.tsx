@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { clearLocalData } from './idb'
+import { clearSyncCursor } from './syncstate'
 import { Landing } from './components/Landing'
 import { Login } from './components/Login'
 
@@ -42,6 +43,9 @@ export default function App() {
       // a session ending for ANY reason (sign-out here, elsewhere, or revoked)
       // must take the local copy of the data with it
       if (event === 'SIGNED_OUT') clearLocalData().catch(() => {})
+      // Always reset the sync cursor on sign-in so the first exchange is a full
+      // pull — avoids blank UI when IndexedDB is empty but a stale cursor remains.
+      if (event === 'SIGNED_IN') clearSyncCursor()
       setSession(s)
     })
     return () => sub.subscription.unsubscribe()

@@ -6,29 +6,10 @@ import { haptic } from './native'
 import { uid } from './utils'
 import { purgeRemote, syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
+import { clearSyncCursor, prepareFullResync, readCursor, readDirty, writeCursor, writeDirty } from './syncstate'
+import { getSupabase } from './supabase'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
-const CURSOR_KEY = 'drafter:sync-cursor'
-const DIRTY_KEY = 'drafter:dirty-ids'
-
-function readDirty(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DIRTY_KEY)
-    if (!raw) return new Set()
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === 'string')) : new Set()
-  } catch {
-    return new Set()
-  }
-}
-
-function writeDirty(ids: Set<string>) {
-  try {
-    localStorage.setItem(DIRTY_KEY, JSON.stringify([...ids]))
-  } catch {
-    /* ignore */
-  }
-}
 
 async function loadCache(myId: string | null): Promise<Item[]> {
   try {
@@ -197,20 +178,6 @@ export function useItems(myId: string | null = null): Store {
   const persistTimer = useRef<number | undefined>(undefined)
   const syncBusy = useRef(false)
 
-  const readCursor = () => {
-    try {
-      return localStorage.getItem(CURSOR_KEY)
-    } catch {
-      return null
-    }
-  }
-  const writeCursor = (iso: string) => {
-    try {
-      localStorage.setItem(CURSOR_KEY, iso)
-    } catch {
-      /* ignore */
-    }
-  }
   const markDirty = (ids: string | string[]) => {
     const dirty = readDirty()
     for (const id of Array.isArray(ids) ? ids : [ids]) dirty.add(id)
@@ -267,6 +234,9 @@ export function useItems(myId: string | null = null): Store {
     let live = true
     loadCache(myId).then(cached => {
       if (!live) return
+      // Empty local + cloud: a leftover cursor would delta-pull nothing → blank UI
+      // while the server still has data (stuck after wipe / sign-out race).
+      if (myId && cached.length === 0) prepareFullResync({ clearDirty: true })
       setItems(ensureProjects(cached))
       loadedRef.current = true
       setLoaded(true)
@@ -276,6 +246,20 @@ export function useItems(myId: string | null = null): Store {
       live = false
     }
   }, [myId])
+
+  // Sign-in: always reset the delta cursor and force a full exchange (same as
+  // Settings → Full resync). Keeps dirty ids when local still has rows so a
+  // mid-session re-auth can still push; empty local drops dirty as stale.
+  useEffect(() => {
+    const sb = getSupabase()
+    if (!sb) return
+    const { data: sub } = sb.auth.onAuthStateChange(event => {
+      if (event !== 'SIGNED_IN') return
+      prepareFullResync({ clearDirty: itemsRef.current.length === 0 })
+      if (loadedRef.current) void doSyncRef.current()
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
   // periodic sync + sync when the app returns to the foreground
   useEffect(() => {
@@ -461,11 +445,7 @@ export function useItems(myId: string | null = null): Store {
     },
     syncNowManual: () => doSyncRef.current(),
     fullResync: () => {
-      try {
-        localStorage.removeItem(CURSOR_KEY)
-      } catch {
-        /* ignore */
-      }
+      clearSyncCursor()
       return doSyncRef.current()
     },
     retainMine: (uid: string | null) => {
