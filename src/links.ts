@@ -6,6 +6,8 @@ export interface ParsedLink {
   tab?: 'people' | 'places' | 'journal'
   saw?: string
   task?: string
+  /** A notification action button was pressed rather than the banner itself. */
+  act?: 'done' | 'tomorrow' | 'saw'
   capture?: { title: string; description?: string; link?: string; dueAt?: string }
   /** Text to append to today's journal entry (drafter://journal?text=… or ?journal=…). */
   journal?: string
@@ -51,7 +53,7 @@ export function safeHttpUrl(s: string | null | undefined): string | undefined {
  * Parse query params from a page URL, push tap, Shortcut, or drafter:// link.
  * Host-scoped: drafter://oauth is OAuth-only; unknown hosts are ignored.
  */
-export function parseLink(params: URLSearchParams, opts?: { host?: string }): ParsedLink {
+export function parseLink(params: URLSearchParams, opts?: { host?: string; allowAct?: boolean }): ParsedLink {
   const host = (opts?.host ?? '').toLowerCase()
   const out: ParsedLink = {}
 
@@ -91,10 +93,23 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string }): Pa
   const taskId = params.get('task')
   if (taskId) out.task = taskId
 
+  // A reminder's action button appends `&act=…` to that row's own link. It writes
+  // on arrival, so it is read only when the caller opts in (the native notification
+  // handler, and nothing else), only for the three known actions, and only next to
+  // the id they act on — a crafted `?act=done` in a web query string is ignored.
+  if (opts?.allowAct && (out.task || out.saw)) {
+    const act = params.get('act')
+    if (act === 'done' || act === 'tomorrow' || act === 'saw') out.act = act
+  }
+
   let title = params.get('title') ?? params.get('new')
   const text = params.get('text')
   let url = params.get('url')
-  if (title || text || url) {
+  // A bare drafter://new — the Home Screen quick action — opens an empty capture.
+  // Only the scheme's own `new` host does this: the PWA share target and the web
+  // query string arrive with host '' (paramsOf collapses the app's own origin),
+  // so an empty query string on the site still parses to nothing.
+  if (host === 'new' || title || text || url) {
     if (!url && looksLikeHttpUrl(title)) {
       url = title!
       title = null
@@ -116,10 +131,27 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string }): Pa
 
 /** Extract host + search params from any absolute or relative URL / drafter:// string. */
 export function paramsOf(raw: string): { host: string; params: URLSearchParams } {
+  const base = typeof window !== 'undefined' ? window.location.origin : 'https://drafter.local'
   try {
-    const u = new URL(raw, typeof window !== 'undefined' ? window.location.origin : 'https://drafter.local')
-    return { host: u.hostname || u.host || '', params: u.searchParams }
+    const u = new URL(raw, base)
+    const host = u.hostname || u.host || ''
+    // A link into the app's own origin has no drafter:// host to scope on. Under
+    // the iOS shell the page origin is capacitor://localhost, so a notification's
+    // `/?task=…` used to resolve to the host "localhost" — which parseLink treats
+    // as an unknown drafter:// host and ignores, killing every reminder tap.
+    if (host && sameOrigin(u, base)) return { host: '', params: u.searchParams }
+    return { host, params: u.searchParams }
   } catch {
     return { host: '', params: new URLSearchParams() }
+  }
+}
+
+/** Scheme + host equality — URL.origin is "null" for capacitor:// and drafter:// alike. */
+function sameOrigin(u: URL, base: string): boolean {
+  try {
+    const b = new URL(base)
+    return u.protocol === b.protocol && u.host === b.host
+  } catch {
+    return false
   }
 }

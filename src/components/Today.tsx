@@ -23,6 +23,7 @@ import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
+import { haptic } from '../native'
 import { excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 
@@ -86,11 +87,36 @@ function nextWeekday(from: Date, weekday: number): Date {
 }
 
 /** How far left the row slides to park the two defer buttons in full view. */
-const DEFER_TRAY = -168
+export const DEFER_TRAY = -168
 /** Past this much of a left drag, letting go parks the tray open instead of snapping back. */
-const DEFER_LATCH = -56
+export const DEFER_LATCH = -56
 /** A right drag this long completes the task on release. */
-const DONE_PULL = 88
+export const DONE_PULL = 88
+/**
+ * How far back over a threshold the finger has to come before the row counts as
+ * having left that band. Without it a thumb resting on the line buzzes on every
+ * touchmove event.
+ */
+const BAND_HYSTERESIS = 10
+/** Which release the row is currently promising: nothing, complete, or park the tray. */
+export type DragBand = 'none' | 'done' | 'latch'
+
+/**
+ * Which of the three swipe outcomes letting go right now would pick, given where
+ * the row was a moment ago. Entering a band is what buzzes, so leaving one costs
+ * `BAND_HYSTERESIS` more travel than entering it did — a thumb parked on the
+ * threshold must not rattle.
+ */
+export function bandOf(dx: number, prev: DragBand, canDefer: boolean): DragBand {
+  // holding the band you are already in is the only thing hysteresis does; a
+  // flick that has left it is re-read from scratch, so crossing straight to the
+  // other band still buzzes on the move that got there
+  if (prev === 'done' && dx >= DONE_PULL - BAND_HYSTERESIS) return 'done'
+  if (prev === 'latch' && canDefer && dx <= DEFER_LATCH + BAND_HYSTERESIS) return 'latch'
+  if (dx >= DONE_PULL) return 'done'
+  if (canDefer && dx <= DEFER_LATCH) return 'latch'
+  return 'none'
+}
 
 /**
  * A task line that can be swiped. The defer buttons live in a tray that the row
@@ -116,7 +142,7 @@ function TaskRow({
 }) {
   const done = task.status === 'done'
   const canDefer = !!onDefer && !done
-  const drag = useRef<{ x: number; y: number; base: number; axis: '?' | 'x' | 'y' } | null>(null)
+  const drag = useRef<{ x: number; y: number; base: number; axis: '?' | 'x' | 'y'; band: DragBand } | null>(null)
   const swiped = useRef(false)
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -156,7 +182,7 @@ function TaskRow({
           else onOpen(task)
         }}
         onTouchStart={e => {
-          drag.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, base: dx, axis: '?' }
+          drag.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, base: dx, axis: '?', band: bandOf(dx, 'none', canDefer) }
         }}
         onTouchMove={e => {
           const d = drag.current
@@ -170,18 +196,30 @@ function TaskRow({
           }
           if (d.axis !== 'x') return
           swiped.current = true
-          const next = d.base + ddx
-          setDx(Math.max(Math.min(next, DONE_PULL + 32), canDefer ? DEFER_TRAY - 32 : 0))
+          const next = Math.max(Math.min(d.base + ddx, DONE_PULL + 32), canDefer ? DEFER_TRAY - 32 : 0)
+          setDx(next)
+          // one tap on entering a band, so the thumb knows what letting go will do
+          const band = bandOf(next, d.band, canDefer)
+          if (band !== d.band) {
+            d.band = band
+            if (band !== 'none') void haptic('light')
+          }
         }}
         onTouchEnd={() => {
           const axis = drag.current?.axis
+          // release on the band that was last signalled, not on a fresh read of
+          // dx: inside the hysteresis window those disagree, and the buzz has
+          // already promised the thumb an outcome. `canDefer` is re-checked all
+          // the same — a sync landing mid-gesture can complete the task, and a
+          // row with no tray must never park itself over an empty gutter.
+          const band = drag.current?.band ?? 'none'
           drag.current = null
           setDragging(false)
           if (axis !== 'x') return
-          if (dx >= DONE_PULL) {
+          if (band === 'done') {
             setDx(0)
             onStatus(task.id, done ? 'todo' : 'done')
-          } else if (canDefer && dx <= DEFER_LATCH) setDx(DEFER_TRAY)
+          } else if (band === 'latch' && canDefer) setDx(DEFER_TRAY)
           else setDx(0)
         }}
       >
@@ -278,6 +316,13 @@ export function Today({
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
   const isSunday = new Date().getDay() === 0
+  /**
+   * Where the journal card sits: with the other once-a-day cards in the
+   * evening, below the task sections in the morning. Frozen at mount — the
+   * editor debounces its writes, and re-deciding this at 17:00 would remount it
+   * (losing the caret, and the keystrokes since the last save) mid-sentence.
+   */
+  const [evening] = useState(() => new Date().getHours() >= 17)
   // Top 3 is written during last week's review as "for next week"
   const weekReview = useMemo(() => {
     const prev = shiftRange(thisWeek, -1)
@@ -403,6 +448,18 @@ export function Today({
     { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
   ].filter(sec => sec.tasks.length > 0)
 
+  // A tile only offers the jump when the section it counts is actually on the
+  // page; otherwise it is the same button, announced as unavailable. `null`
+  // rather than `undefined` on purpose — see StatTile: these three tiles gain
+  // and lose their target as the day is worked through, and a tile that changed
+  // element type under a focused thumb or caret would drop focus to <body>.
+  const shown = new Set(sections.map(sec => sec.key))
+  const jump = (key: string) => (shown.has(key) ? () => document.getElementById(`today-${key}`)?.scrollIntoView({ block: 'start' }) : null)
+
+  const journalCard = (
+    <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
+  )
+
   const endOfNextWeek = (() => {
     const d = nextWeekday(new Date(), 0)
     d.setDate(d.getDate() + 7)
@@ -420,12 +477,26 @@ export function Today({
           </p>
         </div>
       </header>
+      {/* Below 640px the two `kpi-extra` tiles leave grid flow entirely and
+          "Open" spans the row (see styles.css), so DOM order does not decide
+          what the phone shows — it is the desktop row, left as it was. */}
       <div className="kpi-row">
-        <StatTile label="Overdue" value={String(s.overdue.length)} sub={s.overdue.length ? 'need a new date or a push' : 'nothing slipped'} warn={s.overdue.length > 0} />
-        <StatTile label="Due today" value={String(s.today.length)} sub={s.late.length ? `${s.late.length} already past` : undefined} />
-        <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" />
-        <StatTile label="Open" value={String(s.open.length)} sub="to do, doing or blocked" />
-        <div className="stat-tile">
+        <StatTile
+          label="Overdue"
+          value={String(s.overdue.length)}
+          sub={s.overdue.length ? 'need a new date or a push' : 'nothing slipped'}
+          warn={s.overdue.length > 0}
+          onJump={jump('overdue')}
+        />
+        <StatTile
+          label="Due today"
+          value={String(s.today.length)}
+          sub={s.late.length ? `${s.late.length} already past` : undefined}
+          onJump={jump('today')}
+        />
+        <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" className="kpi-extra" onJump={jump('week')} />
+        <StatTile label="Open" value={String(s.open.length)} sub="to do, doing or blocked" className="kpi-wide" />
+        <div className="stat-tile kpi-extra">
           <div className="stat-label">Done this week</div>
           <div className="stat-value">
             {s.doneRecent.length}
@@ -438,6 +509,15 @@ export function Today({
           </div>
         </div>
       </div>
+
+      {/* the one bulk gesture worth the space the counters gave back */}
+      {s.overdue.length > 0 && (
+        <p className="kpi-bulk">
+          <button type="button" className="btn" onClick={() => onDeferAll(s.overdue.map(t => t.id), addDays(new Date(), 1))}>
+            Push {s.overdue.length} overdue → tomorrow
+          </button>
+        </p>
+      )}
 
       {dinner && (
         <section className="chart-card kitchen-tonight">
@@ -486,6 +566,8 @@ export function Today({
           <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
         </section>
       )}
+
+      {evening && journalCard}
 
       {top3.length > 0 && (
         <section className="chart-card week-top3">
@@ -584,7 +666,7 @@ export function Today({
       ) : (
         <div className="today-grid">
           {sections.map(sec => (
-            <section key={sec.key} className={sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card'}>
+            <section key={sec.key} id={`today-${sec.key}`} className={sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card'}>
               <header className="chart-head">
                 <div>
                   <h3>
@@ -609,7 +691,7 @@ export function Today({
         </div>
       )}
 
-      <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
+      {!evening && journalCard}
 
       {occasions.length > 0 && (
         <section className="chart-card occasions">

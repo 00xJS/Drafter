@@ -22,8 +22,21 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
   /* phone chrome: everything that floats measures itself off these */
   --tabbar-h: 56px;
+  /* The sticky .topbar's own height, safe area excluded: 10px + its tallest
+     control + 10px + the 1px border. On the desktop that control is a ~35px
+     .btn; on a phone it is the 40px .new-post-btn, so the phone block below
+     raises this. Everything that has to clear the bar — a KPI tile's jump, the
+     journal's scroll targets, the sticky month header — reads it from here
+     rather than keeping its own belief about the number. */
+  --topbar-h: 56px;
   --fab-size: 52px;
   --safe-b: env(safe-area-inset-bottom);
+  /* READ THIS BEFORE USING IT. Capacitor runs the keyboard at resize:'native',
+     so iOS shrinks the WebView itself and 100dvh is ALREADY keyboard-free.
+     --keyboard-h is a signal (how tall the keyboard is), never a layout inset:
+     spending it on padding/margin/bottom/height subtracts the keyboard twice
+     and collapses the sheet. Key layout off the `keyboard-open` class instead
+     (src/native.ts sets both). */
   --keyboard-h: 0px;
   /* chart tokens */
   --viz-grid: #2b303b;
@@ -40,6 +53,22 @@ html,
 body {
   margin: 0;
   padding: 0;
+}
+
+/* the document body is the scroller, so jumps (a KPI tile to its section, the
+   journal to a day) animate rather than teleport. Phone-only, like the rest of
+   the phone work: a 1280px window keeps the instant jump it has always had, so
+   this changes nothing on the desktop. Journal.tsx passes `behavior: 'instant'`
+   at the two call sites that must not animate under this. */
+@media (max-width: 640px) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -639,8 +668,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* no --keyboard-h term: resize:'native' has already shortened the viewport */
   padding: 12px 20px;
-  padding-bottom: calc(12px + var(--keyboard-h));
   border-top: 1px solid var(--border);
 }
 
@@ -746,6 +775,45 @@ textarea {
   border-radius: var(--radius);
   padding: 14px 16px;
   box-shadow: var(--shadow);
+}
+
+/* a counter that scrolls to what it counts: a real button, dressed as the tile
+   it replaces, with no iOS grey flash on the way */
+.stat-jump {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.stat-jump:hover {
+  border-color: var(--accent);
+}
+.stat-jump:active {
+  transform: scale(0.99);
+}
+/* The same tile with nothing to scroll to. It keeps the element (and with it a
+   keyboard user's focus) when its section empties mid-task, and loses only the
+   affordances: aria-disabled rather than `disabled`, because disabling a
+   focused button is itself what drops focus to <body>. */
+.stat-jump[aria-disabled='true'] {
+  cursor: default;
+}
+.stat-jump[aria-disabled='true']:hover {
+  border-color: var(--border);
+}
+.stat-jump[aria-disabled='true']:active {
+  transform: none;
+}
+
+/* the bulk gesture the trimmed counters made room for. The bottom margin is its
+   own: top-level Today blocks stack flush (.insights has no gap), so without it
+   the full-width button's edge touches the card below. */
+.kpi-bulk {
+  margin: 12px 0 16px;
 }
 
 .stat-label {
@@ -1650,15 +1718,31 @@ textarea {
     white-space: nowrap;
   }
 
-  .dash-meta {
+  /* Today's People card: two max-content buttons left the name column ~54px, so
+     a place read as two letters and an ellipsis and its "Been a while" badge
+     never appeared at all. Drop the actions onto their own line — the same
+     stacking the calendar rows and grocery states already use — and let the
+     title wrap so the badge has somewhere to go.
+
+     `.event-list` is deliberate, not a slip: Occasions uses the same markup
+     (avatar + name + a two-button `.event-actions`) and is squeezed just as
+     hard, so its rows stack too and gain a line. "Coming up" has a bare button
+     with no `.event-actions`, so only the wrap allowance reaches it. */
+  .event-list .event-row {
     flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .event-list .event-row .event-actions {
+    flex: 0 0 100%;
+    justify-content: flex-start;
+  }
+  .event-list .event-row .dash-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
-  /* iOS zooms any focused field under 16px — don't let it */
-  input,
-  select,
-  textarea {
-    font-size: 16px;
+  .dash-meta {
+    flex-wrap: wrap;
   }
 
   .tabs-full {
@@ -1681,6 +1765,25 @@ textarea {
     margin: 0;
     width: 100%;
     overflow: hidden;
+    transition: transform 0.2s ease;
+  }
+
+  /* With resize:'native' the viewport is already short when the keyboard is up,
+     and safe-area-inset-bottom collapses to 0 — so the fixed bar becomes an
+     opaque strip sitting exactly where WebKit scrolls the caret. Native apps
+     hide their tab bar while editing; slide it away and give the field back its
+     56pt. It is unreachable while typing anyway. */
+  .keyboard-open .tabs-compact {
+    transform: translateY(100%);
+    pointer-events: none;
+    /* off-screen is not gone: without this the five buttons stay in the tab
+       order and in VoiceOver's swipe order while the keyboard is up. The 0.2s
+       delay is declared HERE, not on the base rule, so the bar stays painted
+       for the slide out but reappears instantly on the way back in. */
+    visibility: hidden;
+    transition:
+      transform 0.2s ease,
+      visibility 0s linear 0.2s;
   }
   .tabs-compact .tab {
     flex: 1 1 0;
@@ -1751,11 +1854,47 @@ textarea {
     display: inline-block;
   }
 
+  /* 10px + the 40px .new-post-btn below + 10px + the 1px border. The desktop
+     bar is 5px shorter because its tallest control is a ~35px .btn. */
+  :root {
+    --topbar-h: 61px;
+  }
 
   .topbar {
     gap: 8px 10px;
     /* keep the status-bar / Dynamic Island clearance on phones too */
     padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  }
+
+  /* At 375pt the header wanted ~426px in 351px and `.app { overflow-x: clip }`
+     ate the overflow — which is the "+ New task" button, the most-used control
+     in the app, for the one account that also has Admin: the owner's. Shed the
+     decorative width instead of wrapping (a second header line costs vertical
+     space on exactly the devices that are tightest). */
+  .topbar .brand > span:not(.brand-mark) {
+    display: none;
+  }
+  /* the owner's admin route moves into Settings on a phone */
+  .admin-btn {
+    display: none;
+  }
+  /* keep the unsynced count — that is the number an offline-first phone user
+     needs — but let it shrink and ellipsis instead of pushing the + off-screen */
+  .sync-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* min-width alone: .sync-label's `white-space: nowrap` makes the button's
+     automatic minimum size the whole unbroken string, and this is what lets it
+     shrink past that. (flex-shrink is already 1 — nothing sets it otherwise.) */
+  .sync-btn {
+    min-width: 0;
+  }
+  /* the status dot is the fallback when the label ellipses away — never shrink it */
+  .sync-dot {
+    flex: none;
   }
 
   .tab {
@@ -1767,6 +1906,23 @@ textarea {
   .kpi-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
+  }
+
+  /* Today's first screen is ~590px on a 375pt phone and five tiles ate half of
+     it. The two that only report — "This week" and the sparkline — move off the
+     phone (they are still on the Review page and on every wider screen), and
+     the third survivor spans the row it would otherwise half-fill. */
+  .kpi-extra {
+    display: none;
+  }
+  .kpi-row > .kpi-wide {
+    grid-column: 1 / -1;
+  }
+
+  /* the bulk defer under the row is the width of the row it belongs to; on a
+     wide screen (touchscreen laptop included) it stays a normal button */
+  .kpi-bulk .btn {
+    width: 100%;
   }
 
   .stat-tile {
@@ -1824,7 +1980,9 @@ textarea {
     display: flex;
     flex-direction: column;
     max-height: 100%;
-    padding-bottom: var(--keyboard-h);
+    /* deliberately NO padding-bottom: var(--keyboard-h) — the WebView is
+       already the keyboard-free height, and padding it again left the New task
+       sheet a sliver as soon as the title field was focused */
   }
 
   .modal-body {
@@ -1873,6 +2031,48 @@ textarea {
 
   .cal-pill {
     min-height: 24px;
+  }
+
+  /* Pills and segments are ~31-33pt of text with 4-6px between them, and the
+     Review|Journal and People|Places segments are the only route to those two
+     surfaces. Only the height is missing — the widths already clear 44pt — so
+     the padding moves onto the box instead of the text. `button.` keeps the
+     read-only `<span class="toggle on">` summary chips (a person's recent
+     places, a place's companions) at their 27pt, and the 4px gap replaces the
+     whitespace inline-flex strips between a label and its count span. */
+  button.toggle,
+  button.seg {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding-block: 0;
+  }
+
+  /* The control that reveals the rest of the household in the journal editor
+     ("+ Who" / "Hide") is a .btn, not a .toggle, so the rule above missed it:
+     a ~34px target in a row of 44px pills that `align-items: center` lines up
+     against it. It is the row's way to everyone not already offered. */
+  .platform-toggles .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* .picker-results and .attendees set their own 6px gap ~1900 lines further
+     down at the same specificity, so the bare class would lose on source order;
+     naming them here outranks both. */
+  .platform-toggles,
+  .platform-toggles.picker-results,
+  .platform-toggles.attendees {
+    gap: 8px;
+  }
+
+  .segmented,
+  .filter-row {
+    gap: 6px;
   }
 }
 
@@ -2027,6 +2227,12 @@ textarea {
   gap: 16px;
   margin-bottom: 16px;
   min-width: 0;
+}
+/* a KPI tile scrolls to the section it counts; .topbar is sticky, so the
+   heading has to clear it (plus the status bar the bar pads itself for) or the
+   section lands underneath the chrome */
+.today-grid > section {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
 }
 .chart-card.warn-card {
   border-color: rgba(244, 63, 94, 0.45);
@@ -3949,6 +4155,11 @@ textarea {
     flex: 1;
     min-width: 0;
   }
+  /* the tab bar slides away with the keyboard up, so the toast would otherwise
+     float 56pt above nothing — and the viewport is already the short one */
+  .keyboard-open .toast {
+    bottom: calc(var(--safe-b) + 12px);
+  }
 }
 
 /* settings is a fixed-height dialog on desktop; on a phone it is a full sheet
@@ -4514,6 +4725,24 @@ textarea {
 .grocery-states {
   margin-left: auto;
 }
+/* the filter segments and the escape hatch for the lines held on screen after
+   they were ticked. The button is always in the markup — on the phone it takes
+   its line whether or not anything is ticked, so the first tick of a shop does
+   not grow this wrapping row and shove the list down under the thumb. */
+.grocery-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.grocery-filter-row .segmented {
+  flex: 1 1 auto;
+}
+/* the mouse page has no reflow problem and no row to reserve: it sits inline
+   beside the segments, so with nothing to clear it simply goes */
+.grocery-clear:disabled {
+  display: none;
+}
 .grocery-line.have .dash-title {
   color: var(--muted);
 }
@@ -4542,6 +4771,33 @@ textarea {
     width: 100%;
     margin-left: 0;
   }
+  /* Have | Need | Got it are three adjacent targets under one thumb in a shop,
+     and they were ~59x30px chips sized by their own text — the shortest label
+     got the smallest box. Splitting the full-width row three ways gives each
+     one about 100px. Scoped to .grocery-states because the WIDTH is what must
+     not leak: a bare `.seg { flex: 1 }` would stretch every segmented control
+     in the app, the four-way grocery filter above included. The height is not
+     this rule's business — `button.seg` already carries the 44px floor in the
+     `@media (pointer: coarse)` block. */
+  .grocery-states .seg {
+    flex: 1;
+  }
+  /* full width under the segments rather than a stub beside them, and at the
+     same 44pt floor as every other touch target — it sweeps every held line off
+     screen mid-aisle, so it is the last one that should be a 33px stub */
+  .grocery-clear {
+    width: 100%;
+    min-height: 44px;
+  }
+  /* reserved, not removed: dropping it out of flow until the first tick is what
+     moved the list under the thumb. `visibility` keeps the line and takes the
+     button out of the tab and VoiceOver order with it. The parent class is here
+     to win on specificity rather than on source order, so moving the desktop
+     `display: none` below this block cannot silently bring the reflow back. */
+  .grocery-filter-row .grocery-clear:disabled {
+    display: block;
+    visibility: hidden;
+  }
   .ing-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -4556,10 +4812,18 @@ textarea {
   flex-direction: column;
   gap: 8px;
 }
+/* JournalEditor pins a height from scrollHeight once the text outgrows the box,
+   so it grows with the entry; while the text fits, the height stays whatever
+   `rows` and min-height give it. The cap turns the overflow back into a
+   scroller, and the drag handle goes because iOS never draws one and a dragged
+   height would be thrown away by the next keystroke anyway. */
 .journal-editor textarea {
   width: 100%;
   box-sizing: border-box;
   min-height: 64px;
+  max-height: 50vh;
+  overflow-y: auto;
+  resize: none;
   line-height: 1.5;
 }
 .mood-row {
@@ -4606,6 +4870,17 @@ textarea {
   height: 22px;
   font-size: 12px;
 }
+/* "+3" for the faces the header had no room to draw (JournalPeople caps at three) */
+.person-avatar.small.more {
+  width: auto;
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
 .journal-editor-foot {
   display: flex;
   align-items: center;
@@ -4629,6 +4904,38 @@ textarea {
   flex-direction: column;
   gap: 10px;
 }
+/* A landmark every month while thumbing back: the day keys are sorted, so the
+   list emits one wherever the month changes. It sticks on a phone (see the
+   phone block below) — on a desktop the page is short enough to see. */
+.journal-month-head {
+  margin: 4px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg);
+}
+.journal-month-head:first-child {
+  margin-top: 0;
+}
+/* the heading only exists so the month is one for screen readers; the <li>
+   around it carries every visual property */
+.journal-month-title {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+/* both journal scroll targets — today's card and a past day — have to clear the
+   sticky .topbar the same way .today-grid > section does, or opening the journal
+   on a date lands the heading under the chrome */
+.journal-card,
+.journal-day {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
 .journal-day {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -4636,11 +4943,21 @@ textarea {
   padding: 12px 14px;
   box-shadow: var(--shadow);
 }
+/* label + date + mood + faces + Edit. It must wrap: `.content` clips sideways
+   overflow, so an unwrapped row would take Edit — the only way to reopen a past
+   day — off the page with no scroll to recover it. */
 .journal-day-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 6px;
+}
+.journal-day-head > .spacer {
+  flex: 1 1 24px;
+}
+.journal-day-head > button {
+  margin-left: auto;
 }
 .journal-mood {
   font-size: 18px;
@@ -4660,6 +4977,17 @@ textarea {
   white-space: pre-wrap;
 }
 
+/* the KPI tiles and the chart, behind one disclosure on a phone (JournalView
+   renders the button only under 640px, so the desktop page is unchanged).
+   Today's card sits above it now and .chart-card carries no bottom margin. */
+.journal-stats {
+  margin-top: 12px;
+}
+.journal-stats-toggle {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
 /* mood chart */
 .mood-chart-card {
   margin-bottom: 12px;
@@ -4675,6 +5003,12 @@ textarea {
   height: auto;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+  /* the scrub reads clientX along the chart, so the horizontal gesture is ours
+     and the vertical one is still the page's. Never `none`: that would trap a
+     scroll that merely started on the chart. pinch-zoom stays with the browser
+     too — this is a dense 150px graphic, and magnifying it is exactly what a
+     low-vision reader needs (the anti-zoom note at the end of this sheet). */
+  touch-action: pan-y pinch-zoom;
 }
 .mood-chart text {
   fill: currentColor;
@@ -4703,6 +5037,15 @@ textarea {
 .mood-chart .mood-day:hover .mood-hit {
   fill-opacity: 0.06;
 }
+/* the scrubbed day, lit the same way hover lights one */
+.mood-chart .mood-day.on .mood-hit {
+  fill-opacity: 0.12;
+}
+.mood-chart .mood-cursor {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.45;
+}
 .mood-chart .mood-col {
   fill: var(--accent);
 }
@@ -4722,4 +5065,135 @@ textarea {
 .mood-chart-empty {
   margin: 0;
   padding: 18px 0;
+}
+/* The scrub readout, and — once the 46px right gutter goes under 480px, where
+   the chart spends it on columns instead — the Great/Rough scale as its own
+   standing caption beside it. The readout is always in the DOM; the floor that
+   keeps a first touch from pushing the chart out from under the scrubbing thumb
+   is a touch concern, so it lives in the coarse block below and a mouse page
+   keeps no empty strip under the chart. */
+.mood-readout {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.mood-scale {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ---------- journal on a thumb ----------
+   This block has to sit AFTER the journal rules above: a media query adds no
+   specificity, so `.mood-chip` inside the coarse block higher up the file would
+   lose to `.mood-chip` down here on source order alone. Desktop keeps the
+   27pt pill and the 8px column gap. */
+@media (pointer: coarse) {
+  /* tapping a face is the one-second version of journalling, and every mistap
+     writes the wrong mood into the day 0ms later. Five 44px chips and four 8px
+     gaps come to 252px, inside the 319px card interior at 375pt. */
+  .mood-chip {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .mood-row {
+    gap: 8px;
+  }
+
+  /* three lines to start on, and room between an expanded hit box and the text */
+  .journal-editor {
+    gap: 12px;
+  }
+
+  .journal-editor textarea {
+    min-height: 96px;
+  }
+
+  /* the only route to the KPIs and the chart on a phone, and the disclosure
+     starts closed — it gets the same 44pt floor as the chips and the pills */
+  .journal-stats-toggle {
+    min-height: 44px;
+  }
+
+  /* the caption is reserved only where a touch can scrub: a finger that made it
+     appear would push the chart out from under itself. A mouse page leaves no
+     empty strip under the chart. */
+  .mood-readout {
+    min-height: 18px;
+  }
+
+  /* the morning's one-tap escape from a pile of overdue tasks gets the same
+     44pt floor as every other thumb target (its full width is a phone-width
+     rule, not a touch one — see the ≤640px block) */
+  .kpi-bulk .btn {
+    min-height: 44px;
+  }
+}
+
+/* ---------- journal look-back on a phone ---------- */
+@media (max-width: 640px) {
+  /* The month keeps its place while the days scroll under it. The offset clears
+     the sticky `.topbar` — 10px + a ~36px control + 10px — plus the status bar
+     it pads itself for. `.app`/`.content` clip sideways with `overflow-x: clip`,
+     which (unlike `hidden`) makes no scroll container, so this still sticks to
+     the viewport rather than to a box the list's own height. */
+  .journal-month-head {
+    position: sticky;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top));
+    z-index: 2;
+  }
+
+  /* A past day scrolls under the month header, not just under the bar: the
+     header is stuck at the bar's edge and is ~21px tall (12px at the inherited
+     1.45 line-height, plus 2px of padding top and bottom), so a target parked
+     at the bar loses its top border, its rounded corners and its padding
+     behind the label. `.journal-card` keeps the global margin — it is the top
+     of the list, with no month header above it. */
+  .journal-day {
+    scroll-margin-top: calc(var(--topbar-h) + 24px + env(safe-area-inset-top));
+  }
+
+  /* the readout is two lines' worth of room at 375pt: the day, its mood and the
+     week's average do not fit on one, and the chart must not move mid-scrub */
+  .mood-readout {
+    min-height: 34px;
+  }
+}
+
+/* ===================== phone: no field may zoom the page ====================
+   WKWebView zooms the whole page whenever a focused field computes under 16px,
+   and it never zooms back out — the user is left at ~115% with no gesture that
+   restores 100%. A bare `input, select, textarea { font-size: 16px }` does not
+   hold the line, because any later class rule outranks an element selector:
+   .search-input (15px), .notes-input (13px), .check-item input[type='date']
+   (12px) and .copy-row input (12px) all escaped exactly that guard — which is
+   why this block replaced it rather than sitting beside it.
+
+   This block is LAST in the file and every arm carries at least two :not()s,
+   because each one counts as a class in the cascade — a bare `textarea` (0,0,1)
+   would still lose to `.notes-input` (0,1,0). Anything added below it must not
+   set a smaller size on a phone field. Do NOT "fix" this with maximum-scale=1
+   on the viewport meta — that also blocks deliberate pinch-zoom, which is an
+   accessibility control.
+
+   Fields that are already ABOVE 16px never zoomed and are restored after it. */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select:not([hidden]):not([multiple]),
+  textarea:not([hidden]):not([disabled]),
+  [contenteditable='true']:not([hidden]) {
+    font-size: 16px;
+  }
+  /* the emoji picker sat at 18px and never zoomed; ties the catch-all on
+     specificity and wins on order, so it keeps its size */
+  .emoji-field input:not([type='checkbox']) {
+    font-size: 18px;
+  }
 }

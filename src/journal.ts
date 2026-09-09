@@ -45,6 +45,17 @@ export function peopleOf(entry: Pick<JournalEntry, 'peopleIds'>, people: Person[
   return (entry.peopleIds ?? []).map(id => people.find(p => p.id === id)).filter((p): p is Person => !!p)
 }
 
+/**
+ * How many faces a one-line summary may draw, and how many it had to leave off.
+ * A journal day header is a single row on a 375pt phone; a whole household of
+ * 22px avatars overflows it and takes the Edit button — the only way to reopen
+ * that day — off the clipped page with it.
+ */
+export function faceGroup<T>(who: readonly T[], max = 3): { shown: T[]; extra: number } {
+  const cap = Math.max(1, Math.floor(max))
+  return who.length <= cap ? { shown: [...who], extra: 0 } : { shown: who.slice(0, cap), extra: who.length - cap }
+}
+
 /** True when two people lists name the same ids in the same order (both empty counts as the same). */
 export function samePeople(a?: readonly string[], b?: readonly string[]): boolean {
   const x = a ?? []
@@ -129,4 +140,23 @@ export function moodSeries(entries: JournalEntry[], weeks = 12, today = localDay
     weekly.push(avg === undefined ? { start, count: 0 } : { start, avg, count: scored.length })
   }
   return { days, weekly }
+}
+
+/**
+ * How many weeks of mood a card `width` CSS pixels wide should draw. A quarter
+ * of days needs roughly 480px before the columns stop being a smear: at 375pt a
+ * 12-week chart is 84 columns under 2px wide, so the phone gets six weeks of
+ * readable ones instead. Read off the measured card, never off a media query —
+ * the same component sits in a wide desktop column and a 351px phone page.
+ */
+export const moodWeeksFor = (width: number): number => (width < 480 ? 6 : 12)
+
+/**
+ * Which day column a scrub at `x` (viewBox units, so CSS pixels of the chart)
+ * lands on, clamped into the series. Touch has no hover, so the readout is
+ * driven by this rather than by the 7px-wide per-day rects.
+ */
+export function moodIndexAt(x: number, left: number, slot: number, count: number): number {
+  if (count <= 0 || !(slot > 0)) return 0
+  return Math.max(0, Math.min(count - 1, Math.floor((x - left) / slot)))
 }

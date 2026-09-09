@@ -37,11 +37,38 @@ export async function closeExternal(): Promise<void> {
   await Browser.close().catch(() => {})
 }
 
+/**
+ * The haptics plugin, loaded once. A swipe threshold has to buzz within a few
+ * milliseconds of the finger crossing it, and a cold `import()` is a chunk
+ * fetch — so the first crossing of a session was silent until this was
+ * memoised. A failed load is not cached, so a later call may retry.
+ */
+let hapticsModule: Promise<typeof import('@capacitor/haptics')> | null = null
+function loadHaptics(): Promise<typeof import('@capacitor/haptics')> {
+  if (!hapticsModule) {
+    hapticsModule = import('@capacitor/haptics').catch(err => {
+      hapticsModule = null
+      throw err
+    })
+  }
+  return hapticsModule
+}
+
+/** Pull the haptics chunk in before the first gesture needs it. No-op on the web. */
+export async function warmHaptics(): Promise<void> {
+  if (!isNative()) return
+  try {
+    await loadHaptics()
+  } catch {
+    /* haptics are optional */
+  }
+}
+
 /** A small physical confirmation; silent on the web. */
 export async function haptic(kind: 'light' | 'success' = 'light'): Promise<void> {
   if (!isNative()) return
   try {
-    const { Haptics, ImpactStyle, NotificationType } = await import('@capacitor/haptics')
+    const { Haptics, ImpactStyle, NotificationType } = await loadHaptics()
     if (kind === 'success') await Haptics.notification({ type: NotificationType.Success })
     else await Haptics.impact({ style: ImpactStyle.Light })
   } catch {
@@ -50,26 +77,56 @@ export async function haptic(kind: 'light' | 'success' = 'light'): Promise<void>
 }
 
 export interface NativeHooks {
-  /** A URL the app was asked to open: drafter://…, a push tap, or an OAuth return. */
-  onUrl(url: string): void
+  /**
+   * A URL the app was asked to open: drafter://…, a push tap, or an OAuth return.
+   * `fromNotification` is true only for a tap on one of our own local reminders,
+   * which is the only source allowed to carry a write-on-arrival `act=` button.
+   * Every other producer — an external drafter:// link from Safari, a Shortcut,
+   * a cold-start launch URL, a push tap — leaves it false.
+   */
+  onUrl(url: string, fromNotification?: boolean): void
   /** The app came back to the foreground. */
   onResume(): void
 }
 
+/** How long after launch the same URL is treated as the duplicate it is. */
+const LAUNCH_DEDUPE_MS = 5000
+
 /** Wire the shell's events once. Returns a disposer. No-op on the web. */
 export async function initNative(hooks: NativeHooks): Promise<() => void> {
   if (!isNative()) return () => {}
+  // the first swipe of a session should buzz like every later one
+  void warmHaptics()
   const { App } = await import('@capacitor/app')
-  const handles = [await App.addListener('appUrlOpen', e => hooks.onUrl(e.url)), await App.addListener('resume', () => hooks.onResume())]
-  // a cold start from a link arrives here rather than as an event
+  // A cold-start drafter:// URL is delivered on BOTH channels: Capacitor's scene
+  // proxy replays the launch URL contexts as an `appUrlOpen` (retained until a
+  // listener consumes it) and records the same URL for App.getLaunchUrl(). Applied
+  // twice, `drafter://journal?text=…` writes the line twice. Whichever channel
+  // lands first wins, and the copy from the other one is dropped — but only while
+  // the app is starting, so tapping the same Shortcut again later still works.
+  const startedAt = Date.now()
+  const launchSeen = new Set<string>()
+  const deliverUrl = (url: string, fromNotification = false) => {
+    if (Date.now() - startedAt < LAUNCH_DEDUPE_MS) {
+      if (launchSeen.has(url)) return
+      launchSeen.add(url)
+    }
+    hooks.onUrl(url, fromNotification)
+  }
+  const handles = [await App.addListener('appUrlOpen', e => deliverUrl(e.url)), await App.addListener('resume', () => hooks.onResume())]
+  // a cold start from a link may arrive here rather than as an event
   const launch = await App.getLaunchUrl().catch(() => null)
-  if (launch?.url) hooks.onUrl(launch.url)
+  if (launch?.url) deliverUrl(launch.url)
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications')
     handles.push(
       await LocalNotifications.addListener('localNotificationActionPerformed', a => {
         const url = (a.notification.extra as { url?: unknown } | undefined)?.url
-        if (typeof url === 'string') hooks.onUrl(url)
+        if (typeof url !== 'string') return
+        // 'tap' is the banner itself; anything else is one of the buttons
+        // registered below, and rides along on that row's own link.
+        const act = a.actionId && a.actionId !== 'tap' ? a.actionId : ''
+        deliverUrl(act ? `${url}${url.includes('?') ? '&' : '?'}act=${encodeURIComponent(act)}` : url, true)
       }),
     )
   } catch {
@@ -147,14 +204,28 @@ export async function requestLocalNotificationPermission(): Promise<boolean> {
   return p.display === 'granted'
 }
 
+/** The action buttons a reminder can carry. Omitted from a generic reminder. */
+export const TASK_ACTION_TYPE = 'DRAFTER_TASK'
+export const OCCASION_ACTION_TYPE = 'DRAFTER_OCCASION'
+
 export interface PendingReminder {
   id: number
   title: string
   body: string
   at: Date
   url: string
-  badge?: number
+  /** TASK_ACTION_TYPE / OCCASION_ACTION_TYPE, or nothing for a title-less banner. */
+  actionTypeId?: string
 }
+
+/**
+ * Register the notification categories once per launch. iOS keeps them for the
+ * app, not for a notification, so this only has to beat the first schedule call.
+ * Every action is `foreground: true`: a background action would need the web
+ * view to be alive when iOS delivers the response, which is not guaranteed —
+ * foreground still saves the hunt for the row and lands on an undo toast.
+ */
+let actionTypesRegistered = false
 
 /**
  * Replace every pending reminder with this set. iOS holds at most 64 pending
@@ -164,6 +235,25 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
   if (!isNative()) return 0
   const { LocalNotifications } = await import('@capacitor/local-notifications')
   if ((await LocalNotifications.checkPermissions()).display !== 'granted') return 0
+  if (!actionTypesRegistered) {
+    try {
+      await LocalNotifications.registerActionTypes({
+        types: [
+          {
+            id: TASK_ACTION_TYPE,
+            actions: [
+              { id: 'done', title: 'Done', foreground: true },
+              { id: 'tomorrow', title: 'Tomorrow', foreground: true },
+            ],
+          },
+          { id: OCCASION_ACTION_TYPE, actions: [{ id: 'saw', title: 'Saw them', foreground: true }] },
+        ],
+      })
+      actionTypesRegistered = true
+    } catch {
+      /* an older plugin still schedules fine, just without buttons */
+    }
+  }
   const pending = await LocalNotifications.getPending()
   if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) })
   const now = Date.now()
@@ -173,14 +263,18 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
     .slice(0, 60)
   if (upcoming.length) {
     await LocalNotifications.schedule({
-      notifications: upcoming.map(i => ({
+      notifications: upcoming.map((i, idx) => ({
         id: i.id,
         title: i.title,
         body: i.body,
         schedule: { at: i.at, allowWhileIdle: true },
         extra: { url: i.url },
         sound: 'default',
-        ...(i.badge != null ? { badge: i.badge } : {}),
+        // the badge counts reminders that have fired since Drafter was last
+        // opened — these are in time order, so the nth to fire leaves n behind.
+        // clearAppBadge() zeroes it again on the next launch or resume.
+        badge: idx + 1,
+        ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
       })),
     })
   }
@@ -192,29 +286,58 @@ export async function clearAppBadge(): Promise<void> {
   if (!isNative()) return
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications')
-    // Capacitor 8: setting badge via a delivered notification isn't required —
-    // cancel pending already ran; zero via PushNotifications when available.
-    const { PushNotifications } = await import('@capacitor/push-notifications')
-    await PushNotifications.removeAllDeliveredNotifications?.()
-    void LocalNotifications
+    // This one both empties Notification Centre and sets the icon badge to zero,
+    // with no registration guard. The push plugin's identically named method
+    // rejects until APNs registration has run, which never happens on a free
+    // Apple team — so the badge used to stick to the icon for good.
+    await LocalNotifications.removeAllDeliveredNotifications()
   } catch {
-    /* plugin may be unavailable in simulator builds without push */
+    /* the plugin is optional at runtime */
   }
 }
 
-// ---- keyboard: lift modal chrome above the software keyboard ----------------
+// ---- keyboard: signal the keyboard, and give multi-line fields a Done key ----
 
-/** Keep `--keyboard-h` in sync so sheets sit above the iOS keyboard. */
+/**
+ * Publish the keyboard state to CSS.
+ *
+ * `capacitor.config.ts` uses `resize: 'native'`, so iOS already shrinks the
+ * WebView by the keyboard height: `--keyboard-h` is a SIGNAL, never an inset to
+ * spend on padding — doing that subtracts the keyboard twice. The `keyboard-open`
+ * class is what layout rules should key off (see the `.tabs-compact` rule in
+ * styles.css, which slides the fixed tab bar out of the caret's way).
+ */
 export async function watchKeyboard(): Promise<() => void> {
   if (!isNative()) return () => {}
   try {
     const { Keyboard } = await import('@capacitor/keyboard')
-    const set = (h: number) => document.documentElement.style.setProperty('--keyboard-h', `${Math.max(0, h)}px`)
+    // the plugin hides the system accessory bar by default, which leaves every
+    // multi-line field with no way to dismiss the keyboard — and the journal
+    // editor only commits on blur, so "no Done key" means "no save". Its own
+    // try: a failure here must not cost us the listeners below.
+    try {
+      await Keyboard.setAccessoryBarVisible({ isVisible: true })
+    } catch {
+      /* older plugin or a platform without an accessory bar */
+    }
+    const set = (h: number) => {
+      document.documentElement.style.setProperty('--keyboard-h', `${Math.max(0, h)}px`)
+      document.documentElement.classList.toggle('keyboard-open', h > 0)
+    }
     const show = await Keyboard.addListener('keyboardWillShow', e => set(e.keyboardHeight))
     const hide = await Keyboard.addListener('keyboardWillHide', () => set(0))
+    // `keyboard-open` now hides the tab bar outright, so a dropped
+    // `keyboardWillHide` (backgrounded with a field focused, a cancelled
+    // interactive dismiss) would strand the user with no navigation. Coming
+    // back to the foreground always means the keyboard is down.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') set(0)
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       void show.remove()
       void hide.remove()
+      document.removeEventListener('visibilitychange', onVisible)
       set(0)
     }
   } catch {
@@ -240,6 +363,37 @@ export function setAppLockEnabled(on: boolean): void {
     else localStorage.removeItem(APP_LOCK_KEY)
   } catch {
     /* ignore */
+  }
+}
+
+// Whether the unlock card is on screen. A link that changes data on arrival —
+// a reminder's Done button — has to wait behind it, or its undo toast appears
+// (and times out) underneath the lock.
+let lockShowing = false
+const lockClearedWatchers = new Set<() => void>()
+
+/** True while the Face ID / passcode overlay is covering the app. */
+export function isAppLockShowing(): boolean {
+  return lockShowing
+}
+
+/**
+ * LockGate reports the overlay's state here; nothing else should call it.
+ * `silent` resets the flag without announcing an unlock — LockGate uses it when
+ * it unmounts (the session dropped, so the app is behind the login overlay
+ * instead) and for React's development-only double mount.
+ */
+export function setAppLockShowing(on: boolean, opts?: { silent?: boolean }): void {
+  if (lockShowing === on) return
+  lockShowing = on
+  if (!on && !opts?.silent) for (const cb of [...lockClearedWatchers]) cb()
+}
+
+/** Run cb the next time the overlay clears. Returns a disposer. */
+export function onAppLockCleared(cb: () => void): () => void {
+  lockClearedWatchers.add(cb)
+  return () => {
+    lockClearedWatchers.delete(cb)
   }
 }
 
@@ -286,16 +440,25 @@ export async function authenticateAppLock(reason = 'Unlock Drafter'): Promise<bo
  */
 export async function watchAppLock(onLock: () => void): Promise<() => void> {
   let hiddenAt = 0
+  // Synchronously, before onLock: raising the lock is a React state change, and
+  // `resume` and `localNotificationActionPerformed` arrive in the same burst of
+  // bridge callbacks. A reminder's Done button read this flag through
+  // isAppLockShowing() one commit too early and wrote (and toasted) behind the
+  // Face ID card — the exact case the gate exists to hold back.
+  const lock = () => {
+    setAppLockShowing(true)
+    onLock()
+  }
   const onVis = () => {
     if (document.visibilityState === 'hidden') hiddenAt = Date.now()
-    else if (appLockEnabled() && hiddenAt && Date.now() - hiddenAt > 12_000) onLock()
+    else if (appLockEnabled() && hiddenAt && Date.now() - hiddenAt > 12_000) lock()
   }
   document.addEventListener('visibilitychange', onVis)
   if (!isNative()) return () => document.removeEventListener('visibilitychange', onVis)
   try {
     const { App } = await import('@capacitor/app')
     const handle = await App.addListener('resume', () => {
-      if (appLockEnabled()) onLock()
+      if (appLockEnabled()) lock()
     })
     return () => {
       document.removeEventListener('visibilitychange', onVis)

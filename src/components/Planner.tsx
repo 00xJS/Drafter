@@ -10,7 +10,7 @@ import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEv
 import { parseGithubUrl, setIssueState } from '../github'
 import { useHousehold } from '../household'
 import { timeAgo } from '../utils'
-import { closeExternal, genericRemindersEnabled, initNative, isNative, localRemindersEnabled, scheduleLocalReminders, clearAppBadge } from '../native'
+import { closeExternal, genericRemindersEnabled, haptic, initNative, isAppLockShowing, isNative, localRemindersEnabled, onAppLockCleared, scheduleLocalReminders, clearAppBadge } from '../native'
 import { buildLocalReminders, deviceHasServerPush } from '../reminders'
 import { fetchPushInfo } from '../push'
 import { paramsOf, parseLink } from '../links'
@@ -44,6 +44,9 @@ type PeopleTab = 'people' | 'places'
 /** The Review tab holds the look-back and the journal, as People holds Places. */
 type ReviewTab = 'review' | 'journal'
 
+/** An inbound link, held as parsed pieces so a replay keeps its provenance. */
+type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
+
 const VIEW_LABELS: Record<View, string> = {
   today: 'Today',
   tasks: 'Tasks',
@@ -63,11 +66,17 @@ const COMPACT_TABS: { id: View | 'more'; icon: string; label: string }[] = [
   { id: 'kitchen', icon: '🍽', label: 'Kitchen' },
   { id: 'people', icon: '👥', label: 'People' },
 ]
-const MORE_VIEWS: { id: View; icon: string; hint: string }[] = [
-  { id: 'tasks', icon: '☑', hint: 'Searchable list, import and trash' },
-  { id: 'board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
-  { id: 'notes', icon: '✎', hint: 'The selected project’s notepad' },
-  { id: 'review', icon: '📊', hint: 'Weekly look-back, and your journal' },
+/**
+ * The More sheet's rows. `key` is the row, `view` is where it lands: the Journal
+ * row is a second door onto the Review view with its segment already set, so the
+ * list is deliberately not keyed by `View`. The five-tab bar is unchanged.
+ */
+const MORE_VIEWS: { key: string; view: View; label: string; icon: string; hint: string }[] = [
+  { key: 'tasks', view: 'tasks', label: 'Tasks', icon: '☑', hint: 'Searchable list, import and trash' },
+  { key: 'board', view: 'board', label: 'Board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
+  { key: 'notes', view: 'notes', label: 'Notes', icon: '✎', hint: 'The selected project’s notepad' },
+  { key: 'journal', view: 'review', label: 'Journal', icon: '📓', hint: 'Today’s line, and every day you wrote' },
+  { key: 'review', view: 'review', label: 'Review', icon: '📊', hint: 'The weekly look-back' },
 ]
 
 const FILTER_KEY = 'drafter:project-filter'
@@ -101,27 +110,55 @@ export default function Planner() {
       return 'month'
     }
   })
-  const [peopleTab, setPeopleTab] = useState<PeopleTab>(() => {
+  // The two segmented views remember which half you chose — but only when you
+  // chose it. Everything else (a deep link, a nudge, the More sheet) moves the
+  // segment for that visit alone, so "Open review" cannot be hijacked by the
+  // last time the journal was read, and the People tab cannot get pinned to
+  // Places by one search result.
+  const storedPeopleTab = (): PeopleTab => {
     try {
       return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
     } catch {
       return 'people'
     }
-  })
-  const [reviewTab, setReviewTabState] = useState<ReviewTab>(() => {
+  }
+  const storedReviewTab = (): ReviewTab => {
     try {
       return localStorage.getItem(REVIEW_TAB_KEY) === 'journal' ? 'journal' : 'review'
     } catch {
       return 'review'
     }
-  })
+  }
+  /** Move the People segment for this visit only. */
+  const [peopleTab, goPeopleTab] = useState<PeopleTab>(storedPeopleTab)
+  /** Move the Review segment for this visit only. */
+  const [reviewTab, goReviewTab] = useState<ReviewTab>(storedReviewTab)
+  /** Remember the choice: the segment buttons, and nothing else. */
+  const setPeopleTab = (tab: PeopleTab) => {
+    goPeopleTab(tab)
+    try {
+      localStorage.setItem(PEOPLE_TAB_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }
   const setReviewTab = (tab: ReviewTab) => {
-    setReviewTabState(tab)
+    goReviewTab(tab)
     try {
       localStorage.setItem(REVIEW_TAB_KEY, tab)
     } catch {
       /* ignore */
     }
+  }
+  /**
+   * Go to a view from a tab bar. A tab tap is the one move that means "wherever
+   * I left this", so the segmented views re-read the remembered half rather than
+   * keeping whatever a link last set.
+   */
+  const goView = (v: View) => {
+    if (v === 'people') goPeopleTab(storedPeopleTab())
+    if (v === 'review') goReviewTab(storedReviewTab())
+    setView(v)
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
   const [journalOpenDate, setJournalOpenDate] = useState<string | null>(null)
@@ -129,17 +166,12 @@ export default function Planner() {
   const [placeOpenId, setPlaceOpenId] = useState<string | null>(null)
   const openPlace = (id?: string) => {
     if (id) setPlaceOpenId(id)
-    setPeopleTab('places')
-    try {
-      localStorage.setItem(PEOPLE_TAB_KEY, 'places')
-    } catch {
-      /* ignore */
-    }
+    goPeopleTab('places')
     setView('people')
   }
   const openJournal = (date?: string) => {
     if (date) setJournalOpenDate(date)
-    setReviewTab('journal')
+    goReviewTab('journal')
     setView('review')
   }
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
@@ -247,15 +279,20 @@ export default function Planner() {
   // Every way in, understood in one place: the PWA share target, ?new=, ?task=,
   // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
   // consent screen. Anything that needs data waits for the store to load.
-  const pendingLink = useRef<{ host: string; params: URLSearchParams } | null>(null)
-  const applyLink = (raw: string | URLSearchParams | { host: string; params: URLSearchParams }, hostHint = '') => {
-    const { host, params } =
+  const pendingLink = useRef<PendingLink | null>(null)
+  // `fromNotification` is the only way an `act=` button is honoured: a reminder's
+  // Done writes on arrival, so the web query string and the share target must not
+  // be able to ask for it.
+  const applyLink = (raw: string | URLSearchParams | PendingLink, hostHint = '', fromNotification = false) => {
+    const src: PendingLink =
       raw instanceof URLSearchParams
-        ? { host: hostHint, params: raw }
+        ? { host: hostHint, params: raw, allowAct: fromNotification }
         : typeof raw === 'object' && raw && 'params' in raw
-          ? raw
-          : paramsOf(typeof raw === 'string' ? raw : String(raw))
-    const parsed = parseLink(params, { host })
+          ? { allowAct: fromNotification, ...raw }
+          : { ...paramsOf(typeof raw === 'string' ? raw : String(raw)), allowAct: fromNotification }
+    const { host, params } = src
+    const allowAct = !!src.allowAct
+    const parsed = parseLink(params, { host, allowAct })
     if (parsed.oauth) {
       void closeExternal()
       const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
@@ -268,24 +305,26 @@ export default function Planner() {
       setSettingsOpen(true)
       return
     }
-    if (!store.loaded) {
-      pendingLink.current = { host, params }
+    // Nothing below this line may run behind the lock card: a Done button that
+    // fires while the overlay is up would write, toast, and time out unseen.
+    if (!store.loaded || isAppLockShowing()) {
+      pendingLink.current = { host, params, allowAct }
       return
     }
     if (parsed.view === 'admin') {
       setAdminOpen(true)
       return
     }
+    // Every inbound link lands on the view it names: the More sheet is a fixed
+    // backdrop over the routed view, so a quick action tapped with it open would
+    // otherwise look like the app launched and did nothing.
+    setMoreOpen(false)
     if (parsed.view && (VIEWS as string[]).includes(parsed.view)) setView(parsed.view as View)
     if (parsed.tab === 'journal') {
-      openJournal()
+      // land on today's editor, not just the tab — this is the quick action's route
+      openJournal(localDayKey())
     } else if (parsed.tab) {
-      setPeopleTab(parsed.tab)
-      try {
-        localStorage.setItem(PEOPLE_TAB_KEY, parsed.tab)
-      } catch {
-        /* ignore */
-      }
+      goPeopleTab(parsed.tab)
       setView('people')
     }
     if (parsed.journal) {
@@ -301,54 +340,82 @@ export default function Planner() {
           existing ? () => store.upsert({ ...existing, updatedAt: newerStamp(next.updatedAt) }) : () => store.remove(next.id),
         )
       }
-      // drafter://journal is the owner's own Shortcut and writes at once; any other link — a web
-      // URL, or drafter://new?journal= that a page in Safari could hand the phone — shows the line
-      // first and writes only when the button is pressed
-      if (host === 'journal') write()
-      else showToast(`Add to today’s journal: “${line.length > 80 ? line.slice(0, 79) + '…' : line}”`, undefined, { label: 'Add', run: write })
+      // Nothing writes on arrival here. drafter://journal is the owner's own
+      // Shortcut, but a page open in Safari can set location.href to the same
+      // string and iOS's “Open in Drafter?” prompt says nothing about what is
+      // being written — so the line is shown first and lands only on the button.
+      // The Shortcut costs one tap; a web page cannot spend it.
+      showToast(`Add to today’s journal: “${line.length > 80 ? line.slice(0, 79) + '…' : line}”`, undefined, { label: 'Add', run: write })
       openJournal()
       return
     }
     if (parsed.saw) {
       const person = store.people.find(p => p.id === parsed.saw)
       if (person) {
-        const now = new Date().toISOString()
-        const id = crypto.randomUUID()
-        store.upsert({
-          kind: 'task',
-          id,
-          title: `Saw ${person.name}`,
-          description: '',
-          status: 'done',
-          priority: 'normal',
-          completedAt: now,
-          createdAt: now,
-          updatedAt: now,
-          tags: ['visit'],
-          peopleIds: [person.id],
-        })
-        showToast(`Logged a visit with ${person.name}`, () => store.remove(id))
+        const log = () => {
+          const now = new Date().toISOString()
+          const id = crypto.randomUUID()
+          store.upsert({
+            kind: 'task',
+            id,
+            title: `Saw ${person.name}`,
+            description: '',
+            status: 'done',
+            priority: 'normal',
+            completedAt: now,
+            createdAt: now,
+            updatedAt: now,
+            tags: ['visit'],
+            peopleIds: [person.id],
+          })
+          showToast(`Logged a visit with ${person.name}`, () => store.remove(id))
+        }
+        // Only the reminder's own “Saw them” button writes, the same way Done and
+        // Tomorrow do below. Reading whose birthday it is — tapping the banner, or
+        // any other producer of a ?saw= link — opens People and offers the write.
+        if (parsed.act === 'saw') log()
+        else showToast(`Log a visit with ${person.name}?`, undefined, { label: 'Saw them', run: log })
+        goPeopleTab('people')
         setView('people')
       } else showToast('That person is not on this device yet.')
       return
     }
     if (parsed.task) {
       const t = store.tasks.find(x => x.id === parsed.task)
-      if (t) setEditor({ task: t })
-      else showToast('That task is not on this device yet — it will appear after the next sync.')
+      if (!t) {
+        showToast('That task is not on this device yet — it will appear after the next sync.')
+        return
+      }
+      // Done / Tomorrow came from the reminder's own buttons: do the thing the
+      // swipe would have done, and leave its undo toast on screen. A banner can
+      // outlive the task it names (finished on another device), and both writes
+      // go quiet in that case — so say so rather than open to nothing.
+      if (parsed.act === 'done') {
+        if (t.status === 'done') showToast('Already done.')
+        else changeStatus(t.id, 'done')
+      } else if (parsed.act === 'tomorrow') {
+        if (t.status === 'done') showToast('Already done — nothing to move.')
+        else {
+          const tomorrow = new Date()
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          defer(t.id, tomorrow)
+        }
+      } else setEditor({ task: t })
       return
     }
     if (parsed.capture) {
-      setEditor({
-        preset: {
+      // through newTask, so the quick action and the + button file a new task
+      // the same way — including into the project the list is filtered to
+      newTask(
+        {
           title: parsed.capture.title,
           description: parsed.capture.description ?? '',
           link: parsed.capture.link,
           status: 'todo',
           ...(parsed.capture.dueAt ? { dueAt: parsed.capture.dueAt } : {}),
         },
-        capture: !!(parsed.capture.title.trim() || parsed.capture.link || parsed.capture.description),
-      })
+        { capture: !!(parsed.capture.title.trim() || parsed.capture.link || parsed.capture.description) },
+      )
     }
   }
   const applyLinkRef = useRef(applyLink)
@@ -370,20 +437,46 @@ export default function Planner() {
     pendingLink.current = null
     applyLinkRef.current(p)
   }, [store.loaded])
+  // a link that arrived while the app was locked is replayed the moment it opens
+  useEffect(
+    () =>
+      onAppLockCleared(() => {
+        const p = pendingLink.current
+        if (!p) return
+        pendingLink.current = null
+        applyLinkRef.current(p)
+      }),
+    [],
+  )
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
   useEffect(() => {
-    let dispose = () => {}
+    // the effect can be torn down before initNative resolves (React's
+    // development double-mount does exactly that), and a disposer assigned
+    // after the cleanup ran would leave every listener subscribed twice
+    let disposed = false
+    let dispose: (() => void) | null = null
     void initNative({
-      onUrl: url => applyLinkRef.current(url),
+      // only a tap on one of our own reminders may carry an `act=` that writes on
+      // arrival; a drafter:// link from Safari or a Shortcut still just navigates
+      onUrl: (url, fromNotif) => applyLinkRef.current(url, '', !!fromNotif),
       onResume: () => {
         void store.syncNowManual()
         remindersRef.current()
         void clearAppBadge()
       },
     }).then(d => {
+      if (disposed) {
+        d()
+        return
+      }
       dispose = d
+      // resume does not fire at launch, so a cold start clears the badge here
+      void clearAppBadge()
     })
-    return () => dispose()
+    return () => {
+      disposed = true
+      dispose?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -631,6 +724,8 @@ export default function Planner() {
     const prev = reschedule(id, day)
     if (!prev) return
     const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    // deferring is the one daily gesture with no other confirmation you can feel
+    void haptic('light')
     showToast(`Moved to ${label}`, () => store.upsert({ ...prev, updatedAt: newerStamp(prev.updatedAt) }))
   }
 
@@ -642,6 +737,7 @@ export default function Planner() {
     }
     if (!undos.length) return
     const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    void haptic('light')
     showToast(`Moved ${undos.length} to ${label}`, () => {
       for (const p of undos) store.upsert({ ...p, updatedAt: newerStamp(p.updatedAt) })
     })
@@ -658,13 +754,18 @@ export default function Planner() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">✈</span>
+        {/* the phone hides the wordmark span for width (see styles.css), so the
+            name lives on the container and the glyph is decorative — otherwise
+            VoiceOver announces the header as "airplane". */}
+        <div className="brand" aria-label="Drafter">
+          <span className="brand-mark" aria-hidden>
+            ✈
+          </span>
           <span>Drafter</span>
         </div>
         <nav className="tabs tabs-full" aria-label="Views">
           {(Object.keys(VIEW_LABELS) as View[]).map(v => (
-            <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => setView(v)}>
+            <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)}>
               {VIEW_LABELS[v]}
             </button>
           ))}
@@ -672,7 +773,7 @@ export default function Planner() {
         <nav className="tabs tabs-compact" aria-label="Main">
           {COMPACT_TABS.map(t => {
             const onMore = t.id === 'more'
-            const active = onMore ? MORE_VIEWS.some(m => m.id === view) : view === t.id
+            const active = onMore ? MORE_VIEWS.some(m => m.view === view) : view === t.id
             return (
               <button
                 key={t.id}
@@ -685,7 +786,7 @@ export default function Planner() {
                   if (t.id === 'more') setMoreOpen(o => !o)
                   else {
                     setMoreOpen(false)
-                    setView(t.id)
+                    goView(t.id)
                   }
                 }}
               >
@@ -710,8 +811,10 @@ export default function Planner() {
         <button className="btn subtle" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           ⚙
         </button>
+        {/* hidden below 640px (it pushed "+ New task" off a 375pt header) —
+            the phone route is the Admin row in Settings ▸ Data */}
         {isOwner && (
-          <button className="btn subtle" aria-label="Admin" title="Admin" onClick={() => setAdminOpen(true)}>
+          <button className="btn subtle admin-btn" aria-label="Admin" title="Admin" onClick={() => setAdminOpen(true)}>
             Admin
           </button>
         )}
@@ -810,7 +913,10 @@ export default function Planner() {
                 meals={store.meals}
                 recipes={store.recipes}
                 onOpenKitchen={() => setView('kitchen')}
-                onOpenReview={() => setView('review')}
+                onOpenReview={() => {
+                  goReviewTab('review')
+                  setView('review')
+                }}
                 onCookRecipe={r => {
                   setKitchenRecipe(r)
                   setView('kitchen')
@@ -821,7 +927,7 @@ export default function Planner() {
                   store.remove(id)
                   showToast('Journal entry removed', () => store.restore([id]))
                 }}
-                onOpenJournal={() => openJournal()}
+                onOpenJournal={() => openJournal(localDayKey())}
               />
             )}
             {view === 'board' && (
@@ -909,7 +1015,15 @@ export default function Planner() {
                     <button type="button" className={reviewTab === 'review' ? 'seg on' : 'seg'} onClick={() => setReviewTab('review')}>
                       Review
                     </button>
-                    <button type="button" className={reviewTab === 'journal' ? 'seg on' : 'seg'} onClick={() => setReviewTab('journal')}>
+                    <button
+                      type="button"
+                      className={reviewTab === 'journal' ? 'seg on' : 'seg'}
+                      onClick={() => {
+                        setReviewTab('journal')
+                        // land on today's editor, not on the stats above it
+                        setJournalOpenDate(localDayKey())
+                      }}
+                    >
                       Journal
                     </button>
                   </span>
@@ -958,28 +1072,14 @@ export default function Planner() {
                     <button
                       type="button"
                       className={peopleTab === 'people' ? 'seg on' : 'seg'}
-                      onClick={() => {
-                        setPeopleTab('people')
-                        try {
-                          localStorage.setItem(PEOPLE_TAB_KEY, 'people')
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
+                      onClick={() => setPeopleTab('people')}
                     >
                       People
                     </button>
                     <button
                       type="button"
                       className={peopleTab === 'places' ? 'seg on' : 'seg'}
-                      onClick={() => {
-                        setPeopleTab('places')
-                        try {
-                          localStorage.setItem(PEOPLE_TAB_KEY, 'places')
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
+                      onClick={() => setPeopleTab('places')}
                     >
                       Places
                     </button>
@@ -1174,7 +1274,25 @@ export default function Planner() {
         />
       )}
 
-      {settingsOpen && <Settings key={settingsNonce} store={store} calendars={calendars} googlePush={googlePush} microsoftSync={microsoftSync} household={household} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <Settings
+          key={settingsNonce}
+          store={store}
+          calendars={calendars}
+          googlePush={googlePush}
+          microsoftSync={microsoftSync}
+          household={household}
+          onClose={() => setSettingsOpen(false)}
+          onOpenAdmin={
+            isOwner
+              ? () => {
+                  setSettingsOpen(false)
+                  setAdminOpen(true)
+                }
+              : undefined
+          }
+        />
+      )}
       {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
 
       {moreOpen && (
@@ -1193,26 +1311,35 @@ export default function Planner() {
               </button>
             </header>
             <ul className="more-list">
-              {MORE_VIEWS.map(m => (
-                <li key={m.id}>
-                  <button
-                    type="button"
-                    className={view === m.id ? 'more-item on' : 'more-item'}
-                    onClick={() => {
-                      setView(m.id)
-                      setMoreOpen(false)
-                    }}
-                  >
-                    <span className="more-item-icon" aria-hidden>
-                      {m.icon}
-                    </span>
-                    <span className="more-item-copy">
-                      <strong>{VIEW_LABELS[m.id]}</strong>
-                      <small>{m.hint}</small>
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {MORE_VIEWS.map(m => {
+                // Journal and Review share the Review view, so the segment says which row is the current one
+                const on = view === m.view && (m.view !== 'review' || reviewTab === (m.key === 'journal' ? 'journal' : 'review'))
+                return (
+                  <li key={m.key}>
+                    <button
+                      type="button"
+                      className={on ? 'more-item on' : 'more-item'}
+                      onClick={() => {
+                        setMoreOpen(false)
+                        // the journal row is for writing today's line, so it lands on today's editor
+                        if (m.key === 'journal') openJournal(localDayKey())
+                        else if (m.key === 'review') {
+                          goReviewTab('review')
+                          setView('review')
+                        } else setView(m.view)
+                      }}
+                    >
+                      <span className="more-item-icon" aria-hidden>
+                        {m.icon}
+                      </span>
+                      <span className="more-item-copy">
+                        <strong>{m.label}</strong>
+                        <small>{m.hint}</small>
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         </div>

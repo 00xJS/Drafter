@@ -13,7 +13,7 @@ import {
   shiftDayKey,
   streak,
 } from '../../shared/journal.mjs'
-import { entriesInRange, moodSeries } from '../journal'
+import { entriesInRange, moodIndexAt, moodSeries, moodWeeksFor } from '../journal'
 import { weekRange } from '../review'
 import { sanitizeItem, sanitizeJournal } from '../schema'
 import { parseLink } from '../links'
@@ -234,6 +234,44 @@ describe('moodSeries', () => {
   })
 })
 
+describe('mood chart on a phone', () => {
+  it('shortens the range until a column is wide enough to see', () => {
+    // 375pt: 375 - 24 (.content padding) = 351 for the card the chart sits in
+    expect(moodWeeksFor(351)).toBe(6)
+    expect(moodWeeksFor(479)).toBe(6)
+    expect(moodWeeksFor(480)).toBe(12)
+    expect(moodWeeksFor(1000)).toBe(12)
+  })
+
+  it('leaves a phone column thick enough to read, where twelve weeks was a 1.9px smear', () => {
+    // the chart's own plot box at 375pt: 351 - 32 (.chart-card padding)
+    const plot = 319
+    const width = (weeks: number, right: number) => {
+      const slot = (plot - 6 - right) / (weeks * 7)
+      return { slot, bar: Math.max(1.5, Math.min(6, slot * 0.6)) }
+    }
+    expect(width(12, 46).bar).toBeLessThan(2) // what shipped
+    const now = width(moodWeeksFor(351), 8) // six weeks, and the gutter spent on columns
+    expect(now.bar).toBeGreaterThan(4)
+    // and the month labels no longer collide: the first change has to clear 26px
+    expect(now.slot * 4).toBeGreaterThan(26)
+    expect(now.slot * 3).toBeLessThan(26)
+  })
+
+  it('maps a scrub across the chart onto a day, clamped at both ends', () => {
+    const left = 6
+    const slot = 7.4
+    expect(moodIndexAt(left + 0.1, left, slot, 42)).toBe(0)
+    expect(moodIndexAt(left + slot * 3.5, left, slot, 42)).toBe(3)
+    // a finger dragged off either edge holds the end day rather than vanishing
+    expect(moodIndexAt(-200, left, slot, 42)).toBe(0)
+    expect(moodIndexAt(9999, left, slot, 42)).toBe(41)
+    // a chart that has not been measured yet must not divide by zero
+    expect(moodIndexAt(50, left, 0, 42)).toBe(0)
+    expect(moodIndexAt(50, left, slot, 0)).toBe(0)
+  })
+})
+
 describe('journal helpers', () => {
   it('peopleOf resolves live people in entry order and samePeople compares lists', async () => {
     const { peopleOf, samePeople, recentEntries, journalDays, relativeDayLabel } = await import('../journal')
@@ -251,5 +289,19 @@ describe('journal helpers', () => {
     expect(journalDays(list)).toEqual(['2026-09-08', '2026-09-01', '2026-08-31'])
     expect(relativeDayLabel('2026-09-08', '2026-09-08')).toBe('Today')
     expect(relativeDayLabel('2026-09-07', '2026-09-08')).toBe('Yesterday')
+  })
+})
+
+describe('faceGroup', () => {
+  it('draws every face while they fit and collapses the tail into a count once they do not', async () => {
+    const { faceGroup } = await import('../journal')
+    const who = ['mum', 'dad', 'kid', 'gran', 'dog']
+    expect(faceGroup(who.slice(0, 3), 3)).toEqual({ shown: ['mum', 'dad', 'kid'], extra: 0 })
+    expect(faceGroup(who, 3)).toEqual({ shown: ['mum', 'dad', 'kid'], extra: 2 })
+    expect(faceGroup([], 3)).toEqual({ shown: [], extra: 0 })
+    // the header still names the whole roster in its aria-label; only the drawing is capped
+    expect(faceGroup(who, 3).shown.length + faceGroup(who, 3).extra).toBe(who.length)
+    // a nonsense cap still leaves one face rather than an empty row of "+5"
+    expect(faceGroup(who, 0)).toEqual({ shown: ['mum'], extra: 4 })
   })
 })

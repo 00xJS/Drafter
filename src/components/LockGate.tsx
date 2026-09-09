@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { appLockEnabled, authenticateAppLock, checkAppLock, watchAppLock } from '../native'
+import { appLockEnabled, authenticateAppLock, checkAppLock, setAppLockShowing, watchAppLock } from '../native'
 
 /** Blurs the planner until Face ID / device passcode succeeds. */
 export function LockGate() {
@@ -26,6 +26,19 @@ export function LockGate() {
     })
     return () => dispose()
   }, [])
+
+  // The planner holds back anything that would write on arrival (a reminder's
+  // Done button) until this clears, so the undo toast is not buried under the
+  // card. Raising the flag is native.ts's job (watchAppLock sets it inside the
+  // same callback that decides to lock, before React has committed anything);
+  // this mirror exists for the first mount and, above all, for the clearing
+  // edge, which is what replays a held link.
+  useEffect(() => {
+    setAppLockShowing(locked)
+  }, [locked])
+  // unmounting is not an unlock — the session dropped and the login overlay took
+  // the screen, so clear the flag without releasing anything that was held back
+  useEffect(() => () => setAppLockShowing(false, { silent: true }), [])
 
   const unlock = async () => {
     setBusy(true)

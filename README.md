@@ -50,7 +50,7 @@ The **project bar** under the header filters every view to one project (double-c
 - **Review** — weekly or monthly: what got done (with a per-day chart), what slipped (push everything overdue to Monday, or send it back to the wishlist, in one click), what's already planned next, people seen, where you went, what you wrote in the journal, project movement and stalled projects, spend. Write your Top 3 and reflections, then ✨ write my summary drafts an honest review from the data — journal included.
 - **Journal** — a segment on the Review tab, and a card on Today: one entry a day in your own words, with an optional mood (five faces). It saves as you type. Tag who the day was about with "+ Who" and their faces sit on the entry; a person's card on People shows how often they appear in your journal, separately from visits. Today shows yesterday's line and your streak; the journal page lists every day with search, inline editing, a 30-day mood average and a chart of the last 12 weeks (one column a day, a weekly average per week). Sunday's digest reads the week's entries when it drafts the review if you let it (Settings → Reminders, off by default). On a phone, `drafter://journal?text=…` appends a line from any Shortcut without opening the editor.
 - **People** — the people you want to keep close. Give each a rhythm ("every 2 weeks"); any completed task they're attached to counts as seeing them, or log a visit in one tap. Cards show last seen, visits in the last 30/90 days, the average gap, a 12-week sparkline, and a status: on track, due a catch-up, or overdue. Today surfaces the ones that need attention with **Plan something** or **Saw them**. People also carry a birthday and anniversary: Today lists them three weeks out with **Plan a gift** (a task due five days before, seeded with their notes). On a past calendar event, **Who was there?** logs everyone who came in one tap, matches the event's location to a saved place (or saves it as one) so the outing lands there too. The **year with people** table shows visits per month per person, totals and a drifting/more-lately trend. Each person's card lists **where we go** together, and ✨ Ideas draws on those places and on favourites you haven't taken them to yet. **Places** is a segment on the same tab: restaurants, parks, venues. Attach a place on a task or log an outing; the list shows when you last went, how often, and who you usually go with, and ✨ **Where should we go?** suggests outings from your own favourites and the places you've drifted from — tap one to plan it. Give a place a return rhythm and Today and the morning digest say when it's been a while.
-- **Kitchen** — recipes with ingredients and steps, a week of breakfast/lunch/dinner/snack slots, and a grocery list built from whatever is planned (duplicate lines merge; Have / Need / Got it). Cook mode walks the steps. Tonight's dinner also shows on Today.
+- **Kitchen** — recipes with ingredients and steps, a week of breakfast/lunch/dinner/snack slots, and a grocery list built from whatever is planned (duplicate lines merge; Have / Need / Got it). Cook mode walks the steps and keeps the screen awake. Tonight's dinner also shows on Today. On a phone a line you tick stays where it is, struck through, so the list never jumps under your thumb mid-shop and a mis-tap is one tap to undo.
 
 The task editor's ✨ buttons break a task into checklist steps and suggest tags. Pasting or sharing a sentence can fill a date; a URL goes in the link field.
 
@@ -109,23 +109,40 @@ What the shell adds over the installed web app:
   occasion today" instead of a task title or a person's name; tapping one
   still opens the right thing.
 - **Lock this iPhone.** Opt-in Face ID / Touch ID / device passcode (Settings
-  → Reminders) before the signed-in cache is shown.
-- **Keyboard.** The task sheet shrinks above the iOS keyboard.
+  → Reminders) before the signed-in cache is shown. The dark launch screen is
+  laid over the window the moment the app stops being active — that is when iOS
+  takes the App Switcher snapshot — so the multitasking card never shows the
+  planner, and it lifts a beat after the app is forward again.
+- **Keyboard.** Sheets shrink above the iOS keyboard, the tab bar slides out
+  of the way so it never covers what you are typing, fields no longer zoom the
+  page when you tap them, and multi-line fields get a Done key.
 - **Dark launch screen.** `#0f1115` with orange “Drafter”, matching the app.
+- **Reminders you can act on.** A due-task banner offers **Done** and
+  **Tomorrow**; a birthday or anniversary offers **Saw them**. Reminders with
+  details hidden get no buttons — a banner that will not name the task should
+  not offer to finish it. The app icon's badge counts what is waiting and
+  clears when you open the app.
 - **Push through Apple.** Needs a paid membership and `APNS_*` on the host.
   Until then, use on-device reminders. Tapping a nudge opens that task;
   Sunday's digest opens the weekly review.
 - **Calendar connections that work.** Google and Outlook consent runs in Safari
   and returns to the app through `drafter://oauth` — the API hands the browser
   a one-time token so the cookie-bound state still holds.
-- **A URL scheme for capture.** `drafter://new?title=…`, `drafter://new?url=…`,
-  `drafter://open?task=<id>`, `drafter://open?view=review` and
-  `drafter://journal?text=…` (a line into today's journal) all work from
-  anywhere on the phone. A two-step Shortcut ("Receive text/URLs from Share
-  Sheet" → "Open URL" `drafter://new?url=[URL-encoded Shortcut Input]`) puts
-  Drafter in every share sheet.
-- Syncs whenever the app comes to the foreground, haptics on completion, dark
-  system UI, and the status bar tucked into the app's own header.
+- **A URL scheme for capture.** `drafter://new` (an empty capture sheet),
+  `drafter://new?title=…`, `drafter://new?url=…`, `drafter://open?task=<id>`,
+  `drafter://open?view=review`, `drafter://open?tab=journal` (today's journal
+  editor) and `drafter://journal?text=…` (offers the line for today's journal,
+  and appends it when you press Add — nothing writes on arrival except a
+  reminder's own action buttons) all work from anywhere on the phone. A two-step Shortcut ("Receive text/URLs
+  from Share Sheet" → "Open URL" `drafter://new?url=[URL-encoded Shortcut
+  Input]`) puts Drafter in every share sheet.
+- **Home Screen quick actions.** Long-press the icon for *Journal*, *New task*
+  and *Today* — three of the routes above, one gesture from the Home Screen,
+  cold start or warm.
+- Syncs whenever the app comes to the foreground; haptics when a task
+  completes and at each point a swipe latches, so you can defer one-handed
+  without watching; dark system UI, and the status bar tucked into the app's
+  own header.
 
 Not there yet: a Home Screen widget and a native share extension (both need
 their own Swift targets), universal links, and APNs — all waiting on a paid

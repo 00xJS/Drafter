@@ -2,6 +2,7 @@ import { OPEN_STATUSES, Person, Task } from './types'
 import { upcomingOccasions } from './people'
 import { excerpt } from './utils'
 import { currentEndpoint } from './push'
+import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE } from './native'
 
 // Reminders the phone can fire by itself: one at each task's due time and one
 // on the morning of a birthday or anniversary. No server, no account, works
@@ -17,8 +18,13 @@ export interface LocalReminder {
   at: Date
   /** Where a tap should land, as an in-app query string. */
   url: string
-  /** Home-screen badge when the notification fires (iOS). */
-  badge?: number
+  /**
+   * The action buttons the banner offers (Done / Tomorrow, or Saw them). Left
+   * off generic reminders: a banner that will not say which task it is must not
+   * offer to finish it either. The badge is not set here — scheduleLocalReminders
+   * numbers the whole set in time order.
+   */
+  actionTypeId?: string
 }
 
 /** Stable 31-bit id from a string (djb2), so rescheduling replaces rather than duplicates. */
@@ -73,7 +79,7 @@ export function buildLocalReminders(
         body: opts.generic ? 'Open Drafter to see what.' : t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
         at,
         url: `/?task=${encodeURIComponent(t.id)}`,
-        badge: 1,
+        ...(opts.generic ? {} : { actionTypeId: TASK_ACTION_TYPE }),
       })
     }
   }
@@ -87,7 +93,7 @@ export function buildLocalReminders(
       body: opts.generic ? 'Open Drafter to see whose.' : o.years ? `${o.years} years. Send a message or plan something.` : 'Send a message or plan something.',
       at,
       url: `/?saw=${encodeURIComponent(o.person.id)}`,
-      badge: 1,
+      ...(opts.generic ? {} : { actionTypeId: OCCASION_ACTION_TYPE }),
     })
   }
   return out.sort((a, b) => a.at.getTime() - b.at.getTime())

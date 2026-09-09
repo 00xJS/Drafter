@@ -30,9 +30,12 @@ interface Props {
   microsoftSync: GooglePushState
   household: { info: HouseholdInfo | null; myId: string | null; refresh(): Promise<void>; error?: string }
   onClose(): void
+  /** Owner only. The header's Admin button is hidden on phones, so this is the
+      only admin route on the device the owner actually uses. */
+  onOpenAdmin?(): void
 }
 
-export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose }: Props) {
+export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin }: Props) {
   const [group, setGroup] = useState<SettingsGroup>('calendars')
   const [hhName, setHhName] = useState('')
   const [invite, setInvite] = useState('')
@@ -970,6 +973,15 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             </section>
           )}
 
+          {onOpenAdmin && (
+            <section className="settings-section g-data">
+              <h3>Admin</h3>
+              <p className="field-hint">Accounts, backups and integration tests. The header shortcut is hidden on a phone, so this is the way in.</p>
+              <button className="btn" onClick={onOpenAdmin}>
+                Open admin
+              </button>
+            </section>
+          )}
         </div>
 
         <footer className="modal-foot">

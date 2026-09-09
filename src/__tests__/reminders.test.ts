@@ -35,6 +35,7 @@ describe('local reminders', () => {
     expect(r.at.getTime()).toBe(due.getTime())
     expect(r.title).toBe('Due now: Bins out')
     expect(r.url).toBe('/?task=a')
+    expect(r.actionTypeId).toBe('DRAFTER_TASK')
   })
 
   it('moves a date-only (midnight) due to the morning instead of 00:00', () => {
@@ -63,6 +64,7 @@ describe('local reminders', () => {
     expect(list[0].title).toBe("Person mum's birthday today")
     expect([list[0].at.getMonth(), list[0].at.getDate(), list[0].at.getHours()]).toEqual([8, 12, 9])
     expect(list[0].body).toContain('66 years')
+    expect(list[0].actionTypeId).toBe('DRAFTER_OCCASION')
   })
 
   it('skips task due rows when skipTaskDue is set (APNs already subscribed)', () => {
@@ -81,6 +83,9 @@ describe('generic lock-screen reminders', () => {
     const list = buildLocalReminders([task('a', { title: 'Call the bank', dueAt: due.toISOString(), description: 'account 1234' })], [person('mum', '1960-09-12')], NOW, 30, { generic: true })
     const taskRow = list.find(r => r.url === '/?task=a')!
     const occasion = list.find(r => r.url === '/?saw=mum')!
+    // a banner that will not say which task it is must not offer a blind Done
+    expect(taskRow.actionTypeId).toBeUndefined()
+    expect(occasion.actionTypeId).toBeUndefined()
     expect(taskRow.title).toBe('Something is due')
     expect(taskRow.body).not.toContain('1234')
     expect(occasion.title).toBe('An occasion today')

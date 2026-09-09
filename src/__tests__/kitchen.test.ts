@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { buildGroceryList, groceriesForMealDates, ingredientKey, mealId, mealsByDay, mergeIngredients } from '../kitchen'
-import { Meal, Recipe } from '../types'
+import {
+  COOK_STEPS_TTL_MS,
+  buildGroceryList,
+  cookStepsRecipeId,
+  groceriesForMealDates,
+  heldGroceryLines,
+  ingredientKey,
+  mealId,
+  mealsByDay,
+  mergeIngredients,
+  parseCookSteps,
+  serialiseCookSteps,
+  visibleGroceryLines,
+} from '../kitchen'
+import { GroceryLine, Meal, Recipe } from '../types'
 import { weekRange } from '../review'
 import { dateKey } from '../utils'
 import { weekDayKeys, weekKeyOf, weekStartKey } from '../../shared/weeks.mjs'
@@ -173,5 +186,96 @@ describe('day keys and week helpers', () => {
     expect(dinnerOn([meal('2026-09-08', 'lunch', 'Soup')], '2026-09-08')?.title).toBe('Soup')
     expect(dinnerOn(meals, '2026-09-10')).toBeNull()
     expect(groceryWeekFor('2026-09-08')).toBe(weekRange(new Date(2026, 8, 8, 12)).key)
+  })
+})
+
+describe('a ticked grocery line stays where it was', () => {
+  const line = (id: string, state: GroceryLine['state']): GroceryLine => ({ id, name: id, state, recipeIds: [] })
+  const items = [line('onion', 'need'), line('cheese', 'need'), line('milk', 'have'), line('bread', 'done')]
+
+  it('shows only the filter when nothing has been ticked yet', () => {
+    expect(visibleGroceryLines(items, 'need', new Set()).map(i => i.id)).toEqual(['onion', 'cheese'])
+    expect(heldGroceryLines(items, 'need', new Set())).toEqual([])
+  })
+
+  it('keeps a line that was just ticked, in its original position', () => {
+    // 'onion' is now done, so the plain filter would drop it and pull 'cheese'
+    // up under the thumb that just tapped
+    const after = [line('onion', 'done'), line('cheese', 'need'), line('milk', 'have'), line('bread', 'done')]
+    const ticked = new Set(['onion'])
+    expect(visibleGroceryLines(after, 'need', ticked).map(i => i.id)).toEqual(['onion', 'cheese'])
+    // and it renders struck through, which is what makes it the undo
+    expect(visibleGroceryLines(after, 'need', ticked)[0].state).toBe('done')
+  })
+
+  it('does not drag an unrelated ticked line into a filter it never matched', () => {
+    // 'bread' was done before the shop started; ticking it does not make it a
+    // "need" line, it only keeps it visible where it already was
+    const ticked = new Set(['bread'])
+    expect(visibleGroceryLines(items, 'need', ticked).map(i => i.id)).toEqual(['onion', 'cheese', 'bread'])
+    expect(heldGroceryLines(items, 'need', ticked).map(i => i.id)).toEqual(['bread'])
+  })
+
+  it('counts only the held lines for Clear ticked, and holds nothing under All', () => {
+    const after = [line('onion', 'done'), line('cheese', 'need'), line('milk', 'have'), line('bread', 'done')]
+    const ticked = new Set(['onion', 'cheese'])
+    // 'cheese' was tapped back to need, so only 'onion' is held on screen
+    expect(heldGroceryLines(after, 'need', ticked).map(i => i.id)).toEqual(['onion'])
+    expect(visibleGroceryLines(after, 'all', ticked)).toEqual(after)
+    expect(heldGroceryLines(after, 'all', ticked)).toEqual([])
+  })
+})
+
+describe('cook mode remembers its ticked steps across a kill', () => {
+  const now = Date.UTC(2026, 8, 8, 19, 0, 0)
+
+  it('round-trips the ticked steps for the recipe being cooked', () => {
+    const raw = serialiseCookSteps('pasta', { 0: true, 2: true, 1: false }, now, 4)
+    expect(raw).not.toBeNull()
+    expect(parseCookSteps(raw, 'pasta', now + 60_000, 4)).toEqual([0, 2])
+  })
+
+  it('clears the record once nothing is ticked', () => {
+    expect(serialiseCookSteps('pasta', {}, now, 4)).toBeNull()
+    expect(serialiseCookSteps('pasta', { 0: false }, now, 4)).toBeNull()
+  })
+
+  it('forgets the ticks when the steps themselves were edited', () => {
+    // tick 1 and 3 of four, tap Edit, insert a step at the top, save: the ticks
+    // would land on whatever now sits at those indexes, striking through work
+    // that has not been done. A different step count is a different list.
+    const raw = serialiseCookSteps('pasta', { 0: true, 2: true }, now, 4)
+    expect(parseCookSteps(raw, 'pasta', now, 5)).toEqual([])
+    expect(parseCookSteps(raw, 'pasta', now, 4)).toEqual([0, 2])
+    // a record from before the fingerprint existed is not trusted either
+    expect(parseCookSteps(JSON.stringify({ id: 'pasta', at: now, done: [0] }), 'pasta', now, 4)).toEqual([])
+    // but it still names its recipe, so only that recipe may clear it
+    expect(cookStepsRecipeId(raw)).toBe('pasta')
+  })
+
+  it('ignores another recipe, a stale night and junk', () => {
+    const raw = serialiseCookSteps('pasta', { 0: true }, now, 4)
+    expect(parseCookSteps(raw, 'curry', now, 4)).toEqual([])
+    expect(parseCookSteps(raw, 'pasta', now + COOK_STEPS_TTL_MS + 1, 4)).toEqual([])
+    // a phone whose clock stepped back a second must not lose the recipe
+    expect(parseCookSteps(raw, 'pasta', now - 1_000, 4)).toEqual([0])
+    expect(parseCookSteps('not json', 'pasta', now, 4)).toEqual([])
+    expect(parseCookSteps(null, 'pasta', now, 4)).toEqual([])
+    expect(parseCookSteps(JSON.stringify({ id: 'pasta', at: now, steps: 4, done: ['x', 1] }), 'pasta', now, 4)).toEqual([1])
+  })
+
+  it('names the recipe the record belongs to, so a side dish cannot wipe the main', () => {
+    // the main is mid-cook; the side dish mounts with nothing ticked and must
+    // not clear a record that is not its own
+    const raw = serialiseCookSteps('pasta', { 0: true }, now, 4)
+    expect(cookStepsRecipeId(raw)).toBe('pasta')
+    expect(cookStepsRecipeId(raw) === 'garlic-bread').toBe(false)
+    // the TTL is parseCookSteps' business: a stale record still belongs to the
+    // recipe that wrote it, and clearing it is still that recipe's call
+    expect(cookStepsRecipeId(JSON.stringify({ id: 'pasta', at: now - COOK_STEPS_TTL_MS * 2, done: [0] }))).toBe('pasta')
+    expect(cookStepsRecipeId(null)).toBeNull()
+    expect(cookStepsRecipeId('not json')).toBeNull()
+    expect(cookStepsRecipeId(JSON.stringify({ at: now }))).toBeNull()
+    expect(cookStepsRecipeId(JSON.stringify(['pasta']))).toBeNull()
   })
 })

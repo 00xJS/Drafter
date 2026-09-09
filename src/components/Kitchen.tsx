@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -14,7 +14,21 @@ import {
 import { newerStamp } from '../itemops'
 import { weekRange, shiftRange } from '../review'
 import { dateKey, uid } from '../utils'
-import { buildGroceryList, dinnerOn, groceriesForMealDates, groceryId, mealId, mealsForWeek, newIngredient } from '../kitchen'
+import {
+  buildGroceryList,
+  cookStepsRecipeId,
+  dinnerOn,
+  groceriesForMealDates,
+  groceryId,
+  heldGroceryLines,
+  mealId,
+  mealsForWeek,
+  newIngredient,
+  parseCookSteps,
+  serialiseCookSteps,
+  visibleGroceryLines,
+} from '../kitchen'
+import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 
 type Seg = 'recipes' | 'week' | 'grocery'
@@ -179,6 +193,7 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete, openRecip
 
       {cooking && (
         <RecipeCook
+          key={cooking.id}
           recipe={cooking}
           onEdit={() => {
             setEditing(cooking)
@@ -369,18 +384,39 @@ function GroceryPane({
 }) {
   const [filter, setFilter] = useState<GroceryState | 'all'>('need')
   const [manual, setManual] = useState('')
+  // ids ticked since the pane opened. They stay on screen under their old
+  // filter so nothing reflows under a thumb mid-aisle and a mis-tap is undone
+  // by tapping the right button on the line that is still there.
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set<string>())
   const list = grocery ?? buildGroceryList(week.key, meals, recipes, null)
-  const shown = filter === 'all' ? list.items : list.items.filter(i => i.state === filter)
+  const shown = visibleGroceryLines(list.items, filter, ticked)
+  const held = heldGroceryLines(list.items, filter, ticked)
   const counts = {
     need: list.items.filter(i => i.state === 'need').length,
     have: list.items.filter(i => i.state === 'have').length,
     done: list.items.filter(i => i.state === 'done').length,
   }
 
+  // a new week is a new shop: nothing carries over but the list itself
+  useEffect(() => {
+    setTicked(new Set<string>())
+  }, [week.key])
+
   const patch = (next: GroceryList) => onSave({ ...next, updatedAt: newerStamp(next.updatedAt) })
 
   const setState = (id: string, state: GroceryState) => {
+    void haptic('light') // eyes-free confirmation: the row deliberately does not move
+    setTicked(prev => new Set(prev).add(id))
     patch({ ...list, items: list.items.map(i => (i.id === id ? { ...i, state } : i)) })
+  }
+
+  /** A deliberate filter change is the user asking for a clean view. */
+  const changeFilter = (f: GroceryState | 'all') => {
+    // re-tapping the chip that is already on is a miss, not a request: it must
+    // not sweep every held line off screen with no undo
+    if (f === filter) return
+    setFilter(f)
+    setTicked(new Set<string>())
   }
 
   const addManual = () => {
@@ -417,12 +453,26 @@ function GroceryPane({
         <p className="empty">No ingredients yet. Plan dinners on This week, then tap Build from this week.</p>
       ) : (
         <>
-          <div className="segmented">
-            {(['need', 'have', 'done', 'all'] as const).map(f => (
-              <button key={f} className={filter === f ? 'seg on' : 'seg'} onClick={() => setFilter(f)}>
-                {f === 'all' ? `All ${list.items.length}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
-              </button>
-            ))}
+          <div className="grocery-filter-row">
+            <div className="segmented">
+              {(['need', 'have', 'done', 'all'] as const).map(f => (
+                <button key={f} className={filter === f ? 'seg on' : 'seg'} onClick={() => changeFilter(f)}>
+                  {f === 'all' ? `All ${list.items.length}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
+                </button>
+              ))}
+            </div>
+            {/* always rendered: appearing on the first tick would grow this
+                wrapping row by a line and push the whole list down under the
+                thumb, which is the reflow the held lines exist to prevent. The
+                phone hides it with `visibility`, so the line is reserved. It
+                un-holds ticked lines; it changes no line's state. */}
+            <button
+              className="btn subtle grocery-clear"
+              disabled={held.length === 0}
+              onClick={() => setTicked(new Set<string>())}
+            >
+              {held.length ? `Clear ticked (${held.length})` : 'Clear ticked'}
+            </button>
           </div>
           <ul className="grocery-list">
             {shown.map(line => (
@@ -437,8 +487,16 @@ function GroceryPane({
                   </span>
                 </div>
                 <span className="segmented grocery-states">
+                  {/* the row deliberately stays put when tapped, and the only
+                      visual cue is a strike-through — aria-pressed is what tells
+                      a screen reader the tick landed, and on which line */}
                   {(['have', 'need', 'done'] as const).map(s => (
-                    <button key={s} className={line.state === s ? 'seg on' : 'seg'} onClick={() => setState(line.id, s)}>
+                    <button
+                      key={s}
+                      aria-pressed={line.state === s}
+                      className={line.state === s ? 'seg on' : 'seg'}
+                      onClick={() => setState(line.id, s)}
+                    >
                       {GROCERY_STATE_META[s].label}
                     </button>
                   ))}
@@ -458,17 +516,128 @@ function GroceryPane({
   )
 }
 
+const COOK_STEPS_KEY = 'drafter:cook-steps'
+
+/**
+ * Keep the screen awake while cook mode is open.
+ *
+ * RecipeCook is the one screen that is read, not touched, for minutes: with
+ * Auto-Lock at 30s the phone dies between steps and every step costs a Face ID
+ * with oily hands. The Screen Wake Lock API needs no plugin and no entitlement
+ * (WKWebView from iOS 16.4), but iOS releases the sentinel whenever the app
+ * backgrounds — hence the release listener that nulls it and the re-acquire on
+ * the way back in. If a device turns out not to honour it, the fallback is
+ * `UIApplication.shared.isIdleTimerDisabled` behind a four-line plugin.
+ */
+function useScreenAwake(): void {
+  useEffect(() => {
+    const api = navigator.wakeLock
+    if (!api) return
+    let live = true
+    let pending = false
+    let lock: WakeLockSentinel | null = null
+    const dropped = () => {
+      lock = null
+    }
+    const acquire = () => {
+      // `pending` matters: a request is async, so a second visibilitychange
+      // before it settles would otherwise take out a lock we then leak
+      if (!live || lock || pending || document.visibilityState !== 'visible') return
+      pending = true
+      api
+        .request('screen')
+        .then(sentinel => {
+          pending = false
+          if (!live) {
+            void sentinel.release().catch(() => {})
+            return
+          }
+          lock = sentinel
+          sentinel.addEventListener('release', dropped)
+        })
+        .catch(() => {
+          /* denied, unsupported, or the tab lost visibility mid-request */
+          pending = false
+        })
+    }
+    const onVisibility = () => acquire()
+    acquire()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      live = false
+      document.removeEventListener('visibilitychange', onVisibility)
+      lock?.removeEventListener('release', dropped)
+      void lock?.release().catch(() => {})
+      lock = null
+    }
+  }, [])
+}
+
 function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): void; onClose(): void }) {
-  const [done, setDone] = useState<Record<number, boolean>>({})
+  // the stored ticks are step INDEXES, so they only mean anything against the
+  // step list they were made on: Edit mid-cook, insert a step, come back, and
+  // index 2 is a different instruction. The count fingerprints the record.
+  const stepCount = recipe.steps?.length ?? 0
+  const [done, setDone] = useState<Record<number, boolean>>(() => {
+    try {
+      const saved = parseCookSteps(localStorage.getItem(COOK_STEPS_KEY), recipe.id, Date.now(), stepCount)
+      return Object.fromEntries(saved.map(n => [n, true]))
+    } catch {
+      return {}
+    }
+  })
+  useScreenAwake()
+  // survive a jetsam kill at the hob: sessionStorage would go with the WebView
+  // when the shell relaunches, so this is localStorage with a same-day stamp
+  useEffect(() => {
+    try {
+      const raw = serialiseCookSteps(recipe.id, done, Date.now(), stepCount)
+      if (raw) localStorage.setItem(COOK_STEPS_KEY, raw)
+      // untick everything and the record goes — but only ours. Opening a side
+      // dish to check a temperature must not wipe the main's ticked steps.
+      else if (cookStepsRecipeId(localStorage.getItem(COOK_STEPS_KEY)) === recipe.id) localStorage.removeItem(COOK_STEPS_KEY)
+    } catch {
+      /* private mode, or the quota is full: the steps are just not remembered */
+    }
+  }, [recipe.id, stepCount, done])
+  // Leaving the Kitchen tab unmounts this without going through close(), and an
+  // abandoned cook is no more remembered than a finished one: without this,
+  // reopening the recipe later today came back four steps struck through with
+  // nothing to explain it. A jetsam kill runs no cleanup, which is exactly the
+  // case the record is for. Edit is not a departure — it comes straight back —
+  // so it keeps the ticks (and parseCookSteps still discards them if the step
+  // list changed under them).
+  const keepOnUnmount = useRef(false)
+  useEffect(
+    () => () => {
+      if (keepOnUnmount.current) return
+      try {
+        if (cookStepsRecipeId(localStorage.getItem(COOK_STEPS_KEY)) === recipe.id) localStorage.removeItem(COOK_STEPS_KEY)
+      } catch {
+        /* nothing was stored to begin with */
+      }
+    },
+    [recipe.id],
+  )
+  // Closing is finishing. Only a kill is remembered, so cooking the same thing
+  // again tonight opens clean instead of fully struck through with no way back.
+  const close = () => {
+    try {
+      if (cookStepsRecipeId(localStorage.getItem(COOK_STEPS_KEY)) === recipe.id) localStorage.removeItem(COOK_STEPS_KEY)
+    } catch {
+      /* nothing was stored to begin with */
+    }
+    onClose()
+  }
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}>
       <div className="modal recipe-cook" role="dialog" aria-modal="true">
         <header className="modal-head">
           <h2>
             {recipe.emoji ? `${recipe.emoji} ` : ''}
             {recipe.name}
           </h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
+          <button className="btn subtle" onClick={close} aria-label="Close">
             ✕
           </button>
         </header>
@@ -498,7 +667,14 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
               <ol className="recipe-steps">
                 {recipe.steps.map((step, i) => (
                   <li key={i} className={done[i] ? 'done' : undefined}>
-                    <button type="button" className="recipe-step" onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}>
+                    {/* a ticked step is only struck through, so aria-pressed is
+                        the whole announcement for a screen reader */}
+                    <button
+                      type="button"
+                      aria-pressed={!!done[i]}
+                      className="recipe-step"
+                      onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}
+                    >
                       <span className="recipe-step-n">{i + 1}</span>
                       <span>{step}</span>
                     </button>
@@ -512,11 +688,17 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
           {recipe.notes && <p className="recipe-notes">{recipe.notes}</p>}
         </div>
         <footer className="modal-foot">
-          <button className="btn" onClick={onEdit}>
+          <button
+            className="btn"
+            onClick={() => {
+              keepOnUnmount.current = true
+              onEdit()
+            }}
+          >
             Edit
           </button>
           <span className="spacer" />
-          <button className="btn primary" onClick={onClose}>
+          <button className="btn primary" onClick={close}>
             Done
           </button>
         </footer>
