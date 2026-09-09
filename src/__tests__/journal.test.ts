@@ -13,7 +13,18 @@ import {
   shiftDayKey,
   streak,
 } from '../../shared/journal.mjs'
-import { entriesInRange, moodIndexAt, moodSeries, moodWeeksFor } from '../journal'
+import {
+  WEEKDAY_MOOD_MIN,
+  entriesInRange,
+  lowestMoodWeekday,
+  moodByWeekday,
+  moodIndexAt,
+  moodSeries,
+  moodWeeksFor,
+  searchJournal,
+  snippetAround,
+  weekdayOf,
+} from '../journal'
 import { weekRange } from '../review'
 import { sanitizeItem, sanitizeJournal } from '../schema'
 import { parseLink } from '../links'
@@ -303,5 +314,160 @@ describe('faceGroup', () => {
     expect(faceGroup(who, 3).shown.length + faceGroup(who, 3).extra).toBe(who.length)
     // a nonsense cap still leaves one face rather than an empty row of "+5"
     expect(faceGroup(who, 0)).toEqual({ shown: ['mum'], extra: 4 })
+  })
+})
+
+describe('snippetAround', () => {
+  it('gives the words either side of the match and marks where it cut', () => {
+    const long = `${'x'.repeat(100)} garden ${'y'.repeat(100)}`
+    const s = snippetAround(long, 'GARDEN', 10)
+    // the match keeps the body's own casing, not the query's
+    expect(s.match).toBe('garden')
+    expect(s.before).toBe(`…${'x'.repeat(9)} `)
+    expect(s.after).toBe(` ${'y'.repeat(9)}…`)
+  })
+
+  it('leaves off the ellipsis at an end it did not cut', () => {
+    const s = snippetAround('garden day', 'garden', 40)
+    expect(s).toEqual({ before: '', match: 'garden', after: ' day' })
+  })
+
+  it('collapses the entry to one line so a snippet is a snippet', () => {
+    const s = snippetAround('  Slow morning.\n\n  Then the garden.  ', 'the garden', 40)
+    expect(s.before).toBe('Slow morning. Then ')
+    expect(s.match).toBe('the garden')
+    expect(s.after).toBe('.')
+  })
+
+  it('falls back to the head of the entry when the body does not contain the query', () => {
+    // the entry matched on a tagged person's name; the row still has to say something
+    expect(snippetAround('hello world', 'zzz', 3)).toEqual({ before: '', match: '', after: 'hello …' })
+    expect(snippetAround('', 'anything', 40)).toEqual({ before: '', match: '', after: '' })
+  })
+})
+
+describe('searchJournal', () => {
+  const people = new Map([
+    ['mum', 'Mum'],
+    ['dad', 'Dad'],
+  ])
+  const list = [
+    entry({ date: '2024-05-02', id: 'a', body: 'Dug over the garden beds' }),
+    entry({ date: '2025-07-19', id: 'b', body: 'Rain all day, no garden' }),
+    entry({ date: '2026-09-08', id: 'c', body: 'Tomatoes in the GARDEN finally' }),
+    entry({ date: '2026-09-01', id: 'd', body: 'Nothing to report' }),
+    entry({ date: '2026-08-08', id: 'gone', body: 'garden', deletedAt: '2026-08-09T00:00:00.000Z' }),
+  ]
+
+  it('spans years, newest first, and counts every match even when it draws a page', () => {
+    const all = searchJournal(list, 'garden')
+    expect(all.total).toBe(3)
+    expect(all.hits.map(h => h.entry.id)).toEqual(['c', 'b', 'a'])
+    // a tombstone is not a hit
+    expect(all.hits.some(h => h.entry.id === 'gone')).toBe(false)
+    const paged = searchJournal(list, 'garden', 2)
+    expect(paged.total).toBe(3)
+    expect(paged.hits.map(h => h.entry.id)).toEqual(['c', 'b'])
+  })
+
+  it('carries a snippet with the match in context', () => {
+    const [hit] = searchJournal(list, 'garden').hits
+    expect(hit.match).toBe('GARDEN')
+    expect(hit.before + hit.match + hit.after).toBe('Tomatoes in the GARDEN finally')
+  })
+
+  it('matches a tagged person by name, with no marked run in the body', () => {
+    const withMum = entry({ date: '2026-09-05', id: 'm', body: 'Long lunch, then a walk', peopleIds: ['mum'] })
+    const hits = searchJournal([...list, withMum], 'mum', 100, people).hits
+    expect(hits.map(h => h.entry.id)).toEqual(['m'])
+    expect(hits[0].match).toBe('')
+    expect(hits[0].after).toBe('Long lunch, then a walk')
+    // without the lookup there is nothing to match a name against
+    expect(searchJournal([...list, withMum], 'mum').total).toBe(0)
+  })
+
+  it('finds nothing for a query nothing carries, and is not a search at all when empty', () => {
+    expect(searchJournal(list, 'submarine')).toEqual({ total: 0, hits: [] })
+    expect(searchJournal(list, '')).toEqual({ total: 0, hits: [] })
+    expect(searchJournal(list, '   ')).toEqual({ total: 0, hits: [] })
+  })
+
+  it('newest edit first inside a day', () => {
+    const older = entry({ date: '2026-09-08', id: 'x1', body: 'garden am', updatedAt: '2026-09-08T08:00:00.000Z' })
+    const newer = entry({ date: '2026-09-08', id: 'x2', body: 'garden pm', updatedAt: '2026-09-08T21:00:00.000Z' })
+    expect(searchJournal([older, newer], 'garden').hits.map(h => h.entry.id)).toEqual(['x2', 'x1'])
+  })
+})
+
+describe('moodByWeekday', () => {
+  // 2026-09-06 is a Sunday, so 09-12 is the Saturday that ends that week
+  const today = '2026-09-12'
+
+  it('knows the weekday of a day key, Sunday first', () => {
+    expect(weekdayOf('2026-09-06')).toBe(0)
+    expect(weekdayOf('2026-09-07')).toBe(1)
+    expect(weekdayOf('2026-09-12')).toBe(6)
+    expect(weekdayOf('nonsense')).toBe(0)
+  })
+
+  it('buckets each day into its weekday and averages what is there', () => {
+    const list = [
+      entry({ date: '2026-09-06', id: 's2', mood: 5 }),
+      entry({ date: '2026-08-30', id: 's1', mood: 3 }),
+      entry({ date: '2026-09-07', id: 'm1', mood: 1 }),
+      entry({ date: '2026-09-12', id: 'sa', mood: 4 }),
+      entry({ date: '2026-09-09', id: 'w1' }), // no mood: counted nowhere
+    ]
+    const week = moodByWeekday(list, 2, today)
+    expect(week.map(d => d.weekday)).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(week[0]).toEqual({ weekday: 0, avg: 4, count: 2 })
+    expect(week[1]).toEqual({ weekday: 1, avg: 1, count: 1 })
+    expect(week[3]).toEqual({ weekday: 3, count: 0 })
+    expect(week[6]).toEqual({ weekday: 6, avg: 4, count: 1 })
+  })
+
+  it('counts a day once, using the entry the page shows for it', () => {
+    const list = [
+      entry({ date: '2026-09-07', id: 'am', mood: 1, updatedAt: '2026-09-07T08:00:00.000Z' }),
+      entry({ date: '2026-09-07', id: 'pm', mood: 5, updatedAt: '2026-09-07T22:00:00.000Z' }),
+    ]
+    expect(moodByWeekday(list, 2, today)[1]).toEqual({ weekday: 1, avg: 5, count: 1 })
+  })
+
+  it('only looks back over the window it was asked for', () => {
+    const list = [
+      entry({ date: '2026-08-29', id: 'old', mood: 1 }), // the Saturday before a two-week window
+      entry({ date: '2026-09-12', id: 'now', mood: 4 }),
+      entry({ date: '2026-09-19', id: 'ahead', mood: 1 }), // a day that has not happened yet
+    ]
+    expect(moodByWeekday(list, 2, today)[6]).toEqual({ weekday: 6, avg: 4, count: 1 })
+    // widen the window and the older Saturday joins it
+    expect(moodByWeekday(list, 4, today)[6]).toEqual({ weekday: 6, avg: 2.5, count: 2 })
+  })
+
+  it('stays under the floor until enough days carry a mood', () => {
+    // 2026-08-31 … 2026-09-12: thirteen days, all of them on or before `today`
+    const some = Array.from({ length: 13 }, (_, i) => entry({ date: shiftDayKey('2026-08-31', i), id: `e${i}`, mood: 3 }))
+    const scored = (list: JournalEntry[]) => moodByWeekday(list, 26, today).reduce((n, d) => n + d.count, 0)
+    expect(scored(some)).toBe(13)
+    expect(scored(some) >= WEEKDAY_MOOD_MIN).toBe(false)
+    const more = [...some, entry({ date: '2026-08-20', id: 'e13', mood: 3 })]
+    expect(scored(more)).toBe(14)
+    expect(scored(more) >= WEEKDAY_MOOD_MIN).toBe(true)
+  })
+
+  it('names the lowest weekday only when there is something to compare it with', () => {
+    const week = moodByWeekday(
+      [entry({ date: '2026-09-06', id: 'a', mood: 5 }), entry({ date: '2026-09-07', id: 'b', mood: 2 }), entry({ date: '2026-09-08', id: 'c', mood: 4 })],
+      2,
+      today,
+    )
+    expect(lowestMoodWeekday(week)).toBe(1)
+    // one weekday with a score is a fact about that day, not a low point
+    expect(lowestMoodWeekday(moodByWeekday([entry({ date: '2026-09-07', id: 'b', mood: 2 })], 2, today))).toBeNull()
+    // nor is a flat week a finding
+    expect(
+      lowestMoodWeekday(moodByWeekday([entry({ date: '2026-09-07', id: 'b', mood: 3 }), entry({ date: '2026-09-08', id: 'c', mood: 3 })], 2, today)),
+    ).toBeNull()
   })
 })

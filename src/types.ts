@@ -90,6 +90,18 @@ export interface Task extends Owned {
   deletedAt?: string
 }
 
+/**
+ * Two-way sync with a GitHub Projects (v2) board, stored on the project that
+ * links it. Present (with a status field) means sync is on; the ids are GitHub
+ * node ids and are opaque to us. `columns` maps a Drafter status to a board
+ * option id, and is read both ways (push on a status change, pull on focus).
+ */
+export interface GithubProjectSync {
+  statusFieldId?: string
+  dateFieldId?: string
+  columns?: Partial<Record<TaskStatus, string>>
+}
+
 export interface Project extends Owned {
   kind: 'project'
   id: string
@@ -102,6 +114,8 @@ export interface Project extends Owned {
   targetAt?: string
   milestones?: Milestone[]
   githubUrl?: string
+  /** Set when the linked GitHub Projects board mirrors task status / due dates. */
+  githubProjectSync?: GithubProjectSync
   /** Legacy Markdown notes (pre rich text); converted into notesHtml on first open. */
   notes?: string
   /** Rich-text notes as a sanitized HTML subset; photos reference the media store by id. */

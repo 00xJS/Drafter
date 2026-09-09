@@ -518,8 +518,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 <h4>On this iPhone</h4>
                 <p className="field-hint">
                   {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
-                    ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Occasion reminders (birthdays) still fire here.'
-                    : 'A notification at each task’s due time and on the morning of a birthday or anniversary. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
+                    ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Occasion reminders (birthdays) and place nudges still fire here.'
+                    : 'A notification at each task’s due time, on the morning of a birthday or anniversary, and when a place you set a rhythm for is well overdue. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
                 </p>
                 <p className="sync-line">
                   <label className="cal-source mirror-row">
@@ -541,7 +541,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           } catch {
                             /* ignore */
                           }
-                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
                         } else {
                           setLocalRemindersEnabled(false)
                           setLocalOn(false)
@@ -567,7 +567,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           setGenericRemindersEnabled(on)
                           setGenericOn(on)
                           const skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
-                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: on }))
+                          await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: on }))
                         }}
                       />
                       <span className="cal-source-name">Hide details on the lock screen</span>

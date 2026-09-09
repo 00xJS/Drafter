@@ -39,6 +39,7 @@ import {
   TASK_STATUSES,
   Task,
   TaskStatus,
+  GithubProjectSync,
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
 
@@ -248,6 +249,32 @@ export function sanitizeTask(raw: unknown): Task | null {
   }
 }
 
+/**
+ * GitHub Projects sync settings: three known keys, everything else dropped.
+ * The ids are opaque GitHub node ids, so they are kept as plain trimmed
+ * strings (bounded) and never parsed.
+ */
+function githubProjectSync(raw: unknown): GithubProjectSync | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  const node = (v: unknown) => str(v)?.trim().slice(0, 200) || undefined
+  const out: GithubProjectSync = {}
+  const statusFieldId = node(r.statusFieldId)
+  const dateFieldId = node(r.dateFieldId)
+  if (statusFieldId) out.statusFieldId = statusFieldId
+  if (dateFieldId) out.dateFieldId = dateFieldId
+  if (r.columns && typeof r.columns === 'object' && !Array.isArray(r.columns)) {
+    const src = r.columns as Record<string, unknown>
+    const columns: Partial<Record<TaskStatus, string>> = {}
+    for (const s of TASK_STATUSES) {
+      const option = node(src[s])
+      if (option) columns[s] = option
+    }
+    if (Object.keys(columns).length > 0) out.columns = columns
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 /** Coerce arbitrary data into a valid Project. */
 export function sanitizeProject(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null
@@ -269,6 +296,7 @@ export function sanitizeProject(raw: unknown): Project | null {
     targetAt: isoDate(r.targetAt),
     milestones: milestones(r.milestones),
     githubUrl: urlOrUndefined(r.githubUrl),
+    githubProjectSync: githubProjectSync(r.githubProjectSync),
     notes: str(r.notes) || undefined,
     notesHtml: str(r.notesHtml) || undefined,
     ownerId: idOrUndefined(r.ownerId),

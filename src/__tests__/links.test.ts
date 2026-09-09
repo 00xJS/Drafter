@@ -44,6 +44,16 @@ describe('parseLink', () => {
     expect(p.capture?.dueAt).toBe('2026-09-10T15:00:00.000Z')
   })
 
+  it('parses ?place= from a "Been a while" reminder and never carries an action', () => {
+    const { host, params } = paramsOf('/?place=pl1')
+    const p = parseLink(params, { host, allowAct: true })
+    expect(p.place).toBe('pl1')
+    expect(p.capture).toBeUndefined()
+    // a place banner has no buttons, so a stray act= beside it must stay unread
+    expect(parseLink(new URLSearchParams('place=pl1&act=done'), { allowAct: true }).act).toBeUndefined()
+    expect(parseLink(new URLSearchParams('place=pl1'), { host: 'evil' }).place).toBeUndefined()
+  })
+
   it('paramsOf extracts host from drafter:// URLs', () => {
     expect(paramsOf('drafter://oauth?google=connected').host).toBe('oauth')
     expect(paramsOf('drafter://new?title=Hi').params.get('title')).toBe('Hi')

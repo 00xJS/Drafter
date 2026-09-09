@@ -81,7 +81,10 @@ describe('phone chrome: no field may zoom the page', () => {
 
   it('has a 16px catch-all for phone fields', () => {
     expect(zoomGuard).toBeGreaterThan(-1)
-    expect(css.slice(zoomGuard)).toMatch(/font-size:\s*16px/)
+    // a floor rather than a fixed size, so Dynamic Type can raise it — see
+    // "lets a phone field grow past the anti-zoom floor" below. It still
+    // resolves to exactly 16px at --type-scale: 1.
+    expect(css.slice(zoomGuard)).toMatch(/font-size:\s*max\(16px,\s*1rem\)/)
     expect(guardArms.map(a => a.replace(/:not\([^)]*\)/g, '')).sort()).toEqual([
       "[contenteditable='true']",
       'input',
@@ -142,6 +145,33 @@ function rule(scope: string, selector: string): string {
     if (m[1].split(',').map(s => s.trim()).filter(Boolean).join(',') === want) return m[2]
   }
   return ''
+}
+
+/**
+ * `--topbar-h` resolved at `scale`. Two shapes are accepted: the plain
+ * `calc(<a>px + <b>px * var(--type-scale))`, and the phone's
+ * `calc(<a>px + max(<floor>px, <pad>px + <b>px * var(--type-scale)))`, whose
+ * fixed-size square only loses to the scaled control off the top of the clamp.
+ */
+function barHeight(declarations: string, scale: number): number {
+  const m = /--topbar-h:\s*calc\(([\d.]+)px \+ (?:max\(([\d.]+)px,\s*(?:([\d.]+)px \+ )?)?([\d.]+)px \* var\(--type-scale\)\)?\)/.exec(
+    declarations,
+  )
+  if (!m) throw new Error(`--topbar-h is not a scaled calc:\n${declarations}`)
+  const scaled = Number(m[3] ?? 0) + Number(m[4]) * scale
+  return Number(m[1]) + (m[2] ? Math.max(Number(m[2]), scaled) : scaled)
+}
+
+/**
+ * The phone top bar as it really measures at `scale`: 10px + 10px of padding
+ * and a 1px border around the taller of its two controls — the fixed 40px
+ * `.new-post-btn` square, and the 🔍 / ⚙ `.btn.subtle` pair, which is the
+ * inherited 14px * scale text at line-height 1.45 inside 7px * 2 of padding
+ * and a 1px * 2 border. Neither button is hidden on a phone (only `.admin-btn`
+ * and the brand wordmark are), so the token has to cover both.
+ */
+function measuredPhoneBar(scale: number): number {
+  return 21 + Math.max(40, 14 * scale * 1.45 + 16)
 }
 
 describe('phone: the journal is writable with a thumb', () => {
@@ -232,11 +262,18 @@ describe('phone: the journal look-back is readable', () => {
     // permanently empty line under the desktop chart, which never scrubs itself
     const floor = coarseBlocks().find(b => rule(b.body, '.mood-readout'))
     expect(floor, 'no @media (pointer: coarse) floor under .mood-readout').toBeTruthy()
-    expect(rule(floor!.body, '.mood-readout')).toMatch(/min-height:\s*18px/)
+    // one line, and two on a phone — in the readout's OWN units, so the
+    // reservation follows Dynamic Type. A px floor sized against 0.75rem text
+    // stops covering that text the moment --type-scale leaves 1, which is the
+    // layout jump the strip exists to prevent.
+    expect(rule(floor!.body, '.mood-readout')).toMatch(/min-height:\s*calc\(1\.4 \* 0\.75rem\)/)
     expect(rule(bare, '.mood-readout'), 'the mouse page keeps no empty strip').not.toMatch(/min-height:/)
     const taller = narrow.find(b => rule(b.body, '.mood-readout'))
     expect(taller, 'the phone readout needs room for two lines').toBeTruthy()
-    expect(rule(taller!.body, '.mood-readout')).toMatch(/min-height:\s*34px/)
+    expect(rule(taller!.body, '.mood-readout')).toMatch(/min-height:\s*calc\(2 \* 1\.4 \* 0\.75rem\)/)
+    // and the units are the ones the text is actually set in
+    expect(rule(bare, '.mood-readout')).toMatch(/font-size:\s*0\.75rem/)
+    expect(rule(bare, '.mood-readout')).toMatch(/line-height:\s*1\.4/)
   })
 
   it('gives the stats disclosure the 44pt floor, since it is the only way to the chart', () => {
@@ -258,11 +295,28 @@ describe('phone: the journal look-back is readable', () => {
     expect(rule(bare, '.journal-month-head')).not.toMatch(/position:\s*sticky/)
   })
 
-  it('measures the top bar once, and knows it is taller on a phone', () => {
-    expect(rule(bare, ':root')).toMatch(/--topbar-h:\s*56px/)
+  it('measures the top bar once, knows it is taller on a phone, and lets it grow with the text', () => {
+    // the bar is padding + border (fixed) + its tallest control's text box
+    // (scaled), so the token is a calc rather than a number — but it still has
+    // to resolve to the measured 56 / 61 at scale 1 or every scroll target moves
+    expect(barHeight(rule(bare, ':root'), 1)).toBe(56)
     const phone = narrow.find(b => /--topbar-h/.test(rule(b.body, ':root')))
     expect(phone, 'the phone bar is 5px taller than the desktop one — say so once').toBeTruthy()
-    expect(rule(phone!.body, ':root')).toMatch(/--topbar-h:\s*61px/)
+    expect(barHeight(rule(phone!.body, ':root'), 1)).toBe(61)
+    // and a reader on the largest Dynamic Type gets more clearance, not less
+    expect(barHeight(rule(bare, ':root'), 1.6)).toBeGreaterThan(56)
+    // The phone bar is floored by a fixed 40px square only while the text is
+    // small enough; past scale ≈ 1.18 the 🔍 / ⚙ .btn.subtle pair is taller and
+    // the bar grows with them. `>= 61` passed vacuously while the token was
+    // pinned at 61 across the whole clamp, so measure the real bar instead:
+    // never under it (a heading would sit behind the chrome), and never more
+    // than a few px over it (a gap the journal rows would scroll through).
+    for (const scale of [0.9, 1, 1.18, 1.3, 1.6]) {
+      const token = barHeight(rule(phone!.body, ':root'), scale)
+      const real = measuredPhoneBar(scale)
+      expect(token, `--topbar-h understates the bar at scale ${scale}`).toBeGreaterThanOrEqual(real)
+      expect(token, `--topbar-h overstates the bar at scale ${scale}`).toBeLessThan(real + 4)
+    }
   })
 
   it('clears the sticky month header too when a past day is opened', () => {
@@ -371,5 +425,93 @@ describe('phone: the grocery list survives a real shop', () => {
     // segmented control in the app, the four-way grocery filter included
     expect(rule(bare, '.seg'), 'the desktop pill must not grow').not.toMatch(/flex:/)
     for (const b of narrow) expect(rule(b.body, '.seg'), 'no phone-wide .seg override').toBe('')
+  })
+})
+
+/** Every `@media (prefers-reduced-motion: reduce)` block's body. */
+function reducedBlocks(): string[] {
+  return [...bare.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)/g)].map(m => blockBody(m.index))
+}
+
+describe('phone: the type ramp follows the system text size', () => {
+  // src/native.ts watchTextSize() measures -apple-system-body in the WKWebView
+  // and writes 0.9-1.6 here; every browser stays at the default 1.
+  it('declares --type-scale, with a default that changes nothing', () => {
+    expect(rule(bare, ':root')).toMatch(/--type-scale:\s*1;/)
+  })
+
+  it('multiplies the root font-size by it, so every rem in the sheet follows', () => {
+    const html = rule(bare, 'html')
+    // `rem` inside the root element's own font-size resolves against the
+    // property's initial value -- the reader's browser default, 16px unless
+    // they changed it -- so this is 16px on a stock browser and still honours
+    // a desktop reader who raised that default.
+    expect(html).toMatch(/font-size:\s*calc\(1rem \* var\(--type-scale\)\)/)
+    // otherwise WKWebView inflates text on its own on top of the scale
+    expect(html).toMatch(/-webkit-text-size-adjust:\s*100%/)
+  })
+
+  it('carries the scale on the body step too', () => {
+    expect(rule(bare, 'body')).toMatch(/font-size:\s*calc\(14px \* var\(--type-scale\)\)/)
+  })
+
+  it('converted the ramp to rem rather than leaving it in pixels', () => {
+    const sizes = [...bare.matchAll(/font-size:\s*([^;]+);/g)].map(m => m[1].trim())
+    const rem = sizes.filter(v => v.endsWith('rem')).length
+    // ~130 of the ~165 sizes are prose or control labels; the rest are icons,
+    // avatars and chart geometry, which are drawn to fixed boxes on purpose
+    expect(rem).toBeGreaterThan(sizes.length * 0.7)
+  })
+
+  it('caps the tab bar label, since five of them share one fixed-height bar', () => {
+    const compact = narrowBlocks().map(b => rule(b.body, '.tabs-compact .tab')).find(Boolean)
+    expect(compact, 'no .tabs-compact .tab rule under @media (max-width: 640px)').toBeTruthy()
+    expect(compact).toMatch(/font-size:\s*calc\(10px \* min\(1\.15, var\(--type-scale\)\)\)/)
+  })
+
+  it('lets a phone field grow past the anti-zoom floor instead of pinning it', () => {
+    // 16px is what stops WKWebView zooming; on large Dynamic Type a field must
+    // still be able to match the prose around it, so the guard is a max(), and
+    // max(16px, 1rem) is exactly 16px at scale 1
+    const guard = css.slice(css.lastIndexOf("[contenteditable='true']"))
+    expect(guard).toMatch(/font-size:\s*max\(16px,\s*1rem\)/)
+    expect(guard).not.toMatch(/font-size:\s*16px/)
+  })
+})
+
+describe('phone: Reduce Motion is honoured, not decorated', () => {
+  it('resets every animation, transition and smooth scroll', () => {
+    const catchAll = reducedBlocks()
+      .map(b => rule(b, '*, *::before, *::after'))
+      .find(Boolean)
+    expect(catchAll, 'no `*, *::before, *::after` reset in a prefers-reduced-motion block').toBeTruthy()
+    for (const decl of [
+      // 0.01ms rather than 0 so a transitionend/animationend listener still fires
+      'animation-duration: 0.01ms !important',
+      'animation-iteration-count: 1 !important',
+      'transition-duration: 0.01ms !important',
+      'scroll-behavior: auto !important',
+    ]) {
+      expect(catchAll).toContain(decl)
+    }
+  })
+
+  it('leaves nothing slow enough that losing it would be a surprise', () => {
+    // A transition or animation longer than 400ms is a reduced-motion smell:
+    // it is long enough that the app reads as a different app without it, which
+    // is the state every Reduce Motion reader is in. The first time in each
+    // comma-separated part is the duration; a second one is the delay.
+    let outside = bare
+    for (const b of reducedBlocks()) outside = outside.replace(b, '')
+    const slow: string[] = []
+    for (const m of outside.matchAll(/(^|[;{\s])(transition|animation)\s*:\s*([^;{}]+);/g)) {
+      for (const part of m[3].split(',')) {
+        const t = /(-?[\d.]+)(ms|s)\b/.exec(part)
+        if (!t) continue
+        const ms = Number(t[1]) * (t[2] === 's' ? 1000 : 1)
+        if (ms > 400) slow.push(`${m[2]}: ${part.trim()}`)
+      }
+    }
+    expect(slow).toEqual([])
   })
 })

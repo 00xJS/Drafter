@@ -149,6 +149,12 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
   } catch {
     /* optional */
   }
+  try {
+    const stopTextSize = await watchTextSize()
+    handles.push({ remove: async () => stopTextSize() })
+  } catch {
+    /* optional: the app just stays at scale 1 */
+  }
   return () => {
     for (const h of handles) void h.remove()
   }
@@ -342,6 +348,78 @@ export async function watchKeyboard(): Promise<() => void> {
     }
   } catch {
     return () => {}
+  }
+}
+
+// ---- Dynamic Type: the OS drives the type ramp -------------------------------
+
+/**
+ * iOS body text at the default Dynamic Type size. Everything the reader has
+ * asked for is measured against this one number.
+ */
+const IOS_BODY_PX = 17
+
+/** Below 0.9 the chrome stops being tappable; above 1.6 nothing survives 375pt. */
+const TYPE_SCALE_MIN = 0.9
+const TYPE_SCALE_MAX = 1.6
+
+/** The `--type-scale` a probe of this computed size should publish. Pure, so it is testable. */
+export function typeScaleFor(probePx: number): number {
+  if (!Number.isFinite(probePx) || probePx <= 0) return 1
+  const raw = probePx / IOS_BODY_PX
+  const clamped = Math.min(TYPE_SCALE_MAX, Math.max(TYPE_SCALE_MIN, raw))
+  // three decimals is finer than a Dynamic Type step and keeps the CSS short
+  return Math.round(clamped * 1000) / 1000
+}
+
+/**
+ * Publish the user's system text size to CSS as `--type-scale`.
+ *
+ * WKWebView resolves the `-apple-system-body` font keyword at the reader's
+ * current Dynamic Type size, which is the only place the setting is visible to
+ * a web view — there is no media query and no JS API for it. So a hidden probe
+ * is styled with that keyword and its computed size is read back.
+ *
+ * iOS does not tell an app its text size changed while it is backgrounded (the
+ * user leaves for Settings and comes back), so the probe is re-read on `resume`
+ * and on `visibilitychange`. No-op on the web, where the browser's own zoom and
+ * default font size already do this job and 1 is the honest answer.
+ *
+ * Returns a disposer. See `--type-scale` in styles.css for what reads it.
+ */
+export async function watchTextSize(): Promise<() => void> {
+  if (!isNative()) return () => {}
+  const probe = document.createElement('div')
+  probe.setAttribute('aria-hidden', 'true')
+  // Out of flow, unpainted and unreachable: it exists only to be measured. The
+  // explicit 17px comes FIRST so the `font` shorthand overwrites it wherever the
+  // keyword is understood — and, where it is not, the probe still reports the
+  // baseline instead of inheriting a body size that this very reading sets,
+  // which would walk --type-scale down to its floor over a few resumes.
+  probe.style.cssText =
+    'position:absolute;left:-9999px;top:0;visibility:hidden;pointer-events:none;' + `font-size:${IOS_BODY_PX}px;font:-apple-system-body`
+  document.body.appendChild(probe)
+  const read = () => {
+    const px = Number.parseFloat(getComputedStyle(probe).fontSize)
+    document.documentElement.style.setProperty('--type-scale', String(typeScaleFor(px)))
+  }
+  read()
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') read()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+  let handle: { remove(): Promise<void> } | null = null
+  try {
+    const { App } = await import('@capacitor/app')
+    handle = await App.addListener('resume', read)
+  } catch {
+    /* a missing app plugin costs the resume re-read, not the initial measure */
+  }
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible)
+    void handle?.remove()
+    probe.remove()
+    document.documentElement.style.removeProperty('--type-scale')
   }
 }
 

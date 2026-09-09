@@ -6,6 +6,8 @@ export interface ParsedLink {
   tab?: 'people' | 'places' | 'journal'
   saw?: string
   task?: string
+  /** A place row to open (a "Been a while" reminder, or a shared link). */
+  place?: string
   /** A notification action button was pressed rather than the banner itself. */
   act?: 'done' | 'tomorrow' | 'saw'
   capture?: { title: string; description?: string; link?: string; dueAt?: string }
@@ -92,6 +94,9 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
 
   const taskId = params.get('task')
   if (taskId) out.task = taskId
+
+  const placeId = params.get('place')
+  if (placeId) out.place = placeId
 
   // A reminder's action button appends `&act=…` to that row's own link. It writes
   // on arrival, so it is read only when the caller opts in (the native notification

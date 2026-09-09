@@ -12,7 +12,8 @@
     "test": "vitest run",
     "build:ios": "tsc --noEmit && vite build --mode ios && cap sync ios",
     "ios": "npm run build:ios && cap open ios",
-    "db:smoke": "bash scripts/db-smoke.sh"
+    "db:smoke": "bash scripts/db-smoke.sh",
+    "mcp:smoke": "node scripts/mcp-smoke.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

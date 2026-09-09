@@ -3,6 +3,9 @@ import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { newerStamp } from '../itemops'
 import {
   MoodSeries,
+  SEARCH_PAGE,
+  WEEKDAY_MOOD_MIN,
+  WeekdayMood,
   dayLabel,
   entriesOn,
   entryOn,
@@ -10,17 +13,23 @@ import {
   idSet,
   journalDays,
   localDayKey,
+  lowestMoodWeekday,
   moodAverage,
+  moodByWeekday,
   moodIndexAt,
   moodSeries,
   moodWeeksFor,
   newEntry,
+  peopleNameMap,
   peopleOf,
   recentEntries,
   relativeDayLabel,
   samePeople,
+  searchJournal,
   shiftDayKey,
   streak,
+  weekdayLabel,
+  weekdayName,
 } from '../journal'
 import { excerpt } from '../utils'
 import { haptic } from '../native'
@@ -547,6 +556,48 @@ export function MoodChart({ series, summary }: { series: MoodSeries; summary: st
   )
 }
 
+/**
+ * "Which days are hard": seven bars, one per weekday, Sunday first like the
+ * rest of the app's weeks. The lowest average is marked with the accent AND
+ * named in the caption — a colour alone would be the only carrier of the one
+ * thing this chart exists to say.
+ *
+ * The block is only rendered above `WEEKDAY_MOOD_MIN` moods (JournalView
+ * decides); below it the same card explains why there is nothing to show.
+ */
+function WeekdayMoods({ days }: { days: WeekdayMood[] }) {
+  const low = lowestMoodWeekday(days)
+  const lowest = low === null ? undefined : days.find(d => d.weekday === low)
+  return (
+    <>
+      <ul className="weekday-mood">
+        {days.map(d => (
+          <li key={d.weekday} className={d.weekday === low ? 'weekday-col low' : 'weekday-col'}>
+            <span
+              className="weekday-track"
+              role="img"
+              aria-label={`${weekdayName(d.weekday)}: ${d.avg === undefined ? 'no moods yet' : `average ${d.avg} of 5 over ${d.count} ${d.count === 1 ? 'day' : 'days'}`}`}
+            >
+              {d.avg !== undefined && <span className="weekday-bar" style={{ height: `${Math.round((d.avg / 5) * 100)}%` }} />}
+            </span>
+            <span className="weekday-value">{d.avg === undefined ? '—' : d.avg}</span>
+            {/* the letters repeat (S M T W T F S), so they are decoration: the
+                track above carries the day's real name for a screen reader */}
+            <span className="weekday-letter" aria-hidden>
+              {weekdayLabel(d.weekday)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {lowest && (
+        <p className="chart-sub weekday-note">
+          {weekdayName(lowest.weekday)}s are your lowest, at {lowest.avg}/5.
+        </p>
+      )}
+    </>
+  )
+}
+
 interface ViewProps {
   entries: JournalEntry[]
   people: Person[]
@@ -577,6 +628,8 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [limit, setLimit] = useState(() => lastLimit)
+  /** Results are their own list with their own paging; it starts fresh on every new query. */
+  const [hitLimit, setHitLimit] = useState(SEARCH_PAGE)
   const narrow = useMediaQuery('(max-width: 640px)')
   const [statsOpen, setStatsOpen] = useState(() => {
     try {
@@ -648,6 +701,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     }
     // the day must be on screen: drop any search, show enough of the list, then scroll to it
     setQ('')
+    setHitLimit(SEARCH_PAGE)
     setEditing(openDate === today ? null : openDate)
     const idx = journalDays(entries).filter(d => d !== today).indexOf(openDate)
     if (idx >= limit) setLimit((lastLimit = idx + 10))
@@ -682,12 +736,32 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     chartAvg === undefined
       ? `Mood over the last ${weeks} weeks: no moods yet`
       : `Mood over the last ${weeks} weeks: average ${chartAvg} of 5 across ${scored} ${scored === 1 ? 'entry' : 'entries'} with a mood`
-  const needle = q.trim().toLowerCase()
-  const shownDays = useMemo(() => {
-    const matches = (e: JournalEntry) =>
-      e.body.toLowerCase().includes(needle) || peopleOf(e, people).some(p => p.name.toLowerCase().includes(needle))
-    return days.filter(d => d !== today).filter(d => !needle || entriesOn(entries, d).some(matches))
-  }, [days, entries, needle, people, today])
+  const weekdays = useMemo(() => moodByWeekday(entries, 26, today), [entries, today])
+  const weekdayScored = weekdays.reduce((n, d) => n + d.count, 0)
+
+  const query = q.trim()
+  const shownDays = useMemo(() => days.filter(d => d !== today), [days, today])
+  const peopleById = useMemo(() => peopleNameMap(people), [people])
+  // `total` counts every match across every year; `hits` is only what is drawn,
+  // so a diary with a decade in it still answers "how often did I write this".
+  const results = useMemo(() => searchJournal(entries, query, hitLimit, peopleById), [entries, query, hitLimit, peopleById])
+  const spansYears = new Set(results.hits.map(h => h.entry.date.slice(0, 4))).size > 1
+
+  /**
+   * Open a day for editing from a search result: the same path `openDate`
+   * takes, minus the restore deference (this one is a tap, so it is always the
+   * target). Dropping the query is what puts the day list back on screen for
+   * the scroll to land in.
+   */
+  const openDay = (date: string) => {
+    setQ('')
+    setHitLimit(SEARCH_PAGE)
+    setEditing(date === today ? null : date)
+    const idx = shownDays.indexOf(date)
+    if (idx >= limit) setLimit((lastLimit = idx + 10))
+    restored.current = false
+    window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+  }
 
   return (
     <section className="journal">
@@ -697,7 +771,15 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
           <p className="chart-sub">One entry a day, in your own words. Sunday's review reads it back.</p>
         </div>
         <span className="spacer" />
-        <input className="search people-search" placeholder="Search entries…" value={q} onChange={e => setQ(e.target.value)} />
+        <input
+          className="search people-search"
+          placeholder="Search entries…"
+          value={q}
+          onChange={e => {
+            setQ(e.target.value)
+            setHitLimit(SEARCH_PAGE)
+          }}
+        />
       </div>
 
       <section className="chart-card journal-card" id={`journal-day-${today}`}>
@@ -743,14 +825,90 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
                 <p className="empty mood-chart-empty">Tap a face on an entry to start the chart</p>
               )}
             </section>
+
+            <section className="chart-card">
+              <header className="chart-head">
+                <div>
+                  <h3>By weekday</h3>
+                  <p className="chart-sub">
+                    {weekdayScored >= WEEKDAY_MOOD_MIN ? `Average mood on each day, last 26 weeks` : 'Which days are hard'}
+                  </p>
+                </div>
+              </header>
+              {weekdayScored >= WEEKDAY_MOOD_MIN ? (
+                <WeekdayMoods days={weekdays} />
+              ) : (
+                <p className="empty weekday-empty">
+                  {`${WEEKDAY_MOOD_MIN} days with a mood and this fills in — ${weekdayScored} so far. An average over three Mondays is noise, not a pattern.`}
+                </p>
+              )}
+            </section>
           </>
         )}
       </div>
 
-      {shownDays.length === 0 ? (
-        <p className="empty">
-          {needle ? 'Nothing matches.' : 'Past days will collect here. On a phone, a Shortcut can add a line from anywhere: drafter://journal?text=…'}
-        </p>
+      {query ? (
+        <div className="journal-results">
+          <p className="journal-result-count" aria-live="polite">
+            {results.total === 0
+              ? `Nothing mentions ${query}`
+              : `${results.total} ${results.total === 1 ? 'entry mentions' : 'entries mention'} ${query}`}
+          </p>
+          <ul className="journal-hits">
+            {results.hits.map((hit, i) => {
+              const { entry: e, before, match, after } = hit
+              const year = e.date.slice(0, 4)
+              // a year header only earns its row when there is more than one year to tell apart
+              const newYear = spansYears && (i === 0 || results.hits[i - 1].entry.date.slice(0, 4) !== year)
+              const empty = !before && !match && !after
+              return (
+                <Fragment key={e.id}>
+                  {newYear && (
+                    <li className="journal-year-head">
+                      <h3 className="journal-year-title">{year}</h3>
+                    </li>
+                  )}
+                  <li className="journal-hit">
+                    <button type="button" className="journal-hit-row" onClick={() => openDay(e.date)}>
+                      <span className="journal-hit-head">
+                        <strong>{relativeDayLabel(e.date, today)}</strong>
+                        <small className="muted">{dayLabel(e.date, { day: 'numeric', month: 'short', year: 'numeric' })}</small>
+                        {e.mood && (
+                          <span className="journal-mood" title={MOOD_META[e.mood].label}>
+                            {MOOD_META[e.mood].emoji}
+                          </span>
+                        )}
+                        <JournalPeople entry={e} people={people} />
+                      </span>
+                      {/* three plain strings and one <mark>: a journal body is the
+                          last text in this app that should reach innerHTML */}
+                      <span className="journal-snippet">
+                        {empty ? (
+                          <span className="muted">{e.mood ? MOOD_META[e.mood].label : 'No words that day'}</span>
+                        ) : (
+                          <>
+                            {before}
+                            {match && <mark>{match}</mark>}
+                            {after}
+                          </>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                </Fragment>
+              )
+            })}
+          </ul>
+          {results.total > results.hits.length && (
+            <p>
+              <button className="btn" onClick={() => setHitLimit(n => n + SEARCH_PAGE)}>
+                Show older
+              </button>
+            </p>
+          )}
+        </div>
+      ) : shownDays.length === 0 ? (
+        <p className="empty">Past days will collect here. On a phone, a Shortcut can add a line from anywhere: drafter://journal?text=…</p>
       ) : (
         <ul className="journal-days">
           {shownDays.slice(0, limit).map((d, i, list0) => {
@@ -798,7 +956,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
           })}
         </ul>
       )}
-      {shownDays.length > limit && (
+      {!query && shownDays.length > limit && (
         <p>
           <button className="btn" onClick={() => setLimit(l => (lastLimit = l + 60))}>
             Show older

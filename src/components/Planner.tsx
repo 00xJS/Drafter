@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEvent, Person, Place, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
-import { newerStamp, localMidnightIso } from '../itemops'
+import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
+import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { useHousehold } from '../household'
-import { timeAgo } from '../utils'
+import { timeAgo, uid } from '../utils'
 import { closeExternal, genericRemindersEnabled, haptic, initNative, isAppLockShowing, isNative, localRemindersEnabled, onAppLockCleared, scheduleLocalReminders, clearAppBadge } from '../native'
 import { buildLocalReminders, deviceHasServerPush } from '../reminders'
 import { fetchPushInfo } from '../push'
@@ -403,6 +404,14 @@ export default function Planner() {
       } else setEditor({ task: t })
       return
     }
+    if (parsed.place) {
+      // "Been a while" reminders link here. Nothing is written on arrival: the
+      // row opens on Places with its history and its Log an outing button.
+      const place = store.places.find(p => p.id === parsed.place)
+      if (place) openPlace(place.id)
+      else showToast('That place is not on this device yet — it will appear after the next sync.')
+      return
+    }
     if (parsed.capture) {
       // through newTask, so the quick action and the + button file a new task
       // the same way — including into the project the list is filtered to
@@ -565,14 +574,14 @@ export default function Planner() {
       } catch {
         /* offline / unsigned — keep local due reminders */
       }
-      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
     })()
   }
   useEffect(() => {
     if (!store.loaded) return
     const t = window.setTimeout(() => remindersRef.current(), 1500)
     return () => window.clearTimeout(t)
-  }, [store.loaded, store.tasks, store.people])
+  }, [store.loaded, store.tasks, store.people, store.places])
 
   const openTask = (task: Task) => setEditor({ task })
   const newTask = (preset?: Partial<Task>, opts?: { capture?: boolean }) =>
@@ -695,12 +704,77 @@ export default function Planner() {
     if (ref?.type === 'issue') setIssueState(t.githubUrl!, 'close').then(() => showToast(`Closed ${ref.owner}/${ref.repo}#${ref.number} on GitHub`)).catch(() => {})
   }
 
+  /**
+   * Mirror a task onto its project's GitHub Projects board (column, and the due
+   * date when it moved). Debounced per task so a drag across the board is one
+   * mutation, and silent on failure like closeLinkedIssue: GitHub being down
+   * must never block a local edit.
+   */
+  const pushToProjectBoard = (t: Task | undefined) => {
+    if (!t?.githubUrl || !t.projectId) return
+    queueProjectPush(t, store.projects.find(p => p.id === t.projectId))
+  }
+
+  /** The board moved a card: apply it here, newest edit wins, undo in the toast. */
+  const applyProjectPulls = (changes: ProjectPull[]) => {
+    const undo: { prev: Task; spawnedId?: string }[] = []
+    for (const c of changes) {
+      const t = store.tasks.find(x => x.id === c.taskId)
+      if (!t) continue
+      // the reconciler compared the row against the task as it stood when that
+      // board was fetched; boards are read one after another, so re-check the
+      // stamp here or an edit made during a later fetch loses to an older row
+      if (!(Date.parse(c.boardUpdatedAt) > Date.parse(t.updatedAt))) continue
+      const next: Task = { ...t }
+      if (c.status) next.status = c.status
+      if (c.dueDate) next.dueAt = boardDateToDue(c.dueDate, t.dueAt) ?? next.dueAt
+      if (next.status === t.status && next.dueAt === t.dueAt) continue
+      if (next.status === 'done' && t.status !== 'done') next.completedAt = next.completedAt ?? new Date().toISOString()
+      if (next.status !== 'done') next.completedAt = undefined
+      const stamped: Task = { ...next, updatedAt: newerStamp(t.updatedAt) }
+      // upsert spawns the next occurrence when a recurring task crosses into
+      // done, exactly as setStatus does; the id is deterministic, so this is
+      // the copy the undo has to take back out again
+      const spawnedId = stamped.status === 'done' && t.status !== 'done' && stamped.recurrence ? nextOccurrence(stamped, uid)?.id : undefined
+      undo.push({ prev: t, spawnedId })
+      store.upsert(stamped)
+    }
+    if (undo.length === 0) return
+    const first = changes.find(c => c.taskId === undo[0].prev.id)
+    const what = undo.length === 1 ? `“${undo[0].prev.title || 'Untitled'}”${first?.columnName ? ` → ${first.columnName}` : ''}` : `${undo.length} tasks`
+    showToast(`${what} moved from the GitHub board`, () => {
+      // undo puts the board back too, or GitHub would keep proposing the move
+      for (const u of undo) {
+        const restored = { ...u.prev, updatedAt: newerStamp(u.prev.updatedAt) }
+        store.upsert(restored)
+        pushToProjectBoard(restored)
+        if (u.spawnedId) store.remove(u.spawnedId)
+      }
+    })
+  }
+
+  useGithubProjectSync(store.projects, store.tasks, store.loaded && store.projects.some(projectSyncEnabled), applyProjectPulls, msg => showToast(msg))
+
+  // a queued board write outlives the edit that made it by a couple of seconds:
+  // drop the pending ones when the planner goes away (sign-out, unmount)
+  useEffect(() => cancelQueuedPushes, [])
+
   const changeStatus = (id: string, status: TaskStatus) => {
     const change = store.setStatus(id, status)
     if (!change) return
     if (status === 'done' && change.prev.status !== 'done') closeLinkedIssue(change.prev)
+    // the stored task, not `prev` with a status on it: the board's freshness
+    // guard drops a push whose stamp the row already sits after, so pushing the
+    // pre-edit stamp would let the first push through and silently swallow
+    // every one after it
+    pushToProjectBoard(change.next)
     showToast(`Moved to ${STATUS_META[status].label}`, () => {
-      store.upsert({ ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) })
+      // the undo goes to the board too: it supersedes the queued push (same
+      // task id, so the timer is replaced), and without it GitHub would keep
+      // proposing the move the user just took back
+      const restored = { ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) }
+      store.upsert(restored)
+      pushToProjectBoard(restored)
       if (change.spawnedId) store.remove(change.spawnedId)
     })
   }
@@ -711,12 +785,14 @@ export default function Planner() {
     const prev = { ...t }
     const old = t.dueAt ? new Date(t.dueAt) : null
     const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), old?.getHours() ?? 9, old?.getMinutes() ?? 0)
-    store.upsert({
+    const next: Task = {
       ...t,
       status: t.status === 'wishlist' || t.status === 'canceled' ? 'todo' : t.status,
       dueAt: at.toISOString(),
       updatedAt: newerStamp(t.updatedAt),
-    })
+    }
+    store.upsert(next)
+    pushToProjectBoard(next)
     return prev
   }
 
@@ -726,7 +802,11 @@ export default function Planner() {
     const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
     // deferring is the one daily gesture with no other confirmation you can feel
     void haptic('light')
-    showToast(`Moved to ${label}`, () => store.upsert({ ...prev, updatedAt: newerStamp(prev.updatedAt) }))
+    showToast(`Moved to ${label}`, () => {
+      const restored = { ...prev, updatedAt: newerStamp(prev.updatedAt) }
+      store.upsert(restored)
+      pushToProjectBoard(restored)
+    })
   }
 
   const deferAll = (ids: string[], day: Date) => {
@@ -739,7 +819,11 @@ export default function Planner() {
     const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
     void haptic('light')
     showToast(`Moved ${undos.length} to ${label}`, () => {
-      for (const p of undos) store.upsert({ ...p, updatedAt: newerStamp(p.updatedAt) })
+      for (const p of undos) {
+        const restored = { ...p, updatedAt: newerStamp(p.updatedAt) }
+        store.upsert(restored)
+        pushToProjectBoard(restored)
+      }
     })
   }
 
@@ -1166,6 +1250,7 @@ export default function Planner() {
             setEditor(null)
             if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => store.remove(t.id))
             if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
+            if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
           }}
           onDiscard={() => showToast('Nothing to save — that task was empty.')}
           onCommit={t => store.upsert(t)}

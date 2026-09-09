@@ -26,7 +26,7 @@ If both keys are set NVIDIA wins; force one with `AI_PROVIDER=nvidia|anthropic`.
 
 ## Model
 
-- **Project** — a container with a name, color, status (active / paused / done / archived), optional start and target dates, milestones, and an optional GitHub repo or Projects URL.
+- **Project** — a container with a name, color, status (active / paused / done / archived), optional start and target dates, milestones, and an optional GitHub repo or Projects URL (a Projects board can sync status and due dates both ways).
 - **Task** — title, description, status (Wishlist → To do → Doing → Done; leftover Blocked / Canceled still display), priority (low / normal / high / urgent), due date, tags, a checklist, a timestamped comment trail, notes, images, an optional GitHub link, and recurrence (daily / weekly / biweekly / monthly — completing one spawns the next).
 
 The **project bar** under the header filters every view to one project (double-click a chip to edit it). The **Notes** tab is the project's notepad (with "All projects" selected it shows an index of every project's notes): one running page you type straight into, with a formatting bar (bold, italic, underline, strikethrough, headings, lists, checklists, quotes, inline code, code blocks, links, dividers), an emoji picker, and photos pasted, dropped or picked from the 📷 button and shown inline. Notes are stored as a sanitized HTML subset; photos go to the synced media store and are referenced by id. It autosaves as you type. Older Markdown notes convert automatically on first open.
@@ -57,6 +57,8 @@ The task editor's ✨ buttons break a task into checklist steps and suggest tags
 ## GitHub links and write-back
 
 Paste a GitHub URL into a task's or project's **GitHub** field — an issue, pull request, repository, or a Projects (v2) board like `https://github.com/users/you/projects/3` — and the editor shows a live card: title, open/closed/merged/draft state, labels, assignees, comment count, last update. The lookup goes through the session-gated `/api/github` function. Public issues and repos work without configuration; set `GITHUB_TOKEN` on Netlify (a fine-grained PAT with read access to the repos, plus `read:project` for Projects boards) for private repos, Projects, and a far higher rate limit. With `GITHUB_TOKEN` granted write access, the card gains **Close issue on GitHub / Reopen**, marking a task with a linked issue done closes the issue, and a task in a project that links a repo can **Create a GitHub issue** from its title and description.
+
+**Two-way Projects sync.** When a project's GitHub field holds a Projects (v2) board, the project editor offers **Sync status and due dates**. Turning it on reads the board's fields and proposes a mapping — each Drafter status (Wishlist, To do, Doing, Done) against the board's Status options, matched by name, and any of the board's date fields to write due dates into — which you can change per row. After that it runs both ways: moving a task here writes its column (and its due date, when that changed) onto the board row of its linked issue, debounced so dragging a card across the board is one write; and on focus and every 30 minutes each synced board is read back, so a card someone moved on GitHub moves the task here, with a toast and an undo. The newer edit always wins — a board row is only honoured when GitHub touched it after the task's own `updatedAt` — and a board row with no date is never read as "clear the due date". Failures are silent by design: GitHub being unreachable must never block a local edit. This needs `GITHUB_TOKEN` to carry the `project` scope (read **and** write); without it the toggle shows exactly that, and nothing else changes.
 
 ## Backups
 
@@ -159,9 +161,12 @@ npm test             # vitest
 npm run lint         # eslint src --max-warnings 0
 npm run check        # tests + type-check + production build (what Netlify runs)
 npm run db:smoke     # throwaway Postgres: apply every migration, exercise sync_posts and the policies
+npm run mcp:smoke    # ...and drive the real MCP server process against it, end to end
 ```
 
 `db:smoke` needs the PostgreSQL binaries on PATH (`brew install postgresql@17`). It stubs what Supabase provides (auth, storage, roles), applies `supabase/migrations` in order, then writes every record kind as a signed-in user, checks a household peer sees shared kinds but not the owner's journal, review or calendar, that the service role writes as the owner, that last-write-wins holds, that history is kept and scoped, and that a purge tombstone is accepted. Run it after any migration: a function can compile and still reject every write.
+
+`mcp:smoke` starts the same throwaway database (both share the boot-and-migrate loop in `scripts/lib/pgtest.sh`), serves a minimal PostgREST shim over it that translates the handful of requests `mcp/server.mjs` makes into SQL — and answers **501 with the path** for anything else, so an unimplemented request can never look like an empty result — then spawns `node mcp/server.mjs` and speaks JSON-RPC to it over stdio. Projects, tasks, recurrence, visits, places, meals, groceries and the journal are each written through a real tool call and then read back straight from Postgres, with the legacy bare-array RPC shape and a rejected id covered too. Neither smoke test is part of `npm run check`: Netlify has no Postgres.
 
 ## AI agents
 
@@ -169,6 +174,5 @@ npm run db:smoke     # throwaway Postgres: apply every migration, exercise sync_
 
 ## Later
 
-- Two-way GitHub Projects sync (status/due dates), building on the read-only cards.
 - TestFlight / APNs / widgets / share extension / associated domains — needs a paid Apple Developer account.
 - Places nearby-now ("I'm here") — needs the location permission and a native build.

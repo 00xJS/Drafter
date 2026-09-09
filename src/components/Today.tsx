@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   MEAL_SLOT_META,
   CalendarEvent,
@@ -86,7 +86,15 @@ function nextWeekday(from: Date, weekday: number): Date {
   return d
 }
 
-/** How far left the row slides to park the two defer buttons in full view. */
+/**
+ * How far left the row slides to park the two defer buttons in full view, until
+ * the tray has been measured. Two `.swipe-action`s at their 84px `min-width` —
+ * the whole tray at `--type-scale` 1. Their labels are `0.75rem`, so above
+ * about scale 1.2 "Tomorrow" and "Next week" no longer fit in 84px and the tray
+ * is wider than this; the row measures it and latches on the real width instead
+ * (the tray has no width cap, and the opaque `.swipe-face` above it would hide
+ * — and swallow the taps on — whatever the slide failed to uncover).
+ */
 export const DEFER_TRAY = -168
 /** Past this much of a left drag, letting go parks the tray open instead of snapping back. */
 export const DEFER_LATCH = -56
@@ -145,8 +153,26 @@ function TaskRow({
   const drag = useRef<{ x: number; y: number; base: number; axis: '?' | 'x' | 'y'; band: DragBand } | null>(null)
   const swiped = useRef(false)
   const [dx, setDx] = useState(0)
+  const [trayW, setTrayW] = useState(-DEFER_TRAY)
   const [dragging, setDragging] = useState(false)
   const trayOpen = dx <= DEFER_LATCH
+  /** Where a latch parks the face: the tray's real width, once it has one. */
+  const latch = -trayW
+
+  // The tray's buttons carry text that grows with --type-scale and it has no
+  // width cap, so its width is a measurement, not a constant. A ref callback
+  // rather than an effect: it runs once, when the tray attaches, before the
+  // browser paints — an effect would re-read offsetWidth (and force layout) on
+  // every touchmove of the app's most-used gesture.
+  const measureTray = useCallback((el: HTMLDivElement | null) => {
+    const w = el?.offsetWidth
+    if (!w) return
+    setTrayW(prev => (prev === w ? prev : w))
+    // the ⋯ handle latches from rest, where the tray was not in the DOM to be
+    // measured — correct that park now. A face still following a finger is left
+    // alone; the release reads the width this just stored.
+    if (drag.current?.axis !== 'x') setDx(d => (d <= DEFER_LATCH ? -w : d))
+  }, [])
 
   const close = () => {
     setDx(0)
@@ -160,7 +186,7 @@ function TaskRow({
   return (
     <li className={`trow swipe-row${done ? ' done' : ''}${trayOpen ? ' tray-open' : ''}`}>
       {canDefer && dx < -4 && (
-        <div className="swipe-tray">
+        <div className="swipe-tray" ref={measureTray}>
           <button type="button" className="swipe-action" onClick={() => deferTo(1)}>
             Tomorrow
           </button>
@@ -196,7 +222,7 @@ function TaskRow({
           }
           if (d.axis !== 'x') return
           swiped.current = true
-          const next = Math.max(Math.min(d.base + ddx, DONE_PULL + 32), canDefer ? DEFER_TRAY - 32 : 0)
+          const next = Math.max(Math.min(d.base + ddx, DONE_PULL + 32), canDefer ? latch - 32 : 0)
           setDx(next)
           // one tap on entering a band, so the thumb knows what letting go will do
           const band = bandOf(next, d.band, canDefer)
@@ -219,7 +245,7 @@ function TaskRow({
           if (band === 'done') {
             setDx(0)
             onStatus(task.id, done ? 'todo' : 'done')
-          } else if (band === 'latch' && canDefer) setDx(DEFER_TRAY)
+          } else if (band === 'latch' && canDefer) setDx(latch)
           else setDx(0)
         }}
       >
@@ -252,7 +278,7 @@ function TaskRow({
             title="Defer"
             onClick={e => {
               e.stopPropagation()
-              setDx(trayOpen ? 0 : DEFER_TRAY)
+              setDx(trayOpen ? 0 : latch)
             }}
           >
             ⋯

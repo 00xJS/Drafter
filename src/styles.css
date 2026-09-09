@@ -1,5 +1,12 @@
 :root {
   color-scheme: dark;
+  /* Dynamic Type. 1 in every browser, where the reader's own zoom already does
+     this job; the iOS shell writes 0.9-1.6 here from the system text size
+     (watchTextSize in src/native.ts, which measures -apple-system-body).
+     The type ramp is `rem` and the root font-size below is the single multiply
+     that moves it, so almost nothing else has to read this — only the few
+     boxes that must grow with the text they hold. */
+  --type-scale: 1;
   /* app chrome — dark by design */
   --bg: #0f1115;
   --surface: #171a21;
@@ -27,8 +34,14 @@
      .btn; on a phone it is the 40px .new-post-btn, so the phone block below
      raises this. Everything that has to clear the bar — a KPI tile's jump, the
      journal's scroll targets, the sticky month header — reads it from here
-     rather than keeping its own belief about the number. */
-  --topbar-h: 56px;
+     rather than keeping its own belief about the number.
+     The constant term is the padding plus the border; the scaled term is that
+     control's text box, so the bar follows Dynamic Type. Above scale 1 this
+     reads a little high (the phone's + is a fixed 40px square that does not
+     grow) — every reader of --topbar-h wants clearance under the bar, so
+     erring high only adds space while erring low parks a heading under the
+     chrome. Exactly 56px at scale 1. */
+  --topbar-h: calc(34px + 22px * var(--type-scale));
   --fab-size: 52px;
   --safe-b: env(safe-area-inset-bottom);
   /* READ THIS BEFORE USING IT. Capacitor runs the keyboard at resize:'native',
@@ -55,6 +68,22 @@ body {
   padding: 0;
 }
 
+html {
+  /* One multiply for the whole ramp: every font-size that reads as prose or as
+     a control label is a rem off this, so raising --type-scale raises all of
+     them together. `rem` in the ROOT element's own font-size resolves against
+     font-size's initial value (CSS Values 4), i.e. the reader's default
+     (16px unless they changed it) -- not against this declaration -- so a
+     desktop reader who raised their browser's default font size keeps it, and
+     the rem values that were already in the sheet before the ramp existed go
+     on honouring it. At the usual 16px nothing moves until iOS reports that
+     the reader asked for larger text.
+     -webkit-text-size-adjust: 100% stops WKWebView inflating text by itself on
+     top of that, which would apply the same preference twice. */
+  font-size: calc(1rem * var(--type-scale));
+  -webkit-text-size-adjust: 100%;
+}
+
 /* the document body is the scroller, so jumps (a KPI tile to its section, the
    journal to a day) animate rather than teleport. Phone-only, like the rest of
    the phone work: a 1280px window keeps the instant jump it has always had, so
@@ -69,13 +98,30 @@ body {
   html {
     scroll-behavior: auto;
   }
+  /* Reduce Motion is a vestibular setting, not a taste for slower animation,
+     so it is honoured everywhere rather than rule by rule. 0.01ms rather than
+     0 so a transitionend / animationend listener still fires. Nothing here
+     needs motion to be usable: the swipe tray follows the finger from React
+     state, the tab bar's slide out of the keyboard's way is a transform on a
+     class, and the mood chips and the toast are readable the instant they are
+     painted. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  /* the app's base step is 14px, one notch under the 16px root every rem is
+     measured from; it carries the scale itself so inherited text follows too */
+  font-size: calc(14px * var(--type-scale));
   line-height: 1.45;
 }
 
@@ -129,7 +175,7 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 .brand-mark {
@@ -141,6 +187,7 @@ button:focus-visible {
   border-radius: 8px;
   background: var(--accent);
   color: var(--on-accent);
+  /* the "D" glyph, drawn to a fixed 26px square, not text */
   font-size: 14px;
 }
 
@@ -248,7 +295,7 @@ button:focus-visible {
 }
 
 .badge {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 999px;
@@ -256,7 +303,7 @@ button:focus-visible {
 }
 
 .tag {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-2);
   background: var(--surface-2);
   padding: 1px 7px;
@@ -302,7 +349,7 @@ button:focus-visible {
   margin-left: auto;
   color: var(--muted);
   font-weight: 500;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .board-cards {
@@ -350,7 +397,7 @@ button:focus-visible {
 
 .card-body {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .card-meta {
@@ -358,7 +405,7 @@ button:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   min-width: 0;
 }
@@ -384,7 +431,7 @@ button:focus-visible {
 
 .cal-toolbar h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 1.0625rem;
   min-width: 160px;
   text-align: center;
 }
@@ -392,7 +439,7 @@ button:focus-visible {
 .cal-hint {
   margin-left: auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .cal-grid {
@@ -410,7 +457,7 @@ button:focus-visible {
 
 .cal-head {
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-2);
 }
@@ -453,6 +500,10 @@ button:focus-visible {
   color: var(--on-accent);
 }
 
+/* The month grid is fixed-height cells (88px on a phone), so its numbers and
+   pills are drawn to the cell rather than to the ramp — at scale 1.6 scaled
+   text would simply be clipped by the cell it sits in. The day sheet and the
+   agenda rows below carry the same information as prose, and those do scale. */
 .cal-daynum {
   font-size: 12px;
   font-weight: 600;
@@ -541,7 +592,7 @@ button:focus-visible {
 
 .posts-table th {
   text-align: left;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   font-weight: 600;
   padding: 9px 12px;
@@ -593,11 +644,11 @@ button:focus-visible {
 
 .row-body {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .sample-flag {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   color: var(--muted);
   border: 1px solid var(--border);
@@ -652,7 +703,7 @@ button:focus-visible {
 
 .modal-head h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 .modal-body {
@@ -680,7 +731,7 @@ button:focus-visible {
 }
 
 .field > span {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-2);
 }
@@ -712,7 +763,7 @@ textarea {
   color: var(--text-2);
   border-radius: 999px;
   padding: 5px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .toggle.on {
@@ -734,7 +785,7 @@ textarea {
   color: var(--text-2);
   padding: 6px 12px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .seg.on {
@@ -746,7 +797,7 @@ textarea {
 
 .warn {
   color: var(--danger);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
@@ -757,7 +808,7 @@ textarea {
 }
 
 .filter-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-2);
   margin-right: 4px;
@@ -817,18 +868,18 @@ textarea {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-2);
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 600;
   margin-top: 2px;
 }
 
 .stat-sub {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -853,12 +904,12 @@ textarea {
 
 .chart-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .chart-sub {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -882,6 +933,10 @@ textarea {
   stroke-width: 1;
 }
 
+/* Chart labels stay pixels: they are drawn into an SVG whose geometry is
+   fixed (ticks, baselines, a 46px gutter), so growing the text would collide
+   with the marks rather than move them. A reader who needs them bigger can
+   pinch-zoom, which .mood-chart deliberately leaves to the browser. */
 .tick-label {
   fill: var(--muted);
   font-size: 10px;
@@ -924,11 +979,11 @@ textarea {
 
 .tip-value {
   font-weight: 700;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .tip-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   opacity: 0.75;
 }
 
@@ -939,7 +994,7 @@ textarea {
 .chart-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .chart-table th,
@@ -950,7 +1005,7 @@ textarea {
 }
 
 .chart-table th {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -974,6 +1029,7 @@ textarea {
 .hbar-label {
   width: 92px;
   flex-shrink: 0;
+  /* a chart label in a fixed 92px gutter that cannot grow, like .tick-label */
   font-size: 12px;
   color: var(--text-2);
   text-align: right;
@@ -994,7 +1050,7 @@ textarea {
 }
 
 .hbar-value {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
@@ -1029,7 +1085,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -1065,7 +1121,7 @@ textarea {
 }
 
 .landing-header .brand {
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 
 .landing-hero {
@@ -1076,7 +1132,7 @@ textarea {
 }
 
 .landing-hero h1 {
-  font-size: 44px;
+  font-size: 2.75rem;
   line-height: 1.12;
   margin: 0 0 16px;
   letter-spacing: -0.02em;
@@ -1087,18 +1143,18 @@ textarea {
 }
 
 .landing-hero > p {
-  font-size: 17px;
+  font-size: 1.0625rem;
   color: var(--text-2);
   margin: 0 0 26px;
 }
 
 .landing-cta {
-  font-size: 15px;
+  font-size: 0.9375rem;
   padding: 11px 22px;
 }
 
 .landing-note {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1132,17 +1188,18 @@ textarea {
 }
 
 .feature-icon {
+  /* an emoji icon, not a label */
   font-size: 22px;
 }
 
 .feature-card h3 {
   margin: 10px 0 6px;
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 .feature-card p {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-2);
   line-height: 1.5;
 }
@@ -1150,7 +1207,7 @@ textarea {
 .landing-footer {
   text-align: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 20px;
   border-top: 1px solid var(--border);
   margin-top: auto;
@@ -1182,14 +1239,14 @@ textarea {
 
 .login-brand {
   justify-content: center;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 .login-sub {
   margin: -6px 0 0;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .login-btn {
@@ -1208,7 +1265,7 @@ textarea {
 
 .empty-hero h2 {
   margin: 0 0 6px;
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 
 .empty-hero p {
@@ -1280,7 +1337,7 @@ textarea {
 
 .field-hint {
   margin: -6px 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -1320,6 +1377,7 @@ textarea {
   border-radius: 50%;
   width: 18px;
   height: 18px;
+  /* a glyph in a fixed-size tap target */
   font-size: 10px;
   line-height: 1;
 }
@@ -1343,7 +1401,7 @@ textarea {
 }
 
 .card-flag {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -1365,12 +1423,12 @@ textarea {
 
 .settings-section h3 {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .settings-section p {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .sync-ok {
@@ -1428,12 +1486,12 @@ textarea {
   align-items: center;
   gap: 6px;
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
 .dash-reason {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--danger);
 }
 
@@ -1450,7 +1508,7 @@ textarea {
 
 .dash-fix {
   color: var(--accent);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1490,13 +1548,14 @@ textarea {
 }
 
 .card-status-icon {
+  /* a glyph in a fixed-size tap target */
   font-size: 12px;
   color: var(--text-2);
   pointer-events: none;
 }
 
 .board-more {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   text-align: center;
   margin: 4px 0;
@@ -1510,7 +1569,7 @@ textarea {
   background: var(--surface);
   border-radius: 999px;
   padding: 5px 11px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-2);
 }
 
@@ -1525,7 +1584,7 @@ textarea {
   gap: 12px;
   background: var(--warn-bg);
   color: var(--warn-text);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 8px 16px;
 }
@@ -1580,7 +1639,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-2);
 }
 
@@ -1625,7 +1684,7 @@ textarea {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   flex-wrap: wrap;
 }
@@ -1795,11 +1854,16 @@ textarea {
     gap: 2px;
     padding: 6px 2px 4px;
     border-radius: 10px;
-    font-size: 10px;
+    /* The one place the ramp is capped. Five labels have to stay on one line
+       inside a 56px bar, and at scale 1.6 a 16px label wraps and pushes the bar
+       over the content it is meant to sit beside. 1.15 still reads larger and
+       still keeps "Calendar" on its line. */
+    font-size: calc(10px * min(1.15, var(--type-scale)));
     line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
   }
+  /* the glyph is an icon, not text: it is drawn to the bar's fixed height */
   .tabs-compact .tab-icon {
     font-size: 18px;
     line-height: 1;
@@ -1831,6 +1895,7 @@ textarea {
     display: none;
   }
   .new-post-plus {
+    /* a glyph in a fixed-size tap target */
     font-size: 22px;
     line-height: 1;
     margin-top: -1px;
@@ -1845,19 +1910,39 @@ textarea {
      or its Save cannot be pressed at all on an installed app. */
   .modal-head {
     padding-top: calc(14px + env(safe-area-inset-top));
+    /* At --type-scale 1.6 a sheet title and its Save no longer share a 375pt
+       line; wrapping puts Save on its own row instead of pushing it off the
+       edge. Phone-only: a desktop sheet is wide enough that both rows already
+       fit, and wrapping (or a minimum gap in a space-between row) there would
+       change layout no reader asked to change. */
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .modal-foot {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    /* same reason as .modal-head: the footer buttons wrap rather than overflow
+       once Dynamic Type has widened them */
+    flex-wrap: wrap;
   }
 
   .modal-head-save {
     display: inline-block;
   }
 
-  /* 10px + the 40px .new-post-btn below + 10px + the 1px border. The desktop
-     bar is 5px shorter because its tallest control is a ~35px .btn. */
+  /* 10px + 10px + the 1px border = 21px of padding and border, plus the
+     tallest control. Two controls compete for that: the 40px .new-post-btn, a
+     fixed square that does not grow with the text, and the 🔍 / ⚙ .btn.subtle
+     pair, which is `font: inherit` inside 7px of padding and a 1px border —
+     16px of box around a text line of 22px * scale, exactly like the desktop
+     bar's .btn. Below scale ≈ 1.18 the square is the taller of the two and the
+     bar is 61px; above it the buttons overtake the square and the bar grows,
+     so the max() has to compare like with like rather than floor a bare text
+     box at 40. The desktop bar is 5px shorter because it has no 40px square.
+     This one must not err high the way the desktop token may:
+     .journal-month-head sticks at `--topbar-h`, so overstating it opens a gap
+     under the bar that journal rows scroll through. */
   :root {
-    --topbar-h: 61px;
+    --topbar-h: calc(21px + max(40px, 16px + 22px * var(--type-scale)));
   }
 
   .topbar {
@@ -1879,7 +1964,12 @@ textarea {
     display: none;
   }
   /* keep the unsynced count — that is the number an offline-first phone user
-     needs — but let it shrink and ellipsis instead of pushing the + off-screen */
+     needs — but let it shrink and ellipsis instead of pushing the + off-screen.
+     Deliberately ellipsis and not wrap, for the reason above and one more:
+     --topbar-h is a single-line token that every sticky offset and every
+     scroll-margin in the sheet reads, and a bar that wraps to two lines would
+     silently invalidate all of them. The status dot below is the fallback when
+     the words go. */
   .sync-label {
     min-width: 0;
     overflow: hidden;
@@ -1930,7 +2020,7 @@ textarea {
   }
 
   .stat-value {
-    font-size: 21px;
+    font-size: 1.3125rem;
   }
 
   .posts-table {
@@ -1940,7 +2030,7 @@ textarea {
   /* calendar: tighter cells, no hint text */
   .cal-toolbar h2 {
     min-width: 0;
-    font-size: 15px;
+    font-size: 0.9375rem;
   }
 
   .cal-hint {
@@ -1952,6 +2042,9 @@ textarea {
     padding: 3px;
   }
 
+  /* the month grid keeps px on a phone too -- see .cal-daynum above: these
+     sit inside 88px cells and fixed-diameter day badges, so growing the text
+     would spill out of the geometry rather than move it. */
   .cal-pill {
     font-size: 10px;
     padding: 4px 5px;
@@ -1994,7 +2087,7 @@ textarea {
   }
 
   .landing-hero h1 {
-    font-size: 32px;
+    font-size: 2rem;
   }
 }
 
@@ -2020,6 +2113,7 @@ textarea {
   .media-remove {
     width: 26px;
     height: 26px;
+    /* a glyph in a fixed-size tap target */
     font-size: 12px;
   }
 
@@ -2080,7 +2174,7 @@ textarea {
 
 .view-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 .muted {
@@ -2111,7 +2205,7 @@ textarea {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   white-space: nowrap;
   line-height: 1.2;
 }
@@ -2133,7 +2227,7 @@ textarea {
 }
 .pchip.static {
   padding: 1px 8px 1px 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   cursor: default;
   background: var(--surface-2);
   border-color: transparent;
@@ -2153,11 +2247,11 @@ textarea {
 
 /* priority + due */
 .prio {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 .due {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 999px;
@@ -2303,7 +2397,7 @@ textarea {
   padding: 0 14px;
   min-width: 84px;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   background: rgba(14, 165, 233, 0.25);
   color: #7dd3fc;
@@ -2319,7 +2413,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1;
   padding: 6px 4px;
   border-radius: 8px;
@@ -2341,7 +2435,7 @@ textarea {
   margin-top: 6px;
 }
 .due-chips .btn {
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 2px 8px;
 }
 .event-actions {
@@ -2390,7 +2484,7 @@ textarea {
   list-style: none;
   margin: 0 0 8px;
   padding: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .capture-fields li {
   margin: 4px 0;
@@ -2441,12 +2535,12 @@ textarea {
   white-space: nowrap;
 }
 .project-card-pct {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .project-card-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -2494,7 +2588,7 @@ textarea {
   font: inherit;
 }
 .rm-label-head {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   padding: 6px 12px;
 }
@@ -2511,7 +2605,7 @@ textarea {
   align-items: center;
   gap: 8px;
   width: 100%;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 .rm-track {
@@ -2527,7 +2621,7 @@ textarea {
   top: 0;
   bottom: 0;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   border-left: 1px solid var(--border);
   white-space: nowrap;
@@ -2588,6 +2682,7 @@ textarea {
   top: -6px;
   transform: rotate(-45deg);
   transform-origin: left top;
+  /* rotated into the roadmap's fixed track geometry, like .tick-label */
   font-size: 10px;
   color: var(--text-2);
   white-space: nowrap;
@@ -2639,7 +2734,7 @@ textarea {
 .ai-inline {
   align-self: flex-start;
   padding: 2px 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .swatches {
   display: flex;
@@ -2662,6 +2757,7 @@ textarea {
 }
 .emoji-field input {
   text-align: center;
+  /* one emoji, sized to its box */
   font-size: 18px;
 }
 
@@ -2703,7 +2799,7 @@ textarea {
 }
 .check-item input[type='date'] {
   padding: 4px 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .check-add {
   display: flex;
@@ -2725,16 +2821,16 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 .comment-meta .btn {
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .comment-body {
   white-space: pre-wrap;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .comment-form {
   display: flex;
@@ -2761,7 +2857,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .gh-head {
   display: flex;
@@ -2791,7 +2887,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 .gh-desc {
@@ -2804,11 +2900,36 @@ textarea {
   gap: 4px;
 }
 .gh-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--text-2);
+}
+
+/* Projects board mapping: one row per Drafter status, badge then column select.
+   The badge column is in ch so it follows the type scale instead of clipping
+   "Wishlist" at large Dynamic Type; the rows stack on a phone. */
+.gh-map {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gh-map-row {
+  display: grid;
+  grid-template-columns: 10ch 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.gh-map-row .badge {
+  justify-self: start;
+}
+@media (max-width: 640px) {
+  .gh-map-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2850,7 +2971,7 @@ textarea {
   margin-top: 6px;
 }
 .desc-ai .btn {
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 3px 8px;
 }
 .ai-proposal {
@@ -2869,7 +2990,7 @@ textarea {
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-proposal-head small {
   color: var(--muted);
@@ -2944,7 +3065,7 @@ textarea {
   font-weight: 400;
 }
 .cal-source-status {
-  font-size: 12px;
+  font-size: 0.75rem;
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2969,7 +3090,7 @@ textarea {
 }
 .settings-section h4 {
   margin: 16px 0 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .copy-row {
   display: flex;
@@ -2978,7 +3099,7 @@ textarea {
 .copy-row input {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .sync-line {
   display: flex;
@@ -2997,15 +3118,11 @@ textarea {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
-  animation: armed-pulse 0.9s ease-in-out infinite alternate;
-}
-@keyframes armed-pulse {
-  from {
-    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.5);
-  }
-  to {
-    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0);
-  }
+  /* A standing ring, not a 1.8s heartbeat. The red fill is the signal; the
+     pulse was decoration that Reduce Motion had to switch off, and a control
+     whose armed cue vanishes for some readers is worse than one that never
+     moved. It also kept the sheet's only animation above the 400ms line. */
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.28);
 }
 
 /* trash */
@@ -3052,7 +3169,7 @@ textarea {
   min-width: 30px;
   padding: 3px 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .notes-emoji-wrap {
   position: relative;
@@ -3074,6 +3191,7 @@ textarea {
 .notes-emoji button {
   border: 0;
   background: transparent;
+  /* an emoji icon, not a label */
   font-size: 18px;
   padding: 2px;
   border-radius: 6px;
@@ -3097,7 +3215,7 @@ textarea {
   min-height: 320px;
   resize: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
   padding: 12px;
 }
@@ -3129,13 +3247,13 @@ textarea {
   line-height: 1.25;
 }
 .md h1 {
-  font-size: 22px;
+  font-size: 1.375rem;
 }
 .md h2 {
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .md h3 {
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 .md p {
   margin: 0 0 10px;
@@ -3154,7 +3272,7 @@ textarea {
 }
 .md code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -3172,7 +3290,7 @@ textarea {
   background: transparent;
   border: 0;
   padding: 0;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 .md blockquote {
   margin: 0 0 10px;
@@ -3221,7 +3339,7 @@ textarea {
 }
 .notes-card-preview {
   display: block;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--text-2);
   max-height: 150px;
   overflow: hidden;
@@ -3231,7 +3349,7 @@ textarea {
 .notes-card-preview h1,
 .notes-card-preview h2,
 .notes-card-preview h3 {
-  font-size: 14px;
+  font-size: 0.875rem;
   margin: 4px 0;
 }
 
@@ -3245,7 +3363,7 @@ textarea {
   background: var(--surface);
   outline: none;
   line-height: 1.6;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   overflow: auto;
   caret-color: var(--accent);
 }
@@ -3281,10 +3399,10 @@ textarea {
   vertical-align: middle;
 }
 .notes-editable h1 {
-  font-size: 24px;
+  font-size: 1.5rem;
 }
 .notes-editable h2 {
-  font-size: 19px;
+  font-size: 1.1875rem;
 }
 .notes-editable a {
   cursor: text;
@@ -3353,6 +3471,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* initials drawn to a fixed 36px circle, not text */
   font-size: 18px;
   color: var(--inverse-text);
   font-weight: 700;
@@ -3361,12 +3480,13 @@ textarea {
 .person-avatar.small {
   width: 28px;
   height: 28px;
+  /* initials drawn to a fixed circle, like .person-avatar above */
   font-size: 14px;
 }
 .person-reason {
   margin: 0;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .person-journal {
   display: flex;
@@ -3374,7 +3494,7 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .person-stats {
   display: flex;
@@ -3407,13 +3527,13 @@ textarea {
 }
 .person-nums small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 .person-recent {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .person-recent li {
   display: flex;
@@ -3531,7 +3651,7 @@ textarea {
   margin-bottom: 10px;
 }
 .review-costs {
-  font-size: 20px;
+  font-size: 1.25rem;
   margin: 0;
 }
 
@@ -3555,7 +3675,7 @@ textarea {
   border-bottom: 1px solid var(--border);
   border-radius: 0;
   padding: 14px 16px;
-  font-size: 15px;
+  font-size: 0.9375rem;
   background: transparent;
 }
 .search-input:focus-visible {
@@ -3649,7 +3769,7 @@ textarea {
   flex-wrap: wrap;
 }
 .blockers .toggle {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .notes-to-task {
   font-family: inherit;
@@ -3695,7 +3815,7 @@ textarea {
 }
 .more-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 .more-list {
   list-style: none;
@@ -3732,6 +3852,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* an emoji icon drawn to a fixed 36px box, not a label */
   font-size: 16px;
   flex: none;
 }
@@ -3742,11 +3863,11 @@ textarea {
   min-width: 0;
 }
 .more-item-copy strong {
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 .more-item-copy small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* templates + AI plan */
@@ -3756,7 +3877,7 @@ textarea {
   padding: 0;
   max-height: 260px;
   overflow: auto;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .plan-list li {
   padding: 3px 0;
@@ -3778,7 +3899,7 @@ textarea {
 .year-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .year-table th,
 .year-table td {
@@ -3800,7 +3921,7 @@ textarea {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .digest-hour select {
   padding: 3px 6px;
@@ -3816,6 +3937,7 @@ textarea {
   border-radius: 50%;
   background: var(--accent);
   color: var(--on-accent);
+  /* initials drawn to a fixed circle, like .person-avatar above */
   font-size: 10px;
   font-weight: 700;
   flex: none;
@@ -3826,7 +3948,7 @@ textarea {
 
 .error-hero .error-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--danger);
   background: var(--surface-2);
   border-radius: 8px;
@@ -3853,7 +3975,7 @@ textarea {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .people-kpis {
   margin-bottom: 12px;
@@ -3913,7 +4035,7 @@ textarea {
 }
 .person-inline-stats small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 .person-caret {
   color: var(--muted);
@@ -3990,11 +4112,11 @@ textarea {
   border-color: var(--accent);
 }
 .next-up .why {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 .stat-aside {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 400;
   color: var(--muted);
 }
@@ -4098,7 +4220,7 @@ textarea {
   gap: 8px;
   padding: 4px 0;
   border-bottom: 1px dashed var(--border);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .admin-stat:last-child {
   border-bottom: none;
@@ -4128,7 +4250,7 @@ textarea {
 /* inline result of a live integration test */
 .admin-test {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .admin-test small {
   color: var(--muted);
@@ -4234,7 +4356,7 @@ textarea {
 }
 
 .cal-weekday-name {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4242,6 +4364,7 @@ textarea {
 }
 
 .cal-weekday-num {
+  /* a day number drawn to a fixed 24px circle, like .cal-daynum */
   font-size: 15px;
   font-weight: 700;
   min-width: 24px;
@@ -4258,7 +4381,7 @@ textarea {
 }
 
 .cal-weekday-count {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -4266,6 +4389,7 @@ textarea {
   flex: none;
   min-width: 44px;
   min-height: 44px;
+  /* a glyph in a fixed-size tap target */
   font-size: 18px;
   line-height: 1;
 }
@@ -4327,7 +4451,7 @@ textarea {
 }
 
 .cal-item-meta {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   white-space: normal;
   overflow-wrap: anywhere;
@@ -4389,13 +4513,13 @@ textarea {
 
 .cal-sheet-title h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
 .cal-sheet-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -4404,6 +4528,7 @@ textarea {
   flex: none;
   min-width: 44px;
   min-height: 44px;
+  /* a glyph in a fixed-size tap target */
   font-size: 18px;
   line-height: 1;
 }
@@ -4477,7 +4602,7 @@ textarea {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   white-space: normal;
   overflow-wrap: anywhere;
@@ -4597,7 +4722,7 @@ textarea {
 }
 .recipe-preview {
   display: block;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   margin-top: 4px;
   overflow: hidden;
@@ -4608,7 +4733,7 @@ textarea {
 .recipe-notes {
   margin: 0 0 12px;
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .recipe-ings {
   margin: 0;
@@ -4648,7 +4773,7 @@ textarea {
   border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   display: grid;
   place-items: center;
@@ -4684,7 +4809,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .meal-slot {
   display: flex;
@@ -4698,7 +4823,7 @@ textarea {
 .meal-slot-label {
   width: 7.5rem;
   flex: none;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-2);
 }
 .meal-slot select {
@@ -4757,7 +4882,7 @@ textarea {
 }
 .muted {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 @media (max-width: 640px) {
@@ -4837,6 +4962,7 @@ textarea {
   background: var(--surface);
   border-radius: 999px;
   padding: 4px 9px;
+  /* the face is an emoji icon in a 44pt target, not a label */
   font-size: 17px;
   line-height: 1;
   cursor: pointer;
@@ -4868,6 +4994,7 @@ textarea {
 .journal-avatars .person-avatar.small {
   width: 22px;
   height: 22px;
+  /* initials drawn to a fixed circle, like .person-avatar above */
   font-size: 12px;
 }
 /* "+3" for the faces the header had no room to draw (JournalPeople caps at three) */
@@ -4878,6 +5005,7 @@ textarea {
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text-2);
+  /* initials drawn to a fixed circle, like .person-avatar above */
   font-size: 11px;
   font-weight: 600;
 }
@@ -4911,7 +5039,7 @@ textarea {
   margin: 4px 0 -2px;
   padding: 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4960,6 +5088,7 @@ textarea {
   margin-left: auto;
 }
 .journal-mood {
+  /* the mood face is an emoji icon, not a label */
   font-size: 18px;
   line-height: 1;
 }
@@ -5010,6 +5139,7 @@ textarea {
      low-vision reader needs (the anti-zoom note at the end of this sheet). */
   touch-action: pan-y pinch-zoom;
 }
+/* fixed SVG geometry, like .tick-label above */
 .mood-chart text {
   fill: currentColor;
   opacity: 0.6;
@@ -5075,14 +5205,164 @@ textarea {
 .mood-readout {
   margin: 6px 0 0;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 .mood-scale {
   margin: 6px 0 0;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
+}
+
+/* journal search results.
+   A search is its own list, not a filtered day list: a hit from two years ago
+   has to say WHEN it was and WHY it matched, and the day list said neither. */
+.journal-results {
+  margin-top: 14px;
+}
+.journal-result-count {
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.journal-hits {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Sticky at every width, unlike the month header on the day list: results can
+   jump from this year to 2024 in three rows, and the year is the only thing
+   telling them apart. Same offset as .journal-month-head, so both clear the
+   sticky topbar and the status bar it pads itself for. */
+.journal-year-head {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 2;
+  margin: 6px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+}
+.journal-year-head:first-child {
+  margin-top: 0;
+}
+/* the heading only exists so the year is one for screen readers; the <li>
+   around it carries every visual property (same as .journal-month-title) */
+.journal-year-title {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+.journal-hit {
+  display: flex;
+}
+/* the whole row is the control — a hit is one tap from the day it came from */
+.journal-hit-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.journal-hit-row:hover {
+  border-color: var(--accent);
+}
+.journal-hit-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.journal-snippet {
+  color: var(--text-2);
+  line-height: 1.5;
+}
+/* the browser default is black-on-yellow, which is unreadable on the dark
+   surface and ignores the accent the rest of the app marks things with */
+.journal-snippet mark {
+  background: rgba(249, 115, 22, 0.28);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* mood by weekday: seven bars under the 12-week chart */
+.weekday-mood {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.weekday-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* fixed chart geometry, like the mood chart's viewBox: the track is a scale
+   from 0 to 5, so it must not stretch with the type size */
+.weekday-track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 64px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.weekday-bar {
+  display: block;
+  width: 60%;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+}
+/* the lowest average, marked. The caption under the bars names it too — the
+   one thing this chart is for must not be carried by colour alone. */
+.weekday-col.low .weekday-track {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.weekday-col.low .weekday-bar {
+  opacity: 1;
+}
+.weekday-col.low .weekday-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+.weekday-value {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.weekday-letter {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.weekday-note {
+  margin: 10px 0 0;
+}
+.weekday-empty {
+  margin: 0;
+  padding: 12px 0;
 }
 
 /* ---------- journal on a thumb ----------
@@ -5124,9 +5404,11 @@ textarea {
 
   /* the caption is reserved only where a touch can scrub: a finger that made it
      appear would push the chart out from under itself. A mouse page leaves no
-     empty strip under the chart. */
+     empty strip under the chart. One line of the readout's own type, not a
+     fixed 18px: the text is 0.75rem at line-height 1.4 and follows
+     --type-scale, so a reservation in px stops covering it above scale 1. */
   .mood-readout {
-    min-height: 18px;
+    min-height: calc(1.4 * 0.75rem);
   }
 
   /* the morning's one-tap escape from a pile of overdue tasks gets the same
@@ -5161,9 +5443,11 @@ textarea {
   }
 
   /* the readout is two lines' worth of room at 375pt: the day, its mood and the
-     week's average do not fit on one, and the chart must not move mid-scrub */
+     week's average do not fit on one, and the chart must not move mid-scrub.
+     Two lines of its own type (0.75rem at line-height 1.4), so the reservation
+     grows with Dynamic Type — 33.6px at scale 1, where it used to be 34. */
   .mood-readout {
-    min-height: 34px;
+    min-height: calc(2 * 1.4 * 0.75rem);
   }
 }
 
@@ -5189,11 +5473,14 @@ textarea {
   select:not([hidden]):not([multiple]),
   textarea:not([hidden]):not([disabled]),
   [contenteditable='true']:not([hidden]) {
-    font-size: 16px;
+    /* A floor, not a pin. 16px is what stops the zoom; `1rem` lets a reader on
+       large Dynamic Type have fields as big as the prose around them instead of
+       shrinking every field back to 16px. max() is exactly 16px at scale 1. */
+    font-size: max(16px, 1rem);
   }
   /* the emoji picker sat at 18px and never zoomed; ties the catch-all on
      specificity and wins on order, so it keeps its size */
   .emoji-field input:not([type='checkbox']) {
-    font-size: 18px;
+    font-size: max(18px, 1.125rem);
   }
 }

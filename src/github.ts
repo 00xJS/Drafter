@@ -49,6 +49,80 @@ export function createIssue(repoUrl: string, title: string, body: string): Promi
   return post({ action: 'create', repoUrl, title, body })
 }
 
+// ---- Projects v2 (two-way sync) ---------------------------------------------
+
+export interface GithubFieldOption {
+  id: string
+  name: string
+}
+
+export interface GithubProjectField {
+  id: string
+  name: string
+  options?: GithubFieldOption[]
+}
+
+export interface GithubProjectFields {
+  projectId: string
+  title?: string
+  /** The single-select field the board calls Status (or the first one it has). */
+  statusField?: Required<GithubProjectField>
+  selectFields: Required<GithubProjectField>[]
+  dateFields: GithubProjectField[]
+}
+
+/** One row of a Projects board, reduced to what a task cares about. */
+export interface GithubProjectItem {
+  itemId: string
+  updatedAt: string
+  contentUrl?: string
+  statusFieldId?: string
+  statusOptionId?: string
+  statusName?: string
+  dateFieldId?: string
+  /** YYYY-MM-DD as GitHub stores it — a date field has no time. */
+  date?: string
+}
+
+/** The board's Status options and Date fields, so the project editor can offer a mapping. */
+export function fetchProjectFields(url: string): Promise<GithubProjectFields> {
+  return post({ action: 'project-fields', url })
+}
+
+/** The board row for one issue / PR (null when the issue is not on the board). */
+export function fetchProjectItem(
+  url: string,
+  contentUrl: string,
+  fields: { statusFieldId?: string; dateFieldId?: string } = {},
+): Promise<{ projectId?: string; item: GithubProjectItem | null }> {
+  return post({ action: 'project-item', url, contentUrl, ...fields })
+}
+
+/**
+ * Every row on the board, for the periodic pull — up to 300, and `truncated` is
+ * true when the board has more than that. Rows past the cap are invisible to
+ * the reconciler, so their tasks silently stop pulling; the caller says so once
+ * rather than letting the board look merely quiet.
+ */
+export function fetchProjectItems(
+  url: string,
+  fields: { statusFieldId?: string; dateFieldId?: string } = {},
+): Promise<{ projectId?: string; items: GithubProjectItem[]; truncated?: boolean }> {
+  return post({ action: 'project-items', url, ...fields })
+}
+
+/** Write a board row's Status option and/or Date field. `date: null` clears it. */
+export function setProjectItemFields(input: {
+  projectId: string
+  itemId: string
+  statusFieldId?: string
+  optionId?: string
+  dateFieldId?: string
+  date?: string | null
+}): Promise<{ ok: true; wrote: number }> {
+  return post({ action: 'project-set', ...input })
+}
+
 export function parseGithubUrl(input: string | undefined): GithubRef | null {
   if (!input) return null
   let u: URL

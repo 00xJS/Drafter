@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, Task, Template, projectProgress } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template, projectProgress } from '../types'
 import { BUILT_IN_TEMPLATES, instantiateTemplate, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
 import { fromLocalInput, uid } from '../utils'
+import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../github'
+import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
 import { ConfirmButton } from './ConfirmButton'
 import { ProgressBar } from './bits'
@@ -25,6 +27,145 @@ interface Props {
 
 const toDateInput = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 10) : '')
 const fromDateInput = (v: string) => (v ? fromLocalInput(`${v}T12:00`) : undefined)
+
+/**
+ * Two-way GitHub Projects sync, offered only when the GitHub field holds a
+ * Projects board URL. Turning it on asks the host for the board's fields; a
+ * host whose token cannot read Projects answers 501 and the message is shown
+ * as it came, because "set the `project` scope" is the only useful next step.
+ */
+function ProjectSyncFields({ url, sync, onChange }: { url: string; sync?: GithubProjectSync; onChange(next: GithubProjectSync | undefined): void }) {
+  const [fields, setFields] = useState<GithubProjectFields | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const on = !!sync
+  const syncRef = useRef(sync)
+  syncRef.current = sync
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  // the URL is a live input: read the board once typing settles, not once per
+  // keystroke — every read is a session-gated POST and a GraphQL round trip
+  const [settled, setSettled] = useState(url)
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(url), 400)
+    return () => window.clearTimeout(t)
+  }, [url])
+
+  useEffect(() => {
+    if (!on) {
+      setFields(null)
+      setError('')
+      return
+    }
+    let cancelled = false
+    setBusy(true)
+    setError('')
+    fetchProjectFields(settled)
+      .then(f => {
+        if (cancelled) return
+        setFields(f)
+        const cur = syncRef.current
+        // first read of a board: propose the mapping instead of an empty form
+        if (f.statusField && !cur?.statusFieldId) {
+          onChangeRef.current({ ...cur, statusFieldId: f.statusField.id, columns: { ...defaultColumnMap(f.statusField.options), ...cur?.columns } })
+        }
+      })
+      .catch(e => {
+        if (!cancelled) setError((e as Error).message)
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [on, settled])
+
+  const selected = fields?.selectFields.find(f => f.id === sync?.statusFieldId) ?? fields?.statusField
+  const options = selected?.options ?? []
+
+  return (
+    <div className="field">
+      <label className="cal-source mirror-row">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={e => onChange(e.target.checked ? (syncRef.current ?? {}) : undefined)}
+        />
+        <span>
+          Sync status and due dates <small>(moving a card here moves it there, and back on the next check)</small>
+        </span>
+      </label>
+      {on && busy && <small className="field-hint">Reading the board…</small>}
+      {on && error && <p className="field-hint warn">{error}</p>}
+      {on && fields && !error && (
+        <>
+          {fields.selectFields.length === 0 ? (
+            <p className="field-hint warn">This board has no single-select field, so there is no column to map a status onto.</p>
+          ) : (
+            <label className="field">
+              <span>Status field on the board</span>
+              <select
+                value={selected?.id ?? ''}
+                onChange={e => {
+                  const next = fields.selectFields.find(f => f.id === e.target.value)
+                  onChange({ ...sync, statusFieldId: next?.id, columns: next ? defaultColumnMap(next.options) : undefined })
+                }}
+              >
+                {fields.selectFields.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {options.length > 0 && (
+            <div className="gh-map">
+              {BOARD_STATUSES.map(s => (
+                <label key={s} className="gh-map-row">
+                  <span className="badge" style={{ background: STATUS_META[s].bg, color: STATUS_META[s].color }}>
+                    {STATUS_META[s].label}
+                  </span>
+                  <select
+                    value={sync?.columns?.[s] ?? ''}
+                    onChange={e => {
+                      const columns = { ...sync?.columns }
+                      if (e.target.value) columns[s] = e.target.value
+                      else delete columns[s]
+                      onChange({ ...sync, columns })
+                    }}
+                    aria-label={`Board column for ${STATUS_META[s].label}`}
+                  >
+                    <option value="">— not synced —</option>
+                    {options.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          )}
+          <label className="field">
+            <span>Write due dates into</span>
+            <select value={sync?.dateFieldId ?? ''} onChange={e => onChange({ ...sync, dateFieldId: e.target.value || undefined })}>
+              <option value="">Don’t sync dates</option>
+              {fields.dateFields.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            {fields.dateFields.length === 0 && <small className="field-hint">This board has no date field yet — add one on GitHub to sync due dates.</small>}
+          </label>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose, onOpenNotes, templates = [], onCreateMany, onSaveTemplate }: Props) {
   const [base] = useState<Project>(() => {
@@ -50,6 +191,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   const [targetAt, setTargetAt] = useState(toDateInput(base.targetAt))
   const [milestones, setMilestones] = useState<Milestone[]>(base.milestones ?? [])
   const [githubUrl, setGithubUrl] = useState(base.githubUrl ?? '')
+  const [projectSync, setProjectSync] = useState<GithubProjectSync | undefined>(base.githubProjectSync)
+  /** The board the current mapping belongs to, so only a move to another one drops it. */
+  const [syncBoard, setSyncBoard] = useState(() => parseGithubUrl(base.githubUrl))
   const [newMs, setNewMs] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [goal, setGoal] = useState('')
@@ -103,6 +247,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       description: description.trim() || tpl.description,
       status,
       githubUrl: githubUrl.trim() || undefined,
+      githubProjectSync: projectSync,
       milestones: [...milestones, ...(tpl.milestones ?? []).map(m => ({ id: uid(), name: m.name, dueAt: fromLocalInput(`${toDateInput(new Date(start.getFullYear(), start.getMonth(), start.getDate() + m.offsetDays, 12).toISOString())}T12:00`) }))],
       createdAt: base.createdAt,
     })
@@ -144,6 +289,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       targetAt: fromDateInput(targetAt),
       milestones: milestones.length > 0 ? milestones : undefined,
       githubUrl: githubUrl.trim() || undefined,
+      githubProjectSync: projectSync,
     }
   }
   function baseValues() {
@@ -157,6 +303,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       targetAt: base.targetAt,
       milestones: base.milestones,
       githubUrl: base.githubUrl,
+      githubProjectSync: base.githubProjectSync,
     }
   }
   const isDirty = () => JSON.stringify(formValues()) !== JSON.stringify(baseValues())
@@ -376,9 +523,31 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             <span>
               GitHub <small>(repo or Projects board URL)</small>
             </span>
-            <input value={githubUrl} onChange={e => setGithubUrl(e.target.value)} placeholder="https://github.com/you/repo or …/users/you/projects/1" />
+            <input
+              value={githubUrl}
+              onChange={e => setGithubUrl(e.target.value)}
+              onBlur={e => {
+                // a mapping belongs to one board: pointing elsewhere drops it,
+                // but only once editing has settled — fixing a typo passes
+                // through half-URLs that parse as something else, and losing
+                // the mapping mid-keystroke means reading and approving it again
+                const ref = parseGithubUrl(e.target.value.trim())
+                const moved = syncBoard?.type === 'project' && (ref?.owner !== syncBoard.owner || ref?.number !== syncBoard.number)
+                if (ref?.type !== 'project' || moved) setProjectSync(undefined)
+                setSyncBoard(ref)
+              }}
+              placeholder="https://github.com/you/repo or …/users/you/projects/1"
+            />
           </label>
           {githubUrl.trim() && <GithubCard url={githubUrl.trim()} />}
+          {/*
+            Offered for any Projects URL, not only when the card reports a
+            writable host: `canWrite` only says a token exists, and a token
+            without the `project` scope reads boards and still cannot move a
+            card. Ticking the toggle reads the board's fields, so the server's
+            own 501 says exactly what is missing where the setting is made.
+          */}
+          {parseGithubUrl(githubUrl.trim())?.type === 'project' && <ProjectSyncFields url={githubUrl.trim()} sync={projectSync} onChange={setProjectSync} />}
 
           {project && onOpenNotes && (
             <div className="field">

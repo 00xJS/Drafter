@@ -1,11 +1,13 @@
-import { OPEN_STATUSES, Person, Task } from './types'
+import { OPEN_STATUSES, Person, Place, Task } from './types'
 import { upcomingOccasions } from './people'
+import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
 import { currentEndpoint } from './push'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE } from './native'
 
-// Reminders the phone can fire by itself: one at each task's due time and one
-// on the morning of a birthday or anniversary. No server, no account, works
+// Reminders the phone can fire by itself: one at each task's due time, one on
+// the morning of a birthday or anniversary, and a morning nudge for a place
+// whose rhythm you set and clearly missed. No server, no account, works
 // with the app closed. The set is rebuilt from local data whenever it changes,
 // so it is only ever as current as the last time the app ran — which for a
 // phone that opens Drafter daily is current enough.
@@ -37,6 +39,39 @@ export function reminderId(key: string): number {
 const DAY_MS = 86_400_000
 const MORNING = 9
 
+/**
+ * Places are the only cadence row with no date of its own, so they fire in a
+ * morning slot — the same 9am a date-only task or an occasion uses. Which
+ * morning is nextPlaceMorning's job.
+ */
+function nextMorning(now: Date): Date {
+  const at = new Date(now)
+  at.setHours(MORNING, 0, 0, 0)
+  if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
+  return at
+}
+
+/**
+ * One weekday per place, derived from its own id, so a rebuild lands on the
+ * same slot instead of re-arming for tomorrow. An overdue place never stops
+ * being overdue until you actually go, and buildLocalReminders re-runs on
+ * every open, so without this the same banner would fire every single
+ * morning. Pinning the slot caps a place at one nudge a week — the digest's
+ * PERSON_NUDGE_GAP_DAYS gap, reached without remembering anything.
+ */
+function nextPlaceMorning(placeId: string, now: Date): Date {
+  const at = nextMorning(now)
+  at.setDate(at.getDate() + (((reminderId(`place:${placeId}`) % 7) - at.getDay() + 7) % 7))
+  return at
+}
+
+/**
+ * At most this many place rows per rebuild. iOS keeps 64 pending notifications
+ * and scheduleLocalReminders already trims to the soonest 60: a dozen lapsed
+ * restaurants must never push tomorrow's actual work off the phone.
+ */
+const MAX_PLACE_REMINDERS = 3
+
 /** A due date stored at local midnight means "that day": remind in the morning, not at 00:00. */
 function remindAt(dueAt: string): Date {
   const d = new Date(dueAt)
@@ -47,7 +82,9 @@ function remindAt(dueAt: string): Date {
 export interface BuildReminderOpts {
   /**
    * When this device is already on the server's APNs/web-push list, skip local
-   * "Due now" rows so phone and server don't both fire. Occasion rows stay.
+   * "Due now" rows so phone and server don't both fire. Occasion and place
+   * rows stay — the server's channel for those is the emailed digest, not a
+   * banner, so they cannot double up.
    */
   skipTaskDue?: boolean
   /**
@@ -60,6 +97,7 @@ export interface BuildReminderOpts {
 export function buildLocalReminders(
   tasks: Task[],
   people: Person[],
+  places: Place[] = [],
   now = new Date(),
   horizonDays = 30,
   opts: BuildReminderOpts = {},
@@ -96,6 +134,35 @@ export function buildLocalReminders(
       ...(opts.generic ? {} : { actionTypeId: OCCASION_ACTION_TYPE }),
     })
   }
+  // A place with a rhythm you set and clearly missed (1.5× the cadence). Only
+  // 'overdue', never 'due', and at most one nudge a week per place
+  // (nextPlaceMorning) — both halves of the rule the morning digest follows,
+  // because a phone that interrupts you about a restaurant you are merely due
+  // to revisit — or about the same one every morning — is a phone you turn
+  // reminders off on. Places come last: they carry no schedule of their own,
+  // so a cap here is what keeps them from crowding out real work in the
+  // soonest-60 window.
+  const overduePlaces = places
+    .filter(p => p && !p.deletedAt)
+    .map(p => ({ place: p, status: placeCadenceStatus(p, tasks, now) }))
+    .filter(x => x.status.status === 'overdue')
+    // longest overdue first, so the cap keeps the places you have drifted
+    // furthest from rather than whichever happened to load first
+    .sort((a, b) => (b.status.daysSince ?? 0) - (a.status.daysSince ?? 0) || a.place.name.localeCompare(b.place.name))
+    .slice(0, MAX_PLACE_REMINDERS)
+  for (const { place, status } of overduePlaces) {
+    const at = nextPlaceMorning(place.id, now)
+    if (at.getTime() > until) continue
+    out.push({
+      id: reminderId(`place:${place.id}`),
+      title: opts.generic ? 'Somewhere to revisit' : `Been a while: ${place.name}`,
+      body: opts.generic ? 'Open Drafter to see where.' : status.reason || 'Open Drafter for the details.',
+      at,
+      url: `/?place=${encodeURIComponent(place.id)}`,
+    })
+  }
+  // stable sort: rows added at the same minute keep the order above, so tasks
+  // and occasions still lead the 9am group
   return out.sort((a, b) => a.at.getTime() - b.at.getTime())
 }
 

@@ -63,6 +63,14 @@ export interface ImportSummary {
 
 export interface StatusChange {
   prev: Task
+  /**
+   * The task as it was stored, carrying the stamp the edit actually wrote.
+   * A mirror (the GitHub Projects board) has to push *this*, not `prev` with a
+   * status patched onto it: the board's freshness guard compares its row's
+   * updatedAt against the task's, so pushing the pre-edit stamp makes every
+   * push after the first one look stale and get dropped.
+   */
+  next: Task
   spawnedId?: string
 }
 
@@ -471,12 +479,13 @@ export function useItems(myId: string | null = null): Store {
       }
       markDirty(id)
       if (spawned) markDirty(spawned.id)
+      const stored: Task = spawned ? { ...updated, recurrence: undefined } : updated
       setItems(list => {
-        let next: Item[] = list.map(x => (x.id === id ? (spawned ? { ...updated, recurrence: undefined } : updated) : x))
+        let next: Item[] = list.map(x => (x.id === id ? stored : x))
         if (spawned) next = next.concat(spawned)
         return releaseBlocked(next)
       })
-      return { prev: old, spawnedId: spawned?.id }
+      return { prev: old, next: stored, spawnedId: spawned?.id }
     },
     importItems: incoming => {
       const clean = incoming.map(sanitizeItem).filter((p): p is Item => p !== null)
