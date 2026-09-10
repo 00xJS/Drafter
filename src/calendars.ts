@@ -74,6 +74,28 @@ export const GOOGLE_PUSH_ID = 'google-push'
 export const googlePushId = (userId: string) => `google-push-${userId}`
 export const isGoogleSource = (s: CalendarSource) => s.url.startsWith('google:')
 
+/**
+ * What flipping the Google mirror switch has to write.
+ *
+ * The rule that matters is the legacy one: a row still carrying the shared
+ * `google-push` id must be dropped in BOTH directions. Planner decides whether
+ * to run the mirror with `some(c => (c.id === myPushId || c.id === GOOGLE_PUSH_ID) && c.enabled)`,
+ * so writing `enabled: false` onto a fresh per-user row while leaving the
+ * legacy row enabled turns the switch off in Settings and leaves the mirror
+ * pushing to Google. Turning it off has to mean off.
+ *
+ * Pure so it can be tested: the caller performs `remove` then `upsert`.
+ */
+export function mirrorToggle(
+  pushSource: { id: string; updatedAt: string } | undefined,
+  myPushId: string,
+  on: boolean,
+): { removeId?: string; write: 'existing' | 'fresh' | 'none' } {
+  if (!pushSource) return { write: on ? 'fresh' : 'none' }
+  if (pushSource.id !== myPushId) return { removeId: pushSource.id, write: 'fresh' }
+  return { write: 'existing' }
+}
+
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
 const pushCursorKey = (userId?: string | null) => (userId ? `${PUSH_CURSOR_KEY}:${userId}` : PUSH_CURSOR_KEY)
 

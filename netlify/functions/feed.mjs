@@ -7,7 +7,7 @@
 
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
-import { isMineTask, isUntimed, legacyPostToTask } from '../../shared/domain.mjs'
+import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../shared/domain.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
 
@@ -34,6 +34,9 @@ function feedFor(items, site, tz, myId) {
       start,
       end: timed ? start + 3_600_000 : undefined,
       allDay: !timed,
+      // the reader's own calendar day, not the UTC one: an untimed task is
+      // stored at local midnight, which is the previous day in UTC all summer
+      date: timed ? undefined : localDate(t.dueAt, tz),
       description: [t.description, t.checklist?.length ? `Checklist: ${t.checklist.filter(c => c.done).length}/${t.checklist.length}` : '', `Status: ${t.status} · Priority: ${t.priority}`]
         .filter(Boolean)
         .join('\n\n'),
@@ -44,10 +47,10 @@ function feedFor(items, site, tz, myId) {
   for (const p of projects.values()) {
     if (p.status === 'archived' || p.status === 'done') continue
     if (p.ownerId && myId && p.ownerId !== myId) continue
-    if (p.targetAt) feed.push({ uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, description: p.description, url: site, categories: [p.name] })
+    if (p.targetAt) feed.push({ uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, date: localDate(p.targetAt, tz), description: p.description, url: site, categories: [p.name] })
     for (const m of p.milestones ?? []) {
       if (!m.dueAt) continue
-      feed.push({ uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, url: site, categories: [p.name] })
+      feed.push({ uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: localDate(m.dueAt, tz), url: site, categories: [p.name] })
     }
   }
   return feed

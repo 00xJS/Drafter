@@ -294,14 +294,42 @@ const WEEKDAYS: Record<string, number> = {
   saturday: 6,
 }
 
-/** Offline pre-pass: today/tomorrow/weekday + h(:mm)(am|pm). Returns null when nothing matches. */
+/**
+ * A clock time in a captured sentence — but only when the writer clearly meant
+ * one. A bare number must NOT be read as an hour: "Buy 2 tickets" used to parse
+ * as "Buy tickets" due at 02:00, deleting the quantity from the title and
+ * inventing a due time that was already in the past. So a match needs one of
+ * three explicit signals: an "at" in front, a `h:mm`, or an am/pm suffix.
+ * Out-of-range values (25, :70) are not times either.
+ */
+function matchTime(s: string): { text: string; index: number; hour: number; minute: number } | null {
+  const shapes: [RegExp, boolean][] = [
+    [/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i, false], // at 3 · at 3:30 · at 3pm
+    [/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/i, false], // 15:30 · 3:30pm
+    [/\b(\d{1,2})\s*(am|pm)\b/i, true], // 3pm · 11 am
+  ]
+  for (const [re, apInSecondGroup] of shapes) {
+    const m = s.match(re)
+    if (!m || m.index === undefined) continue
+    let hour = Number(m[1])
+    const minute = apInSecondGroup ? 0 : Number(m[2] ?? 0)
+    const ap = (apInSecondGroup ? m[2] : m[3] ?? '').toLowerCase()
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute > 59) continue
+    if (ap ? hour < 1 || hour > 12 : hour > 23) continue
+    if (ap === 'pm' && hour < 12) hour += 12
+    if (ap === 'am' && hour === 12) hour = 0
+    return { text: m[0], index: m.index, hour, minute }
+  }
+  return null
+}
+
+/** Offline pre-pass: today/tomorrow/weekday + an explicit clock time. Returns null when nothing matches. */
 export function deterministicCapture(text: string, now = new Date()): CapturedFields | null {
   const raw = text.trim()
   if (!raw) return null
   let due: Date | null = null
   let rest = raw
 
-  const timeRe = /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i
   const dayRe = /\b(today|tomorrow|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i
 
   const dayMatch = rest.match(dayRe)
@@ -324,17 +352,14 @@ export function deterministicCapture(text: string, now = new Date()): CapturedFi
     rest = (rest.slice(0, dayMatch.index) + rest.slice(dayMatch.index! + dayMatch[0].length)).replace(/\s{2,}/g, ' ').trim()
   }
 
-  const timeMatch = rest.match(timeRe) ?? raw.match(timeRe)
+  const timeMatch = matchTime(rest) ?? matchTime(raw)
   if (timeMatch) {
-    let h = Number(timeMatch[1])
-    const m = Number(timeMatch[2] ?? 0)
-    const ap = (timeMatch[3] ?? '').toLowerCase()
-    if (ap === 'pm' && h < 12) h += 12
-    if (ap === 'am' && h === 12) h = 0
+    const { text: hit, index, hour, minute } = timeMatch
     if (!due) due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0)
-    due.setHours(h, m, 0, 0)
-    if (timeMatch.index !== undefined && rest.includes(timeMatch[0])) {
-      rest = (rest.slice(0, timeMatch.index) + rest.slice(timeMatch.index + timeMatch[0].length)).replace(/\s{2,}/g, ' ').trim()
+    due.setHours(hour, minute, 0, 0)
+    if (rest.includes(hit)) {
+      const at = rest.indexOf(hit) === index ? index : rest.indexOf(hit)
+      rest = (rest.slice(0, at) + rest.slice(at + hit.length)).replace(/\s{2,}/g, ' ').trim()
     }
   }
 

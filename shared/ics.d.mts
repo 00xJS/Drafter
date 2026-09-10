@@ -35,6 +35,12 @@ export interface FeedItem {
   start: number
   end?: number
   allDay: boolean
+  /** All-day only: the reader's own calendar day, 'YYYY-MM-DD'. Without it the
+      day is derived from `start` in UTC, which publishes an untimed task a day
+      early anywhere east of UTC. */
+  date?: string
+  /** All-day only: last day of a multi-day event, 'YYYY-MM-DD' (inclusive). */
+  endDate?: string
   description?: string
   url?: string
   categories?: string[]

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, googlePushId, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, googlePushId, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -204,13 +204,16 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
 
   const setMirroring = (on: boolean) => {
     const now = new Date().toISOString()
-    if (pushSource) {
-      // migrate legacy google-push → google-push-${myId} when enabling
-      if (pushSource.id === GOOGLE_PUSH_ID && household.myId && on) {
-        store.remove(GOOGLE_PUSH_ID)
-        store.upsert({ kind: 'calendar', id: myPushId, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: pushSource.createdAt, updatedAt: now })
-      } else store.upsert({ ...pushSource, id: myPushId, enabled: on, updatedAt: newerStamp(pushSource.updatedAt) })
-    } else if (on) store.upsert({ kind: 'calendar', id: myPushId, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: true, createdAt: now, updatedAt: now })
+    // migrate legacy google-push → google-push-${myId}, in BOTH directions:
+    // Planner still watches the legacy id, so a leftover enabled row would keep
+    // the mirror running with this switch reading off (see mirrorToggle).
+    const plan = mirrorToggle(pushSource, myPushId, on)
+    if (plan.removeId) store.remove(plan.removeId)
+    if (plan.write === 'existing' && pushSource) {
+      store.upsert({ ...pushSource, id: myPushId, enabled: on, updatedAt: newerStamp(pushSource.updatedAt) })
+    } else if (plan.write === 'fresh') {
+      store.upsert({ kind: 'calendar', id: myPushId, name: 'Drafter → Google', url: GOOGLE_PUSH_URL, color: PROJECT_COLORS[0], enabled: on, createdAt: pushSource?.createdAt ?? now, updatedAt: now })
+    }
     if (on) {
       resetGooglePushCursor(household.myId)
       window.setTimeout(() => googlePush.pushNow(), 500)

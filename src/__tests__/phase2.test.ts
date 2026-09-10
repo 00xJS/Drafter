@@ -85,6 +85,44 @@ describe('nextUp late reason', () => {
   })
 })
 
+describe('deterministicCapture: a bare number is not a clock time', () => {
+  // "Buy 2 tickets" used to parse as title "Buy tickets" due today at 02:00 —
+  // the quantity deleted from the title, and a due time already in the past.
+  const now = new Date(2026, 8, 9, 10, 0, 0)
+
+  it.each(['Buy 2 tickets', 'Order 4 chairs', 'Pay £15 invoice', 'Book table for 8', 'Take 3 boxes to the tip'])(
+    'refuses to invent a time from %s',
+    sentence => {
+      expect(deterministicCapture(sentence, now)).toBeNull()
+    },
+  )
+
+  it.each([
+    ['Call Sam tomorrow at 3pm', 15, 0],
+    ['Standup at 9:15', 9, 15],
+    ['Dentist 4pm', 16, 0],
+    ['Deploy at 15:30', 15, 30],
+    ['Wake me 7 am', 7, 0],
+  ])('still reads an explicit time in %s', (sentence, hour, minute) => {
+    const c = deterministicCapture(sentence as string, now)
+    expect(c).not.toBeNull()
+    const due = new Date(c!.dueAt!)
+    expect([due.getHours(), due.getMinutes()]).toEqual([hour, minute])
+  })
+
+  it('rejects an out-of-range hour or minute rather than clamping it', () => {
+    expect(deterministicCapture('Sync at 25', now)).toBeNull()
+    expect(deterministicCapture('Ping me at 3:70', now)).toBeNull()
+  })
+
+  it('keeps the number in the title when it is not a time', () => {
+    const c = deterministicCapture('Buy 2 tickets tomorrow', now)
+    expect(c?.title).toBe('Buy 2 tickets')
+    const due = new Date(c!.dueAt!)
+    expect(due.getHours()).toBe(9)
+  })
+})
+
 describe('deterministicCapture', () => {
   it('parses tomorrow and a time offline', () => {
     const now = new Date('2026-09-07T10:00:00')

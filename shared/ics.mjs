@@ -433,7 +433,30 @@ function fold(line) {
 }
 
 const stamp = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+
+/**
+ * UTC calendar day for an instant. Only correct for an all-day event when the
+ * caller's zone is UTC, so it is the FALLBACK — pass `date` instead. An
+ * untimed task is stored at local midnight, which in Europe/London summer is
+ * 23:00Z the day before, and this would then publish it a day early.
+ */
 const dateOnly = ms => new Date(ms).toISOString().slice(0, 10).replace(/-/g, '')
+
+/** 'YYYY-MM-DD' (or 'YYYYMMDD') -> 'YYYYMMDD'. */
+const compactDay = key => String(key).replace(/-/g, '')
+
+/**
+ * The next calendar day of a date-only key. ICS DTEND for an all-day event is
+ * exclusive, so a one-day event ends on the following date. Stepped in UTC on
+ * purpose: a date-only key carries no time, so no DST rule can apply to it.
+ */
+const nextDay = key => {
+  const m = String(key).match(/^(\d{4})-?(\d{2})-?(\d{2})$/)
+  if (!m) return key
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
 
 /**
  * Build an ICS document. items: { uid, title, start (ms), end (ms, optional),
@@ -456,8 +479,13 @@ export function buildICS(name, items) {
     lines.push(`UID:${esc(it.uid)}`)
     lines.push(`DTSTAMP:${now}`)
     if (it.allDay) {
-      lines.push(`DTSTART;VALUE=DATE:${dateOnly(it.start)}`)
-      lines.push(`DTEND;VALUE=DATE:${dateOnly((it.end ?? it.start) + DAY)}`)
+      // `date`/`endDate` are the reader's own calendar days ('YYYY-MM-DD').
+      // Prefer them: deriving the day from the instant publishes it a day early
+      // anywhere east of UTC (see dateOnly).
+      const from = it.date ? compactDay(it.date) : dateOnly(it.start)
+      const to = it.endDate ? compactDay(it.endDate) : it.date ? it.date : dateOnly(it.end ?? it.start)
+      lines.push(`DTSTART;VALUE=DATE:${from}`)
+      lines.push(`DTEND;VALUE=DATE:${nextDay(to)}`)
     } else {
       lines.push(`DTSTART:${stamp(it.start)}`)
       lines.push(`DTEND:${stamp(it.end ?? it.start + 3_600_000)}`)

@@ -232,3 +232,24 @@ begin
   end if;
   raise notice 'ok 10: user_settings.digest_journal present';
 end $$;
+
+-- ------- 11. every user_settings column the Netlify functions write must exist
+-- The digest PATCHes these in one body. A column that does not exist makes
+-- PostgREST reject the WHOLE body, so a missing `nudged` silently took
+-- last_digest_day and last_due_check down with it and the morning digest
+-- re-sent on every hourly run. Keep this list in step with digest.mjs.
+do $$
+declare missing text;
+begin
+  select string_agg(c, ', ' order by c) into missing
+  from unnest(array['nudged', 'last_digest_day', 'last_due_check', 'push_subscriptions',
+                    'digest_email', 'digest_hour', 'digest_journal', 'timezone']) as c
+  where not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'user_settings' and column_name = c
+  );
+  if missing is not null then
+    raise exception 'FAIL 11: user_settings missing column(s) the digest writes: %', missing;
+  end if;
+  raise notice 'ok 11: every user_settings column the digest writes exists';
+end $$;

@@ -112,3 +112,46 @@ describe('resource bounds against a hostile feed', () => {
     expect(out.length).toBeLessThanOrEqual(20000)
   })
 })
+
+describe('buildICS all-day dates follow the reader, not UTC', () => {
+  // An untimed task is stored at LOCAL midnight. In Europe/London summer that
+  // is 23:00Z the day before, so deriving the day from the instant published
+  // the task a day early in every subscribed Apple/Google calendar.
+  const bstMidnight = Date.parse('2026-07-13T23:00:00.000Z') // Tue 14 Jul, local
+
+  it('uses the supplied local day', () => {
+    const ics = buildICS('t', [{ uid: 'a@x', title: 'Bins out', start: bstMidnight, allDay: true, date: '2026-07-14' }])
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260714')
+    // DTEND is exclusive: a one-day event ends on the next date
+    expect(ics).toContain('DTEND;VALUE=DATE:20260715')
+  })
+
+  it('steps the exclusive end across a month boundary', () => {
+    const ics = buildICS('t', [{ uid: 'b@x', title: 'Rent', start: bstMidnight, allDay: true, date: '2026-07-31' }])
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260731')
+    expect(ics).toContain('DTEND;VALUE=DATE:20260801')
+  })
+
+  it('steps across a leap day', () => {
+    const ics = buildICS('t', [{ uid: 'c@x', title: 'Leap', start: bstMidnight, allDay: true, date: '2028-02-28' }])
+    expect(ics).toContain('DTEND;VALUE=DATE:20280229')
+  })
+
+  it('honours an inclusive multi-day endDate', () => {
+    const ics = buildICS('t', [{ uid: 'd@x', title: 'Trip', start: bstMidnight, allDay: true, date: '2026-07-14', endDate: '2026-07-16' }])
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260714')
+    expect(ics).toContain('DTEND;VALUE=DATE:20260717')
+  })
+
+  it('still emits a sane pair when no local day is supplied', () => {
+    const ics = buildICS('t', [{ uid: 'e@x', title: 'Legacy', start: Date.parse('2026-01-15T00:00:00.000Z'), allDay: true }])
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260115')
+    expect(ics).toContain('DTEND;VALUE=DATE:20260116')
+  })
+
+  it('leaves timed events alone', () => {
+    const ics = buildICS('t', [{ uid: 'f@x', title: 'Call', start: Date.parse('2026-07-14T14:00:00.000Z'), end: Date.parse('2026-07-14T15:00:00.000Z'), allDay: false }])
+    expect(ics).toContain('DTSTART:20260714T140000Z')
+    expect(ics).not.toContain('VALUE=DATE')
+  })
+})
