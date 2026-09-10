@@ -41,6 +41,10 @@ interface Props {
   onClearMeal(id: string): void
   /** Save a new place from the meal picker and hand it back. */
   onCreatePlace(name: string, category: PlaceCategory): Place
+  /** Open the event editor for a new entry starting at this instant. */
+  onNewEvent(startIso: string): void
+  /** Open the event editor on one of our own entries. */
+  onEditEvent(id: string): void
   onReschedule(id: string, day: Date): void
   /** Create a prep task for an external event. */
   onPlan(ev: CalendarEvent): void
@@ -58,6 +62,8 @@ const MEAL_COLOR = '#f97316'
 /** Bought — a different colour so a run of takeaways stands out in the month grid. */
 const MEAL_OUT_COLOR = '#38bdf8'
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
+/** Entries you wrote, distinct from any subscribed feed's colour. */
+const LOCAL_EVENT_COLOR = '#a78bfa'
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -82,6 +88,8 @@ export function Calendar({
   onSaveMeal,
   onClearMeal,
   onCreatePlace,
+  onNewEvent,
+  onEditEvent,
   onReschedule,
   onPlan,
   onAttendance,
@@ -118,7 +126,7 @@ export function Calendar({
   const shift = (delta: number) =>
     setCursor(c => (view === 'week' ? addDays(c, delta * 7) : new Date(c.getFullYear(), c.getMonth() + delta, 1)))
 
-  const eventColor = (ev: CalendarEvent) => sourceMap.get(ev.sourceId)?.color ?? '#94a3b8'
+  const eventColor = (ev: CalendarEvent) => (ev.localId ? LOCAL_EVENT_COLOR : (sourceMap.get(ev.sourceId)?.color ?? '#94a3b8'))
   const taskProject = (t: Task) => (t.projectId ? projectMap.get(t.projectId) : undefined)
 
   /** One line of context under an item's title, shared by the week list and the day sheet. */
@@ -327,6 +335,15 @@ export function Calendar({
                         >
                           🍽️ Meal
                         </button>
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setAddFor(null)
+                            onNewEvent(morningOf(d))
+                          }}
+                        >
+                          🕘 Event
+                        </button>
                       </div>
                     )}
                   </div>
@@ -441,11 +458,14 @@ export function Calendar({
                           className="btn cal-row-action"
                           onClick={() => {
                             closeSheet()
-                            if (isPast(ev)) onAttendance(ev)
+                            // ours to change; a feed row is read-only, so it
+                            // keeps offering to plan around it instead
+                            if (ev.localId) onEditEvent(ev.localId)
+                            else if (isPast(ev)) onAttendance(ev)
                             else onPlan(ev)
                           }}
                         >
-                          {isPast(ev) ? 'Who was there?' : 'Plan for this'}
+                          {ev.localId ? 'Edit' : isPast(ev) ? 'Who was there?' : 'Plan for this'}
                         </button>
                       </li>
                     )
@@ -532,6 +552,16 @@ export function Calendar({
             <footer className="cal-sheet-foot">
               <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(sheetDay)}>
                 + New task this day
+              </button>
+              <button
+                className="btn cal-sheet-new"
+                onClick={() => {
+                  const d = sheetDay
+                  setSheetDay(null)
+                  onNewEvent(morningOf(d))
+                }}
+              >
+                🕘 New event
               </button>
             </footer>
           </div>

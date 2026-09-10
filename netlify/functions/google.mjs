@@ -165,6 +165,14 @@ const handler = async req => {
       }
       return Response.json({ calendarId, ...results, errors })
     }
+    if (action === 'push-event') {
+      // one entry at a time: this fires on save, not on a sweep
+      const entry = body.event && typeof body.event === 'object' ? body.event : null
+      if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
+      const calendarId = await drafterCalendarId(user.id)
+      const result = await (await import('./lib/google.mjs')).pushEntry(user.id, calendarId, entry, url.origin)
+      return Response.json({ calendarId, result })
+    }
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {
     const status = e?.status === 409 || e?.status === 401 ? 409 : e?.status === 501 ? 501 : 502

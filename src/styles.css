@@ -5576,3 +5576,22 @@ textarea {
     min-height: 44px;
   }
 }
+
+/* ---- Event editor ------------------------------------------------------ */
+.event-modal .field-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+@media (pointer: coarse) {
+  /* a 13px checkbox is not a thumb target; the label is clickable too, but the
+     box itself has to be reachable */
+  .event-modal .field-inline input[type='checkbox'] {
+    width: 22px;
+    height: 22px;
+  }
+  .event-modal .field-inline {
+    min-height: 44px;
+  }
+}

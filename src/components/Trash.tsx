@@ -37,6 +37,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Template'
     case 'calendar':
       return 'Calendar'
+    case 'event':
+      return 'Event'
   }
 }
 
@@ -55,7 +57,9 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
             ? i.weekKey
             : i.kind === 'journal'
               ? `${i.date} · ${excerpt(i.body, 50) || 'no text'}`
-              : i.name
+              : i.kind === 'event'
+                ? i.title || 'Untitled event'
+                : i.name
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true">

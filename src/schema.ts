@@ -19,6 +19,7 @@ import {
   GroceryState,
   GROCERY_STATES,
   JournalEntry,
+  CalendarEntry,
   Mood,
   Template,
   TemplateMilestone,
@@ -337,7 +338,7 @@ const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
-const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal'])
+const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -518,6 +519,56 @@ export function sanitizeGrocery(raw: unknown): GroceryList | null {
 }
 
 /** Coerce arbitrary data into a valid JournalEntry. A day with no text but a mood is still an entry. */
+export function sanitizeEvent(raw: unknown): CalendarEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const title = str(r.title)?.trim()
+  const allDay = r.allDay === true
+  // an all-day entry is a pair of day keys; a timed one a pair of instants
+  const start = allDay ? dateOnly(r.start) : isoDate(r.start)
+  const rawEnd = allDay ? dateOnly(r.end) : isoDate(r.end)
+  if (!id || ((!start || !title) && !deletedAt)) return null
+  // An end at or before the start would draw a zero/negative block, so fall
+  // back to the app's usual hour rather than storing something unrenderable.
+  const end =
+    rawEnd && start && (allDay ? rawEnd > start : Date.parse(rawEnd) > Date.parse(start))
+      ? rawEnd
+      : start
+        ? allDay
+          ? nextDayKey(start)
+          : new Date(Date.parse(start) + 3_600_000).toISOString()
+        : ''
+  const now = new Date().toISOString()
+  return {
+    kind: 'event',
+    id,
+    title: title ?? '',
+    start: start ?? '',
+    end,
+    allDay,
+    location: str(r.location)?.trim() || undefined,
+    notes: str(r.notes)?.trim() || undefined,
+    projectId: idOrUndefined(r.projectId),
+    peopleIds: idList(r.peopleIds),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
+/** The day after a YYYY-MM-DD key. Stepped in UTC: a date key carries no time, so no DST applies. */
+function nextDayKey(key: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  if (!m) return key
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 export function sanitizeJournal(raw: unknown): JournalEntry | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
@@ -643,6 +694,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'meal') return sanitizeMeal(converted)
   if (converted.kind === 'grocery') return sanitizeGrocery(converted)
   if (converted.kind === 'journal') return sanitizeJournal(converted)
+  if (converted.kind === 'event') return sanitizeEvent(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null

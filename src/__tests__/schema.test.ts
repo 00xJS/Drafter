@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateStored, sanitizeItem, sanitizePlace, sanitizeProject, sanitizeRecipe, sanitizeTask } from '../schema'
+import { sanitizeEvent, migrateStored, sanitizeItem, sanitizePlace, sanitizeProject, sanitizeRecipe, sanitizeTask } from '../schema'
 import { Task } from '../types'
 
 function valid(over: Partial<Task> = {}): Task {
@@ -182,5 +182,57 @@ describe('purge tombstones survive every sanitizer', () => {
     expect(sanitizeItem({ kind: 'person', id: 'p', updatedAt: now })).toBeNull()
     expect(sanitizeItem({ kind: 'meal', id: 'm', updatedAt: now, date: '2026-09-08' })).toBeNull()
     expect(sanitizeItem({ kind: 'journal', id: 'x', updatedAt: now })).toBeNull()
+  })
+})
+
+describe('sanitizeEvent: a block of time, or nothing', () => {
+  const base = {
+    kind: 'event',
+    id: 'ev1',
+    title: 'Dentist',
+    start: '2026-09-10T14:00:00.000Z',
+    end: '2026-09-10T15:30:00.000Z',
+    allDay: false,
+    createdAt: '2026-09-09T00:00:00.000Z',
+    updatedAt: '2026-09-09T00:00:00.000Z',
+  }
+
+  it('keeps a timed range as given', () => {
+    const e = sanitizeEvent(base)
+    expect(e).toMatchObject({ kind: 'event', title: 'Dentist', allDay: false })
+    expect(e!.start).toBe('2026-09-10T14:00:00.000Z')
+    expect(e!.end).toBe('2026-09-10T15:30:00.000Z')
+  })
+
+  it('repairs an end at or before the start rather than storing a backwards block', () => {
+    expect(sanitizeEvent({ ...base, end: '2026-09-10T13:00:00.000Z' })!.end).toBe('2026-09-10T15:00:00.000Z')
+    expect(sanitizeEvent({ ...base, end: base.start })!.end).toBe('2026-09-10T15:00:00.000Z')
+    expect(sanitizeEvent({ ...base, end: undefined })!.end).toBe('2026-09-10T15:00:00.000Z')
+  })
+
+  it('stores an all-day entry as day keys with an exclusive end', () => {
+    const e = sanitizeEvent({ ...base, allDay: true, start: '2026-09-12', end: '2026-09-15' })
+    expect(e!.start).toBe('2026-09-12')
+    expect(e!.end).toBe('2026-09-15')
+  })
+
+  it('gives a one-day all-day entry the next day as its exclusive end', () => {
+    expect(sanitizeEvent({ ...base, allDay: true, start: '2026-09-12', end: '2026-09-12' })!.end).toBe('2026-09-13')
+    expect(sanitizeEvent({ ...base, allDay: true, start: '2026-12-31', end: undefined })!.end).toBe('2027-01-01')
+  })
+
+  it('refuses a row with no id, and one with neither title nor start', () => {
+    expect(sanitizeEvent({ ...base, id: undefined })).toBeNull()
+    expect(sanitizeEvent({ kind: 'event', id: 'x' })).toBeNull()
+  })
+
+  it('accepts a content-free tombstone so a delete syncs', () => {
+    const t = sanitizeEvent({ kind: 'event', id: 'ev1', deletedAt: '2026-09-11T00:00:00.000Z', purged: true })
+    expect(t).toMatchObject({ id: 'ev1', purged: true })
+    expect(t!.deletedAt).toBe('2026-09-11T00:00:00.000Z')
+  })
+
+  it('is reachable through sanitizeItem, so a synced row is not dropped', () => {
+    expect(sanitizeItem(base)).toMatchObject({ kind: 'event', id: 'ev1' })
   })
 })

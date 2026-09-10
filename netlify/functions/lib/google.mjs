@@ -208,6 +208,52 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
 }
 
 /**
+ * Mirror one calendar entry the user wrote into the Drafter calendar.
+ *
+ * Keyed on its own `eventId` private property, never `taskId` — the pull path
+ * filters on taskId to map Google moves back onto tasks, so an entry tagged
+ * that way would be read back as a task that does not exist.
+ *
+ * Unlike a mirrored task these are `opaque`: a task in the calendar is a
+ * reminder that something is due, but an entry is a block of time, and the
+ * whole reason for writing one is to show the slot as busy.
+ */
+export async function pushEntry(userId, calendarId, entry, site) {
+  const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
+  const page = await gapi(
+    userId,
+    `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`eventId=${entry.id}`)}&showDeleted=true&maxResults=5`,
+  )
+  const existing = (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
+  if (entry.deletedAt) {
+    if (existing && existing.status !== 'cancelled') {
+      await gapi(userId, evPath(existing.id), { method: 'DELETE' }).catch(e => {
+        if (e.status !== 404 && e.status !== 410) throw e
+      })
+      return 'removed'
+    }
+    return 'skipped'
+  }
+  // deleted in Google on purpose: leave it gone rather than resurrecting it
+  if (existing?.status === 'cancelled') return 'skipped'
+  const body = {
+    summary: entry.title || 'Untitled event',
+    description: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') || undefined,
+    location: entry.location || undefined,
+    start: entry.allDay ? { date: entry.start } : { dateTime: new Date(entry.start).toISOString() },
+    end: entry.allDay ? { date: entry.end } : { dateTime: new Date(entry.end).toISOString() },
+    transparency: 'opaque',
+    extendedProperties: { private: { drafter: '1', eventId: entry.id } },
+  }
+  if (existing) {
+    await gapi(userId, evPath(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
+    return 'updated'
+  }
+  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
+  return 'created'
+}
+
+/**
  * A cryptographically random token. These guard the calendar feed, the
  * email-in webhook and the OAuth state, all of which are the ONLY thing
  * standing between an anonymous request and personal data — so they must come

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarSource, GroceryList, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
+import { CalendarEntry, CalendarSource, GroceryList, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
@@ -11,7 +11,7 @@ import { getSupabase } from './supabase'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 /** Kinds the server used to drop silently — keep retrying so they survive a new session. */
-const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal'])
+const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal', 'event'])
 /** Kinds that belong to one account even inside a household. */
 const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar'])
 
@@ -87,6 +87,8 @@ export interface Store {
   places: Place[]
   recipes: Recipe[]
   meals: Meal[]
+  /** Calendar entries you wrote yourself (start AND end), oldest first. */
+  events: CalendarEntry[]
   groceries: GroceryList[]
   /** Your journal entries (personal, newest day first). */
   journal: JournalEntry[]
@@ -387,6 +389,12 @@ export function useItems(myId: string | null = null): Store {
     () => items.filter((i): i is GroceryList => i.kind === 'grocery' && !i.deletedAt),
     [items],
   )
+  // Entries you wrote yourself. Household-visible like tasks: a block of time
+  // on a family calendar is meant to be seen, unlike a `calendar` subscription.
+  const events = useMemo(
+    () => items.filter((i): i is CalendarEntry => i.kind === 'event' && !i.deletedAt).sort((a, b) => a.start.localeCompare(b.start)),
+    [items],
+  )
   const visibleItems = useMemo(
     () => items.filter(i => !PERSONAL_KINDS.has(i.kind) || isMine(i)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -424,6 +432,7 @@ export function useItems(myId: string | null = null): Store {
     places,
     recipes,
     meals,
+    events,
     groceries,
     journal,
     reviews,

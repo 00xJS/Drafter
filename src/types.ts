@@ -149,6 +149,41 @@ export interface CalendarEvent {
   end: string
   allDay: boolean
   location?: string
+  /**
+   * Set when this row is a CalendarEntry of ours rather than a feed occurrence.
+   * Projecting our own entries into this shape lets every grid, pill and day row
+   * draw them with the code that already exists; this field is what tells the
+   * calendar it may also EDIT this one.
+   */
+  localId?: string
+}
+
+/**
+ * A calendar entry you wrote yourself, as opposed to CalendarEvent above, which
+ * is a read-only occurrence projected from a subscribed feed.
+ *
+ * This is what blocks out 2-3pm: unlike a task it has a real start AND end, so
+ * it occupies a slot instead of marking a single moment. `start`/`end` follow
+ * exactly the CalendarEvent convention — ISO datetimes, or YYYY-MM-DD with an
+ * EXCLUSIVE end when allDay — so a local entry can be rendered by the same code
+ * that draws everything else on the grid.
+ */
+export interface CalendarEntry extends Owned {
+  kind: 'event'
+  id: string
+  title: string
+  /** ISO datetime, or YYYY-MM-DD when allDay. */
+  start: string
+  /** Exclusive end: ISO datetime, or YYYY-MM-DD when allDay. */
+  end: string
+  allDay: boolean
+  location?: string
+  notes?: string
+  projectId?: string
+  peopleIds?: string[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
 }
 
 export type PersonGroup = 'family' | 'friends' | 'other'
@@ -386,7 +421,7 @@ export interface JournalEntry extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

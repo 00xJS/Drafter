@@ -14,6 +14,15 @@ import { randomToken } from './lib/google.mjs'
 const OPEN = ['todo', 'doing', 'blocked']
 const DAY = 86_400_000
 
+/** The day before a YYYY-MM-DD key. UTC arithmetic: a date key carries no time, so no DST applies. */
+function prevDayKey(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key ?? ''))
+  if (!m) return undefined
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function feedFor(items, site, tz, myId) {
   const projects = new Map(items.filter(i => i.kind === 'project').map(p => [p.id, p]))
   const feed = []
@@ -52,6 +61,28 @@ function feedFor(items, site, tz, myId) {
       if (!m.dueAt) continue
       feed.push({ uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: localDate(m.dueAt, tz), url: site, categories: [p.name] })
     }
+  }
+  // Entries the user wrote themselves. These are the only rows in the feed with
+  // a real duration — everything else marks a moment — so they are the ones a
+  // subscribed calendar can show as busy.
+  for (const e of items) {
+    if (e.kind !== 'event' || e.deletedAt || !e.start) continue
+    if (e.ownerId && myId && e.ownerId !== myId) continue
+    feed.push({
+      uid: `event-${e.id}@drafter`,
+      title: e.title || 'Untitled event',
+      start: Date.parse(e.allDay ? `${e.start}T12:00:00Z` : e.start),
+      end: e.allDay ? undefined : Date.parse(e.end),
+      allDay: !!e.allDay,
+      // all-day rows carry their day keys straight through: they are already
+      // the reader's own calendar days, so nothing needs converting
+      date: e.allDay ? e.start : undefined,
+      // stored end is EXCLUSIVE (the ICS convention); buildICS wants the last
+      // day INCLUSIVE and re-adds the day itself, so step back one
+      endDate: e.allDay ? prevDayKey(e.end) : undefined,
+      description: e.notes,
+      url: site,
+    })
   }
   return feed
 }

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
+import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
+import { entryToEvent, pushEventToGoogle, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
@@ -33,6 +33,7 @@ import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
 import { Trash } from './Trash'
+import { EventEditor } from './EventEditor'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -223,6 +224,12 @@ export default function Planner() {
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const calendars = useCalendarEvents(store.calendars)
+  /**
+   * Feed occurrences and our own entries in one list, so the grids draw both
+   * with the same code. Ours carry `localId`, which is what lets the day sheet
+   * offer Edit on them and not on a read-only feed row.
+   */
+  const allEvents = useMemo(() => [...calendars.events, ...store.events.map(entryToEvent)], [calendars.events, store.events])
   const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
   const myPushId = household.myId ? googlePushId(household.myId) : GOOGLE_PUSH_ID
   const mirroring = store.calendars.some(c => (c.id === myPushId || c.id === GOOGLE_PUSH_ID) && c.enabled)
@@ -568,6 +575,22 @@ export default function Planner() {
     }
     store.upsert(place)
     return place
+  }
+
+  /** Which event the editor is on: an existing entry, or a new one at this instant. */
+  const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string } | null>(null)
+
+  const saveEvent = (e: CalendarEntry) => {
+    store.upsert(e)
+    // A Google mirror that is on should carry these too, so the block shows up
+    // on the phone's real calendar and not only inside Drafter.
+    if (mirroring) void pushEventToGoogle(e).catch(() => {})
+  }
+  const deleteEvent = (id: string) => {
+    const gone = store.events.find(e => e.id === id)
+    store.remove(id)
+    showToast('Event deleted', () => store.restore([id]))
+    if (mirroring && gone) void pushEventToGoogle({ ...gone, deletedAt: new Date().toISOString() }).catch(() => {})
   }
 
   const saveMeal = (m: Meal) => {
@@ -1019,7 +1042,7 @@ export default function Planner() {
                 onSaveReview={r => store.upsert(r)}
                 projects={filterProject ? [filterProject] : store.projects}
                 projectMap={projectMap}
-                events={calendars.events}
+                events={allEvents}
                 sourceMap={sourceMap}
                 onPlan={planForEvent}
                 onOpen={openTask}
@@ -1085,7 +1108,12 @@ export default function Planner() {
                     onSaveMeal={saveMeal}
                     onClearMeal={clearMeal}
                     onCreatePlace={createPlaceInline}
-                    events={calendars.events}
+                    onNewEvent={startIso => setEventEditor({ startIso })}
+                    onEditEvent={id => {
+                      const entry = store.events.find(e => e.id === id)
+                      if (entry) setEventEditor({ entry, startIso: entry.start })
+                    }}
+                    events={allEvents}
                     sourceMap={sourceMap}
                     onOpen={openTask}
                     onNew={d => newTask({ status: 'todo', dueAt: d })}
@@ -1099,7 +1127,7 @@ export default function Planner() {
                   <Roadmap
                     projects={filterProject ? [filterProject] : store.projects}
                     tasks={store.tasks}
-                    events={calendars.events}
+                    events={allEvents}
                     sourceMap={sourceMap}
                     onOpenProject={openProject}
                     onNewProject={newProject}
@@ -1382,6 +1410,16 @@ export default function Planner() {
             newTask({ title, status: 'todo' }, { capture: true })
           }}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {eventEditor && (
+        <EventEditor
+          entry={eventEditor.entry}
+          defaultStartIso={eventEditor.startIso}
+          onSave={saveEvent}
+          onDelete={deleteEvent}
+          onClose={() => setEventEditor(null)}
         />
       )}
 

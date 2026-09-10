@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isMineTask } from '../shared/domain.mjs'
-import { CalendarEvent, CalendarSource, Item, Project } from './types'
+import { CalendarEntry, CalendarEvent, CalendarSource, Item, Project } from './types'
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
 import { dateKey } from './utils'
@@ -95,6 +95,38 @@ export function mirrorToggle(
   if (pushSource.id !== myPushId) return { removeId: pushSource.id, write: 'fresh' }
   return { write: 'existing' }
 }
+
+/**
+ * Draw one of our own entries with the code that already draws feed events.
+ * The alternative — a parallel render path for local events — is how a month
+ * grid ends up with two kinds of pill that drift apart.
+ */
+export function entryToEvent(e: CalendarEntry): CalendarEvent {
+  return {
+    id: `local:${e.id}`,
+    sourceId: LOCAL_SOURCE_ID,
+    title: e.title || 'Untitled event',
+    start: e.start,
+    end: e.end,
+    allDay: e.allDay,
+    location: e.location,
+    localId: e.id,
+  }
+}
+
+/**
+ * Write one entry through to the connected Google calendar.
+ *
+ * Best-effort by design, like every other Google call here: a network that is
+ * down must never block saving locally. The row is already in the store by the
+ * time this runs, so a failure costs the mirror, not the entry.
+ */
+export function pushEventToGoogle(entry: CalendarEntry): Promise<{ result: string }> {
+  return googleAction<{ result: string }>('push-event', { event: entry })
+}
+
+/** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */
+export const LOCAL_SOURCE_ID = 'drafter:local'
 
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
 const pushCursorKey = (userId?: string | null) => (userId ? `${PUSH_CURSOR_KEY}:${userId}` : PUSH_CURSOR_KEY)

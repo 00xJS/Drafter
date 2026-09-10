@@ -253,3 +253,36 @@ begin
   end if;
   raise notice 'ok 11: every user_settings column the digest writes exists';
 end $$;
+
+-- ------------- 12. an `event` row round-trips and stays household-visible
+-- Events are the one calendar kind you write yourself. Unlike `calendar`
+-- (a subscription carrying a feed token) they are NOT owner-only: a block of
+-- time on a family calendar is meant to be seen.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[{"kind":"event","id":"ev1","title":"Dentist","start":"2026-09-20T14:00:00.000Z","end":"2026-09-20T15:00:00.000Z","allDay":false,"createdAt":"2026-09-09T10:00:00.000Z","updatedAt":"2026-09-09T10:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL 12: an event was rejected: %', r -> 'rejected';
+  end if;
+  if (select data ->> 'title' from public.posts where id = 'ev1') <> 'Dentist' then
+    raise exception 'FAIL 12: the event did not round-trip';
+  end if;
+  raise notice 'ok 12: an event row is accepted and stored';
+end $$;
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+begin
+  if (select count(*) from public.posts where id = 'ev1') <> 1 then
+    raise exception 'FAIL 12: a household peer should see an event (only journal/review/calendar are private)';
+  end if;
+  raise notice 'ok 12: a household peer sees the event';
+end $$;
+commit;
