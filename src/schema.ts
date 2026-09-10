@@ -460,6 +460,9 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     date: date ?? '',
     slot,
     recipeId: idOrUndefined(r.recipeId),
+    // a bought meal never carries a recipe, so the grocery list ignores it
+    out: r.out === true || undefined,
+    placeId: r.out === true ? idOrUndefined(r.placeId) : undefined,
     title: title ?? '',
     notes: str(r.notes)?.trim() || undefined,
     ownerId: idOrUndefined(r.ownerId),

@@ -550,14 +550,16 @@ export function Today({
           <header className="chart-head">
             <div>
               <h3>{dinner.meal.slot === 'dinner' ? 'Tonight’s dinner' : `Today’s ${MEAL_SLOT_META[dinner.meal.slot].label.toLowerCase()}`}</h3>
-              <p className="chart-sub">{dinner.recipe ? `${dinner.recipe.ingredients.length} ingredients` : 'Planned on the Kitchen tab'}</p>
+              <p className="chart-sub">
+                {dinner.meal.out ? 'Eating out — nothing to cook' : dinner.recipe ? `${dinner.recipe.ingredients.length} ingredients` : 'Planned on the Kitchen tab'}
+              </p>
             </div>
             <button className="btn subtle" onClick={onOpenKitchen}>
               Kitchen
             </button>
           </header>
           <p className="kitchen-tonight-title">
-            {dinner.recipe?.emoji || '🍽️'} {dinner.meal.title}
+            {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'} {dinner.meal.title}
           </p>
           {dinner.recipe && (
             <p className="chart-sub kitchen-tonight-ings">

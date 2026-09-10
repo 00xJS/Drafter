@@ -105,7 +105,9 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
     .filter(x => x.visits.length > 0)
     .sort((a, b) => b.visits.length - a.visits.length)
   const placesWent = places
-    .map(p => ({ place: p, visits: outingsAt(p.id, tasks).filter(v => inRange(v.at, range)).map(v => v.task) }))
+    // task outings only: this row lists the visits you logged, and a takeaway
+    // has no task to open. Eating out is counted on the place's own card.
+    .map(p => ({ place: p, visits: outingsAt(p.id, tasks).flatMap(v => (v.kind === 'task' && inRange(v.at, range) ? [v.task] : [])) }))
     .filter(x => x.visits.length > 0)
     .sort((a, b) => b.visits.length - a.visits.length)
   const projectRows = projects

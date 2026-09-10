@@ -279,3 +279,46 @@ describe('cook mode remembers its ticked steps across a kill', () => {
     expect(cookStepsRecipeId(JSON.stringify(['pasta']))).toBeNull()
   })
 })
+
+describe('a bought meal is planned like any other, but shops and cooks like none', () => {
+  const out = (over: Partial<Meal> = {}): Meal => ({
+    kind: 'meal',
+    id: 'm1',
+    date: '2026-09-09',
+    slot: 'dinner',
+    out: true,
+    placeId: 'pl1',
+    title: 'Curry house',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...over,
+  })
+  const pasta = recipe({
+    id: 'r1',
+    name: 'Pasta',
+    ingredients: [{ id: 'i1', name: 'Spaghetti', qty: 500, unit: 'g' }],
+  })
+
+  it('contributes nothing to the grocery list', () => {
+    const list = buildGroceryList('2026-W37', [out()], [pasta], null, '2026-09-01T00:00:00.000Z')
+    expect(list.items).toEqual([])
+  })
+
+  it('does not hide a cooked meal on another day of the same week', () => {
+    const cooked: Meal = { ...out({ id: 'm2', date: '2026-09-10' }), out: undefined, placeId: undefined, recipeId: 'r1', title: 'Pasta' }
+    const list = buildGroceryList('2026-W37', [out(), cooked], [pasta], null, '2026-09-01T00:00:00.000Z')
+    expect(list.items.map(l => l.name)).toContain('Spaghetti')
+  })
+
+  it('reads as where it is coming from, not as a recipe', () => {
+    expect(tonightLine([out()], [pasta], '2026-09-09')).toBe('Tonight: out — Curry house')
+  })
+
+  it('says just "out" when no place was named', () => {
+    expect(tonightLine([out({ placeId: undefined, title: 'Eating out' })], [], '2026-09-09')).toBe('Tonight: out')
+  })
+
+  it('still ignores a day with only lunch planned', () => {
+    expect(tonightLine([out({ slot: 'lunch' })], [], '2026-09-09')).toBeNull()
+  })
+})

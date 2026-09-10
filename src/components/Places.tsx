@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Meal,
   CADENCE_META,
   Cadence,
   PLACE_CATEGORIES,
@@ -22,6 +23,8 @@ interface Props {
   places: Place[]
   people: Person[]
   tasks: Task[]
+  /** Meals eaten out here count as outings, so the stats need them too. */
+  meals: Meal[]
   onSave(p: Place): void
   onDelete(id: string): void
   onLogOuting(place: Place, atIso: string, note: string, peopleIds: string[]): void
@@ -316,12 +319,20 @@ function PlaceRow({
 
           {stats.visits.length > 0 && (
             <ul className="person-recent">
-              {stats.visits.slice(0, 4).map(v => (
-                <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
-                  <span>{v.task.title || 'Outing'}</span>
-                  <small className="muted">{fmtDate(v.at)}</small>
-                </li>
-              ))}
+              {stats.visits.slice(0, 4).map(v =>
+                v.kind === 'task' ? (
+                  <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
+                    <span>{v.task.title || 'Outing'}</span>
+                    <small className="muted">{fmtDate(v.at)}</small>
+                  </li>
+                ) : (
+                  // a takeaway has no task behind it, so this row does not open
+                  <li key={v.meal.id} className="outing-meal">
+                    <span>🥡 {v.meal.title || 'Ate out'}</span>
+                    <small className="muted">{fmtDate(v.at)}</small>
+                  </li>
+                ),
+              )}
             </ul>
           )}
 
@@ -357,7 +368,7 @@ function PlaceRow({
   )
 }
 
-export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask }: Props) {
+export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, meals }: Props) {
   const [editing, setEditing] = useState<{ place?: Place } | null>(null)
   const [logging, setLogging] = useState<Place | null>(null)
   const [category, setCategory] = useState<CategoryFilter>('all')
@@ -379,7 +390,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOpen])
 
-  const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people)), [places, tasks, people])
+  const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals)), [places, tasks, people, meals])
 
   const getIdeas = async () => {
     setIdeasBusy(true)
@@ -399,8 +410,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
       setIdeas(
         await suggestOuting({
           weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
-          favourites: favourites(places, tasks, people).slice(0, 6).map(row),
-          lapsed: lapsed(places, tasks, people).slice(0, 6).map(row),
+          favourites: favourites(places, tasks, people, new Date(), meals).slice(0, 6).map(row),
+          lapsed: lapsed(places, tasks, people, new Date(), meals).slice(0, 6).map(row),
           recent,
           allNames: places.map(p => p.name),
         }),

@@ -37,12 +37,36 @@ export function matchPlace(text, places) {
 
 const DAY_MS = 86_400_000
 
-/** Done tasks at this place, newest first. Open tasks and tombstones never count. */
-export function outingsAt(placeId, tasks) {
-  return (tasks ?? [])
+/**
+ * Midday UTC for a date-only key. A meal records a day, not an instant, and
+ * midday lands on that same calendar day in every zone from UTC-11 to UTC+12 —
+ * which midnight would not.
+ */
+const middayOf = dateKey => `${dateKey}T12:00:00.000Z`
+
+/**
+ * Everything that counts as having been to this place, newest first.
+ *
+ * Two things count, and they are the same event seen from different tabs: a
+ * done task carrying the place, and a meal you marked as eaten out there. A
+ * takeaway IS an outing — counting it is what lets "how often do we eat there"
+ * and "been a while" agree instead of drifting apart.
+ *
+ * Open tasks and tombstones never count, and neither does a meal in the
+ * FUTURE: next Friday's booking is a plan, not a visit, so it must not reset a
+ * cadence or inflate a count. Meals are optional so every existing caller keeps
+ * working unchanged.
+ */
+export function outingsAt(placeId, tasks, meals = [], now = new Date()) {
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
+  const fromTasks = (tasks ?? [])
     .filter(t => t && !t.deletedAt && t.status === 'done' && t.completedAt && t.placeId === placeId)
-    .map(t => ({ task: t, at: t.completedAt }))
-    .sort((a, b) => b.at.localeCompare(a.at))
+    .map(t => ({ kind: 'task', task: t, at: t.completedAt }))
+  const fromMeals = (meals ?? [])
+    .filter(m => m && !m.deletedAt && m.out === true && m.placeId === placeId && m.date)
+    .map(m => ({ kind: 'meal', meal: m, at: middayOf(m.date) }))
+    .filter(v => Date.parse(v.at) <= nowMs)
+  return [...fromTasks, ...fromMeals].sort((a, b) => b.at.localeCompare(a.at))
 }
 
 /**
@@ -51,11 +75,11 @@ export function outingsAt(placeId, tasks) {
  * never set a rhythm for must never read as due or overdue on Today or in the
  * digest. Same 1× due / 1.5× overdue thresholds as people once a cadence is set.
  */
-export function placeCadenceStatus(place, tasks, now = new Date()) {
+export function placeCadenceStatus(place, tasks, now = new Date(), meals = []) {
   const cadence = Number(place?.cadenceDays)
   if (!Number.isFinite(cadence) || cadence <= 0) return { status: 'none', reason: '' }
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
-  const lastAt = outingsAt(place.id, tasks)[0]?.at
+  const lastAt = outingsAt(place.id, tasks, meals, now)[0]?.at
   if (!lastAt) {
     return { status: 'never', reason: `No outings yet — you aimed for every ${cadence} days`, cadenceDays: cadence }
   }

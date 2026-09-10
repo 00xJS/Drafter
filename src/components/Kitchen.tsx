@@ -8,6 +8,7 @@ import {
   MEAL_SLOTS,
   Meal,
   MealSlot,
+  Place,
   Recipe,
   RecipeIngredient,
 } from '../types'
@@ -38,6 +39,8 @@ interface Props {
   recipes: Recipe[]
   meals: Meal[]
   groceries: GroceryList[]
+  /** Where a bought meal can come from; eating there counts as an outing. */
+  places: Place[]
   onSave(item: Recipe | Meal | GroceryList): void
   onDelete(id: string): void
   /** Open this recipe in cook mode (Today → tonight’s dinner). */
@@ -45,7 +48,7 @@ interface Props {
   onOpenRecipeConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, onSave, onDelete, openRecipe, onOpenRecipeConsumed }: Props) {
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, openRecipe, onOpenRecipeConsumed }: Props) {
   const [seg, setSeg] = useState<Seg>(() => {
     try {
       const saved = localStorage.getItem(SEG_KEY) as Seg | null
@@ -173,6 +176,7 @@ export function Kitchen({ recipes, meals, groceries, onSave, onDelete, openRecip
           week={week}
           meals={weekMeals}
           recipes={recipes}
+          places={places}
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSaveMeal={persistMeal}
           onClearMeal={clearMeal}
@@ -231,6 +235,7 @@ function WeekPlan({
   week,
   meals,
   recipes,
+  places,
   onShift,
   onSaveMeal,
   onClearMeal,
@@ -239,6 +244,7 @@ function WeekPlan({
   week: { key: string; start: Date; end: Date; label: string }
   meals: Meal[]
   recipes: Recipe[]
+  places: Place[]
   onShift(delta: number): void
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
@@ -279,6 +285,7 @@ function WeekPlan({
                   slot={slot}
                   meal={meals.find(m => m.date === key && m.slot === slot)}
                   recipes={recipes}
+                  places={places}
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
                   onOpenRecipe={onOpenRecipe}
@@ -292,11 +299,26 @@ function WeekPlan({
   )
 }
 
+/**
+ * Somewhere food comes from, first. Every place stays selectable — a picnic in
+ * a park is a real answer to "what are we eating" — but a restaurant should not
+ * sit below the swimming pool in the list.
+ */
+const FOOD_CATEGORIES = new Set(['restaurant', 'cafe', 'bar'])
+function foodFirst(places: Place[]): Place[] {
+  return [...places].sort((a, b) => {
+    const fa = FOOD_CATEGORIES.has(a.category) ? 0 : 1
+    const fb = FOOD_CATEGORIES.has(b.category) ? 0 : 1
+    return fa - fb || a.name.localeCompare(b.name)
+  })
+}
+
 function MealSlotRow({
   date,
   slot,
   meal,
   recipes,
+  places,
   onSave,
   onClear,
   onOpenRecipe,
@@ -305,35 +327,56 @@ function MealSlotRow({
   slot: MealSlot
   meal?: Meal
   recipes: Recipe[]
+  /** Somewhere a bought meal can come from; also what makes it count as an outing. */
+  places: Place[]
   onSave(m: Meal): void
   onClear(id: string): void
   onOpenRecipe(r: Recipe): void
 }) {
   const meta = MEAL_SLOT_META[slot]
-  const pick = (recipeId: string) => {
-    const r = recipes.find(x => x.id === recipeId)
+  /**
+   * One control, two ways to answer "what are we eating": a recipe you cook, or
+   * a place you get it from. Values are prefixed so the two id spaces cannot
+   * collide, and `out` alone records a bought meal with no place named.
+   */
+  const write = (fields: Partial<Meal> & { title: string }) => {
     const now = new Date().toISOString()
     onSave({
       kind: 'meal',
       id: mealId(date, slot),
       date,
       slot,
-      recipeId: recipeId || undefined,
-      title: r?.name || meal?.title || meta.label,
       createdAt: meal?.createdAt ?? now,
       updatedAt: meal ? newerStamp(meal.updatedAt) : now,
-    })
+      ...fields,
+    } as Meal)
   }
+  const pick = (value: string) => {
+    if (value.startsWith('r:')) {
+      const r = recipes.find(x => x.id === value.slice(2))
+      write({ recipeId: r?.id, title: r?.name || meta.label })
+      return
+    }
+    if (value === 'out') {
+      write({ out: true, title: 'Eating out' })
+      return
+    }
+    if (value.startsWith('p:')) {
+      const p = places.find(x => x.id === value.slice(2))
+      write({ out: true, placeId: p?.id, title: p?.name || 'Eating out' })
+    }
+  }
+  const current = meal ? (meal.out ? (meal.placeId ? `p:${meal.placeId}` : 'out') : meal.recipeId ? `r:${meal.recipeId}` : '') : ''
   return (
     <div className={'meal-slot' + (slot === 'dinner' ? ' dinner' : '')}>
       <span className="meal-slot-label">
         {meta.emoji} {meta.label}
       </span>
-      {recipes.length === 0 ? (
+      {recipes.length === 0 && places.length === 0 ? (
         <span className="muted">Add a recipe first</span>
       ) : (
         <select
-          value={meal?.recipeId ?? ''}
+          value={current}
           onChange={e => {
             if (!e.target.value) {
               if (meal) onClear(meal.id)
@@ -344,12 +387,25 @@ function MealSlotRow({
           aria-label={`${meta.label} on ${date}`}
         >
           <option value="">—</option>
-          {recipes.map(r => (
-            <option key={r.id} value={r.id}>
-              {r.emoji ? `${r.emoji} ` : ''}
-              {r.name}
-            </option>
-          ))}
+          {recipes.length > 0 && (
+            <optgroup label="Cook">
+              {recipes.map(r => (
+                <option key={r.id} value={`r:${r.id}`}>
+                  {r.emoji ? `${r.emoji} ` : ''}
+                  {r.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Eat out">
+            <option value="out">🥡 Out (no place)</option>
+            {foodFirst(places).map(p => (
+              <option key={p.id} value={`p:${p.id}`}>
+                {p.emoji ? `${p.emoji} ` : '🥡 '}
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
         </select>
       )}
       {meal?.recipeId && (
@@ -363,6 +419,7 @@ function MealSlotRow({
           Cook
         </button>
       )}
+      {meal?.out && <span className="meal-out-chip">🥡 Out</span>}
     </div>
   )
 }

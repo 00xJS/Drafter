@@ -44,7 +44,9 @@ export function visitsFor(personId: string, tasks: Task[]): Visit[] {
 }
 
 /** Shared last/gap/weekly rollup used by people and places. */
-export function visitSummary(visits: Visit[], now: Date = new Date()) {
+// Widened to anything carrying an instant: a place's outings now include meals
+// eaten out, which are not tasks. Only `at` is ever read here.
+export function visitSummary(visits: { at: string }[], now: Date = new Date()) {
   const nowMs = now.getTime()
   const lastAt = visits[0]?.at
   const daysSince =

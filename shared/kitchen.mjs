@@ -93,6 +93,9 @@ export function tonightLine(meals, recipes, dateKey) {
   // dinner only: a day with just lunch planned must not read "Tonight: soup"
   const meal = (meals ?? []).find(m => m && !m.deletedAt && m.date === dateKey && m.slot === 'dinner')
   if (!meal) return null
+  // a bought meal has nothing to shop for and nothing to cook, so it reads as
+  // where it is coming from rather than as a recipe with an ingredient count
+  if (meal.out) return `Tonight: out${meal.title && meal.title !== 'Eating out' ? ` — ${meal.title}` : ''}`
   const recipe = meal.recipeId ? (recipes ?? []).find(r => r.id === meal.recipeId) : null
   const n = recipe?.ingredients?.length ?? 0
   return `Tonight: ${meal.title}${n ? ` (${n} ingredient${n === 1 ? '' : 's'})` : ''}`

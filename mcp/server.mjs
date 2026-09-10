@@ -29,7 +29,7 @@ import {
 } from '../shared/domain.mjs'
 import { seenStatus, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, localDayKey, peopleNameMap, peopleNamesOf, shiftDayKey, streak } from '../shared/journal.mjs'
-import { matchPlace, normalisePlaceText, placeCadenceStatus } from '../shared/places.mjs'
+import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { buildGroceryList, groceryId, groceryWeekFor, ingredientKey, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 
@@ -209,16 +209,18 @@ function resolveContext(all, { peopleIds, placeId, placeName }) {
   return out
 }
 
-function summarizePlace(p, tasks = [], people = []) {
-  const outings = tasks
-    .filter(t => t.status === 'done' && t.completedAt && t.placeId === p.id)
-    .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
+function summarizePlace(p, tasks = [], people = [], meals = []) {
   const nowMs = Date.now()
-  const last = outings[0]?.completedAt ?? null
+  // one rule, in shared/places.mjs: done tasks here plus past meals eaten here
+  const outings = outingsAt(p.id, tasks, meals, new Date(nowMs))
+  const last = outings[0]?.at ?? null
   const companions = new Map()
-  for (const t of outings) for (const id of t.peopleIds ?? []) companions.set(id, (companions.get(id) ?? 0) + 1)
+  for (const o of outings) {
+    if (o.kind !== 'task') continue // a meal records the place, not the company
+    for (const id of o.task.peopleIds ?? []) companions.set(id, (companions.get(id) ?? 0) + 1)
+  }
   // opt-in rhythm: status is 'none' unless the user set one — never a nag by default
-  const cadence = placeCadenceStatus(p, tasks, new Date(nowMs))
+  const cadence = placeCadenceStatus(p, tasks, new Date(nowMs), meals)
   return {
     id: p.id,
     name: p.name,
@@ -230,8 +232,11 @@ function summarizePlace(p, tasks = [], people = []) {
     statusReason: cadence.reason || null,
     lastWent: last,
     daysSince: last ? Math.floor((nowMs - Date.parse(last)) / DAY) : null,
-    outingsLast365Days: outings.filter(t => nowMs - Date.parse(t.completedAt) < 365 * DAY).length,
+    outingsLast365Days: outings.filter(o => nowMs - Date.parse(o.at) < 365 * DAY).length,
     outingsAllTime: outings.length,
+    /** How often they ate here rather than merely went — the takeaway count. */
+    mealsHereLast365Days: outings.filter(o => o.kind === 'meal' && nowMs - Date.parse(o.at) < 365 * DAY).length,
+    mealsHereAllTime: outings.filter(o => o.kind === 'meal').length,
     usuallyWith: [...companions.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -639,7 +644,8 @@ const TOOLS = [
       const tasks = all.filter(i => i.kind === 'task')
       const people = all.filter(i => i.kind === 'person')
       const places = all.filter(i => i.kind === 'place' && (!category || i.category === category))
-      return { count: places.length, places: places.map(p => summarizePlace(p, tasks, people)).sort((a, b) => (b.lastWent ?? '').localeCompare(a.lastWent ?? '')) }
+      const meals = all.filter(i => i.kind === 'meal')
+      return { count: places.length, places: places.map(p => summarizePlace(p, tasks, people, meals)).sort((a, b) => (b.lastWent ?? '').localeCompare(a.lastWent ?? '')) }
     },
   },
   {
@@ -771,7 +777,7 @@ const TOOLS = [
   {
     name: 'plan_meal',
     description:
-      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes) or a free-text title such as "Leftovers". Replaces whatever was in that slot and rebuilds the week\'s grocery list from every planned recipe, keeping Have / Got it ticks and hand-added lines.',
+      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes), a free-text title such as "Leftovers", or a meal you are buying rather than cooking (out: true, optionally placeName from list_places). Replaces whatever was in that slot and rebuilds the week\'s grocery list from every planned recipe, keeping Have / Got it ticks and hand-added lines. A bought meal adds nothing to the list, and once its day has passed it counts as an outing at that place.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -780,11 +786,13 @@ const TOOLS = [
         recipeId: { type: 'string' },
         recipeName: { type: 'string' },
         title: { type: 'string', description: 'Free text when no recipe' },
+        out: { type: 'boolean', description: 'Bought rather than cooked: takeaway, delivery, or a meal out' },
+        placeName: { type: 'string', description: 'Where a bought meal came from; must match a place from list_places' },
         notes: { type: 'string' },
       },
       required: ['date'],
     },
-    async run({ date, slot, recipeId, recipeName, title, notes }) {
+    async run({ date, slot, recipeId, recipeName, title, out, placeName, notes }) {
       const day = String(date ?? '').trim()
       assertDayKey(day)
       const when = slot ? oneOf(slot, MEAL_SLOTS, 'slot') : 'dinner'
@@ -799,8 +807,19 @@ const TOOLS = [
         recipe = recipes.find(r => r.name.toLowerCase() === needle) ?? recipes.find(r => r.name.toLowerCase().includes(needle))
         if (!recipe) throw new Error(`No recipe named "${recipeName}". Use list_recipes.`)
       }
-      const label = recipe ? recipe.name : String(title ?? '').trim()
-      if (!label) throw new Error('Give a recipeId / recipeName, or a title.')
+      // eating out is the other way to answer "what are we eating": no recipe,
+      // nothing to shop for, and a place that makes it an outing once it passes
+      let place = null
+      const eatingOut = out === true || (!recipe && !!placeName)
+      if (placeName) {
+        const needle = String(placeName).trim().toLowerCase()
+        const places = all.filter(i => i.kind === 'place' && !i.deletedAt)
+        place = places.find(p => (p.name ?? '').toLowerCase() === needle) ?? places.find(p => (p.name ?? '').toLowerCase().includes(needle))
+        if (!place) throw new Error(`No place named "${placeName}". Use list_places, or create_place first.`)
+      }
+      if (eatingOut && recipe) throw new Error('A meal is either cooked from a recipe or bought, not both.')
+      const label = recipe ? recipe.name : String(title ?? '').trim() || (place ? place.name : eatingOut ? 'Eating out' : '')
+      if (!label) throw new Error('Give a recipeId / recipeName, a title, or out: true.')
       const id = mealId(day, when)
       const existing = all.find(i => i.kind === 'meal' && i.id === id)
       const stamp = now()
@@ -810,6 +829,8 @@ const TOOLS = [
         date: day,
         slot: when,
         recipeId: recipe?.id,
+        out: eatingOut || undefined,
+        placeId: eatingOut ? place?.id : undefined,
         title: label,
         notes: notes ? String(notes).trim() || undefined : existing?.notes,
         createdAt: existing?.createdAt ?? stamp,
@@ -825,7 +846,11 @@ const TOOLS = [
         const check = stored.find(p => p.id === w.id)
         if (!check || check.updatedAt !== w.updatedAt) throw new Error(`Write of ${w.kind} ${w.id} was rejected by the last-write-wins merge (a newer copy exists). Re-read and retry.`)
       }
-      return { planned: { id: meal.id, date: meal.date, slot: meal.slot, title: meal.title, recipeId: meal.recipeId ?? null }, groceryItems: grocery.items.length, weekKey }
+      return {
+        planned: { id: meal.id, date: meal.date, slot: meal.slot, title: meal.title, recipeId: meal.recipeId ?? null, out: !!meal.out, placeId: meal.placeId ?? null },
+        groceryItems: grocery.items.length,
+        weekKey,
+      }
     },
   },
   {

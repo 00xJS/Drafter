@@ -1174,6 +1174,7 @@ export default function Planner() {
                     places={store.places}
                     people={store.people}
                     tasks={store.tasks}
+                    meals={store.meals}
                     onSave={p => store.upsert(p)}
                     onDelete={id => {
                       store.remove(id)
@@ -1218,6 +1219,7 @@ export default function Planner() {
                 recipes={store.recipes}
                 meals={store.meals}
                 groceries={store.groceries}
+                places={store.places}
                 onSave={item => store.upsert(item)}
                 onDelete={id => {
                   store.remove(id)

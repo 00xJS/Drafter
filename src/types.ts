@@ -311,6 +311,14 @@ export interface Meal extends Owned {
   date: string
   slot: MealSlot
   recipeId?: string
+  /**
+   * Bought rather than cooked — takeaway, a delivery, or a meal out. A day with
+   * one still answers "what are we eating", contributes nothing to the grocery
+   * list, and once the day has passed counts as an outing at `placeId`.
+   */
+  out?: boolean
+  /** Where an `out` meal came from. A place row, so eating there is an outing. */
+  placeId?: string
   title: string
   notes?: string
   createdAt: string

@@ -413,6 +413,47 @@ async function main() {
     eq(groceryRow.data.items?.length, 2, "the list holds both of the recipe's ingredients")
     ok(groceryRow.data.items.some(i => i.name === 'Spaghetti' && i.qty === 500 && i.unit === 'g'), 'a grocery line kept its quantity and unit')
 
+    // ---- eating out: the other way to answer "what are we eating"
+    // A bought meal must add nothing to the shop, and once its day has passed
+    // it must count as an outing at the place — that is what makes "how often
+    // do we eat there" and "been a while" agree instead of drifting apart.
+    const yesterday = (() => {
+      const y = new Date()
+      y.setDate(y.getDate() - 1)
+      return `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
+    })()
+    const groceriesBefore = (row(`grocery~${planned.weekKey}`).data.items ?? []).length
+    const outMeal = await call('plan_meal', { date: yesterday, out: true, placeName: 'Nopi' })
+    eq(outMeal.planned.out, true, 'plan_meal recorded a bought meal')
+    eq(outMeal.planned.placeId, place.id, 'the bought meal points at the place')
+    const outRow = row(`meal~${yesterday}~dinner`)
+    eq(outRow?.kind, 'meal', 'the bought meal is stored as a meal row')
+    eq(outRow.data.out, true, 'the stored meal is marked as eaten out')
+    eq(outRow.data.recipeId, undefined, 'a bought meal carries no recipe')
+    eq((row(`grocery~${planned.weekKey}`).data.items ?? []).length, groceriesBefore, 'a bought meal adds nothing to the grocery list')
+    const afterEating = await call('list_places', {})
+    const nopiAfter = afterEating.places.find(p => p.id === place.id)
+    eq(nopiAfter?.mealsHereAllTime, 1, 'list_places counts the meal eaten there')
+    eq(nopiAfter?.outingsAllTime, 2, 'the meal joins the logged visit as an outing')
+    // a meal planned for NEXT week is a plan, not a visit
+    const future = (() => {
+      const f = new Date()
+      f.setDate(f.getDate() + 9)
+      return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`
+    })()
+    await call('plan_meal', { date: future, out: true, placeName: 'Nopi' })
+    const afterPlanning = await call('list_places', {})
+    const nopiLater = afterPlanning.places.find(p => p.id === place.id)
+    eq(nopiLater?.outingsAllTime, 2, 'a meal planned for the future is not counted as an outing yet')
+    eq(nopiLater?.mealsHereAllTime, 1, 'nor as a meal eaten there yet')
+    let refusedBoth = null
+    try {
+      await call('plan_meal', { date: today, out: true, recipeName: 'Pasta' })
+    } catch (e) {
+      refusedBoth = String(e.message ?? e)
+    }
+    ok(refusedBoth && /cooked|bought/i.test(refusedBoth), 'a meal cannot be both cooked and bought')
+
     await call('add_grocery_item', { name: 'Milk', qty: 2, unit: 'l', date: today })
     const withMilk = row(`grocery~${planned.weekKey}`).data.items ?? []
     const milk = withMilk.find(i => i.name === 'Milk')

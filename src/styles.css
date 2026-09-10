@@ -5484,3 +5484,19 @@ textarea {
     font-size: max(18px, 1.125rem);
   }
 }
+
+/* ---- Eating out ------------------------------------------------------- */
+/* A bought meal is planned in the same slot as a cooked one, so it needs to
+   read differently at a glance rather than sit in the list looking identical. */
+.meal-out-chip {
+  font-size: calc(0.72rem * var(--type-scale));
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.outing-meal {
+  /* no task behind it, so it must not look clickable like the rows beside it */
+  cursor: default;
+}

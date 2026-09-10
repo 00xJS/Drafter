@@ -44,6 +44,11 @@ interface Props {
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MAX_PILLS = 3
 const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
+/** Cooked at home. */
+const MEAL_COLOR = '#f97316'
+/** Bought — a different colour so a run of takeaways stands out in the month grid. */
+const MEAL_OUT_COLOR = '#38bdf8'
+const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -117,7 +122,8 @@ export function Calendar({
     }
     if (item.kind === 'meal') {
       const slot = item.meal.slot[0].toUpperCase() + item.meal.slot.slice(1)
-      return slot
+      // the whole point of the merge: "Dinner · Out" answers the glance
+      return item.meal.out ? `${slot} · Out` : slot
     }
     const project = taskProject(item.task)
     const when = item.at && hasClock(item.at) ? fmtTime(item.at) : 'No time set'
@@ -136,7 +142,7 @@ export function Calendar({
     if (item.kind === 'occasion') return item.occasion.person.color
     if (item.kind === 'event') return eventColor(item.event)
     if (item.kind === 'mark') return item.mark.project.color
-    if (item.kind === 'meal') return '#f97316'
+    if (item.kind === 'meal') return item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR
     return taskProject(item.task)?.color ?? STATUS_META[item.task.status].color
   }
 
@@ -179,7 +185,7 @@ export function Calendar({
       )
     }
     const color = itemColor(item)
-    const glyph = item.kind === 'occasion' ? OCCASION_GLYPH[item.occasion.kind] : item.kind === 'mark' ? '◆' : item.kind === 'meal' ? '🍽️' : ''
+    const glyph = item.kind === 'occasion' ? OCCASION_GLYPH[item.occasion.kind] : item.kind === 'mark' ? '◆' : item.kind === 'meal' ? mealGlyph(item.meal) : ''
     const time = item.kind === 'event' && !item.event.allDay ? fmtTime(item.event.start) : ''
     return (
       <button
@@ -404,9 +410,11 @@ export function Calendar({
                   if (item.kind === 'meal') {
                     return (
                       <li key={item.id} className="cal-row">
-                        <span className="cal-item-dot" style={{ background: '#f97316' }} />
+                        <span className="cal-item-dot" style={{ background: item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR }} />
                         <div className="cal-row-main">
-                          <span className="cal-row-title">🍽️ {item.meal.title}</span>
+                          <span className="cal-row-title">
+                            {mealGlyph(item.meal)} {item.meal.title}
+                          </span>
                           <span className="cal-row-meta">{itemMeta(item)}</span>
                         </div>
                       </li>

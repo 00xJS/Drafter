@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
 import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, placeStats, placesWith } from '../places'
-import { Person, Place, Task } from '../types'
+import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
   return {
@@ -104,7 +104,7 @@ describe('places insights', () => {
       task({ id: 'd', placeId: 'other', completedAt: '2026-03-09T12:00:00.000Z' }),
     ]
     const visits = outingsAt('pl1', tasks)
-    expect(visits.map(v => v.task.id)).toEqual(['a'])
+    expect(visits.map(v => (v.kind === 'task' ? v.task.id : v.meal.id))).toEqual(['a'])
   })
 
   it('orders newest first and counts companions', () => {
@@ -116,7 +116,7 @@ describe('places insights', () => {
       task({ id: 'c', completedAt: '2026-02-01T12:00:00.000Z', peopleIds: ['mum'] }),
     ]
     const stats = placeStats(place(), tasks, [mum, dad], now)
-    expect(stats.visits.map(v => v.task.id)).toEqual(['b', 'a', 'c'])
+    expect(stats.visits.map(v => (v.kind === 'task' ? v.task.id : v.meal.id))).toEqual(['b', 'a', 'c'])
     expect(stats.companions.map(c => c.person.id)).toEqual(['mum', 'dad'])
     expect(stats.companions[0].count).toBe(3)
     expect(stats.count365).toBe(3)
@@ -214,5 +214,68 @@ describe('matchPlace picks the place named first', () => {
     const soho = place({ id: 'soho', name: 'Soho House', category: 'venue' })
     expect(matchPlace('Nopi, then drinks at Soho House', [soho, nopi])?.id).toBe('nopi')
     expect(matchPlace('Soho House then Nopi', [nopi, soho])?.id).toBe('soho')
+  })
+})
+
+describe('eating out counts as an outing', () => {
+  const now = new Date('2026-09-09T12:00:00.000Z')
+  const meal = (over: Partial<Meal> = {}): Meal => ({
+    kind: 'meal',
+    id: `m-${over.date ?? 'x'}-${over.slot ?? 'dinner'}`,
+    date: '2026-09-01',
+    slot: 'dinner',
+    out: true,
+    placeId: 'pl1',
+    title: 'Curry house',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...over,
+  })
+
+  it('counts a past takeaway alongside a logged task', () => {
+    const tasks = [task({ id: 'a', completedAt: '2026-08-01T12:00:00.000Z' })]
+    const visits = outingsAt('pl1', tasks, [meal()], now)
+    expect(visits.map(v => v.kind)).toEqual(['meal', 'task'])
+    expect(visits).toHaveLength(2)
+  })
+
+  it('ignores a meal planned for the future — a plan is not a visit', () => {
+    const visits = outingsAt('pl1', [], [meal({ date: '2026-12-25' })], now)
+    expect(visits).toEqual([])
+  })
+
+  it('ignores a cooked meal, a tombstone, and another place', () => {
+    const meals = [
+      meal({ date: '2026-09-02', out: undefined, recipeId: 'r1' }),
+      meal({ date: '2026-09-03', deletedAt: '2026-09-04T00:00:00.000Z' }),
+      meal({ date: '2026-09-04', placeId: 'other' }),
+    ]
+    expect(outingsAt('pl1', [], meals, now)).toEqual([])
+  })
+
+  it('a takeaway resets the cadence, so "been a while" does not nag', () => {
+    const p = { ...place(), cadenceDays: 30 }
+    const stale = placeCadenceStatus(p, [], now, [])
+    expect(stale.status).toBe('never')
+    const fresh = placeCadenceStatus(p, [], now, [meal({ date: '2026-09-08' })])
+    expect(fresh.status).toBe('ok')
+  })
+
+  it('reports how often you ate there, separately from all outings', () => {
+    const tasks = [task({ id: 'a', completedAt: '2026-08-01T12:00:00.000Z' })]
+    const meals = [meal({ date: '2026-09-01' }), meal({ date: '2026-09-05' })]
+    const stats = placeStats(place(), tasks, [], now, meals)
+    expect(stats.count365).toBe(3)
+    expect(stats.eatenOut).toBe(2)
+    expect(stats.eatenOut365).toBe(2)
+    expect(stats.reason).toContain('ate here 2 times')
+  })
+
+  it('leaves companions to tasks — a meal records the place, not the company', () => {
+    const mum = person()
+    const tasks = [task({ id: 'a', completedAt: '2026-08-01T12:00:00.000Z', peopleIds: ['mum'] })]
+    const stats = placeStats(place(), tasks, [mum], now, [meal()])
+    expect(stats.companions.map(c => c.person.id)).toEqual(['mum'])
+    expect(stats.companions[0].count).toBe(1)
   })
 })
