@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
-import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, placeStats, placesWith } from '../places'
+import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeStats, placesWith } from '../places'
 import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
@@ -277,5 +277,32 @@ describe('eating out counts as an outing', () => {
     const stats = placeStats(place(), tasks, [mum], now, [meal()])
     expect(stats.companions.map(c => c.person.id)).toEqual(['mum'])
     expect(stats.companions[0].count).toBe(1)
+  })
+})
+
+describe('placeByName: naming somewhere new must not duplicate somewhere old', () => {
+  const nopi = { ...place(), id: 'pl1', name: 'Nopi' }
+  const taco = { ...place(), id: 'pl2', name: 'Taco Cartel' }
+  const gone = { ...place(), id: 'pl3', name: 'Closed Diner', deletedAt: '2026-01-01T00:00:00.000Z' }
+  const all = [nopi, taco, gone]
+
+  it('matches regardless of case and stray whitespace', () => {
+    expect(placeByName('taco cartel', all)?.id).toBe('pl2')
+    expect(placeByName('  TACO   CARTEL  ', all)?.id).toBe('pl2')
+    expect(placeByName('Nopi', all)?.id).toBe('pl1')
+  })
+
+  it('returns undefined for a genuinely new name, so the caller creates one', () => {
+    expect(placeByName('Some New Bistro', all)).toBeUndefined()
+  })
+
+  it('ignores a deleted place rather than resurrecting it', () => {
+    expect(placeByName('Closed Diner', all)).toBeUndefined()
+  })
+
+  it('treats an empty or missing name as no match', () => {
+    expect(placeByName('', all)).toBeUndefined()
+    expect(placeByName('   ', all)).toBeUndefined()
+    expect(placeByName(null, all)).toBeUndefined()
   })
 })

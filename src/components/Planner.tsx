@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Meal, Person, Place, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
+import { CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
@@ -550,6 +550,26 @@ export default function Planner() {
    * see mealWrites. Both the Kitchen tab and the calendar's day sheet go
    * through here so neither can forget it.
    */
+  /**
+   * A place created while planning a meal: somewhere you ate for the first time
+   * gets tracked from the meal picker, instead of a detour to the Places tab.
+   * Returns the row so the caller can attach it to the meal in the same tick.
+   */
+  const createPlaceInline = (name: string, category: PlaceCategory): Place => {
+    const now = new Date().toISOString()
+    const place: Place = {
+      kind: 'place',
+      id: uid(),
+      name: name.trim(),
+      category,
+      color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
+      createdAt: now,
+      updatedAt: now,
+    }
+    store.upsert(place)
+    return place
+  }
+
   const saveMeal = (m: Meal) => {
     for (const row of mealWrites(m, null, store.meals, store.recipes, store.groceries)) store.upsert(row)
   }
@@ -1064,6 +1084,7 @@ export default function Planner() {
                     places={store.places}
                     onSaveMeal={saveMeal}
                     onClearMeal={clearMeal}
+                    onCreatePlace={createPlaceInline}
                     events={calendars.events}
                     sourceMap={sourceMap}
                     onOpen={openTask}
@@ -1240,6 +1261,7 @@ export default function Planner() {
                 places={store.places}
                 onSaveMeal={saveMeal}
                 onClearMeal={clearMeal}
+                onCreatePlace={createPlaceInline}
                 onSave={item => store.upsert(item)}
                 onDelete={id => {
                   store.remove(id)

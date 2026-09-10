@@ -1,6 +1,8 @@
-import { MEAL_SLOT_META, Meal, MealSlot, Place, Recipe } from '../types'
+import { useState } from 'react'
+import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { newerStamp } from '../itemops'
 import { mealId } from '../kitchen'
+import { placeByName } from '../places'
 
 // One control for "what are we eating on this day", used by the Kitchen tab's
 // week and by the calendar's day sheet. It lives here rather than in either of
@@ -30,6 +32,7 @@ export function MealSlotRow({
   places,
   onSave,
   onClear,
+  onCreatePlace,
   onOpenRecipe,
 }: {
   date: string
@@ -40,9 +43,17 @@ export function MealSlotRow({
   places: Place[]
   onSave(m: Meal): void
   onClear(id: string): void
+  /**
+   * Save a brand-new place and hand it back, so somewhere you ate for the first
+   * time can be recorded here instead of in a detour to the Places tab.
+   */
+  onCreatePlace(name: string, category: PlaceCategory): Place
   /** Cook mode. Absent on the calendar, where there is nowhere to cook from. */
   onOpenRecipe?(r: Recipe): void
 }) {
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newCategory, setNewCategory] = useState<PlaceCategory>('restaurant')
   const meta = MEAL_SLOT_META[slot]
   /**
    * One control, two ways to answer "what are we eating": a recipe you cook, or
@@ -76,6 +87,21 @@ export function MealSlotRow({
       write({ out: true, placeId: p?.id, title: p?.name || 'Eating out' })
     }
   }
+
+  /**
+   * Somewhere new. Typing a name that already exists reuses that place rather
+   * than making a second copy of it — otherwise a fortnight of takeaways leaves
+   * three spellings of the same restaurant and the counts mean nothing.
+   */
+  const addPlace = () => {
+    const name = newName.trim()
+    if (!name) return
+    const place = placeByName(name, places) ?? onCreatePlace(name, newCategory)
+    write({ out: true, placeId: place.id, title: place.name })
+    setAdding(false)
+    setNewName('')
+    setNewCategory('restaurant')
+  }
   const current = meal ? (meal.out ? (meal.placeId ? `p:${meal.placeId}` : 'out') : meal.recipeId ? `r:${meal.recipeId}` : '') : ''
   return (
     <div className={'meal-slot' + (slot === 'dinner' ? ' dinner' : '')}>
@@ -88,6 +114,11 @@ export function MealSlotRow({
         <select
           value={current}
           onChange={e => {
+            if (e.target.value === 'new') {
+              setAdding(true)
+              return
+            }
+            setAdding(false)
             if (!e.target.value) {
               if (meal) onClear(meal.id)
               return
@@ -108,7 +139,8 @@ export function MealSlotRow({
             </optgroup>
           )}
           <optgroup label="Eat out">
-            <option value="out">🥡 Out (no place)</option>
+            <option value="new">➕ Somewhere new…</option>
+            <option value="out">🥡 Out, no place</option>
             {foodFirst(places).map(p => (
               <option key={p.id} value={`p:${p.id}`}>
                 {p.emoji ? `${p.emoji} ` : '🥡 '}
@@ -130,6 +162,43 @@ export function MealSlotRow({
         </button>
       )}
       {meal?.out && <span className="meal-out-chip">🥡 Out</span>}
+
+      {adding && (
+        <div className="meal-new-place">
+          <input
+            className="meal-new-place-name"
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addPlace()
+              }
+              if (e.key === 'Escape') setAdding(false)
+            }}
+            placeholder="Where from?"
+            aria-label={`Name of the place for ${meta.label.toLowerCase()} on ${date}`}
+          />
+          <select
+            value={newCategory}
+            onChange={e => setNewCategory(e.target.value as PlaceCategory)}
+            aria-label="Kind of place"
+          >
+            {PLACE_CATEGORIES.map(c => (
+              <option key={c} value={c}>
+                {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
+              </option>
+            ))}
+          </select>
+          <button className="btn primary" onClick={addPlace} disabled={!newName.trim()}>
+            Save
+          </button>
+          <button className="btn subtle" onClick={() => setAdding(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   )
 }

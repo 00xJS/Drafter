@@ -10,6 +10,20 @@ export function matchPlace(text: string | null | undefined, places: Place[]): Pl
   return sharedMatchPlace(text, places) ?? undefined
 }
 
+/**
+ * The saved place a typed name means, or undefined when it is genuinely new.
+ *
+ * Used when somewhere new is named while planning a meal. Matching on the
+ * normalised name is what stops a fortnight of takeaways leaving three
+ * spellings of the same restaurant, which would split its counts and make
+ * "how often do we eat there" meaningless.
+ */
+export function placeByName(name: string | null | undefined, places: Place[]): Place | undefined {
+  const key = normalisePlaceText(name ?? '')
+  if (!key) return undefined
+  return places.find(p => !p.deletedAt && normalisePlaceText(p.name) === key)
+}
+
 /** How long a loved place can go unvisited before it counts as lapsed. */
 export const LAPSED_AFTER_DAYS = 120
 

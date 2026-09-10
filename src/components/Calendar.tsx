@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, Project, Recipe, STATUS_META, Task } from '../types'
+import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task } from '../types'
 import { dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -39,6 +39,8 @@ interface Props {
   /** Plan or clear a meal from the day sheet. Rebuilds the grocery list (Planner owns it). */
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
+  /** Save a new place from the meal picker and hand it back. */
+  onCreatePlace(name: string, category: PlaceCategory): Place
   onReschedule(id: string, day: Date): void
   /** Create a prep task for an external event. */
   onPlan(ev: CalendarEvent): void
@@ -79,6 +81,7 @@ export function Calendar({
   onNew,
   onSaveMeal,
   onClearMeal,
+  onCreatePlace,
   onReschedule,
   onPlan,
   onAttendance,
@@ -521,6 +524,7 @@ export function Calendar({
                   places={places}
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
+                  onCreatePlace={onCreatePlace}
                 />
               ))}
             </section>

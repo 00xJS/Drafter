@@ -5554,3 +5554,25 @@ textarea {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ---- Adding a place while planning a meal ----------------------------- */
+/* Full width on its own row: the picker above it is already the width of the
+   slot, and a name field squeezed beside it would be unusable on a phone. */
+.meal-new-place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin-top: 6px;
+}
+.meal-new-place-name {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .meal-new-place > * {
+    /* thumb-sized, and never small enough to make WKWebView zoom on focus */
+    min-height: 44px;
+  }
+}

@@ -7,6 +7,7 @@ import {
   MEAL_SLOTS,
   Meal,
   Place,
+  PlaceCategory,
   Recipe,
   RecipeIngredient,
 } from '../types'
@@ -44,12 +45,14 @@ interface Props {
   /** Plan or clear a meal. Owned by Planner so the grocery rebuild happens once. */
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
+  /** Save a new place from the meal picker and hand it back. */
+  onCreatePlace(name: string, category: PlaceCategory): Place
   /** Open this recipe in cook mode (Today → tonight’s dinner). */
   openRecipe?: Recipe | null
   onOpenRecipeConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, openRecipe, onOpenRecipeConsumed }: Props) {
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, openRecipe, onOpenRecipeConsumed }: Props) {
   const [seg, setSeg] = useState<Seg>(() => {
     try {
       const saved = localStorage.getItem(SEG_KEY) as Seg | null
@@ -171,6 +174,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
+          onCreatePlace={onCreatePlace}
           onOpenRecipe={r => setCooking(r)}
         />
       )}
@@ -230,6 +234,7 @@ function WeekPlan({
   onShift,
   onSaveMeal,
   onClearMeal,
+  onCreatePlace,
   onOpenRecipe,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
@@ -237,6 +242,7 @@ function WeekPlan({
   recipes: Recipe[]
   places: Place[]
   onShift(delta: number): void
+  onCreatePlace(name: string, category: PlaceCategory): Place
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
   onOpenRecipe(r: Recipe): void
@@ -279,6 +285,7 @@ function WeekPlan({
                   places={places}
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
+                  onCreatePlace={onCreatePlace}
                   onOpenRecipe={onOpenRecipe}
                 />
               ))}
