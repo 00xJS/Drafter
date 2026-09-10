@@ -79,6 +79,30 @@ export function groceriesForMealDates(
   )
 }
 
+/**
+ * Everything that must be written when a meal is planned or cleared: the meal
+ * row itself (or nothing, when clearing) AND the rebuilt grocery list for its
+ * week.
+ *
+ * This exists so the Kitchen tab and the calendar's day sheet cannot disagree.
+ * A meal saved without rebuilding the list leaves the shop list stale on every
+ * other device — the invariant DEVELOPMENT.md calls out — and that is easy to
+ * forget the second time someone wires up a meal picker.
+ */
+export function mealWrites(
+  next: Meal | null,
+  clearedId: string | null,
+  meals: Meal[],
+  recipes: Recipe[],
+  groceries: GroceryList[],
+): (Meal | GroceryList)[] {
+  const withoutOld = meals.filter(m => m.id !== (next?.id ?? clearedId))
+  const nextMeals = next ? [...withoutOld, next] : withoutOld
+  const date = next?.date ?? meals.find(m => m.id === clearedId)?.date
+  if (!date) return next ? [next] : []
+  return [...(next ? [next] : []), ...groceriesForMealDates(nextMeals, recipes, groceries, [date])]
+}
+
 export function newIngredient(): RecipeIngredient {
   return { id: Math.random().toString(36).slice(2, 10), name: '' }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, Person, Place, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
+import { CalendarEvent, Meal, Person, Place, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
@@ -9,6 +9,7 @@ import { projectById } from '../taskutils'
 import { GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
+import { mealWrites } from '../kitchen'
 import { useHousehold } from '../household'
 import { timeAgo, uid } from '../utils'
 import { closeExternal, genericRemindersEnabled, haptic, initNative, isAppLockShowing, isNative, localRemindersEnabled, onAppLockCleared, scheduleLocalReminders, clearAppBadge } from '../native'
@@ -544,6 +545,19 @@ export default function Planner() {
   }, [store.tasks, activeFilter, mineOnly, inHousehold, household.myId])
   const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
 
+  /**
+   * Planning a meal always writes its week's grocery list in the same round —
+   * see mealWrites. Both the Kitchen tab and the calendar's day sheet go
+   * through here so neither can forget it.
+   */
+  const saveMeal = (m: Meal) => {
+    for (const row of mealWrites(m, null, store.meals, store.recipes, store.groceries)) store.upsert(row)
+  }
+  const clearMeal = (id: string) => {
+    for (const row of mealWrites(null, id, store.meals, store.recipes, store.groceries)) store.upsert(row)
+    store.remove(id)
+  }
+
   const showToast = (msg: string, undo?: () => void, action?: Toast['action']) => {
     window.clearTimeout(toastTimer.current)
     setToast({ msg, undo, action })
@@ -1046,6 +1060,10 @@ export default function Planner() {
                     projectMap={projectMap}
                     people={store.people}
                     meals={store.meals}
+                    recipes={store.recipes}
+                    places={store.places}
+                    onSaveMeal={saveMeal}
+                    onClearMeal={clearMeal}
                     events={calendars.events}
                     sourceMap={sourceMap}
                     onOpen={openTask}
@@ -1220,6 +1238,8 @@ export default function Planner() {
                 meals={store.meals}
                 groceries={store.groceries}
                 places={store.places}
+                onSaveMeal={saveMeal}
+                onClearMeal={clearMeal}
                 onSave={item => store.upsert(item)}
                 onDelete={id => {
                   store.remove(id)

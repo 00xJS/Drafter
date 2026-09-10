@@ -5500,3 +5500,57 @@ textarea {
   /* no task behind it, so it must not look clickable like the rows beside it */
   cursor: default;
 }
+
+/* ---- Add-to-a-day menu, and meals in the day sheet --------------------- */
+/* The + on a week day header asks "task or meal?" rather than silently
+   meaning task, which left no route to a meal from the calendar at all. */
+.cal-add-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.cal-add-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+}
+.cal-add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 44pt: this is a phone target sitting next to a 44pt day header */
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(0.9rem * var(--type-scale));
+  text-align: left;
+  cursor: pointer;
+}
+.cal-add-menu button:hover,
+.cal-add-menu button:focus-visible {
+  background: var(--surface-2);
+}
+
+.cal-sheet-eating {
+  padding: 8px 16px 4px;
+  border-top: 1px solid var(--border);
+}
+.cal-sheet-eating-head {
+  margin: 0 0 6px;
+  font-size: calc(0.78rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

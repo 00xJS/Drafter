@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  mealWrites,
   COOK_STEPS_TTL_MS,
   buildGroceryList,
   cookStepsRecipeId,
@@ -13,7 +14,7 @@ import {
   serialiseCookSteps,
   visibleGroceryLines,
 } from '../kitchen'
-import { GroceryLine, Meal, Recipe } from '../types'
+import { GroceryLine, GroceryList, Meal, Recipe } from '../types'
 import { weekRange } from '../review'
 import { dateKey } from '../utils'
 import { weekDayKeys, weekKeyOf, weekStartKey } from '../../shared/weeks.mjs'
@@ -320,5 +321,44 @@ describe('a bought meal is planned like any other, but shops and cooks like none
 
   it('still ignores a day with only lunch planned', () => {
     expect(tonightLine([out({ slot: 'lunch' })], [], '2026-09-09')).toBeNull()
+  })
+})
+
+describe('mealWrites: planning a meal always writes its grocery list too', () => {
+  const pasta = recipe({ id: 'r1', name: 'Pasta', ingredients: [{ id: 'i1', name: 'Spaghetti', qty: 500, unit: 'g' }] })
+  const meal = (over: Partial<Meal> = {}): Meal => ({
+    kind: 'meal',
+    id: 'meal~2026-09-09~dinner',
+    date: '2026-09-09',
+    slot: 'dinner',
+    recipeId: 'r1',
+    title: 'Pasta',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...over,
+  })
+
+  it('returns the meal and a rebuilt list, never the meal alone', () => {
+    const rows = mealWrites(meal(), null, [], [pasta], [])
+    expect(rows.map(r => r.kind)).toEqual(['meal', 'grocery'])
+    const list = rows.find(r => r.kind === 'grocery') as GroceryList
+    expect(list.items.map(i => i.name)).toEqual(['Spaghetti'])
+  })
+
+  it('rebuilds the list when a meal is cleared, so the shop list empties', () => {
+    const existing = meal()
+    const rows = mealWrites(null, existing.id, [existing], [pasta], [])
+    expect(rows.map(r => r.kind)).toEqual(['grocery'])
+    expect((rows[0] as GroceryList).items).toEqual([])
+  })
+
+  it('a bought meal writes a list with nothing in it', () => {
+    const rows = mealWrites(meal({ recipeId: undefined, out: true, placeId: 'pl1', title: 'Nopi' }), null, [], [pasta], [])
+    const list = rows.find(r => r.kind === 'grocery') as GroceryList
+    expect(list.items).toEqual([])
+  })
+
+  it('clearing an id that is not there is a no-op rather than a throw', () => {
+    expect(mealWrites(null, 'nope', [], [pasta], [])).toEqual([])
   })
 })

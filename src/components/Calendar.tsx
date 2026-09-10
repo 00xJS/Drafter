@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, Meal, Person, Project, STATUS_META, Task } from '../types'
+import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, Project, Recipe, STATUS_META, Task } from '../types'
 import { dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -16,6 +16,7 @@ import {
   weekLabel,
 } from '../calgrid'
 import { mealsByDay } from '../kitchen'
+import { MealSlotRow } from './MealSlotRow'
 import { ProjectChip } from './bits'
 
 export type CalendarView = 'month' | 'week'
@@ -28,10 +29,16 @@ interface Props {
   projectMap: Map<string, Project>
   people: Person[]
   meals: Meal[]
+  /** For the day sheet's meal pickers: what you can cook, and where you can eat. */
+  recipes: Recipe[]
+  places: Place[]
   events: CalendarEvent[]
   sourceMap: Map<string, CalendarSource>
   onOpen(t: Task): void
   onNew(dueAtIso: string): void
+  /** Plan or clear a meal from the day sheet. Rebuilds the grocery list (Planner owns it). */
+  onSaveMeal(m: Meal): void
+  onClearMeal(id: string): void
   onReschedule(id: string, day: Date): void
   /** Create a prep task for an external event. */
   onPlan(ev: CalendarEvent): void
@@ -64,10 +71,14 @@ export function Calendar({
   projectMap,
   people,
   meals,
+  recipes,
+  places,
   events,
   sourceMap,
   onOpen,
   onNew,
+  onSaveMeal,
+  onClearMeal,
   onReschedule,
   onPlan,
   onAttendance,
@@ -77,6 +88,9 @@ export function Calendar({
   // one anchor day drives both grids: its month, or the week around it
   const [cursor, setCursor] = useState(() => dayStart(new Date()))
   const [sheetDay, setSheetDay] = useState<Date | null>(null)
+  // The + used to mean "new task" silently, so there was no route to a meal
+  // from the calendar at all. It now asks which.
+  const [addFor, setAddFor] = useState<string | null>(null)
 
   const sources: DaySources = useMemo(
     () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
@@ -231,6 +245,21 @@ export function Calendar({
     </li>
   )
 
+  useEffect(() => {
+    if (!addFor) return
+    const close = () => setAddFor(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    // capture: a click anywhere else dismisses, including on another day's +
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [addFor])
+
   const sheetItems = sheetDay ? dayItems(sheetDay, sources) : []
 
   return (
@@ -264,9 +293,40 @@ export function Calendar({
                     <span className="cal-weekday-num">{d.getDate()}</span>
                     <span className="cal-weekday-count">{daySummary(items)}</span>
                   </button>
-                  <button className="btn subtle cal-weekday-add" onClick={() => newTaskOn(d)} aria-label={`New task on ${fullDate(d)}`} title="New task">
-                    +
-                  </button>
+                  <div className="cal-add-wrap" onPointerDown={e => e.stopPropagation()}>
+                    <button
+                      className="btn subtle cal-weekday-add"
+                      onClick={() => setAddFor(addFor === k ? null : k)}
+                      aria-label={`Add to ${fullDate(d)}`}
+                      aria-expanded={addFor === k}
+                      aria-haspopup="menu"
+                      title="Add"
+                    >
+                      +
+                    </button>
+                    {addFor === k && (
+                      <div className="cal-add-menu" role="menu">
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setAddFor(null)
+                            newTaskOn(d)
+                          }}
+                        >
+                          ✓ Task
+                        </button>
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setAddFor(null)
+                            setSheetDay(d)
+                          }}
+                        >
+                          🍽️ Meal
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {items.length > 0 && <ul className="cal-daylist">{items.map(item => weekRow(item, d))}</ul>}
               </section>
@@ -448,6 +508,22 @@ export function Calendar({
                 })}
               </ul>
             </div>
+
+            <section className="cal-sheet-eating" aria-label="Meals">
+              <h3 className="cal-sheet-eating-head">Eating</h3>
+              {MEAL_SLOTS.map(slot => (
+                <MealSlotRow
+                  key={slot}
+                  date={dateKey(sheetDay)}
+                  slot={slot}
+                  meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
+                  recipes={recipes}
+                  places={places}
+                  onSave={onSaveMeal}
+                  onClear={onClearMeal}
+                />
+              ))}
+            </section>
 
             <footer className="cal-sheet-foot">
               <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(sheetDay)}>
