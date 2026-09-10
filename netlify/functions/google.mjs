@@ -170,7 +170,7 @@ const handler = async req => {
       const entry = body.event && typeof body.event === 'object' ? body.event : null
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
       const calendarId = await drafterCalendarId(user.id)
-      const result = await (await import('./lib/google.mjs')).pushEntry(user.id, calendarId, entry, url.origin)
+      const result = await (await import('./lib/google.mjs')).pushEntry(user.id, calendarId, entry, url.origin, { revive: body.revive === true })
       return Response.json({ calendarId, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })

@@ -6,7 +6,7 @@ import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { entryToEvent, pushEventToGoogle, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
+import { entryToEvent, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
@@ -580,17 +580,29 @@ export default function Planner() {
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string } | null>(null)
 
+  /**
+   * Write an entry through to every connected mirror: Google when its mirror is
+   * on, and EACH enabled Microsoft account — the same fan-out task mirroring
+   * uses. Best effort: the row is already saved locally, so a failed mirror
+   * costs the copy in the provider, never the entry itself.
+   */
+  const mirrorEvent = (e: CalendarEntry, opts: { revive?: boolean } = {}) => {
+    if (mirroring) void pushEventToGoogle(e, opts).catch(() => {})
+    for (const accountId of msMirrorIds) void pushEventToMicrosoft(e, accountId).catch(() => {})
+  }
   const saveEvent = (e: CalendarEntry) => {
     store.upsert(e)
-    // A Google mirror that is on should carry these too, so the block shows up
-    // on the phone's real calendar and not only inside Drafter.
-    if (mirroring) void pushEventToGoogle(e).catch(() => {})
+    mirrorEvent(e)
   }
   const deleteEvent = (id: string) => {
     const gone = store.events.find(e => e.id === id)
     store.remove(id)
-    showToast('Event deleted', () => store.restore([id]))
-    if (mirroring && gone) void pushEventToGoogle({ ...gone, deletedAt: new Date().toISOString() }).catch(() => {})
+    if (gone) mirrorEvent({ ...gone, deletedAt: new Date().toISOString() })
+    showToast('Event deleted', () => {
+      store.restore([id])
+      // Undo has to put it back on the mirrors too, or it lives only in Drafter
+      if (gone) mirrorEvent(gone, { revive: true })
+    })
   }
 
   const saveMeal = (m: Meal) => {

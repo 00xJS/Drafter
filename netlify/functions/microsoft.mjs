@@ -11,7 +11,7 @@
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
-import {
+import { pushEntry,
   authUrl,
   connectAccount,
   disconnectAccount,
@@ -158,6 +158,17 @@ const handler = async req => {
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
       const calendarId = await drafterCalendarId(user.id, accountId)
       return Response.json({ changes: await pullChanges(user.id, accountId, calendarId, since.replace(/\.\d{3}Z$/, 'Z')), at: new Date().toISOString() })
+    }
+    if (action === 'push-event') {
+      // one entry, one account: the client fans out across every enabled
+      // Microsoft mirror, the same way it already does for tasks
+      const accountId = String(body.accountId ?? '')
+      const entry = body.event && typeof body.event === 'object' ? body.event : null
+      if (!accountId) return Response.json({ error: 'accountId required' }, { status: 400 })
+      if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
+      const calendarId = await drafterCalendarId(user.id, accountId)
+      const result = await pushEntry(user.id, accountId, calendarId, entry, url.origin)
+      return Response.json({ calendarId, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {

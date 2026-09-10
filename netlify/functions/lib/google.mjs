@@ -218,25 +218,24 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
  * reminder that something is due, but an entry is a block of time, and the
  * whole reason for writing one is to show the slot as busy.
  */
-export async function pushEntry(userId, calendarId, entry, site) {
-  const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
-  const page = await gapi(
-    userId,
-    `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`eventId=${entry.id}`)}&showDeleted=true&maxResults=5`,
-  )
-  const existing = (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
-  if (entry.deletedAt) {
-    if (existing && existing.status !== 'cancelled') {
-      await gapi(userId, evPath(existing.id), { method: 'DELETE' }).catch(e => {
-        if (e.status !== 404 && e.status !== 410) throw e
-      })
-      return 'removed'
-    }
-    return 'skipped'
-  }
-  // deleted in Google on purpose: leave it gone rather than resurrecting it
-  if (existing?.status === 'cancelled') return 'skipped'
-  const body = {
+/**
+ * What pushEntry must do for one entry, given what Google already holds.
+ *
+ * Pure, so the Undo subtlety is testable without a live account. A cancelled
+ * event normally means "deleted in Google on purpose, leave it gone" — but
+ * Drafter's own DELETE also leaves one cancelled, so Undo passes `revive` and
+ * gets a fresh event instead of a silent skip.
+ */
+export function googleEntryPlan(existing, entry, opts = {}) {
+  const live = existing && existing.status !== 'cancelled' ? existing : null
+  if (entry.deletedAt) return live ? { op: 'delete', id: live.id } : { op: 'skip' }
+  if (!live && existing && !opts.revive) return { op: 'skip' }
+  return live ? { op: 'patch', id: live.id } : { op: 'create' }
+}
+
+/** The Google Calendar body for one entry: busy, and keyed on eventId so the pull never reads it as a task. */
+export function googleEntryBody(entry, site) {
+  return {
     summary: entry.title || 'Untitled event',
     description: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') || undefined,
     location: entry.location || undefined,
@@ -245,11 +244,29 @@ export async function pushEntry(userId, calendarId, entry, site) {
     transparency: 'opaque',
     extendedProperties: { private: { drafter: '1', eventId: entry.id } },
   }
-  if (existing) {
-    await gapi(userId, evPath(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
+  const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
+  const page = await gapi(
+    userId,
+    `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`eventId=${entry.id}`)}&showDeleted=true&maxResults=5`,
+  )
+  const existing = (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
+  const plan = googleEntryPlan(existing, entry, opts)
+  if (plan.op === 'skip') return 'skipped'
+  if (plan.op === 'delete') {
+    await gapi(userId, evPath(plan.id), { method: 'DELETE' }).catch(e => {
+      if (e.status !== 404 && e.status !== 410) throw e
+    })
+    return 'removed'
+  }
+  const body = JSON.stringify(googleEntryBody(entry, site))
+  if (plan.op === 'patch') {
+    await gapi(userId, evPath(plan.id), { method: 'PATCH', body })
     return 'updated'
   }
-  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
+  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body })
   return 'created'
 }
 

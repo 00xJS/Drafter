@@ -121,8 +121,19 @@ export function entryToEvent(e: CalendarEntry): CalendarEvent {
  * down must never block saving locally. The row is already in the store by the
  * time this runs, so a failure costs the mirror, not the entry.
  */
-export function pushEventToGoogle(entry: CalendarEntry): Promise<{ result: string }> {
-  return googleAction<{ result: string }>('push-event', { event: entry })
+export function pushEventToGoogle(entry: CalendarEntry, opts: { revive?: boolean } = {}): Promise<{ result: string }> {
+  // `revive` is for Drafter's own Undo: Google keeps our deletion as a
+  // cancelled event, which would otherwise read as "deleted in Google on purpose"
+  return googleAction<{ result: string }>('push-event', { event: entry, revive: opts.revive === true })
+}
+
+/**
+ * The same, into one Microsoft account. The caller fans out across every
+ * enabled mirror account, exactly as task mirroring already does; Graph
+ * hard-deletes, so Undo needs no revive flag here.
+ */
+export function pushEventToMicrosoft(entry: CalendarEntry, accountId: string): Promise<{ result: string }> {
+  return microsoftAction<{ result: string }>('push-event', { event: entry, accountId })
 }
 
 /** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */

@@ -15,6 +15,13 @@ export const SCOPES = ['offline_access', 'openid', 'email', 'profile', 'User.Rea
 
 /** Namespace for the marker that identifies events this app owns. */
 const TASK_PROP = 'String {66f5a359-4659-4830-9070-00047ec6ac6e} Name drafterTaskId'
+/**
+ * A SEPARATE property from TASK_PROP, deliberately. pullChanges expands only
+ * TASK_PROP and drops any event without one, so an entry tagged this way can
+ * never be read back as a task that does not exist. Same guarantee Google gets
+ * from using eventId rather than taskId.
+ */
+const EVENT_PROP = 'String {66f5a359-4659-4830-9070-00047ec6ac6e} Name drafterEventId'
 
 /**
  * OData string literals are single-quoted and escape a quote by doubling it.
@@ -271,6 +278,63 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     return 'updated'
   }
   await graph(userId, accountId, `/me/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
+  return 'created'
+}
+
+/**
+ * Mirror one calendar entry the user wrote into the account's Drafter calendar.
+ *
+ * The Graph twin of lib/google.mjs pushEntry. Two differences from pushTask,
+ * both deliberate: it is keyed on EVENT_PROP so the pull cannot mistake it for
+ * a task, and `showAs` is 'busy' rather than 'free' — a mirrored task means
+ * something is due, an entry means the time is taken, and blocking the slot is
+ * the whole reason for writing one.
+ */
+/** Graph hard-deletes, so unlike Google there is no cancelled state to revive: an event is present or absent. */
+export function graphEntryPlan(existing, entry) {
+  if (entry.deletedAt) return existing ? { op: 'delete', id: existing.id } : { op: 'skip' }
+  return existing ? { op: 'patch', id: existing.id } : { op: 'create' }
+}
+
+const graphStamp = d => new Date(d).toISOString().replace(/\.\d{3}Z$/, '')
+
+/**
+ * The Graph body for one entry: busy, keyed on EVENT_PROP, and — for all-day —
+ * midnight to an EXCLUSIVE midnight, which is exactly how a CalendarEntry
+ * already stores one, so nothing is converted.
+ */
+export function graphEntryBody(entry, site) {
+  return {
+    subject: entry.title || 'Untitled event',
+    body: { contentType: 'text', content: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') },
+    location: entry.location ? { displayName: entry.location } : undefined,
+    isAllDay: !!entry.allDay,
+    showAs: 'busy',
+    start: entry.allDay ? { dateTime: `${entry.start}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.start), timeZone: 'UTC' },
+    end: entry.allDay ? { dateTime: `${entry.end}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.end), timeZone: 'UTC' },
+    singleValueExtendedProperties: [{ id: EVENT_PROP, value: entry.id }],
+  }
+}
+
+export async function pushEntry(userId, accountId, calendarId, entry, site) {
+  const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(EVENT_PROP)} and ep/value eq ${odataLiteral(entry.id)})`
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(filter)}`
+  const existing = (await graph(userId, accountId, q)).value?.[0] ?? null
+  const path = id => `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
+  const plan = graphEntryPlan(existing, entry)
+  if (plan.op === 'skip') return 'skipped'
+  if (plan.op === 'delete') {
+    await graph(userId, accountId, path(plan.id), { method: 'DELETE' }).catch(e => {
+      if (e.status !== 404 && e.status !== 410) throw e
+    })
+    return 'removed'
+  }
+  const body = JSON.stringify(graphEntryBody(entry, site))
+  if (plan.op === 'patch') {
+    await graph(userId, accountId, path(plan.id), { method: 'PATCH', body })
+    return 'updated'
+  }
+  await graph(userId, accountId, `/me/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body })
   return 'created'
 }
 
