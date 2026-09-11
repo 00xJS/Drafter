@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { feedFor, withOwner } from '../../netlify/functions/feed.mjs'
+import { feedFor, withOwner } from '../../netlify/functions/lib/feedrows.mjs'
 import { isMirroredTask } from '../calendars'
 
 // Two calendar bugs found by the Google/Microsoft parity audit and fixed by
