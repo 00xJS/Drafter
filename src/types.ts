@@ -156,6 +156,20 @@ export interface CalendarEvent {
    * calendar it may also EDIT this one.
    */
   localId?: string
+  /** Set when the entry is a work day, so the calendar draws it as a day badge instead of an item. */
+  work?: WorkMode
+}
+
+/**
+ * Where a work day is spent. A work day is a CalendarEntry whose start and end
+ * are the working hours: it answers "which days am I home" at a glance, and it
+ * is never busy time — you are working, and available, just not in the office.
+ */
+export type WorkMode = 'home' | 'office'
+export const WORK_MODES: WorkMode[] = ['home', 'office']
+export const WORK_MODE_META: Record<WorkMode, { label: string; short: string; emoji: string }> = {
+  home: { label: 'Working from home', short: 'Home', emoji: '🏠' },
+  office: { label: 'In the office', short: 'Office', emoji: '🏢' },
 }
 
 /**
@@ -181,6 +195,8 @@ export interface CalendarEntry extends Owned {
   notes?: string
   projectId?: string
   peopleIds?: string[]
+  /** Present on a work day: where it is spent. Its start and end are the working hours. */
+  work?: WorkMode
   createdAt: string
   updatedAt: string
   deletedAt?: string

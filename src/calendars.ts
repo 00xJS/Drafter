@@ -111,6 +111,7 @@ export function entryToEvent(e: CalendarEntry): CalendarEvent {
     allDay: e.allDay,
     location: e.location,
     localId: e.id,
+    work: e.work,
   }
 }
 
@@ -147,6 +148,45 @@ export function pushEventToMicrosoft(entry: CalendarEntry, accountId: string): P
  */
 export function isMirroredTask(t: Pick<Task, 'status' | 'dueAt'> & { deletedAt?: string }): boolean {
   return !t.deletedAt && OPEN_STATUSES.includes(t.status) && !!t.dueAt
+}
+
+/**
+ * The concrete days a repeating work pattern covers: every chosen weekday from
+ * `fromDay` for `weeks` weeks, each with the same working hours in LOCAL time.
+ *
+ * Materialised into separate entries on purpose. Each day then stays editable
+ * on its own — the Tuesday you go into the office instead — which one repeating
+ * rule would make awkward, and the mirrors, the feed and the grid need nothing
+ * new to understand them. Capped at a year so a slip cannot mint thousands.
+ */
+export function expandWorkDays(
+  fromDay: string,
+  weekdays: number[],
+  weeks: number,
+  startHM: string,
+  endHM: string,
+): { day: string; start: string; end: string }[] {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromDay)
+  const hm = (v: string) => {
+    const x = /^(\d{1,2}):(\d{2})/.exec(v)
+    return x ? { h: Number(x[1]), min: Number(x[2]) } : null
+  }
+  const a = hm(startHM)
+  const b = hm(endHM)
+  if (!m || !a || !b) return []
+  const want = new Set(weekdays)
+  const first = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  const span = Math.max(1, Math.min(52, Math.floor(weeks) || 1)) * 7
+  const out: { day: string; start: string; end: string }[] = []
+  for (let i = 0; i < span; i++) {
+    const d = new Date(first.getFullYear(), first.getMonth(), first.getDate() + i)
+    if (!want.has(d.getDay())) continue
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), a.h, a.min)
+    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), b.h, b.min)
+    if (end.getTime() <= start.getTime()) continue
+    out.push({ day: dateKey(d), start: start.toISOString(), end: end.toISOString() })
+  }
+  return out
 }
 
 /** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */

@@ -550,6 +550,7 @@ export function sanitizeEvent(raw: unknown): CalendarEntry | null {
     allDay,
     location: str(r.location)?.trim() || undefined,
     notes: str(r.notes)?.trim() || undefined,
+    work: r.work === 'home' || r.work === 'office' ? r.work : undefined,
     projectId: idOrUndefined(r.projectId),
     peopleIds: idList(r.peopleIds),
     ownerId: idOrUndefined(r.ownerId),

@@ -490,6 +490,9 @@ export function buildICS(name, items) {
       lines.push(`DTSTART:${stamp(it.start)}`)
       lines.push(`DTEND:${stamp(it.end ?? it.start + 3_600_000)}`)
     }
+    // Busy is the ICS default; only an item that is explicitly available time
+    // says so, which is what makes a calendar leave that slot bookable
+    if (it.transparent) lines.push('TRANSP:TRANSPARENT')
     lines.push(`SUMMARY:${esc(it.title)}`)
     if (it.description) lines.push(`DESCRIPTION:${esc(it.description)}`)
     if (it.url) lines.push(`URL:${esc(it.url)}`)

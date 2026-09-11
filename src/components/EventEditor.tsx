@@ -1,18 +1,19 @@
 import { useState } from 'react'
-import { CalendarEntry } from '../types'
+import { CalendarEntry, WORK_MODES, WORK_MODE_META, WorkMode } from '../types'
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
+import { expandWorkDays } from '../calendars'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
 // Everything else on the calendar marks a moment (a due time, a meal, an
-// occasion); this reserves a slot.
+// occasion); this reserves a slot. A work day is the same record with a place
+// attached — home or the office — and its start and end are the working hours.
 
 /** 'YYYY-MM-DDTHH:MM' in local time, which is what <input type="datetime-local"> speaks. */
 function toLocalInput(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function fromLocalInput(v: string): string | null {
@@ -29,16 +30,44 @@ function nextDayKey(key: string): string {
   return d.toISOString().slice(0, 10)
 }
 
+const pad = (n: number) => String(n).padStart(2, '0')
+
 const dayKeyOf = (iso: string) => {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso.slice(0, 10)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+/** 'HH:MM' in local time, which is what <input type="time"> speaks. */
+const hmOf = (iso: string) => {
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** A local day plus a local 'HH:MM', as an instant. */
+function atLocal(day: string, hm: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  const t = /^(\d{1,2}):(\d{2})/.exec(hm)
+  if (!m || !t) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(t[1]), Number(t[2])).toISOString()
+}
+
+/** Monday first, the way a working week reads. `n` is Date.getDay(). */
+const WEEKDAYS: { n: number; label: string }[] = [
+  { n: 1, label: 'Mon' },
+  { n: 2, label: 'Tue' },
+  { n: 3, label: 'Wed' },
+  { n: 4, label: 'Thu' },
+  { n: 5, label: 'Fri' },
+  { n: 6, label: 'Sat' },
+  { n: 0, label: 'Sun' },
+]
+const REPEAT_WEEKS = [1, 2, 4, 8, 12]
 
 export function EventEditor({
   entry,
   defaultStartIso,
+  defaultWork,
   onSave,
   onDelete,
   onClose,
@@ -47,22 +76,91 @@ export function EventEditor({
   entry?: CalendarEntry
   /** The slot the calendar was showing when this opened. */
   defaultStartIso: string
-  onSave(e: CalendarEntry): void
+  /** Open straight into a work day, from the calendar's "Work day" button. */
+  defaultWork?: WorkMode
+  /** One entry, or every day of a repeated work pattern. */
+  onSave(entries: CalendarEntry[]): void
   onDelete?(id: string): void
   onClose(): void
 }) {
-  const [title, setTitle] = useState(entry?.title ?? '')
+  const [work, setWork] = useState<WorkMode | undefined>(entry ? entry.work : defaultWork)
+  // A work day saved with its mode's default label ("Working from home") has an
+  // automatic title, not a chosen one: start the field empty so the label follows
+  // whichever mode is picked, or switching a home day to Office would keep
+  // telling Google and Outlook it is a home day.
+  const [title, setTitle] = useState(() =>
+    entry?.work && entry.title === WORK_MODE_META[entry.work].label ? '' : (entry?.title ?? ''),
+  )
   const [allDay, setAllDay] = useState(entry?.allDay ?? false)
   const [startLocal, setStartLocal] = useState(() => toLocalInput(entry && !entry.allDay ? entry.start : defaultStartIso))
   const [endLocal, setEndLocal] = useState(() =>
     toLocalInput(entry && !entry.allDay ? entry.end : new Date(Date.parse(defaultStartIso) + 3_600_000).toISOString()),
   )
   const [startDay, setStartDay] = useState(() => (entry?.allDay ? entry.start : dayKeyOf(entry?.start ?? defaultStartIso)))
+  const [workDay, setWorkDay] = useState(() => dayKeyOf(entry?.start ?? defaultStartIso))
+  const [from, setFrom] = useState(() => (entry?.work && !entry.allDay ? hmOf(entry.start) : '09:00'))
+  const [to, setTo] = useState(() => (entry?.work && !entry.allDay ? hmOf(entry.end) : '17:30'))
+  const [repeatDays, setRepeatDays] = useState<number[]>([])
+  const [repeatWeeks, setRepeatWeeks] = useState(4)
   const [location, setLocation] = useState(entry?.location ?? '')
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [error, setError] = useState('')
 
-  const save = () => {
+  /** A full entry from the fields both kinds share. Editing keeps the id and creation time. */
+  const build = (f: { title: string; start: string; end: string; allDay: boolean }, keepId: boolean): CalendarEntry => {
+    const now = new Date().toISOString()
+    const editing = keepId ? entry : undefined
+    return {
+      kind: 'event',
+      id: editing ? editing.id : uid(),
+      title: f.title,
+      start: f.start,
+      end: f.end,
+      allDay: f.allDay,
+      location: location.trim() || undefined,
+      notes: notes.trim() || undefined,
+      projectId: entry?.projectId,
+      peopleIds: entry?.peopleIds,
+      work,
+      createdAt: editing ? editing.createdAt : now,
+      updatedAt: editing ? newerStamp(editing.updatedAt) : now,
+    }
+  }
+
+  const saveWork = (mode: WorkMode) => {
+    const name = title.trim() || WORK_MODE_META[mode].label
+    const f = from.slice(0, 5)
+    const t = to.slice(0, 5)
+    if (!/^\d{2}:\d{2}$/.test(f) || !/^\d{2}:\d{2}$/.test(t)) {
+      setError('Pick your working hours.')
+      return
+    }
+    // zero-padded 'HH:MM' compares correctly as text
+    if (t <= f) {
+      setError('The working day has to end after it starts.')
+      return
+    }
+    if (!entry && repeatDays.length > 0) {
+      const days = expandWorkDays(workDay, repeatDays, repeatWeeks, f, t)
+      if (days.length === 0) {
+        setError('None of those weekdays fall in that range.')
+        return
+      }
+      onSave(days.map(d => build({ title: name, start: d.start, end: d.end, allDay: false }, false)))
+      onClose()
+      return
+    }
+    const start = atLocal(workDay, f)
+    const end = atLocal(workDay, t)
+    if (!start || !end) {
+      setError('Pick a day.')
+      return
+    }
+    onSave([build({ title: name, start, end, allDay: false }, true)])
+    onClose()
+  }
+
+  const saveEvent = () => {
     const name = title.trim()
     if (!name) {
       setError('Give it a title.')
@@ -93,68 +191,135 @@ export function EventEditor({
       start = s
       end = e ?? new Date(Date.parse(s) + 3_600_000).toISOString()
     }
-    const now = new Date().toISOString()
-    onSave({
-      kind: 'event',
-      id: entry?.id ?? uid(),
-      title: name,
-      start,
-      end,
-      allDay,
-      location: location.trim() || undefined,
-      notes: notes.trim() || undefined,
-      projectId: entry?.projectId,
-      peopleIds: entry?.peopleIds,
-      createdAt: entry?.createdAt ?? now,
-      updatedAt: entry ? newerStamp(entry.updatedAt) : now,
-    })
+    onSave([build({ title: name, start, end, allDay }, true)])
     onClose()
   }
 
+  const save = () => (work ? saveWork(work) : saveEvent())
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') save()
+  }
+  const heading = entry ? (work ? 'Edit work day' : 'Edit event') : work ? 'New work day' : 'New event'
+
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal event-modal" role="dialog" aria-modal="true" aria-label={entry ? 'Edit event' : 'New event'}>
+      <div className="modal event-modal" role="dialog" aria-modal="true" aria-label={heading}>
         <header className="modal-head">
-          <h2>{entry ? 'Edit event' : 'New event'}</h2>
+          <h2>{heading}</h2>
           <button className="btn subtle" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </header>
 
         <div className="modal-body">
-          <label className="field">
-            <span>Title</span>
-            <input
-              autoFocus
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') save()
-              }}
-              placeholder="Dentist"
-            />
-          </label>
+          {!entry && (
+            <div className="event-kind segmented" role="group" aria-label="What kind of entry">
+              <button type="button" className={work ? 'seg' : 'seg on'} aria-pressed={!work} onClick={() => setWork(undefined)}>
+                🕘 Event
+              </button>
+              <button type="button" className={work ? 'seg on' : 'seg'} aria-pressed={!!work} onClick={() => setWork(w => w ?? 'home')}>
+                🏠 Work day
+              </button>
+            </div>
+          )}
 
-          <label className="field-inline">
-            <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
-            <span>All day</span>
-          </label>
+          {work ? (
+            <>
+              <div className="field">
+                <span>Where</span>
+                <div className="segmented" role="group" aria-label="Where you are working">
+                  {WORK_MODES.map(m => (
+                    <button key={m} type="button" className={work === m ? 'seg on' : 'seg'} aria-pressed={work === m} onClick={() => setWork(m)}>
+                      {WORK_MODE_META[m].emoji} {WORK_MODE_META[m].short}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {allDay ? (
-            <label className="field">
-              <span>Day</span>
-              <input type="date" value={startDay} onChange={e => setStartDay(e.target.value)} />
-            </label>
+              <label className="field">
+                <span>{repeatDays.length > 0 ? 'Starting' : 'Day'}</span>
+                <input type="date" value={workDay} onChange={e => setWorkDay(e.target.value)} />
+              </label>
+
+              <div className="work-hours">
+                <label className="field">
+                  <span>From</span>
+                  <input type="time" value={from} onChange={e => setFrom(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>To</span>
+                  <input type="time" value={to} onChange={e => setTo(e.target.value)} />
+                </label>
+              </div>
+
+              {!entry && (
+                <div className="field">
+                  <span>Repeat on</span>
+                  <div className="work-days" role="group" aria-label="Repeat on these weekdays">
+                    {WEEKDAYS.map(w => {
+                      const on = repeatDays.includes(w.n)
+                      return (
+                        <button
+                          key={w.n}
+                          type="button"
+                          className={'work-day-chip' + (on ? ' on' : '')}
+                          aria-pressed={on}
+                          onClick={() => setRepeatDays(ds => (on ? ds.filter(x => x !== w.n) : [...ds, w.n]))}
+                        >
+                          {w.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {repeatDays.length > 0 && (
+                    <label className="work-weeks">
+                      <span>for</span>
+                      <select value={repeatWeeks} onChange={e => setRepeatWeeks(Number(e.target.value))} aria-label="How many weeks">
+                        {REPEAT_WEEKS.map(n => (
+                          <option key={n} value={n}>
+                            {n} week{n === 1 ? '' : 's'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              <label className="field">
+                <span>Label</span>
+                <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder={WORK_MODE_META[work].label} />
+              </label>
+            </>
           ) : (
             <>
               <label className="field">
-                <span>Starts</span>
-                <input type="datetime-local" value={startLocal} onChange={e => setStartLocal(e.target.value)} />
+                <span>Title</span>
+                <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder="Dentist" />
               </label>
-              <label className="field">
-                <span>Ends</span>
-                <input type="datetime-local" value={endLocal} onChange={e => setEndLocal(e.target.value)} />
+
+              <label className="field-inline">
+                <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
+                <span>All day</span>
               </label>
+
+              {allDay ? (
+                <label className="field">
+                  <span>Day</span>
+                  <input type="date" value={startDay} onChange={e => setStartDay(e.target.value)} />
+                </label>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>Starts</span>
+                    <input type="datetime-local" value={startLocal} onChange={e => setStartLocal(e.target.value)} />
+                  </label>
+                  <label className="field">
+                    <span>Ends</span>
+                    <input type="datetime-local" value={endLocal} onChange={e => setEndLocal(e.target.value)} />
+                  </label>
+                </>
+              )}
             </>
           )}
 

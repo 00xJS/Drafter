@@ -41,6 +41,8 @@ export interface FeedItem {
   date?: string
   /** All-day only: last day of a multi-day event, 'YYYY-MM-DD' (inclusive). */
   endDate?: string
+  /** Available time rather than busy: emits TRANSP:TRANSPARENT. */
+  transparent?: boolean
   description?: string
   url?: string
   categories?: string[]

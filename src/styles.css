@@ -5595,3 +5595,104 @@ textarea {
     min-height: 44px;
   }
 }
+
+/* ---- Work days --------------------------------------------------------- */
+/* A work day is a property of the day, so it is a small badge on the day
+   header, never a pill that competes with the day's events and meals. */
+.cal-work-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: calc(0.68rem * var(--type-scale));
+  line-height: 1.4;
+}
+.cal-work-badge.home {
+  border-color: #34d399;
+  color: #34d399;
+}
+.cal-work-badge.office {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+.cal-cell .cal-work-badge {
+  margin: 0 0 2px;
+}
+.cal-weekday-open .cal-work-badge {
+  margin-top: 2px;
+}
+.cal-work-edit,
+.cal-work-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+  cursor: pointer;
+}
+.cal-work-edit {
+  border-style: solid;
+}
+.cal-work-edit-label {
+  color: var(--muted);
+}
+
+/* the editor */
+.event-kind {
+  margin-bottom: 12px;
+}
+.work-hours {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.work-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.work-day-chip {
+  min-width: 42px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(0.85rem * var(--type-scale));
+  cursor: pointer;
+}
+.work-day-chip.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.work-weeks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+@media (pointer: coarse) {
+  .work-day-chip,
+  .cal-work-edit,
+  .cal-work-set {
+    min-height: 44px;
+  }
+  .work-day-chip {
+    min-width: 44px;
+  }
+}

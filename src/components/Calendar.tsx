@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task } from '../types'
+import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode } from '../types'
 import { dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -41,8 +41,8 @@ interface Props {
   onClearMeal(id: string): void
   /** Save a new place from the meal picker and hand it back. */
   onCreatePlace(name: string, category: PlaceCategory): Place
-  /** Open the event editor for a new entry starting at this instant. */
-  onNewEvent(startIso: string): void
+  /** Open the event editor for a new entry starting at this instant; `work` opens it as a work day. */
+  onNewEvent(startIso: string, work?: WorkMode): void
   /** Open the event editor on one of our own entries. */
   onEditEvent(id: string): void
   onReschedule(id: string, day: Date): void
@@ -64,6 +64,11 @@ const MEAL_OUT_COLOR = '#38bdf8'
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
 const LOCAL_EVENT_COLOR = '#a78bfa'
+/** 24-hour and short, for a badge that has to fit a month cell: 9–17:30. */
+const clock = (iso: string) => {
+  const d = new Date(iso)
+  return d.getMinutes() ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getHours()}`
+}
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -104,9 +109,30 @@ export function Calendar({
   const [addFor, setAddFor] = useState<string | null>(null)
 
   const sources: DaySources = useMemo(
-    () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
+    () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events.filter(e => !e.work)), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
     [tasks, events, projects, people, meals],
   )
+  // A work day is drawn as a badge on the day, not as an item competing with
+  // the day's events and meals: "am I home on Thursday" is a property of the day.
+  const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
+  const workOn = (d: Date) => (workByDay.get(dateKey(d)) ?? [])[0]
+  const workBadge = (d: Date, compact: boolean) => {
+    const w = workOn(d)
+    if (!w?.work) return null
+    const meta = WORK_MODE_META[w.work]
+    const hours = w.allDay ? '' : `${clock(w.start)}–${clock(w.end)}`
+    return (
+      <span
+        className={'cal-work-badge ' + w.work}
+        title={`${meta.label}${hours ? ' · ' + hours : ''}`}
+        aria-label={`${meta.label}${hours ? ', ' + hours : ''}`}
+      >
+        {meta.emoji}
+        {compact ? '' : ` ${meta.short}`}
+        {hours ? ` ${hours}` : ''}
+      </span>
+    )
+  }
 
   const cells = useMemo(() => monthCells(new Date(cursor.getFullYear(), cursor.getMonth(), 1)), [cursor])
   const week = useMemo(() => weekDays(cursor), [cursor])
@@ -303,6 +329,7 @@ export function Calendar({
                     <span className="cal-weekday-name">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
                     <span className="cal-weekday-num">{d.getDate()}</span>
                     <span className="cal-weekday-count">{daySummary(items)}</span>
+                    {workBadge(d, true)}
                   </button>
                   <div className="cal-add-wrap" onPointerDown={e => e.stopPropagation()}>
                     <button
@@ -343,6 +370,15 @@ export function Calendar({
                           }}
                         >
                           🕘 Event
+                        </button>
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setAddFor(null)
+                            onNewEvent(morningOf(d), 'home')
+                          }}
+                        >
+                          🏠 Work day
                         </button>
                       </div>
                     )}
@@ -389,6 +425,7 @@ export function Calendar({
                   onDrop={dropOn(d)}
                 >
                   <div className="cal-daynum">{d.getDate()}</div>
+                  {workBadge(d, true)}
                   {shown.map(item => monthPill(item, d))}
                   {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
                 </div>
@@ -408,6 +445,32 @@ export function Calendar({
               <div className="cal-sheet-title">
                 <h2>{fullDate(sheetDay)}</h2>
                 <span className="cal-sheet-sub">{daySummary(sheetItems)}</span>
+                {(() => {
+                  const w = workOn(sheetDay)
+                  return w?.localId ? (
+                    <button
+                      className="cal-work-edit"
+                      onClick={() => {
+                        const id = w.localId!
+                        closeSheet()
+                        onEditEvent(id)
+                      }}
+                    >
+                      {workBadge(sheetDay, false)} <span className="cal-work-edit-label">Edit</span>
+                    </button>
+                  ) : (
+                    <button
+                      className="cal-work-set"
+                      onClick={() => {
+                        const d = sheetDay
+                        setSheetDay(null)
+                        onNewEvent(morningOf(d), 'home')
+                      }}
+                    >
+                      🏠 Set work day
+                    </button>
+                  )
+                })()}
               </div>
               <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, 1))} aria-label="Next day">
                 ›

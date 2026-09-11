@@ -309,7 +309,8 @@ export function graphEntryBody(entry, site) {
     body: { contentType: 'text', content: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') },
     location: entry.location ? { displayName: entry.location } : undefined,
     isAllDay: !!entry.allDay,
-    showAs: 'busy',
+    // home is "working elsewhere", Outlook's own status for exactly this; the office is free
+    showAs: entry.work === 'home' ? 'workingElsewhere' : entry.work ? 'free' : 'busy',
     start: entry.allDay ? { dateTime: `${entry.start}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.start), timeZone: 'UTC' },
     end: entry.allDay ? { dateTime: `${entry.end}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.end), timeZone: 'UTC' },
     singleValueExtendedProperties: [{ id: EVENT_PROP, value: entry.id }],

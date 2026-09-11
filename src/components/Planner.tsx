@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
+import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus, WorkMode } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
@@ -585,7 +585,7 @@ export default function Planner() {
   }
 
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
-  const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string } | null>(null)
+  const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
 
   /**
    * Write an entry through to every connected mirror: Google when its mirror is
@@ -597,9 +597,27 @@ export default function Planner() {
     if (mirroring) void pushEventToGoogle(e, opts).catch(() => {})
     for (const accountId of msMirrorIds) void pushEventToMicrosoft(e, accountId).catch(() => {})
   }
-  const saveEvent = (e: CalendarEntry) => {
-    store.upsert(e)
-    mirrorEvent(e)
+  /** The same fan-out, awaited, so a run of entries can be fed to the mirrors one at a time. */
+  const mirrorEventNow = (e: CalendarEntry) =>
+    Promise.allSettled([
+      ...(mirroring ? [pushEventToGoogle(e)] : []),
+      ...msMirrorIds.map(accountId => pushEventToMicrosoft(e, accountId)),
+    ]).then(() => undefined)
+  /**
+   * Save one entry, or a run of repeated work days. Every row lands locally at
+   * once; a run is fed to the mirrors one entry at a time, so a dozen work days
+   * do not fire two dozen provider calls in the same instant and trip limits.
+   */
+  const saveEvents = (entries: CalendarEntry[]) => {
+    for (const e of entries) store.upsert(e)
+    if (entries.length === 1) {
+      mirrorEvent(entries[0])
+      return
+    }
+    void (async () => {
+      for (const e of entries) await mirrorEventNow(e)
+    })()
+    showToast(`${entries.length} work days added`)
   }
   const deleteEvent = (id: string) => {
     const gone = store.events.find(e => e.id === id)
@@ -1127,7 +1145,7 @@ export default function Planner() {
                     onSaveMeal={saveMeal}
                     onClearMeal={clearMeal}
                     onCreatePlace={createPlaceInline}
-                    onNewEvent={startIso => setEventEditor({ startIso })}
+                    onNewEvent={(startIso, work) => setEventEditor({ startIso, work })}
                     onEditEvent={id => {
                       const entry = store.events.find(e => e.id === id)
                       if (entry) setEventEditor({ entry, startIso: entry.start })
@@ -1436,7 +1454,8 @@ export default function Planner() {
         <EventEditor
           entry={eventEditor.entry}
           defaultStartIso={eventEditor.startIso}
-          onSave={saveEvent}
+          defaultWork={eventEditor.work}
+          onSave={saveEvents}
           onDelete={deleteEvent}
           onClose={() => setEventEditor(null)}
         />

@@ -12,6 +12,8 @@ export interface EntryLike {
   location?: string
   notes?: string
   deletedAt?: string
+  /** Present on a work day: where it is spent. */
+  work?: 'home' | 'office'
   [key: string]: unknown
 }
 
@@ -32,6 +34,6 @@ export declare function googleEntryBody(
   location?: string
   start: { date?: string; dateTime?: string }
   end: { date?: string; dateTime?: string }
-  transparency: 'opaque'
+  transparency: 'opaque' | 'transparent'
   extendedProperties: { private: { drafter: '1'; eventId: string } }
 }

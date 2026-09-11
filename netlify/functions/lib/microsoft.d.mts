@@ -12,6 +12,8 @@ export interface EntryLike {
   location?: string
   notes?: string
   deletedAt?: string
+  /** Present on a work day: where it is spent. */
+  work?: 'home' | 'office'
   [key: string]: unknown
 }
 
@@ -28,7 +30,7 @@ export declare function graphEntryBody(
   body: { contentType: 'text'; content: string }
   location?: { displayName: string }
   isAllDay: boolean
-  showAs: 'busy'
+  showAs: 'busy' | 'free' | 'workingElsewhere'
   start: { dateTime: string; timeZone: 'UTC' }
   end: { dateTime: string; timeZone: 'UTC' }
   singleValueExtendedProperties: [{ id: string; value: string }]

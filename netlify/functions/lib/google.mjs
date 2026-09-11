@@ -241,7 +241,8 @@ export function googleEntryBody(entry, site) {
     location: entry.location || undefined,
     start: entry.allDay ? { date: entry.start } : { dateTime: new Date(entry.start).toISOString() },
     end: entry.allDay ? { date: entry.end } : { dateTime: new Date(entry.end).toISOString() },
-    transparency: 'opaque',
+    // a work day is working hours, not a meeting: you are available, so it is free time
+    transparency: entry.work ? 'transparent' : 'opaque',
     extendedProperties: { private: { drafter: '1', eventId: entry.id } },
   }
 }
