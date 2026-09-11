@@ -4458,7 +4458,9 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface);
   min-width: 0;
-  overflow: hidden;
+  /* NOT overflow:hidden — that clipped the add-menu dropdown to a short,
+     event-less day so only its top rows showed. The header rounds its own top
+     corners instead, so the card still reads as clipped. */
 }
 
 .cal-weekday.today {
@@ -4472,6 +4474,7 @@ textarea {
   padding-right: 6px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .cal-weekday-open {
