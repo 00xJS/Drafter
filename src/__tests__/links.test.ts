@@ -18,6 +18,17 @@ describe('parseLink', () => {
     expect(oauthReasonLabel('<script>alert(1)</script>')).toBe('unknown error')
   })
 
+  it('turns the classified Microsoft codes into something you can act on, but never echoes prose', () => {
+    // the server reads the AADSTS code out of Microsoft's explanation and sends only the token
+    expect(oauthReasonLabel('secret_expired')).toMatch(/client secret has expired/)
+    expect(oauthReasonLabel('redirect_uri')).toMatch(/api\/microsoft\/callback/)
+    expect(parseLink(new URLSearchParams('microsoft=error&reason=account_type')).oauth?.reason).toMatch(/kind of account/)
+    // the prose itself, if it ever reached the browser, still collapses — that is the guarantee the hints rely on
+    expect(oauthReasonLabel('AADSTS7000222: The provided client secret keys for app are expired.')).toBe('unknown error')
+    // a plain unknown code is shown as words, as before
+    expect(oauthReasonLabel('state_mismatch')).toBe('state mismatch')
+  })
+
   it('scopes drafter://oauth host to OAuth only', () => {
     const p = parseLink(new URLSearchParams('title=Nope&google=connected'), { host: 'oauth' })
     expect(p.oauth?.ok).toBe(true)

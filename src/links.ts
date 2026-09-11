@@ -29,9 +29,32 @@ const OAUTH_REASONS = new Set([
   'unknown_error',
 ])
 
+/**
+ * What to tell the person for the codes the callbacks classify (see
+ * oauthFailureCode in netlify/functions/lib/microsoft.mjs). The server keeps
+ * Microsoft's prose in its log and sends only one of these tokens back, so this
+ * is where a bare code becomes something you can act on. Each reads as the
+ * inside of "Outlook could not be connected (…)".
+ */
+const OAUTH_HINTS: Record<string, string> = {
+  secret_expired: 'the Azure client secret has expired — create a new one and update MICROSOFT_CLIENT_SECRET on Netlify',
+  bad_client_secret: 'MICROSOFT_CLIENT_SECRET is not accepted — paste the secret’s Value, not its Secret ID',
+  bad_client_id: 'MICROSOFT_CLIENT_ID does not match an app registration',
+  redirect_uri: 'the reply URL is not registered in Azure — add https://<your site>/api/microsoft/callback',
+  consent_required: 'that account needs consent for Calendars.ReadWrite — an admin may have to grant it',
+  account_type: 'the app registration does not allow this kind of account — allow any organisational directory and personal accounts',
+  invalid_grant: 'the sign-in took too long or was reused — try connecting again',
+  tenant: 'that account’s directory could not be reached',
+  no_refresh_token: 'no refresh token came back — offline_access was refused, so nothing could be saved',
+  save_failed: 'signed in, but saving the account failed — check SUPABASE_SERVICE_KEY on Netlify',
+  exchange_failed: 'the token exchange failed — the Netlify function log has the explanation',
+  access_denied: 'access was refused or the sign-in was cancelled',
+}
+
 /** Map an OAuth failure code to a short, known toast fragment (never echo arbitrary attacker text). */
 export function oauthReasonLabel(raw: string | null | undefined): string {
   const key = (raw ?? 'unknown').toLowerCase().replace(/\s+/g, '_')
+  if (OAUTH_HINTS[key]) return OAUTH_HINTS[key]
   if (OAUTH_REASONS.has(key)) return key.replace(/_/g, ' ')
   if (/^[a-z0-9_]{1,40}$/i.test(key)) return key.replace(/_/g, ' ')
   return 'unknown error'

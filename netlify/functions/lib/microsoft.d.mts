@@ -19,6 +19,12 @@ export interface EntryLike {
 
 export type EntryPlan = { op: 'create' } | { op: 'skip' } | { op: 'patch'; id: string } | { op: 'delete'; id: string }
 
+/**
+ * The short, safe reason a failed connect sends back to the browser, read out
+ * of Microsoft's { error, error_description } — always matches /^[a-z0-9_]{1,40}$/.
+ */
+export declare function oauthFailureCode(body: unknown): string
+
 /** Graph hard-deletes, so there is no cancelled state and no revive option. */
 export declare function graphEntryPlan(existing: { id: string } | null, entry: EntryLike): EntryPlan
 

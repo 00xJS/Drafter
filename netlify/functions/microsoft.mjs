@@ -22,6 +22,7 @@ import { pushEntry,
   listCalendars,
   microsoftConfigured,
   missingMicrosoftEnv,
+  oauthFailureCode,
   publicAccount,
   pullChanges,
   pushTask,
@@ -56,7 +57,16 @@ async function callback(req, url) {
     return new Response(null, { status: 302, headers })
   }
   if (!microsoftConfigured()) return back('microsoft=error&reason=not_configured')
-  if (url.searchParams.get('error')) return back(`microsoft=error&reason=${encodeURIComponent(url.searchParams.get('error_description') ?? url.searchParams.get('error'))}`)
+  // Microsoft's own refusal (consent, account type, a secret problem it caught
+  // early). The browser only ever gets a short code — the client would collapse
+  // the prose to "unknown error" anyway — so the full explanation is logged
+  // here, where whoever administers the site can read it.
+  if (url.searchParams.get('error')) {
+    const error = url.searchParams.get('error')
+    const description = url.searchParams.get('error_description') ?? ''
+    console.error('microsoft callback: Microsoft returned', error, description)
+    return back(`microsoft=error&reason=${encodeURIComponent(oauthFailureCode({ error, error_description: description }))}`)
+  }
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   if (!code || !state) return back('microsoft=error&reason=bad_state')
@@ -66,14 +76,24 @@ async function callback(req, url) {
   const row = await settingsFind('ms_oauth_state', state).catch(() => null)
   if (!row || !row.ms_state_at || Date.now() - Date.parse(row.ms_state_at) > STATE_TTL_MS) return back('microsoft=error&reason=bad_state')
   await settingsSet(row.user_id, { ms_oauth_state: null, ms_state_at: null })
+  let tokens
   try {
-    const tokens = await exchangeCode(code, redirectUriFor(url.origin))
-    if (!tokens.refresh_token) return back('microsoft=error&reason=no_refresh_token')
-    await connectAccount(row.user_id, tokens)
-    return back('microsoft=connected')
+    tokens = await exchangeCode(code, redirectUriFor(url.origin))
   } catch (e) {
-    return back(`microsoft=error&reason=${encodeURIComponent(e?.message ?? 'exchange_failed')}`)
+    // an expired or mistyped client secret lands here, as does a redirect URI
+    // Azure does not know — exchangeCode has already read the AADSTS code out
+    console.error('microsoft callback: token exchange failed —', e?.message)
+    return back(`microsoft=error&reason=${encodeURIComponent(e?.code ?? oauthFailureCode({ error_description: e?.message }))}`)
   }
+  if (!tokens.refresh_token) return back('microsoft=error&reason=no_refresh_token')
+  try {
+    await connectAccount(row.user_id, tokens)
+  } catch (e) {
+    // signed in fine; writing the account to user_settings is what failed
+    console.error('microsoft callback: saving the account failed —', e?.message)
+    return back('microsoft=error&reason=save_failed')
+  }
+  return back('microsoft=connected')
 }
 
 const handler = async req => {

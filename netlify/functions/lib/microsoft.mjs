@@ -61,6 +61,44 @@ export const publicAccount = a => ({ id: a.id, email: a.email, name: a.name, has
 
 // ------------------------------------------------------------------ tokens
 
+/**
+ * The short, safe reason the browser is allowed to see for a failed connect.
+ * Microsoft explains failures in `error_description` prose ("AADSTS7000222:
+ * The provided client secret keys for app … are expired…"), which the client
+ * deliberately refuses to echo — it collapses anything that is not a bare code
+ * to "unknown error", so a crafted redirect can never put text on screen. That
+ * left every real cause invisible. Read the AADSTS code out of the prose here,
+ * server-side, and hand back a token the client knows how to explain; the
+ * prose itself goes to the function log (see the callback).
+ */
+export function oauthFailureCode(body) {
+  const error = String(body?.error ?? '').toLowerCase()
+  const desc = String(body?.error_description ?? '')
+  const aadsts = /AADSTS(\d+)/.exec(desc)?.[1]
+  const byCode = {
+    7000222: 'secret_expired', // client secret keys expired
+    7000215: 'bad_client_secret', // invalid client secret provided (often the secret's ID pasted, not its Value)
+    700016: 'bad_client_id', // application not found in the directory
+    50011: 'redirect_uri', // reply URL not registered for the app
+    65001: 'consent_required', // user or admin has not consented
+    65004: 'consent_required',
+    50020: 'account_type', // user account from a different tenant / personal account not allowed
+    50194: 'account_type', // app not configured as multi-tenant
+    9002313: 'account_type', // signed-in account type not allowed
+    500113: 'account_type',
+    90002: 'tenant', // tenant not found
+    70000: 'invalid_grant', // code expired or already redeemed
+    54005: 'invalid_grant',
+  }
+  if (aadsts && byCode[aadsts]) return byCode[aadsts]
+  if (error === 'access_denied' || error === 'consent_required' || error === 'interaction_required') return error
+  if (error === 'invalid_grant') return 'invalid_grant'
+  if (error === 'invalid_client') return 'bad_client_secret'
+  if (error === 'unauthorized_client') return 'bad_client_id'
+  if (/^[a-z0-9_]{1,40}$/.test(error)) return error
+  return 'exchange_failed'
+}
+
 export async function exchangeCode(code, redirectUri) {
   const e = env()
   const res = await fetch(`${AUTHORITY}/token`, {
@@ -69,7 +107,9 @@ export async function exchangeCode(code, redirectUri) {
     body: new URLSearchParams({ client_id: e.clientId, client_secret: e.clientSecret, code, redirect_uri: redirectUri, grant_type: 'authorization_code', scope: SCOPES.join(' ') }),
   })
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error_description ?? body.error ?? `token exchange failed (${res.status})`)
+  // the message keeps Microsoft's full explanation for the log; `code` is the
+  // only part that travels back to the browser
+  if (!res.ok) throw Object.assign(new Error(body.error_description ?? body.error ?? `token exchange failed (${res.status})`), { code: oauthFailureCode(body) })
   return body
 }
 
