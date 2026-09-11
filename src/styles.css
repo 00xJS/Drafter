@@ -5972,6 +5972,144 @@ textarea {
   min-width: 0;
 }
 
+/* ---------- habits (Today dashboard card) ---------- */
+.habit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.habit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+.habit-row:hover {
+  background: var(--surface-2);
+}
+.habit-row.rest {
+  opacity: 0.6;
+}
+/* the tick: an outlined ring in the habit's colour that fills when done today */
+.habit-tick {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
+}
+.habit-tick:active {
+  transform: scale(0.88);
+}
+.habit-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.habit-name:hover {
+  color: var(--accent-text);
+}
+.habit-emoji {
+  font-size: 1.05rem;
+}
+.habit-streak {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.habit-row.rest .habit-streak {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* the add / edit form */
+.habit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.habit-form-top {
+  display: flex;
+  gap: 8px;
+}
+.habit-emoji-input {
+  width: 48px;
+  flex: none;
+  text-align: center;
+}
+.habit-name-input {
+  flex: 1;
+  min-width: 0;
+}
+.habit-days {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.habit-day {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.habit-day.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
+}
+.habit-days-hint {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.habit-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.habit-delete {
+  margin-left: auto;
+}
+
 /* ============================================================
    NATIVE SHELL  ·  html.native (and html.ios)
    ------------------------------------------------------------

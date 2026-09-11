@@ -470,7 +470,32 @@ export interface JournalEntry extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry
+/**
+ * A habit you want to keep: a thing to do on its scheduled days, ticked once a
+ * day, with a streak. Personal like the journal. Completions live on the record
+ * as a list of day keys rather than a row each, so a habit is one record and a
+ * tick is one small write — the streak is computed, never stored.
+ */
+export interface Habit extends Owned {
+  kind: 'habit'
+  id: string
+  name: string
+  emoji?: string
+  color?: string
+  /** Weekdays it is due, 0=Sun … 6=Sat. Empty or absent means every day. */
+  days?: number[]
+  /** Days it was done, each YYYY-MM-DD. */
+  done: string[]
+  /** Order on the Today card. */
+  order?: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  /** Kept but no longer counted or shown on Today. */
+  archivedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

@@ -39,6 +39,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Calendar'
     case 'event':
       return 'Event'
+    case 'habit':
+      return 'Habit'
   }
 }
 

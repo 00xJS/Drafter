@@ -19,6 +19,7 @@ import {
   GroceryState,
   GROCERY_STATES,
   JournalEntry,
+  Habit,
   CalendarEntry,
   Bill,
   BillKind,
@@ -359,7 +360,7 @@ const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
-const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event'])
+const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -616,6 +617,37 @@ export function sanitizeJournal(raw: unknown): JournalEntry | null {
   }
 }
 
+/** Coerce arbitrary data into a valid Habit. Completions are de-duped, sorted
+ *  day keys; unknown weekdays are dropped. */
+export function sanitizeHabit(raw: unknown): Habit | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id) return null
+  const now = new Date().toISOString()
+  const days = Array.isArray(r.days)
+    ? [...new Set(r.days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b)
+    : undefined
+  const done = Array.isArray(r.done) ? [...new Set(r.done.map(v => dateOnly(v)).filter((d): d is string => !!d))].sort() : []
+  const orderN = Number(r.order)
+  return {
+    kind: 'habit',
+    id,
+    name: str(r.name) ?? '',
+    emoji: str(r.emoji) || undefined,
+    color: str(r.color) || undefined,
+    days: days && days.length ? days : undefined,
+    done,
+    order: Number.isFinite(orderN) ? orderN : undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+    archivedAt: isoDate(r.archivedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -716,6 +748,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'meal') return sanitizeMeal(converted)
   if (converted.kind === 'grocery') return sanitizeGrocery(converted)
   if (converted.kind === 'journal') return sanitizeJournal(converted)
+  if (converted.kind === 'habit') return sanitizeHabit(converted)
   if (converted.kind === 'event') return sanitizeEvent(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)

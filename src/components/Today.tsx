@@ -3,6 +3,7 @@ import {
   MEAL_SLOT_META,
   CalendarEvent,
   CalendarSource,
+  Habit,
   JournalEntry,
   Meal,
   PLACE_CATEGORY_META,
@@ -24,8 +25,9 @@ import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjec
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
-import { excerpt, fmtTime, timeAgo } from '../utils'
+import { dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
+import { HabitsCard } from './HabitsCard'
 
 interface Props {
   tasks: Task[]
@@ -61,6 +63,9 @@ interface Props {
   onSaveJournal(e: JournalEntry): void
   onDeleteJournal(id: string): void
   onOpenJournal(): void
+  habits: Habit[]
+  onSaveHabit(h: Habit): void
+  onDeleteHabit(id: string): void
 }
 
 const STALE_DAYS = 14
@@ -338,6 +343,9 @@ export function Today({
   onSaveJournal,
   onDeleteJournal,
   onOpenJournal,
+  habits,
+  onSaveHabit,
+  onDeleteHabit,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -596,6 +604,8 @@ export function Today({
       )}
 
       {evening && journalCard}
+
+      <HabitsCard habits={habits} today={dateKey(new Date())} onSave={onSaveHabit} onDelete={onDeleteHabit} />
 
       {top3.length > 0 && (
         <section className="chart-card week-top3">

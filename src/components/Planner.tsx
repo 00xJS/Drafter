@@ -1208,6 +1208,12 @@ export default function Planner() {
                       showToast('Journal entry removed', () => store.restore([id]))
                     }}
                     onOpenJournal={() => openJournal(localDayKey())}
+                    habits={store.habits}
+                    onSaveHabit={h => store.upsert(h)}
+                    onDeleteHabit={id => {
+                      store.remove(id)
+                      showToast('Habit removed', () => store.restore([id]))
+                    }}
                   />
                 )}
                 {homeTab === 'week' && (
