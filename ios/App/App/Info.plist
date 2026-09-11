@@ -72,6 +72,11 @@
 	<string>Dark</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
+	<!-- The Enable weather button on Home asks WKWebView's navigator.geolocation,
+	     which iOS routes through this app's CoreLocation. Without this key the
+	     prompt never appears and the request just fails. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Drafter uses your location only to show today's forecast on Home. It is kept on this iPhone and never synced.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

@@ -20,6 +20,10 @@ import {
   GROCERY_STATES,
   JournalEntry,
   Habit,
+  Routine,
+  RoutineStep,
+  RoutineWhen,
+  ROUTINE_WHENS,
   CalendarEntry,
   Bill,
   BillKind,
@@ -360,7 +364,9 @@ const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
-const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit'])
+const ROUTINE_WHEN_SET = new Set<string>(ROUTINE_WHENS)
+/** Exported so a test can hold the newest sync_posts migration to the same list. */
+export const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine'])
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {
@@ -648,6 +654,53 @@ export function sanitizeHabit(raw: unknown): Habit | null {
   }
 }
 
+/** Coerce arbitrary data into a valid Routine. Steps need an id and text and
+ *  are de-duped by id; ticks must be 'YYYY-MM-DD|stepId' and are de-duped and
+ *  sorted. A tick whose step is gone is kept — an edit on another device may
+ *  land before the steps do, and an orphan costs nothing. Only the id is
+ *  required, so a purge tombstone survives. */
+export function sanitizeRoutine(raw: unknown): Routine | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id) return null
+  const now = new Date().toISOString()
+  const steps: RoutineStep[] = []
+  const seen = new Set<string>()
+  if (Array.isArray(r.steps)) {
+    for (const rawStep of r.steps) {
+      if (!rawStep || typeof rawStep !== 'object') continue
+      const s = rawStep as Record<string, unknown>
+      const stepId = str(s.id)
+      const text = str(s.text)?.trim()
+      if (stepId && text && !seen.has(stepId)) {
+        seen.add(stepId)
+        steps.push({ id: stepId, text })
+      }
+    }
+  }
+  const ticks = Array.isArray(r.ticks)
+    ? [...new Set(r.ticks.filter((t): t is string => typeof t === 'string' && /^\d{4}-\d{2}-\d{2}\|.+$/.test(t)))].sort()
+    : []
+  const when = str(r.when)
+  const orderN = Number(r.order)
+  return {
+    kind: 'routine',
+    id,
+    name: str(r.name) ?? '',
+    when: when && ROUTINE_WHEN_SET.has(when) ? (when as RoutineWhen) : 'anytime',
+    steps,
+    ticks,
+    order: Number.isFinite(orderN) ? orderN : undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+    archivedAt: isoDate(r.archivedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -749,6 +802,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'grocery') return sanitizeGrocery(converted)
   if (converted.kind === 'journal') return sanitizeJournal(converted)
   if (converted.kind === 'habit') return sanitizeHabit(converted)
+  if (converted.kind === 'routine') return sanitizeRoutine(converted)
   if (converted.kind === 'event') return sanitizeEvent(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)

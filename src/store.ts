@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
+import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, Routine, SOCIAL_PROJECT_ID, Task, TaskStatus, Template } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
@@ -12,9 +12,9 @@ import { getSupabase } from './supabase'
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 /** Kinds the server used to drop silently — keep retrying so they survive a new session. */
-const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit'])
+const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine'])
 /** Kinds that belong to one account even inside a household. */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit'])
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
 
 async function loadCache(myId: string | null): Promise<Item[]> {
   try {
@@ -96,6 +96,8 @@ export interface Store {
   reviews: Review[]
   /** Your habits (personal), in card order. */
   habits: Habit[]
+  /** Your routines (personal), in card order. */
+  routines: Routine[]
   templates: Template[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
@@ -423,6 +425,14 @@ export function useItems(myId: string | null = null): Store {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, myId],
   )
+  const routines = useMemo(
+    () =>
+      items
+        .filter((i): i is Routine => i.kind === 'routine' && !i.deletedAt && !i.archivedAt && isMine(i))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt.localeCompare(b.createdAt)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
   const templates = useMemo(
     () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
     [items],
@@ -449,6 +459,7 @@ export function useItems(myId: string | null = null): Store {
     journal,
     reviews,
     habits,
+    routines,
     templates,
     allItems: items,
     visibleItems,

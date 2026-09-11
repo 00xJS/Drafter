@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Habit } from '../types'
-import { isDueOn, isDoneOn, toggleDone, streakOf, rangeStats } from '../habits'
+import { isDueOn, isDoneOn, toggleDone, streakOf, rangeStats, habitsConsistency } from '../habits'
 import { sanitizeHabit } from '../schema'
 
 function habit(over: Partial<Habit> = {}): Habit {
@@ -64,6 +64,47 @@ describe('range stats for the review', () => {
     const h = habit({ days: [1, 2, 3, 4, 5], done: ['2026-09-10', '2026-09-14'] })
     // Thu10..Mon14 inclusive: due on 10,11,14 (weekdays); done 10 and 14
     expect(rangeStats(h, day(10), day(14))).toEqual({ done: 2, due: 3 })
+  })
+})
+
+describe('habits consistency for the review', () => {
+  // review ranges end EXCLUSIVE: Sun 6 → Sun 13 is the week of the 6th–12th
+  const start = day(6)
+  const end = day(13)
+  it('totals done against due across every habit, ignoring the exclusive end day', () => {
+    const read = habit({ id: 'a', done: ['2026-09-07', '2026-09-08', '2026-09-13'] }) // 13th is outside
+    const gym = habit({ id: 'b', days: [1, 3, 5], done: ['2026-09-07'] }) // Mon/Wed/Fri: due 7, 9, 11
+    const c = habitsConsistency([read, gym], start, end, day(20))
+    expect(c.rows.map(r => [r.habit.id, r.done, r.due])).toEqual([
+      ['a', 2, 7],
+      ['b', 1, 3],
+    ])
+    expect(c).toMatchObject({ done: 3, due: 10, pct: 30 })
+  })
+  it('only counts days up to today when the period is still in progress', () => {
+    const h = habit({ done: ['2026-09-06', '2026-09-07', '2026-09-08'] })
+    const c = habitsConsistency([h], start, end, day(8)) // Tuesday
+    expect(c).toMatchObject({ done: 3, due: 3, pct: 100 })
+  })
+  it('drops habits with nothing due and is empty when nothing was due at all', () => {
+    const weekday = habit({ days: [1, 2, 3, 4, 5] })
+    const c = habitsConsistency([weekday], day(12), day(14), day(20)) // Sat 12 – Sun 13
+    expect(c.rows).toEqual([])
+    expect(c).toMatchObject({ done: 0, due: 0, pct: 0 })
+    expect(habitsConsistency([], start, end, day(20)).due).toBe(0)
+  })
+  it('counts nothing for a period entirely in the future', () => {
+    expect(habitsConsistency([habit()], day(20), day(27), day(10)).due).toBe(0)
+  })
+  it('starts counting the day a habit was created, not the start of the period', () => {
+    // created and ticked on Thu 10 in the week Sun 6 – Sat 12, reviewed on Thu 10
+    const born = new Date(2026, 8, 10, 14, 30).toISOString()
+    const fresh = habit({ id: 'new', createdAt: born, updatedAt: born, done: ['2026-09-10'] })
+    expect(habitsConsistency([fresh], start, end, day(10))).toMatchObject({ done: 1, due: 1, pct: 100 })
+    // last month never had it: no row, rather than 0 of 31
+    expect(habitsConsistency([fresh], new Date(2026, 7, 1), new Date(2026, 8, 1), day(10)).rows).toEqual([])
+    // and a habit that predates the period is unaffected
+    expect(habitsConsistency([habit()], start, end, day(20)).due).toBe(7)
   })
 })
 

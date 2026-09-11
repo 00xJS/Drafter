@@ -58,3 +58,39 @@ export function rangeStats(habit: Habit, start: Date, end: Date): { done: number
   }
   return { done, due }
 }
+
+export interface HabitConsistency {
+  rows: { habit: Habit; done: number; due: number }[]
+  done: number
+  due: number
+  /** 0–100, rounded; 0 when nothing was due. */
+  pct: number
+}
+
+/**
+ * Every habit's done/due over a review period, plus the total. `end` is
+ * EXCLUSIVE to match a review Range, where rangeStats is inclusive — passing it
+ * straight through would count the first day of the next period. Days after
+ * `today` are not yet due, so a week still in progress reads "3/3 so far"
+ * rather than "3/7" and the summary isn't told you are slacking. Days before
+ * the habit existed are not owed either: one created and ticked on Thursday
+ * is 1/1, not 1/5, and a review of last month shows nothing for it at all.
+ */
+export function habitsConsistency(habits: Habit[], start: Date, end: Date, today = new Date()): HabitConsistency {
+  // calendar-date arithmetic, never milliseconds, so a DST day doesn't shift the edge
+  const lastInRange = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1)
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const last = lastInRange.getTime() < todayStart.getTime() ? lastInRange : todayStart
+  const rows = habits
+    .map(habit => {
+      // createdAt is an instant; the habit's first day is that instant's LOCAL day
+      const born = new Date(habit.createdAt)
+      const bornDay = Number.isNaN(born.getTime()) ? start : new Date(born.getFullYear(), born.getMonth(), born.getDate())
+      const from = bornDay.getTime() > start.getTime() ? bornDay : start
+      return { habit, ...rangeStats(habit, from, last) }
+    })
+    .filter(r => r.due > 0)
+  const done = rows.reduce((s, r) => s + r.done, 0)
+  const due = rows.reduce((s, r) => s + r.due, 0)
+  return { rows, done, due, pct: due ? Math.round((done / due) * 100) : 0 }
+}

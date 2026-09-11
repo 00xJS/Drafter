@@ -32,6 +32,7 @@ interface Props {
   onOpenPlace?(p: Place): void
   onOpenJournal?(e: JournalEntry): void
   onSaw?(p: Person): void
+  /** openEditor=false files the line straight to the Inbox with no editor. */
   onCreateTask(title: string, openEditor?: boolean): void
   onClose(): void
 }
@@ -131,7 +132,8 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
 
   useEffect(() => setCursor(0), [q])
 
-  const pick = (h: Hit, openEditor = false) => {
+  // a click on the create row opens the editor; only Shift+Enter passes false
+  const pick = (h: Hit, openEditor = true) => {
     onClose()
     if (h.kind === 'task' || h.kind === 'recent') onOpenTask(h.task)
     else if (h.kind === 'project') onOpenProject(h.project)
@@ -161,7 +163,8 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               setCursor(c => Math.max(c - 1, 0))
             } else if (e.key === 'Enter' && hits[cursor]) {
               const h = hits[cursor]
-              if (h.kind === 'create' && h.title) pick(h, e.shiftKey)
+              // Enter edits, Shift+Enter captures without stopping at the editor
+              if (h.kind === 'create' && h.title) pick(h, !e.shiftKey)
               else pick(h)
             }
           }}
@@ -194,7 +197,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
                   <li key="create" className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                     <span className="search-kind">＋</span>
                     <span className="search-main">
-                      Create task “{h.title}”<small>Enter to edit · Shift+Enter same</small>
+                      Create task “{h.title}”<small>Enter to edit · Shift+Enter to capture</small>
                     </span>
                   </li>
                 )

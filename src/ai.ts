@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import type { Task } from './types'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
@@ -181,6 +182,8 @@ export async function summarizeReview(input: {
   people: string[]
   /** "Nopi ×2" — where you went this period. */
   places?: string[]
+  /** One line: "86% consistent (12/14): Read 6/7 · Gym 3/3" — only sent when something was due. */
+  habits?: string[]
   projects: string[]
   stalled: string[]
   reflections?: string
@@ -200,7 +203,7 @@ export async function summarizeReview(input: {
       : '- none recorded'
   return complete(
     'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. When the journal explains why the period went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
     900,
   )
 }
@@ -407,6 +410,53 @@ export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<
   } catch {
     if (local) return local
     return { title: text.trim().slice(0, 140) }
+  }
+}
+
+/**
+ * What parseCapture would return if the model never answered. The palette's
+ * Shift+Enter files the line with this at once — a keystroke must not wait on
+ * /api/ai (its timeout is 180 s) — and merges the model's answer in afterwards
+ * if the task is still there and untouched.
+ */
+export function quickCaptureFields(line: string, now = new Date()): CapturedFields {
+  return deterministicCapture(line, now) ?? { title: line.trim().slice(0, 140) }
+}
+
+/** The names a capture can resolve against — projects and people, matched by name. */
+export interface CaptureLookup {
+  projects: { id: string; name: string }[]
+  people: { id: string; name: string }[]
+}
+
+/**
+ * Captured fields → a whole task, mapped exactly as the editor's applyCapture
+ * would: names become ids by case-insensitive match, unknown names are
+ * dropped, and nothing is set that the sentence did not say — so an undated,
+ * unprojected line lands in Today's Inbox.
+ */
+export function buildCapturedTask(fields: CapturedFields, lookup: CaptureLookup, opts: { id: string; now: Date }): Task {
+  const stamp = opts.now.toISOString()
+  const title = fields.title.trim().slice(0, 140)
+  const projectId = fields.projectName ? lookup.projects.find(p => p.name.toLowerCase() === fields.projectName!.toLowerCase())?.id : undefined
+  const peopleIds = [
+    ...new Set((fields.peopleNames ?? []).map(n => lookup.people.find(p => p.name.toLowerCase() === n.toLowerCase())?.id).filter((id): id is string => !!id)),
+  ]
+  const tags = [...new Set((fields.tags ?? []).map(t => t.trim().toLowerCase()).filter(Boolean))]
+  return {
+    kind: 'task',
+    id: opts.id,
+    title,
+    description: '',
+    status: 'todo',
+    priority: fields.priority ?? 'normal',
+    createdAt: stamp,
+    updatedAt: stamp,
+    tags,
+    ...(projectId ? { projectId } : {}),
+    ...(fields.dueAt ? { dueAt: fields.dueAt } : {}),
+    ...(peopleIds.length ? { peopleIds } : {}),
+    ...(fields.recurrence ? { recurrence: { freq: fields.recurrence } } : {}),
   }
 }
 

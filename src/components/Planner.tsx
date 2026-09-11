@@ -11,7 +11,8 @@ import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
 import { useHousehold } from '../household'
-import { timeAgo, uid } from '../utils'
+import { fmtDateTime, timeAgo, uid } from '../utils'
+import { buildCapturedTask, parseCapture, quickCaptureFields } from '../ai'
 import { closeExternal, genericRemindersEnabled, haptic, initNative, isAppLockShowing, isNative, localRemindersEnabled, onAppLockCleared, scheduleLocalReminders, clearAppBadge } from '../native'
 import { buildLocalReminders, deviceHasServerPush } from '../reminders'
 import { fetchPushInfo } from '../push'
@@ -469,6 +470,10 @@ export default function Planner() {
   // the deferred "Add" on a web ?journal= link must append to the entry as it is when pressed
   const journalRef = useRef(store.journal)
   journalRef.current = store.journal
+  // the latest live tasks, for work that finishes after a later render (the
+  // palette's capture enrichment must see an Undo that happened meanwhile)
+  const tasksRef = useRef(store.tasks)
+  tasksRef.current = store.tasks
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -750,6 +755,49 @@ export default function Planner() {
       capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
   const openProject = (project: Project) => setProjectEditor({ project })
+  /**
+   * Shift+Enter in the palette: file the line as a task now, no editor. The
+   * offline parse lands at once (a keystroke must not wait on /api/ai); the
+   * model's fuller reading is merged in afterwards, but only while the task is
+   * still there and untouched — never over an Undo or an edit. The first toast
+   * said where it went, so a merge that moves it (a project, a date) says so
+   * again with its own undo, and a date the toast already announced is kept —
+   * the model may add to the task, not contradict what was read out. Bypasses
+   * newTask on purpose: an active project filter must not project a capture.
+   */
+  const captureTask = (line: string) => {
+    const now = new Date()
+    const id = uid()
+    const lookup = { projects: store.projects, people: store.people }
+    const first = buildCapturedTask(quickCaptureFields(line, now), lookup, { id, now })
+    store.upsert(first)
+    // Today's Inbox holds only what has neither a project nor a date
+    const inbox = !first.projectId && !first.dueAt
+    showToast(inbox ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
+    void parseCapture(line, {
+      now,
+      projectNames: store.projects.filter(p => p.status === 'active').map(p => p.name),
+      personNames: store.people.map(p => p.name),
+    })
+      .then(parsed => {
+        const cur = tasksRef.current.find(t => t.id === id)
+        if (!cur || cur.updatedAt !== first.updatedAt) return
+        const next = buildCapturedTask(parsed, lookup, { id, now })
+        if (first.dueAt) next.dueAt = first.dueAt
+        if (JSON.stringify(next) === JSON.stringify(first)) return
+        const merged = { ...cur, ...next, createdAt: cur.createdAt, updatedAt: newerStamp(cur.updatedAt) }
+        store.upsert(merged)
+        const filed = !first.projectId && merged.projectId ? lookup.projects.find(p => p.id === merged.projectId)?.name : undefined
+        const dated = !first.dueAt && merged.dueAt ? fmtDateTime(merged.dueAt) : undefined
+        if (filed || dated) {
+          const msg = filed && dated ? `Filed under ${filed} — due ${dated}` : filed ? `Filed under ${filed}` : `Due ${dated}`
+          showToast(msg, () => store.upsert({ ...first, updatedAt: newerStamp(merged.updatedAt) }))
+        }
+      })
+      .catch(() => {
+        /* offline / no key — the offline parse already landed */
+      })
+  }
   /** One-tap "Saw them" with undo — used from Today, Search, and ?saw=. */
   const sawThem = (person: Person) => {
     const now = new Date().toISOString()
@@ -1214,6 +1262,12 @@ export default function Planner() {
                       store.remove(id)
                       showToast('Habit removed', () => store.restore([id]))
                     }}
+                    routines={store.routines}
+                    onSaveRoutine={r => store.upsert(r)}
+                    onDeleteRoutine={id => {
+                      store.remove(id)
+                      showToast('Routine removed', () => store.restore([id]))
+                    }}
                   />
                 )}
                 {homeTab === 'week' && (
@@ -1225,6 +1279,7 @@ export default function Planner() {
                     reviews={store.reviews}
                     journal={store.journal}
                     places={store.places}
+                    habits={store.habits}
                     onSaveReview={r => store.upsert(r)}
                     onOpen={openTask}
                     onStatus={changeStatus}
@@ -1560,9 +1615,10 @@ export default function Planner() {
           onOpenJournal={e => openJournal(e.date)}
           onSaw={sawThem}
           onCreateTask={(title, openEditor) => {
-            // always open the editor so parseCapture can propose fields; Shift+Enter same path
-            void openEditor
-            newTask({ title, status: 'todo' }, { capture: true })
+            // Enter opens the editor so parseCapture can propose fields;
+            // Shift+Enter (openEditor=false) files the line as it is, Undo in the toast
+            if (openEditor === false && title.trim()) captureTask(title)
+            else newTask({ title, status: 'todo' }, { capture: true })
           }}
           onClose={() => setSearchOpen(false)}
         />

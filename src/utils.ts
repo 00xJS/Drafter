@@ -20,6 +20,19 @@ export function fmtTime(iso?: string): string {
   return iso ? TIME_FMT.format(new Date(iso)) : ''
 }
 
+/** Short 12-hour clock for a badge that has to fit a month cell: 9am, 5:30pm —
+ *  am/pm to match the events beside it, dropping the :00 and the space to stay
+ *  narrow. Shared by the calendar's work badge and the Today briefing so the
+ *  same hours read the same on both. */
+export function clock(iso: string): string {
+  const d = new Date(iso)
+  const h = d.getHours()
+  const m = d.getMinutes()
+  const ampm = h < 12 ? 'am' : 'pm'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
+}
+
 export function excerpt(s: string, n = 90): string {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n - 1) + '…' : t

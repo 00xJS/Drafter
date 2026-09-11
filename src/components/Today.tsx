@@ -12,6 +12,7 @@ import {
   Project,
   Recipe,
   Review as ReviewRecord,
+  Routine,
   Task,
   TaskStatus,
   projectProgress,
@@ -28,6 +29,8 @@ import { haptic } from '../native'
 import { dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
+import { RoutinesCard } from './RoutinesCard'
+import { BriefingCard } from './BriefingCard'
 
 interface Props {
   tasks: Task[]
@@ -66,6 +69,9 @@ interface Props {
   habits: Habit[]
   onSaveHabit(h: Habit): void
   onDeleteHabit(id: string): void
+  routines: Routine[]
+  onSaveRoutine(r: Routine): void
+  onDeleteRoutine(id: string): void
 }
 
 const STALE_DAYS = 14
@@ -346,6 +352,9 @@ export function Today({
   habits,
   onSaveHabit,
   onDeleteHabit,
+  routines,
+  onSaveRoutine,
+  onDeleteRoutine,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -357,6 +366,10 @@ export function Today({
    * (losing the caret, and the keystrokes since the last save) mid-sentence.
    */
   const [evening] = useState(() => new Date().getHours() >= 17)
+  // NOT frozen: Today stays mounted across a night on the phone, and a routines
+  // card still filtering by last night's hour would hide the morning list. The
+  // card itself holds the hour still while an edit is open.
+  const hour = new Date().getHours()
   // Top 3 is written during last week's review as "for next week"
   const weekReview = useMemo(() => {
     const prev = shiftRange(thisWeek, -1)
@@ -478,7 +491,7 @@ export function Today({
     { key: 'week', title: 'This week', sub: 'Due in the next 7 days', tasks: s.week },
     { key: 'doing', title: 'In progress, no date', sub: 'Started but not scheduled', tasks: s.doing },
     { key: 'blocked', title: 'Blocked', sub: 'Waiting on something — worth a nudge?', tasks: s.blocked },
-    { key: 'inbox', title: 'Inbox', sub: 'Undated captures — give each a project or a date', tasks: s.inbox },
+    { key: 'inbox', title: 'Inbox', sub: 'Captured, not yet triaged — give each a project or a date', tasks: s.inbox },
     { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
   ].filter(sec => sec.tasks.length > 0)
 
@@ -511,6 +524,8 @@ export function Today({
           </p>
         </div>
       </header>
+      {/* the day at a glance sits above the counters: what the day IS before what it owes */}
+      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} />
       {/* Below 640px the two `kpi-extra` tiles leave grid flow entirely and
           "Open" spans the row (see styles.css), so DOM order does not decide
           what the phone shows — it is the desktop row, left as it was. */}
@@ -606,6 +621,8 @@ export function Today({
       {evening && journalCard}
 
       <HabitsCard habits={habits} today={dateKey(new Date())} onSave={onSaveHabit} onDelete={onDeleteHabit} />
+
+      <RoutinesCard routines={routines} today={dateKey(new Date())} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
 
       {top3.length > 0 && (
         <section className="chart-card week-top3">

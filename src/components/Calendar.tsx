@@ -1,6 +1,6 @@
 import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode, BILL_KIND_META } from '../types'
-import { dateKey, fmtTime } from '../utils'
+import { clock, dateKey, fmtTime } from '../utils'
 import {
   DayItem,
   DaySources,
@@ -67,17 +67,6 @@ const MEAL_OUT_COLOR = '#38bdf8'
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
 const LOCAL_EVENT_COLOR = '#a78bfa'
-/** Short 12-hour clock for a badge that has to fit a month cell: 9am, 5:30pm —
- *  am/pm to match the events beside it, dropping the :00 and the space to stay
- *  narrow. */
-const clock = (iso: string) => {
-  const d = new Date(iso)
-  const h = d.getHours()
-  const m = d.getMinutes()
-  const ampm = h < 12 ? 'am' : 'pm'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
-}
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)

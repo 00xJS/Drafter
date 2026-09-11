@@ -495,7 +495,40 @@ export interface Habit extends Owned {
   archivedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit
+export type RoutineWhen = 'morning' | 'evening' | 'anytime'
+export const ROUTINE_WHENS: RoutineWhen[] = ['morning', 'evening', 'anytime']
+
+export interface RoutineStep {
+  id: string
+  text: string
+}
+
+/**
+ * A routine is a short checklist you run at a time of day — the morning start,
+ * the wind-down before bed. Personal like a habit, and stored the same way: one
+ * record, with each tick a 'YYYY-MM-DD|stepId' key on it. Because a tick names
+ * its day, tomorrow simply has no ticks yet — the list starts fresh with no
+ * reset job, and yesterday's run is still on the record if anything wants it.
+ */
+export interface Routine extends Owned {
+  kind: 'routine'
+  id: string
+  name: string
+  when: RoutineWhen
+  /** The steps in order. Ids stay stable across an edit so ticks survive it. */
+  steps: RoutineStep[]
+  /** Each 'YYYY-MM-DD|stepId'. */
+  ticks: string[]
+  /** Order on the Today card. */
+  order?: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  /** Kept but no longer shown on Today. */
+  archivedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

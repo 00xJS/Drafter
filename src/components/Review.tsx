@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
+import { Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
+import { habitsConsistency } from '../habits'
 import { JournalPeople } from './Journal'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
@@ -17,6 +18,8 @@ interface Props {
   /** Your journal (personal); the period's entries feed the summary. */
   journal: JournalEntry[]
   places: Place[]
+  /** Your habits (personal); done/due over the period feeds the block and the summary. */
+  habits: Habit[]
   onSaveReview(r: ReviewRecord): void
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -59,13 +62,14 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
   )
 }
 
-export function Review({ tasks, projects, projectMap, people, reviews, journal, places, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
+export function Review({ tasks, projects, projectMap, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
   const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places), [range, tasks, projects, people, places])
   const wrote = useMemo(() => entriesInRange(journal, range), [journal, range])
   const mood = moodAverage(wrote)
+  const habitStats = useMemo(() => habitsConsistency(habits, range.start, range.end, new Date()), [habits, range])
   const saved = reviews.find(r => r.period === period && r.key === range.key)
   const prevRange = useMemo(() => shiftRange(range, -1), [range])
   const prevSaved = reviews.find(r => r.period === period && r.key === prevRange.key)
@@ -109,6 +113,8 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
         upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
         people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
         places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
+        // one compact line so the model can weigh it without a tally per day
+        habits: habitStats.due > 0 ? [`${habitStats.pct}% consistent (${habitStats.done}/${habitStats.due}): ${habitStats.rows.map(r => `${r.habit.name} ${r.done}/${r.due}`).join(' · ')}`] : [],
         projects: data.projects.map(p => `${p.project.name}: ${p.done} done, ${p.open} open`),
         stalled: data.stalled.map(p => p.name),
         reflections,
@@ -360,6 +366,34 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
                     <span className="dash-reason">{p.visits.map(v => v.title).join(' · ')}</span>
                   </div>
                   <strong>×{p.visits.length}</strong>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {habitStats.due > 0 && (
+          <section className="chart-card review-habits">
+            <header className="chart-head">
+              <div>
+                <h3>Habits</h3>
+                <p className="chart-sub">
+                  {habitStats.pct}% consistent — {habitStats.done} of {habitStats.due} {isCurrent ? 'so far' : `this ${period}`}
+                </p>
+              </div>
+            </header>
+            <ul className="dash-list">
+              {habitStats.rows.map(r => (
+                <li key={r.habit.id}>
+                  <span className="journal-mood" aria-hidden>
+                    {r.habit.emoji ?? '·'}
+                  </span>
+                  <div className="dash-main">
+                    <span className="dash-title">{r.habit.name}</span>
+                  </div>
+                  <strong className="habit-streak">
+                    {r.done}/{r.due}
+                  </strong>
                 </li>
               ))}
             </ul>

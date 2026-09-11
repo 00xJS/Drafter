@@ -372,6 +372,28 @@ describe("phone: Today's first screen is worth the morning", () => {
     expect(rule(bulk!.body, '.kpi-bulk .btn')).toMatch(/min-height:\s*44px/)
   })
 
+  it('gives each routine step a 44pt row, with the pitch equal to the target', () => {
+    // a tick is a synced store write, so a thumb that meant one step must not
+    // land on the next: the 18px box and 14px text are a 24px row on a mouse page
+    const step = coarseBlocks().find(b => rule(b.body, '.routine-step'))
+    expect(step, 'no @media (pointer: coarse) rule for .routine-step').toBeTruthy()
+    expect(rule(step!.body, '.routine-step')).toMatch(/min-height:\s*44px/)
+    // and no dead strip between rows, or the floor would still leave a gap to miss into
+    expect(rule(step!.body, '.routine-steps')).toMatch(/gap:\s*0/)
+    // the desktop list keeps its tight 4px pitch
+    expect(rule(bare, '.routine-steps')).toMatch(/gap:\s*4px/)
+  })
+
+  it('puts the routine name ellipsis on the name, so the when-pill survives a long one', () => {
+    // text-overflow on the flex button does nothing to its span child, which
+    // keeps its full text width and pushes the flex:none pill out of the box
+    expect(rule(bare, '.routine-name')).not.toMatch(/text-overflow/)
+    const name = rule(bare, '.routine-name > span:first-child')
+    expect(name).toMatch(/min-width:\s*0/)
+    expect(name).toMatch(/text-overflow:\s*ellipsis/)
+    expect(rule(bare, '.routine-when')).toMatch(/flex:\s*none/)
+  })
+
   it('dresses a jumping tile as the tile it replaces, with no iOS tap flash', () => {
     const jump = rule(bare, '.stat-jump')
     expect(jump).toMatch(/appearance:\s*none/)
