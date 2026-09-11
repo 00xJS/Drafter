@@ -38,6 +38,7 @@ import { Bills } from './Bills'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
+import { Icon, type IconName } from './Icon'
 import { fetchAdminMe } from '../admin'
 
 type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'kitchen' | 'bills' | 'review'
@@ -63,27 +64,40 @@ const VIEW_LABELS: Record<View, string> = {
   review: 'Review',
 }
 
+/** The line icon each view carries in the desktop tab strip. */
+const VIEW_ICONS: Record<View, IconName> = {
+  today: 'today',
+  tasks: 'tasks',
+  board: 'board',
+  calendar: 'calendar',
+  notes: 'notes',
+  people: 'people',
+  kitchen: 'kitchen',
+  bills: 'bills',
+  review: 'review',
+}
+
 /** Phone tab bar: four daily surfaces and a centre More for the rest. */
-const COMPACT_TABS: { id: View | 'more'; icon: string; label: string }[] = [
-  { id: 'today', icon: '☀', label: 'Today' },
-  { id: 'calendar', icon: '📅', label: 'Calendar' },
-  { id: 'more', icon: '☰', label: 'More' },
-  { id: 'kitchen', icon: '🍽', label: 'Kitchen' },
-  { id: 'people', icon: '👥', label: 'People' },
+const COMPACT_TABS: { id: View | 'more'; icon: IconName; label: string }[] = [
+  { id: 'today', icon: 'today', label: 'Today' },
+  { id: 'calendar', icon: 'calendar', label: 'Calendar' },
+  { id: 'more', icon: 'more', label: 'More' },
+  { id: 'kitchen', icon: 'kitchen', label: 'Kitchen' },
+  { id: 'people', icon: 'people', label: 'People' },
 ]
 /**
  * The More sheet's rows. `key` is the row, `view` is where it lands: the Journal
  * row is a second door onto the Review view with its segment already set, so the
  * list is deliberately not keyed by `View`. The five-tab bar is unchanged.
  */
-const MORE_VIEWS: { key: string; view: View; label: string; icon: string; hint: string }[] = [
-  { key: 'tasks', view: 'tasks', label: 'Tasks', icon: '☑', hint: 'Searchable list, import and trash' },
-  { key: 'board', view: 'board', label: 'Board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
-  { key: 'notes', view: 'notes', label: 'Notes', icon: '✎', hint: 'The selected project’s notepad' },
+const MORE_VIEWS: { key: string; view: View; label: string; icon: IconName; hint: string }[] = [
+  { key: 'tasks', view: 'tasks', label: 'Tasks', icon: 'tasks', hint: 'Searchable list, import and trash' },
+  { key: 'board', view: 'board', label: 'Board', icon: 'board', hint: 'Wishlist → to do → doing → done' },
+  { key: 'notes', view: 'notes', label: 'Notes', icon: 'notes', hint: 'The selected project’s notepad' },
   // a row, not a sixth tab: the phone keeps its five
-  { key: 'bills', view: 'bills', label: 'Bills', icon: '💳', hint: 'What’s due, what’s paid, an average month' },
-  { key: 'journal', view: 'review', label: 'Journal', icon: '📓', hint: 'Today’s line, and every day you wrote' },
-  { key: 'review', view: 'review', label: 'Review', icon: '📊', hint: 'The weekly look-back' },
+  { key: 'bills', view: 'bills', label: 'Bills', icon: 'bills', hint: 'What’s due, what’s paid, an average month' },
+  { key: 'journal', view: 'review', label: 'Journal', icon: 'journal', hint: 'Today’s line, and every day you wrote' },
+  { key: 'review', view: 'review', label: 'Review', icon: 'review', hint: 'The weekly look-back' },
 ]
 
 const FILTER_KEY = 'drafter:project-filter'
@@ -960,13 +974,16 @@ export default function Planner() {
             VoiceOver announces the header as "airplane". */}
         <div className="brand" aria-label="Drafter">
           <span className="brand-mark" aria-hidden>
-            ✈
+            <Icon name="brand" filled strokeWidth={0} />
           </span>
           <span>Drafter</span>
         </div>
         <nav className="tabs tabs-full" aria-label="Views">
           {(Object.keys(VIEW_LABELS) as View[]).map(v => (
             <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)}>
+              <span className="tab-icon" aria-hidden>
+                <Icon name={VIEW_ICONS[v]} />
+              </span>
               {VIEW_LABELS[v]}
             </button>
           ))}
@@ -992,7 +1009,7 @@ export default function Planner() {
                 }}
               >
                 <span className="tab-icon" aria-hidden>
-                  {t.icon}
+                  <Icon name={t.icon} />
                 </span>
                 <span className="tab-label">{t.label}</span>
               </button>
@@ -1006,11 +1023,11 @@ export default function Planner() {
             {syncing ? 'Syncing…' : store.syncInfo.pending ? `${store.syncInfo.pending} unsynced` : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
           </span>
         </button>
-        <button className="btn subtle" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
-          🔍
+        <button className="btn subtle icon-btn" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
+          <Icon name="search" size={19} />
         </button>
-        <button className="btn subtle" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
-          ⚙
+        <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          <Icon name="settings" size={19} />
         </button>
         {/* hidden below 640px (it pushed "+ New task" off a 375pt header) —
             the phone route is the Admin row in Settings ▸ Data */}
@@ -1021,7 +1038,7 @@ export default function Planner() {
         )}
         <button className="btn primary new-post-btn" onClick={() => newTask()} aria-label="New task" title="New task">
           <span className="new-post-plus" aria-hidden>
-            +
+            <Icon name="plus" size={18} strokeWidth={2.2} />
           </span>
           <span className="new-post-label">New task</span>
         </button>
@@ -1572,7 +1589,7 @@ export default function Planner() {
                       }}
                     >
                       <span className="more-item-icon" aria-hidden>
-                        {m.icon}
+                        <Icon name={m.icon} size={20} />
                       </span>
                       <span className="more-item-copy">
                         <strong>{m.label}</strong>

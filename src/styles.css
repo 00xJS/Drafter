@@ -7,17 +7,30 @@
      that moves it, so almost nothing else has to read this — only the few
      boxes that must grow with the text they hold. */
   --type-scale: 1;
-  /* app chrome — dark by design */
-  --bg: #0f1115;
-  --surface: #171a21;
-  --surface-2: #1f232c;
-  --border: #2b303b;
-  --text: #e7e9ee;
-  --text-2: #b3b8c4;
-  --muted: #7d8494;
+  /* app chrome — dark by design. The neutrals carry a faint warm/blue bias
+     rather than pure grey, and the four surface steps are spaced far enough
+     apart that a card reads as raised off the ground without leaning on its
+     border. Elevation (the --shadow-* ramp) does the separating now; borders
+     are back to being hairlines. */
+  --bg: #0c0e12;
+  --surface: #15181f;
+  --surface-2: #1e222b;
+  --surface-3: #272c37;
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --hairline: rgba(255, 255, 255, 0.06);
+  --text: #edeff3;
+  --text-2: #a9b0be;
+  --muted: #737b8b;
   --accent: #f97316;
   --accent-hover: #fb923c;
   --on-accent: #1a1206;
+  /* accent as a wash, not a fill: tinted chips, active states, focus rings, the
+     glow under the primary button. color-mix keeps them all one hue apart. */
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 9%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
+  --accent-text: #fca560;
   --danger: #f87171;
   /* the "inverted" pill: light chip on the dark ground */
   --inverse-bg: #e7e9ee;
@@ -25,8 +38,19 @@
   --ok: #4ade80;
   --warn-bg: rgba(245, 158, 11, 0.16);
   --warn-text: #fcd34d;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
+     feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
+  --radius-sm: 9px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  /* elevation ramp. Two layers each: a tight contact shadow plus a softer
+     ambient one, so a raised surface reads as lifted rather than outlined. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.32), 0 18px 44px rgba(0, 0, 0, 0.46);
+  --glow-accent: 0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent);
   /* phone chrome: everything that floats measures itself off these */
   --tabbar-h: 56px;
   /* The sticky .topbar's own height, safe area excluded: 10px + its tallest
@@ -167,7 +191,20 @@ button:focus-visible {
   /* under the status bar / Dynamic Island on an installed app */
   padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Frost the sticky header — desktop only. On a phone the header is the
+   containing block for the tab bar it holds (.tabs-compact is extracted to a
+   fixed bottom bar), and a backdrop-filter here would capture that fixed child
+   and pin it to the header instead of the viewport. The compact bar is hidden
+   on desktop, so the frost is safe above 640px. */
+@media (min-width: 641px) {
+  .topbar {
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    backdrop-filter: saturate(1.4) blur(16px);
+    -webkit-backdrop-filter: saturate(1.4) blur(16px);
+  }
 }
 
 .brand {
@@ -182,18 +219,24 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent);
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  /* a lit tile, not a flat square: a soft top-down accent gradient and a faint
+     glow give the mark some dimension. */
+  background: linear-gradient(160deg, var(--accent-hover), var(--accent) 62%, #e2620a);
   color: var(--on-accent);
-  /* the "D" glyph, drawn to a fixed 26px square, not text */
+  box-shadow: var(--glow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   font-size: 14px;
+}
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
 }
 
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
 .tabs-compact {
@@ -201,20 +244,43 @@ button:focus-visible {
 }
 
 .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: none;
   background: transparent;
   color: var(--text-2);
-  padding: 7px 14px;
+  padding: 7px 13px;
   border-radius: 999px;
+  font-weight: 500;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+/* desktop tab glyphs are line icons drawn to a fixed box */
+.tabs-full .tab-icon {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  opacity: 0.85;
+}
+.tabs-full .tab-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .tab:hover {
   background: var(--surface-2);
+  color: var(--text);
 }
 
 .tab.active {
-  background: var(--inverse-bg);
-  color: var(--inverse-text);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tab.active .tab-icon {
+  opacity: 1;
 }
 
 .topbar .btn.primary {
@@ -273,6 +339,26 @@ button:focus-visible {
 
 .btn.danger:hover {
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+/* square, quiet icon buttons in the header (search, settings) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--text-2);
+}
+.icon-btn:hover {
+  color: var(--text);
+}
+.new-post-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .spacer {
@@ -375,18 +461,23 @@ button:focus-visible {
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 11px 13px;
   box-shadow: var(--shadow);
   cursor: grab;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .card:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-md);
 }
 
 .card-title {
@@ -789,9 +880,9 @@ textarea {
 }
 
 .seg.on {
-  background: var(--inverse-bg);
-  border-color: var(--text);
-  color: var(--inverse-text);
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -821,11 +912,13 @@ textarea {
 }
 
 .stat-tile {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  position: relative;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 15px 17px;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 /* a counter that scrolls to what it counts: a real button, dressed as the tile
@@ -841,7 +934,8 @@ textarea {
   -webkit-tap-highlight-color: transparent;
 }
 .stat-jump:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-md);
 }
 .stat-jump:active {
   transform: scale(0.99);
@@ -868,20 +962,26 @@ textarea {
 }
 
 .stat-label {
-  font-size: 0.75rem;
-  color: var(--text-2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .stat-value {
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin-top: 2px;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
 }
 
 .stat-sub {
   font-size: 0.6875rem;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .chart-card {
@@ -1816,11 +1916,16 @@ textarea {
     right: 0;
     bottom: 0;
     z-index: 40;
+    /* translucent, frosted bar — the iOS convention. Content scrolls under it
+       and blurs; the solid line is a fallback where backdrop-filter is off. */
     background: var(--surface);
-    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    backdrop-filter: saturate(1.5) blur(20px);
+    -webkit-backdrop-filter: saturate(1.5) blur(20px);
+    border-top: 1px solid var(--hairline);
     justify-content: stretch;
     gap: 0;
-    padding: 4px 2px calc(4px + env(safe-area-inset-bottom));
+    padding: 6px 6px calc(4px + env(safe-area-inset-bottom));
     margin: 0;
     width: 100%;
     overflow: hidden;
@@ -1863,10 +1968,26 @@ textarea {
     white-space: nowrap;
     overflow: hidden;
   }
-  /* the glyph is an icon, not text: it is drawn to the bar's fixed height */
+  /* a line icon drawn to a fixed box, sitting above the label */
   .tabs-compact .tab-icon {
-    font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     line-height: 1;
+    color: var(--muted);
+    transition:
+      color 0.15s ease,
+      transform 0.15s ease;
+  }
+  .tabs-compact .tab-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  .tabs-compact .tab {
+    color: var(--muted);
+    transition: color 0.15s ease;
   }
   .tabs-compact .tab-label {
     max-width: 100%;
@@ -1875,8 +1996,15 @@ textarea {
   }
   .tabs-compact .tab.active {
     background: transparent;
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 700;
+  }
+  .tabs-compact .tab.active .tab-icon {
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .tabs-compact .tab:active .tab-icon {
+    transform: scale(0.9);
   }
 
   /* keep New task in the header — a floating + covered the last rows */
@@ -3842,19 +3970,22 @@ textarea {
   background: var(--surface-2);
 }
 .more-item.on {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .more-item-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
   background: var(--surface-2);
+  color: var(--text-2);
   display: flex;
   align-items: center;
   justify-content: center;
-  /* an emoji icon drawn to a fixed 36px box, not a label */
-  font-size: 16px;
   flex: none;
+}
+.more-item.on .more-item-icon {
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .more-item-copy {
   display: flex;
@@ -5829,4 +5960,112 @@ textarea {
 }
 .bill-row {
   min-width: 0;
+}
+
+/* ============================================================
+   NATIVE SHELL  ·  html.native (and html.ios)
+   ------------------------------------------------------------
+   The iOS app is this same bundle in a WKWebView. Everything
+   that should feel built-for-iPhone rather than like a website
+   lives here and matches ONLY under html.native — which
+   native.ts stamps on inside the shell, and which ?native=1
+   forces on in a browser for previewing. The web layout is
+   never touched: these selectors carry the extra `.native`
+   class, so they outrank the phone media-query rules they
+   refine without a single !important.
+   ============================================================ */
+
+/* Kill the grey tap-flash and give scrolling iOS momentum — the two things
+   that most give a web view away as a web view. */
+.native * {
+  -webkit-tap-highlight-color: transparent;
+}
+.native body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- Large title. The page heading reads big, heavy and tight, the way a
+   native navigation title's large state does, instead of as body-sized text. */
+.native .today-head {
+  margin-bottom: 14px;
+}
+.native .today-head h2,
+.native .view-title {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.021em;
+  line-height: 1.12;
+}
+
+/* --- Card sheets. On the phone the editors were already full-height panels;
+   as a native card sheet they rise from the bottom with a grab handle and a
+   rounded top, leaving the dimmed app just visible above — the iOS pageSheet. */
+.native .modal-backdrop {
+  align-items: flex-end;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.native .modal {
+  width: 100%;
+  height: auto;
+  max-height: 94dvh;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: 0 -10px 44px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: sheet-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+/* the card sits below the status bar, so it drops the safe-area inset the
+   full-screen sheet needed and spends that space on the grab handle instead */
+.native .modal-head {
+  position: relative;
+  padding-top: 22px;
+  border-bottom-color: var(--hairline);
+}
+.native .modal-head::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 38px;
+  height: 5px;
+  margin-left: -19px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.native .modal-foot {
+  border-top-color: var(--hairline);
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+@media (prefers-reduced-motion: reduce) {
+  .native .modal {
+    animation: none;
+  }
+}
+
+/* --- Touch feedback. Rows and buttons dim on press rather than flashing, and
+   an active tab icon springs — the small physical responses iOS trains for. */
+.native .btn:active,
+.native .more-item:active,
+.native .card:active,
+.native .stat-jump:active,
+.native .seg:active {
+  background: var(--surface-2);
+}
+.native .card:active {
+  transform: scale(0.995);
+}
+
+/* --- The frosted bottom tab bar reads as glass over the app: a hair more
+   translucent on native, with a bright top hairline like a real UITabBar. */
+.native .tabs-compact {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }

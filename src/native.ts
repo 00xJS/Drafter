@@ -7,6 +7,25 @@ import { Capacitor } from '@capacitor/core'
 /** True inside the iOS shell; false in every browser, installed PWA included. */
 export const isNative = (): boolean => Capacitor.isNativePlatform()
 
+/**
+ * Stamp the root element with the platform once, at startup, so the stylesheet
+ * can diverge inside the native shell — the grouped inset lists, the sheet-style
+ * modals, the frosted tab bar and the large title all key off `html.native`.
+ * It always adds a truthful class, so in a browser `.native` / `.ios` simply
+ * never match and the web layout stands. `?native=1` in the URL forces the
+ * classes on in a desktop browser, which is how the iOS look is previewed
+ * without a device build.
+ */
+export function applyPlatformClasses(): void {
+  const root = document.documentElement
+  const forced = typeof location !== 'undefined' && new URLSearchParams(location.search).has('native')
+  const native = isNative() || forced
+  root.classList.toggle('native', native)
+  const platform = forced && !isNative() ? 'ios' : Capacitor.getPlatform()
+  root.classList.add(`platform-${platform}`)
+  root.classList.toggle('ios', platform === 'ios')
+}
+
 /** Open a URL outside the web view: Safari's sheet on iOS, a new tab on the web. */
 export async function openExternal(url: string): Promise<void> {
   if (isNative()) {
