@@ -9,6 +9,7 @@ import type { CSSProperties } from 'react'
  * light (stroke ~1.75); heavier marks pass a thicker `strokeWidth`.
  */
 export type IconName =
+  | 'home'
   | 'today'
   | 'tasks'
   | 'board'
@@ -26,6 +27,13 @@ export type IconName =
   | 'brand'
 
 const PATHS: Record<IconName, JSX.Element> = {
+  home: (
+    <>
+      <path d="M3.2 11.3 12 4.2l8.8 7.1" />
+      <path d="M5.4 9.9V19.8h13.2V9.9" />
+      <path d="M9.8 19.8v-5.2h4.4v5.2" />
+    </>
+  ),
   today: (
     <>
       <circle cx="12" cy="12" r="4" />

@@ -3,6 +3,21 @@ import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, S
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
+import { Icon, type IconName } from './Icon'
+
+/** A palette command: jump somewhere, or do something. `run` closes the palette
+ *  itself (the caller wires the navigation/action). */
+export interface Command {
+  id: string
+  label: string
+  hint?: string
+  icon?: IconName
+  /** whether it shows before you type — the quick actions on an empty palette */
+  quick?: boolean
+  /** extra words to match on (e.g. "review" for the Week command) */
+  keywords?: string
+  run(): void
+}
 
 interface Props {
   tasks: Task[]
@@ -10,6 +25,7 @@ interface Props {
   people: Person[]
   places?: Place[]
   journal?: JournalEntry[]
+  commands?: Command[]
   onOpenTask(t: Task): void
   onOpenProject(p: Project): void
   onOpenPerson(p: Person): void
@@ -28,6 +44,7 @@ type Hit =
   | { kind: 'journal'; score: number; entry: JournalEntry; where: string }
   | { kind: 'create'; score: number; title: string }
   | { kind: 'recent'; score: number; task: Task }
+  | { kind: 'command'; score: number; command: Command }
 
 function score(haystack: string, needle: string, weight: number): number {
   const h = haystack.toLowerCase()
@@ -41,8 +58,9 @@ function score(haystack: string, needle: string, weight: number): number {
 
 const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
 
-/** Cmd/Ctrl+K palette: find anything, or create a task from what you typed. */
-export function Search({ tasks, projects, people, places = [], journal = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onClose }: Props) {
+/** Cmd/Ctrl+K palette: jump anywhere, run a command, find anything, or create a
+ *  task from what you typed. */
+export function Search({ tasks, projects, people, places = [], journal = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onClose }: Props) {
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -55,14 +73,20 @@ export function Search({ tasks, projects, people, places = [], journal = [], onO
   const hits = useMemo<Hit[]>(() => {
     const needle = q.trim().toLowerCase()
     if (!needle) {
-      // empty query: 6 most recently updated open tasks
-      return [...tasks]
+      // empty palette: the quick-action commands, then the 6 most recent open tasks
+      const quick: Hit[] = commands.filter(c => c.quick).map(command => ({ kind: 'command' as const, score: 0, command }))
+      const recent: Hit[] = [...tasks]
         .filter(t => OPEN.has(t.status))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .slice(0, 6)
         .map(task => ({ kind: 'recent' as const, score: 0, task }))
+      return [...quick, ...recent]
     }
     const out: Hit[] = []
+    for (const c of commands) {
+      const s = score(c.label, needle, 9) + score(c.keywords ?? '', needle, 6)
+      if (s > 0) out.push({ kind: 'command', score: s, command: c })
+    }
     for (const t of tasks) {
       const s =
         score(t.title, needle, 10) +
@@ -103,7 +127,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], onO
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
     return top
-  }, [q, tasks, projects, people, places, journal, projectName])
+  }, [q, tasks, projects, people, places, journal, commands, projectName])
 
   useEffect(() => setCursor(0), [q])
 
@@ -114,6 +138,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], onO
     else if (h.kind === 'person') onOpenPerson(h.person)
     else if (h.kind === 'place') onOpenPlace?.(h.place)
     else if (h.kind === 'journal') onOpenJournal?.(h.entry)
+    else if (h.kind === 'command') h.command.run()
     else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
   }
 
@@ -124,7 +149,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], onO
           ref={input}
           className="search-input"
           value={q}
-          placeholder="Search tasks, notes, projects, people, places, journal… or create task… Enter"
+          placeholder="Search or jump to anything — a task, a view, a person… or type to create"
           onChange={e => setQ(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Escape') onClose()
@@ -152,15 +177,18 @@ export function Search({ tasks, projects, people, places = [], journal = [], onO
         )}
         {hits.length > 0 && (
           <ul className="search-results">
-            {!q.trim() && (
-              <li className="search-hit muted-head" aria-hidden>
-                <span className="search-main">
-                  <small>Recent</small>
-                </span>
-              </li>
-            )}
             {hits.map((h, i) => {
               const active = i === cursor
+              if (h.kind === 'command')
+                return (
+                  <li key={h.command.id} className={active ? 'search-hit active command' : 'search-hit command'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                    <span className="search-kind">{h.command.icon ? <Icon name={h.command.icon} size={17} /> : '⌘'}</span>
+                    <span className="search-main">
+                      {h.command.label}
+                      {h.command.hint && <small>{h.command.hint}</small>}
+                    </span>
+                  </li>
+                )
               if (h.kind === 'create')
                 return (
                   <li key="create" className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>

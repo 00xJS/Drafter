@@ -27,7 +27,7 @@ import { Places } from './Places'
 import { Kitchen } from './Kitchen'
 import { Review } from './Review'
 import { JournalView } from './Journal'
-import { Search } from './Search'
+import { Search, type Command } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
@@ -41,69 +41,70 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { Icon, type IconName } from './Icon'
 import { fetchAdminMe } from '../admin'
 
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'kitchen' | 'bills' | 'review'
-const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'kitchen', 'bills', 'review']
+// Each tab that shows the same data more than one way holds those ways as
+// segments instead of splitting into peer tabs: Home holds the day, the week
+// and the journal; Tasks holds the list, board, bills and notes; People holds
+// Places. Desktop and phone then land on the identical five nouns.
+type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen'
+const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen']
 type CalendarMode = 'month' | 'week' | 'timeline'
 const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 type PeopleTab = 'people' | 'places'
-/** The Review tab holds the look-back and the journal, as People holds Places. */
-type ReviewTab = 'review' | 'journal'
+/** Home's three time horizons: today's dashboard, the weekly look-back, the journal. */
+type HomeTab = 'today' | 'week' | 'journal'
+const HOME_TABS: { key: HomeTab; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'Week' },
+  { key: 'journal', label: 'Journal' },
+]
+/** The Tasks tab's four segments: the list, the board, the bills, the notes. */
+type TasksTab = 'list' | 'board' | 'bills' | 'notes'
+const TASKS_TABS: { key: TasksTab; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'board', label: 'Board' },
+  { key: 'bills', label: 'Bills' },
+  { key: 'notes', label: 'Notes' },
+]
+/** Old inbound links (drafter://…?view=board|bills|notes) still resolve: they
+ *  land on the Tasks tab with that segment open. */
+const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', bills: 'bills', notes: 'notes' }
+/** …and the former Today / Review views land on the matching Home segment. */
+const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week' }
 
 /** An inbound link, held as parsed pieces so a replay keeps its provenance. */
 type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
 
 const VIEW_LABELS: Record<View, string> = {
-  today: 'Today',
+  home: 'Home',
   tasks: 'Tasks',
-  board: 'Board',
   calendar: 'Calendar',
-  notes: 'Notes',
   people: 'People',
   kitchen: 'Kitchen',
-  bills: 'Bills',
-  review: 'Review',
 }
 
 /** The line icon each view carries in the desktop tab strip. */
 const VIEW_ICONS: Record<View, IconName> = {
-  today: 'today',
+  home: 'home',
   tasks: 'tasks',
-  board: 'board',
   calendar: 'calendar',
-  notes: 'notes',
   people: 'people',
   kitchen: 'kitchen',
-  bills: 'bills',
-  review: 'review',
 }
 
-/** Phone tab bar: four daily surfaces and a centre More for the rest. */
-const COMPACT_TABS: { id: View | 'more'; icon: IconName; label: string }[] = [
-  { id: 'today', icon: 'today', label: 'Today' },
+/** Phone tab bar: the same five nouns as the desktop, no catch-all. Home carries
+ *  the day, week and journal; Tasks the board, bills and notes. */
+const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
+  { id: 'home', icon: 'home', label: 'Home' },
   { id: 'calendar', icon: 'calendar', label: 'Calendar' },
-  { id: 'more', icon: 'more', label: 'More' },
+  { id: 'tasks', icon: 'tasks', label: 'Tasks' },
   { id: 'kitchen', icon: 'kitchen', label: 'Kitchen' },
   { id: 'people', icon: 'people', label: 'People' },
-]
-/**
- * The More sheet's rows. `key` is the row, `view` is where it lands: the Journal
- * row is a second door onto the Review view with its segment already set, so the
- * list is deliberately not keyed by `View`. The five-tab bar is unchanged.
- */
-const MORE_VIEWS: { key: string; view: View; label: string; icon: IconName; hint: string }[] = [
-  { key: 'tasks', view: 'tasks', label: 'Tasks', icon: 'tasks', hint: 'Searchable list, import and trash' },
-  { key: 'board', view: 'board', label: 'Board', icon: 'board', hint: 'Wishlist → to do → doing → done' },
-  { key: 'notes', view: 'notes', label: 'Notes', icon: 'notes', hint: 'The selected project’s notepad' },
-  // a row, not a sixth tab: the phone keeps its five
-  { key: 'bills', view: 'bills', label: 'Bills', icon: 'bills', hint: 'What’s due, what’s paid, an average month' },
-  { key: 'journal', view: 'review', label: 'Journal', icon: 'journal', hint: 'Today’s line, and every day you wrote' },
-  { key: 'review', view: 'review', label: 'Review', icon: 'review', hint: 'The weekly look-back' },
 ]
 
 const FILTER_KEY = 'drafter:project-filter'
 const CAL_MODE_KEY = 'drafter:calendar-mode'
+const TASKS_TAB_KEY = 'drafter:tasks-tab'
 const PEOPLE_TAB_KEY = 'drafter:people-tab'
-const REVIEW_TAB_KEY = 'drafter:review-tab'
 
 interface Toast {
   msg: string
@@ -115,7 +116,7 @@ interface Toast {
 export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
-  const [view, setView] = useState<View>('today')
+  const [view, setView] = useState<View>('home')
   const [projectFilter, setProjectFilter] = useState<string>(() => {
     try {
       return localStorage.getItem(FILTER_KEY) ?? 'all'
@@ -136,6 +137,14 @@ export default function Planner() {
   // segment for that visit alone, so "Open review" cannot be hijacked by the
   // last time the journal was read, and the People tab cannot get pinned to
   // Places by one search result.
+  const storedTasksTab = (): TasksTab => {
+    try {
+      const t = localStorage.getItem(TASKS_TAB_KEY)
+      return t === 'board' || t === 'bills' || t === 'notes' ? t : 'list'
+    } catch {
+      return 'list'
+    }
+  }
   const storedPeopleTab = (): PeopleTab => {
     try {
       return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
@@ -143,18 +152,22 @@ export default function Planner() {
       return 'people'
     }
   }
-  const storedReviewTab = (): ReviewTab => {
-    try {
-      return localStorage.getItem(REVIEW_TAB_KEY) === 'journal' ? 'journal' : 'review'
-    } catch {
-      return 'review'
-    }
-  }
+  /** Move the Tasks segment for this visit only. */
+  const [tasksTab, goTasksTab] = useState<TasksTab>(storedTasksTab)
   /** Move the People segment for this visit only. */
   const [peopleTab, goPeopleTab] = useState<PeopleTab>(storedPeopleTab)
-  /** Move the Review segment for this visit only. */
-  const [reviewTab, goReviewTab] = useState<ReviewTab>(storedReviewTab)
+  /** Home's segment. It is not persisted: tapping Home always returns to the
+   *  day, the app's base surface; Week and Journal are opt-in from there. */
+  const [homeTab, setHomeTab] = useState<HomeTab>('today')
   /** Remember the choice: the segment buttons, and nothing else. */
+  const setTasksTab = (tab: TasksTab) => {
+    goTasksTab(tab)
+    try {
+      localStorage.setItem(TASKS_TAB_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }
   const setPeopleTab = (tab: PeopleTab) => {
     goPeopleTab(tab)
     try {
@@ -163,22 +176,15 @@ export default function Planner() {
       /* ignore */
     }
   }
-  const setReviewTab = (tab: ReviewTab) => {
-    goReviewTab(tab)
-    try {
-      localStorage.setItem(REVIEW_TAB_KEY, tab)
-    } catch {
-      /* ignore */
-    }
-  }
   /**
    * Go to a view from a tab bar. A tab tap is the one move that means "wherever
    * I left this", so the segmented views re-read the remembered half rather than
-   * keeping whatever a link last set.
+   * keeping whatever a link last set — except Home, which always opens on the day.
    */
   const goView = (v: View) => {
+    if (v === 'home') setHomeTab('today')
+    if (v === 'tasks') goTasksTab(storedTasksTab())
     if (v === 'people') goPeopleTab(storedPeopleTab())
-    if (v === 'review') goReviewTab(storedReviewTab())
     setView(v)
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
@@ -192,8 +198,8 @@ export default function Planner() {
   }
   const openJournal = (date?: string) => {
     if (date) setJournalOpenDate(date)
-    goReviewTab('journal')
-    setView('review')
+    setHomeTab('journal')
+    setView('home')
   }
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
@@ -220,7 +226,6 @@ export default function Planner() {
   const [adminOpen, setAdminOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [moreOpen, setMoreOpen] = useState(false)
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
@@ -266,7 +271,6 @@ export default function Planner() {
   // Cmd/Ctrl+K opens search from anywhere
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMoreOpen(false)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setSearchOpen(o => !o)
@@ -342,11 +346,18 @@ export default function Planner() {
       setAdminOpen(true)
       return
     }
-    // Every inbound link lands on the view it names: the More sheet is a fixed
-    // backdrop over the routed view, so a quick action tapped with it open would
-    // otherwise look like the app launched and did nothing.
-    setMoreOpen(false)
-    if (parsed.view && (VIEWS as string[]).includes(parsed.view)) setView(parsed.view as View)
+    // Every inbound link lands on the view it names. Views that became segments
+    // still resolve: board / bills / notes open the Tasks tab on that segment,
+    // and the former today / review views open Home on the day or the week.
+    if (parsed.view && LEGACY_VIEW_TO_TASKS[parsed.view]) {
+      goTasksTab(LEGACY_VIEW_TO_TASKS[parsed.view])
+      setView('tasks')
+    } else if (parsed.view && LEGACY_VIEW_TO_HOME[parsed.view]) {
+      setHomeTab(LEGACY_VIEW_TO_HOME[parsed.view])
+      setView('home')
+    } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
+      setView(parsed.view as View)
+    }
     if (parsed.tab === 'journal') {
       // land on today's editor, not just the tab — this is the quick action's route
       openJournal(localDayKey())
@@ -966,6 +977,27 @@ export default function Planner() {
 
   const filterProject = activeFilter !== 'all' ? projectMap.get(activeFilter) : undefined
 
+  // The command palette's own rows: the things you can do and the places you can
+  // go, beside the search results. Navigation lands on the same segment a tab
+  // tap would; the actions open the same editors the toolbar buttons do.
+  const paletteCommands: Command[] = [
+    { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
+    { id: 'new-project', label: 'New project', icon: 'plus', quick: true, keywords: 'add create', run: newProject },
+    { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
+    { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
+    { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },
+    { id: 'go-journal', label: 'Journal', icon: 'journal', keywords: 'diary write', run: () => openJournal(localDayKey()) },
+    { id: 'go-tasks', label: 'Tasks', icon: 'tasks', keywords: 'list', run: () => { goTasksTab('list'); setView('tasks') } },
+    { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
+    { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
+    { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
+    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => setView('calendar') },
+    { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
+    { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
+    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
+    { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
+  ]
+
   return (
     <div className="app">
       <header className="topbar">
@@ -990,23 +1022,14 @@ export default function Planner() {
         </nav>
         <nav className="tabs tabs-compact" aria-label="Main">
           {COMPACT_TABS.map(t => {
-            const onMore = t.id === 'more'
-            const active = onMore ? MORE_VIEWS.some(m => m.view === view) : view === t.id
+            const active = view === t.id
             return (
               <button
                 key={t.id}
                 type="button"
-                className={active || (onMore && moreOpen) ? 'tab active' : 'tab'}
+                className={active ? 'tab active' : 'tab'}
                 aria-current={active ? 'page' : undefined}
-                aria-haspopup={onMore ? 'dialog' : undefined}
-                aria-expanded={onMore ? moreOpen : undefined}
-                onClick={() => {
-                  if (t.id === 'more') setMoreOpen(o => !o)
-                  else {
-                    setMoreOpen(false)
-                    goView(t.id)
-                  }
-                }}
+                onClick={() => goView(t.id)}
               >
                 <span className="tab-icon" aria-hidden>
                   <Icon name={t.icon} />
@@ -1104,60 +1127,108 @@ export default function Planner() {
       <main className="content">
         {store.loaded && (
           <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
-            {view === 'today' && (
-              <Today
-                tasks={filteredTasks}
-                allTasks={store.tasks}
-                people={store.people}
-                places={store.places}
-                reviews={store.reviews}
-                onPlanWith={planWith}
-                onWentTo={wentTo}
-                onPlanAt={planAt}
-                onPlanOccasion={planOccasion}
-                onSaw={sawThem}
-                onSaveReview={r => store.upsert(r)}
-                projects={filterProject ? [filterProject] : store.projects}
-                projectMap={projectMap}
-                events={allEvents}
-                sourceMap={sourceMap}
-                onPlan={planForEvent}
-                onOpen={openTask}
-                onOpenProject={openProject}
-                onStatus={changeStatus}
-                onDefer={defer}
-                onDeferAll={deferAll}
-                onNew={newTask}
-                meals={store.meals}
-                recipes={store.recipes}
-                onOpenKitchen={() => setView('kitchen')}
-                onOpenReview={() => {
-                  goReviewTab('review')
-                  setView('review')
-                }}
-                onCookRecipe={r => {
-                  setKitchenRecipe(r)
-                  setView('kitchen')
-                }}
-                journal={store.journal}
-                onSaveJournal={e => store.upsert(e)}
-                onDeleteJournal={id => {
-                  store.remove(id)
-                  showToast('Journal entry removed', () => store.restore([id]))
-                }}
-                onOpenJournal={() => openJournal(localDayKey())}
-              />
-            )}
-            {view === 'board' && (
-              <Board
-                tasks={filteredTasks}
-                projects={projectMap}
-                members={household.info?.members ?? []}
-                showProject={activeFilter === 'all'}
-                onOpen={openTask}
-                onStatus={changeStatus}
-                onNew={s => newTask({ status: s })}
-              />
+            {view === 'home' && (
+              <>
+                {/* one Home across three time horizons: the day, the week’s
+                    look-back, and the journal — Today’s dashboard is the base */}
+                <div className="people-tab-seg home-seg" role="tablist" aria-label="Home view">
+                  <span className="segmented">
+                    {HOME_TABS.map(t => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={homeTab === t.key}
+                        className={homeTab === t.key ? 'seg on' : 'seg'}
+                        onClick={() => {
+                          setHomeTab(t.key)
+                          // the journal opens on today’s line, not the list above it
+                          if (t.key === 'journal') setJournalOpenDate(localDayKey())
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+                {homeTab === 'today' && (
+                  <Today
+                    tasks={filteredTasks}
+                    allTasks={store.tasks}
+                    people={store.people}
+                    places={store.places}
+                    reviews={store.reviews}
+                    onPlanWith={planWith}
+                    onWentTo={wentTo}
+                    onPlanAt={planAt}
+                    onPlanOccasion={planOccasion}
+                    onSaw={sawThem}
+                    onSaveReview={r => store.upsert(r)}
+                    projects={filterProject ? [filterProject] : store.projects}
+                    projectMap={projectMap}
+                    events={allEvents}
+                    sourceMap={sourceMap}
+                    onPlan={planForEvent}
+                    onOpen={openTask}
+                    onOpenProject={openProject}
+                    onStatus={changeStatus}
+                    onDefer={defer}
+                    onDeferAll={deferAll}
+                    onNew={newTask}
+                    meals={store.meals}
+                    recipes={store.recipes}
+                    onOpenKitchen={() => setView('kitchen')}
+                    onOpenReview={() => setHomeTab('week')}
+                    onCookRecipe={r => {
+                      setKitchenRecipe(r)
+                      setView('kitchen')
+                    }}
+                    journal={store.journal}
+                    onSaveJournal={e => store.upsert(e)}
+                    onDeleteJournal={id => {
+                      store.remove(id)
+                      showToast('Journal entry removed', () => store.restore([id]))
+                    }}
+                    onOpenJournal={() => openJournal(localDayKey())}
+                  />
+                )}
+                {homeTab === 'week' && (
+                  <Review
+                    tasks={store.tasks}
+                    projects={store.projects}
+                    projectMap={projectMap}
+                    people={store.people}
+                    reviews={store.reviews}
+                    journal={store.journal}
+                    places={store.places}
+                    onSaveReview={r => store.upsert(r)}
+                    onOpen={openTask}
+                    onStatus={changeStatus}
+                    onReschedule={(ids, dueAt) => {
+                      for (const id of ids) {
+                        const t = store.tasks.find(x => x.id === id)
+                        if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
+                      }
+                      showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
+                    }}
+                    onOpenProject={openProject}
+                    onNew={preset => newTask(preset)}
+                  />
+                )}
+                {homeTab === 'journal' && (
+                  <JournalView
+                    entries={store.journal}
+                    people={store.people}
+                    onSave={e => store.upsert(e)}
+                    onDelete={id => {
+                      store.remove(id)
+                      showToast('Journal entry removed', () => store.restore([id]))
+                    }}
+                    openDate={journalOpenDate}
+                    onOpenDateConsumed={() => setJournalOpenDate(null)}
+                  />
+                )}
+              </>
             )}
             {view === 'calendar' && (
               <>
@@ -1214,82 +1285,61 @@ export default function Planner() {
               </>
             )}
             {view === 'tasks' && (
-              <TasksTable
-                store={store}
-                tasks={filteredTasks}
-                projectMap={projectMap}
-                onOpen={openTask}
-                onNew={newTask}
-                onDelete={deleteTask}
-                onOpenTrash={() => setTrashOpen(true)}
-                trashCount={store.visibleItems.filter(i => i.deletedAt && !i.purged).length}
-              />
-            )}
-            {view === 'notes' && (
-              <NotesView
-                projects={store.projects}
-                project={filterProject}
-                getLatest={id => store.projects.find(x => x.id === id)}
-                onSave={p => store.upsert(p)}
-                onSelectProject={id => setProjectFilter(id)}
-                onNewProject={newProject}
-                onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
-              />
-            )}
-            {view === 'review' && (
               <>
-                <div className="people-tab-seg">
+                {/* one workspace, four lenses on the same project data — the list,
+                    the board, the bills and the project notes */}
+                <div className="people-tab-seg tasks-seg" role="tablist" aria-label="Tasks view">
                   <span className="segmented">
-                    <button type="button" className={reviewTab === 'review' ? 'seg on' : 'seg'} onClick={() => setReviewTab('review')}>
-                      Review
-                    </button>
-                    <button
-                      type="button"
-                      className={reviewTab === 'journal' ? 'seg on' : 'seg'}
-                      onClick={() => {
-                        setReviewTab('journal')
-                        // land on today's editor, not on the stats above it
-                        setJournalOpenDate(localDayKey())
-                      }}
-                    >
-                      Journal
-                    </button>
+                    {TASKS_TABS.map(t => (
+                      <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>
+                        {t.label}
+                      </button>
+                    ))}
                   </span>
                 </div>
-                {reviewTab === 'journal' ? (
-                  <JournalView
-                    entries={store.journal}
-                    people={store.people}
-                    onSave={e => store.upsert(e)}
-                    onDelete={id => {
-                      store.remove(id)
-                      showToast('Journal entry removed', () => store.restore([id]))
-                    }}
-                    openDate={journalOpenDate}
-                    onOpenDateConsumed={() => setJournalOpenDate(null)}
+                {tasksTab === 'list' && (
+                  <TasksTable
+                    store={store}
+                    tasks={filteredTasks}
+                    projectMap={projectMap}
+                    onOpen={openTask}
+                    onNew={newTask}
+                    onDelete={deleteTask}
+                    onOpenTrash={() => setTrashOpen(true)}
+                    trashCount={store.visibleItems.filter(i => i.deletedAt && !i.purged).length}
                   />
-                ) : (
-              <Review
-                tasks={store.tasks}
-                projects={store.projects}
-                projectMap={projectMap}
-                people={store.people}
-                reviews={store.reviews}
-                journal={store.journal}
-                places={store.places}
-                onSaveReview={r => store.upsert(r)}
-                onOpen={openTask}
-                onStatus={changeStatus}
-                onReschedule={(ids, dueAt) => {
-                  for (const id of ids) {
-                    const t = store.tasks.find(x => x.id === id)
-                    if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
-                  }
-                  showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
-                }}
-                onOpenProject={openProject}
-                onNew={preset => newTask(preset)}
-              />
+                )}
+                {tasksTab === 'board' && (
+                  <Board
+                    tasks={filteredTasks}
+                    projects={projectMap}
+                    members={household.info?.members ?? []}
+                    showProject={activeFilter === 'all'}
+                    onOpen={openTask}
+                    onStatus={changeStatus}
+                    onNew={s => newTask({ status: s })}
+                  />
+                )}
+                {tasksTab === 'bills' && (
+                  <Bills
+                    tasks={store.tasks}
+                    onOpen={openTask}
+                    onNew={() => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false })}
+                    // the one completion path with a real undo: it restores the bill and
+                    // removes next month's occurrence, so an accidental tap costs nothing
+                    onMarkPaid={t => changeStatus(t.id, 'done')}
+                  />
+                )}
+                {tasksTab === 'notes' && (
+                  <NotesView
+                    projects={store.projects}
+                    project={filterProject}
+                    getLatest={id => store.projects.find(x => x.id === id)}
+                    onSave={p => store.upsert(p)}
+                    onSelectProject={id => setProjectFilter(id)}
+                    onNewProject={newProject}
+                    onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
+                  />
                 )}
               </>
             )}
@@ -1357,16 +1407,6 @@ export default function Planner() {
                   />
                 )}
               </>
-            )}
-            {view === 'bills' && (
-              <Bills
-                tasks={store.tasks}
-                onOpen={openTask}
-                onNew={() => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false })}
-                // the one completion path with a real undo: it restores the bill and
-                // removes next month's occurrence, so an accidental tap costs nothing
-                onMarkPaid={t => changeStatus(t.id, 'done')}
-              />
             )}
             {view === 'kitchen' && (
               <Kitchen
@@ -1447,7 +1487,8 @@ export default function Planner() {
           onOpenNotes={p => {
             setProjectEditor(null)
             setProjectFilter(p.id)
-            setView('notes')
+            goTasksTab('notes')
+            setView('tasks')
           }}
           templates={store.templates}
           onCreateMany={(p, ts) => {
@@ -1483,6 +1524,7 @@ export default function Planner() {
           tasks={store.tasks}
           projects={store.projects}
           people={store.people}
+          commands={paletteCommands}
           onOpenTask={openTask}
           onOpenProject={openProject}
           onOpenPerson={() => setView('people')}
@@ -1553,56 +1595,6 @@ export default function Planner() {
         />
       )}
       {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
-
-      {moreOpen && (
-        <div
-          className="more-backdrop"
-          onMouseDown={e => {
-            if (e.target === e.currentTarget) setMoreOpen(false)
-          }}
-        >
-          <div className="more-sheet" role="dialog" aria-label="More">
-            <div className="more-handle" aria-hidden />
-            <header className="more-head">
-              <h2>More</h2>
-              <button type="button" className="btn subtle" aria-label="Close" onClick={() => setMoreOpen(false)}>
-                ✕
-              </button>
-            </header>
-            <ul className="more-list">
-              {MORE_VIEWS.map(m => {
-                // Journal and Review share the Review view, so the segment says which row is the current one
-                const on = view === m.view && (m.view !== 'review' || reviewTab === (m.key === 'journal' ? 'journal' : 'review'))
-                return (
-                  <li key={m.key}>
-                    <button
-                      type="button"
-                      className={on ? 'more-item on' : 'more-item'}
-                      onClick={() => {
-                        setMoreOpen(false)
-                        // the journal row is for writing today's line, so it lands on today's editor
-                        if (m.key === 'journal') openJournal(localDayKey())
-                        else if (m.key === 'review') {
-                          goReviewTab('review')
-                          setView('review')
-                        } else setView(m.view)
-                      }}
-                    >
-                      <span className="more-item-icon" aria-hidden>
-                        <Icon name={m.icon} size={20} />
-                      </span>
-                      <span className="more-item-copy">
-                        <strong>{m.label}</strong>
-                        <small>{m.hint}</small>
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
 
       {toast && (
         <div className="toast" role="status">

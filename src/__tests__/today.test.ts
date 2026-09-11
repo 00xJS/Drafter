@@ -115,17 +115,19 @@ describe('the journal is two taps away, and never moves under the caret', () => 
     expect(today).not.toMatch(/autoFocus/)
   })
 
-  it('gives the More sheet its own Journal row without a sixth tab', () => {
-    expect(planner).toMatch(/key: 'journal', view: 'review'/)
-    // the phone tab bar is still exactly the five it was
-    const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const MORE_VIEWS'))
+  it('keeps the phone to five tabs and no More drawer', () => {
+    // Board, Bills and Notes moved into the Tasks tab as segments, so the
+    // catch-all sheet is gone — its data and its open-state with it.
+    const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const FILTER_KEY'))
     expect(bar.match(/id: '/g)).toHaveLength(5)
+    expect(planner).not.toMatch(/MORE_VIEWS/)
+    expect(planner).not.toMatch(/moreOpen/)
   })
 
-  it('lands the journal routes on today’s editor rather than the stats above it', () => {
+  it('opens the journal on today’s editor from Today, not the stats above it', () => {
     expect(planner).toMatch(/onOpenJournal=\{\(\) => openJournal\(localDayKey\(\)\)\}/)
-    expect(planner).toMatch(/if \(m\.key === 'journal'\) openJournal\(localDayKey\(\)\)/)
-    expect(planner).toMatch(/setReviewTab\('journal'\)\s*\n\s*\/\/[^\n]*\n\s*setJournalOpenDate\(localDayKey\(\)\)/)
+    // openJournal moves Home to its journal segment and opens the day asked for
+    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[\s\S]*?setJournalOpenDate\(date\)[\s\S]*?setHomeTab\('journal'\)[\s\S]*?setView\('home'\)/)
   })
 })
 
@@ -136,29 +138,35 @@ describe('a remembered segment may not hijack a destination', () => {
 
   it('writes each segment key from exactly one place', () => {
     // one persisting setter each — the segment buttons' own; every other route
-    // moves the segment for the visit only
+    // moves the segment for the visit only. Home is deliberately not persisted.
     expect(writes('PEOPLE_TAB_KEY')).toBe(1)
-    expect(writes('REVIEW_TAB_KEY')).toBe(1)
+    expect(writes('TASKS_TAB_KEY')).toBe(1)
+    expect(planner).not.toMatch(/HOME_TAB_KEY/)
   })
 
   it('opens a place and the journal without pinning the segment for good', () => {
     expect(planner).toMatch(/const openPlace = \([^)]*\) => \{[^}]*goPeopleTab\('places'\)/)
-    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[^}]*goReviewTab\('journal'\)/)
+    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[^}]*setHomeTab\('journal'\)/)
     expect(planner).not.toMatch(/const openPlace[\s\S]{0,240}setPeopleTab\(/)
-    expect(planner).not.toMatch(/const openJournal[\s\S]{0,200}setReviewTab\(/)
   })
 
-  it('sends "Open review" to the review, whatever the journal was last read', () => {
-    expect(planner).toMatch(/onOpenReview=\{\(\) => \{\s*goReviewTab\('review'\)\s*setView\('review'\)/)
+  it('sends "Open review" to Home’s Week segment', () => {
+    expect(planner).toMatch(/onOpenReview=\{\(\) => setHomeTab\('week'\)\}/)
   })
 
-  it('sends the More sheet’s Review row to the review too', () => {
-    expect(planner).toMatch(/else if \(m\.key === 'review'\) \{\s*goReviewTab\('review'\)/)
+  it('reaches the review as Home’s Week segment, not a tab of its own', () => {
+    // Today, Review and the Journal are three segments of one Home tab now
+    expect(planner).toMatch(/homeTab === 'week' && \(/)
+    expect(planner).toMatch(/<Review/)
+    expect(planner).not.toMatch(/view === 'review'/)
+    expect(planner).not.toMatch(/view === 'today'/)
   })
 
   it('re-reads the remembered half when a tab bar is tapped', () => {
-    // a tab tap means "wherever I left this", not "wherever a link last went"
-    expect(planner).toMatch(/const goView = \(v: View\) => \{[\s\S]*?goPeopleTab\(storedPeopleTab\(\)\)[\s\S]*?goReviewTab\(storedReviewTab\(\)\)/)
+    // a tab tap means "wherever I left this", not "wherever a link last went" —
+    // except Home, which always returns to the day
+    expect(planner).toMatch(/const goView = \(v: View\) => \{[\s\S]*?goTasksTab\(storedTasksTab\(\)\)[\s\S]*?goPeopleTab\(storedPeopleTab\(\)\)/)
+    expect(planner).toMatch(/if \(v === 'home'\) setHomeTab\('today'\)/)
     // both bars route through it
     expect(planner).toMatch(/onClick=\{\(\) => goView\(v\)\}/)
     expect(planner).toMatch(/goView\(t\.id\)/)
