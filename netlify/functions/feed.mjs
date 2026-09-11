@@ -23,7 +23,7 @@ function prevDayKey(key) {
   return d.toISOString().slice(0, 10)
 }
 
-function feedFor(items, site, tz, myId) {
+export function feedFor(items, site, tz, myId) {
   const projects = new Map(items.filter(i => i.kind === 'project').map(p => [p.id, p]))
   const feed = []
   const cutoff = Date.now() - 30 * DAY
@@ -115,12 +115,22 @@ async function visibleOwnerIds(userId) {
  * MUST be applied here: without it one feed token would dump every user's
  * tasks. Scope is the token's owner plus their household, matching the app.
  */
+/** The row's owner, as the app would see it. Exported for the tests. */
+export function withOwner(item, userId) {
+  return item && typeof item === 'object' && userId ? { ...item, ownerId: userId } : item
+}
+
 async function loadItems(ownerIds) {
   if (!ownerIds.length) return []
   const list = ownerIds.map(id => `"${id}"`).join(',')
-  const res = await fetch(`${baseUrl()}/rest/v1/posts?select=data&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`, { headers: serviceHeaders() })
+  // user_id comes back beside data on purpose. sync_posts strips `ownerId`
+  // before storing and only re-adds it on the way back to a signed-in client,
+  // so a row read straight from the table carries no owner at all — and every
+  // "only mine" filter in feedFor silently passed a household peer's events,
+  // project targets and unassigned tasks into this user's calendar.
+  const res = await fetch(`${baseUrl()}/rest/v1/posts?select=data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`, { headers: serviceHeaders() })
   if (!res.ok) throw new Error(`Supabase ${res.status}`)
-  return (await res.json()).map(r => legacyPostToTask(r.data))
+  return (await res.json()).map(r => withOwner(legacyPostToTask(r.data), r.user_id))
 }
 
 const feedUrl = (origin, token) => `${origin}/api/feed.ics?token=${encodeURIComponent(token)}`

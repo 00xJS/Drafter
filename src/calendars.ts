@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isMineTask } from '../shared/domain.mjs'
-import { CalendarEntry, CalendarEvent, CalendarSource, Item, Project } from './types'
+import { CalendarEntry, CalendarEvent, CalendarSource, Item, OPEN_STATUSES, Project, Task } from './types'
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
 import { dateKey } from './utils'
@@ -134,6 +134,19 @@ export function pushEventToGoogle(entry: CalendarEntry, opts: { revive?: boolean
  */
 export function pushEventToMicrosoft(entry: CalendarEntry, accountId: string): Promise<{ result: string }> {
   return microsoftAction<{ result: string }>('push-event', { event: entry, accountId })
+}
+
+/**
+ * Whether a task is one the mirrors keep in the provider: open and dated.
+ *
+ * The server decides what to push with exactly this rule (lib/google.mjs
+ * pushTask `wanted`), so the pull uses it too, to tell a cancellation the
+ * mirror itself caused from one the owner made in Google. Without it, moving a
+ * task to Wishlist or clearing its date removed the event, the pull saw that
+ * cancellation, and marked the task done.
+ */
+export function isMirroredTask(t: Pick<Task, 'status' | 'dueAt'> & { deletedAt?: string }): boolean {
+  return !t.deletedAt && OPEN_STATUSES.includes(t.status) && !!t.dueAt
 }
 
 /** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */

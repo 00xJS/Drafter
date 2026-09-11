@@ -6,7 +6,7 @@ import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { entryToEvent, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
+import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
@@ -508,7 +508,14 @@ export default function Planner() {
       const t = store.tasks.find(x => x.id === c.taskId)
       if (!t || c.updated <= t.updatedAt) continue
       if (c.deleted) {
-        if (t.status === 'done' || t.status === 'canceled') continue
+        // A cancelled event for a task that is no longer mirrored is our OWN
+        // delete echoing back, not the owner deleting it in the provider: the
+        // mirror removes the event the moment a task leaves the open, dated set
+        // (wishlist, due date cleared, done, canceled), and the pull then sees
+        // that cancellation. Reading it as "deleted in Google, so done" marked a
+        // task done seconds after it was moved to Wishlist. Same rule the server
+        // uses to decide what to mirror (lib/google.mjs pushTask `wanted`).
+        if (!isMirroredTask(t)) continue
         const change = store.setStatus(t.id, 'done')
         if (change) undone.push({ id: t.id, status: change.prev.status })
         continue
