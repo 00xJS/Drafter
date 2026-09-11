@@ -613,6 +613,24 @@ export default function Planner() {
     return place
   }
 
+  /** The Cook-side mirror of createPlaceInline: save a new dish from just its
+   *  name while planning the meal; its ingredients and steps get filled in on
+   *  the Kitchen tab later. */
+  const createRecipeInline = (name: string): Recipe => {
+    const now = new Date().toISOString()
+    const recipe: Recipe = {
+      kind: 'recipe',
+      id: uid(),
+      name: name.trim(),
+      ingredients: [],
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    store.upsert(recipe)
+    return recipe
+  }
+
   /**
    * Pushes for one entry to one provider run one after another. Without this a
    * quick Undo raced its own delete: the revive's lookup still saw the live copy
@@ -1256,6 +1274,7 @@ export default function Planner() {
                     onSaveMeal={saveMeal}
                     onClearMeal={clearMeal}
                     onCreatePlace={createPlaceInline}
+                    onCreateRecipe={createRecipeInline}
                     onNewEvent={(startIso, work) => setEventEditor({ startIso, work })}
                     onEditEvent={id => {
                       const entry = store.events.find(e => e.id === id)
@@ -1417,6 +1436,7 @@ export default function Planner() {
                 onSaveMeal={saveMeal}
                 onClearMeal={clearMeal}
                 onCreatePlace={createPlaceInline}
+                onCreateRecipe={createRecipeInline}
                 onSave={item => store.upsert(item)}
                 onDelete={id => {
                   store.remove(id)

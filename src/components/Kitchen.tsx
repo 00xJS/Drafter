@@ -47,12 +47,14 @@ interface Props {
   onClearMeal(id: string): void
   /** Save a new place from the meal picker and hand it back. */
   onCreatePlace(name: string, category: PlaceCategory): Place
+  /** Save a new recipe (name only) from the meal picker and hand it back. */
+  onCreateRecipe(name: string): Recipe
   /** Open this recipe in cook mode (Today → tonight’s dinner). */
   openRecipe?: Recipe | null
   onOpenRecipeConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, openRecipe, onOpenRecipeConsumed }: Props) {
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed }: Props) {
   const [seg, setSeg] = useState<Seg>(() => {
     try {
       const saved = localStorage.getItem(SEG_KEY) as Seg | null
@@ -175,6 +177,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
           onCreatePlace={onCreatePlace}
+          onCreateRecipe={onCreateRecipe}
           onOpenRecipe={r => setCooking(r)}
         />
       )}
@@ -235,6 +238,7 @@ function WeekPlan({
   onSaveMeal,
   onClearMeal,
   onCreatePlace,
+  onCreateRecipe,
   onOpenRecipe,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
@@ -243,6 +247,7 @@ function WeekPlan({
   places: Place[]
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
+  onCreateRecipe(name: string): Recipe
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
   onOpenRecipe(r: Recipe): void
@@ -286,6 +291,7 @@ function WeekPlan({
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
                   onCreatePlace={onCreatePlace}
+                  onCreateRecipe={onCreateRecipe}
                   onOpenRecipe={onOpenRecipe}
                 />
               ))}

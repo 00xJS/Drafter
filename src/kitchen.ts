@@ -19,6 +19,17 @@ export const ingredientKey = (name: string, unit?: string): string => sharedIngr
 export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
 export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
 
+/**
+ * A recipe matched by name, case- and space-insensitively — so planning
+ * "Something new" with a dish you already have reuses that recipe instead of
+ * making a second copy of it, the same rule places follow (see placeByName).
+ */
+export function recipeByName(name: string | null | undefined, recipes: Recipe[]): Recipe | undefined {
+  const key = (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!key) return undefined
+  return recipes.find(r => !r.deletedAt && r.name.trim().toLowerCase().replace(/\s+/g, ' ') === key)
+}
+
 /** Build or refresh a week's list. Keeps have/done/manual lines the user already set. */
 export const buildGroceryList = (weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString()): GroceryList =>
   sharedBuildGroceryList(weekKey, meals, recipes, prev ?? null, now)

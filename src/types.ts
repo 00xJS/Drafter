@@ -274,10 +274,11 @@ export interface Person extends Owned {
   deletedAt?: string
 }
 
-export type PlaceCategory = 'restaurant' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
-export const PLACE_CATEGORIES: PlaceCategory[] = ['restaurant', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
+export type PlaceCategory = 'restaurant' | 'fastfood' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
+export const PLACE_CATEGORIES: PlaceCategory[] = ['restaurant', 'fastfood', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
 export const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }> = {
   restaurant: { label: 'Restaurant', emoji: '🍽️' },
+  fastfood: { label: 'Fast food', emoji: '🍔' },
   cafe: { label: 'Café', emoji: '☕' },
   bar: { label: 'Bar', emoji: '🍸' },
   outdoors: { label: 'Outdoors', emoji: '🌳' },

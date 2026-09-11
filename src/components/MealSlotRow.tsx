@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { newerStamp } from '../itemops'
-import { mealId } from '../kitchen'
+import { mealId, recipeByName } from '../kitchen'
 import { placeByName } from '../places'
 
 // One control for "what are we eating on this day", used by the Kitchen tab's
@@ -15,7 +15,7 @@ import { placeByName } from '../places'
  * a park is a real answer to "what are we eating" — but a restaurant should not
  * sit below the swimming pool in the list.
  */
-const FOOD_CATEGORIES = new Set(['restaurant', 'cafe', 'bar'])
+const FOOD_CATEGORIES = new Set(['restaurant', 'fastfood', 'cafe', 'bar'])
 export function foodFirst(places: Place[]): Place[] {
   return [...places].sort((a, b) => {
     const fa = FOOD_CATEGORIES.has(a.category) ? 0 : 1
@@ -33,6 +33,7 @@ export function MealSlotRow({
   onSave,
   onClear,
   onCreatePlace,
+  onCreateRecipe,
   onOpenRecipe,
 }: {
   date: string
@@ -48,10 +49,18 @@ export function MealSlotRow({
    * time can be recorded here instead of in a detour to the Places tab.
    */
   onCreatePlace(name: string, category: PlaceCategory): Place
+  /**
+   * Save a brand-new recipe from just its name and hand it back, so a dish you
+   * are cooking for the first time can be planned here — ingredients and steps
+   * filled in later on the Kitchen tab — instead of a detour to add it first.
+   * The mirror of onCreatePlace for the Cook side.
+   */
+  onCreateRecipe?(name: string): Recipe
   /** Cook mode. Absent on the calendar, where there is nowhere to cook from. */
   onOpenRecipe?(r: Recipe): void
 }) {
-  const [adding, setAdding] = useState(false)
+  // which inline "new…" form is open, if any: a place to eat out, or a recipe to cook
+  const [add, setAdd] = useState<null | 'place' | 'recipe'>(null)
   const [newName, setNewName] = useState('')
   const [newCategory, setNewCategory] = useState<PlaceCategory>('restaurant')
   const meta = MEAL_SLOT_META[slot]
@@ -98,9 +107,23 @@ export function MealSlotRow({
     if (!name) return
     const place = placeByName(name, places) ?? onCreatePlace(name, newCategory)
     write({ out: true, placeId: place.id, title: place.name })
-    setAdding(false)
+    setAdd(null)
     setNewName('')
     setNewCategory('restaurant')
+  }
+
+  /**
+   * Something new to cook. Like Somewhere new, a name you already have reuses
+   * that recipe rather than making a second copy; a genuinely new one is saved
+   * with just its name, ready to gain ingredients and steps on the Kitchen tab.
+   */
+  const addRecipe = () => {
+    const name = newName.trim()
+    if (!name || !onCreateRecipe) return
+    const recipe = recipeByName(name, recipes) ?? onCreateRecipe(name)
+    write({ recipeId: recipe.id, title: recipe.name })
+    setAdd(null)
+    setNewName('')
   }
   const current = meal ? (meal.out ? (meal.placeId ? `p:${meal.placeId}` : 'out') : meal.recipeId ? `r:${meal.recipeId}` : '') : ''
   return (
@@ -108,17 +131,21 @@ export function MealSlotRow({
       <span className="meal-slot-label">
         {meta.emoji} {meta.label}
       </span>
-      {recipes.length === 0 && places.length === 0 ? (
+      {recipes.length === 0 && places.length === 0 && !onCreateRecipe ? (
         <span className="muted">Add a recipe first</span>
       ) : (
         <select
           value={current}
           onChange={e => {
             if (e.target.value === 'new') {
-              setAdding(true)
+              setAdd('place')
               return
             }
-            setAdding(false)
+            if (e.target.value === 'new-recipe') {
+              setAdd('recipe')
+              return
+            }
+            setAdd(null)
             if (!e.target.value) {
               if (meal) onClear(meal.id)
               return
@@ -128,8 +155,9 @@ export function MealSlotRow({
           aria-label={`${meta.label} on ${date}`}
         >
           <option value="">—</option>
-          {recipes.length > 0 && (
+          {(recipes.length > 0 || onCreateRecipe) && (
             <optgroup label="Cook">
+              {onCreateRecipe && <option value="new-recipe">➕ Something new…</option>}
               {recipes.map(r => (
                 <option key={r.id} value={`r:${r.id}`}>
                   {r.emoji ? `${r.emoji} ` : ''}
@@ -163,7 +191,7 @@ export function MealSlotRow({
       )}
       {meal?.out && <span className="meal-out-chip">🥡 Out</span>}
 
-      {adding && (
+      {add === 'place' && (
         <div className="meal-new-place">
           <input
             className="meal-new-place-name"
@@ -175,7 +203,7 @@ export function MealSlotRow({
                 e.preventDefault()
                 addPlace()
               }
-              if (e.key === 'Escape') setAdding(false)
+              if (e.key === 'Escape') setAdd(null)
             }}
             placeholder="Where from?"
             aria-label={`Name of the place for ${meta.label.toLowerCase()} on ${date}`}
@@ -194,7 +222,33 @@ export function MealSlotRow({
           <button className="btn primary" onClick={addPlace} disabled={!newName.trim()}>
             Save
           </button>
-          <button className="btn subtle" onClick={() => setAdding(false)}>
+          <button className="btn subtle" onClick={() => setAdd(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {add === 'recipe' && (
+        <div className="meal-new-place">
+          <input
+            className="meal-new-place-name"
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addRecipe()
+              }
+              if (e.key === 'Escape') setAdd(null)
+            }}
+            placeholder="What are you cooking?"
+            aria-label={`Name of the new recipe for ${meta.label.toLowerCase()} on ${date}`}
+          />
+          <button className="btn primary" onClick={addRecipe} disabled={!newName.trim()}>
+            Save
+          </button>
+          <button className="btn subtle" onClick={() => setAdd(null)}>
             Cancel
           </button>
         </div>

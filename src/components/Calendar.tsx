@@ -42,6 +42,8 @@ interface Props {
   onClearMeal(id: string): void
   /** Save a new place from the meal picker and hand it back. */
   onCreatePlace(name: string, category: PlaceCategory): Place
+  /** Save a new recipe (name only) from the meal picker and hand it back. */
+  onCreateRecipe(name: string): Recipe
   /** Open the event editor for a new entry starting at this instant; `work` opens it as a work day. */
   onNewEvent(startIso: string, work?: WorkMode): void
   /** Open the event editor on one of our own entries. */
@@ -65,10 +67,16 @@ const MEAL_OUT_COLOR = '#38bdf8'
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
 const LOCAL_EVENT_COLOR = '#a78bfa'
-/** 24-hour and short, for a badge that has to fit a month cell: 9–17:30. */
+/** Short 12-hour clock for a badge that has to fit a month cell: 9am, 5:30pm —
+ *  am/pm to match the events beside it, dropping the :00 and the space to stay
+ *  narrow. */
 const clock = (iso: string) => {
   const d = new Date(iso)
-  return d.getMinutes() ? `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getHours()}`
+  const h = d.getHours()
+  const m = d.getMinutes()
+  const ampm = h < 12 ? 'am' : 'pm'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
 }
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
@@ -94,6 +102,7 @@ export function Calendar({
   onSaveMeal,
   onClearMeal,
   onCreatePlace,
+  onCreateRecipe,
   onNewEvent,
   onEditEvent,
   onReschedule,
@@ -117,7 +126,7 @@ export function Calendar({
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
   const workOn = (d: Date) => (workByDay.get(dateKey(d)) ?? [])[0]
-  const workBadge = (d: Date, compact: boolean) => {
+  const workBadge = (d: Date) => {
     const w = workOn(d)
     if (!w?.work) return null
     const meta = WORK_MODE_META[w.work]
@@ -128,8 +137,7 @@ export function Calendar({
         title={`${meta.label}${hours ? ' · ' + hours : ''}`}
         aria-label={`${meta.label}${hours ? ', ' + hours : ''}`}
       >
-        {meta.emoji}
-        {compact ? '' : ` ${meta.short}`}
+        {meta.emoji} {meta.short}
         {hours ? ` ${hours}` : ''}
       </span>
     )
@@ -337,7 +345,7 @@ export function Calendar({
                     <span className="cal-weekday-name">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
                     <span className="cal-weekday-num">{d.getDate()}</span>
                     <span className="cal-weekday-count">{daySummary(items)}</span>
-                    {workBadge(d, true)}
+                    {workBadge(d)}
                   </button>
                   <div className="cal-add-wrap" onPointerDown={e => e.stopPropagation()}>
                     <button
@@ -433,7 +441,7 @@ export function Calendar({
                   onDrop={dropOn(d)}
                 >
                   <div className="cal-daynum">{d.getDate()}</div>
-                  {workBadge(d, true)}
+                  {workBadge(d)}
                   {shown.map(item => monthPill(item, d))}
                   {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
                 </div>
@@ -464,7 +472,7 @@ export function Calendar({
                         onEditEvent(id)
                       }}
                     >
-                      {workBadge(sheetDay, false)} <span className="cal-work-edit-label">Edit</span>
+                      {workBadge(sheetDay)} <span className="cal-work-edit-label">Edit</span>
                     </button>
                   ) : (
                     <button
@@ -607,6 +615,7 @@ export function Calendar({
               <h3 className="cal-sheet-eating-head">Eating</h3>
               {MEAL_SLOTS.map(slot => (
                 <MealSlotRow
+                  onCreateRecipe={onCreateRecipe}
                   key={slot}
                   date={dateKey(sheetDay)}
                   slot={slot}
