@@ -588,6 +588,25 @@ export default function Planner() {
     return place
   }
 
+  /**
+   * Pushes for one entry to one provider run one after another. Without this a
+   * quick Undo raced its own delete: the revive's lookup still saw the live copy
+   * and patched it, then the DELETE landed, and the provider lost an entry that
+   * Drafter still showed. Different entries and providers still run in parallel.
+   */
+  const mirrorChain = useRef(new Map<string, Promise<unknown>>())
+  const enqueueMirror = (key: string, run: () => Promise<unknown>) => {
+    const chain = mirrorChain.current
+    const tail = (chain.get(key) ?? Promise.resolve()).catch(() => {}).then(run)
+    chain.set(key, tail)
+    void tail
+      .finally(() => {
+        if (chain.get(key) === tail) chain.delete(key)
+      })
+      .catch(() => {})
+    return tail
+  }
+
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
 
@@ -598,14 +617,14 @@ export default function Planner() {
    * costs the copy in the provider, never the entry itself.
    */
   const mirrorEvent = (e: CalendarEntry, opts: { revive?: boolean } = {}) => {
-    if (mirroring) void pushEventToGoogle(e, opts).catch(() => {})
-    for (const accountId of msMirrorIds) void pushEventToMicrosoft(e, accountId).catch(() => {})
+    if (mirroring) void enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e, opts)).catch(() => {})
+    for (const accountId of msMirrorIds) void enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId)).catch(() => {})
   }
   /** The same fan-out, awaited, so a run of entries can be fed to the mirrors one at a time. */
   const mirrorEventNow = (e: CalendarEntry) =>
     Promise.allSettled([
-      ...(mirroring ? [pushEventToGoogle(e)] : []),
-      ...msMirrorIds.map(accountId => pushEventToMicrosoft(e, accountId)),
+      ...(mirroring ? [enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e))] : []),
+      ...msMirrorIds.map(accountId => enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId))),
     ]).then(() => undefined)
   /**
    * Save one entry, or a run of repeated work days. Every row lands locally at
@@ -1480,7 +1499,11 @@ export default function Planner() {
           items={store.visibleItems}
           projectMap={projectMap}
           onRestore={id => {
+            const row = store.allItems.find(x => x.id === id)
             store.restore([id])
+            // A restored entry goes back out to the mirrors too, or it lives only in
+            // Drafter. Pushed as the live, newer record so the providers take it.
+            if (row?.kind === 'event') mirrorEvent({ ...row, deletedAt: undefined, updatedAt: newerStamp(row.updatedAt) }, { revive: true })
             showToast('Restored')
           }}
           onPurge={id => {

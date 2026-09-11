@@ -55,13 +55,19 @@ const handler = async req => {
   } catch {
     return Response.json({ error: 'invalid JSON' }, { status: 400 })
   }
-  const sources = Array.isArray(body?.sources) ? body.sources.slice(0, MAX_SOURCES) : []
+  const all = Array.isArray(body?.sources) ? body.sources : []
+  const sources = all.slice(0, MAX_SOURCES)
   const now = Date.now()
   const from = Number.isFinite(Date.parse(body?.from)) ? Date.parse(body.from) : now - 60 * DAY
   const to = Number.isFinite(Date.parse(body?.to)) ? Date.parse(body.to) : now + 400 * DAY
 
   const events = []
   const errors = {}
+  // Anything past the cap used to vanish and read as "0 events" in Settings.
+  // Name it instead: all three Settings lists already show errors[id].
+  for (const s of all.slice(MAX_SOURCES)) {
+    if (s && s.id) errors[String(s.id)] = `Only ${MAX_SOURCES} calendars can be shown at once. Untick another to see this one.`
+  }
   const names = {}
   await Promise.all(
     sources.map(async src => {

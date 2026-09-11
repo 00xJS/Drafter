@@ -6,6 +6,7 @@
 // redirect URI https://<site>/api/google/callback → GOOGLE_CLIENT_ID /
 // GOOGLE_CLIENT_SECRET on the host. SUPABASE_SERVICE_KEY stores tokens per user.
 
+import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
@@ -150,6 +151,9 @@ const handler = async req => {
       return Response.json({ changes, at: new Date().toISOString() })
     }
     if (action === 'push') {
+      // judge "untimed" in the owner's zone, not UTC: adopt the device's zone
+      // when the account has none, never overwriting one that was chosen
+      await adoptTimeZone(user.id, body.timezone)
       const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 200) : []
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}
       const calendarId = await drafterCalendarId(user.id)

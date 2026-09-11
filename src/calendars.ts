@@ -192,6 +192,21 @@ export function expandWorkDays(
 /** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */
 export const LOCAL_SOURCE_ID = 'drafter:local'
 
+/**
+ * The device's IANA zone, sent with every mirror push. The server decides
+ * whether a task is untimed in the owner's zone, and an account that never
+ * saved push prefs had none, so it judged in UTC and every untimed task reached
+ * both calendars as a 00:00 event all summer. It is only ever adopted, never
+ * used to overwrite a zone the owner chose.
+ */
+function deviceTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
 const pushCursorKey = (userId?: string | null) => (userId ? `${PUSH_CURSOR_KEY}:${userId}` : PUSH_CURSOR_KEY)
 
@@ -269,7 +284,7 @@ export function useGooglePush(
     setState(s => ({ ...s, pending: true }))
     try {
       const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
-      const result = await googleAction<{ errors: { id: string; error: string }[] }>('push', { tasks: tasks.slice(0, 200), projects: names })
+      const result = await googleAction<{ errors: { id: string; error: string }[] }>('push', { tasks: tasks.slice(0, 200), projects: names, timezone: deviceTimeZone() })
       if (result.errors.length > 0) {
         setState({ lastAt: new Date().toISOString(), error: result.errors[0].error, pending: false })
         return
@@ -551,7 +566,7 @@ export function useMicrosoftSync(
         const cursor = readCursor(cursorKey)
         const tasks = itemsRef.current.filter(i => i.kind === 'task' && isMineTask(i, myIdRef.current) && i.updatedAt > cursor)
         if (tasks.length > 0) {
-          const result = await microsoftAction<{ errors: { id: string; error: string }[] }>('push', { accountId, tasks: tasks.slice(0, 200), projects: names })
+          const result = await microsoftAction<{ errors: { id: string; error: string }[] }>('push', { accountId, tasks: tasks.slice(0, 200), projects: names, timezone: deviceTimeZone() })
           if (result.errors.length > 0) {
             setState({ lastAt: new Date().toISOString(), error: result.errors[0].error, pending: false })
             continue

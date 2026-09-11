@@ -12,6 +12,7 @@ export interface EntryLike {
   location?: string
   notes?: string
   deletedAt?: string
+  updatedAt?: string
   /** Present on a work day: where it is spent. */
   work?: 'home' | 'office'
   [key: string]: unknown
@@ -20,7 +21,7 @@ export interface EntryLike {
 export type EntryPlan = { op: 'create' } | { op: 'skip' } | { op: 'patch'; id: string } | { op: 'delete'; id: string }
 
 export declare function googleEntryPlan(
-  existing: { id: string; status?: string } | null,
+  existing: GoogleCopy | null,
   entry: EntryLike,
   opts?: { revive?: boolean },
 ): EntryPlan
@@ -37,3 +38,14 @@ export declare function googleEntryBody(
   transparency: 'opaque' | 'transparent'
   extendedProperties: { private: { drafter: '1'; eventId: string } }
 }
+
+/** Google's view of a mirrored copy: enough to decide which copy speaks for a record. */
+export interface GoogleCopy {
+  id: string
+  status?: string
+  updated?: string
+}
+/** The live copy, or else the most recently cancelled one. */
+export declare function newestCopy(items: GoogleCopy[] | undefined | null): GoogleCopy | null
+/** True when the record was edited after its Google copy was cancelled. */
+export declare function editedSinceCancelled(existing: GoogleCopy | null, record: { updatedAt?: string }): boolean

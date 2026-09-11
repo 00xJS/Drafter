@@ -101,3 +101,13 @@ describe('isMirroredTask: a cancellation the mirror caused is not the owner’s 
     expect(isMirroredTask({ status: 'todo', dueAt: '2026-09-20T14:00:00.000Z', deletedAt: '2026-09-10T00:00:00.000Z' })).toBe(false)
   })
 })
+
+describe('the feed publishes tasks as free time, the way both mirrors do', () => {
+  it('marks tasks and project dates transparent, and leaves an ordinary entry busy', () => {
+    const rows = feedFor([withOwner(task('mine'), ME), withOwner(project('myproj'), ME), withOwner(entry('myev'), ME)], SITE, 'Europe/London', ME)
+    const by = Object.fromEntries(rows.map(r => [r.uid, r]))
+    expect(by['task-mine@drafter'].transparent).toBe(true)
+    expect(by['project-myproj@drafter'].transparent).toBe(true)
+    expect(by['event-myev@drafter'].transparent).toBe(false)
+  })
+})

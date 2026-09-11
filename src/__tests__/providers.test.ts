@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { googleEntryBody, googleEntryPlan } from '../../netlify/functions/lib/google.mjs'
+import { editedSinceCancelled, googleEntryBody, googleEntryPlan, newestCopy } from '../../netlify/functions/lib/google.mjs'
 import { graphEntryBody, graphEntryPlan } from '../../netlify/functions/lib/microsoft.mjs'
 
 // The provider libraries talk to live Google and Microsoft accounts, which
@@ -117,5 +117,36 @@ describe('parity: both providers treat an entry the same way', () => {
     const m = graphEntryBody(timed, '')
     expect(Date.parse(g.start.dateTime!)).toBe(Date.parse(`${m.start.dateTime}Z`))
     expect(Date.parse(g.end.dateTime!)).toBe(Date.parse(`${m.end.dateTime}Z`))
+  })
+})
+
+describe('Google: the newer write wins over a cancelled copy', () => {
+  it('revives an entry edited after its Google copy was cancelled (a restore, a re-save)', () => {
+    const cancelled = { id: 'g1', status: 'cancelled', updated: '2026-09-10T10:00:00.000Z' }
+    expect(googleEntryPlan(cancelled, { ...timed, updatedAt: '2026-09-10T11:00:00.000Z' })).toEqual({ op: 'create' })
+  })
+
+  it('leaves it gone when the owner deleted it in Google after the last Drafter edit', () => {
+    const cancelled = { id: 'g1', status: 'cancelled', updated: '2026-09-10T12:00:00.000Z' }
+    expect(googleEntryPlan(cancelled, { ...timed, updatedAt: '2026-09-10T11:00:00.000Z' })).toEqual({ op: 'skip' })
+  })
+
+  it('editedSinceCancelled is only ever true for a cancelled copy older than the record', () => {
+    expect(editedSinceCancelled({ id: 'a', status: 'confirmed', updated: '2026-01-01T00:00:00Z' }, { updatedAt: '2026-06-01T00:00:00Z' })).toBe(false)
+    expect(editedSinceCancelled({ id: 'a', status: 'cancelled', updated: '2026-06-01T00:00:00Z' }, { updatedAt: '2026-01-01T00:00:00Z' })).toBe(false)
+    expect(editedSinceCancelled({ id: 'a', status: 'cancelled', updated: '2026-01-01T00:00:00Z' }, { updatedAt: '2026-06-01T00:00:00Z' })).toBe(true)
+    expect(editedSinceCancelled(null, { updatedAt: '2026-06-01T00:00:00Z' })).toBe(false)
+  })
+
+  it('newestCopy prefers the live event, else the most recently cancelled one', () => {
+    expect(newestCopy([{ id: 'a', status: 'cancelled', updated: '2026-01-02T00:00:00Z' }, { id: 'b', status: 'confirmed' }])?.id).toBe('b')
+    expect(
+      newestCopy([
+        { id: 'old', status: 'cancelled', updated: '2026-01-01T00:00:00Z' },
+        { id: 'new', status: 'cancelled', updated: '2026-01-03T00:00:00Z' },
+      ])?.id,
+    ).toBe('new')
+    expect(newestCopy([])).toBeNull()
+    expect(newestCopy(undefined)).toBeNull()
   })
 })

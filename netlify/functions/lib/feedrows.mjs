@@ -39,6 +39,8 @@ export function feedFor(items, site, tz, myId) {
     const prefix = t.status === 'done' ? '✓ ' : t.priority === 'urgent' ? '‼ ' : t.priority === 'high' ? '▲ ' : ''
     feed.push({
       uid: `task-${t.id}@drafter`,
+      // a task marks something due, not a meeting: free time, as both mirrors publish it
+      transparent: true,
       title: `${prefix}${t.title || 'Untitled task'}${project ? ` · ${project.name}` : ''}`,
       start,
       end: timed ? start + 3_600_000 : undefined,
@@ -56,10 +58,10 @@ export function feedFor(items, site, tz, myId) {
   for (const p of projects.values()) {
     if (p.status === 'archived' || p.status === 'done') continue
     if (p.ownerId && myId && p.ownerId !== myId) continue
-    if (p.targetAt) feed.push({ uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, date: localDate(p.targetAt, tz), description: p.description, url: site, categories: [p.name] })
+    if (p.targetAt) feed.push({ transparent: true, uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, date: localDate(p.targetAt, tz), description: p.description, url: site, categories: [p.name] })
     for (const m of p.milestones ?? []) {
       if (!m.dueAt) continue
-      feed.push({ uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: localDate(m.dueAt, tz), url: site, categories: [p.name] })
+      feed.push({ transparent: true, uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: localDate(m.dueAt, tz), url: site, categories: [p.name] })
     }
   }
   // Entries the user wrote themselves. These are the only rows in the feed with

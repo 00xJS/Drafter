@@ -8,6 +8,7 @@
 // https://<site>/api/microsoft/callback -> MICROSOFT_CLIENT_ID and a client
 // secret in MICROSOFT_CLIENT_SECRET.
 
+import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
@@ -137,6 +138,9 @@ const handler = async req => {
       return Response.json({ accounts: out })
     }
     if (action === 'push') {
+      // judge "untimed" in the owner's zone, not UTC: adopt the device's zone
+      // when the account has none, never overwriting one that was chosen
+      await adoptTimeZone(user.id, body.timezone)
       const accountId = String(body.accountId ?? '')
       const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 200) : []
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}

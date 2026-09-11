@@ -172,10 +172,32 @@ function eventBodyFor(task, projectName, site, tz) {
   }
 }
 
+/**
+ * The copy that speaks for a record: the live event, or else the most recently
+ * cancelled one. `items[0]` used to stand in for "the cancelled one", which is
+ * arbitrary as soon as a record has been deleted and re-created more than once.
+ */
+export function newestCopy(items) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : []
+  const live = list.find(ev => ev.status !== 'cancelled')
+  if (live) return live
+  return list.sort((a, b) => String(b.updated ?? '').localeCompare(String(a.updated ?? '')))[0] ?? null
+}
+
+/**
+ * A cancelled copy the Drafter record was edited AFTER: Drafter's own delete,
+ * then a reopen, a new due date or a restore from Trash. The newer write wins,
+ * so it comes back. A cancellation newer than the last Drafter edit is the
+ * owner deleting it in Google on purpose, and stays gone.
+ */
+export function editedSinceCancelled(existing, record) {
+  return !!existing && existing.status === 'cancelled' && Date.parse(record?.updatedAt) > Date.parse(existing.updated)
+}
+
 async function findMirrored(userId, calendarId, taskId) {
   // showDeleted so we don't recreate an event the user deleted in Google
   const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`taskId=${taskId}`)}&showDeleted=true&maxResults=5`)
-  return (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
+  return newestCopy(page.items)
 }
 
 /** Mirror one task into the Drafter calendar: upsert when open with a due date, otherwise remove. */
@@ -192,15 +214,19 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
     }
     return 'skipped'
   }
-  if (existing?.status === 'cancelled') {
-    // user deleted it in Google — leave it gone rather than recreating
+  const live = existing && existing.status !== 'cancelled' ? existing : null
+  if (!live && existing && !editedSinceCancelled(existing, task)) {
+    // cancelled after Drafter last touched the task: the owner deleted it in
+    // Google on purpose, so leave it gone. Treating EVERY cancellation this way
+    // meant a task Drafter itself had removed (done, wishlist, date cleared)
+    // could never come back to Google, even after it was reopened.
     return 'skipped'
   }
   const settings = await settingsGet(userId).catch(() => null)
   const tz = settings?.timezone ?? undefined
   const body = eventBodyFor(task, projectName, site, tz)
-  if (existing) {
-    await gapi(userId, evPath(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
+  if (live) {
+    await gapi(userId, evPath(live.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
   await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
@@ -229,7 +255,9 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
 export function googleEntryPlan(existing, entry, opts = {}) {
   const live = existing && existing.status !== 'cancelled' ? existing : null
   if (entry.deletedAt) return live ? { op: 'delete', id: live.id } : { op: 'skip' }
-  if (!live && existing && !opts.revive) return { op: 'skip' }
+  // left gone unless Drafter's record is newer than the cancellation (a restore,
+  // a re-save) or this is Drafter's own Undo, whose record predates its delete
+  if (!live && existing && !opts.revive && !editedSinceCancelled(existing, entry)) return { op: 'skip' }
   return live ? { op: 'patch', id: live.id } : { op: 'create' }
 }
 
@@ -253,7 +281,7 @@ export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
     userId,
     `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`eventId=${entry.id}`)}&showDeleted=true&maxResults=5`,
   )
-  const existing = (page.items ?? []).find(ev => ev.status !== 'cancelled') ?? page.items?.[0] ?? null
+  const existing = newestCopy(page.items)
   const plan = googleEntryPlan(existing, entry, opts)
   if (plan.op === 'skip') return 'skipped'
   if (plan.op === 'delete') {
