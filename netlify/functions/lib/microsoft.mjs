@@ -80,6 +80,7 @@ export function oauthFailureCode(body) {
     7000215: 'bad_client_secret', // invalid client secret provided (often the secret's ID pasted, not its Value)
     700016: 'bad_client_id', // application not found in the directory
     50011: 'redirect_uri', // reply URL not registered for the app
+    9002327: 'spa_platform', // reply URL registered as a Single-page application: its tokens cannot be redeemed with a secret
     65001: 'consent_required', // user or admin has not consented
     65004: 'consent_required',
     50020: 'account_type', // user account from a different tenant / personal account not allowed

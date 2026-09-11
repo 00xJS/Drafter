@@ -18,6 +18,8 @@ describe('oauthFailureCode', () => {
   it('names the app-registration mistakes', () => {
     expect(oauthFailureCode(prose(700016, 'Application not found in the directory'))).toBe('bad_client_id')
     expect(oauthFailureCode(prose(50011, 'The reply URL specified in the request does not match'))).toBe('redirect_uri')
+    // the reply URL was added under "Single-page application" instead of "Web"
+    expect(oauthFailureCode({ error: 'invalid_request', error_description: "AADSTS9002327: Tokens issued for the 'Single-Page Application' client-type may only be redeemed via cross-origin requests" })).toBe('spa_platform')
     expect(oauthFailureCode(prose(50194, 'Application is not configured as a multi-tenant application'))).toBe('account_type')
     expect(oauthFailureCode({ error: 'unauthorized_client', error_description: 'AADSTS50020: User account from identity provider does not exist in tenant' })).toBe('account_type')
   })

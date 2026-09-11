@@ -41,6 +41,7 @@ const OAUTH_HINTS: Record<string, string> = {
   bad_client_secret: 'MICROSOFT_CLIENT_SECRET is not accepted — paste the secret’s Value, not its Secret ID',
   bad_client_id: 'MICROSOFT_CLIENT_ID does not match an app registration',
   redirect_uri: 'the reply URL is not registered in Azure — add https://<your site>/api/microsoft/callback',
+  spa_platform: 'the reply URL is registered under “Single-page application” in Azure — it has to be under the “Web” platform',
   consent_required: 'that account needs consent for Calendars.ReadWrite — an admin may have to grant it',
   account_type: 'the app registration does not allow this kind of account — allow any organisational directory and personal accounts',
   invalid_grant: 'the sign-in took too long or was reused — try connecting again',

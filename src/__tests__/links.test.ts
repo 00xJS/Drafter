@@ -22,6 +22,7 @@ describe('parseLink', () => {
     // the server reads the AADSTS code out of Microsoft's explanation and sends only the token
     expect(oauthReasonLabel('secret_expired')).toMatch(/client secret has expired/)
     expect(oauthReasonLabel('redirect_uri')).toMatch(/api\/microsoft\/callback/)
+    expect(oauthReasonLabel('spa_platform')).toMatch(/Web/)
     expect(parseLink(new URLSearchParams('microsoft=error&reason=account_type')).oauth?.reason).toMatch(/kind of account/)
     // the prose itself, if it ever reached the browser, still collapses — that is the guarantee the hints rely on
     expect(oauthReasonLabel('AADSTS7000222: The provided client secret keys for app are expired.')).toBe('unknown error')
