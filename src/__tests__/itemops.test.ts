@@ -147,7 +147,10 @@ describe('nextOccurrence', () => {
     expect(nextOccurrence({ ...base, recurrence: { freq: 'daily' } }, uid)?.dueAt).toBe('2026-02-01T12:00:00.000Z')
     expect(nextOccurrence({ ...base, recurrence: { freq: 'biweekly' } }, uid)?.dueAt).toBe('2026-02-14T12:00:00.000Z')
     expect(nextOccurrence({ ...base, recurrence: { freq: 'monthly' } }, uid)?.dueAt).toBe(
-      '2026-03-03T12:00:00.000Z', // Jan 31 + 1 month rolls over (no Feb 31)
+      // A month after 31 January is 28 February. This used to expect 3 March:
+      // setMonth rolled the overflow into the next month and skipped February
+      // entirely. nextOccurrence now clamps to the month's length.
+      '2026-02-28T12:00:00.000Z', // Jan 31 + 1 month rolls over (no Feb 31)
     )
   })
 

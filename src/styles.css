@@ -5696,3 +5696,137 @@ textarea {
     min-width: 44px;
   }
 }
+
+/* ---- Bills -------------------------------------------------------------- */
+.bills-month {
+  min-width: 9ch;
+  text-align: center;
+  color: var(--text-2);
+}
+.bills-kpis {
+  margin: 8px 0 16px;
+}
+.bills-head {
+  margin: 14px 0 6px;
+  font-size: calc(0.78rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bills-head.overdue {
+  color: var(--danger);
+}
+.bill-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.bill-row.overdue {
+  border-color: var(--danger);
+}
+.bill-row.paid {
+  opacity: 0.75;
+}
+.bill-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.bill-glyph {
+  font-size: 1.2rem;
+}
+.bill-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.bill-copy strong,
+.bill-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bill-copy small {
+  color: var(--muted);
+}
+.bill-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.bill-pay {
+  margin-right: 8px;
+}
+.bill-field {
+  margin-bottom: 8px;
+}
+.bill-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.bill-fields .field-inline {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .bill-fields {
+    grid-template-columns: 1fr;
+  }
+}
+@media (pointer: coarse) {
+  .bill-pay {
+    min-height: 44px;
+  }
+}
+
+/* Bills: the totals read as a label above its figure everywhere, and a row
+   can never be wider than the screen — a grid track sized to its content let
+   the rows reach 381px in a 375pt viewport. */
+.bills-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.bills-kpis .stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.bills-kpis .stat-value {
+  font-size: calc(1.3rem * var(--type-scale));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.bill-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.bill-row {
+  min-width: 0;
+}

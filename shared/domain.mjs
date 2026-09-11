@@ -9,7 +9,7 @@ export const POST_STATUSES = ['idea', 'draft', 'scheduled', 'posted', 'canceled'
 export const TASK_STATUSES = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
 export const PROJECT_STATUSES = ['active', 'paused', 'done', 'archived']
 export const PRIORITIES = ['low', 'normal', 'high', 'urgent']
-export const RECURRENCE_FREQS = ['daily', 'weekly', 'biweekly', 'monthly']
+export const RECURRENCE_FREQS = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']
 
 /** The project every migrated social post lands in (deterministic so all devices agree). */
 export const SOCIAL_PROJECT_ID = 'project-social'
@@ -155,16 +155,43 @@ export function spawnId(taskId, freq, nextDueIso) {
 }
 
 /** The next occurrence of a recurring task, cloned from the one just completed. */
+const MONTH_STEPS = { monthly: 1, quarterly: 3, yearly: 12 }
+
+/** Whole months later in local time, on `day` clamped to that month's length. */
+function addMonthsOnDay(date, months, day) {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1, date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(day, last))
+  return target
+}
+
 export function nextOccurrence(task, uidFn) {
   if (!task.recurrence) return null
-  const baseIso = task.completedAt ?? task.dueAt
-  const next = baseIso ? new Date(baseIso) : new Date()
+  const bill = task.bill && typeof task.bill === 'object' ? task.bill : null
+  // A bill falls due on its own day however early or late it was paid; a chore
+  // comes round again from when it was last done. Anchoring a bill on its
+  // completion made it drift: due on the 15th, paid on the 12th, and the next
+  // one was due on the 12th.
+  const baseIso = bill ? (task.dueAt ?? task.completedAt) : (task.completedAt ?? task.dueAt)
+  let next = baseIso ? new Date(baseIso) : new Date()
   if (isNaN(next.getTime())) return null
   const freq = task.recurrence.freq
+  let billDay
   if (freq === 'daily') next.setDate(next.getDate() + 1)
   else if (freq === 'weekly') next.setDate(next.getDate() + 7)
   else if (freq === 'biweekly') next.setDate(next.getDate() + 14)
-  else next.setMonth(next.getMonth() + 1)
+  else {
+    // Monthly, quarterly and yearly land on a clamped day: setMonth used to roll
+    // 31 January into 3 March. A bill also remembers its intended day, so one due
+    // on the 31st goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th;
+    // if the owner has moved the date since, the new day wins.
+    const baseDay = next.getDate()
+    const monthLen = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
+    const stored = bill && Number.isInteger(bill.day) ? bill.day : undefined
+    const day = stored !== undefined && Math.min(stored, monthLen) === baseDay ? stored : baseDay
+    if (bill) billDay = day
+    next = addMonthsOnDay(next, MONTH_STEPS[freq] ?? 1, day)
+  }
   const now = new Date().toISOString()
   const dueAt = next.toISOString()
   // uidFn kept for call-site compatibility; id is deterministic so two devices agree
@@ -189,6 +216,7 @@ export function nextOccurrence(task, uidFn) {
     link: task.link,
     githubUrl: task.githubUrl,
     estimateCost: task.estimateCost,
+    bill: bill ? { ...bill, ...(billDay !== undefined ? { day: billDay } : {}) } : undefined,
     checklist: task.checklist ? task.checklist.map(c => ({ ...c, done: false })) : undefined,
     social: task.social
       ? { platforms: [...task.social.platforms], variants: task.social.variants ? { ...task.social.variants } : undefined }

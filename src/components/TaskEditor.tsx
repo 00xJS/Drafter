@@ -11,6 +11,9 @@ import {
   Priority,
   Project,
   RECURRENCE_META,
+  BILL_KINDS,
+  BILL_KIND_META,
+  Bill,
   RecurrenceFreq,
   STATUS_META,
   Task,
@@ -115,6 +118,7 @@ export function TaskEditor({
   const [attachments, setAttachments] = useState<Attachment[]>(base.attachments ?? [])
   const [estimateCost, setEstimateCost] = useState(base.estimateCost !== undefined ? String(base.estimateCost) : '')
   const [actualCost, setActualCost] = useState(base.actualCost !== undefined ? String(base.actualCost) : '')
+  const [bill, setBill] = useState<Bill | undefined>(base.bill)
   const [blockedBy, setBlockedBy] = useState<string[]>(base.blockedBy ?? [])
   const [assigneeId, setAssigneeId] = useState(base.assigneeId ?? '')
   const fileInput = useRef<HTMLInputElement>(null)
@@ -331,6 +335,8 @@ export function TaskEditor({
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
       social: base.social,
+      // listed explicitly like every field here: leave it out and a bill saves as a plain task
+      bill: bill ? { ...bill, payee: bill.payee?.trim() || undefined } : undefined,
       peopleIds: peopleIds.length > 0 ? peopleIds : undefined,
       placeId: placeId || undefined,
       attachments: attachments.length > 0 ? attachments : undefined,
@@ -359,6 +365,7 @@ export function TaskEditor({
       mediaIds: base.mediaIds,
       recurrence: base.recurrence,
       social: base.social,
+      bill: base.bill,
       peopleIds: base.peopleIds,
       placeId: base.placeId,
       attachments: base.attachments,
@@ -873,13 +880,46 @@ export function TaskEditor({
               </label>
             )}
 
+            <div className="field bill-field">
+              <label className="field-inline">
+                <input
+                  type="checkbox"
+                  checked={!!bill}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setBill({ kind: 'bill' })
+                      // a bill almost always comes round again
+                      if (!freq) setFreq('monthly')
+                    } else setBill(undefined)
+                  }}
+                />
+                <span>This is a bill or payment</span>
+              </label>
+              {bill && (
+                <div className="bill-fields">
+                  <select value={bill.kind} onChange={e => setBill({ ...bill, kind: e.target.value as Bill['kind'] })} aria-label="Kind of payment">
+                    {BILL_KINDS.map(k => (
+                      <option key={k} value={k}>
+                        {BILL_KIND_META[k].emoji} {BILL_KIND_META[k].label}
+                      </option>
+                    ))}
+                  </select>
+                  <input value={bill.payee ?? ''} onChange={e => setBill({ ...bill, payee: e.target.value })} placeholder="Paid to (optional)" aria-label="Paid to" />
+                  <label className="field-inline">
+                    <input type="checkbox" checked={!!bill.autopay} onChange={e => setBill({ ...bill, autopay: e.target.checked || undefined })} />
+                    <span>Paid automatically</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
             <div className="field-row costs">
               <label className="field">
-                <span>Estimate</span>
+                <span>{bill ? 'Amount due' : 'Estimate'}</span>
                 <input inputMode="decimal" value={estimateCost} onChange={e => setEstimateCost(e.target.value)} placeholder="0" />
               </label>
               <label className="field">
-                <span>Actual cost</span>
+                <span>{bill ? 'Paid' : 'Actual cost'}</span>
                 <input inputMode="decimal" value={actualCost} onChange={e => setActualCost(e.target.value)} placeholder="0" />
               </label>
             </div>

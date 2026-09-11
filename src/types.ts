@@ -4,7 +4,7 @@ export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'posted' | 'canceled'
 export type TaskStatus = 'wishlist' | 'todo' | 'doing' | 'blocked' | 'done' | 'canceled'
 export type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
-export type RecurrenceFreq = 'daily' | 'weekly' | 'biweekly' | 'monthly'
+export type RecurrenceFreq = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly'
 
 export interface Metrics {
   likes?: number
@@ -34,6 +34,36 @@ export interface Milestone {
   name: string
   dueAt?: string
   done?: boolean
+}
+
+/**
+ * A household payment: a bill, a credit card, a subscription, a loan.
+ *
+ * It rides on a repeating task rather than being its own kind, because a bill
+ * IS something due on a date, again and again, with an amount — and a task
+ * already gets the calendar, reminders, Today, the Google and Outlook mirrors
+ * and overdue handling for free. The amount due is the task's estimateCost and
+ * what was actually paid is its actualCost; this only adds what a task lacks.
+ */
+export type BillKind = 'bill' | 'card' | 'subscription' | 'loan'
+export const BILL_KINDS: BillKind[] = ['bill', 'card', 'subscription', 'loan']
+export const BILL_KIND_META: Record<BillKind, { label: string; emoji: string }> = {
+  bill: { label: 'Bill', emoji: '🧾' },
+  card: { label: 'Credit card', emoji: '💳' },
+  subscription: { label: 'Subscription', emoji: '🔁' },
+  loan: { label: 'Loan or mortgage', emoji: '🏦' },
+}
+export interface Bill {
+  kind: BillKind
+  /** Who is paid: "British Gas", "Amex". */
+  payee?: string
+  /** Paid automatically, by direct debit or a card on file. */
+  autopay?: boolean
+  /**
+   * The day of the month it falls due (1-31), kept so a bill due on the 31st
+   * goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th for good.
+   */
+  day?: number
 }
 
 /** The social-publishing extension of a task; present only on tasks that are posts. */
@@ -74,6 +104,8 @@ export interface Task extends Owned {
   mediaIds?: string[]
   recurrence?: Recurrence
   social?: Social
+  /** Present when this task is a household payment: a bill, a card, a subscription, a loan. */
+  bill?: Bill
   /** People this task involves; when it's done, it counts as seeing them. */
   peopleIds?: string[]
   /** Where this happened; when the task is done it counts as an outing there. */
@@ -508,6 +540,8 @@ export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
   weekly: 'Weekly',
   biweekly: 'Every 2 weeks',
   monthly: 'Monthly',
+  quarterly: 'Every 3 months',
+  yearly: 'Yearly',
 }
 
 export const PLATFORMS: Platform[] = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']

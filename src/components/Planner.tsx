@@ -34,13 +34,14 @@ import { ProjectEditor } from './ProjectEditor'
 import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { EventEditor } from './EventEditor'
+import { Bills } from './Bills'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { fetchAdminMe } from '../admin'
 
-type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'kitchen' | 'review'
-const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'kitchen', 'review']
+type View = 'today' | 'tasks' | 'board' | 'calendar' | 'notes' | 'people' | 'kitchen' | 'bills' | 'review'
+const VIEWS: View[] = ['today', 'tasks', 'board', 'calendar', 'notes', 'people', 'kitchen', 'bills', 'review']
 type CalendarMode = 'month' | 'week' | 'timeline'
 const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 type PeopleTab = 'people' | 'places'
@@ -58,6 +59,7 @@ const VIEW_LABELS: Record<View, string> = {
   notes: 'Notes',
   people: 'People',
   kitchen: 'Kitchen',
+  bills: 'Bills',
   review: 'Review',
 }
 
@@ -78,6 +80,8 @@ const MORE_VIEWS: { key: string; view: View; label: string; icon: string; hint: 
   { key: 'tasks', view: 'tasks', label: 'Tasks', icon: '☑', hint: 'Searchable list, import and trash' },
   { key: 'board', view: 'board', label: 'Board', icon: '▦', hint: 'Wishlist → to do → doing → done' },
   { key: 'notes', view: 'notes', label: 'Notes', icon: '✎', hint: 'The selected project’s notepad' },
+  // a row, not a sixth tab: the phone keeps its five
+  { key: 'bills', view: 'bills', label: 'Bills', icon: '💳', hint: 'What’s due, what’s paid, an average month' },
   { key: 'journal', view: 'review', label: 'Journal', icon: '📓', hint: 'Today’s line, and every day you wrote' },
   { key: 'review', view: 'review', label: 'Review', icon: '📊', hint: 'The weekly look-back' },
 ]
@@ -1317,6 +1321,16 @@ export default function Planner() {
                   />
                 )}
               </>
+            )}
+            {view === 'bills' && (
+              <Bills
+                tasks={store.tasks}
+                onOpen={openTask}
+                onNew={() => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false })}
+                // the one completion path with a real undo: it restores the bill and
+                // removes next month's occurrence, so an accidental tap costs nothing
+                onMarkPaid={t => changeStatus(t.id, 'done')}
+              />
             )}
             {view === 'kitchen' && (
               <Kitchen

@@ -20,6 +20,9 @@ import {
   GROCERY_STATES,
   JournalEntry,
   CalendarEntry,
+  Bill,
+  BillKind,
+  BILL_KINDS,
   Mood,
   Template,
   TemplateMilestone,
@@ -54,7 +57,8 @@ const PLATFORM_SET = new Set<string>(PLATFORMS)
 const TASK_STATUS_SET = new Set<string>(TASK_STATUSES)
 const PROJECT_STATUS_SET = new Set<string>(PROJECT_STATUSES)
 const PRIORITY_SET = new Set<string>(PRIORITIES)
-const FREQ_SET = new Set(['daily', 'weekly', 'biweekly', 'monthly'])
+// every frequency the model knows, or a quarterly bill loses its repeat on the first sync
+const FREQ_SET = new Set(['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'])
 const METRIC_KEYS = ['likes', 'comments', 'shares', 'impressions'] as const
 
 function str(v: unknown): string | undefined {
@@ -198,6 +202,22 @@ function urlOrUndefined(v: unknown): string | undefined {
   return s && /^https?:/.test(s) ? s : undefined
 }
 
+const BILL_KIND_SET = new Set<string>(BILL_KINDS)
+
+/** A task's payment facet, or nothing: an unknown kind is dropped rather than guessed. */
+function bill(v: unknown): Bill | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
+  if (typeof r.kind !== 'string' || !BILL_KIND_SET.has(r.kind)) return undefined
+  const day = Number(r.day)
+  return {
+    kind: r.kind as BillKind,
+    payee: str(r.payee)?.trim() || undefined,
+    autopay: r.autopay === true || undefined,
+    day: Number.isInteger(day) && day >= 1 && day <= 31 ? day : undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Task, repairing what it can. */
 export function sanitizeTask(raw: unknown): Task | null {
   if (!raw || typeof raw !== 'object') return null
@@ -237,6 +257,7 @@ export function sanitizeTask(raw: unknown): Task | null {
     mediaIds: idList(r.mediaIds),
     recurrence,
     social: social(r.social),
+    bill: bill(r.bill),
     peopleIds: idList(r.peopleIds),
     placeId: idOrUndefined(r.placeId),
     attachments: attachments(r.attachments),

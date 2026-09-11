@@ -4,6 +4,7 @@ import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
 import { haptic } from './native'
 import { uid } from './utils'
+import { withPaidDefault } from './bills'
 import { purgeRemote, syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
 import { clearSyncCursor, prepareFullResync, readCursor, readDirty, writeCursor, writeDirty } from './syncstate'
@@ -139,7 +140,8 @@ export function stampStatus(t: Task, status: TaskStatus): Task {
   const next: Task = { ...t, status, updatedAt: newerStamp(t.updatedAt) }
   if (status === 'done') next.completedAt = next.completedAt ?? new Date().toISOString()
   else next.completedAt = undefined
-  return next
+  // a bill marked done with nothing typed under Paid was paid in full
+  return withPaidDefault(next)
 }
 
 /** The project migrated social posts live in; created on demand so every device agrees on it. */
@@ -445,6 +447,7 @@ export function useItems(myId: string | null = null): Store {
       setItems(list => {
         markDirty(item.id)
         const old = list.find(x => x.id === item.id)
+        if (item.kind === 'task' && item.status === 'done' && !(old?.kind === 'task' && old.status === 'done')) item = withPaidDefault(item)
         let next = old ? list.map(x => (x.id === item.id ? item : x)) : [...list, item]
         if (item.kind === 'task' && item.status === 'done' && old?.kind === 'task' && old.status !== 'done' && item.recurrence) {
           const spawn = nextOccurrence(item, uid)

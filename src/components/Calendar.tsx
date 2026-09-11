@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode } from '../types'
+import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode, BILL_KIND_META } from '../types'
 import { dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -17,6 +17,7 @@ import {
 } from '../calgrid'
 import { mealsByDay } from '../kitchen'
 import { MealSlotRow } from './MealSlotRow'
+import { formatMoney } from '../bills'
 import { ProjectChip } from './bits'
 
 export type CalendarView = 'month' | 'week'
@@ -186,6 +187,13 @@ export function Calendar({
     if (item.kind === 'event') return item.event.title
     if (item.kind === 'mark') return item.mark.kind === 'target' ? `${item.mark.project.name} target` : item.mark.milestone?.name || 'Milestone'
     if (item.kind === 'meal') return item.meal.title
+    // A bill reads as what it is and what it costs. The amount is shown here only:
+    // the mirrors and the feed send the title the owner typed, so a figure never
+    // reaches Google or Outlook unless it was written into the title itself.
+    if (item.task.bill) {
+      const amount = formatMoney(item.task.estimateCost)
+      return `${BILL_KIND_META[item.task.bill.kind].emoji} ${item.task.title || 'Untitled bill'}${amount ? ' ' + amount : ''}`
+    }
     return item.task.title || item.task.description.slice(0, 60) || 'Untitled'
   }
 
