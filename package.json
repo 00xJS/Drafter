@@ -1,5 +1,6 @@
 {
   "name": "drafter",
+  "description": "Home journal and planner: Home, Tasks, Calendar, People and Kitchen, with habits, routines, a weekly review, a command palette and an iOS shell",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -11,7 +11,7 @@ export default defineConfig({
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',
-        description: 'Personal project manager: projects, tasks, notes, people and calendars',
+        description: 'Home journal and planner: Home, Tasks, Calendar, People and Kitchen, with habits, routines and a weekly review',
         share_target: {
           action: '/',
           method: 'GET',

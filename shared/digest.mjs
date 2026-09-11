@@ -12,7 +12,7 @@ const DAY = 86_400_000
 const PERSON_NUDGE_GAP_DAYS = 7
 const NEVER_MIN_AGE_DAYS = 30
 /** Kinds that belong to one account even inside a household (same set as src/store.ts). */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar'])
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
 
 /** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
 export function localParts(date, tz) {

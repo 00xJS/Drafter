@@ -5,12 +5,14 @@ interface Props {
 }
 
 const FEATURES: { icon: string; title: string; text: string }[] = [
-  { icon: '🗂', title: 'Projects & tasks', text: 'Wishlist → to do → doing → done. Due dates, priorities, checklists and a comment trail on everything.' },
-  { icon: '🛣', title: 'Roadmap', text: 'Projects and milestones on a timeline, so the kitchen refresh and the side app both have an end in sight.' },
-  { icon: '☀️', title: 'Today', text: 'Overdue, due today, this week, blocked — the one page to open every morning.' },
-  { icon: '🐙', title: 'GitHub-linked', text: 'Paste an issue, PR, repo or Projects URL onto a task and see its live state without leaving the plan.' },
-  { icon: '✨', title: 'AI assist', text: 'Break a task into steps, suggest tags, clarify or expand a description.' },
-  { icon: '🤖', title: 'Agent-ready', text: 'An MCP server and REST gateway let your AI agents create tasks, comment, and close things out.' },
+  { icon: '☀️', title: 'Home', text: 'A briefing for the day — greeting, weather if you want it, work hours, what is due — then habits to tick, routines to run and tonight’s dinner. The week’s review and your journal are a segment away.' },
+  { icon: '🗂', title: 'Tasks', text: 'Wishlist → to do → doing → done, as a list, a board, the month’s bills or a project’s notes. Due dates, priorities, checklists and a comment trail on everything.' },
+  { icon: '📅', title: 'Calendar', text: 'Month, week and timeline: tasks, events, meals, home or office days and your Google, Outlook or iCloud calendars in one grid.' },
+  { icon: '👥', title: 'People & places', text: 'Who you saw and where you went — a rhythm for each, so Home says when it has been a while.' },
+  { icon: '🍳', title: 'Kitchen', text: 'Recipes, a week of meals cooked or eaten out, and a grocery list built from what is planned.' },
+  { icon: '⌘', title: 'Command palette', text: 'Cmd/Ctrl+K jumps to any view, creates a task, project or bill, searches everything, and captures a line straight to the Inbox.' },
+  { icon: '✨', title: 'AI assist', text: 'Draft a plan from a goal, break a task into steps, suggest tags, and write the week’s review from what actually happened.' },
+  { icon: '🤖', title: 'Agent-ready', text: 'An MCP server lets your AI agents create tasks, log visits, plan meals and add to the journal through the same rules the app runs.' },
 ]
 
 export function Landing({ configured, onSignIn }: Props) {
@@ -33,8 +35,8 @@ export function Landing({ configured, onSignIn }: Props) {
           Run your life like a <span className="hero-accent">well-run project.</span>
         </h1>
         <p>
-          Drafter is a personal project manager — projects, tasks with due dates, a roadmap and a daily view — with
-          GitHub links and a kitchen planner built in.
+          Drafter is a home journal and planner — five tabs on desktop and phone: Home, Tasks, Calendar, People and
+          Kitchen — with habits, routines, a weekly review, GitHub links and an iPhone app that feels like one.
         </p>
         {configured ? (
           <button className="btn primary landing-cta" onClick={onSignIn}>

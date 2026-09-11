@@ -199,6 +199,18 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
                     <span className="search-main">
                       Create task “{h.title}”<small>Enter to edit · Shift+Enter to capture</small>
                     </span>
+                    {/* the touch route to capture: a phone has no Shift key, and a tap
+                        on the row itself opens the editor */}
+                    <button
+                      type="button"
+                      className="btn subtle"
+                      onClick={e => {
+                        e.stopPropagation()
+                        pick(h, false)
+                      }}
+                    >
+                      Capture
+                    </button>
                   </li>
                 )
               if (h.kind === 'task' || h.kind === 'recent')
