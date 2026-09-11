@@ -1,4 +1,4 @@
-import { GroceryLine, GroceryList, GroceryState, Meal, MealSlot, Recipe, RecipeIngredient } from './types'
+import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSlot, Recipe, RecipeIngredient } from './types'
 import { weekRange } from './review'
 import { dateKey } from './utils'
 import {
@@ -53,7 +53,8 @@ export function mealsByDay(meals: Meal[]): Map<string, Meal[]> {
     map.set(m.date, arr)
   }
   for (const arr of map.values()) {
-    arr.sort((a, b) => a.slot.localeCompare(b.slot) || a.title.localeCompare(b.title))
+    // the day's order, not the alphabet's — sorting the slot names put dinner above lunch
+    arr.sort((a, b) => MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot) || a.title.localeCompare(b.title))
   }
   return map
 }

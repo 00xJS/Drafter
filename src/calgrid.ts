@@ -2,7 +2,7 @@
 // shows, and what lands on each of them. Kept out of the component so the
 // bucketing and the week ranges can be tested without a DOM.
 import { eventDayKeys } from './calendars'
-import { CalendarEvent, Meal, Milestone, Person, Project, Task } from './types'
+import { CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task } from './types'
 import { dateKey } from './utils'
 
 /** A dated project moment: the project's own target, or one of its milestones. */
@@ -179,7 +179,9 @@ function sortKeyOf(item: DayItem): string {
   if (item.kind === 'event') return item.event.allDay ? item.event.title : item.event.start
   if (item.kind === 'task') return item.at && hasClock(item.at) ? item.at : '\uffff' + (item.task.title || '')
   if (item.kind === 'mark') return item.mark.label
-  if (item.kind === 'meal') return item.meal.slot + item.meal.title
+  // breakfast, lunch, dinner — the slot's place in the day, not its name's place
+  // in the alphabet, which had dinner sitting above lunch in every grid
+  if (item.kind === 'meal') return `${MEAL_SLOTS.indexOf(item.meal.slot)}${item.meal.title}`
   return item.occasion.person.name
 }
 

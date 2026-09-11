@@ -101,12 +101,14 @@ describe('buildGroceryList', () => {
 })
 
 describe('mealsByDay', () => {
-  it('buckets by YYYY-MM-DD', () => {
+  it('buckets by YYYY-MM-DD and orders the day breakfast, lunch, dinner', () => {
+    // not alphabetically — that put dinner above lunch on the calendar
     const map = mealsByDay([
-      { kind: 'meal', id: 'a', date: '2026-09-08', slot: 'lunch', title: 'Soup', createdAt: '', updatedAt: '' },
       { kind: 'meal', id: 'b', date: '2026-09-08', slot: 'dinner', title: 'Pizza', createdAt: '', updatedAt: '' },
+      { kind: 'meal', id: 'a', date: '2026-09-08', slot: 'lunch', title: 'Soup', createdAt: '', updatedAt: '' },
+      { kind: 'meal', id: 'c', date: '2026-09-08', slot: 'breakfast', title: 'Eggs', createdAt: '', updatedAt: '' },
     ])
-    expect(map.get('2026-09-08')?.map(m => m.slot)).toEqual(['dinner', 'lunch'])
+    expect(map.get('2026-09-08')?.map(m => m.slot)).toEqual(['breakfast', 'lunch', 'dinner'])
   })
 })
 

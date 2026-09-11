@@ -174,6 +174,15 @@ describe('a day, gathered', () => {
     expect(dayItems(day(2026, 9, 14), sources)).toEqual([])
   })
 
+  it('lists a day’s meals breakfast, lunch, dinner, whatever order they arrive in', () => {
+    // the slot names sort d-i-n-n-e-r before l-u-n-c-h, which is how dinner
+    // ended up above lunch in the month and week grids
+    const meal = (slot: 'breakfast' | 'lunch' | 'dinner', title: string) => ({ kind: 'meal' as const, id: `m-${slot}`, date: '2026-09-11', slot, title, createdAt: '', updatedAt: '' })
+    const withMeals = { ...sources, meals: new Map([['2026-09-11', [meal('dinner', 'Pizza'), meal('breakfast', 'Eggs'), meal('lunch', 'Soup')]]]) }
+    const meals = dayItems(day(2026, 9, 11), withMeals).filter(i => i.kind === 'meal')
+    expect(meals.map(i => i.kind === 'meal' && i.meal.slot)).toEqual(['breakfast', 'lunch', 'dinner'])
+  })
+
   it('counts a day for its header', () => {
     expect(daySummary(dayItems(day(2026, 9, 11), sources))).toBe('2 events · 2 tasks · 1 occasion · 1 project date')
     expect(daySummary(dayItems(day(2026, 9, 14), sources))).toBe('Nothing planned')
