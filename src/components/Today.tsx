@@ -39,6 +39,18 @@ export function projectCardSub(progress: { done: number; total: number }, target
   return targetAt ? `${count} · target ${new Date(targetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : count
 }
 
+/**
+ * The projects Today shows as progress cards: active ones with a target date.
+ * A project with no end — the ongoing home project the app now centres on —
+ * has no meaningful "% done", so it lives on the Timeline, the Week review and
+ * search rather than sitting on Today as a bar that never fills.
+ */
+export function projectsForToday(projects: Project[], tasks: Task[]) {
+  return projects
+    .filter(p => p.status === 'active' && !!p.targetAt)
+    .map(p => ({ project: p, progress: projectProgress(tasks.filter(t => t.projectId === p.id)) }))
+}
+
 interface Props {
   tasks: Task[]
   /** Unfiltered tasks — visits are counted across every project. */
@@ -479,9 +491,7 @@ export function Today({
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
     const doneRecent = doneRecentAll.filter(t => !isVisit(t))
     const visitsRecent = doneRecentAll.filter(isVisit)
-    const activeProjects = projects
-      .filter(p => p.status === 'active')
-      .map(p => ({ project: p, progress: projectProgress(tasks.filter(t => t.projectId === p.id)) }))
+    const activeProjects = projectsForToday(projects, tasks)
     return { open, overdue, today, late, week, doing, blocked, stale, inbox, doneRecent, visitsRecent, activeProjects }
   }, [tasks, projects])
 
