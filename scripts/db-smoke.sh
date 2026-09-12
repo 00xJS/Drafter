@@ -8,8 +8,9 @@
 # scripts/mcp-smoke.mjs so there is only ever one migration loop.
 #
 # Needs the PostgreSQL client and server binaries on PATH (initdb, pg_ctl,
-# psql), e.g. `brew install postgresql@17` and its bin dir on PATH. Nothing
-# touches a real database. Run with `npm run db:smoke`.
+# psql) — see scripts/lib/pgtest.sh for macOS and Debian/Ubuntu. Nothing
+# touches a real database. Run with `npm run db:smoke`; DB_SMOKE_PORT pins the
+# port, otherwise a free one is picked.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,8 +19,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 pgtest_require_bins db-smoke
 
+# before the temp dir exists, so a bad DB_SMOKE_PORT leaves nothing behind
+PORT="$(pgtest_port "${DB_SMOKE_PORT:-}")"
 WORK="$(pgtest_workdir db-smoke)"
-PORT="${DB_SMOKE_PORT:-55432}"
 export LC_ALL=C
 cleanup() {
   pgtest_stop "$WORK"
@@ -29,7 +31,7 @@ trap cleanup EXIT
 pgtest_boot "$WORK" "$PORT"
 PSQL=(psql -h "$WORK" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
 
-echo "db-smoke: postgres $("${PSQL[@]}" -tAc 'show server_version') in $WORK"
+echo "db-smoke: postgres $("${PSQL[@]}" -tAc 'show server_version') on port $PORT in $WORK"
 pgtest_schema "$WORK" "$PORT" db-smoke
 
 # notices carry the per-step "ok" lines; anything raised stops psql with a non-zero exit
