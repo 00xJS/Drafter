@@ -28,9 +28,7 @@ const files = tsxUnder(SRC).map(path => ({ path: relative(SRC, path).split(sep).
  */
 const NOT_YET_ON_MODAL = [
   'components/TaskEditor.tsx', // TODO(level-up): remove after Modal adoption
-  'components/Settings.tsx', // TODO(level-up): remove after Modal adoption
   'components/taskeditor/', // TODO(level-up): remove after Modal adoption
-  'components/settings/', // TODO(level-up): remove after Modal adoption
   'components/ConnectAssistantSheet.tsx', // TODO(level-up): remove after Modal adoption
 ]
 const notYetOnModal = (path: string) => NOT_YET_ON_MODAL.some(p => (p.endsWith('/') ? path.startsWith(p) : path === p))

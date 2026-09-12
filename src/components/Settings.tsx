@@ -4,6 +4,7 @@ import { CalendarState, GooglePushState } from '../calendars'
 import { isSupabaseConfigured } from '../supabase'
 import type { HouseholdInfo } from '../household'
 import type { SettingsCtx } from './settings/context'
+import { Modal, ModalHead } from './Modal'
 import { useFeedInfo } from './settings/useFeedInfo'
 import { AdminLink } from './settings/AdminLink'
 import { Assistants } from './settings/Assistants'
@@ -62,19 +63,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const ctx: SettingsCtx = { store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin, supabaseOn, syncing, setSyncing, feed }
 
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={e => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="modal settings-modal" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>Settings</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
+    <Modal onClose={onClose} className="modal settings-modal">
+        <ModalHead title="Settings" />
 
         <div className={`modal-body settings-body showing-${group}`}>
           <nav className="settings-nav" role="tablist" aria-label="Settings sections">
@@ -95,7 +85,6 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
             Done
           </button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   )
 }
