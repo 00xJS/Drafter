@@ -177,7 +177,7 @@
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  max-width: min(560px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px - var(--safe-l) - var(--safe-r)));
   background: var(--inverse-bg);
   color: var(--inverse-text);
   border-radius: 10px;

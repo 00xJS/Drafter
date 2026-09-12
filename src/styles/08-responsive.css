@@ -105,7 +105,7 @@
     border-top: 1px solid var(--hairline);
     justify-content: stretch;
     gap: 0;
-    padding: 6px 6px calc(4px + env(safe-area-inset-bottom));
+    padding: 6px max(6px, var(--safe-r)) calc(4px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));
     margin: 0;
     width: 100%;
     overflow: hidden;
@@ -256,7 +256,7 @@
   .topbar {
     gap: 8px 10px;
     /* keep the status-bar / Dynamic Island clearance on phones too */
-    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+    padding: calc(10px + env(safe-area-inset-top)) max(12px, var(--safe-r)) 10px max(12px, var(--safe-l));
   }
 
   /* At 375pt the header wanted ~426px in 351px and `.app { overflow-x: clip }`

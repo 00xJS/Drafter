@@ -68,6 +68,12 @@
   --topbar-h: calc(34px + 22px * var(--type-scale));
   --fab-size: 52px;
   --safe-b: env(safe-area-inset-bottom);
+  /* The side insets: 0 in portrait, the notch / Dynamic Island's width in
+     landscape. Every iPhone is wider than 640pt on its side, so the desktop
+     rules apply there; each rule that meets a side edge pads with
+     max(<its own padding>, var(--safe-l)), so portrait stays unchanged. */
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
   /* READ THIS BEFORE USING IT. Capacitor runs the keyboard at resize:'native',
      so iOS shrinks the WebView itself and 100dvh is ALREADY keyboard-free.
      --keyboard-h is a signal (how tall the keyboard is), never a layout inset:
