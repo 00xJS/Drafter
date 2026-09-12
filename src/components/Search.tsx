@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
@@ -66,6 +66,10 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  // the results are a listbox the field drives: focus stays in the field, and
+  // aria-activedescendant names the row that Enter would open
+  const listId = useId()
+  const optionId = (i: number) => `${listId}-${i}`
   const projectName = useMemo(() => new Map(projects.map(p => [p.id, p.name])), [projects])
 
   useEffect(() => {
@@ -150,6 +154,12 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
       <input
         ref={input}
         className="search-input"
+        role="combobox"
+        aria-label="Search"
+        aria-autocomplete="list"
+        aria-expanded={hits.length > 0}
+        aria-controls={hits.length > 0 ? listId : undefined}
+        aria-activedescendant={hits[cursor] ? optionId(cursor) : undefined}
         value={q}
         placeholder="Search or jump to anything — a task, a view, a person… or type to create"
         onChange={e => setQ(e.target.value)}
@@ -178,12 +188,12 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
         </p>
       )}
       {hits.length > 0 && (
-        <ul className="search-results">
+        <ul className="search-results" id={listId} role="listbox" aria-label="Results">
           {hits.map((h, i) => {
             const active = i === cursor
             if (h.kind === 'command')
               return (
-                <li key={h.command.id} className={active ? 'search-hit active command' : 'search-hit command'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.command.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active command' : 'search-hit command'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">{h.command.icon ? <Icon name={h.command.icon} size={17} /> : '⌘'}</span>
                   <span className="search-main">
                     {h.command.label}
@@ -193,7 +203,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               )
             if (h.kind === 'create')
               return (
-                <li key="create" className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key="create" id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">＋</span>
                   <span className="search-main">
                     Create task “{h.title}”<small>Enter to edit · Shift+Enter to capture</small>
@@ -214,7 +224,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               )
             if (h.kind === 'task' || h.kind === 'recent')
               return (
-                <li key={h.task.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.task.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">☐</span>
                   <span className="search-main">
                     {h.task.title || 'Untitled'}
@@ -230,7 +240,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               )
             if (h.kind === 'project')
               return (
-                <li key={h.project.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.project.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">
                     <span className="pdot" style={{ background: h.project.color }} />
                   </span>
@@ -243,7 +253,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               )
             if (h.kind === 'place')
               return (
-                <li key={h.place.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.place.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">
                     <span className="person-avatar small" style={{ background: h.place.color }}>
                       {h.place.emoji ?? PLACE_CATEGORY_META[h.place.category].emoji}
@@ -260,7 +270,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
               )
             if (h.kind === 'journal')
               return (
-                <li key={h.entry.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.entry.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">{h.entry.mood ? MOOD_META[h.entry.mood].emoji : '📓'}</span>
                   <span className="search-main">
                     {relativeDayLabel(h.entry.date)}
@@ -269,7 +279,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
                 </li>
               )
             return (
-              <li key={h.person.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+              <li key={h.person.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                 <span className="search-kind">
                   <span className="person-avatar small" style={{ background: h.person.color }}>
                     {h.person.emoji ?? h.person.name.slice(0, 1)}
