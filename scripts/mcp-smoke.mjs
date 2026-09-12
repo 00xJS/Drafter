@@ -109,6 +109,47 @@ function seedRows(items) {
 }
 
 // ---------------------------------------------------------------------------
+// A household peer (the second member db-smoke-assert.sql seeds), to prove the
+// server keeps their personal rows to themselves
+// ---------------------------------------------------------------------------
+
+const PEER = '00000000-0000-0000-0000-00000000000b'
+const PEER_EMAIL = 'peer@example.test'
+const HOUSEHOLD = '00000000-0000-0000-0000-0000000000f0'
+/** Written into every personal row of the peer's; no tool output may ever contain it. */
+const PEER_SECRET = 'PEER-PRIVATE'
+
+function seedPeer() {
+  psqlValue(`insert into auth.users (id, email) values (${lit(PEER)}, ${lit(PEER_EMAIL)}) on conflict do nothing`)
+  psqlValue(`insert into public.households (id, name, created_by) values (${lit(HOUSEHOLD)}, 'Home', ${lit(OWNER)}) on conflict do nothing`)
+  psqlValue(`insert into public.household_members (household_id, user_id, role)
+             values (${lit(HOUSEHOLD)}, ${lit(OWNER)}, 'owner'), (${lit(HOUSEHOLD)}, ${lit(PEER)}, 'member') on conflict do nothing`)
+}
+
+/**
+ * Store rows as the peer would: signed in (role authenticated, the peer's JWT
+ * claims) through the real RPC and the real policies — not as the service
+ * role, which would file them under the owner.
+ */
+function seedRowsAsPeer(items) {
+  const n = queryCount++
+  const qfile = join(dbDir, `q${n}.sql`)
+  const ofile = join(dbDir, `q${n}.out`)
+  const claims = JSON.stringify({ sub: PEER, role: 'authenticated', email: PEER_EMAIL })
+  writeFileSync(
+    qfile,
+    `select set_config('request.jwt.claims', ${lit(claims)}, false);\nset role authenticated;\n\\o ${ofile}\n` +
+      `select public.sync_posts(${jsonLit(items)}::jsonb, '2099-01-01')::text;\n`,
+  )
+  const r = spawnSync('psql', ['-h', dbDir, '-p', dbPort, '-U', 'postgres', '-d', 'postgres', '-t', '-A', '-q', '-v', 'ON_ERROR_STOP=1', '-f', qfile], {
+    encoding: 'utf8',
+  })
+  if (r.status !== 0) throw new Error(`mcp-smoke: seeding as the peer failed: ${(r.stderr || r.stdout || '').trim()}`)
+  const res = JSON.parse(readFileSync(ofile, 'utf8').trim())
+  if (res.rejected?.length) throw new Error(`mcp-smoke: the peer's seed rows were rejected: ${res.rejected.join(', ')}`)
+}
+
+// ---------------------------------------------------------------------------
 // The PostgREST shim
 //
 // Three routes, because mcp/server.mjs makes exactly three kinds of request:
@@ -498,6 +539,63 @@ async function main() {
     ok(overview.projects.some(p => p.id === project.id), 'get_overview lists the project')
     ok(overview.counts.doing >= 1, 'get_overview counts the doing task')
     ok(overview.completedLast7Days >= 2, 'get_overview counts the completed task and the visit')
+
+    // ------------------------------- a household peer's personal rows stay theirs
+    // The service key bypasses every policy, so the server is all that stands
+    // between an agent and a peer's diary. The peer writes one row of every
+    // personal kind (each carrying PEER_SECRET) and one shared chore; then every
+    // read tool runs, and every id-based tool is aimed at the personal ids.
+    seedPeer()
+    const peerStamp = new Date(Date.now() - 30_000).toISOString()
+    const peerRow = (kind, id, fields) => ({ kind, id, createdAt: peerStamp, updatedAt: peerStamp, ...fields })
+    const peerPersonal = [
+      peerRow('habit', 'peer-1', { name: `${PEER_SECRET} habit`, done: [today] }),
+      peerRow('routine', 'peer-2', { name: `${PEER_SECRET} routine`, when: 'morning', steps: [{ id: 's1', text: PEER_SECRET }], ticks: [] }),
+      peerRow('review', 'peer-3', { period: 'week', key: planned.weekKey, top: [`${PEER_SECRET} review`] }),
+      peerRow('calendar', 'peer-4', { name: `${PEER_SECRET} calendar`, url: 'https://example.test/peer.ics', color: '#888', enabled: true }),
+      peerRow('journal', `journal~${today}~peer`, { date: today, body: `${PEER_SECRET} journal`, mood: 2 }),
+    ]
+    seedRowsAsPeer([...peerPersonal, peerRow('task', 'peer-chore', { title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] })])
+    ok(peerPersonal.every(p => row(p.id)?.user_id === PEER), "the peer's habit, routine, review, calendar and journal are stored under the peer")
+
+    const peerTexts = []
+    /** Any tool call, keeping what came back: the peer's marker must never be in it. */
+    async function probe(name, args) {
+      const res = await rpc('tools/call', { name, arguments: args })
+      const text = res.result?.content?.[0]?.text ?? res.error?.message ?? ''
+      peerTexts.push(`${name}: ${text}`)
+      return { text, isError: !!res.result?.isError || !!res.error }
+    }
+    const reads = [
+      ['list_projects', { includeArchived: true }], ['list_tasks', { limit: 200 }], ['list_people', {}], ['list_places', {}],
+      ['list_recipes', {}], ['get_week_meals', { date: today }], ['get_grocery_list', { date: today }],
+      ['list_journal', { days: 366 }], ['list_journal', { search: 'peer' }], ['get_overview', {}],
+    ]
+    const failedReads = []
+    for (const [name, args] of reads) if ((await probe(name, args)).isError) failedReads.push(name)
+    eq(failedReads.join(', '), '', 'every read tool answers with a peer in the household')
+    eq(JSON.parse((await probe('list_tasks', { search: 'Peer chore' })).text).count, 1, "the peer's shared chore is still visible: household sharing is kept")
+    const lastWeek = JSON.parse((await probe('list_journal', { days: 7 })).text)
+    ok(lastWeek.entries.every(e => e.id !== `journal~${today}~peer`), "list_journal leaves out the peer's entry for today")
+
+    for (const p of peerPersonal) {
+      const answered = []
+      for (const [name, args] of [
+        ['get_task', { id: p.id }], ['update_task', { id: p.id, title: 'mine now' }], ['complete_task', { id: p.id }],
+        ['add_comment', { id: p.id, body: 'hello' }], ['delete_task', { id: p.id }], ['update_project', { id: p.id, name: 'mine now' }],
+      ]) {
+        const r = await probe(name, args)
+        if (!r.isError || !/^Error: No (task|project) with id "/.test(r.text)) answered.push(`${name}: ${r.text.slice(0, 120)}`)
+      }
+      eq(answered.join(' | '), '', `every id-based tool treats the peer's ${p.kind} as missing`)
+      eq(row(p.id).data.updatedAt, peerStamp, `the peer's ${p.kind} is untouched`)
+    }
+
+    const bath = JSON.parse((await probe('add_journal_entry', { text: 'And a bath.' })).text)
+    eq(bath.entry?.id, journalId, "add_journal_entry appends to the owner's day, never the peer's")
+    eq(row(`journal~${today}~peer`).data.body, `${PEER_SECRET} journal`, "the peer's journal body is unchanged")
+    const leaked = peerTexts.filter(t => t.includes(PEER_SECRET)).map(t => t.split(':')[0])
+    eq(leaked.join(', '), '', `no tool output carried the peer's personal rows (${peerTexts.length} calls checked)`)
 
     // ------------------------------------------- negative: legacy RPC shape
     shim.syncShape = 'legacy'

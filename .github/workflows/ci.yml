@@ -1,0 +1,53 @@
+# Every push and pull request: lint, then `npm run check` (what Netlify runs
+# before a deploy), then the two database smoke tests Netlify cannot run
+# because it has no Postgres. scripts/lib/pgtest.sh boots its own throwaway
+# cluster from the binaries on PATH, so there is no service container.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # Neither package.json nor package-lock.json declares engines, so the
+      # current LTS line.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A step of its own so a lint failure is named as one; `check` runs it
+      # again because Netlify only runs `check`.
+      - run: npm run lint
+
+      # lint + vitest + tsc + vite build
+      - run: npm run check
+
+      # Supabase runs Postgres 17 (supabase/config.toml) and so does local
+      # development, so the migrations are applied to 17 here too, from the
+      # PGDG apt repo. Only the binaries are wanted: pgtest.sh makes its own
+      # cluster, so the package is told not to create and start a main one.
+      - name: Install PostgreSQL 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y --no-install-recommends postgresql-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+
+      # No port variables: each smoke test picks a free port for its server.
+      - run: npm run db:smoke
+
+      - run: npm run mcp:smoke

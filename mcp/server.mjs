@@ -73,9 +73,11 @@ async function api(path, init = {}) {
 }
 
 /**
- * Write items through the LWW merge; returns the full current item list
- * (normalized). sync_posts has returned { items, rejected } since the
+ * Write items through the LWW merge; returns the stored copies of the items
+ * written (normalized). sync_posts has returned { items, rejected } since the
  * synced_at migration; the bare-array shape is kept for an older database.
+ * Under the service key those items are every row in the table — a household
+ * peer's journal and habits included — so only the ids sent here come back.
  */
 async function syncWrite(items) {
   const res = await api('/rest/v1/rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: items }) })
@@ -83,13 +85,33 @@ async function syncWrite(items) {
   const rejected = Array.isArray(res?.rejected) ? res.rejected : []
   const mine = items.map(i => i.id).filter(id => rejected.includes(id))
   if (mine.length) throw new Error(`The server refused to store ${mine.join(', ')} (unknown kind or invalid record — is the newest migration applied?).`)
-  return list.map(legacyPostToTask)
+  const sent = new Set(items.map(i => i.id))
+  return list.filter(p => sent.has(p?.id)).map(legacyPostToTask)
 }
 
-/** All live rows, normalized to v3 shape. */
+/**
+ * Kinds that belong to one account even inside a household: the set
+ * src/store.ts and shared/digest.mjs filter on. The bot gateway carries a copy
+ * too; src/__tests__/mcp.test.ts holds all of them to the same answer.
+ */
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
+
+/**
+ * The posts policy as the owner meets it. The service key bypasses every
+ * policy, so this is the only thing between an agent and a household peer's
+ * journal, review, calendar subscription, habits or routines: the owner's own
+ * rows and legacy unowned ones (user_id null) pass, anyone else's only when
+ * the kind is shared with the household.
+ */
+function ownerMaySee(row, owner) {
+  if (!PERSONAL_KINDS.has(row?.data?.kind ?? 'task')) return true
+  return row.user_id === null || (owner != null && row.user_id === owner)
+}
+
+/** All live rows the owner may see, normalized to v3 shape. */
 async function fetchAll() {
-  const rows = await api('/rest/v1/posts?select=data&deleted=is.false&order=updated_at.desc')
-  return rows.map(r => legacyPostToTask(r.data))
+  const [rows, owner] = await Promise.all([api('/rest/v1/posts?select=data,user_id&deleted=is.false&order=updated_at.desc'), ownerId()])
+  return rows.filter(r => ownerMaySee(r, owner)).map(r => legacyPostToTask(r.data))
 }
 
 let ownerIdCache
@@ -100,13 +122,12 @@ async function ownerId() {
 }
 
 /**
- * Journal rows are personal. The service key bypasses every policy, so this
- * server reads only the owner's entries (and legacy unowned rows) — never a
- * household peer's diary — and appends only into those.
+ * The owner's journal entries (and legacy unowned rows) — never a household
+ * peer's diary — so add_journal_entry appends only into those.
  */
 async function fetchJournal() {
   const [rows, owner] = await Promise.all([api('/rest/v1/posts?select=data,user_id&deleted=is.false&kind=eq.journal'), ownerId()])
-  return rows.filter(r => r.user_id === null || r.user_id === owner).map(r => legacyPostToTask(r.data))
+  return rows.filter(r => ownerMaySee(r, owner)).map(r => legacyPostToTask(r.data))
 }
 
 /** A real calendar day, not just the right shape: 2026-02-30 is refused. */
@@ -117,8 +138,10 @@ function assertDayKey(day) {
 }
 
 async function fetchItem(id, kind) {
-  const rows = await api(`/rest/v1/posts?id=eq.${encodeURIComponent(id)}&select=data`)
-  const item = rows?.[0]?.data ? legacyPostToTask(rows[0].data) : null
+  const [rows, owner] = await Promise.all([api(`/rest/v1/posts?id=eq.${encodeURIComponent(id)}&select=data,user_id`), ownerId()])
+  // a peer's personal row reads as missing: "is a journal, not a task" would already say too much
+  const row = rows?.[0]
+  const item = row?.data && ownerMaySee(row, owner) ? legacyPostToTask(row.data) : null
   if (!item) throw new Error(`No ${kind} with id "${id}".`)
   if (item.deletedAt) throw new Error(`${kind} "${id}" is deleted.`)
   if (item.kind !== kind) throw new Error(`"${id}" is a ${item.kind}, not a ${kind}.`)
@@ -1157,6 +1180,6 @@ export function startStdio() {
 }
 
 // pieces the tests exercise without a database or a transport
-export { TOOLS, syncWrite, writeItem, fetchJournal, assertDayKey, resolveContext, summarizeTask, summarizePlace }
+export { TOOLS, syncWrite, writeItem, fetchAll, fetchJournal, PERSONAL_KINDS, ownerMaySee, assertDayKey, resolveContext, summarizeTask, summarizePlace }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) startStdio()

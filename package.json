@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "check": "vitest run && tsc --noEmit && vite build",
+    "check": "eslint src --max-warnings 0 && vitest run && tsc --noEmit && vite build",
     "lint": "eslint src --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest run",
