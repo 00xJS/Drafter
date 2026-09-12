@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { TaskEditor } from '../components/TaskEditor'
-import type { Project, Task } from '../types'
+import type { Person, Project, Task } from '../types'
 
 /*
  * The task editor's first render (vitest runs in node, so no effects and no
@@ -27,6 +27,7 @@ const task = (over: Partial<Task> = {}): Task => ({
 })
 
 const home = { kind: 'project', id: 'pr1', name: 'Home', color: '#f97316', status: 'active' } as Project
+const sam: Person = { kind: 'person', id: 'p1', name: 'Sam', color: '#f97316', group: 'family', createdAt: OPENED, updatedAt: OPENED }
 
 type EditorProps = Parameters<typeof TaskEditor>[0]
 const render = (over: Partial<EditorProps> = {}) =>
@@ -95,5 +96,13 @@ describe('the task editor', () => {
     // a new task has no versions: Activity is the last section
     const fresh = render()
     expect(fresh.lastIndexOf('class="field')).toBe(fresh.indexOf('class="field activity"'))
+  })
+
+  it('offers People for adding someone new only when it can save them', () => {
+    expect(render()).not.toContain('counts as seeing them')
+    expect(render({ people: [sam] })).toContain('placeholder="Search people to add…"')
+    const adding = render({ onSavePerson: noop })
+    expect(adding).toContain('counts as seeing them')
+    expect(adding).toContain('placeholder="Search or add a person…"')
   })
 })

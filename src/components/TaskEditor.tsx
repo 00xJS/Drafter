@@ -29,6 +29,8 @@ interface Props {
   people: Person[]
   places?: Place[]
   onSavePlace?(p: Place): void
+  /** Save a person typed into the People picker who isn't in People yet; without it the picker only finds people. */
+  onSavePerson?(p: Person): void
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
   /** Open tasks that could block this one (same project preferred). */
@@ -55,6 +57,7 @@ export function TaskEditor({
   people,
   places = [],
   onSavePlace,
+  onSavePerson,
   members,
   candidates,
   getLatest,
@@ -326,7 +329,7 @@ export function TaskEditor({
               <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} />
               <DueFields form={form} set={set} />
               <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
-              <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} />
+              <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
               <Images mediaIds={form.mediaIds} set={set} />
               <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
             </aside>

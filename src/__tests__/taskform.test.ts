@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { sanitizePerson } from '../schema'
 import {
   FormPatch,
   TaskForm,
@@ -16,12 +17,14 @@ import {
   linkLabel,
   mergeOnto,
   money,
+  newPerson,
+  peopleSearch,
   pendingRenames,
   urlsIn,
   versionNote,
   versionRows,
 } from '../taskform'
-import type { ChecklistItem, Task } from '../types'
+import type { ChecklistItem, Person, Task } from '../types'
 import { toLocalInput } from '../utils'
 
 /*
@@ -244,6 +247,34 @@ describe('estimate and actual cost', () => {
     expect(costsVisible(initForm(task({ actualCost: 0 })), task({ actualCost: 0 }))).toBe(true)
     // typed on a bill, then unticked: the amount stays in view
     expect(costsVisible(edit(initForm(plain), { actualCost: '12' }), plain)).toBe(true)
+  })
+})
+
+describe('people typed into the picker', () => {
+  const person = (id: string, name: string): Person => ({ kind: 'person', id, name, color: '#f97316', group: 'family', createdAt: OPENED, updatedAt: OPENED })
+  const people = [person('p1', 'Sam'), person('p2', 'Samantha'), person('p3', 'Dave')]
+
+  it('picks an existing name in any case or spacing, so it is never added twice', () => {
+    const found = peopleSearch('  sAm ', people, [])
+    expect(found.exact?.id).toBe('p1')
+    expect(found.matches.map(p => p.id)).toEqual(['p1', 'p2'])
+    // already on the task: still found as exact, so no "Add" for them either
+    const attached = peopleSearch('Sam', people, ['p1'])
+    expect(attached.exact?.id).toBe('p1')
+    expect(attached.matches.map(p => p.id)).toEqual(['p2'])
+  })
+
+  it('offers someone new by the name as typed', () => {
+    const found = peopleSearch('  Priya   Shah ', people, [])
+    expect(found).toEqual({ name: 'Priya Shah', exact: undefined, matches: [] })
+    expect(peopleSearch('   ', people, []).name).toBe('')
+  })
+
+  it('makes a person shaped as the People tab saves one', () => {
+    const p = newPerson('  Priya Shah ', { id: 'p9', color: '#22c55e', now: new Date(LATER) })
+    expect(p).toEqual({ kind: 'person', id: 'p9', name: 'Priya Shah', group: 'family', color: '#22c55e', createdAt: LATER, updatedAt: LATER })
+    expect(p.cadenceDays).toBeUndefined()
+    expect(sanitizePerson(p)).toEqual({ ...p, emoji: undefined, cadenceDays: undefined, notes: undefined, birthday: undefined, anniversary: undefined, ownerId: undefined, deletedAt: undefined, purged: undefined })
   })
 })
 

@@ -1,7 +1,7 @@
 import type { CapturedFields, RefineMode } from './ai'
 import { parseGithubUrl } from './github'
 import { newerStamp } from './itemops'
-import type { Attachment, Bill, ChecklistItem, Comment, Priority, RecurrenceFreq, Task, TaskStatus } from './types'
+import type { Attachment, Bill, ChecklistItem, Comment, Person, Priority, RecurrenceFreq, Task, TaskStatus } from './types'
 import { fromLocalInput, toLocalInput } from './utils'
 
 /*
@@ -379,6 +379,28 @@ export function isEmpty(t: Task): boolean {
     !t.githubUrl &&
     !t.notes?.trim()
   )
+}
+
+// ---- people typed into the picker -------------------------------------------------
+
+/**
+ * The People picker's results for what was typed: people whose name contains
+ * it (not those already on the task), and the one whose name it is exactly —
+ * trimmed, any case — so an existing name is picked, never added twice.
+ */
+export function peopleSearch(query: string, people: readonly Person[], attached: readonly string[]) {
+  const name = query.trim().replace(/\s+/g, ' ')
+  const q = name.toLowerCase()
+  if (!q) return { name, exact: undefined, matches: [] as Person[] }
+  const exact = people.find(p => p.name.trim().replace(/\s+/g, ' ').toLowerCase() === q)
+  const matches = people.filter(p => !attached.includes(p.id) && p.name.toLowerCase().includes(q)).slice(0, 8)
+  return { name, exact, matches }
+}
+
+/** A person added from the task editor, shaped as the People tab saves one: family, no cadence of their own. */
+export function newPerson(name: string, opts: { id: string; color: string; now: Date }): Person {
+  const stamp = opts.now.toISOString()
+  return { kind: 'person', id: opts.id, name: name.trim(), group: 'family', color: opts.color, createdAt: stamp, updatedAt: stamp }
 }
 
 // ---- versions ---------------------------------------------------------------------
