@@ -580,7 +580,7 @@ export function Today({
         </section>
       )}
       {/* Below 640px the two `kpi-extra` tiles leave grid flow entirely and
-          "Open" spans the row (see styles.css), so DOM order does not decide
+          "Open" spans the row (the phone `.kpi-extra` rules in src/styles/), so DOM order does not decide
           what the phone shows — it is the desktop row, left as it was. */}
       <div className="kpi-row">
         <StatTile

@@ -366,8 +366,8 @@ export async function onAppPause(cb: () => void): Promise<() => void> {
  * `capacitor.config.ts` uses `resize: 'native'`, so iOS already shrinks the
  * WebView by the keyboard height: `--keyboard-h` is a SIGNAL, never an inset to
  * spend on padding — doing that subtracts the keyboard twice. The `keyboard-open`
- * class is what layout rules should key off (see the `.tabs-compact` rule in
- * styles.css, which slides the fixed tab bar out of the caret's way).
+ * class is what layout rules should key off (see `.keyboard-open .tabs-compact` in
+ * src/styles/08-responsive.css, which slides the fixed tab bar out of the caret's way).
  */
 export async function watchKeyboard(): Promise<() => void> {
   if (!isNative()) return () => {}
@@ -441,7 +441,7 @@ export function typeScaleFor(probePx: number): number {
  * and on `visibilitychange`. No-op on the web, where the browser's own zoom and
  * default font size already do this job and 1 is the honest answer.
  *
- * Returns a disposer. See `--type-scale` in styles.css for what reads it.
+ * Returns a disposer. See `--type-scale` in src/styles/01-base.css for what reads it.
  */
 export async function watchTextSize(): Promise<() => void> {
   if (!isNative()) return () => {}

@@ -143,7 +143,7 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
     // box-sizing: border-box the height has to carry the border as well
     if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`
     // `behavior: 'instant'` because the document scrolls smoothly by default
-    // (styles.css) — an animated correction on every keystroke would drift the
+    // (html's scroll-behavior, src/styles/) — an animated correction on every keystroke would drift the
     // page out from under the caret
     if (window.scrollY !== top) window.scrollTo({ top, behavior: 'instant' })
   }, [])

@@ -6,7 +6,7 @@ import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../calendars'
+import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync, entryPullWrites, type EntryChange } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
@@ -263,6 +263,7 @@ export default function Planner() {
     store.loaded && mirroring,
     changes => applyMirrorChanges(changes, 'Google Calendar'),
     household.myId,
+    entries => applyEntryChanges(entries, 'Google Calendar'),
   )
 
   // Cmd/Ctrl+K opens search from anywhere
@@ -573,12 +574,21 @@ export default function Planner() {
       })
   }
 
+  // An event moved or retitled in Google or Outlook comes back the way a moved
+  // task does — only when the provider's edit is newer than the entry's own.
+  const applyEntryChanges = (changes: EntryChange[], source: string) => {
+    const rows = entryPullWrites(store.events, changes)
+    for (const r of rows) store.upsert(r)
+    if (rows.length) showToast(`${rows.length} event${rows.length === 1 ? '' : 's'} updated from ${source}`)
+  }
+
   const microsoftSync = useMicrosoftSync(
     store.allItems,
     store.projects,
     store.loaded ? msMirrorIds : [],
     changes => applyMirrorChanges(changes, 'Outlook'),
     household.myId,
+    entries => applyEntryChanges(entries, 'Outlook'),
   )
 
   // Every view reads this, so the household's Mine / Everyone applies app-wide;
@@ -1086,7 +1096,7 @@ export default function Planner() {
   return (
     <div className="app">
       <header className="topbar">
-        {/* the phone hides the wordmark span for width (see styles.css), so the
+        {/* the phone hides the wordmark span for width (src/styles/08-responsive.css), so the
             name lives on the container and the glyph is decorative — otherwise
             VoiceOver announces the header as "airplane". */}
         <div className="brand" aria-label="Drafter">
