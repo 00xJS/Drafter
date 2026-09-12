@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SYNC_KINDS } from '../../shared/kinds.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import adminFunction from '../../netlify/functions/admin.mjs'
 
@@ -15,6 +16,7 @@ const LEAVER = '00000000-0000-0000-0000-00000000000d'
 let calls: string[]
 let prepareFails: boolean
 let deleteFails: boolean
+let stored: unknown
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -23,6 +25,7 @@ beforeEach(() => {
   calls = []
   prepareFails = false
   deleteFails = false
+  stored = null
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -40,6 +43,12 @@ beforeEach(() => {
       }
       if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'DELETE') {
         return deleteFails ? Response.json({ msg: 'Database error deleting user' }, { status: 500 }) : Response.json({})
+      }
+      if (url.startsWith('/rest/v1/app_config?key=eq.sync_canary')) return Response.json([])
+      if (url === '/rest/v1/rpc/sync_canary') return Response.json({ ok: true, checked: body.kinds.length, failures: [] })
+      if (url === '/rest/v1/app_config?on_conflict=key' && method === 'POST') {
+        stored = JSON.parse(body.value)
+        return new Response(null, { status: 201 })
       }
       throw new Error(`unexpected ${method} ${url}`)
     }),
@@ -92,5 +101,16 @@ describe('Admin → delete an account', () => {
     const res = await act('deleteUser', { userId: OWNER })
     expect(res.status).toBe(400)
     expect(calls).not.toContain('POST /rest/v1/rpc/admin_prepare_user_deletion')
+  })
+})
+
+describe('Admin → Data → Check now', () => {
+  it('runs the canary for every kind, keeps the answer, and reports it in a sentence', async () => {
+    const res = await act('runSyncCanary')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sentence).toBe(`The server accepted a test write for all ${SYNC_KINDS.size} kinds, just now.`)
+    expect(body.record).toMatchObject({ ok: true, checked: SYNC_KINDS.size, failures: [], alertedAt: null })
+    expect(stored).toEqual(body.record)
   })
 })

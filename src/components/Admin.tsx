@@ -23,6 +23,21 @@ const KIND_LABELS: [string, string][] = [
   ['unknown', 'Legacy rows (no kind)'],
 ]
 
+/** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
+interface SyncCheck {
+  sentence: string
+  record: {
+    ok: boolean
+    checked: number
+    failures: { kind: string | null; reason: string }[]
+    error: string | null
+    at: string
+    failingSince: string | null
+    alertedAt: string | null
+  } | null
+}
+type Stats = DataStats & { syncCheck?: SyncCheck }
+
 interface Props {
   onClose(): void
 }
@@ -65,6 +80,36 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
   )
 }
 
+/** Admin → Data's card for the hourly sync check: what it last found, the kinds that failed, and a way to run it now. */
+function SyncCheckCard({ check, busy, checking, onCheck }: { check?: SyncCheck; busy: boolean; checking: boolean; onCheck(): void }) {
+  const record = check?.record ?? null
+  return (
+    <div className={record && !record.ok ? 'admin-health admin-alarm' : 'admin-health'}>
+      <p className="sync-line">
+        <strong>Sync check</strong>
+        <span className={record?.ok ? 'sync-ok' : 'warn'}>{!check ? 'Unknown' : !record ? 'Not run yet' : record.ok ? 'Passing' : 'Failing'}</span>
+      </p>
+      <p className="field-hint">{check?.sentence ?? 'The server did not report a sync check.'}</p>
+      {record && record.failures.length > 0 && (
+        <ul className="admin-stats">
+          {record.failures.map((f, i) => (
+            <Stat key={`${f.kind}-${i}`} label={f.kind ?? '(no kind)'} value={f.reason} tone="warn" />
+          ))}
+        </ul>
+      )}
+      <div className="check-add">
+        <button className="btn" disabled={busy} onClick={onCheck}>
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+      </div>
+      <p className="field-hint">
+        Every hour the digest writes one test row of each kind through <code>sync_posts</code> and rolls it back, so nothing is kept. If the server refuses one, you
+        are told through the digest’s push or email, at most every 12 hours.
+      </p>
+    </div>
+  )
+}
+
 function TestLine({ ok, detail, error }: { ok: boolean; detail?: string; error?: string | null }) {
   return (
     <p className="admin-test">
@@ -80,7 +125,7 @@ export function Admin({ onClose }: Props) {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
   const [status, setStatus] = useState<AdminStatus | null>(null)
-  const [stats, setStats] = useState<DataStats | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
   const [backups, setBackups] = useState<BackupList | null>(null)
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
   const [downloadUrl, setDownloadUrl] = useState('')
@@ -104,7 +149,7 @@ export function Admin({ onClose }: Props) {
       setOwnerEmail(r.ownerEmail)
     })
   const refreshStatus = () => adminAction<AdminStatus>('status').then(setStatus)
-  const refreshStats = () => adminAction<DataStats>('dataStats').then(setStats)
+  const refreshStats = () => adminAction<Stats>('dataStats').then(setStats)
   const refreshBackups = () => adminAction<BackupList>('listBackups').then(setBackups)
 
   useEffect(() => {
@@ -334,6 +379,17 @@ export function Admin({ onClose }: Props) {
             </p>
             {stats ? (
               <>
+                <SyncCheckCard
+                  check={stats.syncCheck}
+                  busy={busy}
+                  checking={pending === 'syncCheck'}
+                  onCheck={() =>
+                    runNamed('syncCheck', async () => {
+                      const check = await adminAction<SyncCheck>('runSyncCanary')
+                      setStats(s => (s ? { ...s, syncCheck: check } : s))
+                    })
+                  }
+                />
                 <ul className="admin-stats">
                   <Stat label="Live records" value={stats.live} tone={stats.live > 0 ? 'ok' : 'warn'} />
                   {KIND_LABELS.filter(([k]) => (stats.kinds[k] ?? 0) > 0 || k === 'task').map(([k, label]) => (

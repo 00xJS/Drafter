@@ -1,7 +1,7 @@
 // Site-owner Admin API (service role): integration health, live integration
 // tests, data/backup visibility, and Auth user ops.
 //   POST /api/admin { action } — session-gated
-//     me | status | dataStats
+//     me | status | dataStats | runSyncCanary
 //     listUsers | createUser | inviteUser | resetPassword | setDisabled | deleteUser
 //     listBackups | runBackup | downloadBackup
 //     testAi | testPush | runDigest
@@ -16,6 +16,7 @@ import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
 import { complete } from './lib/ai.mjs'
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, runBackup, signSnapshotUrl } from './lib/backup.mjs'
+import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
 import { buildPeerMap, sendEmail } from './digest.mjs'
@@ -49,6 +50,11 @@ async function count(path) {
   if (!res.ok) return null
   const m = /\/(\d+|\*)$/.exec(res.headers.get('content-range') ?? '')
   return m && m[1] !== '*' ? Number(m[1]) : null
+}
+
+/** Admin → Data's view of the latest sync canary: the stored record and one sentence about it. */
+function syncCheck(record) {
+  return { sentence: canarySentence(record, new Date()), record: record ?? null }
 }
 
 /** Page through a select with Range so a big table can't be silently truncated. */
@@ -213,12 +219,23 @@ const handler = async req => {
       const rows = await fetchAll('posts?select=user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged&order=id.asc')
       const users = await listUsers().catch(() => [])
       const emails = Object.fromEntries(users.map(u => [u.id, u.email]))
-      const [historyRows, households, householdMembers] = await Promise.all([
+      const [historyRows, households, householdMembers, canary] = await Promise.all([
         count('posts_history?select=id').catch(() => null),
         count('households?select=id').catch(() => null),
         count('household_members?select=user_id').catch(() => null),
+        readCanary(rest).catch(() => null),
       ])
-      return Response.json({ ...shapeDataStats(rows, { emails }), historyRows, households, householdMembers })
+      return Response.json({ ...shapeDataStats(rows, { emails }), historyRows, households, householdMembers, syncCheck: syncCheck(canary) })
+    }
+
+    if (action === 'runSyncCanary') {
+      // by hand, e.g. straight after `supabase db push`. Stored like the hourly
+      // run's, so "first seen" and the alert throttle carry on, but it never
+      // alerts: the owner is the one looking at it
+      const prev = await readCanary(rest).catch(() => null)
+      const { record } = nextCanaryRecord(prev, await runSyncCanary(rest), new Date())
+      await writeCanary(rest, record)
+      return Response.json(syncCheck(record))
     }
 
     if (action === 'listUsers') return Response.json({ users: await listUsers(), ownerEmail: gate.owner })

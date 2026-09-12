@@ -489,3 +489,91 @@ begin
   raise notice 'ok 14: the account is gone; shared rows and their history belong to the heir, personal rows and their history are deleted';
 end $$;
 drop table d_before;
+
+-- --------------- 15. the sync canary: every kind stores, and nothing stays
+do $$
+begin
+  if has_function_privilege('authenticated', 'public.sync_canary(text[])', 'execute')
+     or has_function_privilege('anon', 'public.sync_canary(text[])', 'execute') then
+    raise exception 'FAIL 15: sync_canary must be service-role only';
+  end if;
+  if not has_function_privilege('service_role', 'public.sync_canary(text[])', 'execute') then
+    raise exception 'FAIL 15: the service role must be able to run sync_canary';
+  end if;
+end $$;
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb; posts_before bigint; history_before bigint;
+begin
+  select count(*) into posts_before from public.posts;
+  select count(*) into history_before from public.posts_history;
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine']);
+  if r <> '{"ok": true, "checked": 14, "failures": []}'::jsonb then
+    raise exception 'FAIL 15: the canary should pass for all 14 kinds, got %', r;
+  end if;
+  r := public.sync_canary(array['task', 'bogus']);
+  if r <> '{"ok": false, "checked": 2, "failures": [{"kind": "bogus", "reason": "rejected"}]}'::jsonb then
+    raise exception 'FAIL 15: a kind sync_posts does not know must fail, got %', r;
+  end if;
+  if (select count(*) from public.posts) <> posts_before or (select count(*) from public.posts_history) <> history_before then
+    raise exception 'FAIL 15: the canary left rows behind';
+  end if;
+  raise notice 'ok 15: the canary passes all 14 kinds, fails a bogus one, and leaves posts and history as they were';
+end $$;
+commit;
+do $$
+begin
+  if exists (select 1 from public.posts where id like 'canary~%') or exists (select 1 from public.posts_history where id like 'canary~%') then
+    raise exception 'FAIL 15: a canary row was committed';
+  end if;
+end $$;
+
+-- ...and it would have caught September: put the ambiguous `id` variable back
+-- into sync_posts inside a transaction that is rolled back, and every kind fails
+begin;
+create or replace function public.sync_posts(incoming jsonb, since timestamptz default null)
+returns jsonb
+language plpgsql
+as $$
+declare
+  item jsonb;
+  id text;
+  rejected jsonb := '[]'::jsonb;
+begin
+  for item in select value from jsonb_array_elements(incoming) loop
+    id := item->>'id';
+    begin
+      insert into public.posts as p (id, updated_at, synced_at, data, user_id)
+      values (item->>'id', (item->>'updatedAt')::timestamptz, clock_timestamp(), item, public.owner_user_id())
+      on conflict (id) do update set data = excluded.data where excluded.updated_at > p.updated_at;
+    exception when others then
+      rejected := rejected || jsonb_build_array(id);
+    end;
+  end loop;
+  return jsonb_build_object('items', '[]'::jsonb, 'rejected', rejected);
+end;
+$$;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.sync_canary(array['task', 'journal', 'habit']);
+  if (r ->> 'ok')::boolean or jsonb_array_length(r -> 'failures') <> 3 then
+    raise exception 'FAIL 15: with the September bug back, the canary must fail every kind, got %', r;
+  end if;
+  raise notice 'ok 15: with the ambiguous id put back, the canary fails every kind (%)', r -> 'failures' -> 0;
+end $$;
+rollback;
+
+begin;
+set local role service_role;
+do $$
+begin
+  if not (public.sync_canary(array['task']) ->> 'ok')::boolean then
+    raise exception 'FAIL 15: sync_posts should be itself again after the rolled-back break';
+  end if;
+end $$;
+commit;

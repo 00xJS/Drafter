@@ -5,13 +5,21 @@
 //
 // Records are scoped per recipient exactly as the database policy scopes them:
 // your own rows plus your household's (plus legacy unowned rows, which belong
-// to the owner). The service key bypasses RLS, so that filtering happens here
-// and must stay in step with public.household_user_ids().
+// to the owner), minus a household member's personal kinds. The service key
+// bypasses RLS, so that filtering happens here (visibleItemsFor) and must stay
+// in step with public.household_user_ids() and the policy's kind list.
+//
+// Once a run, before anyone's digest, the sync canary writes one synthetic row
+// of every kind through sync_posts and rolls it back (public.sync_canary). The
+// answer is kept for Admin → Data, and a refusal reaches the owner through the
+// same push and email as the digest, at most every twelve hours.
 
 import { newerStamp } from '../../shared/domain.mjs'
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
+import { SYNC_KINDS } from '../../shared/kinds.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
+import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { previousWeekIn } from './lib/reviewweek.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
@@ -150,20 +158,56 @@ export async function buildPeerMap() {
   return peers
 }
 
+/**
+ * The sync canary, once a run. September's outage rejected every write for
+ * days with nothing to say so; this is the thing that says so. The owner is
+ * told through whichever of the digest's channels they have on (push, the
+ * email digest), and `alertedAt` is stamped only when one of them took the
+ * message — with neither on, Admin → Data is where it shows.
+ */
+async function checkSyncCanary(users, ownerId, now, site) {
+  const prev = await readCanary(rest).catch(() => null)
+  const { record, alert } = nextCanaryRecord(prev, await runSyncCanary(rest, [...SYNC_KINDS]), now)
+  if (!record.ok) console.error('digest: sync canary', JSON.stringify(record.failures.length ? record.failures : record.error))
+  if (alert && ownerId) {
+    const owner = (users ?? []).find(u => u.user_id === ownerId)
+    const { title, body, text } = canaryAlert(record)
+    let told = false
+    const subs = owner?.push_subscriptions ?? []
+    if (subs.length && pushConfigured()) {
+      const { gone, failed } = await sendToAll(subs, { title, body, tag: 'sync-canary', url: `${site}/` })
+      told = subs.length > gone.length + failed.length
+    }
+    if (owner?.digest_email) {
+      const email = await userEmail(ownerId).catch(() => null)
+      if (email && (await sendEmail(email, title, `${text}\n\nOpen Drafter: ${site}/`).catch(() => false))) told = true
+    }
+    if (told) record.alertedAt = now.toISOString()
+  }
+  await writeCanary(rest, record).catch(() => {})
+  return record
+}
+
 export default async () => {
   if (!process.env.SUPABASE_SERVICE_KEY) return new Response('not configured', { status: 200 })
   const now = new Date()
+  const site = process.env.URL || process.env.DEPLOY_PRIME_URL || ''
   const users = await rest('user_settings?select=*')
+  const ownerId = await rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null)
+
+  // once a run, not once a user — and ahead of the early return below, so a
+  // site with nobody subscribed still finds out its writes are failing
+  const canary = await checkSyncCanary(users, ownerId, now, site).catch(e => ({ ok: false, failures: [], error: String(e?.message ?? e) }))
+  const checked = canary.ok
+    ? 'sync check ok'
+    : `sync check failed: ${canary.failures.length ? canary.failures.map(f => `${f.kind} ${f.reason}`).join(', ') : canary.error}`
+
   const active = (users ?? []).filter(u => (u.push_subscriptions?.length ?? 0) > 0 || u.digest_email)
-  if (active.length === 0) return new Response('no subscribers', { status: 200 })
+  if (active.length === 0) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
   // keep row ownership so each recipient only ever sees their own scope
   const rows = await rest('posts?select=data,user_id&deleted=is.false')
-  const [peers, ownerId] = await Promise.all([
-    buildPeerMap(),
-    rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
-  ])
-  const site = process.env.URL || process.env.DEPLOY_PRIME_URL || ''
+  const peers = await buildPeerMap()
   let sent = 0
   const failures = []
 
@@ -253,7 +297,7 @@ export default async () => {
     /* best-effort */
   }
 
-  const report = `sent ${sent}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
+  const report = `sent ${sent}; ${checked}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
   if (failures.length) console.error('digest:', report)
   return new Response(report, { status: 200 })
 }
