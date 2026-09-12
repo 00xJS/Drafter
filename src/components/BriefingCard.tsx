@@ -4,7 +4,7 @@ import { eventDayKeys } from '../calendars'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
 import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, getWeather, readCache, requestLocation, setCity } from '../weather'
-import { tonightDinner } from './Kitchen'
+import { tonightDinner } from '../kitchen'
 
 /** Same 17:00 line Today uses to move the journal card to the evening. */
 export function greeting(hour: number, name?: string): string {

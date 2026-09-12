@@ -64,6 +64,13 @@ export function dinnerOn(meals: Meal[], day: Date): Meal | undefined {
   return meals.find(m => m.date === key && m.slot === 'dinner') ?? meals.find(m => m.date === key)
 }
 
+/** Tonight's meal and its recipe. Today and the briefing strip read it, so it lives here rather than in the Kitchen view, which can then load on its own. */
+export function tonightDinner(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe } | null {
+  const meal = dinnerOn(meals, day)
+  if (!meal) return null
+  return { meal, recipe: recipes.find(r => r.id === meal.recipeId) }
+}
+
 /** Unique Sunday-start weeks that contain these YYYY-MM-DD meal dates. */
 export function weeksForDates(dates: string[]): { key: string; start: Date }[] {
   const map = new Map<string, Date>()
