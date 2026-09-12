@@ -153,7 +153,9 @@ export function TaskEditor({
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<{ mode: RefineMode; text: string } | null>(null)
   const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
-  const [versions, setVersions] = useState<{ replaced_at: string; data: Task; updated_at: string }[] | null>(null)
+  const [versions, setVersions] = useState<
+    { replaced_at: string; data: Task; updated_at: string; reason: string | null }[] | null
+  >(null)
   const [versionsBusy, setVersionsBusy] = useState(false)
   const mediaInput = useRef<HTMLInputElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
@@ -224,9 +226,11 @@ export function TaskEditor({
     }
     setVersionsBusy(true)
     try {
+      // '*' rather than a column list: `reason` only exists once v3.11 is applied,
+      // and naming it would fail the whole query against an older database
       const { data, error } = await sb
         .from('posts_history')
-        .select('replaced_at, updated_at, data')
+        .select('*')
         .eq('id', task.id)
         .order('replaced_at', { ascending: false })
         .limit(20)
@@ -237,6 +241,7 @@ export function TaskEditor({
             replaced_at: row.replaced_at as string,
             updated_at: row.updated_at as string,
             data: row.data as Task,
+            reason: typeof row.reason === 'string' ? row.reason : null,
           }))
           .filter(v => v.data && typeof v.data === 'object'),
       )
@@ -1183,11 +1188,15 @@ export function TaskEditor({
                 {versions && versions.length === 0 && <p className="empty">No earlier versions yet.</p>}
                 {versions && versions.length > 0 && (
                   <ul className="versions-list">
-                    {versions.map(v => (
-                      <li key={v.replaced_at}>
+                    {versions.map((v, i) => (
+                      <li key={`${v.replaced_at}-${i}`}>
                         <div className="dash-main">
                           <span className="dash-title">{v.data.title || 'Untitled'}</span>
-                          <span className="dash-reason">{fmtDateTime(v.replaced_at)}</span>
+                          <span className="dash-reason">
+                            {/* an edit that reached the server after a newer one had already won */}
+                            {v.reason === 'lost' ? 'Lost to a newer edit · ' : ''}
+                            {fmtDateTime(v.replaced_at)}
+                          </span>
                         </div>
                         <button type="button" className="btn" onClick={() => restoreVersion(v.data)}>
                           Restore
