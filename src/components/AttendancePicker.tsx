@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { CalendarEvent, PROJECT_COLORS, Person, Place } from '../types'
 import { matchPlace } from '../places'
 import { uid } from '../utils'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   event: CalendarEvent
@@ -47,65 +48,58 @@ export function AttendancePicker({ event, people, places = [], onSavePlace, onDo
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal narrow" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>Who was at “{event.title}”?</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          {people.length === 0 ? (
-            <p className="empty">Add people in the People tab first.</p>
-          ) : (
-            <div className="platform-toggles">
-              {people.map(p => (
-                <button key={p.id} type="button" className={ids.includes(p.id) ? 'toggle on' : 'toggle'} onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}>
-                  {p.emoji ? `${p.emoji} ` : ''}
-                  {p.name}
+    <Modal onClose={onClose} className="modal narrow">
+      <ModalHead title={`Who was at “${event.title}”?`} />
+      <div className="modal-body">
+        {people.length === 0 ? (
+          <p className="empty">Add people in the People tab first.</p>
+        ) : (
+          <div className="platform-toggles">
+            {people.map(p => (
+              <button key={p.id} type="button" className={ids.includes(p.id) ? 'toggle on' : 'toggle'} onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}>
+                {p.emoji ? `${p.emoji} ` : ''}
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {(place || matched || canSaveLocation) && (
+          <div className="field">
+            <span>Where</span>
+            {place ? (
+              <div className="platform-toggles attendees">
+                <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Don't attach this place">
+                  {place.emoji ? `${place.emoji} ` : ''}
+                  {place.name} ✕
                 </button>
-              ))}
-            </div>
-          )}
-          {(place || matched || canSaveLocation) && (
-            <div className="field">
-              <span>Where</span>
-              {place ? (
-                <div className="platform-toggles attendees">
-                  <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Don't attach this place">
-                    {place.emoji ? `${place.emoji} ` : ''}
-                    {place.name} ✕
-                  </button>
-                  {matched && <small className="field-hint">Matched from “{event.location}”</small>}
-                </div>
-              ) : matched ? (
-                <div className="platform-toggles attendees">
-                  <button type="button" className="toggle" onClick={() => setPlaceId(matched.id)} title="Attach this place again">
-                    {matched.emoji ? `${matched.emoji} ` : ''}
-                    Attach {matched.name}
-                  </button>
-                </div>
-              ) : (
-                <label className="cal-source mirror-row">
-                  <input type="checkbox" checked={saveLocation} onChange={e => setSaveLocation(e.target.checked)} />
-                  <span className="cal-source-name">Save “{event.location}” as a place</span>
-                </label>
-              )}
-            </div>
-          )}
-          <p className="field-hint">Each ticked person gets a visit logged on the event's date, so People stays accurate without extra typing. A place counts as an outing there.</p>
-        </div>
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" disabled={ids.length === 0 && !placeId && !(saveLocation && canSaveLocation)} onClick={finish}>
-            {ids.length ? `Log ${ids.length} ${ids.length === 1 ? 'person' : 'people'}` : 'Log the outing'}
-          </button>
-        </footer>
+                {matched && <small className="field-hint">Matched from “{event.location}”</small>}
+              </div>
+            ) : matched ? (
+              <div className="platform-toggles attendees">
+                <button type="button" className="toggle" onClick={() => setPlaceId(matched.id)} title="Attach this place again">
+                  {matched.emoji ? `${matched.emoji} ` : ''}
+                  Attach {matched.name}
+                </button>
+              </div>
+            ) : (
+              <label className="cal-source mirror-row">
+                <input type="checkbox" checked={saveLocation} onChange={e => setSaveLocation(e.target.checked)} />
+                <span className="cal-source-name">Save “{event.location}” as a place</span>
+              </label>
+            )}
+          </div>
+        )}
+        <p className="field-hint">Each ticked person gets a visit logged on the event's date, so People stays accurate without extra typing. A place counts as an outing there.</p>
       </div>
-    </div>
+      <footer className="modal-foot">
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={ids.length === 0 && !placeId && !(saveLocation && canSaveLocation)} onClick={finish}>
+          {ids.length ? `Log ${ids.length} ${ids.length === 1 ? 'person' : 'people'}` : 'Log the outing'}
+        </button>
+      </footer>
+    </Modal>
   )
 }

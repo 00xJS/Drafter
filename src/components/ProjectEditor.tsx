@@ -9,6 +9,7 @@ import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
 import { ConfirmButton } from './ConfirmButton'
 import { ProgressBar } from './bits'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   project?: Project
@@ -335,283 +336,272 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   }
 
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={e => {
-        if (e.target === e.currentTarget) requestClose()
-      }}
-    >
-      <div className="modal" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>{project ? 'Edit project' : 'New project'}</h2>
-          <button className="btn primary modal-head-save" onClick={save}>
-            Save
-          </button>
-          <button className="btn subtle" onClick={requestClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
+    <Modal onClose={requestClose}>
+      <ModalHead title={project ? 'Edit project' : 'New project'}>
+        <button className="btn primary modal-head-save" onClick={save}>
+          Save
+        </button>
+      </ModalHead>
 
-        <div className="modal-body">
-          {!project && onCreateMany && (
-            <label className="field">
-              <span>
-                Start from a template <small>(optional — tasks and milestones come with it)</small>
-              </span>
-              <select value={templateId} onChange={e => pickTemplate(e.target.value)}>
-                <option value="">Blank project</option>
-                {templates.length > 0 && (
-                  <optgroup label="Your templates">
-                    {templates.map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.emoji ? `${t.emoji} ` : ''}
-                        {t.name} · {t.tasks.length} tasks
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                <optgroup label="Built in">
-                  {BUILT_IN_TEMPLATES.map(t => (
+      <div className="modal-body">
+        {!project && onCreateMany && (
+          <label className="field">
+            <span>
+              Start from a template <small>(optional — tasks and milestones come with it)</small>
+            </span>
+            <select value={templateId} onChange={e => pickTemplate(e.target.value)}>
+              <option value="">Blank project</option>
+              {templates.length > 0 && (
+                <optgroup label="Your templates">
+                  {templates.map(t => (
                     <option key={t.id} value={t.id}>
                       {t.emoji ? `${t.emoji} ` : ''}
                       {t.name} · {t.tasks.length} tasks
                     </option>
                   ))}
                 </optgroup>
-              </select>
-              {chosen && (
-                <small className="field-hint">
-                  {chosen.description} The <strong>Start</strong> date below anchors every task.
-                </small>
               )}
-            </label>
-          )}
-          <div className="field-row">
-            <label className="field emoji-field">
-              <span>Icon</span>
-              <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🏡" maxLength={4} />
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Kitchen refresh" autoFocus={!project} />
-            </label>
-          </div>
-
-          <div className="field">
-            <span>Color</span>
-            <div className="swatches">
-              {PROJECT_COLORS.map(c => (
-                <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-              ))}
-            </div>
-          </div>
-
-          <label className="field">
-            <span>Description</span>
-            <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does done look like?" />
+              <optgroup label="Built in">
+                {BUILT_IN_TEMPLATES.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.emoji ? `${t.emoji} ` : ''}
+                    {t.name} · {t.tasks.length} tasks
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            {chosen && (
+              <small className="field-hint">
+                {chosen.description} The <strong>Start</strong> date below anchors every task.
+              </small>
+            )}
           </label>
-
-          <div className="field">
-            <span>Status</span>
-            <div className="segmented">
-              {PROJECT_STATUSES.map(s => (
-                <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => setStatus(s)}>
-                  {PROJECT_STATUS_META[s].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="field-row">
-            <label className="field">
-              <span>Start</span>
-              <input type="date" value={startAt} onChange={e => setStartAt(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Target</span>
-              <input type="date" value={targetAt} onChange={e => setTargetAt(e.target.value)} />
-            </label>
-          </div>
-
-          <div className="field">
-            <span>
-              Milestones <small>(show as ◆ on the roadmap)</small>
-            </span>
-            <ul className="checklist">
-              {milestones.map(m => (
-                <li key={m.id} className="check-item">
-                  <input type="checkbox" checked={!!m.done} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, done: e.target.checked || undefined } : x)))} aria-label="Reached" />
-                  <input className="check-text" value={m.name} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, name: e.target.value } : x)))} />
-                  <input type="date" value={toDateInput(m.dueAt)} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, dueAt: fromDateInput(e.target.value) } : x)))} aria-label="Milestone date" />
-                  <button type="button" className="btn subtle" aria-label="Remove" onClick={() => setMilestones(cur => cur.filter(x => x.id !== m.id))}>
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="check-add">
-              <input
-                value={newMs}
-                onChange={e => setNewMs(e.target.value)}
-                placeholder="Add a milestone and press Enter"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addMilestone()
-                  }
-                }}
-              />
-              <button type="button" className="btn" onClick={addMilestone}>
-                Add
-              </button>
-            </div>
-          </div>
-
-          {onCreateMany && (
-            <div className="field ai-plan">
-              <span>
-                ✨ Draft a plan from a goal <small>(the model proposes dated tasks and milestones; you choose)</small>
-              </span>
-              <div className="check-add">
-                <input value={goal} onChange={e => setGoal(e.target.value)} placeholder="e.g. Turn the spare room into a home office by the end of November" />
-                <button type="button" className="btn" disabled={!goal.trim() || planBusy} onClick={runDraft}>
-                  {planBusy ? 'Drafting…' : 'Draft'}
-                </button>
-              </div>
-              {planError && <p className="warn">{planError}</p>}
-              {plan && (
-                <div className="ai-proposal">
-                  <div className="ai-proposal-head">
-                    <strong>
-                      {plan.tasks.length} tasks · {plan.milestones.length} milestones · about {plan.durationDays} days
-                    </strong>
-                    <small>Anchored on the Start date {startAt ? `(${startAt})` : '(today)'}</small>
-                  </div>
-                  <ul className="plan-list">
-                    {plan.milestones.map(m => (
-                      <li key={`m-${m.name}`} className="plan-ms">
-                        ◆ {m.name} <small>day {m.offsetDays}</small>
-                      </li>
-                    ))}
-                    {plan.tasks.map((t, i) => (
-                      <li key={i}>
-                        {t.title} <small>day {t.offsetDays}{t.priority && t.priority !== 'normal' ? ` · ${t.priority}` : ''}{t.checklist?.length ? ` · ${t.checklist.length} steps` : ''}</small>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="ai-row">
-                    <button
-                      type="button"
-                      className="btn primary"
-                      onClick={() => {
-                        const tpl = planAsTemplate()
-                        if (tpl) createWith(tpl)
-                      }}
-                    >
-                      {project ? 'Add these to the project' : 'Create project with this plan'}
-                    </button>
-                    <button type="button" className="btn subtle" onClick={() => setPlan(null)}>
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <label className="field">
-            <span>
-              GitHub <small>(repo or Projects board URL)</small>
-            </span>
-            <input
-              value={githubUrl}
-              onChange={e => setGithubUrl(e.target.value)}
-              onBlur={e => {
-                // a mapping belongs to one board: pointing elsewhere drops it,
-                // but only once editing has settled — fixing a typo passes
-                // through half-URLs that parse as something else, and losing
-                // the mapping mid-keystroke means reading and approving it again
-                const ref = parseGithubUrl(e.target.value.trim())
-                const moved = syncBoard?.type === 'project' && (ref?.owner !== syncBoard.owner || ref?.number !== syncBoard.number)
-                if (ref?.type !== 'project' || moved) setProjectSync(undefined)
-                setSyncBoard(ref)
-              }}
-              placeholder="https://github.com/you/repo or …/users/you/projects/1"
-            />
+        )}
+        <div className="field-row">
+          <label className="field emoji-field">
+            <span>Icon</span>
+            <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🏡" maxLength={4} />
           </label>
-          {githubUrl.trim() && <GithubCard url={githubUrl.trim()} />}
-          {/*
-            Offered for any Projects URL, not only when the card reports a
-            writable host: `canWrite` only says a token exists, and a token
-            without the `project` scope reads boards and still cannot move a
-            card. Ticking the toggle reads the board's fields, so the server's
-            own 501 says exactly what is missing where the setting is made.
-          */}
-          {parseGithubUrl(githubUrl.trim())?.type === 'project' && <ProjectSyncFields url={githubUrl.trim()} sync={projectSync} onChange={setProjectSync} />}
-
-          {project && onOpenNotes && (
-            <div className="field">
-              <span>Notes</span>
-              <button
-                type="button"
-                className="btn notes-open"
-                onClick={() => {
-                  if (isDirty()) save()
-                  else onClose()
-                  onOpenNotes(getLatest(project.id) ?? project)
-                }}
-              >
-                Open the notepad{project.notes ? ` (${project.notes.split(/\s+/).filter(Boolean).length} words)` : ''}
-              </button>
-              <small className="field-hint">A running notepad with formatting, checklists, links, code, emoji and inline photos. Autosaves.</small>
-            </div>
-          )}
-          {project && (
-            <div className="field">
-              <span>Progress</span>
-              <div className="project-progress-row">
-                <ProgressBar pct={progress.pct} color={color} />
-                <small>
-                  {progress.done} of {progress.total} tasks done
-                </small>
-              </div>
-            </div>
-          )}
+          <label className="field">
+            <span>Name</span>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Kitchen refresh" autoFocus={!project} />
+          </label>
         </div>
 
-        <footer className="modal-foot">
-          {project && (
-            <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
-              Delete
-            </ConfirmButton>
-          )}
-          {project && onSaveTemplate && (
+        <div className="field">
+          <span>Color</span>
+          <div className="swatches">
+            {PROJECT_COLORS.map(c => (
+              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
+            ))}
+          </div>
+        </div>
+
+        <label className="field">
+          <span>Description</span>
+          <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does done look like?" />
+        </label>
+
+        <div className="field">
+          <span>Status</span>
+          <div className="segmented">
+            {PROJECT_STATUSES.map(s => (
+              <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => setStatus(s)}>
+                {PROJECT_STATUS_META[s].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field-row">
+          <label className="field">
+            <span>Start</span>
+            <input type="date" value={startAt} onChange={e => setStartAt(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Target</span>
+            <input type="date" value={targetAt} onChange={e => setTargetAt(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="field">
+          <span>
+            Milestones <small>(show as ◆ on the roadmap)</small>
+          </span>
+          <ul className="checklist">
+            {milestones.map(m => (
+              <li key={m.id} className="check-item">
+                <input type="checkbox" checked={!!m.done} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, done: e.target.checked || undefined } : x)))} aria-label="Reached" />
+                <input className="check-text" value={m.name} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, name: e.target.value } : x)))} />
+                <input type="date" value={toDateInput(m.dueAt)} onChange={e => setMilestones(cur => cur.map(x => (x.id === m.id ? { ...x, dueAt: fromDateInput(e.target.value) } : x)))} aria-label="Milestone date" />
+                <button type="button" className="btn subtle" aria-label="Remove" onClick={() => setMilestones(cur => cur.filter(x => x.id !== m.id))}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="check-add">
+            <input
+              value={newMs}
+              onChange={e => setNewMs(e.target.value)}
+              placeholder="Add a milestone and press Enter"
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addMilestone()
+                }
+              }}
+            />
+            <button type="button" className="btn" onClick={addMilestone}>
+              Add
+            </button>
+          </div>
+        </div>
+
+        {onCreateMany && (
+          <div className="field ai-plan">
+            <span>
+              ✨ Draft a plan from a goal <small>(the model proposes dated tasks and milestones; you choose)</small>
+            </span>
+            <div className="check-add">
+              <input value={goal} onChange={e => setGoal(e.target.value)} placeholder="e.g. Turn the spare room into a home office by the end of November" />
+              <button type="button" className="btn" disabled={!goal.trim() || planBusy} onClick={runDraft}>
+                {planBusy ? 'Drafting…' : 'Draft'}
+              </button>
+            </div>
+            {planError && <p className="warn">{planError}</p>}
+            {plan && (
+              <div className="ai-proposal">
+                <div className="ai-proposal-head">
+                  <strong>
+                    {plan.tasks.length} tasks · {plan.milestones.length} milestones · about {plan.durationDays} days
+                  </strong>
+                  <small>Anchored on the Start date {startAt ? `(${startAt})` : '(today)'}</small>
+                </div>
+                <ul className="plan-list">
+                  {plan.milestones.map(m => (
+                    <li key={`m-${m.name}`} className="plan-ms">
+                      ◆ {m.name} <small>day {m.offsetDays}</small>
+                    </li>
+                  ))}
+                  {plan.tasks.map((t, i) => (
+                    <li key={i}>
+                      {t.title} <small>day {t.offsetDays}{t.priority && t.priority !== 'normal' ? ` · ${t.priority}` : ''}{t.checklist?.length ? ` · ${t.checklist.length} steps` : ''}</small>
+                    </li>
+                  ))}
+                </ul>
+                <div className="ai-row">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => {
+                      const tpl = planAsTemplate()
+                      if (tpl) createWith(tpl)
+                    }}
+                  >
+                    {project ? 'Add these to the project' : 'Create project with this plan'}
+                  </button>
+                  <button type="button" className="btn subtle" onClick={() => setPlan(null)}>
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <label className="field">
+          <span>
+            GitHub <small>(repo or Projects board URL)</small>
+          </span>
+          <input
+            value={githubUrl}
+            onChange={e => setGithubUrl(e.target.value)}
+            onBlur={e => {
+              // a mapping belongs to one board: pointing elsewhere drops it,
+              // but only once editing has settled — fixing a typo passes
+              // through half-URLs that parse as something else, and losing
+              // the mapping mid-keystroke means reading and approving it again
+              const ref = parseGithubUrl(e.target.value.trim())
+              const moved = syncBoard?.type === 'project' && (ref?.owner !== syncBoard.owner || ref?.number !== syncBoard.number)
+              if (ref?.type !== 'project' || moved) setProjectSync(undefined)
+              setSyncBoard(ref)
+            }}
+            placeholder="https://github.com/you/repo or …/users/you/projects/1"
+          />
+        </label>
+        {githubUrl.trim() && <GithubCard url={githubUrl.trim()} />}
+        {/*
+          Offered for any Projects URL, not only when the card reports a
+          writable host: `canWrite` only says a token exists, and a token
+          without the `project` scope reads boards and still cannot move a
+          card. Ticking the toggle reads the board's fields, so the server's
+          own 501 says exactly what is missing where the setting is made.
+        */}
+        {parseGithubUrl(githubUrl.trim())?.type === 'project' && <ProjectSyncFields url={githubUrl.trim()} sync={projectSync} onChange={setProjectSync} />}
+
+        {project && onOpenNotes && (
+          <div className="field">
+            <span>Notes</span>
             <button
-              className="btn subtle"
-              title="Save this project's tasks and milestones as a reusable template"
+              type="button"
+              className="btn notes-open"
               onClick={() => {
-                onSaveTemplate(templateFromProject(getLatest(project.id) ?? project, tasks))
-                setSavedTemplate(true)
+                if (isDirty()) save()
+                else onClose()
+                onOpenNotes(getLatest(project.id) ?? project)
               }}
             >
-              {savedTemplate ? 'Saved as template ✓' : 'Save as template'}
+              Open the notepad{project.notes ? ` (${project.notes.split(/\s+/).filter(Boolean).length} words)` : ''}
             </button>
-          )}
-          <span className="spacer" />
-          <button className="btn" onClick={requestClose}>
-            Cancel
-          </button>
-          {!project && chosen && onCreateMany ? (
-            <button className="btn primary" onClick={() => createWith(chosen)}>
-              Create with {chosen.tasks.length} tasks
-            </button>
-          ) : (
-            <button className="btn primary" onClick={save}>
-              Save
-            </button>
-          )}
-        </footer>
+            <small className="field-hint">A running notepad with formatting, checklists, links, code, emoji and inline photos. Autosaves.</small>
+          </div>
+        )}
+        {project && (
+          <div className="field">
+            <span>Progress</span>
+            <div className="project-progress-row">
+              <ProgressBar pct={progress.pct} color={color} />
+              <small>
+                {progress.done} of {progress.total} tasks done
+              </small>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+
+      <footer className="modal-foot">
+        {project && (
+          <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
+            Delete
+          </ConfirmButton>
+        )}
+        {project && onSaveTemplate && (
+          <button
+            className="btn subtle"
+            title="Save this project's tasks and milestones as a reusable template"
+            onClick={() => {
+              onSaveTemplate(templateFromProject(getLatest(project.id) ?? project, tasks))
+              setSavedTemplate(true)
+            }}
+          >
+            {savedTemplate ? 'Saved as template ✓' : 'Save as template'}
+          </button>
+        )}
+        <span className="spacer" />
+        <button className="btn" onClick={requestClose}>
+          Cancel
+        </button>
+        {!project && chosen && onCreateMany ? (
+          <button className="btn primary" onClick={() => createWith(chosen)}>
+            Create with {chosen.tasks.length} tasks
+          </button>
+        ) : (
+          <button className="btn primary" onClick={save}>
+            Save
+          </button>
+        )}
+      </footer>
+    </Modal>
   )
 }

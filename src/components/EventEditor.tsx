@@ -3,6 +3,7 @@ import { CalendarEntry, WORK_MODES, WORK_MODE_META, WorkMode } from '../types'
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
+import { Modal, ModalHead } from './Modal'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
 // Everything else on the calendar marks a moment (a due time, a meal, an
@@ -202,161 +203,154 @@ export function EventEditor({
   const heading = entry ? (work ? 'Edit work day' : 'Edit event') : work ? 'New work day' : 'New event'
 
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal event-modal" role="dialog" aria-modal="true" aria-label={heading}>
-        <header className="modal-head">
-          <h2>{heading}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
+    <Modal onClose={onClose} className="modal event-modal">
+      <ModalHead title={heading} />
 
-        <div className="modal-body">
-          {!entry && (
-            <div className="event-kind segmented" role="group" aria-label="What kind of entry">
-              <button type="button" className={work ? 'seg' : 'seg on'} aria-pressed={!work} onClick={() => setWork(undefined)}>
-                🕘 Event
-              </button>
-              <button type="button" className={work ? 'seg on' : 'seg'} aria-pressed={!!work} onClick={() => setWork(w => w ?? 'home')}>
-                🏠 Work day
-              </button>
-            </div>
-          )}
-
-          {work ? (
-            <>
-              <div className="field">
-                <span>Where</span>
-                <div className="segmented" role="group" aria-label="Where you are working">
-                  {WORK_MODES.map(m => (
-                    <button key={m} type="button" className={work === m ? 'seg on' : 'seg'} aria-pressed={work === m} onClick={() => setWork(m)}>
-                      {WORK_MODE_META[m].emoji} {WORK_MODE_META[m].short}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <label className="field">
-                <span>{repeatDays.length > 0 ? 'Starting' : 'Day'}</span>
-                <input type="date" value={workDay} onChange={e => setWorkDay(e.target.value)} />
-              </label>
-
-              <div className="work-hours">
-                <label className="field">
-                  <span>From</span>
-                  <input type="time" value={from} onChange={e => setFrom(e.target.value)} />
-                </label>
-                <label className="field">
-                  <span>To</span>
-                  <input type="time" value={to} onChange={e => setTo(e.target.value)} />
-                </label>
-              </div>
-
-              {!entry && (
-                <div className="field">
-                  <span>Repeat on</span>
-                  <div className="work-days" role="group" aria-label="Repeat on these weekdays">
-                    {WEEKDAYS.map(w => {
-                      const on = repeatDays.includes(w.n)
-                      return (
-                        <button
-                          key={w.n}
-                          type="button"
-                          className={'work-day-chip' + (on ? ' on' : '')}
-                          aria-pressed={on}
-                          onClick={() => setRepeatDays(ds => (on ? ds.filter(x => x !== w.n) : [...ds, w.n]))}
-                        >
-                          {w.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {repeatDays.length > 0 && (
-                    <label className="work-weeks">
-                      <span>for</span>
-                      <select value={repeatWeeks} onChange={e => setRepeatWeeks(Number(e.target.value))} aria-label="How many weeks">
-                        {REPEAT_WEEKS.map(n => (
-                          <option key={n} value={n}>
-                            {n} week{n === 1 ? '' : 's'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                </div>
-              )}
-
-              <label className="field">
-                <span>Label</span>
-                <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder={WORK_MODE_META[work].label} />
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="field">
-                <span>Title</span>
-                <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder="Dentist" />
-              </label>
-
-              <label className="field-inline">
-                <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
-                <span>All day</span>
-              </label>
-
-              {allDay ? (
-                <label className="field">
-                  <span>Day</span>
-                  <input type="date" value={startDay} onChange={e => setStartDay(e.target.value)} />
-                </label>
-              ) : (
-                <>
-                  <label className="field">
-                    <span>Starts</span>
-                    <input type="datetime-local" value={startLocal} onChange={e => setStartLocal(e.target.value)} />
-                  </label>
-                  <label className="field">
-                    <span>Ends</span>
-                    <input type="datetime-local" value={endLocal} onChange={e => setEndLocal(e.target.value)} />
-                  </label>
-                </>
-              )}
-            </>
-          )}
-
-          <label className="field">
-            <span>Location</span>
-            <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Optional" />
-          </label>
-
-          <label className="field">
-            <span>Notes</span>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional" />
-          </label>
-
-          {error && <p className="form-error">{error}</p>}
-        </div>
-
-        <footer className="modal-foot">
-          {entry && onDelete && (
-            <button
-              className="btn danger"
-              onClick={() => {
-                onDelete(entry.id)
-                onClose()
-              }}
-            >
-              Delete
+      <div className="modal-body">
+        {!entry && (
+          <div className="event-kind segmented" role="group" aria-label="What kind of entry">
+            <button type="button" className={work ? 'seg' : 'seg on'} aria-pressed={!work} onClick={() => setWork(undefined)}>
+              🕘 Event
             </button>
-          )}
-          <span className="spacer" />
-          <button className="btn subtle" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
-        </footer>
+            <button type="button" className={work ? 'seg on' : 'seg'} aria-pressed={!!work} onClick={() => setWork(w => w ?? 'home')}>
+              🏠 Work day
+            </button>
+          </div>
+        )}
+
+        {work ? (
+          <>
+            <div className="field">
+              <span>Where</span>
+              <div className="segmented" role="group" aria-label="Where you are working">
+                {WORK_MODES.map(m => (
+                  <button key={m} type="button" className={work === m ? 'seg on' : 'seg'} aria-pressed={work === m} onClick={() => setWork(m)}>
+                    {WORK_MODE_META[m].emoji} {WORK_MODE_META[m].short}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="field">
+              <span>{repeatDays.length > 0 ? 'Starting' : 'Day'}</span>
+              <input type="date" value={workDay} onChange={e => setWorkDay(e.target.value)} />
+            </label>
+
+            <div className="work-hours">
+              <label className="field">
+                <span>From</span>
+                <input type="time" value={from} onChange={e => setFrom(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>To</span>
+                <input type="time" value={to} onChange={e => setTo(e.target.value)} />
+              </label>
+            </div>
+
+            {!entry && (
+              <div className="field">
+                <span>Repeat on</span>
+                <div className="work-days" role="group" aria-label="Repeat on these weekdays">
+                  {WEEKDAYS.map(w => {
+                    const on = repeatDays.includes(w.n)
+                    return (
+                      <button
+                        key={w.n}
+                        type="button"
+                        className={'work-day-chip' + (on ? ' on' : '')}
+                        aria-pressed={on}
+                        onClick={() => setRepeatDays(ds => (on ? ds.filter(x => x !== w.n) : [...ds, w.n]))}
+                      >
+                        {w.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {repeatDays.length > 0 && (
+                  <label className="work-weeks">
+                    <span>for</span>
+                    <select value={repeatWeeks} onChange={e => setRepeatWeeks(Number(e.target.value))} aria-label="How many weeks">
+                      {REPEAT_WEEKS.map(n => (
+                        <option key={n} value={n}>
+                          {n} week{n === 1 ? '' : 's'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
+
+            <label className="field">
+              <span>Label</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder={WORK_MODE_META[work].label} />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="field">
+              <span>Title</span>
+              <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onEnter} placeholder="Dentist" />
+            </label>
+
+            <label className="field-inline">
+              <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
+              <span>All day</span>
+            </label>
+
+            {allDay ? (
+              <label className="field">
+                <span>Day</span>
+                <input type="date" value={startDay} onChange={e => setStartDay(e.target.value)} />
+              </label>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Starts</span>
+                  <input type="datetime-local" value={startLocal} onChange={e => setStartLocal(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Ends</span>
+                  <input type="datetime-local" value={endLocal} onChange={e => setEndLocal(e.target.value)} />
+                </label>
+              </>
+            )}
+          </>
+        )}
+
+        <label className="field">
+          <span>Location</span>
+          <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Optional" />
+        </label>
+
+        <label className="field">
+          <span>Notes</span>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional" />
+        </label>
+
+        {error && <p className="form-error">{error}</p>}
       </div>
-    </div>
+
+      <footer className="modal-foot">
+        {entry && onDelete && (
+          <button
+            className="btn danger"
+            onClick={() => {
+              onDelete(entry.id)
+              onClose()
+            }}
+          >
+            Delete
+          </button>
+        )}
+        <span className="spacer" />
+        <button className="btn subtle" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" onClick={save}>
+          Save
+        </button>
+      </footer>
+    </Modal>
   )
 }
