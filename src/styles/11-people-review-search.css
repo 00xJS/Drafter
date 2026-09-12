@@ -6,6 +6,12 @@
   margin-bottom: 12px;
   align-items: flex-start;
 }
+/* every block on People and Places carries its own bottom margin; the ideas
+   card (and the empty-state card) had none, so "Where should we go?" sat on
+   the search and sort row below it */
+.people > .chart-card {
+  margin-bottom: 12px;
+}
 .people .chart-sub {
   margin: 2px 0 0;
 }
