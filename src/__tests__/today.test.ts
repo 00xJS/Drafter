@@ -250,7 +250,10 @@ describe('the gestures can be felt', () => {
   })
 
   it('confirms every defer route, since deferring has no other feedback', () => {
-    const defer = planner.slice(planner.indexOf('const defer = '), planner.indexOf('const manualSync'))
+    // defer and deferAll close useTaskActions, so its return ends the slice
+    // (manualSync, which followed them in Planner.tsx, is in useCalendarSync)
+    const from = planner.indexOf('const defer = ')
+    const defer = planner.slice(from, planner.indexOf('return {', from))
     // both the single row and the "push them all" bulk
     expect(defer.match(/void haptic\('light'\)/g)).toHaveLength(2)
   })
