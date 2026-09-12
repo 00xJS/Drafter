@@ -13,6 +13,10 @@ export declare function startStdio(): void
 export declare function syncWrite(items: Record<string, unknown>[]): Promise<Record<string, any>[]>
 export declare function writeItem(item: Record<string, unknown>): Promise<Record<string, any>>
 export declare function fetchJournal(): Promise<Record<string, any>[]>
+export declare function fetchAll(): Promise<Record<string, any>[]>
+/** Kinds only their own account may read: journal, review, calendar, habit, routine. */
+export declare const PERSONAL_KINDS: ReadonlySet<string>
+export declare function ownerMaySee(row: { user_id?: string | null; data?: Record<string, unknown> | null }, owner: string | null | undefined): boolean
 export declare function assertDayKey(day: unknown): string
 export declare function resolveContext(
   all: Record<string, unknown>[],
