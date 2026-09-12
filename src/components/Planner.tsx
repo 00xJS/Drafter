@@ -43,135 +43,55 @@ import { Icon } from './Icon'
 import { PullToRefresh } from './PullToRefresh'
 import { fetchAdminMe } from '../admin'
 import { forgetRetiredKeys } from '../retiredkeys'
-import {
-  CAL_MODE_KEY,
-  CALENDAR_MODES,
-  COMPACT_TABS,
-  HOME_TABS,
-  LEGACY_VIEW_TO_HOME,
-  LEGACY_VIEW_TO_TASKS,
-  PEOPLE_TAB_KEY,
-  TASKS_TAB_KEY,
-  TASKS_TABS,
-  VIEW_ICONS,
-  VIEW_LABELS,
-  VIEWS,
-  storedPeopleTab,
-  storedTasksTab,
-  type CalendarMode,
-  type HomeTab,
-  type PendingLink,
-  type PeopleTab,
-  type TasksTab,
-  type View,
-} from './planner/routes'
+import { COMPACT_TABS, HOME_TABS, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, TASKS_TABS, VIEW_ICONS, VIEW_LABELS, VIEWS, type PendingLink, type View } from './planner/routes'
 import { Toast } from './planner/Toast'
+import { useMineOnly } from './planner/useMineOnly'
+import { useNavigation } from './planner/useNavigation'
 import { useToast } from './planner/useToast'
 
 export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
-  const [view, setView] = useState<View>('home')
-  const [calMode, setCalMode] = useState<CalendarMode>(() => {
-    try {
-      const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
-      return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
-    } catch {
-      return 'month'
-    }
-  })
-  /** Move the Tasks segment for this visit only. */
-  const [tasksTab, goTasksTab] = useState<TasksTab>(storedTasksTab)
-  /** The project whose notepad the Notes segment is showing; null is the index
-   *  of every project's notes. Not persisted: it is a place within a visit,
-   *  not a preference, and a remembered pad would reopen on a project the
-   *  person may have stopped thinking about. It is the only project selection
-   *  left in the app — nothing filters the other views any more. */
-  const [notesProjectId, setNotesProjectId] = useState<string | null>(null)
-  /** Move the People segment for this visit only. */
-  const [peopleTab, goPeopleTab] = useState<PeopleTab>(storedPeopleTab)
-  /** Home's segment. It is not persisted: tapping Home always returns to the
-   *  day, the app's base surface; Week and Journal are opt-in from there. */
-  const [homeTab, setHomeTab] = useState<HomeTab>('today')
-  /** Remember the choice: the segment buttons, and nothing else. */
-  const setTasksTab = (tab: TasksTab) => {
-    goTasksTab(tab)
-    try {
-      localStorage.setItem(TASKS_TAB_KEY, tab)
-    } catch {
-      /* ignore */
-    }
-  }
-  const setPeopleTab = (tab: PeopleTab) => {
-    goPeopleTab(tab)
-    try {
-      localStorage.setItem(PEOPLE_TAB_KEY, tab)
-    } catch {
-      /* ignore */
-    }
-  }
-  /**
-   * Go to a view from a tab bar. A tab tap is the one move that means "wherever
-   * I left this", so the segmented views re-read the remembered half rather than
-   * keeping whatever a link last set — except Home, which always opens on the day.
-   */
-  const goView = (v: View) => {
-    if (v === 'home') setHomeTab('today')
-    if (v === 'tasks') goTasksTab(storedTasksTab())
-    if (v === 'people') goPeopleTab(storedPeopleTab())
-    setView(v)
-  }
-  /** A journal day to open for editing (from search or a link); consumed by the view. */
-  const [journalOpenDate, setJournalOpenDate] = useState<string | null>(null)
-  /** A place row to expand (from search); consumed by the Places view. */
-  const [placeOpenId, setPlaceOpenId] = useState<string | null>(null)
-  const openPlace = (id?: string) => {
-    if (id) setPlaceOpenId(id)
-    goPeopleTab('places')
-    setView('people')
-  }
-  const openJournal = (date?: string) => {
-    if (date) setJournalOpenDate(date)
-    setHomeTab('journal')
-    setView('home')
-  }
+  const { mineOnly, setMineOnly, inHousehold, filteredTasks } = useMineOnly({ store, household })
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [mineOnly, setMineOnly] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('drafter:mine-only') === '1'
-    } catch {
-      return false
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem('drafter:mine-only', mineOnly ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
-  }, [mineOnly])
-  const inHousehold = !!household.info?.household && (household.info?.members.length ?? 0) > 1
   const [settingsOpen, setSettingsOpen] = useState(false)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
   const [adminOpen, setAdminOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
-  const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
   const [syncing, setSyncing] = useState(false)
 
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
   useEffect(() => forgetRetiredKeys(), [])
-  useEffect(() => {
-    try {
-      localStorage.setItem(CAL_MODE_KEY, calMode)
-    } catch {
-      /* ignore */
-    }
-  }, [calMode])
+  const {
+    view,
+    setView,
+    calMode,
+    setCalMode,
+    tasksTab,
+    goTasksTab,
+    notesProjectId,
+    setNotesProjectId,
+    peopleTab,
+    goPeopleTab,
+    homeTab,
+    setHomeTab,
+    setTasksTab,
+    setPeopleTab,
+    goView,
+    journalOpenDate,
+    setJournalOpenDate,
+    placeOpenId,
+    setPlaceOpenId,
+    openPlace,
+    openJournal,
+    kitchenRecipe,
+    setKitchenRecipe,
+  } = useNavigation()
   const { toast, setToast, showToast } = useToast({ store })
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
@@ -522,14 +442,6 @@ export default function Planner() {
     household.myId,
     entries => applyEntryChanges(entries, 'Outlook'),
   )
-
-  // Every view reads this, so the household's Mine / Everyone applies app-wide;
-  // there is no project filter any more — the person is always on their one
-  // home project, and every view gets the full set.
-  const filteredTasks = useMemo(() => {
-    if (mineOnly && inHousehold && household.myId) return store.tasks.filter(t => (t.assigneeId ? t.assigneeId === household.myId : t.ownerId === household.myId || !t.ownerId))
-    return store.tasks
-  }, [store.tasks, mineOnly, inHousehold, household.myId])
 
   /**
    * Planning a meal always writes its week's grocery list in the same round —
