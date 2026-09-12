@@ -536,6 +536,10 @@ button:focus-visible {
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  /* no grid-auto-rows minimum here: the weekday header is a row of this grid
+     too, and a minimum would pad it into a blank band. The cells carry the
+     minimum (.cal-cell min-height), and a grid row is as tall as its tallest
+     cell, so a busy day still grows its whole row. */
 }
 
 .cal-head-row {
@@ -563,8 +567,11 @@ button:focus-visible {
 
 .cal-cell {
   background: var(--surface);
-  /* fixed height: a busy day must not stretch its whole row */
-  height: 108px;
+  /* a minimum, not a fixed height: the old 108px cut every third event and
+     every long title. A busy day may now stretch its row (the grid caps what a
+     cell shows at MAX_PILLS, so the stretch is bounded); overflow stays hidden
+     only as a backstop for a wildly long word. */
+  min-height: 136px;
   overflow: hidden;
   padding: 6px;
   display: flex;
@@ -609,18 +616,18 @@ button:focus-visible {
 .cal-pill {
   border: none;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 3px 7px;
   border-radius: 5px;
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 4px;
   min-width: 0;
   width: 100%;
   overflow: hidden;
-  white-space: nowrap;
-  line-height: 1.4;
+  white-space: normal;
+  line-height: 1.35;
 }
 .cal-pill-time {
   flex: none;
@@ -634,14 +641,23 @@ button:focus-visible {
   opacity: 0.85;
 }
 
+/* two lines of title, then an ellipsis — a one-line pill lost the point of
+   most titles ("Council tax" survived, "Book the electrician for the…" did not) */
 .cal-pill-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cal-pill-time {
+  flex: none;
   white-space: nowrap;
 }
 
 .cal-more {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding-left: 2px;
 }
@@ -2165,12 +2181,12 @@ textarea {
   }
 
   .cal-cell {
-    height: 88px;
+    min-height: 96px;
     padding: 3px;
   }
 
   /* the month grid keeps px on a phone too -- see .cal-daynum above: these
-     sit inside 88px cells and fixed-diameter day badges, so growing the text
+     sit inside 96px-minimum cells and fixed-diameter day badges, so growing the text
      would spill out of the geometry rather than move it. */
   .cal-pill {
     font-size: 10px;
@@ -4772,18 +4788,28 @@ textarea {
 
 /* --- phones: one day card at a time, and a full-height day sheet --- */
 
+/* Laptop widths get four days a row (Sun–Wed, then Thu–Sat) so each card keeps
+   room for a title and its work-hours badge; seven across only from 1440px,
+   where a day is still ~195px. Seven at 900px gave each day ~115px and cut
+   every second word; at 1280px it still clipped the badge. */
 @media (min-width: 900px) {
   .cal-week {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: start;
-    gap: 8px;
+    gap: 10px;
   }
 
   .cal-weekday-open {
     flex-direction: column;
     align-items: flex-start;
     gap: 0;
+  }
+}
+
+@media (min-width: 1440px) {
+  .cal-week {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 
@@ -5019,6 +5045,9 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  /* the list starts straight under this row; without a gap the first line's
+     border sat against the filters */
+  margin-bottom: 12px;
 }
 .grocery-filter-row .segmented {
   flex: 1 1 auto;

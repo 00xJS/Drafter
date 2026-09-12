@@ -58,7 +58,9 @@ interface Props {
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MAX_PILLS = 3
+// four before "+n more" — with two-line titles and cells that grow to fit, a
+// normal day shows everything it has and only a packed one folds
+const MAX_PILLS = 4
 const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
 /** Cooked at home. */
 const MEAL_COLOR = '#f97316'
