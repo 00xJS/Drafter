@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
+import { useEffect, useMemo, useRef } from 'react'
+import { CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
-import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
+import { newerStamp, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
-import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, eventStartDate, prepDueFor, useCalendarEvents, useGooglePush, useMicrosoftSync, entryPullWrites, type EntryChange } from '../calendars'
+import { eventStartDate, prepDueFor } from '../calendars'
 import { parseGithubUrl, setIssueState } from '../github'
 import { ProjectPull, boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync } from '../githubsync'
 import { mealWrites } from '../kitchen'
@@ -44,6 +44,7 @@ import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { COMPACT_TABS, HOME_TABS, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, TASKS_TABS, VIEW_ICONS, VIEW_LABELS, VIEWS, type PendingLink, type View } from './planner/routes'
 import { Toast } from './planner/Toast'
+import { useCalendarSync } from './planner/useCalendarSync'
 import { useMineOnly } from './planner/useMineOnly'
 import { useNavigation } from './planner/useNavigation'
 import { useOverlays } from './planner/useOverlays'
@@ -54,7 +55,6 @@ export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
   const { mineOnly, setMineOnly, inHousehold, filteredTasks } = useMineOnly({ store, household })
-  const [syncing, setSyncing] = useState(false)
 
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
@@ -87,28 +87,7 @@ export default function Planner() {
   const { toast, setToast, showToast } = useToast({ store })
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
-  const calendars = useCalendarEvents(store.calendars)
-  /**
-   * Feed occurrences and our own entries in one list, so the grids draw both
-   * with the same code. Ours carry `localId`, which is what lets the day sheet
-   * offer Edit on them and not on a read-only feed row.
-   */
-  const allEvents = useMemo(() => [...calendars.events, ...store.events.map(entryToEvent)], [calendars.events, store.events])
-  const sourceMap = useMemo(() => new Map(store.calendars.map(c => [c.id, c])), [store.calendars])
-  const myPushId = household.myId ? googlePushId(household.myId) : GOOGLE_PUSH_ID
-  const mirroring = store.calendars.some(c => (c.id === myPushId || c.id === GOOGLE_PUSH_ID) && c.enabled)
-  const msMirrorIds = useMemo(
-    () => store.calendars.filter(c => c.enabled && c.url.startsWith('ms-push:')).map(c => c.url.slice('ms-push:'.length)),
-    [store.calendars],
-  )
-  const googlePush = useGooglePush(
-    store.allItems,
-    store.projects,
-    store.loaded && mirroring,
-    changes => applyMirrorChanges(changes, 'Google Calendar'),
-    household.myId,
-    entries => applyEntryChanges(entries, 'Google Calendar'),
-  )
+  const { calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, syncing, manualSync } = useCalendarSync({ store, household, showToast })
 
   const {
     editor,
@@ -361,69 +340,6 @@ export default function Planner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /** A mirrored task moved (or was deleted) in an external calendar. */
-  const applyMirrorChanges = (
-    changes: { taskId: string; deleted: boolean; start: string | null; updated: string; allDay?: boolean }[],
-    source: string,
-  ) => {
-    let moved = 0
-    const undone: { id: string; status: TaskStatus }[] = []
-    for (const c of changes) {
-      const t = store.tasks.find(x => x.id === c.taskId)
-      if (!t || c.updated <= t.updatedAt) continue
-      if (c.deleted) {
-        // A cancelled event for a task that is no longer mirrored is our OWN
-        // delete echoing back, not the owner deleting it in the provider: the
-        // mirror removes the event the moment a task leaves the open, dated set
-        // (wishlist, due date cleared, done, canceled), and the pull then sees
-        // that cancellation. Reading it as "deleted in Google, so done" marked a
-        // task done seconds after it was moved to Wishlist. Same rule the server
-        // uses to decide what to mirror (lib/google.mjs pushTask `wanted`).
-        if (!isMirroredTask(t)) continue
-        const change = store.setStatus(t.id, 'done')
-        if (change) undone.push({ id: t.id, status: change.prev.status })
-        continue
-      }
-      if (!c.start) continue
-      const next = c.allDay
-        ? localMidnightIso(/^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10))
-        : new Date(c.start).toISOString()
-      if (!next || next === t.dueAt) continue
-      // compare all-day by local date key so a 09:00 rewrite is ignored
-      if (c.allDay && t.dueAt) {
-        const localKey = (iso: string) => {
-          const d = new Date(iso)
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        }
-        if (localKey(t.dueAt) === next.slice(0, 10) || localKey(t.dueAt) === c.start.slice(0, 10)) continue
-      }
-      store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
-      moved++
-    }
-    if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from ${source}`)
-    if (undone.length)
-      showToast(`${undone.length} task${undone.length === 1 ? '' : 's'} marked done from ${source}`, () => {
-        for (const u of undone) store.setStatus(u.id, u.status)
-      })
-  }
-
-  // An event moved or retitled in Google or Outlook comes back the way a moved
-  // task does — only when the provider's edit is newer than the entry's own.
-  const applyEntryChanges = (changes: EntryChange[], source: string) => {
-    const rows = entryPullWrites(store.events, changes)
-    for (const r of rows) store.upsert(r)
-    if (rows.length) showToast(`${rows.length} event${rows.length === 1 ? '' : 's'} updated from ${source}`)
-  }
-
-  const microsoftSync = useMicrosoftSync(
-    store.allItems,
-    store.projects,
-    store.loaded ? msMirrorIds : [],
-    changes => applyMirrorChanges(changes, 'Outlook'),
-    household.myId,
-    entries => applyEntryChanges(entries, 'Outlook'),
-  )
-
   /**
    * Planning a meal always writes its week's grocery list in the same round —
    * see mealWrites. Both the Kitchen tab and the calendar's day sheet go
@@ -465,68 +381,6 @@ export default function Planner() {
     }
     store.upsert(recipe)
     return recipe
-  }
-
-  /**
-   * Pushes for one entry to one provider run one after another. Without this a
-   * quick Undo raced its own delete: the revive's lookup still saw the live copy
-   * and patched it, then the DELETE landed, and the provider lost an entry that
-   * Drafter still showed. Different entries and providers still run in parallel.
-   */
-  const mirrorChain = useRef(new Map<string, Promise<unknown>>())
-  const enqueueMirror = (key: string, run: () => Promise<unknown>) => {
-    const chain = mirrorChain.current
-    const tail = (chain.get(key) ?? Promise.resolve()).catch(() => {}).then(run)
-    chain.set(key, tail)
-    void tail
-      .finally(() => {
-        if (chain.get(key) === tail) chain.delete(key)
-      })
-      .catch(() => {})
-    return tail
-  }
-
-  /**
-   * Write an entry through to every connected mirror: Google when its mirror is
-   * on, and EACH enabled Microsoft account — the same fan-out task mirroring
-   * uses. Best effort: the row is already saved locally, so a failed mirror
-   * costs the copy in the provider, never the entry itself.
-   */
-  const mirrorEvent = (e: CalendarEntry, opts: { revive?: boolean } = {}) => {
-    if (mirroring) void enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e, opts)).catch(() => {})
-    for (const accountId of msMirrorIds) void enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId)).catch(() => {})
-  }
-  /** The same fan-out, awaited, so a run of entries can be fed to the mirrors one at a time. */
-  const mirrorEventNow = (e: CalendarEntry) =>
-    Promise.allSettled([
-      ...(mirroring ? [enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e))] : []),
-      ...msMirrorIds.map(accountId => enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId))),
-    ]).then(() => undefined)
-  /**
-   * Save one entry, or a run of repeated work days. Every row lands locally at
-   * once; a run is fed to the mirrors one entry at a time, so a dozen work days
-   * do not fire two dozen provider calls in the same instant and trip limits.
-   */
-  const saveEvents = (entries: CalendarEntry[]) => {
-    for (const e of entries) store.upsert(e)
-    if (entries.length === 1) {
-      mirrorEvent(entries[0])
-      return
-    }
-    void (async () => {
-      for (const e of entries) await mirrorEventNow(e)
-    })()
-    showToast(`${entries.length} work days added`)
-  }
-  const deleteEvent = (id: string) => {
-    const gone = store.events.find(e => e.id === id)
-    store.remove(id)
-    if (gone) mirrorEvent({ ...gone, deletedAt: new Date().toISOString() })
-    showToast('Event deleted', () => {
-      store.restore([id])
-      // Undo has to put it back on the mirrors too, or it lives only in Drafter
-      if (gone) mirrorEvent(gone, { revive: true })
-    })
   }
 
   const saveMeal = (m: Meal) => {
@@ -847,23 +701,6 @@ export default function Planner() {
         pushToProjectBoard(restored)
       }
     })
-  }
-
-  /**
-   * One refresh for both the header pill and the pull-down: the set that runs
-   * when the app comes back to the foreground — the items sync, the calendar
-   * feeds, and what moved in Google or Outlook. allSettled so one failing feed
-   * cannot stop the items sync; each piece reports its own error in its own
-   * place. The GitHub board pull and the weather card refresh themselves on
-   * foreground and are left to their own timers here.
-   */
-  const manualSync = async () => {
-    setSyncing(true)
-    try {
-      await Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])
-    } finally {
-      setSyncing(false)
-    }
   }
 
   // a map lookup so an id whose project was deleted degrades to the index
