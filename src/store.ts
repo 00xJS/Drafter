@@ -8,6 +8,7 @@ import { getSupabase } from './supabase'
 import {
   createSyncEngine,
   watchLifecycle,
+  type EngineConflict,
   type ImportSummary,
   type StatusChange,
   type SyncEngine,
@@ -19,8 +20,8 @@ import {
 // file subscribes to it, derives the per-kind lists every view renders, and
 // wires the page's lifecycle to it.
 
-export type { ImportSummary, StatusChange, SyncInfo }
-export { stampStatus } from './syncengine'
+export type { EngineConflict, ImportSummary, StatusChange, SyncInfo }
+export { conflictMessage, stampStatus } from './syncengine'
 
 /** Kinds that belong to one account even inside a household. */
 const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
@@ -73,6 +74,10 @@ export interface Store {
   fullResync(): Promise<boolean>
   /** Drop peer-owned rows after leaving a household (keeps unowned + mine). */
   retainMine(myId: string | null): void
+  /** Called, each round that has any, with the records whose local edit lost a field to another device's. */
+  onConflict(listener: (conflicts: EngineConflict[]) => void): () => void
+  /** Put this device's values back for those conflicts, as a new and newer edit. */
+  keepMine(conflicts: EngineConflict[]): void
 }
 
 let shared: SyncEngine | null = null
@@ -247,5 +252,7 @@ export function useItems(myId: string | null = null): Store {
     syncNowManual: e.sync,
     fullResync: e.fullResync,
     retainMine: e.retainMine,
+    onConflict: e.onConflict,
+    keepMine: e.keepMine,
   }
 }

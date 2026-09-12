@@ -45,11 +45,11 @@ describe('boot and the everyday round', () => {
     await idle(d)
     expect(last(server.calls)).toMatchObject({ since: pullSince(cursor) })
     expect(server.row<Task>('a')!.title).toBe('Buy paint')
-    expect(d.engine.inspect()).toMatchObject({ dirty: [] })
+    expect(d.engine.inspect()).toMatchObject({ dirty: [], shadows: new Map() })
     expect(d.engine.getState().syncInfo.pending).toBe(0)
   })
 
-  it('offline keeps the edit on the device, and online sends it', async () => {
+  it('offline keeps the edit (and its merge base) on the device, and online sends it', async () => {
     const server = new FakeServer()
     server.seed(task('a'))
     const d = device(server)
@@ -61,6 +61,8 @@ describe('boot and the everyday round', () => {
     await idle(d)
     expect(d.engine.getState().syncInfo).toMatchObject({ online: false, pending: 2 })
     expect(JSON.parse(d.kv.get(DIRTY_KEY)!).sort()).toEqual(['a', 'new'])
+    // the base the edit was made on is written with it, for a merge after a restart
+    expect(d.snapshot()!.shadows).toEqual([expect.objectContaining({ id: 'a', title: 'a' })])
 
     server.offline = false
     expect(await d.engine.sync()).toBe(true)

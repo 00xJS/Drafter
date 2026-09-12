@@ -1,6 +1,7 @@
 import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones } from './itemops'
+import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
+import { applyLocalChoice } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { purgeRemote, type SyncResult } from './sync'
@@ -54,11 +55,19 @@ export interface StatusChange {
   spawnedId?: string
 }
 
+/** A concurrent edit that beat one of ours, named for the toast that offers it back. */
+export interface EngineConflict extends SyncConflict {
+  /** The record as this device knew it: “Buy paint”. */
+  label: string
+}
+
 /** The IndexedDB cache record. */
 export interface CacheRecord {
   version: number
   userId?: string | null
   items: Item[]
+  /** The merge base of each dirty record, written with the items so the two can never disagree. */
+  shadows?: Item[]
 }
 
 export interface SyncStorage {
@@ -173,6 +182,35 @@ function maxMetrics(a: MetricsMap | undefined, b: MetricsMap | undefined): { mer
   return { merged, changed }
 }
 
+/** What a person would call this record in a sentence: a toast, a Settings row. */
+export function recordLabel(item: Item | undefined): string {
+  if (!item) return 'A deleted item'
+  switch (item.kind) {
+    case 'task':
+      return item.title || 'Untitled task'
+    case 'meal':
+      return item.title || 'A meal'
+    case 'event':
+      return item.title || 'Untitled event'
+    case 'grocery':
+      return item.weekKey ? `Grocery list ${item.weekKey}` : 'Grocery list'
+    case 'journal':
+      return item.date ? `Journal ${item.date}` : 'Journal entry'
+    case 'review':
+      return `${item.period === 'month' ? 'Month' : 'Week'} review ${item.key}`.trim()
+    default:
+      return item.name || 'Untitled'
+  }
+}
+
+/** “Buy paint” changed on another device too — kept the newer edit. */
+export function conflictMessage(conflicts: readonly { label: string }[]): string {
+  const first = `“${conflicts[0]?.label ?? 'Something'}”`
+  return conflicts.length > 1
+    ? `${first} and ${conflicts.length - 1} more changed on another device too — kept the newer edits`
+    : `${first} changed on another device too — kept the newer edit`
+}
+
 export type SyncEngine = ReturnType<typeof createSyncEngine>
 
 export function createSyncEngine(deps: SyncEngineDeps) {
@@ -186,11 +224,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   let state: EngineState = { items: [], loaded: false, syncInfo: { online: false, authError: false } }
   const listeners = new Set<() => void>()
+  const conflictListeners = new Set<(conflicts: EngineConflict[]) => void>()
 
   /** The account the cache on disk belongs to (null until known, and in local mode). */
   let account: string | null = null
   let bootGen = 0
   let dirty = new Set<string>()
+  /** The last version the server confirmed of each dirty record: the base a concurrent edit merges against. */
+  let shadows = new Map<string, Item>()
 
   let persistTimer: unknown = undefined
   let pushTimer: unknown = undefined
@@ -225,6 +266,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       dirty.delete(id)
       changed = true
     }
+    for (const id of [...shadows.keys()]) if (!dirty.has(id)) shadows.delete(id)
     if (changed) saveBookkeeping()
   }
 
@@ -239,6 +281,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (!state.loaded) return
     const snapshot = state.items
     const record: CacheRecord = { version: STORAGE_VERSION, userId: account, items: snapshot }
+    if (remote && shadows.size > 0) record.shadows = [...shadows.values()]
     try {
       await storage.writeSnapshot(record)
       // legacy cache retired only once the new cache holds real data
@@ -265,31 +308,33 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }, PUSH_MS)
   }
 
-  async function loadCache(myId: string | null): Promise<{ items: Item[]; wiped: boolean }> {
+  async function loadCache(myId: string | null): Promise<{ items: Item[]; shadows: Item[]; wiped: boolean }> {
     try {
-      const cached = (await storage.readSnapshot()) as { userId?: string | null } | undefined
+      const cached = (await storage.readSnapshot()) as { userId?: string | null; shadows?: unknown } | undefined
       // a cache written by a different account must never be adopted or re-synced
       if (cached && myId && cached.userId && cached.userId !== myId) {
         await storage.clearAll()
-        return { items: [], wiped: true }
+        return { items: [], shadows: [], wiped: true }
       }
       if (cached) {
         const migrated = migrateStored(cached)
         // an empty cache must not shadow a legacy localStorage store (e.g. an
         // interrupted first run of this version)
-        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), wiped: false }
+        if (migrated && migrated.length > 0) {
+          return { items: purgeTombstones(migrated, now()), shadows: migrateStored(Array.isArray(cached.shadows) ? cached.shadows : []) ?? [], wiped: false }
+        }
       }
       // migration from the old localStorage cache — non-destructive: the legacy
       // key is only removed after the IndexedDB cache has persisted real data
       const raw = kv.getItem(LEGACY_LS_KEY)
       if (raw !== null) {
         const migrated = migrateStored(JSON.parse(raw))
-        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), wiped: false }
+        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: [], wiped: false }
       }
     } catch (e) {
       console.error('Failed to load the local cache', e)
     }
-    return { items: [], wiped: false }
+    return { items: [], shadows: [], wiped: false }
   }
 
   // ---- boot and accounts -------------------------------------------------------
@@ -321,6 +366,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       prepareFullResync({ clearDirty: true }, kv)
       dirty = new Set()
     }
+    shadows = new Map(cached.shadows.filter(s => dirty.has(s.id)).map(s => [s.id, s]))
     // No blanket re-push of whole kinds on boot: a rejected id of a retried kind stays in
     // the persisted dirty set, so a new session pushes it again on its own. The
     // blanket version re-sent every place, recipe, meal, grocery list, journal
@@ -338,6 +384,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     pushTimer = undefined
     account = nextAccount
     dirty = new Set()
+    shadows = new Map()
     saveBookkeeping()
     publish({ items: [], syncInfo: { online: false, authError: false } })
   }
@@ -376,7 +423,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /**
    * Adopt a list the user changed. Every id named in `touched`, and every
    * record whose object changed (a task releaseBlocked moved, a recurrence
-   * spawn), becomes dirty.
+   * spawn), becomes dirty; the first time a record becomes dirty, the copy it
+   * replaced — the server's last word on it — is kept as its shadow.
    */
   function commit(next: Item[], touched: Iterable<string> = []): void {
     const prev = state.items
@@ -386,7 +434,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       const ids = new Set(touched)
       for (const i of next) if (before.get(i.id) !== i) ids.add(i.id)
       const present = new Set(next.map(i => i.id))
-      for (const id of ids) if (present.has(id)) dirty.add(id)
+      for (const id of ids) {
+        if (!present.has(id)) continue
+        if (!dirty.has(id)) {
+          const base = before.get(id)
+          if (base) shadows.set(id, base)
+        }
+        dirty.add(id)
+      }
       saveBookkeeping()
       if (inflight) editedMidRound = true
     }
@@ -501,10 +556,28 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   async function purge(ids: string[]): Promise<void> {
     const snapshot = state.items
     const set = new Set(ids)
-    for (const id of ids) dirty.delete(id)
+    for (const id of ids) {
+      dirty.delete(id)
+      shadows.delete(id)
+    }
     saveBookkeeping()
     replaceItems(snapshot.filter(p => !set.has(p.id)))
     await purgeRemote(ids, snapshot)
+  }
+
+  /** "Keep mine" on a conflict toast: put this device's values back, as a new edit stamped newer than the merge. */
+  function keepMine(conflicts: readonly SyncConflict[]): void {
+    const byId = new Map(conflicts.map(c => [c.id, c]))
+    const touched: string[] = []
+    const next = state.items.map(i => {
+      const c = byId.get(i.id)
+      if (!c || i.purged) return i
+      const back = sanitizeItem(applyLocalChoice(i, c.fields))
+      if (!back) return i
+      touched.push(i.id)
+      return { ...back, updatedAt: newerStamp(i.updatedAt) }
+    })
+    if (touched.length > 0) commit(next, touched)
   }
 
   // ---- the round ---------------------------------------------------------------
@@ -531,9 +604,20 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** One round of push-and-pull; sync() is the only caller and serialises it. */
   async function runRound(): Promise<boolean> {
     const full = forceFull
-    const since = full ? null : readCursor(kv)
+    let since = full ? null : readCursor(kv)
     const clock = now()
     pruneBookkeeping()
+    // Pull before pushing an edit of a record the server already had. If
+    // another device changed it meanwhile, that change is merged in first:
+    // pushed blind, this device's newer stamp would win last-write-wins and
+    // erase the other edit wholesale — the server reports `stale` only when
+    // ours is the older one.
+    if (since && outgoingFor(since).some(p => shadows.has(p.id))) {
+      const pulled = await call([], since)
+      if (!pulled) return false
+      settle(pulled, [], since, clock)
+      since = readCursor(kv)
+    }
     editedMidRound = false
     const outgoing = outgoingFor(since)
     const result = await call(outgoing, since)
@@ -548,11 +632,15 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // Merge onto the list as it is NOW, not the snapshot the request was built
     // from: an edit made while the request was in flight must survive it.
     const current = state.items
-    const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections)
+    const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
+      dirty,
+      shadows,
+      stale: result.stale,
+    })
     const next = ensureProjects(purgeTombstones(decision.merged, clock))
     if (decision.cursor) writeCursor(decision.cursor, kv)
 
-    // What still has to go out: anything unconfirmed. Places,
+    // What still has to go out: anything unconfirmed or merged anew. Places,
     // kitchen and the newer kinds used to be dropped by an older sync_posts
     // allow-list — a rejected id of those kinds stays dirty so the next
     // session pushes it again; any other rejected id is dropped.
@@ -564,13 +652,27 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       }),
     )
     for (const o of outgoing) if (!retryIds.has(o.id) && !keepRejected.has(o.id)) dirty.delete(o.id)
+    for (const id of decision.settled) dirty.delete(id)
+    for (const id of decision.remerged) dirty.add(id)
     for (const id of keepRejected) dirty.add(id)
     for (const id of decision.rejected) if (!keepRejected.has(id)) dirty.delete(id)
 
+    // The server now holds what we sent: that is the base for any edit still waiting.
+    const remoteById = new Map(result.items!.map(r => [r.id, r]))
+    const sentById = new Map(outgoing.map(o => [o.id, o]))
+    for (const id of decision.accepted) {
+      const held = remoteById.get(id) ?? sentById.get(id)
+      if (dirty.has(id) && held) shadows.set(id, held)
+    }
+    for (const id of decision.remerged) {
+      const r = remoteById.get(id)
+      if (r) shadows.set(id, r)
+    }
+    for (const id of [...shadows.keys()]) if (!dirty.has(id)) shadows.delete(id)
     saveBookkeeping()
 
     const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
-    const changed = signature(next) !== signature(current)
+    const changed = decision.remerged.length > 0 || decision.settled.length > 0 || signature(next) !== signature(current)
     const items = changed ? next : current
     publish({
       items,
@@ -583,6 +685,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       },
     })
     if (items !== current) schedulePersist()
+    if (decision.remerged.length > 0) schedulePush()
+    if (decision.conflicts.length > 0) {
+      const before = new Map(current.map(i => [i.id, i]))
+      const found = decision.conflicts.map(c => ({ ...c, label: recordLabel(before.get(c.id)) }))
+      for (const l of [...conflictListeners]) l(found)
+    }
   }
 
   function sync(): Promise<boolean> {
@@ -652,6 +760,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
         listeners.delete(listener)
       }
     },
+    onConflict(listener: (conflicts: EngineConflict[]) => void): () => void {
+      conflictListeners.add(listener)
+      return () => {
+        conflictListeners.delete(listener)
+      }
+    },
     boot,
     signedIn,
     start,
@@ -666,8 +780,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     setStatus,
     importItems,
     retainMine,
+    keepMine,
     /** What the engine holds for the next round — for tests and diagnostics. */
-    inspect: () => ({ dirty: [...dirty].sort(), cursor: readCursor(kv), syncing: inflight !== null }),
+    inspect: () => ({ dirty: [...dirty].sort(), shadows: new Map(shadows), cursor: readCursor(kv), syncing: inflight !== null }),
   }
 }
 

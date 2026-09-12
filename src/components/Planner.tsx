@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus, WorkMode } from '../types'
-import { useItems } from '../store'
+import { conflictMessage, useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
@@ -710,6 +710,14 @@ export default function Planner() {
     setToast({ msg, undo, action })
     toastTimer.current = window.setTimeout(() => setToast(null), action ? 15000 : 6000)
   }
+  // A local edit that lost a field to another device's edit of the same field:
+  // say so, and offer it back — Keep mine writes this device's values again.
+  useEffect(
+    () => store.onConflict(found => showToast(conflictMessage(found), undefined, { label: 'Keep mine', run: () => store.keepMine(found) })),
+    // the engine's own functions, stable for the life of the page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
 
   // due reminders while the app is open (device-local, never a store write)
   const notifyRef = useRef(() => {})
