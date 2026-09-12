@@ -707,6 +707,43 @@
   flex: none;
 }
 
+/* task editor: what the description links to — the GitHub card, then every
+   other URL as a chip that opens in a new tab (Safari's sheet on the phone) */
+.desc-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -6px;
+}
+.link-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+.link-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.link-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* task editor: the foot of the form, full width under both columns — Repeat
    and Tags, then the Activity feed (comments, newest last), then Versions */
 .editor-bottom {
@@ -763,6 +800,12 @@
 @media (max-width: 900px) {
   .editor-bottom-row {
     grid-template-columns: 1fr;
+  }
+}
+@media (pointer: coarse) {
+  .link-chip {
+    min-height: 44px;
+    padding: 6px 14px;
   }
 }
 

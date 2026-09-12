@@ -4,10 +4,12 @@ import { timeAgo } from '../utils'
 
 interface Props {
   url: string
+  /** Offered when the URL is the task's own link (not just one in its description): clears it. */
+  onUnlink?(): void
 }
 
 /** Live status card for a GitHub issue / PR / repo / project URL. */
-export function GithubCard({ url }: Props) {
+export function GithubCard({ url, onUnlink }: Props) {
   const ref = parseGithubUrl(url)
   const [card, setCard] = useState<Card | null>(null)
   const [error, setError] = useState('')
@@ -32,7 +34,17 @@ export function GithubCard({ url }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
-  if (!ref) return <p className="field-hint warn">Not a GitHub issue, pull request, repository or project URL.</p>
+  if (!ref)
+    return (
+      <p className="field-hint warn">
+        Not a GitHub issue, pull request, repository or project URL.{' '}
+        {onUnlink && (
+          <button type="button" className="btn subtle" onClick={onUnlink}>
+            Unlink
+          </button>
+        )}
+      </p>
+    )
 
   const glyph = ref.type === 'pr' ? '⎇' : ref.type === 'issue' ? '◉' : ref.type === 'project' ? '▦' : '⌥'
   const state = card ? GITHUB_STATE_META[card.state] : null
@@ -54,6 +66,11 @@ export function GithubCard({ url }: Props) {
         <button type="button" className="btn subtle gh-refresh" disabled={busy} onClick={() => load(true)} aria-label="Refresh">
           {busy ? '…' : '↻'}
         </button>
+        {onUnlink && (
+          <button type="button" className="btn subtle gh-refresh" onClick={onUnlink} aria-label="Unlink from this task" title="Unlink from this task">
+            ✕
+          </button>
+        )}
       </div>
       <div className="gh-sub">
         <span>{githubLabel(ref)}</span>

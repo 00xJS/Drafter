@@ -3,17 +3,17 @@ import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
 import { RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
-import { AiBusy, FormPatch, StepOp, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
+import { AiBusy, FormPatch, StepOp, appendOnce, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
 import { CaptureProposal } from './taskeditor/CaptureProposal'
 import { DescriptionField, RefineProposal } from './taskeditor/DescriptionField'
+import { DescriptionLinks } from './taskeditor/DescriptionLinks'
 import { ChecklistField } from './taskeditor/ChecklistField'
 import { CommentsField } from './taskeditor/CommentsField'
 import { AssignFields } from './taskeditor/AssignFields'
 import { DueFields } from './taskeditor/DueFields'
 import { BillCost } from './taskeditor/BillCost'
 import { PeoplePlace } from './taskeditor/PeoplePlace'
-import { LinksNotes } from './taskeditor/LinksNotes'
 import { Images } from './taskeditor/Images'
 import { Attachments } from './taskeditor/Attachments'
 import { RepeatField } from './taskeditor/RepeatField'
@@ -110,7 +110,9 @@ export function TaskEditor({
     ;(async () => {
       setAiBusy('capture')
       try {
-        if (seed.url && !base.link) set({ link: seed.url })
+        // a pasted or shared URL goes into the description, where it shows as a
+        // link (a shared link is there already: the form opens with it)
+        if (seed.url) set(f => ({ description: appendOnce(f.description, seed.url!) }))
         const parsed = await parseCapture(seed.text || seed.url || base.title, {
           // no project names: there is one home project, and a sentence never files a new task under one
           personNames: people.map(p => p.name),
@@ -307,6 +309,7 @@ export function TaskEditor({
               {aiBusy === 'capture' && !captureProposal && <p className="muted">Parsing capture…</p>}
 
               <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
+              <DescriptionLinks form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
               <ChecklistField
                 checklist={form.checklist}
                 onType={onType}
@@ -324,7 +327,6 @@ export function TaskEditor({
               <DueFields form={form} set={set} />
               <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
               <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} />
-              <LinksNotes form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
               <Images mediaIds={form.mediaIds} set={set} />
               <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
             </aside>

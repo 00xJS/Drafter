@@ -5,8 +5,9 @@ import type { Project, Task } from '../types'
 
 /*
  * The task editor's first render (vitest runs in node, so no effects and no
- * typing): which fields it has, and the order of the foot of the form. The
- * rules behind each are in taskform.test.ts.
+ * typing): which fields it has, what the description opens with, what sits
+ * under it, and the order of the foot of the form. The rules behind each are
+ * in taskform.test.ts.
  */
 
 const OPENED = '2026-09-01T09:00:00.000Z'
@@ -33,14 +34,40 @@ const render = (over: Partial<EditorProps> = {}) =>
     <TaskEditor projects={[home]} people={[]} members={[]} candidates={[]} getLatest={() => undefined} onSave={noop} onCommit={noop} onDelete={noop} onClose={noop} {...over} />,
   )
 
+/** The Description field's text as rendered. */
+const descriptionOf = (html: string) => /<textarea[^>]*placeholder="What needs to happen[^"]*"[^>]*>([\s\S]*?)<\/textarea>/.exec(html)?.[1]
+
 describe('the task editor', () => {
-  it('has no project field — for a new task, a bill, or a saved task in a project', () => {
-    for (const html of [render(), render({ preset: { bill: { kind: 'bill' } } }), render({ task: task({ projectId: 'pr1' }) })]) {
+  it('has no project, notes, link or GitHub field — for a new task, a bill, or a saved task in a project', () => {
+    for (const html of [render(), render({ preset: { bill: { kind: 'bill' } } }), render({ task: task({ projectId: 'pr1', githubUrl: 'https://github.com/00xJS/Drafter/issues/12' }) })]) {
       expect(html).not.toContain('No project')
-      expect(html).not.toMatch(/<span>Project<\/span>/)
+      expect(html).not.toMatch(/<span>(Project|Notes|Link|GitHub)<\/span>/)
+      expect(html).not.toContain('Private scratch space')
+      expect(html).not.toContain('Issue, PR, repo or project URL')
+      expect(html).not.toContain('placeholder="https://…"')
     }
     // the project a saved task is in is still said, just not offered for change
     expect(render({ task: task({ projectId: 'pr1' }) })).toContain('in Home')
+  })
+
+  it('opens a saved task with its notes and link in the description', () => {
+    const html = render({ task: task({ description: 'Hinges are loose.', notes: 'Measure first', link: 'https://example.com/hinges' }) })
+    expect(descriptionOf(html)).toBe('Hinges are loose.\n\nMeasure first\n\nhttps://example.com/hinges')
+  })
+
+  it('shows the GitHub card and a chip for every other link under the description', () => {
+    const issue = 'https://github.com/00xJS/Drafter/issues/12'
+    const html = render({ task: task({ description: `Tracking ${issue}\nParts: https://example.com/hinges.` }) })
+    expect(html).toContain('class="gh-card"')
+    expect(html).toContain('00xJS/Drafter#12')
+    expect(html.match(/class="link-chip"/g)).toHaveLength(1)
+    expect(html).toContain('href="https://example.com/hinges"')
+    expect(html).toContain('>example.com/hinges</span>')
+    // read from the text, the card has nothing to unlink; the task's own link does
+    expect(html).not.toContain('Unlink from this task')
+    expect(render({ task: task({ githubUrl: issue }) })).toContain('Unlink from this task')
+    // nothing under a description without links
+    expect(render({ task: task({ description: 'Just words.' }) })).not.toContain('desc-links')
   })
 
   it('asks for costs only on a bill — or on a task that already has one', () => {

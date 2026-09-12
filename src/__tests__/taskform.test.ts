@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { FormPatch, TaskForm, commitStep, costsVisible, formReducer, formValues, initForm, isDirty, isEmpty, mergeOnto, money, pendingRenames, versionNote, versionRows } from '../taskform'
+import {
+  FormPatch,
+  TaskForm,
+  appendOnce,
+  cardUrl,
+  commitStep,
+  costsVisible,
+  descriptionLinks,
+  formReducer,
+  formValues,
+  initForm,
+  isDirty,
+  isEmpty,
+  isGithubCardUrl,
+  linkLabel,
+  mergeOnto,
+  money,
+  pendingRenames,
+  urlsIn,
+  versionNote,
+  versionRows,
+} from '../taskform'
 import type { ChecklistItem, Task } from '../types'
 import { toLocalInput } from '../utils'
 
@@ -78,7 +99,7 @@ describe('what counts as empty and as unsaved', () => {
     const form = initForm(base)
     expect(isEmpty(mergeOnto(base, form, base, false))).toBe(true)
     // spaces alone are still nothing
-    expect(isEmpty(mergeOnto(base, edit(form, { title: '   ', notes: '  ' }), base, false))).toBe(true)
+    expect(isEmpty(mergeOnto(base, edit(form, { title: '   ', description: '  ' }), base, false))).toBe(true)
     expect(isEmpty(mergeOnto(base, edit(form, { title: 'Call mum' }), base, false))).toBe(false)
     expect(isEmpty(mergeOnto(base, edit(form, { tags: '#home' }), base, false))).toBe(false)
     expect(isEmpty(mergeOnto(base, addSteps(form, [{ id: 'c1', text: 'Ring', done: false }]), base, false))).toBe(false)
@@ -88,6 +109,109 @@ describe('what counts as empty and as unsaved', () => {
     const base = task({ dueAt: '2026-09-14T08:00:00.000Z', tags: ['home'], estimateCost: 40, bill: { kind: 'bill', payee: 'British Gas' }, recurrence: { freq: 'monthly' } })
     expect(isDirty(initForm(base), base, true)).toBe(false)
     expect(isDirty(edit(initForm(base), { estimateCost: '41' }), base, true)).toBe(true)
+  })
+})
+
+describe('a task’s old notes and link open inside its description', () => {
+  const base = task({ description: 'Hinges are loose.', notes: 'Measure first\nthen buy', link: 'https://example.com/hinges' })
+
+  it('shows each under the description after a blank line, and that alone is not an unsaved change', () => {
+    const form = initForm(base)
+    expect(form.description).toBe('Hinges are loose.\n\nMeasure first\nthen buy\n\nhttps://example.com/hinges')
+    expect(isDirty(form, base, true)).toBe(false)
+  })
+
+  it('writes them into the description on save, and clears notes and link only then', () => {
+    const next = mergeOnto(base, initForm(base), base, true)
+    expect(next.description).toBe('Hinges are loose.\n\nMeasure first\nthen buy\n\nhttps://example.com/hinges')
+    expect(next.notes).toBeUndefined()
+    expect(next.link).toBeUndefined()
+    // reflowed, the description still holds the note: line breaks and spacing are not content
+    const reflowed = edit(initForm(base), { description: 'Hinges are loose.\nMeasure first then buy.\nhttps://example.com/hinges' })
+    expect(mergeOnto(base, reflowed, base, true).notes).toBeUndefined()
+    const spaced = edit(initForm(base), { description: 'Hinges are loose.   Measure first   then buy   https://example.com/hinges' })
+    expect(mergeOnto(base, spaced, base, true).notes).toBeUndefined()
+  })
+
+  it('keeps a note taken back out of the description, and one changed elsewhere meanwhile', () => {
+    const trimmed = edit(initForm(base), { description: 'Hinges are loose.\n\nhttps://example.com/hinges' })
+    const next = mergeOnto(base, trimmed, base, true)
+    expect(next.notes).toBe('Measure first\nthen buy')
+    expect(next.link).toBeUndefined()
+    // another device rewrote the notes while this editor was open
+    const current: Task = { ...base, notes: 'Bought them', updatedAt: LATER }
+    expect(mergeOnto(current, initForm(base), base, true).notes).toBe('Bought them')
+  })
+
+  it('never repeats what the description already says, and tells a longer URL from the link', () => {
+    const said = task({ description: 'See https://example.com/hinges.', link: 'https://example.com/hinges/' })
+    expect(initForm(said).description).toBe('See https://example.com/hinges.')
+    expect(mergeOnto(said, initForm(said), said, true).link).toBeUndefined()
+    const deeper = task({ description: 'https://example.com/hinges/brass', link: 'https://example.com/hinges' })
+    expect(initForm(deeper).description).toBe('https://example.com/hinges/brass\n\nhttps://example.com/hinges')
+  })
+
+  it('lands a shared link in a new task’s description, once, and saves it there', () => {
+    const shared = task({ title: '', link: 'https://example.com/recipe' })
+    const form = initForm(shared)
+    expect(form.description).toBe('https://example.com/recipe')
+    // the capture effect adds the URL again; it is already there
+    expect(appendOnce(form.description, 'https://example.com/recipe')).toBe(form.description)
+    expect(appendOnce('Read later', 'https://example.com/recipe')).toBe('Read later\n\nhttps://example.com/recipe')
+    const next = mergeOnto(shared, form, shared, false)
+    expect(next.description).toBe('https://example.com/recipe')
+    expect(next.link).toBeUndefined()
+  })
+})
+
+describe('GitHub from the description', () => {
+  const issue = 'https://github.com/00xJS/Drafter/issues/12'
+  const pull = 'https://github.com/00xJS/Drafter/pull/3'
+
+  it('links the first GitHub issue in the description when the task has none', () => {
+    const base = task({ description: `Tracking ${issue}, see also ${pull}` })
+    const form = initForm(base)
+    expect(isDirty(form, base, true)).toBe(false)
+    expect(cardUrl(form)).toBe(issue)
+    expect(mergeOnto(base, form, base, true).githubUrl).toBe(issue)
+    expect(descriptionLinks(form.description, cardUrl(form))).toEqual([pull])
+  })
+
+  it('keeps the task’s own GitHub link over one in the text, and unlinks when asked', () => {
+    const base = task({ githubUrl: pull, description: `Tracking ${issue}` })
+    const form = initForm(base)
+    expect(cardUrl(form)).toBe(pull)
+    expect(mergeOnto(base, form, base, true).githubUrl).toBe(pull)
+    expect(descriptionLinks(form.description, cardUrl(form))).toEqual([issue])
+    // unlinked, the issue in the text takes over on save
+    expect(mergeOnto(base, edit(form, { githubUrl: '' }), base, true).githubUrl).toBe(issue)
+    const bare = task({ githubUrl: pull })
+    expect(mergeOnto(bare, edit(initForm(bare), { githubUrl: '' }), bare, true).githubUrl).toBeUndefined()
+  })
+
+  it('counts only what the card can show', () => {
+    for (const url of [issue, pull, 'https://github.com/orgs/acme/projects/4', 'https://github.com/users/joe/projects/1', 'https://github.com/00xJS/Drafter']) {
+      expect(isGithubCardUrl(url), url).toBe(true)
+    }
+    for (const url of ['https://github.com/00xJS/Drafter/blob/main/README.md', 'https://github.com/orgs/acme', 'https://github.com/settings', 'https://example.com/00xJS/Drafter/issues/1']) {
+      expect(isGithubCardUrl(url), url).toBe(false)
+    }
+  })
+})
+
+describe('link chips under the description', () => {
+  it('finds each URL once, without the punctuation after it, keeping a bracket the URL opened', () => {
+    const text = 'Read https://example.com/a. Then (see https://en.wikipedia.org/wiki/Gate_(disambiguation)) and https://example.com/a again, plus [docs](https://docs.example.com/x).'
+    expect(urlsIn(text)).toEqual(['https://example.com/a', 'https://en.wikipedia.org/wiki/Gate_(disambiguation)', 'https://docs.example.com/x'])
+    expect(urlsIn('no links here, only www.example.com')).toEqual([])
+  })
+
+  it('labels a chip with the host and path, shortened', () => {
+    expect(linkLabel('https://www.example.com/a/b/?q=1')).toBe('example.com/a/b')
+    expect(linkLabel('https://example.com')).toBe('example.com')
+    const long = linkLabel(`https://example.com/${'x'.repeat(80)}`)
+    expect(long).toHaveLength(40)
+    expect(long.endsWith('…')).toBe(true)
   })
 })
 
