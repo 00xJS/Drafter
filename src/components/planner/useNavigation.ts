@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import type { Recipe } from '../../types'
 import {
   CAL_MODE_KEY,
@@ -18,10 +18,16 @@ import {
  * Where the shell is: the tab, the segment inside each tab, and the one-shot
  * "open this" hand-offs (a journal day, a place row, a recipe) that a view
  * consumes when it mounts.
+ *
+ * Every move between tabs and segments is a transition: when the next view's
+ * chunk has not arrived yet, React keeps the current screen up instead of
+ * blanking it, and swaps once it can. Warmed chunks never suspend, so after
+ * the first moments of a launch this changes nothing you can see.
  */
 export function useNavigation() {
-  const [view, setView] = useState<View>('home')
-  const [calMode, setCalMode] = useState<CalendarMode>(() => {
+  const [view, showView] = useState<View>('home')
+  const setView = (v: View) => startTransition(() => showView(v))
+  const [calMode, showCalMode] = useState<CalendarMode>(() => {
     try {
       const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
       return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
@@ -29,19 +35,23 @@ export function useNavigation() {
       return 'month'
     }
   })
+  const setCalMode = (mode: CalendarMode) => startTransition(() => showCalMode(mode))
+  const [tasksTab, showTasksTab] = useState<TasksTab>(storedTasksTab)
   /** Move the Tasks segment for this visit only. */
-  const [tasksTab, goTasksTab] = useState<TasksTab>(storedTasksTab)
+  const goTasksTab = (tab: TasksTab) => startTransition(() => showTasksTab(tab))
   /** The project whose notepad the Notes segment is showing; null is the index
    *  of every project's notes. Not persisted: it is a place within a visit,
    *  not a preference, and a remembered pad would reopen on a project the
    *  person may have stopped thinking about. It is the only project selection
    *  left in the app — nothing filters the other views any more. */
   const [notesProjectId, setNotesProjectId] = useState<string | null>(null)
+  const [peopleTab, showPeopleTab] = useState<PeopleTab>(storedPeopleTab)
   /** Move the People segment for this visit only. */
-  const [peopleTab, goPeopleTab] = useState<PeopleTab>(storedPeopleTab)
+  const goPeopleTab = (tab: PeopleTab) => startTransition(() => showPeopleTab(tab))
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week and Journal are opt-in from there. */
-  const [homeTab, setHomeTab] = useState<HomeTab>('today')
+  const [homeTab, showHomeTab] = useState<HomeTab>('today')
+  const setHomeTab = (tab: HomeTab) => startTransition(() => showHomeTab(tab))
   /** Remember the choice: the segment buttons, and nothing else. */
   const setTasksTab = (tab: TasksTab) => {
     goTasksTab(tab)

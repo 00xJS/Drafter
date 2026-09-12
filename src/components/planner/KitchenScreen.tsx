@@ -1,5 +1,5 @@
-import { Kitchen } from '../Kitchen'
 import type { PlannerCtx } from './ctx'
+import { Kitchen } from './lazy'
 
 /** Kitchen: recipes, the week's meals and the grocery list. */
 export function KitchenScreen({ p }: { p: PlannerCtx }) {

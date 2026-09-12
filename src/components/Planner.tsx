@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { Suspense, useEffect, useMemo } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
@@ -12,6 +12,7 @@ import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
 import { KitchenScreen } from './planner/KitchenScreen'
+import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
 import { PeopleScreen } from './planner/PeopleScreen'
 import { VIEW_LABELS } from './planner/routes'
@@ -66,6 +67,9 @@ export default function Planner() {
     setProjectEditor: overlays.setProjectEditor,
     setNotesProjectId: nav.setNotesProjectId,
   })
+  // a moment after launch, fetch the lazy views and editors, so no tab or
+  // editor waits on the network later
+  useWarmChunks(owner.isOwner)
 
   // Everything the top bar, the screens and the overlays read, rebuilt every
   // render and handed down as one prop (see planner/ctx.ts).
@@ -122,11 +126,16 @@ export default function Planner() {
                 Showing only your tasks · Show everyone
               </button>
             )}
-            {view === 'home' && <HomeScreen p={p} />}
-            {view === 'calendar' && <CalendarScreen p={p} />}
-            {view === 'tasks' && <TasksScreen p={p} />}
-            {view === 'people' && <PeopleScreen p={p} />}
-            {view === 'kitchen' && <KitchenScreen p={p} />}
+            {/* a screen whose chunk has not arrived holds its space, blank.
+                Moving between tabs is a transition, so a screen already up
+                stays up until the next one can replace it. */}
+            <Suspense fallback={<div className="view-pending" aria-busy="true" />}>
+              {view === 'home' && <HomeScreen p={p} />}
+              {view === 'calendar' && <CalendarScreen p={p} />}
+              {view === 'tasks' && <TasksScreen p={p} />}
+              {view === 'people' && <PeopleScreen p={p} />}
+              {view === 'kitchen' && <KitchenScreen p={p} />}
+            </Suspense>
           </ErrorBoundary>
         )}
       </main>

@@ -1,8 +1,5 @@
-import { Bills } from '../Bills'
-import { Board } from '../Board'
-import { NotesView } from '../NotesView'
-import { TasksTable } from '../TasksTable'
 import type { PlannerCtx } from './ctx'
+import { Bills, Board, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
 
 /** Tasks: the list, the board, the bills and the project notes, four segments of one tab. */

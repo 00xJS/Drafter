@@ -1,6 +1,5 @@
-import { Calendar } from '../Calendar'
-import { Roadmap } from '../Roadmap'
 import type { PlannerCtx } from './ctx'
+import { Calendar, Roadmap } from './lazy'
 
 /** Calendar: the month and week grids, or the projects' timeline. */
 export function CalendarScreen({ p }: { p: PlannerCtx }) {

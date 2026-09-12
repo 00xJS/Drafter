@@ -1,9 +1,9 @@
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { JournalView } from '../Journal'
-import { Review } from '../Review'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
+import { Review } from './lazy'
 import { HOME_TABS } from './routes'
 
 /** Home: the day, the week's look-back and the journal, three segments of one tab. */

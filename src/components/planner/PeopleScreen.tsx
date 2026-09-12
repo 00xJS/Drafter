@@ -1,6 +1,5 @@
-import { People } from '../People'
-import { Places } from '../Places'
 import type { PlannerCtx } from './ctx'
+import { People, Places } from './lazy'
 
 /** People, with Places as its second segment. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {

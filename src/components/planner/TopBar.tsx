@@ -1,14 +1,21 @@
+import { warm } from '../../lazyload'
 import { timeAgo } from '../../utils'
 import { Icon } from '../Icon'
 import type { PlannerCtx } from './ctx'
+import { Search, Settings, TaskEditor, preloadView } from './lazy'
 import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
 
 /**
  * The header: the name, the five tabs (a strip on the desktop, the bar at the
  * foot of the phone), the sync pill, search, settings, Admin and New task.
+ * A finger landing on a tab or a button (or focus reaching it) starts fetching
+ * what it opens, so the tap that follows finds it here.
  */
 export function TopBar({ p }: { p: PlannerCtx }) {
   const { view, goView, store, syncing, manualSync, setSearchOpen, setSettingsOpen, isOwner, setAdminOpen, newTask } = p
+  const warmSearch = () => warm(Search.preload)
+  const warmSettings = () => warm(Settings.preload)
+  const warmEditor = () => warm(TaskEditor.preload)
   return (
     <header className="topbar">
       {/* the phone hides the wordmark span for width (src/styles/08-responsive.css), so the
@@ -22,7 +29,7 @@ export function TopBar({ p }: { p: PlannerCtx }) {
       </div>
       <nav className="tabs tabs-full" aria-label="Views">
         {(Object.keys(VIEW_LABELS) as View[]).map(v => (
-          <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)}>
+          <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)} onPointerDown={() => preloadView(v)} onFocus={() => preloadView(v)}>
             <span className="tab-icon" aria-hidden>
               <Icon name={VIEW_ICONS[v]} />
             </span>
@@ -40,6 +47,8 @@ export function TopBar({ p }: { p: PlannerCtx }) {
               className={active ? 'tab active' : 'tab'}
               aria-current={active ? 'page' : undefined}
               onClick={() => goView(t.id)}
+              onPointerDown={() => preloadView(t.id)}
+              onFocus={() => preloadView(t.id)}
             >
               <span className="tab-icon" aria-hidden>
                 <Icon name={t.icon} />
@@ -56,10 +65,17 @@ export function TopBar({ p }: { p: PlannerCtx }) {
           {syncing ? 'Syncing…' : store.syncInfo.pending ? `${store.syncInfo.pending} unsynced` : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
         </span>
       </button>
-      <button className="btn subtle icon-btn" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
+      <button
+        className="btn subtle icon-btn"
+        aria-label="Search (Cmd/Ctrl+K)"
+        title="Search (Cmd/Ctrl+K)"
+        onClick={() => setSearchOpen(true)}
+        onPointerDown={warmSearch}
+        onFocus={warmSearch}
+      >
         <Icon name="search" size={19} />
       </button>
-      <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+      <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)} onPointerDown={warmSettings} onFocus={warmSettings}>
         <Icon name="settings" size={19} />
       </button>
       {/* hidden below 640px (it pushed "+ New task" off a 375pt header) —
@@ -69,7 +85,7 @@ export function TopBar({ p }: { p: PlannerCtx }) {
           Admin
         </button>
       )}
-      <button className="btn primary new-post-btn" onClick={() => newTask()} aria-label="New task" title="New task">
+      <button className="btn primary new-post-btn" onClick={() => newTask()} onPointerDown={warmEditor} onFocus={warmEditor} aria-label="New task" title="New task">
         <span className="new-post-plus" aria-hidden>
           <Icon name="plus" size={18} strokeWidth={2.2} />
         </span>

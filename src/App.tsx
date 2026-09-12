@@ -5,10 +5,15 @@ import { clearLocalData } from './idb'
 import { Landing } from './components/Landing'
 import { Login } from './components/Login'
 import { LockGate } from './components/LockGate'
+import { guardChunkLoads } from './lazyload'
 
 // The planner (and everything it imports) loads only after the gate — the
 // public landing page ships a fraction of the bundle.
 const Planner = lazy(() => import('./components/Planner'))
+
+// A chunk that will not load (usually a page older than the latest deploy)
+// reloads the page, once; see lazyload.ts.
+guardChunkLoads()
 
 /** Local mode is for private hosts only — a public deploy without a backend fails closed. */
 function isPrivateHost(hostname: string): boolean {

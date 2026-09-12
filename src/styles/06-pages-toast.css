@@ -222,3 +222,10 @@
   background: var(--ok);
 }
 
+/* ---------- lazy views ---------- */
+
+/* the space a screen holds while its chunk arrives: no spinner and no text,
+   so a quick load shows nothing and a slow one does not jump the layout */
+.view-pending {
+  min-height: 60vh;
+}
