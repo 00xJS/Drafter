@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus, WorkMode } from '../types'
-import { conflictMessage, useItems } from '../store'
+import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
 import { getSupabase } from '../supabase'
@@ -63,9 +63,10 @@ import {
   type PendingLink,
   type PeopleTab,
   type TasksTab,
-  type Toast,
   type View,
 } from './planner/routes'
+import { Toast } from './planner/Toast'
+import { useToast } from './planner/useToast'
 
 export default function Planner() {
   const household = useHousehold()
@@ -158,10 +159,8 @@ export default function Planner() {
   const [settingsNonce, setSettingsNonce] = useState(0)
   const [adminOpen, setAdminOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
-  const [toast, setToast] = useState<Toast | null>(null)
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
   const [syncing, setSyncing] = useState(false)
-  const toastTimer = useRef<number | undefined>(undefined)
 
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
@@ -173,6 +172,7 @@ export default function Planner() {
       /* ignore */
     }
   }, [calMode])
+  const { toast, setToast, showToast } = useToast({ store })
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const calendars = useCalendarEvents(store.calendars)
@@ -646,20 +646,6 @@ export default function Planner() {
     for (const row of mealWrites(null, id, store.meals, store.recipes, store.groceries)) store.upsert(row)
     store.remove(id)
   }
-
-  const showToast = (msg: string, undo?: () => void, action?: Toast['action']) => {
-    window.clearTimeout(toastTimer.current)
-    setToast({ msg, undo, action })
-    toastTimer.current = window.setTimeout(() => setToast(null), action ? 15000 : 6000)
-  }
-  // A local edit that lost a field to another device's edit of the same field:
-  // say so, and offer it back — Keep mine writes this device's values again.
-  useEffect(
-    () => store.onConflict(found => showToast(conflictMessage(found), undefined, { label: 'Keep mine', run: () => store.keepMine(found) })),
-    // the engine's own functions, stable for the life of the page
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
 
   // due reminders while the app is open (device-local, never a store write)
   const notifyRef = useRef(() => {})
@@ -1630,36 +1616,7 @@ export default function Planner() {
       )}
       {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
 
-      {toast && (
-        <div className="toast" role="status">
-          <span>{toast.msg}</span>
-          {toast.undo && (
-            <button
-              className="toast-undo"
-              onClick={() => {
-                toast.undo?.()
-                setToast(null)
-              }}
-            >
-              Undo
-            </button>
-          )}
-          {toast.action && (
-            <button
-              className="toast-undo"
-              onClick={() => {
-                toast.action?.run()
-                setToast(null)
-              }}
-            >
-              {toast.action.label}
-            </button>
-          )}
-          <button className="toast-close" aria-label="Dismiss" onClick={() => setToast(null)}>
-            ✕
-          </button>
-        </div>
-      )}
+      <Toast toast={toast} setToast={setToast} />
     </div>
   )
 }
