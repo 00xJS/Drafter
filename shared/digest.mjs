@@ -6,13 +6,14 @@ import { seenStatus, upcomingOccasions, plannedVisit } from './people.mjs'
 import { bucketByDue } from './today.mjs'
 import { tonightLine } from './kitchen.mjs'
 import { placeCadenceStatus } from './places.mjs'
+import { PERSONAL_KINDS } from './kinds.mjs'
 
 const DAY = 86_400_000
 /** Don't re-nag the same person (or place) more often than this. */
 const PERSON_NUDGE_GAP_DAYS = 7
 const NEVER_MIN_AGE_DAYS = 30
-/** Kinds that belong to one account even inside a household (same set as src/store.ts). */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
+/** How many names a Catch up / Been a while line spells out before "+n more". */
+const DIGEST_NAMES = 3
 
 /** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
 export function localParts(date, tz) {
@@ -36,8 +37,8 @@ const dayKeyIn = (iso, tz) => localParts(iso, tz).day
 /** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
 export function visibleItemsFor(rows, userId, peerIds, ownerId) {
   const visible = new Set([userId, ...(peerIds ?? [])])
-  // Mirrors the posts policy: a peer's rows are visible except personal kinds
-  // (journal, review, calendar), which only their owner ever sees. ownerId
+  // Mirrors the posts policy: a peer's rows are visible except PERSONAL_KINDS
+  // (journal, review, calendar, habit, routine), which only their owner sees. ownerId
   // rides along (as sync_posts does on read) so callers can tell whose row it is.
   return (rows ?? [])
     .filter(r => {
@@ -62,6 +63,7 @@ export function buildDigest(items, tz, now, nudged = {}) {
   const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 
   const peopleDue = []
+  const peopleIds = []
   for (const p of people) {
     // an open planned visit means the nudge already did its job
     if (plannedVisit(p.id, tasks)) continue
@@ -81,12 +83,13 @@ export function buildDigest(items, tz, now, nudged = {}) {
         ? `${p.name} (no visit logged)`
         : `${p.name} (${daysSince ?? '?'}d)`
     peopleDue.push(label)
-    if (today) nudgedNext[p.id] = today
+    peopleIds.push(p.id)
   }
 
   // Places only nag when the user set a rhythm, and only once clearly overdue
   // (1.5× the cadence) — merely "due" stays on Today, never in the inbox.
   const placesDue = []
+  const placeIds = []
   for (const p of places) {
     const { status, daysSince } = placeCadenceStatus(p, tasks, now)
     if (status !== 'overdue') continue
@@ -96,7 +99,14 @@ export function buildDigest(items, tz, now, nudged = {}) {
       if (Number.isFinite(gap) && gap < PERSON_NUDGE_GAP_DAYS) continue
     }
     placesDue.push(`${p.name} (${daysSince ?? '?'}d)`)
-    if (today) nudgedNext[p.id] = today
+    placeIds.push(p.id)
+  }
+
+  // Only the names a line actually reads out count as nudged. Stamping the
+  // "+n more" too hid them for a week, after which the first three won again —
+  // so a fourth name was never read out while those three stayed overdue.
+  if (today) {
+    for (const id of [...peopleIds.slice(0, DIGEST_NAMES), ...placeIds.slice(0, DIGEST_NAMES)]) nudgedNext[id] = today
   }
 
   const occasions = upcomingOccasions(people, 21, now, today).map(
@@ -109,8 +119,9 @@ export function buildDigest(items, tz, now, nudged = {}) {
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
-  if (peopleDue.length) lines.push(`Catch up with: ${peopleDue.slice(0, 3).join(', ')}${peopleDue.length > 3 ? `, +${peopleDue.length - 3} more` : ''}`)
-  if (placesDue.length) lines.push(`Been a while: ${placesDue.slice(0, 3).join(', ')}${placesDue.length > 3 ? `, +${placesDue.length - 3} more` : ''}`)
+  const named = list => `${list.slice(0, DIGEST_NAMES).join(', ')}${list.length > DIGEST_NAMES ? `, +${list.length - DIGEST_NAMES} more` : ''}`
+  if (peopleDue.length) lines.push(`Catch up with: ${named(peopleDue)}`)
+  if (placesDue.length) lines.push(`Been a while: ${named(placesDue)}`)
   if (tonight) lines.push(tonight)
   return { overdue, dueToday, occasions, peopleDue, placesDue, tonight, lines, nudgedNext }
 }

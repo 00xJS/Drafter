@@ -140,6 +140,36 @@ describe('digest places line', () => {
   })
 })
 
+describe('digest: a name past the first three gets its turn', () => {
+  // Every due name used to be stamped as nudged, including the "+n more" ones,
+  // so with four overdue the fourth was never read out.
+  const day1 = new Date('2026-09-08T09:00:00.000Z')
+  const day2 = new Date('2026-09-09T09:00:00.000Z')
+
+  it('stamps only the three people it names, so the fourth is read out the next day', () => {
+    const items = ['a', 'b', 'c', 'd'].map(id => ({ kind: 'person', id, name: id.toUpperCase(), cadenceDays: 7, createdAt: '2026-01-01T00:00:00.000Z' }))
+    const first = buildDigest(items, 'UTC', day1, {})
+    expect(first.lines).toContain('Catch up with: A (no visit logged), B (no visit logged), C (no visit logged), +1 more')
+    expect(Object.keys(first.nudgedNext).sort()).toEqual(['a', 'b', 'c'])
+    const second = buildDigest(items, 'UTC', day2, first.nudgedNext)
+    expect(second.peopleDue).toEqual(['D (no visit logged)'])
+    expect(second.nudgedNext.d).toBe('2026-09-09')
+  })
+
+  it('does the same for places', () => {
+    const items = ['a', 'b', 'c', 'd'].flatMap(id => [
+      { kind: 'place', id, name: id.toUpperCase(), category: 'other', cadenceDays: 7, createdAt: '2026-01-01T00:00:00.000Z' },
+      { kind: 'task', id: `o-${id}`, status: 'done', completedAt: '2026-05-01T12:00:00.000Z', placeId: id, title: 'Dinner' },
+    ])
+    const first = buildDigest(items, 'UTC', day1, {})
+    expect(first.placesDue).toHaveLength(4)
+    expect(Object.keys(first.nudgedNext).sort()).toEqual(['a', 'b', 'c'])
+    const second = buildDigest(items, 'UTC', day2, first.nudgedNext)
+    expect(second.placesDue).toHaveLength(1)
+    expect(second.placesDue[0]).toMatch(/^D \(\d+d\)$/)
+  })
+})
+
 describe('digest kitchen line', () => {
   it('adds tonight\'s dinner from the household meal plan', () => {
     const now = new Date('2026-09-08T09:00:00.000Z')
