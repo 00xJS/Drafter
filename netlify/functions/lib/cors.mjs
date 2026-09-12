@@ -30,3 +30,28 @@ export function withCors(handler) {
     return out
   }
 }
+
+/**
+ * Open CORS — any origin, never credentials — for the endpoints an assistant
+ * reaches from anywhere: /api/mcp, /oauth/* and /.well-known/*. Each is
+ * bearer-only or public by design and sets no cookie, so a hostile page has
+ * no ambient authority to ride on. Everything the app itself calls
+ * (/api/agents, /api/oauth/*) keeps withCors and the Supabase session.
+ */
+export function withPublicCors(handler, { methods = 'GET, POST, OPTIONS', headers = 'authorization, content-type', expose = 'www-authenticate', maxAge = 86400 } = {}) {
+  const preflight = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': methods,
+    'access-control-allow-headers': headers,
+    'access-control-expose-headers': expose,
+    'access-control-max-age': String(maxAge),
+  }
+  return async (req, context) => {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: preflight })
+    const res = await handler(req, context)
+    const out = new Response(res.body, res)
+    out.headers.set('access-control-allow-origin', '*')
+    out.headers.set('access-control-expose-headers', expose)
+    return out
+  }
+}
