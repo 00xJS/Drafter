@@ -45,3 +45,18 @@ describe('the tabs and segments say where you are', () => {
     expect(bars).not.toMatch(/haptic/)
   })
 })
+
+describe('the sync pill', () => {
+  const pill = topBar.slice(topBar.indexOf('className="sync-btn"'), topBar.indexOf('</button>', topBar.indexOf('className="sync-btn"')))
+
+  it('says the data stays on this device when there is no account to sync with', () => {
+    // local mode (no Supabase env) has nothing to sync: "Offline — tap to retry" was untrue
+    expect(pill).toMatch(/!isSupabaseConfigured\(\)\s*\?\s*'Stored on this device[^']*'/)
+    expect(pill).toContain("'Synced — tap to sync now'")
+    expect(pill).toContain("'Offline — tap to retry'")
+  })
+
+  it('keeps the visible label as it was', () => {
+    expect(pill).toMatch(/\{syncing \? 'Syncing…' : store\.syncInfo\.pending \? `\$\{store\.syncInfo\.pending\} unsynced` : store\.syncInfo\.lastAt \? timeAgo\(store\.syncInfo\.lastAt\)\.replace\(' ago', ''\) : 'sync'\}/)
+  })
+})
