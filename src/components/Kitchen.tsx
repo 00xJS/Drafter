@@ -15,14 +15,19 @@ import { newerStamp } from '../itemops'
 import { weekRange, shiftRange } from '../review'
 import { dateKey, uid } from '../utils'
 import {
+  addGroceryItem,
   buildGroceryList,
   cookStepsRecipeId,
   groceriesForMealDates,
+  groceryCounts,
   groceryId,
   heldGroceryLines,
   mealsForWeek,
   newIngredient,
   parseCookSteps,
+  removeGroceryLine,
+  removedGroceryLines,
+  restoreGroceryLine,
   serialiseCookSteps,
   visibleGroceryLines,
 } from '../kitchen'
@@ -326,26 +331,49 @@ function GroceryPane({
   // filter so nothing reflows under a thumb mid-aisle and a mis-tap is undone
   // by tapping the right button on the line that is still there.
   const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set<string>())
+  // ids removed since the pane opened, by the same rule: each keeps its slot as
+  // a Removed row with Restore until the view is cleaned, so the next line is
+  // not pulled up under the thumb that just confirmed the ✕.
+  const [gone, setGone] = useState<ReadonlySet<string>>(() => new Set<string>())
   const list = grocery ?? buildGroceryList(week.key, meals, recipes, null)
-  const shown = visibleGroceryLines(list.items, filter, ticked)
+  const shown = visibleGroceryLines(list.items, filter, ticked, gone)
   const held = heldGroceryLines(list.items, filter, ticked)
-  const counts = {
-    need: list.items.filter(i => i.state === 'need').length,
-    have: list.items.filter(i => i.state === 'have').length,
-    done: list.items.filter(i => i.state === 'done').length,
-  }
+  const removed = removedGroceryLines(list.items)
+  // a line taken off the list is in none of these, All included
+  const counts = groceryCounts(list.items)
 
   // a new week is a new shop: nothing carries over but the list itself
   useEffect(() => {
     setTicked(new Set<string>())
+    setGone(new Set<string>())
   }, [week.key])
 
   const patch = (next: GroceryList) => onSave({ ...next, updatedAt: newerStamp(next.updatedAt) })
+  const patchLine = (id: string, change: (line: GroceryLine) => GroceryLine) =>
+    patch({ ...list, items: list.items.map(i => (i.id === id ? change(i) : i)) })
 
   const setState = (id: string, state: GroceryState) => {
     void haptic('light') // eyes-free confirmation: the row deliberately does not move
     setTicked(prev => new Set(prev).add(id))
-    patch({ ...list, items: list.items.map(i => (i.id === id ? { ...i, state } : i)) })
+    patchLine(id, i => ({ ...i, state }))
+  }
+
+  /** The ✕'s second tap. A flag, not a deletion, so the next rebuild from the meal plan cannot put it back. */
+  const remove = (id: string) => {
+    void haptic('light')
+    setGone(prev => new Set(prev).add(id))
+    patchLine(id, removeGroceryLine)
+  }
+
+  /** Back on the list as it was. One removed in this session comes back in the slot it kept. */
+  const restore = (id: string) => {
+    if (gone.has(id)) setTicked(prev => new Set(prev).add(id))
+    patchLine(id, restoreGroceryLine)
+  }
+
+  const clearView = () => {
+    setTicked(new Set<string>())
+    setGone(new Set<string>())
   }
 
   /** A deliberate filter change is the user asking for a clean view. */
@@ -354,16 +382,19 @@ function GroceryPane({
     // not sweep every held line off screen with no undo
     if (f === filter) return
     setFilter(f)
-    setTicked(new Set<string>())
+    clearView()
   }
 
   const addManual = () => {
     const name = manual.trim()
     if (!name) return
-    const line: GroceryLine = { id: uid(), name, state: 'need', recipeIds: [], manual: true }
-    patch({ ...list, id: groceryId(week.key), weekKey: week.key, items: [...list.items, line] })
+    // add_grocery_item's rule: a name already on the list goes back to Need
+    // rather than in twice, and one that was removed comes back
+    patch({ ...list, id: groceryId(week.key), weekKey: week.key, items: addGroceryItem(list.items, { name }, uid).items })
     setManual('')
   }
+
+  const amount = (line: GroceryLine) => (line.qty != null ? `${line.qty}${line.unit ? ' ' + line.unit : ''} ` : '')
 
   return (
     <>
@@ -378,7 +409,7 @@ function GroceryPane({
         </button>
         <button
           className="btn primary"
-          onClick={() => onSave(buildGroceryList(week.key, meals, recipes, grocery))}
+          onClick={() => onSave(buildGroceryList(week.key, meals, recipes, grocery, newerStamp(grocery?.updatedAt)))}
         >
           Build from this week
         </button>
@@ -387,15 +418,19 @@ function GroceryPane({
         Pulls ingredients from recipes planned this week and merges duplicates (two onion recipes become one line). Tick Have if
         it’s already in the house, Need if you’re buying, Got it once it’s in the cart.
       </p>
-      {list.items.length === 0 ? (
-        <p className="empty">No ingredients yet. Plan dinners on This week, then tap Build from this week.</p>
+      {counts.all === 0 && shown.length === 0 ? (
+        <p className="empty">
+          {removed.length
+            ? 'Nothing on the list. The lines you took off it are under Removed, at the bottom.'
+            : 'No ingredients yet. Plan dinners on This week, then tap Build from this week.'}
+        </p>
       ) : (
         <>
           <div className="grocery-filter-row">
             <div className="segmented">
               {(['need', 'have', 'done', 'all'] as const).map(f => (
                 <button key={f} className={filter === f ? 'seg on' : 'seg'} onClick={() => changeFilter(f)}>
-                  {f === 'all' ? `All ${list.items.length}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
+                  {f === 'all' ? `All ${counts.all}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
                 </button>
               ))}
             </div>
@@ -403,44 +438,72 @@ function GroceryPane({
                 wrapping row by a line and push the whole list down under the
                 thumb, which is the reflow the held lines exist to prevent. The
                 phone hides it with `visibility`, so the line is reserved. It
-                un-holds ticked lines; it changes no line's state. */}
+                un-holds ticked lines and lets go of the Removed rows' slots;
+                it changes no line. Its count is ticked lines only: a removed
+                line is in no count. */}
             <button
               className="btn subtle grocery-clear"
-              disabled={held.length === 0}
-              onClick={() => setTicked(new Set<string>())}
+              disabled={held.length === 0 && !shown.some(line => line.removed)}
+              onClick={clearView}
             >
               {held.length ? `Clear ticked (${held.length})` : 'Clear ticked'}
             </button>
           </div>
           <ul className="grocery-list">
-            {shown.map(line => (
-              <li key={line.id} className={'grocery-line ' + line.state}>
-                <div className="dash-main">
-                  <span className="dash-title">
-                    {line.qty != null ? `${line.qty}${line.unit ? ' ' + line.unit : ''} ` : ''}
-                    {line.name}
-                  </span>
-                  <span className="dash-meta">
-                    {line.manual ? 'Added by hand' : line.recipeIds.length ? `${line.recipeIds.length} recipe${line.recipeIds.length === 1 ? '' : 's'}` : ''}
-                  </span>
-                </div>
-                <span className="segmented grocery-states">
-                  {/* the row deliberately stays put when tapped, and the only
-                      visual cue is a strike-through — aria-pressed is what tells
-                      a screen reader the tick landed, and on which line */}
-                  {(['have', 'need', 'done'] as const).map(s => (
-                    <button
-                      key={s}
-                      aria-pressed={line.state === s}
-                      className={line.state === s ? 'seg on' : 'seg'}
-                      onClick={() => setState(line.id, s)}
-                    >
-                      {GROCERY_STATE_META[s].label}
+            {shown.map(line =>
+              line.removed ? (
+                <li key={line.id} className="grocery-line removed">
+                  <div className="dash-main">
+                    <span className="dash-title">
+                      {amount(line)}
+                      {line.name}
+                    </span>
+                    <span className="dash-meta">Removed</span>
+                  </div>
+                  {/* where the state buttons were and built the same way, so
+                      the row keeps its height and the list below stays put */}
+                  <span className="segmented grocery-states">
+                    <button className="seg" onClick={() => restore(line.id)}>
+                      Restore<span className="grocery-sr"> {line.name}</span>
                     </button>
-                  ))}
-                </span>
-              </li>
-            ))}
+                  </span>
+                </li>
+              ) : (
+                <li key={line.id} className={'grocery-line ' + line.state}>
+                  <div className="dash-main">
+                    <span className="dash-title">
+                      {amount(line)}
+                      {line.name}
+                    </span>
+                    <span className="dash-meta">
+                      {line.manual ? 'Added by hand' : line.recipeIds.length ? `${line.recipeIds.length} recipe${line.recipeIds.length === 1 ? '' : 's'}` : ''}
+                    </span>
+                  </div>
+                  <span className="segmented grocery-states">
+                    {/* the row deliberately stays put when tapped, and the only
+                        visual cue is a strike-through — aria-pressed is what tells
+                        a screen reader the tick landed, and on which line */}
+                    {(['have', 'need', 'done'] as const).map(s => (
+                      <button
+                        key={s}
+                        aria-pressed={line.state === s}
+                        className={line.state === s ? 'seg on' : 'seg'}
+                        onClick={() => setState(line.id, s)}
+                      >
+                        {GROCERY_STATE_META[s].label}
+                      </button>
+                    ))}
+                  </span>
+                  {/* two-step like every delete: the first tap arms it, a
+                      second within four seconds takes the line off. The name
+                      is in the button for a screen reader ("Remove Milk"). */}
+                  <ConfirmButton className="btn subtle grocery-remove" confirmLabel="Remove?" onConfirm={() => remove(line.id)}>
+                    <span aria-hidden="true">✕</span>
+                    <span className="grocery-sr">Remove {line.name}</span>
+                  </ConfirmButton>
+                </li>
+              ),
+            )}
           </ul>
         </>
       )}
@@ -450,6 +513,33 @@ function GroceryPane({
           Add item
         </button>
       </div>
+      {removed.length > 0 && (
+        <details className="grocery-removed">
+          <summary>Removed ({removed.length})</summary>
+          <ul className="grocery-removed-list">
+            {removed.map(line => (
+              <li key={line.id} className="grocery-removed-line">
+                <div className="dash-main">
+                  <span className="dash-title">
+                    {amount(line)}
+                    {line.name}
+                  </span>
+                  <span className="dash-meta">
+                    {line.manual
+                      ? 'Added by hand'
+                      : line.recipeIds.length
+                        ? `${line.recipeIds.length} recipe${line.recipeIds.length === 1 ? '' : 's'}`
+                        : 'No planned recipe needs it'}
+                  </span>
+                </div>
+                <button className="btn" onClick={() => restore(line.id)}>
+                  Restore<span className="grocery-sr"> {line.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   )
 }

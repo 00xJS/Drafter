@@ -515,6 +515,10 @@ function sanitizeGroceryLines(raw: unknown): GroceryLine[] {
     if (!name) continue
     const qty = Number(r.qty)
     const state: GroceryState = typeof r.state === 'string' && GROCERY_STATE_SET.has(r.state) ? (r.state as GroceryState) : 'need'
+    // taken off the list by hand, with the recipes that wanted it then; the
+    // snapshot means nothing without the flag
+    const removed = r.removed === true
+    const removedRecipeIds = removed ? strList(r.removedRecipeIds) : []
     out.push({
       id: str(r.id)?.trim() || `g-${out.length + 1}`,
       name,
@@ -523,6 +527,8 @@ function sanitizeGroceryLines(raw: unknown): GroceryLine[] {
       state,
       recipeIds: strList(r.recipeIds),
       manual: r.manual === true || undefined,
+      removed: removed || undefined,
+      removedRecipeIds: removedRecipeIds.length ? removedRecipeIds : undefined,
     })
   }
   return out

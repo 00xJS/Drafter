@@ -782,6 +782,30 @@ async function main() {
     await call('set_grocery_state', { name: 'Milk', state: 'done', date: today })
     eq(row(`grocery~${planned.weekKey}`).data.items.find(i => i.name === 'Milk')?.state, 'done', 'set_grocery_state ticked the stored line')
 
+    // ---- a line taken off the list (the app's ✕) stays off it
+    // No tool takes a line off — the Kitchen tab does — so the removal is stored
+    // the way the app stores it: the whole list through sync_posts, stamped newer.
+    const groceryKey = `grocery~${planned.weekKey}`
+    const beforeOff = row(groceryKey).data
+    seedRows([
+      {
+        ...beforeOff,
+        updatedAt: new Date(Math.max(Date.now(), Date.parse(beforeOff.updatedAt) + 1)).toISOString(),
+        items: beforeOff.items.map(i => (i.name === 'Tomatoes' ? { ...i, removed: true, removedRecipeIds: [...(i.recipeIds ?? [])] } : i)),
+      },
+    ])
+    eq(row(groceryKey).data.items.find(i => i.name === 'Tomatoes')?.removed, true, 'the list stores a line taken off it')
+    eq(row(groceryKey).user_id, OWNER, 'the list still belongs to the owner')
+    const shopping = await call('get_grocery_list', { date: today })
+    ok(!shopping.items.some(i => i.name === 'Tomatoes'), 'get_grocery_list leaves out a line taken off the list')
+    await call('plan_meal', { date: today, recipeName: 'Pasta' })
+    eq(row(groceryKey).data.items.find(i => i.name === 'Tomatoes')?.removed, true, 'planning the same recipe again keeps the line off the list')
+    await call('add_grocery_item', { name: 'tomatoes', date: today })
+    const tomatoes = row(groceryKey).data.items.filter(i => i.name.toLowerCase() === 'tomatoes')
+    eq(tomatoes.length, 1, 'adding it by name restores the line rather than adding a second')
+    eq(tomatoes[0].removed, undefined, 'the restored line is back on the list')
+    eq(tomatoes[0].state, 'need', 'the restored line is back as need')
+
     const week = await call('get_week_meals', { date: today })
     ok(week.meals.some(m => m.id === `meal~${today}~dinner`), 'get_week_meals sees the meal it planned')
     ok(week.grocery?.items?.length >= 3, 'get_week_meals returns the week grocery list')

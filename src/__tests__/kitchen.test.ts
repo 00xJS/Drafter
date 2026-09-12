@@ -2,23 +2,31 @@ import { describe, expect, it } from 'vitest'
 import {
   mealWrites,
   COOK_STEPS_TTL_MS,
+  activeGroceryLines,
+  addGroceryItem,
   buildGroceryList,
   cookStepsRecipeId,
   groceriesForMealDates,
+  groceryCounts,
   heldGroceryLines,
   ingredientKey,
   mealId,
   mealsByDay,
   mergeIngredients,
   parseCookSteps,
+  removeGroceryLine,
+  removedGroceryLines,
+  restoreGroceryLine,
   serialiseCookSteps,
   visibleGroceryLines,
 } from '../kitchen'
 import { GroceryLine, GroceryList, Meal, Recipe } from '../types'
+import { sanitizeGrocery } from '../schema'
 import { weekRange } from '../review'
 import { dateKey } from '../utils'
 import { weekDayKeys, weekKeyOf, weekStartKey } from '../../shared/weeks.mjs'
 import { mealsInWeekOf, tonightLine } from '../../shared/kitchen.mjs'
+import { mergeRecord } from '../../shared/merge.mjs'
 
 const recipe = (over: Partial<Recipe> & { id: string; name: string; ingredients: Recipe['ingredients'] }): Recipe => ({
   kind: 'recipe',
@@ -362,5 +370,176 @@ describe('mealWrites: planning a meal always writes its grocery list too', () =>
 
   it('clearing an id that is not there is a no-op rather than a throw', () => {
     expect(mealWrites(null, 'nope', [], [pasta], [])).toEqual([])
+  })
+})
+
+describe('a grocery line taken off the list', () => {
+  const AT = '2026-09-07T12:00:00.000Z'
+  const WEEK = '2026-W37'
+  const pasta = recipe({
+    id: 'pasta',
+    name: 'Pasta',
+    ingredients: [
+      { id: '1', name: 'Spaghetti', qty: 400, unit: 'g' },
+      { id: '2', name: 'Salt', qty: 1, unit: 'tsp' },
+    ],
+  })
+  const soup = recipe({
+    id: 'soup',
+    name: 'Soup',
+    ingredients: [
+      { id: '3', name: 'salt', qty: 1, unit: 'tsp' },
+      { id: '4', name: 'Leek', qty: 2 },
+    ],
+  })
+  const dinner = (date: string, recipeId: string): Meal => ({
+    kind: 'meal',
+    id: mealId(date, 'dinner'),
+    date,
+    slot: 'dinner',
+    recipeId,
+    title: recipeId,
+    createdAt: AT,
+    updatedAt: AT,
+  })
+  const named = (list: GroceryList, name: string) => list.items.find(i => i.name.toLowerCase() === name.toLowerCase())
+  const without = (list: GroceryList, name: string): GroceryList => ({
+    ...list,
+    items: list.items.map(i => (i.name.toLowerCase() === name.toLowerCase() ? removeGroceryLine(i) : i)),
+  })
+  const pastaWeek = () => buildGroceryList(WEEK, [dinner('2026-09-08', 'pasta')], [pasta, soup], null, AT)
+
+  it('is a flag with the recipes that wanted it, and Restore puts it back exactly as it was', () => {
+    const list = pastaWeek()
+    const ticked = { ...list, items: list.items.map(i => (i.name === 'Salt' ? { ...i, state: 'have' as const } : i)) }
+    const off = named(without(ticked, 'Salt'), 'Salt')!
+    expect(off).toMatchObject({ removed: true, removedRecipeIds: ['pasta'], recipeIds: ['pasta'], state: 'have' })
+    const back = restoreGroceryLine(off)
+    expect(back).toEqual(named(ticked, 'Salt'))
+    expect('removed' in back || 'removedRecipeIds' in back).toBe(false)
+  })
+
+  it('stays removed when the same plan is rebuilt', () => {
+    const off = without(pastaWeek(), 'Salt')
+    const again = buildGroceryList(WEEK, [dinner('2026-09-08', 'pasta')], [pasta, soup], off, '2026-09-07T13:00:00.000Z')
+    expect(named(again, 'Salt')).toMatchObject({ id: named(off, 'Salt')!.id, removed: true, removedRecipeIds: ['pasta'] })
+    expect(activeGroceryLines(again.items).map(i => i.name)).toEqual(['Spaghetti'])
+  })
+
+  it('stays removed when that dish is cleared and planned again, or moved to another night', () => {
+    const off = without(pastaWeek(), 'Salt')
+    // cleared: nothing wants salt now, but the line is kept, flag and all
+    const cleared = buildGroceryList(WEEK, [], [pasta, soup], off, '2026-09-07T13:00:00.000Z')
+    expect(cleared.items).toHaveLength(1)
+    expect(cleared.items[0]).toMatchObject({ name: 'Salt', removed: true, recipeIds: [], removedRecipeIds: ['pasta'] })
+    // planned again on Thursday: still the same recipe, so still off the list
+    const moved = buildGroceryList(WEEK, [dinner('2026-09-10', 'pasta')], [pasta, soup], cleared, '2026-09-07T14:00:00.000Z')
+    expect(named(moved, 'Salt')).toMatchObject({ removed: true, recipeIds: ['pasta'] })
+    expect(activeGroceryLines(moved.items).map(i => i.name)).toEqual(['Spaghetti'])
+  })
+
+  it('comes back to Need, flag cleared, when a newly planned recipe needs it', () => {
+    const off = without(pastaWeek(), 'Salt')
+    const withSoup = buildGroceryList(WEEK, [dinner('2026-09-08', 'pasta'), dinner('2026-09-09', 'soup')], [pasta, soup], off, '2026-09-07T13:00:00.000Z')
+    const salt = named(withSoup, 'Salt')!
+    expect(salt).toMatchObject({ id: named(off, 'Salt')!.id, state: 'need', qty: 2, recipeIds: ['pasta', 'soup'] })
+    expect(salt.removed).toBeUndefined()
+    expect(salt.removedRecipeIds).toBeUndefined()
+  })
+
+  it('a removed hand-added line stays removed through rebuilds until it is restored', () => {
+    const list = pastaWeek()
+    list.items.push({ id: 'hand', name: 'Paper towels', state: 'need', recipeIds: [], manual: true })
+    const off = without(list, 'Paper towels')
+    const again = buildGroceryList(WEEK, [dinner('2026-09-08', 'pasta'), dinner('2026-09-09', 'soup')], [pasta, soup], off, '2026-09-07T13:00:00.000Z')
+    expect(named(again, 'Paper towels')).toMatchObject({ id: 'hand', manual: true, removed: true })
+    const restored = { ...again, items: again.items.map(i => (i.id === 'hand' ? restoreGroceryLine(i) : i)) }
+    const later = buildGroceryList(WEEK, [dinner('2026-09-08', 'pasta')], [pasta, soup], restored, '2026-09-07T14:00:00.000Z')
+    expect(named(later, 'Paper towels')).toEqual({ id: 'hand', name: 'Paper towels', state: 'need', recipeIds: [], manual: true })
+  })
+
+  it('restoring a line no planned recipe needs any more keeps it on the list as hand-added', () => {
+    const cleared = buildGroceryList(WEEK, [], [pasta, soup], without(pastaWeek(), 'Salt'), '2026-09-07T13:00:00.000Z')
+    const back = { ...cleared, items: cleared.items.map(restoreGroceryLine) }
+    expect(back.items[0]).toMatchObject({ name: 'Salt', manual: true })
+    // otherwise the next rebuild would drop it as a leftover nobody asked for
+    expect(buildGroceryList(WEEK, [], [pasta, soup], back, '2026-09-07T14:00:00.000Z').items.map(i => i.name)).toEqual(['Salt'])
+  })
+
+  it('adding it by name restores that line instead of adding a second one', () => {
+    const off = without(pastaWeek(), 'Salt')
+    const id = () => 'new-id'
+    // the add box has no unit: the name alone finds "1 tsp Salt"
+    const typed = addGroceryItem(off.items, { name: '  SALT ' }, id)
+    expect(typed.outcome).toBe('restored')
+    expect(typed.items).toHaveLength(off.items.length)
+    expect(typed.items.filter(i => ingredientKey(i.name) === ingredientKey('salt'))).toHaveLength(1)
+    expect(typed.line).toMatchObject({ id: named(off, 'Salt')!.id, name: 'Salt', qty: 1, unit: 'tsp', state: 'need' })
+    expect(typed.line.removed).toBeUndefined()
+    // the MCP server's exact name + unit does the same; a quantity asked for now replaces the recipes' one
+    const exact = addGroceryItem(off.items, { name: 'salt', qty: 2, unit: 'tsp' }, id)
+    expect(exact).toMatchObject({ outcome: 'restored', line: { qty: 2, unit: 'tsp' } })
+    expect(exact.items).toHaveLength(off.items.length)
+  })
+
+  it('adding a name that is already on the list sends that line back to Need, once', () => {
+    const list = pastaWeek()
+    const got = list.items.map(i => (i.name === 'Salt' ? { ...i, state: 'done' as const } : i))
+    const again = addGroceryItem(got, { name: 'salt' }, () => 'x')
+    expect(again).toMatchObject({ outcome: 'merged', line: { name: 'Salt', state: 'need', qty: 1 } })
+    expect(again.items).toHaveLength(got.length)
+    // a quantity in the same unit adds up
+    expect(addGroceryItem(got, { name: 'Spaghetti', qty: 100, unit: 'g' }, () => 'x').line.qty).toBe(500)
+    // a new name is a hand-added line
+    const milk = addGroceryItem(got, { name: 'Milk' }, () => 'm1')
+    expect(milk).toMatchObject({ outcome: 'added', line: { id: 'm1', name: 'Milk', state: 'need', recipeIds: [], manual: true } })
+    expect(milk.items).toHaveLength(got.length + 1)
+    // a different unit is a different line, whatever the name
+    expect(addGroceryItem(got, { name: 'Salt', qty: 1, unit: 'kg' }, () => 'k').outcome).toBe('added')
+  })
+
+  it('is left out of the list, every count and Clear ticked, and listed under Removed', () => {
+    const line = (id: string, state: GroceryLine['state'], removed = false): GroceryLine => ({ id, name: id, state, recipeIds: [], ...(removed ? { removed: true } : {}) })
+    const items = [line('onion', 'need'), line('salt', 'need', true), line('milk', 'have'), line('oil', 'done', true)]
+    expect(groceryCounts(items)).toEqual({ need: 1, have: 1, done: 0, all: 2 })
+    expect(visibleGroceryLines(items, 'need', new Set()).map(i => i.id)).toEqual(['onion'])
+    expect(visibleGroceryLines(items, 'all', new Set()).map(i => i.id)).toEqual(['onion', 'milk'])
+    // ticked and then removed: not held, not counted by Clear ticked
+    const ticked = new Set(['oil', 'milk'])
+    expect(visibleGroceryLines(items, 'need', ticked).map(i => i.id)).toEqual(['onion', 'milk'])
+    expect(heldGroceryLines(items, 'need', ticked).map(i => i.id)).toEqual(['milk'])
+    expect(removedGroceryLines(items).map(i => i.id)).toEqual(['salt', 'oil'])
+    expect(activeGroceryLines(items).map(i => i.id)).toEqual(['onion', 'milk'])
+  })
+
+  it('keeps its slot while the pane that removed it is open, so nothing jumps under the thumb', () => {
+    const line = (id: string, removed = false): GroceryLine => ({ id, name: id, state: 'need', recipeIds: [], ...(removed ? { removed: true } : {}) })
+    const items = [line('onion'), line('salt', true), line('leek')]
+    expect(visibleGroceryLines(items, 'need', new Set(), new Set(['salt'])).map(i => i.id)).toEqual(['onion', 'salt', 'leek'])
+    expect(visibleGroceryLines(items, 'all', new Set(), new Set(['salt'])).map(i => i.id)).toEqual(['onion', 'salt', 'leek'])
+    // a slot kept for a line that is back on the list is just the line
+    expect(visibleGroceryLines([line('onion'), line('salt'), line('leek')], 'need', new Set(), new Set(['salt'])).map(i => i.id)).toEqual(['onion', 'salt', 'leek'])
+    // and it still counts nowhere
+    expect(groceryCounts(items).all).toBe(2)
+  })
+
+  it('round-trips the flag and the recipes through the sanitizer, and drops a snapshot with no flag', () => {
+    const list = without(pastaWeek(), 'Salt')
+    const back = sanitizeGrocery(JSON.parse(JSON.stringify(list)))!
+    expect(named(back, 'Salt')).toMatchObject({ removed: true, removedRecipeIds: ['pasta'] })
+    expect(named(back, 'Spaghetti')!.removed).toBeUndefined()
+    const junk = sanitizeGrocery({ ...list, items: [{ name: 'Leek', state: 'need', removed: 'yes', removedRecipeIds: ['soup'] }] })!
+    expect(junk.items[0].removed).toBeUndefined()
+    expect(junk.items[0].removedRecipeIds).toBeUndefined()
+  })
+
+  it('a removal on one device and a tick on another both survive a sync', () => {
+    const base = pastaWeek()
+    const local = without(base, 'Salt')
+    const remote = { ...base, items: base.items.map(i => (i.name === 'Spaghetti' ? { ...i, state: 'done' as const } : i)) }
+    const { merged, conflicts } = mergeRecord(base, local, remote)
+    expect(conflicts).toEqual([])
+    expect(named(merged, 'Salt')).toMatchObject({ removed: true, removedRecipeIds: ['pasta'] })
+    expect(named(merged, 'Spaghetti')!.state).toBe('done')
   })
 })

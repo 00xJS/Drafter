@@ -2,13 +2,18 @@ import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSlot, Rec
 import { weekRange } from './review'
 import { dateKey } from './utils'
 import {
+  activeGroceryLines as sharedActiveGroceryLines,
+  addGroceryItem as sharedAddGroceryItem,
   buildGroceryList as sharedBuildGroceryList,
   groceryId as sharedGroceryId,
   ingredientKey as sharedIngredientKey,
   mealId as sharedMealId,
   mergeIngredients as sharedMergeIngredients,
   recipesUsed as sharedRecipesUsed,
+  removeGroceryLine as sharedRemoveGroceryLine,
+  restoreGroceryLine as sharedRestoreGroceryLine,
 } from '../shared/kitchen.mjs'
+import type { GroceryAddOutcome } from '../shared/kitchen.mjs'
 
 // Merging, list building and ids live in shared/kitchen.mjs so an agent adding
 // "milk" through the MCP server and the Kitchen tab produce the same list.
@@ -18,6 +23,19 @@ export const mealId = (date: string, slot: MealSlot): string => sharedMealId(dat
 export const ingredientKey = (name: string, unit?: string): string => sharedIngredientKey(name, unit)
 export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
 export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
+
+/** The lines on the list: every line but the ones taken off it by hand. */
+export const activeGroceryLines = (items: GroceryLine[]): GroceryLine[] => sharedActiveGroceryLines(items)
+/** Take a line off the list, remembering the recipes that wanted it (see buildGroceryList). */
+export const removeGroceryLine = (line: GroceryLine): GroceryLine => sharedRemoveGroceryLine(line)
+/** Put a removed line back as it was. */
+export const restoreGroceryLine = (line: GroceryLine): GroceryLine => sharedRestoreGroceryLine(line)
+/** Add a line by name: never twice, and a removed line comes back instead of a copy. */
+export const addGroceryItem = (
+  items: GroceryLine[],
+  input: { name: string; qty?: number | null; unit?: string | null },
+  newId: () => string,
+): { items: GroceryLine[]; line: GroceryLine; outcome: GroceryAddOutcome } => sharedAddGroceryItem(items, input, newId)
 
 /**
  * A recipe matched by name, case- and space-insensitively — so planning
@@ -135,16 +153,42 @@ export function newIngredient(): RecipeIngredient {
  * bought. Lines ticked in this session stay exactly where they were — struck
  * through by `.grocery-line.done` and still carrying their three buttons, which
  * is the undo. `ticked` is session state, cleared on a week or filter change.
+ *
+ * Lines taken off the list are never among them — except one removed in this
+ * session, whose id is in `kept`: removing a line is a tap mid-aisle too, so
+ * it keeps its slot (drawn as a Removed row with Restore) rather than pulling
+ * the next line up under the thumb that just confirmed. Its `removed` flag is
+ * what tells the pane to draw it that way.
  */
-export function visibleGroceryLines(items: GroceryLine[], filter: GroceryState | 'all', ticked: ReadonlySet<string>): GroceryLine[] {
-  if (filter === 'all') return items
-  return items.filter(i => i.state === filter || ticked.has(i.id))
+export function visibleGroceryLines(
+  items: GroceryLine[],
+  filter: GroceryState | 'all',
+  ticked: ReadonlySet<string>,
+  kept: ReadonlySet<string> = new Set<string>(),
+): GroceryLine[] {
+  return items.filter(i => (i.removed ? kept.has(i.id) : filter === 'all' || i.state === filter || ticked.has(i.id)))
 }
 
-/** The lines on screen only because they were ticked — what "Clear ticked" removes. */
+/** The lines on screen only because they were ticked — what "Clear ticked" counts. Never a removed line. */
 export function heldGroceryLines(items: GroceryLine[], filter: GroceryState | 'all', ticked: ReadonlySet<string>): GroceryLine[] {
   if (filter === 'all') return []
-  return items.filter(i => i.state !== filter && ticked.has(i.id))
+  return items.filter(i => !i.removed && i.state !== filter && ticked.has(i.id))
+}
+
+/** The lines taken off the list, for the "Removed (n)" disclosure. */
+export function removedGroceryLines(items: GroceryLine[]): GroceryLine[] {
+  return items.filter(i => i.removed)
+}
+
+/** How many lines each filter holds. A removed line is in none of them, All included. */
+export function groceryCounts(items: GroceryLine[]): Record<GroceryState | 'all', number> {
+  const counts: Record<GroceryState | 'all', number> = { need: 0, have: 0, done: 0, all: 0 }
+  for (const line of items) {
+    if (line.removed) continue
+    counts[line.state] += 1
+    counts.all += 1
+  }
+  return counts
 }
 
 /**

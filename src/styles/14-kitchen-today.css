@@ -287,3 +287,98 @@
   }
 }
 
+/* ---------- Grocery: taking a line off the list ---------- */
+/* The ✕ at the end of a line: quiet until its first tap arms it (.btn.armed
+   paints it red and it reads "Remove?"); a second tap within four seconds takes
+   the line off. flex: none, so the name gives way to it rather than the row. */
+.grocery-remove {
+  flex: none;
+  min-width: 2.25rem;
+  padding: 6px 8px;
+  line-height: 1;
+}
+/* the line's name, for a screen reader ("Remove Milk", "Restore Milk"); the
+   ✕ is for the eye */
+.grocery-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* a line removed in this session keeps its slot until the view is cleaned —
+   the tick's rule — struck through, with Restore where its state buttons were */
+.grocery-line.removed {
+  border-style: dashed;
+}
+.grocery-line.removed .dash-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+/* "Removed (n)" at the very bottom of the pane, closed until asked for */
+.grocery-removed {
+  margin-top: 16px;
+}
+.grocery-removed > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 8px 0;
+}
+.grocery-removed-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grocery-removed-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.grocery-removed-line .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* The ✕ shares the name's line, top right, and the state buttons keep the
+     full-width line under it. It is last in the markup, so a screen reader
+     meets it after Have / Need / Got it, but it must not become a third line. */
+  .grocery-line .grocery-states {
+    order: 1;
+  }
+  .grocery-line .dash-main {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .grocery-remove {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* the Removed row has no ✕, so its first line is held to the ✕'s height: a
+     row that came up a few px short would still nudge the list under the thumb */
+  .grocery-line.removed .dash-main {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .grocery-removed > summary {
+    padding: 12px 0;
+  }
+  .grocery-removed-line .btn {
+    min-height: 44px;
+  }
+}
+
