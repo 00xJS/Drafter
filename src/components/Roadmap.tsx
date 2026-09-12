@@ -123,12 +123,12 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
       const next = new Date(m.getFullYear(), m.getMonth() + 1, 1)
       const left = Math.max(m.getTime(), from.getTime())
       const width = x(Math.min(next.getTime(), to.getTime())) - x(left)
-      months.push({
-        // a sliver of a month (the first day can fall on the 29th) keeps its line but not a label
-        label: width >= 28 ? m.toLocaleDateString(undefined, { month: 'short', year: m.getMonth() === 0 || months.length === 0 ? '2-digit' : undefined }) : '',
-        left: x(left),
-        width,
-      })
+      // the first month and every January carry the year in full ("Sep 2026") —
+      // a two-digit year read as a date ("Sep 26"); a sliver of a month (the
+      // first day can fall on the 29th) keeps its line but not a label
+      const withYear = m.getMonth() === 0 || months.length === 0
+      const label = m.toLocaleDateString(undefined, withYear ? { month: 'short', year: 'numeric' } : { month: 'short' })
+      months.push({ label: width >= (withYear ? 64 : 28) ? label : '', left: x(left), width })
     }
     rows.sort((a, b) => a.start.getTime() - b.start.getTime())
     const markers = events
