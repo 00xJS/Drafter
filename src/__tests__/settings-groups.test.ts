@@ -37,8 +37,8 @@ function componentSource(name: string): string | undefined {
 }
 
 describe('Settings groups: one registry, every group drawn and styled', () => {
-  it('reads the four groups, in nav order', () => {
-    expect(registry.map(g => g.key)).toEqual(['calendars', 'reminders', 'household', 'data'])
+  it('reads the five groups, in nav order', () => {
+    expect(registry.map(g => g.key)).toEqual(['calendars', 'reminders', 'household', 'assistants', 'data'])
   })
 
   it('gives every group sections that each draw settings-section g-<key>', () => {

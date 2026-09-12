@@ -6,6 +6,7 @@ import type { HouseholdInfo } from '../household'
 import type { SettingsCtx } from './settings/context'
 import { useFeedInfo } from './settings/useFeedInfo'
 import { AdminLink } from './settings/AdminLink'
+import { Assistants } from './settings/Assistants'
 import { Calendars } from './settings/Calendars'
 import { EmailIn } from './settings/EmailIn'
 import { Account, Household } from './settings/Household'
@@ -35,6 +36,7 @@ const SETTINGS_GROUPS: SettingsGroupDef[] = [
   { key: 'calendars', label: 'Calendars', sections: [Calendars] },
   { key: 'reminders', label: 'Reminders', sections: [Lock, Reminders] },
   { key: 'household', label: 'Household', needsAccount: true, sections: [Household, Account] },
+  { key: 'assistants', label: 'Assistants', needsAccount: true, sections: [Assistants] },
   { key: 'data', label: 'Data', sections: [Sync, EmailIn, Templates, AdminLink] },
 ]
 
