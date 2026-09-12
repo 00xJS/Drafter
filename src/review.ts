@@ -4,6 +4,7 @@ import { visitsFor } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
 import { weekKeyOf } from '../shared/weeks.mjs'
+import { nextUp as sharedNextUp } from '../shared/today.mjs'
 
 export type Period = 'week' | 'month'
 
@@ -171,78 +172,18 @@ export interface NextUp {
   score: number
 }
 
-/** A task created this recently is almost certainly what you are looking at the screen for. */
-const JUST_ADDED_MS = 10 * 60_000
-
-export function nextUp(tasks: Task[], projects: Project[], limit = 6, now = new Date(), pinnedTitles: string[] = []): NextUp[] {
-  const nowMs = now.getTime()
-  const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
-  const prio: Record<string, number> = { urgent: 3, high: 2, normal: 1, low: 0 }
-  // a project touched recently is one you are actually in the middle of
-  const projectTouched = new Map<string, number>()
-  for (const t of tasks) {
-    if (!t.projectId) continue
-    const at = Date.parse(t.updatedAt)
-    if (Number.isFinite(at)) projectTouched.set(t.projectId, Math.max(projectTouched.get(t.projectId) ?? 0, at))
-  }
-  const active = new Set(projects.filter(p => p.status === 'active').map(p => p.id))
-  const pinSet = new Set(pinnedTitles.map(t => t.trim().toLowerCase()).filter(Boolean))
-
-  const scored = open.map(t => {
-    let score = 0
-    let reason = ''
-    const due = t.dueAt ? Date.parse(t.dueAt) : NaN
-    const days = Number.isFinite(due) ? Math.round((due - nowMs) / DAY_MS) : null
-
-    if (pinSet.has((t.title || '').trim().toLowerCase())) {
-      return { task: t, reason: 'your top 3', score: 3000 }
-    }
-
-    // Ranking otherwise rewards age, so a brand-new task sorts to the BOTTOM and
-    // vanishes behind the cut — you save something and the page looks unchanged.
-    const age = nowMs - Date.parse(t.createdAt)
-    if (Number.isFinite(age) && age >= 0 && age < JUST_ADDED_MS) {
-      return { task: t, reason: 'just added', score: 2000 - age / 1000 }
-    }
-
-    if (days !== null && days < 0) {
-      score += 1000 - Math.min(days * -1, 60)
-      reason = `overdue ${-days}d`
-    } else if (Number.isFinite(due) && due < nowMs && days === 0) {
-      // same calendar day, time already past — between overdue and due-today
-      const hoursAgo = Math.max(1, Math.round((nowMs - due) / 3_600_000))
-      score += 950
-      reason = `due ${hoursAgo}h ago`
-    } else if (days !== null && days <= 1) {
-      score += 900
-      reason = days === 0 ? 'due today' : 'due tomorrow'
-    } else if (days !== null && days <= 7) {
-      score += 700 - days * 10
-      reason = `due in ${days}d`
-    } else if (t.status === 'doing') {
-      score += 600
-      reason = 'in progress'
-    } else if (days !== null) {
-      score += 200 - Math.min(days, 90)
-      reason = `due in ${days}d`
-    } else {
-      // undated: the backlog this list exists to surface
-      const touched = t.projectId ? projectTouched.get(t.projectId) ?? 0 : 0
-      const projectIsMoving = touched > nowMs - 14 * DAY_MS
-      const idleDays = Math.floor((nowMs - Date.parse(t.updatedAt)) / DAY_MS)
-      score += 300 + (projectIsMoving ? 80 : 0) + Math.min(idleDays, 60)
-      reason = projectIsMoving ? 'project is moving' : idleDays > 21 ? `untouched ${idleDays}d` : 'no date yet'
-    }
-
-    if (t.status === 'blocked') {
-      score -= 250
-      reason = 'blocked'
-    }
-    score += prio[t.priority] * 40
-    if (t.projectId && active.has(t.projectId)) score += 25
-    return { task: t, reason, score }
-  })
-
-  scored.sort((a, b) => b.score - a.score || (a.task.dueAt ?? '9').localeCompare(b.task.dueAt ?? '9'))
-  return scored.slice(0, limit)
+/**
+ * Ranked in shared/today.mjs, so the week plan's Top 3 — in the app and in the
+ * Sunday digest — ranks exactly as this list does. `exclude` leaves tasks out
+ * without changing how the rest score: today's focus has its own card.
+ */
+export function nextUp(
+  tasks: Task[],
+  projects: Project[],
+  limit = 6,
+  now = new Date(),
+  pinnedTitles: string[] = [],
+  exclude: ReadonlySet<string> = new Set(),
+): NextUp[] {
+  return sharedNextUp(tasks, projects, limit, now, pinnedTitles, exclude)
 }

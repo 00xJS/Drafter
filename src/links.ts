@@ -13,6 +13,8 @@ export interface ParsedLink {
   capture?: { title: string; description?: string; link?: string; dueAt?: string }
   /** Text to append to today's journal entry (drafter://journal?text=… or ?journal=…). */
   journal?: string
+  /** A planning sheet to open: Plan my day, Shut down, Plan next week. Opening it writes nothing. */
+  plan?: 'day' | 'shutdown' | 'week'
 }
 
 const JOURNAL_MAX = 2000
@@ -121,6 +123,14 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
 
   const placeId = params.get('place')
   if (placeId) out.place = placeId
+
+  // Plan my day, Shut down and Plan next week open a sheet and nothing more —
+  // the sheet writes only when its button is pressed — and only from the app's
+  // own links: the web query string and drafter://open, never drafter://new
+  if (host === '' || host === 'open') {
+    const plan = params.get('plan')
+    if (plan === 'day' || plan === 'shutdown' || plan === 'week') out.plan = plan
+  }
 
   // A reminder's action button appends `&act=…` to that row's own link. It writes
   // on arrival, so it is read only when the caller opts in (the native notification
