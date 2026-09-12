@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus, WorkMode } from '../types'
+import { CalendarEntry, CalendarEvent, Meal, PROJECT_COLORS, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, TaskStatus } from '../types'
 import { useItems } from '../store'
 import { newerStamp, localMidnightIso, nextOccurrence } from '../itemops'
 import { notifyDue } from '../notify'
@@ -41,27 +41,19 @@ import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { PullToRefresh } from './PullToRefresh'
-import { fetchAdminMe } from '../admin'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { COMPACT_TABS, HOME_TABS, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, TASKS_TABS, VIEW_ICONS, VIEW_LABELS, VIEWS, type PendingLink, type View } from './planner/routes'
 import { Toast } from './planner/Toast'
 import { useMineOnly } from './planner/useMineOnly'
 import { useNavigation } from './planner/useNavigation'
+import { useOverlays } from './planner/useOverlays'
+import { useOwner } from './planner/useOwner'
 import { useToast } from './planner/useToast'
 
 export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
   const { mineOnly, setMineOnly, inHousehold, filteredTasks } = useMineOnly({ store, household })
-  const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
-  const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
-  const [trashOpen, setTrashOpen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  // bumped when a calendar consent flow returns, so an open Settings refetches
-  const [settingsNonce, setSettingsNonce] = useState(0)
-  const [adminOpen, setAdminOpen] = useState(false)
-  const [isOwner, setIsOwner] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
   // the multi-project bar is gone; a filter a device saved before the update
@@ -118,44 +110,33 @@ export default function Planner() {
     entries => applyEntryChanges(entries, 'Google Calendar'),
   )
 
-  // Cmd/Ctrl+K opens search from anywhere
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setSearchOpen(o => !o)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const {
+    editor,
+    setEditor,
+    projectEditor,
+    setProjectEditor,
+    trashOpen,
+    setTrashOpen,
+    searchOpen,
+    setSearchOpen,
+    settingsOpen,
+    setSettingsOpen,
+    settingsNonce,
+    setSettingsNonce,
+    adminOpen,
+    setAdminOpen,
+    eventEditor,
+    setEventEditor,
+    attendance,
+    setAttendance,
+    openTask,
+    newTask,
+    openProject,
+    newProject,
+    anyOpen,
+  } = useOverlays()
 
-  // Site-owner Admin entry: JWT email vs app_config.owner_email (server-side).
-  useEffect(() => {
-    const sb = getSupabase()
-    if (!sb) return
-    let cancelled = false
-    const check = () => {
-      fetchAdminMe()
-        .then(r => {
-          if (!cancelled) setIsOwner(!!r.isOwner)
-        })
-        .catch(() => {
-          if (!cancelled) setIsOwner(false)
-        })
-    }
-    sb.auth.getSession().then(({ data }) => {
-      if (data.session) check()
-    })
-    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
-      if (session) check()
-      else setIsOwner(false)
-    })
-    return () => {
-      cancelled = true
-      sub.subscription.unsubscribe()
-    }
-  }, [])
+  const { isOwner } = useOwner()
 
   // Every way in, understood in one place: the PWA share target, ?new=, ?task=,
   // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
@@ -505,9 +486,6 @@ export default function Planner() {
     return tail
   }
 
-  /** Which event the editor is on: an existing entry, or a new one at this instant. */
-  const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
-
   /**
    * Write an entry through to every connected mirror: Google when its mirror is
    * on, and EACH enabled Microsoft account — the same fan-out task mirroring
@@ -592,13 +570,6 @@ export default function Planner() {
     return () => window.clearTimeout(t)
   }, [store.loaded, store.tasks, store.people, store.places])
 
-  const openTask = (task: Task) => setEditor({ task })
-  const newTask = (preset?: Partial<Task>, opts?: { capture?: boolean }) =>
-    setEditor({
-      preset,
-      capture: opts?.capture ?? !!(preset?.title || preset?.link),
-    })
-  const openProject = (project: Project) => setProjectEditor({ project })
   /**
    * Shift+Enter in the palette: file the line as a task now, no editor. The
    * offline parse lands at once (a keystroke must not wait on /api/ai); the
@@ -708,7 +679,6 @@ export default function Planner() {
       notes: person.notes ? `Ideas from their notes: ${person.notes}` : undefined,
     })
   }
-  const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
   const logAttendance = (ev: CalendarEvent, peopleIds: string[], placeId?: string) => {
     if (peopleIds.length === 0 && !placeId) return
     const at = ev.allDay ? new Date(`${ev.start}T12:00`).toISOString() : new Date(ev.start).toISOString()
@@ -733,7 +703,6 @@ export default function Planner() {
       notes: `For “${ev.title}” on ${when}${ev.location ? ` · ${ev.location}` : ''}`,
     })
   }
-  const newProject = () => setProjectEditor({})
 
   const deleteTask = (t: Task) => {
     store.remove(t.id)
@@ -1011,7 +980,7 @@ export default function Planner() {
       {/* iOS: drag down from the top of a tab to refresh — the same set the
           foreground resume runs. Off while an editor or sheet owns the screen;
           the day sheet lives inside main and is refused by the touch target. */}
-      <PullToRefresh enabled={!editor && !projectEditor && !eventEditor && !attendance && !searchOpen && !settingsOpen && !trashOpen && !adminOpen} onRefresh={manualSync} />
+      <PullToRefresh enabled={!anyOpen} onRefresh={manualSync} />
 
       <main className="content">
         {store.loaded && (
