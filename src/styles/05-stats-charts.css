@@ -1,0 +1,308 @@
+/* ---------- stats ---------- */
+
+.filter-row {
+  align-items: center;
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-right: 4px;
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 12px;
+}
+
+.stat-tile {
+  position: relative;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 15px 17px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* a counter that scrolls to what it counts: a real button, dressed as the tile
+   it replaces, with no iOS grey flash on the way */
+.stat-jump {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.stat-jump:hover {
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-md);
+}
+.stat-jump:active {
+  transform: scale(0.99);
+}
+/* The same tile with nothing to scroll to. It keeps the element (and with it a
+   keyboard user's focus) when its section empties mid-task, and loses only the
+   affordances: aria-disabled rather than `disabled`, because disabling a
+   focused button is itself what drops focus to <body>. */
+.stat-jump[aria-disabled='true'] {
+  cursor: default;
+}
+.stat-jump[aria-disabled='true']:hover {
+  border-color: var(--border);
+}
+.stat-jump[aria-disabled='true']:active {
+  transform: none;
+}
+
+/* the bulk gesture the trimmed counters made room for. Today's column gap
+   (.insights.today) spaces it like every other block. */
+.kpi-bulk {
+  margin: 0;
+}
+
+.stat-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+
+.stat-sub {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chart-head h3 {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.chart-sub {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.chart-plot {
+  position: relative;
+}
+
+.chart-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.gridline {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+}
+
+.axis-base {
+  stroke: var(--viz-baseline);
+  stroke-width: 1;
+}
+
+/* Chart labels stay pixels: they are drawn into an SVG whose geometry is
+   fixed (ticks, baselines, a 46px gutter), so growing the text would collide
+   with the marks rather than move them. A reader who needs them bigger can
+   pinch-zoom, which .mood-chart deliberately leaves to the browser. */
+.tick-label {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.direct-label {
+  fill: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bar {
+  fill: var(--viz-series-1);
+}
+
+.bar.hot {
+  fill: var(--viz-series-1-hot);
+}
+
+.hit {
+  fill: transparent;
+  outline: none;
+}
+
+.chart-tip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+  border-radius: 6px;
+  padding: 5px 9px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.tip-value {
+  font-weight: 700;
+  font-size: 0.8125rem;
+}
+
+.tip-label {
+  font-size: 0.6875rem;
+  opacity: 0.75;
+}
+
+.chart-table-wrap {
+  overflow-x: auto;
+}
+
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.chart-table th,
+.chart-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-table th {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+.chart-table th.num {
+  text-align: right;
+}
+
+.hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.hbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hbar-label {
+  width: 92px;
+  flex-shrink: 0;
+  /* a chart label in a fixed 92px gutter that cannot grow, like .tick-label */
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.hbar-track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hbar-fill {
+  height: 16px;
+  background: var(--viz-series-1);
+  border-radius: 0 4px 4px 0;
+}
+
+.hbar-value {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.top-posts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-posts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.top-posts li:last-child {
+  border-bottom: none;
+}
+
+.top-title {
+  font-weight: 600;
+}
+
+.top-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.top-nums {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.top-nums small {
+  color: var(--muted);
+}
+

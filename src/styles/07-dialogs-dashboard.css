@@ -1,0 +1,393 @@
+/* ---------- composer extras ---------- */
+
+.ai-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.field-hint {
+  margin: -6px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.media-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.media-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+}
+
+.media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: none;
+  background: rgba(11, 11, 11, 0.6);
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  /* a glyph in a fixed-size tap target */
+  font-size: 10px;
+  line-height: 1;
+}
+
+.media-add {
+  width: 64px;
+  height: 64px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.media-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.media-missing {
+  color: var(--muted);
+}
+
+.card-flag {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+/* ---------- settings & dialogs ---------- */
+
+.modal.narrow {
+  width: 560px;
+}
+
+.settings-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.settings-section h3 {
+  margin: 0 0 6px;
+  font-size: 0.8125rem;
+}
+
+.settings-section p {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+}
+
+.sync-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.sync-off {
+  color: var(--muted);
+}
+
+.notice.error {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- dashboard ---------- */
+
+.stat-warn {
+  color: var(--danger);
+}
+
+.dash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.dash-list li:hover {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
+.dash-list li:last-child {
+  border-bottom: none;
+}
+
+.dash-title {
+  font-weight: 600;
+  display: block;
+}
+
+.dash-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.dash-reason {
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
+.dash-when {
+  text-align: right;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-when small {
+  color: var(--muted);
+}
+
+.dash-fix {
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- new interaction chrome ---------- */
+
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.card-title-row .card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-status {
+  position: relative;
+  flex-shrink: 0;
+  width: 26px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.card-status select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.card-status-icon {
+  /* a glyph in a fixed-size tap target */
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.board-more {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 4px 0;
+}
+
+.sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
+.sync-btn:hover {
+  background: var(--surface-2);
+}
+
+.auth-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.auth-overlay .login-wrap {
+  min-height: auto;
+  background: transparent;
+}
+
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: #0f1115;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.lock-card {
+  text-align: center;
+  max-width: 20rem;
+}
+.lock-card .brand {
+  justify-content: center;
+  margin-bottom: 12px;
+  font-size: 1.25rem;
+}
+.lock-card p {
+  color: var(--text-2);
+  margin: 0 0 16px;
+}
+
+.day-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+
+.show-all {
+  display: block;
+  margin: 12px auto;
+}
+
+.modal-head-save {
+  display: none;
+  margin-left: auto;
+}
+
+/* mobile posts list */
+.mpost-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mpost {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.mpost-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mpost-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.action-menu {
+  position: relative;
+}
+
+.action-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-menu[open] .action-menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  min-width: 180px;
+}
+

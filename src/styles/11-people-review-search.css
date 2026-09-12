@@ -1,0 +1,434 @@
+/* people */
+.people {
+  margin-bottom: 20px;
+}
+.people .toolbar {
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+.people .chart-sub {
+  margin: 2px 0 0;
+}
+.people-summary {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.person-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.person-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.person-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.person-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* initials drawn to a fixed 36px circle, not text */
+  font-size: 18px;
+  color: var(--inverse-text);
+  font-weight: 700;
+  flex: none;
+}
+.person-avatar.small {
+  width: 28px;
+  height: 28px;
+  /* initials drawn to a fixed circle, like .person-avatar above */
+  font-size: 14px;
+}
+.person-reason {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.person-journal {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+.person-stats {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.person-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  flex: 1;
+}
+.person-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--border);
+  min-height: 2px;
+}
+.person-nums {
+  display: flex;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.person-nums span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.person-nums small {
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+.person-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.75rem;
+}
+.person-recent li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.person-recent li:hover {
+  color: var(--accent);
+}
+.person-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.people-delete {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+}
+
+.person-ideas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.person-idea {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+}
+.person-idea small {
+  color: var(--text-2);
+}
+.person-idea:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}
+
+/* sparkline + stalled */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+  margin-top: 6px;
+}
+.spark-bar {
+  flex: 1;
+  background: var(--border);
+  border-radius: 2px 2px 0 0;
+}
+.spark-bar.now {
+  background: var(--accent);
+}
+.stalled-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.stalled-chip {
+  cursor: pointer;
+}
+
+/* review */
+.review .toolbar {
+  margin-bottom: 14px;
+  align-items: center;
+}
+.review .view-title {
+  margin: 0 4px;
+}
+.review-summary-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.review-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 36px;
+  margin-bottom: 8px;
+}
+.review-day {
+  flex: 1;
+  background: var(--accent);
+  opacity: 0.8;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+.review-bulk {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.review-top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.review-costs {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+/* search palette */
+.search-backdrop {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.search-palette {
+  width: 640px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.search-input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 14px 16px;
+  font-size: 0.9375rem;
+  background: transparent;
+}
+.search-input:focus-visible {
+  outline: none;
+}
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.search-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.search-hit.active {
+  background: var(--surface-2);
+}
+.search-hit.create {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  margin-top: 4px;
+  color: var(--accent);
+}
+.search-kind {
+  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex: none;
+}
+/* a command row (jump / do) reads as an affordance, not a found record: its
+   glyph carries the accent so the palette's "what you can do" is scannable
+   apart from the "what you have" below it */
+.search-hit.command .search-kind {
+  color: var(--accent-text);
+}
+.search-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-main small {
+  color: var(--muted);
+}
+/* the create row's key hint names Shift+Enter, which a soft keyboard cannot
+   send: on the phone a tap or Return opens the editor and the hint is only noise */
+@media (max-width: 640px) {
+  .search-hit.create small {
+    display: none;
+  }
+}
+.search-foot {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+/* attachments, costs, blockers */
+.attachments {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attachments li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.attachment {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment small {
+  color: var(--muted);
+}
+.costs .field input {
+  max-width: 140px;
+}
+.blockers {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.blockers .toggle {
+  font-size: 0.75rem;
+}
+.notes-to-task {
+  font-family: inherit;
+}
+
+/* phone: compact tab bar already defined above; do not let this older
+   rule put eight labels on a sideways-scrolling strip */
+@media (max-width: 640px) {
+  .content {
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+  }
+}
+
+/* templates + AI plan */
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 0.8125rem;
+}
+.plan-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.plan-list li small {
+  color: var(--muted);
+  margin-left: 6px;
+}
+.plan-list .plan-ms {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* year report */
+.year-report {
+  margin-top: 14px;
+}
+.year-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.year-table th,
+.year-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.year-table .num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.year-cell {
+  border-radius: 4px;
+}
+
+.digest-hour {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.digest-hour select {
+  padding: 3px 6px;
+}
+

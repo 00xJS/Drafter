@@ -1,0 +1,285 @@
+/* ---------- Kitchen ---------- */
+.people-tab-seg {
+  margin: 4px 0 14px;
+}
+/* the household's Mine / Everyone sits at the right of the Tasks segment row
+   (.mine-seg pushes it there); on a narrow phone it wraps under the segments */
+.tasks-seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* the pad's way back to the index, left of the title */
+.notes-back {
+  margin-right: 12px;
+}
+.people-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.people-toolbar h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  flex: 1;
+  min-width: 8rem;
+}
+.kitchen-week-label {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.recipe-list,
+.meal-week,
+.grocery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe-card,
+.meal-day,
+.grocery-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.recipe-card {
+  cursor: pointer;
+}
+.recipe-preview {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipe-cook-meta,
+.recipe-notes {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.recipe-ings {
+  margin: 0;
+  padding-left: 1.2rem;
+  line-height: 1.55;
+}
+.recipe-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.recipe-steps li.done .recipe-step {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.recipe-step-n {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+/* Today is one column of blocks — the header, the briefing, the KPI row, the
+   journal, habits, routines, Next up. This gap is the ONLY vertical spacing
+   between them: no block carries a margin of its own, so none can end up
+   flush against its neighbour and none can double up. The Week view is not
+   included; it lays its cards out in grids that space themselves. */
+.insights.today {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .insights.today {
+    gap: 12px;
+  }
+}
+.today-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.today-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.week-review-excerpt {
+  margin: 0 4px 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.recipe-emoji {
+  font-size: 1.4rem;
+  flex: none;
+}
+.meal-day {
+  flex-direction: column;
+  align-items: stretch;
+}
+.meal-day.today {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.meal-day-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.meal-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.meal-slot.dinner {
+  font-weight: 600;
+}
+.meal-slot-label {
+  width: 7.5rem;
+  flex: none;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.meal-slot select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ing-row {
+  display: grid;
+  grid-template-columns: 4.5rem 5rem 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ing-row input {
+  width: 100%;
+}
+.grocery-line {
+  flex-wrap: wrap;
+}
+.grocery-states {
+  margin-left: auto;
+}
+/* the filter segments and the escape hatch for the lines held on screen after
+   they were ticked. The button is always in the markup — on the phone it takes
+   its line whether or not anything is ticked, so the first tick of a shop does
+   not grow this wrapping row and shove the list down under the thumb. */
+.grocery-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  /* the list starts straight under this row; without a gap the first line's
+     border sat against the filters */
+  margin-bottom: 12px;
+}
+.grocery-filter-row .segmented {
+  flex: 1 1 auto;
+}
+/* the mouse page has no reflow problem and no row to reserve: it sits inline
+   beside the segments, so with nothing to clear it simply goes */
+.grocery-clear:disabled {
+  display: none;
+}
+.grocery-line.have .dash-title {
+  color: var(--muted);
+}
+.grocery-line.done .dash-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.kitchen-tonight-title {
+  margin: 0 4px 12px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .meal-slot {
+    flex-wrap: wrap;
+  }
+  .meal-slot-label {
+    width: 100%;
+  }
+  .grocery-states {
+    width: 100%;
+    margin-left: 0;
+  }
+  /* Have | Need | Got it are three adjacent targets under one thumb in a shop,
+     and they were ~59x30px chips sized by their own text — the shortest label
+     got the smallest box. Splitting the full-width row three ways gives each
+     one about 100px. Scoped to .grocery-states because the WIDTH is what must
+     not leak: a bare `.seg { flex: 1 }` would stretch every segmented control
+     in the app, the four-way grocery filter above included. The height is not
+     this rule's business — `button.seg` already carries the 44px floor in the
+     `@media (pointer: coarse)` block. */
+  .grocery-states .seg {
+    flex: 1;
+  }
+  /* full width under the segments rather than a stub beside them, and at the
+     same 44pt floor as every other touch target — it sweeps every held line off
+     screen mid-aisle, so it is the last one that should be a 33px stub */
+  .grocery-clear {
+    width: 100%;
+    min-height: 44px;
+  }
+  /* reserved, not removed: dropping it out of flow until the first tick is what
+     moved the list under the thumb. `visibility` keeps the line and takes the
+     button out of the tab and VoiceOver order with it. The parent class is here
+     to win on specificity rather than on source order, so moving the desktop
+     `display: none` below this block cannot silently bring the reflow back. */
+  .grocery-filter-row .grocery-clear:disabled {
+    display: block;
+    visibility: hidden;
+  }
+  .ing-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ing-name {
+    grid-column: 1 / -1;
+  }
+}
+

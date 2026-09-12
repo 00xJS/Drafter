@@ -1,0 +1,709 @@
+/* editor */
+.modal.wide {
+  width: 960px;
+}
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 0 24px;
+}
+.editor-main,
+.editor-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.editor-side {
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+}
+.segmented.wrap .seg {
+  flex: 1 1 auto;
+}
+.ai-inline {
+  align-self: flex-start;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+}
+.swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+}
+.swatch.on {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.emoji-field {
+  flex: 0 0 72px;
+}
+.emoji-field input {
+  text-align: center;
+  /* one emoji, sized to its box */
+  font-size: 18px;
+}
+
+.checklist,
+.comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.check-item input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: none;
+}
+.check-item.done .check-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.check-text {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border-color: transparent;
+  background: transparent;
+}
+.check-text:hover,
+.check-text:focus {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.check-item input[type='date'] {
+  padding: 4px 6px;
+  font-size: 0.75rem;
+}
+.check-add {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.check-add input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.comment {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.comment-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.comment-meta .btn {
+  padding: 0 4px;
+  font-size: 0.6875rem;
+}
+.comment-body {
+  white-space: pre-wrap;
+  font-size: 0.8125rem;
+}
+.comment-form {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 6px;
+}
+.comment-form textarea {
+  flex: 1;
+}
+.project-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+/* github card */
+.gh-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+}
+.gh-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gh-glyph {
+  color: var(--muted);
+}
+.gh-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gh-title:hover {
+  text-decoration: underline;
+}
+.gh-refresh {
+  padding: 0 6px;
+}
+.gh-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.gh-desc {
+  margin: 0;
+  color: var(--text-2);
+}
+.gh-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.gh-label {
+  font-size: 0.6875rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+/* Projects board mapping: one row per Drafter status, badge then column select.
+   The badge column is in ch so it follows the type scale instead of clipping
+   "Wishlist" at large Dynamic Type; the rows stack on a phone. */
+.gh-map {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gh-map-row {
+  display: grid;
+  grid-template-columns: 10ch 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.gh-map-row .badge {
+  justify-self: start;
+}
+@media (max-width: 640px) {
+  .gh-map-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 900px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .editor-side {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .rm-label {
+    width: 180px;
+  }
+  .rm-progress {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .today-grid {
+    grid-template-columns: 1fr;
+  }
+  .rm-label {
+    width: 140px;
+    padding: 8px;
+  }
+  .rm-label .badge {
+    display: none;
+  }
+}
+
+/* AI description rewrites */
+.desc-ai {
+  margin-top: 6px;
+}
+.desc-ai .btn {
+  font-size: 0.75rem;
+  padding: 3px 8px;
+}
+.ai-proposal {
+  margin-top: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+.ai-proposal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.8125rem;
+}
+.ai-proposal-head small {
+  color: var(--muted);
+}
+.ai-proposal textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.cal-mode {
+  display: inline-flex;
+  margin-bottom: 12px;
+}
+
+/* external calendar events */
+.cal-pill.event {
+  background: transparent;
+  border: 1px dashed currentColor;
+  font-weight: 500;
+  cursor: default;
+}
+.event-list .event-row {
+  cursor: default;
+}
+.event-list .event-row .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+.event-list .event-row:hover {
+  background: transparent;
+}
+.rm-events .rm-track {
+  min-height: 26px;
+}
+.rm-event {
+  position: absolute;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-4px) rotate(45deg);
+  border-radius: 1px;
+  opacity: 0.9;
+}
+.cal-sources {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.cal-source-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.cal-source-name small,
+.cal-source-status small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.cal-source-status {
+  font-size: 0.75rem;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.cal-add-name {
+  flex: 1 1 120px;
+}
+.cal-add-url {
+  flex: 3 1 240px;
+}
+.swatches.small .swatch {
+  width: 18px;
+  height: 18px;
+}
+.settings-section h4 {
+  margin: 16px 0 6px;
+  font-size: 0.8125rem;
+}
+.copy-row {
+  display: flex;
+  gap: 6px;
+}
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+.sync-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mirror-row {
+  cursor: pointer;
+  margin: 6px 0;
+}
+
+/* two-step delete */
+.btn.armed {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  /* A standing ring, not a 1.8s heartbeat. The red fill is the signal; the
+     pulse was decoration that Reduce Motion had to switch off, and a control
+     whose armed cue vanishes for some readers is worse than one that never
+     moved. It also kept the sheet's only animation above the 400ms line. */
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.28);
+}
+
+/* trash */
+.trash-row {
+  cursor: default;
+}
+.trash-row .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+.trash-list .dash-meta {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* notes pad */
+.notes-modal {
+  width: 1100px;
+  height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+.notes-modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.notes {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+.notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+}
+.notes-tool {
+  font-weight: 700;
+  min-width: 30px;
+  padding: 3px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+.notes-emoji-wrap {
+  position: relative;
+}
+.notes-emoji {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(8, 30px);
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.notes-emoji button {
+  border: 0;
+  background: transparent;
+  /* an emoji icon, not a label */
+  font-size: 18px;
+  padding: 2px;
+  border-radius: 6px;
+}
+.notes-emoji button:hover {
+  background: var(--surface-2);
+}
+.notes-body {
+  flex: 1;
+  min-height: 320px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.notes-body.split {
+  grid-template-columns: 1fr 1fr;
+}
+.notes-input {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  resize: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  padding: 12px;
+}
+.notes-preview {
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  min-height: 320px;
+}
+.notes-foot {
+  display: flex;
+  color: var(--muted);
+}
+.notes-open {
+  align-self: flex-start;
+}
+
+/* rendered markdown */
+.md > :first-child {
+  margin-top: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 18px 0 6px;
+  line-height: 1.25;
+}
+.md h1 {
+  font-size: 1.375rem;
+}
+.md h2 {
+  font-size: 1.125rem;
+}
+.md h3 {
+  font-size: 0.9375rem;
+}
+.md p {
+  margin: 0 0 10px;
+}
+.md ul,
+.md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.md li {
+  margin: 2px 0;
+}
+.md li input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 4px;
+}
+.md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.md pre {
+  background: #0b0d11;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+.md pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 0.78125rem;
+}
+.md blockquote {
+  margin: 0 0 10px;
+  padding: 4px 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-2);
+}
+.md a {
+  color: var(--accent);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+.md del {
+  color: var(--muted);
+}
+
+/* notes as a page */
+.notes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: calc(100vh - 170px);
+}
+.notes-page .notes {
+  flex: 1;
+}
+.notes-page .notes-body {
+  min-height: calc(100vh - 290px);
+}
+.notes-page-head {
+  display: flex;
+  align-items: center;
+}
+.notes-index .toolbar {
+  margin-bottom: 12px;
+}
+.notes-cards {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.notes-card {
+  align-items: stretch;
+  min-height: 140px;
+}
+.notes-card-preview {
+  display: block;
+  font-size: 0.78125rem;
+  color: var(--text-2);
+  max-height: 150px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.notes-card-preview h1,
+.notes-card-preview h2,
+.notes-card-preview h3 {
+  font-size: 0.875rem;
+  margin: 4px 0;
+}
+
+/* rich notepad */
+.notes-editable {
+  flex: 1;
+  min-height: calc(100vh - 290px);
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  outline: none;
+  line-height: 1.6;
+  font-size: 0.90625rem;
+  overflow: auto;
+  caret-color: var(--accent);
+}
+.notes-editable:focus {
+  border-color: var(--accent);
+}
+.notes.dragging .notes-editable {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.notes-editable:empty::before,
+.notes-editable[data-empty='true']::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+.notes-editable img {
+  max-width: min(100%, 720px);
+  max-height: 480px;
+  border-radius: 8px;
+  display: block;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+}
+.notes-editable ul.checklist {
+  list-style: none;
+  padding-left: 4px;
+}
+.notes-editable ul.checklist input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.notes-editable h1 {
+  font-size: 1.5rem;
+}
+.notes-editable h2 {
+  font-size: 1.1875rem;
+}
+.notes-editable a {
+  cursor: text;
+}
+.notes-tool input[type='file'] {
+  display: none;
+}
+.notes-card-preview {
+  white-space: pre-wrap;
+}
+
+.trash-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+

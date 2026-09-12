@@ -1,0 +1,530 @@
+/* journal */
+.journal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* JournalEditor pins a height from scrollHeight once the text outgrows the box,
+   so it grows with the entry; while the text fits, the height stays whatever
+   `rows` and min-height give it. The cap turns the overflow back into a
+   scroller, and the drag handle goes because iOS never draws one and a dragged
+   height would be thrown away by the next keystroke anyway. */
+.journal-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  max-height: 50vh;
+  overflow-y: auto;
+  resize: none;
+  line-height: 1.5;
+}
+.mood-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mood-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 4px 9px;
+  /* the face is an emoji icon in a 44pt target, not a label */
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.mood-chip:hover {
+  opacity: 1;
+}
+.mood-chip.on {
+  opacity: 1;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
+  transform: scale(1.08);
+}
+.journal-people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.journal-people .platform-toggles {
+  align-items: center;
+}
+.journal-avatars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.journal-avatars .person-avatar.small {
+  width: 22px;
+  height: 22px;
+  /* initials drawn to a fixed circle, like .person-avatar above */
+  font-size: 12px;
+}
+/* "+3" for the faces the header had no room to draw (JournalPeople caps at three) */
+.person-avatar.small.more {
+  width: auto;
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  /* initials drawn to a fixed circle, like .person-avatar above */
+  font-size: 11px;
+  font-weight: 600;
+}
+.journal-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+.journal-editor-foot small:last-child {
+  margin-left: auto;
+}
+.journal-yesterday {
+  margin: 10px 4px 0;
+  color: var(--text-2);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.journal-days {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* A landmark every month while thumbing back: the day keys are sorted, so the
+   list emits one wherever the month changes. It sticks on a phone (see the
+   phone block below) — on a desktop the page is short enough to see. */
+.journal-month-head {
+  margin: 4px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg);
+}
+.journal-month-head:first-child {
+  margin-top: 0;
+}
+/* the heading only exists so the month is one for screen readers; the <li>
+   around it carries every visual property */
+.journal-month-title {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+/* both journal scroll targets — today's card and a past day — have to clear the
+   sticky .topbar the same way .today-grid > section does, or opening the journal
+   on a date lands the heading under the chrome */
+.journal-card,
+.journal-day {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.journal-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+/* label + date + mood + faces + Edit. It must wrap: `.content` clips sideways
+   overflow, so an unwrapped row would take Edit — the only way to reopen a past
+   day — off the page with no scroll to recover it. */
+.journal-day-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.journal-day-head > .spacer {
+  flex: 1 1 24px;
+}
+.journal-day-head > button {
+  margin-left: auto;
+}
+.journal-mood {
+  /* the mood face is an emoji icon, not a label */
+  font-size: 18px;
+  line-height: 1;
+}
+.journal-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+.journal-body + .journal-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.review-journal .dash-title {
+  white-space: pre-wrap;
+}
+.review-habits .journal-mood {
+  /* same column as the avatar circles in the People card next door */
+  width: 28px;
+  text-align: center;
+}
+.review-habits .dash-main {
+  /* a short name would otherwise float to the middle under space-between */
+  flex: 1;
+  min-width: 0;
+}
+
+/* the KPI tiles and the chart, behind one disclosure on a phone (JournalView
+   renders the button only under 640px, so the desktop page is unchanged).
+   Today's card sits above it now and .chart-card carries no bottom margin. */
+.journal-stats {
+  margin-top: 12px;
+}
+.journal-stats-toggle {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* mood chart */
+.mood-chart-card {
+  margin-bottom: 12px;
+}
+.mood-chart-plot {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.mood-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  /* the scrub reads clientX along the chart, so the horizontal gesture is ours
+     and the vertical one is still the page's. Never `none`: that would trap a
+     scroll that merely started on the chart. pinch-zoom stays with the browser
+     too — this is a dense 150px graphic, and magnifying it is exactly what a
+     low-vision reader needs (the anti-zoom note at the end of this sheet). */
+  touch-action: pan-y pinch-zoom;
+}
+/* fixed SVG geometry, like .tick-label above */
+.mood-chart text {
+  fill: currentColor;
+  opacity: 0.6;
+  font-size: 10px;
+}
+.mood-chart .mood-grid {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.12;
+}
+.mood-chart .mood-base {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.3;
+}
+.mood-chart .mood-tick {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.35;
+}
+.mood-chart .mood-hit {
+  fill: currentColor;
+  fill-opacity: 0;
+}
+.mood-chart .mood-day:hover .mood-hit {
+  fill-opacity: 0.06;
+}
+/* the scrubbed day, lit the same way hover lights one */
+.mood-chart .mood-day.on .mood-hit {
+  fill-opacity: 0.12;
+}
+.mood-chart .mood-cursor {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.45;
+}
+.mood-chart .mood-col {
+  fill: var(--accent);
+}
+.mood-chart .mood-avg-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+.mood-chart .mood-avg {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.mood-chart-empty {
+  margin: 0;
+  padding: 18px 0;
+}
+/* The scrub readout, and — once the 46px right gutter goes under 480px, where
+   the chart spends it on columns instead — the Great/Rough scale as its own
+   standing caption beside it. The readout is always in the DOM; the floor that
+   keeps a first touch from pushing the chart out from under the scrubbing thumb
+   is a touch concern, so it lives in the coarse block below and a mouse page
+   keeps no empty strip under the chart. */
+.mood-readout {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.mood-scale {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* journal search results.
+   A search is its own list, not a filtered day list: a hit from two years ago
+   has to say WHEN it was and WHY it matched, and the day list said neither. */
+.journal-results {
+  margin-top: 14px;
+}
+.journal-result-count {
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.journal-hits {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Sticky at every width, unlike the month header on the day list: results can
+   jump from this year to 2024 in three rows, and the year is the only thing
+   telling them apart. Same offset as .journal-month-head, so both clear the
+   sticky topbar and the status bar it pads itself for. */
+.journal-year-head {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 2;
+  margin: 6px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+}
+.journal-year-head:first-child {
+  margin-top: 0;
+}
+/* the heading only exists so the year is one for screen readers; the <li>
+   around it carries every visual property (same as .journal-month-title) */
+.journal-year-title {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+.journal-hit {
+  display: flex;
+}
+/* the whole row is the control — a hit is one tap from the day it came from */
+.journal-hit-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.journal-hit-row:hover {
+  border-color: var(--accent);
+}
+.journal-hit-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.journal-snippet {
+  color: var(--text-2);
+  line-height: 1.5;
+}
+/* the browser default is black-on-yellow, which is unreadable on the dark
+   surface and ignores the accent the rest of the app marks things with */
+.journal-snippet mark {
+  background: rgba(249, 115, 22, 0.28);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* mood by weekday: seven bars under the 12-week chart */
+.weekday-mood {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.weekday-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* fixed chart geometry, like the mood chart's viewBox: the track is a scale
+   from 0 to 5, so it must not stretch with the type size */
+.weekday-track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 64px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.weekday-bar {
+  display: block;
+  width: 60%;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+}
+/* the lowest average, marked. The caption under the bars names it too — the
+   one thing this chart is for must not be carried by colour alone. */
+.weekday-col.low .weekday-track {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.weekday-col.low .weekday-bar {
+  opacity: 1;
+}
+.weekday-col.low .weekday-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+.weekday-value {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.weekday-letter {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.weekday-note {
+  margin: 10px 0 0;
+}
+.weekday-empty {
+  margin: 0;
+  padding: 12px 0;
+}
+
+/* ---------- journal on a thumb ----------
+   This block has to sit AFTER the journal rules above: a media query adds no
+   specificity, so `.mood-chip` inside the coarse block higher up the file would
+   lose to `.mood-chip` down here on source order alone. Desktop keeps the
+   27pt pill and the 8px column gap. */
+@media (pointer: coarse) {
+  /* tapping a face is the one-second version of journalling, and every mistap
+     writes the wrong mood into the day 0ms later. Five 44px chips and four 8px
+     gaps come to 252px, inside the 319px card interior at 375pt. */
+  .mood-chip {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .mood-row {
+    gap: 8px;
+  }
+
+  /* three lines to start on, and room between an expanded hit box and the text */
+  .journal-editor {
+    gap: 12px;
+  }
+
+  .journal-editor textarea {
+    min-height: 96px;
+  }
+
+  /* the only route to the KPIs and the chart on a phone, and the disclosure
+     starts closed — it gets the same 44pt floor as the chips and the pills */
+  .journal-stats-toggle {
+    min-height: 44px;
+  }
+
+  /* the caption is reserved only where a touch can scrub: a finger that made it
+     appear would push the chart out from under itself. A mouse page leaves no
+     empty strip under the chart. One line of the readout's own type, not a
+     fixed 18px: the text is 0.75rem at line-height 1.4 and follows
+     --type-scale, so a reservation in px stops covering it above scale 1. */
+  .mood-readout {
+    min-height: calc(1.4 * 0.75rem);
+  }
+
+  /* the morning's one-tap escape from a pile of overdue tasks gets the same
+     44pt floor as every other thumb target (its full width is a phone-width
+     rule, not a touch one — see the ≤640px block) */
+  .kpi-bulk .btn {
+    min-height: 44px;
+  }
+}
+
+/* ---------- journal look-back on a phone ---------- */
+@media (max-width: 640px) {
+  /* The month keeps its place while the days scroll under it. The offset clears
+     the sticky `.topbar` — 10px + a ~36px control + 10px — plus the status bar
+     it pads itself for. `.app`/`.content` clip sideways with `overflow-x: clip`,
+     which (unlike `hidden`) makes no scroll container, so this still sticks to
+     the viewport rather than to a box the list's own height. */
+  .journal-month-head {
+    position: sticky;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top));
+    z-index: 2;
+  }
+
+  /* A past day scrolls under the month header, not just under the bar: the
+     header is stuck at the bar's edge and is ~21px tall (12px at the inherited
+     1.45 line-height, plus 2px of padding top and bottom), so a target parked
+     at the bar loses its top border, its rounded corners and its padding
+     behind the label. `.journal-card` keeps the global margin — it is the top
+     of the list, with no month header above it. */
+  .journal-day {
+    scroll-margin-top: calc(var(--topbar-h) + 24px + env(safe-area-inset-top));
+  }
+
+  /* the readout is two lines' worth of room at 375pt: the day, its mood and the
+     week's average do not fit on one, and the chart must not move mid-scrub.
+     Two lines of its own type (0.75rem at line-height 1.4), so the reservation
+     grows with Dynamic Type — 33.6px at scale 1, where it used to be 34. */
+  .mood-readout {
+    min-height: calc(2 * 1.4 * 0.75rem);
+  }
+}
+

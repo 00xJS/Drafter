@@ -1,0 +1,480 @@
+/* ---------- responsive ---------- */
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .board {
+    grid-template-columns: repeat(3, minmax(200px, 1fr));
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body,
+  #root,
+  .app {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .content {
+    padding: 12px;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .insights,
+  .today,
+  .today-grid,
+  .kpi-row,
+  .stat-tile,
+  .chart-head,
+  .dash-list,
+  .tlist,
+  .swipe-row,
+  .swipe-face {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .chart-head {
+    flex-wrap: wrap;
+  }
+
+  .dash-title,
+  .tlist .dash-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Today's People card: two max-content buttons left the name column ~54px, so
+     a place read as two letters and an ellipsis and its "Been a while" badge
+     never appeared at all. Drop the actions onto their own line — the same
+     stacking the calendar rows and grocery states already use — and let the
+     title wrap so the badge has somewhere to go.
+
+     `.event-list` is deliberate, not a slip: Occasions uses the same markup
+     (avatar + name + a two-button `.event-actions`) and is squeezed just as
+     hard, so its rows stack too and gain a line. "Coming up" has a bare button
+     with no `.event-actions`, so only the wrap allowance reaches it. */
+  .event-list .event-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .event-list .event-row .event-actions {
+    flex: 0 0 100%;
+    justify-content: flex-start;
+  }
+  .event-list .event-row .dash-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .dash-meta {
+    flex-wrap: wrap;
+  }
+
+  .tabs-full {
+    display: none;
+  }
+
+  /* five equal slots: Today, Calendar, More, Kitchen, People */
+  .tabs-compact {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    /* translucent, frosted bar — the iOS convention. Content scrolls under it
+       and blurs; the solid line is a fallback where backdrop-filter is off. */
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    backdrop-filter: saturate(1.5) blur(20px);
+    -webkit-backdrop-filter: saturate(1.5) blur(20px);
+    border-top: 1px solid var(--hairline);
+    justify-content: stretch;
+    gap: 0;
+    padding: 6px 6px calc(4px + env(safe-area-inset-bottom));
+    margin: 0;
+    width: 100%;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+  }
+
+  /* With resize:'native' the viewport is already short when the keyboard is up,
+     and safe-area-inset-bottom collapses to 0 — so the fixed bar becomes an
+     opaque strip sitting exactly where WebKit scrolls the caret. Native apps
+     hide their tab bar while editing; slide it away and give the field back its
+     56pt. It is unreachable while typing anyway. */
+  .keyboard-open .tabs-compact {
+    transform: translateY(100%);
+    pointer-events: none;
+    /* off-screen is not gone: without this the five buttons stay in the tab
+       order and in VoiceOver's swipe order while the keyboard is up. The 0.2s
+       delay is declared HERE, not on the base rule, so the bar stays painted
+       for the slide out but reappears instantly on the way back in. */
+    visibility: hidden;
+    transition:
+      transform 0.2s ease,
+      visibility 0s linear 0.2s;
+  }
+  .tabs-compact .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 2px 4px;
+    border-radius: 10px;
+    /* The one place the ramp is capped. Five labels have to stay on one line
+       inside a 56px bar, and at scale 1.6 a 16px label wraps and pushes the bar
+       over the content it is meant to sit beside. 1.15 still reads larger and
+       still keeps "Calendar" on its line. */
+    font-size: calc(10px * min(1.15, var(--type-scale)));
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* a line icon drawn to a fixed box, sitting above the label */
+  .tabs-compact .tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    color: var(--muted);
+    transition:
+      color 0.15s ease,
+      transform 0.15s ease;
+  }
+  .tabs-compact .tab-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  .tabs-compact .tab {
+    color: var(--muted);
+    transition: color 0.15s ease;
+  }
+  .tabs-compact .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tabs-compact .tab.active {
+    background: transparent;
+    color: var(--accent-text);
+    font-weight: 700;
+  }
+  .tabs-compact .tab.active .tab-icon {
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .tabs-compact .tab:active .tab-icon {
+    transform: scale(0.9);
+  }
+
+  /* keep New task in the header — a floating + covered the last rows */
+  .new-post-btn {
+    position: static;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin-left: 0;
+    border-radius: 12px;
+    justify-content: center;
+    box-shadow: none;
+    flex: none;
+  }
+  .new-post-label {
+    display: none;
+  }
+  .new-post-plus {
+    /* a glyph in a fixed-size tap target */
+    font-size: 22px;
+    line-height: 1;
+    margin-top: -1px;
+  }
+
+  .modal {
+    height: 100dvh;
+  }
+
+  /* The sheet starts under the status bar / Dynamic Island. Taps up there go
+     to iOS (scroll-to-top), never to the page, so the head must sit below it
+     or its Save cannot be pressed at all on an installed app. */
+  .modal-head {
+    padding-top: calc(14px + env(safe-area-inset-top));
+    /* At --type-scale 1.6 a sheet title and its Save no longer share a 375pt
+       line; wrapping puts Save on its own row instead of pushing it off the
+       edge. Phone-only: a desktop sheet is wide enough that both rows already
+       fit, and wrapping (or a minimum gap in a space-between row) there would
+       change layout no reader asked to change. */
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .modal-foot {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    /* same reason as .modal-head: the footer buttons wrap rather than overflow
+       once Dynamic Type has widened them */
+    flex-wrap: wrap;
+  }
+
+  .modal-head-save {
+    display: inline-block;
+  }
+
+  /* 10px + 10px + the 1px border = 21px of padding and border, plus the
+     tallest control. Two controls compete for that: the 40px .new-post-btn, a
+     fixed square that does not grow with the text, and the 🔍 / ⚙ .btn.subtle
+     pair, which is `font: inherit` inside 7px of padding and a 1px border —
+     16px of box around a text line of 22px * scale, exactly like the desktop
+     bar's .btn. Below scale ≈ 1.18 the square is the taller of the two and the
+     bar is 61px; above it the buttons overtake the square and the bar grows,
+     so the max() has to compare like with like rather than floor a bare text
+     box at 40. The desktop bar is 5px shorter because it has no 40px square.
+     This one must not err high the way the desktop token may:
+     .journal-month-head sticks at `--topbar-h`, so overstating it opens a gap
+     under the bar that journal rows scroll through. */
+  :root {
+    --topbar-h: calc(21px + max(40px, 16px + 22px * var(--type-scale)));
+  }
+
+  .topbar {
+    gap: 8px 10px;
+    /* keep the status-bar / Dynamic Island clearance on phones too */
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  }
+
+  /* At 375pt the header wanted ~426px in 351px and `.app { overflow-x: clip }`
+     ate the overflow — which is the "+ New task" button, the most-used control
+     in the app, for the one account that also has Admin: the owner's. Shed the
+     decorative width instead of wrapping (a second header line costs vertical
+     space on exactly the devices that are tightest). */
+  .topbar .brand > span:not(.brand-mark) {
+    display: none;
+  }
+  /* the owner's admin route moves into Settings on a phone */
+  .admin-btn {
+    display: none;
+  }
+  /* keep the unsynced count — that is the number an offline-first phone user
+     needs — but let it shrink and ellipsis instead of pushing the + off-screen.
+     Deliberately ellipsis and not wrap, for the reason above and one more:
+     --topbar-h is a single-line token that every sticky offset and every
+     scroll-margin in the sheet reads, and a bar that wraps to two lines would
+     silently invalidate all of them. The status dot below is the fallback when
+     the words go. */
+  .sync-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* min-width alone: .sync-label's `white-space: nowrap` makes the button's
+     automatic minimum size the whole unbroken string, and this is what lets it
+     shrink past that. (flex-shrink is already 1 — nothing sets it otherwise.) */
+  .sync-btn {
+    min-width: 0;
+  }
+  /* the status dot is the fallback when the label ellipses away — never shrink it */
+  .sync-dot {
+    flex: none;
+  }
+
+  .tab {
+    white-space: nowrap;
+    padding: 10px 14px;
+  }
+
+  /* compact 2-up stat tiles instead of a mile of full-width cards */
+  .kpi-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  /* Today's first screen is ~590px on a 375pt phone and five tiles ate half of
+     it. The two that only report — "This week" and the sparkline — move off the
+     phone (they are still on the Review page and on every wider screen), and
+     the third survivor spans the row it would otherwise half-fill. */
+  .kpi-extra {
+    display: none;
+  }
+  .kpi-row > .kpi-wide {
+    grid-column: 1 / -1;
+  }
+
+  /* the bulk defer under the row is the width of the row it belongs to; on a
+     wide screen (touchscreen laptop included) it stays a normal button */
+  .kpi-bulk .btn {
+    width: 100%;
+  }
+
+  .stat-tile {
+    padding: 10px 12px;
+  }
+
+  .stat-value {
+    font-size: 1.3125rem;
+  }
+
+  .posts-table {
+    min-width: 620px;
+  }
+
+  /* calendar: tighter cells, no hint text */
+  .cal-toolbar h2 {
+    min-width: 0;
+    font-size: 0.9375rem;
+  }
+
+  .cal-hint {
+    display: none;
+  }
+
+  .cal-cell {
+    min-height: 96px;
+    padding: 3px;
+  }
+
+  /* the month grid keeps px on a phone too -- see .cal-daynum above: these
+     sit inside 96px-minimum cells and fixed-diameter day badges, so growing the text
+     would spill out of the geometry rather than move it. */
+  .cal-pill {
+    font-size: 10px;
+    padding: 4px 5px;
+  }
+
+  .cal-pill-time {
+    font-size: 9px;
+  }
+
+  .cal-daynum {
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+  }
+
+  .modal-backdrop {
+    padding: 12px 8px;
+    align-items: stretch;
+  }
+
+  .modal-body {
+    max-height: none;
+  }
+
+  .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    /* deliberately NO padding-bottom: var(--keyboard-h) — the WebView is
+       already the keyboard-free height, and padding it again left the New task
+       sheet a sliver as soon as the title field was focused */
+  }
+
+  .modal-body {
+    overflow-y: auto;
+  }
+
+  .landing-hero {
+    padding: 40px 20px 24px;
+  }
+
+  .landing-hero h1 {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 560px) {
+  /* one column per screen, swipe between statuses — mobile kanban */
+  .board {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+  }
+
+  .board-col {
+    flex: 0 0 86%;
+    scroll-snap-align: start;
+    min-height: 120px;
+  }
+}
+
+/* touch devices: bigger tap targets for the small controls */
+@media (pointer: coarse) {
+  .media-remove {
+    width: 26px;
+    height: 26px;
+    /* a glyph in a fixed-size tap target */
+    font-size: 12px;
+  }
+
+  .toast-undo,
+  .toast-close {
+    padding: 10px 8px;
+    margin: -8px 0;
+  }
+
+  .cal-pill {
+    min-height: 24px;
+  }
+
+  /* Pills and segments are ~31-33pt of text with 4-6px between them, and the
+     Review|Journal and People|Places segments are the only route to those two
+     surfaces. Only the height is missing — the widths already clear 44pt — so
+     the padding moves onto the box instead of the text. `button.` keeps the
+     read-only `<span class="toggle on">` summary chips (a person's recent
+     places, a place's companions) at their 27pt, and the 4px gap replaces the
+     whitespace inline-flex strips between a label and its count span. */
+  button.toggle,
+  button.seg {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding-block: 0;
+  }
+
+  /* The control that reveals the rest of the household in the journal editor
+     ("+ Who" / "Hide") is a .btn, not a .toggle, so the rule above missed it:
+     a ~34px target in a row of 44px pills that `align-items: center` lines up
+     against it. It is the row's way to everyone not already offered. */
+  .platform-toggles .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* .picker-results and .attendees set their own 6px gap ~1900 lines further
+     down at the same specificity, so the bare class would lose on source order;
+     naming them here outranks both. */
+  .platform-toggles,
+  .platform-toggles.picker-results,
+  .platform-toggles.attendees {
+    gap: 8px;
+  }
+
+  .segmented,
+  .filter-row {
+    gap: 6px;
+  }
+}
+
