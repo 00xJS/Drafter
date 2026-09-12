@@ -5,17 +5,13 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { localDayKey } from '../journal'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
-import { Today } from './Today'
 import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
 import { People } from './People'
 import { Places } from './Places'
 import { Kitchen } from './Kitchen'
-import { Review } from './Review'
-import { JournalView } from './Journal'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
@@ -31,7 +27,8 @@ import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
-import { HOME_TABS, TASKS_TABS, VIEW_LABELS } from './planner/routes'
+import { HomeScreen } from './planner/HomeScreen'
+import { TASKS_TABS, VIEW_LABELS } from './planner/routes'
 import { Toast } from './planner/Toast'
 import { TopBar } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
@@ -101,13 +98,13 @@ export default function Planner() {
   }
   // read inline below until each screen and the overlays move into planner/
   const { paletteCommands, mineOnly, setMineOnly, inHousehold, filteredTasks } = p
-  const { view, setView, calMode, setCalMode, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, homeTab, setHomeTab, setTasksTab, setPeopleTab } = p
-  const { journalOpenDate, setJournalOpenDate, placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
+  const { view, setView, calMode, setCalMode, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, setTasksTab, setPeopleTab } = p
+  const { placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
   const { toast, setToast, calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
   const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
   const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, newProject, anyOpen, isOwner } = p
-  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent } = p
-  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule, defer, deferAll } = p
+  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent } = p
+  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule } = p
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -148,124 +145,7 @@ export default function Planner() {
                 Showing only your tasks · Show everyone
               </button>
             )}
-            {view === 'home' && (
-              <>
-                {/* one Home across three time horizons: the day, the week’s
-                    look-back, and the journal — Today’s dashboard is the base */}
-                <div className="people-tab-seg home-seg" role="tablist" aria-label="Home view">
-                  <span className="segmented">
-                    {HOME_TABS.map(t => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={homeTab === t.key}
-                        className={homeTab === t.key ? 'seg on' : 'seg'}
-                        onClick={() => {
-                          setHomeTab(t.key)
-                          // the journal opens on today’s line, not the list above it
-                          if (t.key === 'journal') setJournalOpenDate(localDayKey())
-                        }}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </span>
-                </div>
-                {homeTab === 'today' && (
-                  <Today
-                    tasks={filteredTasks}
-                    allTasks={store.tasks}
-                    people={store.people}
-                    places={store.places}
-                    reviews={store.reviews}
-                    onPlanWith={planWith}
-                    onWentTo={wentTo}
-                    onPlanAt={planAt}
-                    onPlanOccasion={planOccasion}
-                    onSaw={sawThem}
-                    onSaveReview={r => store.upsert(r)}
-                    projects={store.projects}
-                    projectMap={projectMap}
-                    events={allEvents}
-                    sourceMap={sourceMap}
-                    onPlan={planForEvent}
-                    onOpen={openTask}
-                    onOpenProject={openProject}
-                    onNewProject={newProject}
-                    onStatus={changeStatus}
-                    onDefer={defer}
-                    onDeferAll={deferAll}
-                    onNew={newTask}
-                    meals={store.meals}
-                    recipes={store.recipes}
-                    onOpenKitchen={() => setView('kitchen')}
-                    onOpenReview={() => setHomeTab('week')}
-                    onCookRecipe={r => {
-                      setKitchenRecipe(r)
-                      setView('kitchen')
-                    }}
-                    journal={store.journal}
-                    onSaveJournal={e => store.upsert(e)}
-                    onDeleteJournal={id => {
-                      store.remove(id)
-                      showToast('Journal entry removed', () => store.restore([id]))
-                    }}
-                    onOpenJournal={() => openJournal(localDayKey())}
-                    name={household.info?.me.displayName ?? undefined}
-                    habits={store.habits}
-                    onSaveHabit={h => store.upsert(h)}
-                    onDeleteHabit={id => {
-                      store.remove(id)
-                      showToast('Habit removed', () => store.restore([id]))
-                    }}
-                    routines={store.routines}
-                    onSaveRoutine={r => store.upsert(r)}
-                    onDeleteRoutine={id => {
-                      store.remove(id)
-                      showToast('Routine removed', () => store.restore([id]))
-                    }}
-                  />
-                )}
-                {homeTab === 'week' && (
-                  <Review
-                    tasks={store.tasks}
-                    projects={store.projects}
-                    projectMap={projectMap}
-                    people={store.people}
-                    reviews={store.reviews}
-                    journal={store.journal}
-                    places={store.places}
-                    habits={store.habits}
-                    onSaveReview={r => store.upsert(r)}
-                    onOpen={openTask}
-                    onStatus={changeStatus}
-                    onReschedule={(ids, dueAt) => {
-                      for (const id of ids) {
-                        const t = store.tasks.find(x => x.id === id)
-                        if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
-                      }
-                      showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
-                    }}
-                    onOpenProject={openProject}
-                    onNew={preset => newTask(preset)}
-                  />
-                )}
-                {homeTab === 'journal' && (
-                  <JournalView
-                    entries={store.journal}
-                    people={store.people}
-                    onSave={e => store.upsert(e)}
-                    onDelete={id => {
-                      store.remove(id)
-                      showToast('Journal entry removed', () => store.restore([id]))
-                    }}
-                    openDate={journalOpenDate}
-                    onOpenDateConsumed={() => setJournalOpenDate(null)}
-                  />
-                )}
-              </>
-            )}
+            {view === 'home' && <HomeScreen p={p} />}
             {view === 'calendar' && (
               <>
                 <div className="segmented cal-mode" role="tablist" aria-label="Calendar mode">
