@@ -111,6 +111,24 @@ describe('parseLink', () => {
     expect(parseLink(new URLSearchParams('title=Hi'), { host: 'evil' }).capture).toBeUndefined()
   })
 
+  it('reads plan= only from the app’s own links, and nothing rides along that could write', () => {
+    const parse = (raw: string) => {
+      const { host, params } = paramsOf(raw)
+      return parseLink(params, { host, allowAct: true })
+    }
+    expect(parse('/?plan=day')).toEqual({ plan: 'day' })
+    expect(parse('/?view=review&plan=week')).toEqual({ view: 'review', plan: 'week' })
+    expect(parse('drafter://open?plan=shutdown')).toEqual({ plan: 'shutdown' })
+    expect(parse('/?plan=delete').plan).toBeUndefined()
+    // a capture link is a capture link, and the other hosts are scoped as before
+    expect(parse('drafter://new?plan=day').plan).toBeUndefined()
+    expect(parse('drafter://journal?plan=day')).toEqual({})
+    expect(parse('drafter://oauth?plan=day').plan).toBeUndefined()
+    expect(parse('drafter://evil?plan=day')).toEqual({})
+    // opening a sheet is all it does: no action, no capture, no journal line
+    expect(parse('/?plan=day&act=done')).toEqual({ plan: 'day' })
+  })
+
   it('ignores an action button unless the caller opted in', () => {
     // only the notification handler passes allowAct, so a crafted web link —
     // https://…/?task=t1&act=done — cannot complete a task from the query string

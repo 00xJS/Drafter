@@ -204,3 +204,45 @@ describe('visibleItemsFor carries ownership', () => {
     expect(mine.map(i => i.id)).toEqual(['j1'])
   })
 })
+
+describe('digest focus line', () => {
+  const now = new Date('2026-09-14T08:00:00.000Z')
+  const task = (title: string, over: Record<string, unknown> = {}) => ({ kind: 'task', id: title, title, status: 'todo', ...over })
+  const items = [
+    task('Call the bank', { focusOn: '2026-09-14', focusBy: 'u1' }),
+    task('Fix the tap', { focusOn: '2026-09-14' }),
+    task('Their pick', { focusOn: '2026-09-14', focusBy: 'u2' }),
+    task('Already done', { focusOn: '2026-09-14', focusBy: 'u1', status: 'done' }),
+    task('Yesterday', { focusOn: '2026-09-13', focusBy: 'u1' }),
+  ]
+
+  it('opens with the reader’s open focus for today — not a household member’s', () => {
+    const d = buildDigest(items, 'UTC', now, {}, 'u1')
+    expect(d.lines).toEqual(['Focus: Call the bank · Fix the tap'])
+    expect(d.focus.map(t => t.id)).toEqual(['Call the bank', 'Fix the tap'])
+  })
+
+  it('counts every pick when there is no reader to tell apart', () => {
+    expect(buildDigest(items, 'UTC', now).lines[0]).toBe('Focus: Call the bank · Fix the tap · Their pick')
+  })
+
+  it('reads today in the reader’s zone, and says nothing when nothing is in focus', () => {
+    // 03:00 UTC on the 14th is still the evening of the 13th in Los Angeles,
+    // where the pick made for the 13th is today's focus
+    const early = new Date('2026-09-14T03:00:00.000Z')
+    expect(buildDigest(items, 'UTC', early, {}, 'u1').lines[0]).toBe('Focus: Call the bank · Fix the tap')
+    expect(buildDigest(items, 'America/Los_Angeles', early, {}, 'u1').lines[0]).toBe('Focus: Yesterday')
+    expect(buildDigest([task('Nothing')], 'UTC', now, {}, 'u1').lines).toEqual([])
+  })
+
+  it('names three and counts the rest', () => {
+    const four = ['A', 'B', 'C', 'D'].map(t => task(t, { focusOn: '2026-09-14' }))
+    expect(buildDigest(four, 'UTC', now, {}, 'u1').lines[0]).toBe('Focus: A · B · C · +1 more')
+  })
+
+  it('closes with the week plan when the caller passes one', () => {
+    expect(buildDigest([], 'UTC', now, {}, 'u1', { weekPlan: '4 dinners to fill · 2 catch-ups' }).lines).toEqual(['Plan next week: 4 dinners to fill · 2 catch-ups'])
+    expect(buildDigest([], 'UTC', now, {}, 'u1', { weekPlan: null }).lines).toEqual([])
+    expect(buildDigest([task('Fix', { focusOn: '2026-09-14' })], 'UTC', now, {}, 'u1', { weekPlan: '1 bill due' }).lines).toEqual(['Focus: Fix', 'Plan next week: 1 bill due'])
+  })
+})
