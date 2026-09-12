@@ -93,6 +93,8 @@ export function Modal({
   // whatever had focus when this first rendered — read now, before an
   // autoFocus field inside takes it at commit
   const [opener] = useState(() => {
+    // a server or test render has no document, and nothing to hand focus back to
+    if (typeof document === 'undefined') return null
     const a = document.activeElement
     return a instanceof HTMLElement ? a : null
   })

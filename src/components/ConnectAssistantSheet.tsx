@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentScope } from '../agents'
 import { approveRequest, clearAuthorizeRequest, describeRequest, returnsTo, safeRedirect } from '../oauthRequest'
 import type { AuthorizeAnswer, AuthorizeDescription } from '../oauthRequest'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   /** The captured /oauth/authorize query (pendingAuthorizeRequest()). */
@@ -77,19 +78,21 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
   }
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal narrow" role="dialog" aria-modal="true" aria-labelledby="connect-assistant-title">
-        <header className="modal-head">
-          <h2 id="connect-assistant-title">
-            {phase.step === 'ask'
+    // A consent screen never closes on a stray tap on the backdrop. Escape and ✕
+    // do what Close does — drop the request, nothing shared, no redirect; Deny
+    // stays the explicit answer. Once it is sending you back, nothing closes it.
+    <Modal onClose={phase.step === 'leaving' ? () => {} : dismiss} className="modal narrow" closeOnBackdrop={false}>
+        <ModalHead
+          title={
+            phase.step === 'ask'
               ? `Connect ${phase.desc.clientName}?`
               : phase.step === 'refused'
                 ? 'This connection request can’t be used'
                 : phase.step === 'leaving'
                   ? `Returning to ${phase.clientName}…`
-                  : 'Connect an assistant'}
-          </h2>
-        </header>
+                  : 'Connect an assistant'
+          }
+        />
 
         <div className="modal-body">
           {phase.step === 'checking' && <p className="field-hint">Checking the request…</p>}
@@ -154,7 +157,6 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
             </button>
           ) : null}
         </footer>
-      </div>
-    </div>
+    </Modal>
   )
 }
