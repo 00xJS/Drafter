@@ -1,6 +1,7 @@
 // Shared AI completion used by /api/ai and (later) digest / inbound / MCP.
 // NVIDIA first when keyed; Anthropic as runtime fallback on 429/502.
-// JSON mode: lower temperature + response_format when the caller asks for JSON.
+// JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
+// instruction instead (current Claude models accept no temperature at all).
 
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -105,16 +106,48 @@ export async function completeNvidia({ system, prompt, maxTokens, json = false }
   }
 }
 
+// Models that take output_config.effort (older ones answer it with a 400).
+const ANTHROPIC_EFFORT_MODELS = /^claude-(fable-5|mythos-5|opus-5|opus-4-[678]|sonnet-5|sonnet-4-6)/
+// Models with server-side refusal fallbacks in the `fallbacks: "default"` form.
+const ANTHROPIC_REFUSAL_FALLBACK_MODELS = new Set(['claude-opus-5', 'claude-fable-5-1'])
+
+/**
+ * The request body for one Anthropic completion. Current Claude models (Opus 5,
+ * the Opus 4.7+ family, Sonnet 5, Fable) reject temperature / top_p / top_k with
+ * a 400, so none is sent — the JSON path used to send temperature 0.2, which made
+ * every JSON call on this backup fail. Opus 5 thinks by default and its thinking
+ * counts against max_tokens, so these short utility calls run at low effort with
+ * headroom, which also keeps them inside the function timeout. A classifier
+ * decline re-runs server-side on Anthropic's recommended fallback model.
+ */
+export function anthropicRequest({ system, prompt, maxTokens, json = false, model }) {
+  const request = {
+    model,
+    max_tokens: Math.max(maxTokens ?? 0, 8000),
+    messages: [{ role: 'user', content: prompt }],
+  }
+  const sys = json ? `${system ?? ''}\n\nRespond with valid JSON only.`.trim() : system
+  if (sys) request.system = sys
+  if (ANTHROPIC_EFFORT_MODELS.test(model)) request.output_config = { effort: 'low' }
+  if (ANTHROPIC_REFUSAL_FALLBACK_MODELS.has(model)) {
+    request.betas = ['server-side-fallback-2026-07-01']
+    request.fallbacks = 'default'
+  }
+  return request
+}
+
 export async function completeAnthropic({ system, prompt, maxTokens, json = false }) {
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const anthropic = new Anthropic(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
-  const response = await anthropic.messages.create({
+  const request = anthropicRequest({
+    system,
+    prompt,
+    maxTokens,
+    json,
     model: process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL,
-    max_tokens: maxTokens,
-    temperature: json ? 0.2 : undefined,
-    system: json ? `${system}\n\nRespond with valid JSON only.` : system,
-    messages: [{ role: 'user', content: prompt }],
   })
+  const response = request.betas ? await anthropic.beta.messages.create(request) : await anthropic.messages.create(request)
+  // the whole chain declined (the fallback model can refuse too)
   if (response.stop_reason === 'refusal') return { text: '', provider: 'anthropic' }
   const text = response.content
     .filter(block => block.type === 'text')
