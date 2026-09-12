@@ -1,26 +1,6 @@
-// Loose declarations for the pieces of the MCP server the tests exercise.
-// The server is dependency-free JavaScript; these types only keep tsc quiet.
+// The stdio server: transport and mode only. The tools are in tools.mjs,
+// the protocol in protocol.mjs and the database access in data.mjs.
 
-export interface ToolDef {
-  name: string
-  description: string
-  inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] }
-  run(args: Record<string, unknown>): Promise<unknown>
-}
-
-export declare const TOOLS: ToolDef[]
-export declare function startStdio(): void
-export declare function syncWrite(items: Record<string, unknown>[]): Promise<Record<string, any>[]>
-export declare function writeItem(item: Record<string, unknown>): Promise<Record<string, any>>
-export declare function fetchJournal(): Promise<Record<string, any>[]>
-export declare function fetchAll(): Promise<Record<string, any>[]>
-/** Kinds only their own account may read: journal, review, calendar, habit, routine. */
-export declare const PERSONAL_KINDS: ReadonlySet<string>
-export declare function ownerMaySee(row: { user_id?: string | null; data?: Record<string, unknown> | null }, owner: string | null | undefined): boolean
-export declare function assertDayKey(day: unknown): string
-export declare function resolveContext(
-  all: Record<string, unknown>[],
-  ctx: { peopleIds?: unknown; placeId?: unknown; placeName?: unknown },
-): { peopleIds?: string[]; placeId?: string }
-export declare function summarizeTask(t: Record<string, any>): Record<string, any>
-export declare function summarizePlace(p: Record<string, any>, tasks?: Record<string, any>[], people?: Record<string, any>[]): Record<string, any>
+export declare const DEFAULT_MCP_URL: string
+export declare function selectMode(env?: Record<string, string | undefined>): 'proxy' | 'service' | 'unconfigured'
+export declare function startStdio(env?: Record<string, string | undefined>): void
