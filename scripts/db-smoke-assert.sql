@@ -1154,3 +1154,120 @@ begin
   end if;
   raise notice 'ok v3.12-8: deleting an account deletes its tokens and codes';
 end $$;
+
+-- ===== v3.13 notes (level-up) =====
+-- 20260922000000_v3_13_notes: sync_posts takes kind = 'note', and a note is
+-- shared with the household like a task — the owner stores one, a peer sees it
+-- and may edit it, a stranger can do neither — and the sync canary covers it.
+
+-- ------------------------------------------------ v3.13-1. the owner stores a note
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall</p><p><img data-media=\"m-swatch\" alt=\"swatch\"></p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.13-1: sync_posts rejected the owner''s note: %', r -> 'rejected';
+  end if;
+  if (select user_id from public.posts where id = 'note-paint') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.13-1: the note should be stored under the owner';
+  end if;
+  if (select data from public.posts where id = 'note-paint') ->> 'body' is distinct from '<p>Sage for the hall</p><p><img data-media="m-swatch" alt="swatch"></p>'
+     or (select kind from public.posts where id = 'note-paint') is distinct from 'note' then
+    raise exception 'FAIL v3.13-1: the note''s kind or body did not survive the write';
+  end if;
+  raise notice 'ok v3.13-1: the owner stores a note, body and photo reference intact';
+end $$;
+commit;
+
+-- ------------------------- v3.13-2. a household peer sees the note and may edit it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select array_agg(x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
+  if not ('note-paint' = any(ids)) then
+    raise exception 'FAIL v3.13-2: a peer''s sync pull should return the owner''s note, saw %', ids;
+  end if;
+  if (select count(*) from public.posts where id = 'note-paint') <> 1 then
+    raise exception 'FAIL v3.13-2: direct select should show the peer the owner''s note';
+  end if;
+  -- shared like a task: the peer's edit is a household edit, not a refused write
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall, white for the ceiling</p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T10:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.13-2: the peer''s edit of a shared note was rejected: %', r -> 'rejected';
+  end if;
+  if (select count(*) from public.posts_history where id = 'note-paint') <> 1 then
+    raise exception 'FAIL v3.13-2: the peer should read the note''s history, as a task''s';
+  end if;
+  raise notice 'ok v3.13-2: a peer sees the owner''s note, edits it, and reads its history';
+end $$;
+commit;
+do $$
+begin
+  if (select data ->> 'body' from public.posts where id = 'note-paint') is distinct from '<p>Sage for the hall, white for the ceiling</p>' then
+    raise exception 'FAIL v3.13-2: the peer''s edit did not land';
+  end if;
+  if (select user_id from public.posts where id = 'note-paint') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.13-2: an edit must not change whose note it is';
+  end if;
+end $$;
+
+-- --------------------------------------- v3.13-3. a stranger neither sees nor writes it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","role":"authenticated","email":"stranger@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if 'note-paint' = any(ids) then
+    raise exception 'FAIL v3.13-3: a stranger''s sync pull returns the owner''s note';
+  end if;
+  if (select count(*) from public.posts where id = 'note-paint') <> 0
+     or (select count(*) from public.posts_history where id = 'note-paint') <> 0 then
+    raise exception 'FAIL v3.13-3: direct select shows a stranger the note or its history';
+  end if;
+  r := public.sync_posts('[{"kind":"note","id":"note-paint","title":"Mine now","body":"","createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T11:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["note-paint"]'::jsonb then
+    raise exception 'FAIL v3.13-3: a stranger''s write onto the note should be rejected, got %', r;
+  end if;
+  raise notice 'ok v3.13-3: a stranger cannot see the note, its history, or write over it';
+end $$;
+commit;
+do $$
+begin
+  if (select data ->> 'title' from public.posts where id = 'note-paint') is distinct from 'Paint colours' then
+    raise exception 'FAIL v3.13-3: the note was changed by a stranger';
+  end if;
+end $$;
+
+-- --------------------------------- v3.13-4. the canary passes every kind, 'note' too
+begin;
+set local role service_role;
+do $$
+declare r jsonb; posts_before bigint; history_before bigint;
+begin
+  select count(*) into posts_before from public.posts;
+  select count(*) into history_before from public.posts_history;
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note']);
+  if r <> '{"ok": true, "checked": 15, "failures": []}'::jsonb then
+    raise exception 'FAIL v3.13-4: the canary should pass for all 15 kinds, got %', r;
+  end if;
+  if (select count(*) from public.posts) <> posts_before or (select count(*) from public.posts_history) <> history_before then
+    raise exception 'FAIL v3.13-4: the canary left rows behind';
+  end if;
+  raise notice 'ok v3.13-4: the canary passes all 15 kinds, note included, and leaves posts and history as they were';
+end $$;
+commit;

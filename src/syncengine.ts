@@ -216,6 +216,8 @@ export function recordLabel(item: Item | undefined): string {
       return item.date ? `Journal ${item.date}` : 'Journal entry'
     case 'review':
       return `${item.period === 'month' ? 'Month' : 'Week'} review ${item.key}`.trim()
+    case 'note':
+      return item.title || 'Untitled note'
     default:
       return item.name || 'Untitled'
   }

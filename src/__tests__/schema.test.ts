@@ -165,7 +165,7 @@ describe('migrateStored', () => {
 
 describe('purge tombstones survive every sanitizer', () => {
   const now = '2026-09-08T10:00:00.000Z'
-  const kinds = ['task', 'project', 'person', 'place', 'recipe', 'template', 'meal', 'grocery', 'journal', 'review', 'calendar'] as const
+  const kinds = ['task', 'project', 'person', 'place', 'recipe', 'template', 'meal', 'grocery', 'journal', 'review', 'calendar', 'note'] as const
   it('a content-free tombstone of any kind round-trips with deletedAt intact', async () => {
     const { purgeTombstone } = await import('../sync')
     for (const kind of kinds) {
