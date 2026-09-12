@@ -5,8 +5,6 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { Board } from './Board'
-import { TasksTable } from './TasksTable'
 import { People } from './People'
 import { Places } from './Places'
 import { Kitchen } from './Kitchen'
@@ -14,10 +12,8 @@ import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
-import { NotesView } from './NotesView'
 import { Trash } from './Trash'
 import { EventEditor } from './EventEditor'
-import { Bills } from './Bills'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -27,7 +23,8 @@ import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
-import { TASKS_TABS, VIEW_LABELS } from './planner/routes'
+import { VIEW_LABELS } from './planner/routes'
+import { TasksScreen } from './planner/TasksScreen'
 import { Toast } from './planner/Toast'
 import { TopBar } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
@@ -96,17 +93,14 @@ export default function Planner() {
     ...taskActions,
   }
   // read inline below until each screen and the overlays move into planner/
-  const { paletteCommands, mineOnly, setMineOnly, inHousehold, filteredTasks } = p
-  const { view, setView, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, setTasksTab, setPeopleTab } = p
+  const { paletteCommands, mineOnly, setMineOnly, inHousehold } = p
+  const { view, setView, goTasksTab, setNotesProjectId, peopleTab, setPeopleTab } = p
   const { placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
   const { toast, setToast, calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
   const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
-  const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, newProject, anyOpen, isOwner } = p
+  const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, anyOpen, isOwner } = p
   const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, logVisit, logAttendance, planWith, planAt } = p
-  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus } = p
-
-  // a map lookup so an id whose project was deleted degrades to the index
-  const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
+  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
 
   return (
     <div className="app">
@@ -146,78 +140,7 @@ export default function Planner() {
             )}
             {view === 'home' && <HomeScreen p={p} />}
             {view === 'calendar' && <CalendarScreen p={p} />}
-            {view === 'tasks' && (
-              <>
-                {/* one workspace, four lenses on the same project data — the list,
-                    the board, the bills and the project notes */}
-                <div className="people-tab-seg tasks-seg">
-                  <span className="segmented" role="tablist" aria-label="Tasks view">
-                    {TASKS_TABS.map(t => (
-                      <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>
-                        {t.label}
-                      </button>
-                    ))}
-                  </span>
-                  {/* whose tasks, not which lens — so a group beside the tablist,
-                      not a tab; it narrows Today, the list and the board alike
-                      (see filteredTasks) */}
-                  {inHousehold && (
-                    <span className="segmented mine-seg" role="group" aria-label="Whose tasks">
-                      <button type="button" className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
-                        Mine
-                      </button>
-                      <button type="button" className={!mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(false)}>
-                        Everyone
-                      </button>
-                    </span>
-                  )}
-                </div>
-                {tasksTab === 'list' && (
-                  <TasksTable
-                    store={store}
-                    tasks={filteredTasks}
-                    projectMap={projectMap}
-                    onOpen={openTask}
-                    onNew={newTask}
-                    onDelete={deleteTask}
-                    onOpenTrash={() => setTrashOpen(true)}
-                    trashCount={store.visibleItems.filter(i => i.deletedAt && !i.purged).length}
-                  />
-                )}
-                {tasksTab === 'board' && (
-                  <Board
-                    tasks={filteredTasks}
-                    projects={projectMap}
-                    members={household.info?.members ?? []}
-                    onOpen={openTask}
-                    onStatus={changeStatus}
-                    onNew={s => newTask({ status: s })}
-                  />
-                )}
-                {tasksTab === 'bills' && (
-                  <Bills
-                    tasks={store.tasks}
-                    onOpen={openTask}
-                    onNew={() => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false })}
-                    // the one completion path with a real undo: it restores the bill and
-                    // removes next month's occurrence, so an accidental tap costs nothing
-                    onMarkPaid={t => changeStatus(t.id, 'done')}
-                  />
-                )}
-                {tasksTab === 'notes' && (
-                  <NotesView
-                    projects={store.projects}
-                    project={notesProject}
-                    getLatest={id => store.projects.find(x => x.id === id)}
-                    onSave={p => store.upsert(p)}
-                    onSelectProject={id => setNotesProjectId(id)}
-                    onBack={() => setNotesProjectId(null)}
-                    onNewProject={newProject}
-                    onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
-                  />
-                )}
-              </>
-            )}
+            {view === 'tasks' && <TasksScreen p={p} />}
             {view === 'people' && (
               <>
                 <div className="people-tab-seg">
