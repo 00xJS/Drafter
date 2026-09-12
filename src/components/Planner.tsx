@@ -39,81 +39,33 @@ import { Bills } from './Bills'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
-import { Icon, type IconName } from './Icon'
+import { Icon } from './Icon'
 import { PullToRefresh } from './PullToRefresh'
 import { fetchAdminMe } from '../admin'
 import { forgetRetiredKeys } from '../retiredkeys'
-
-// Each tab that shows the same data more than one way holds those ways as
-// segments instead of splitting into peer tabs: Home holds the day, the week
-// and the journal; Tasks holds the list, board, bills and notes; People holds
-// Places. Desktop and phone then land on the identical five nouns.
-type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen'
-const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen']
-type CalendarMode = 'month' | 'week' | 'timeline'
-const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
-type PeopleTab = 'people' | 'places'
-/** Home's three time horizons: today's dashboard, the weekly look-back, the journal. */
-type HomeTab = 'today' | 'week' | 'journal'
-const HOME_TABS: { key: HomeTab; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'week', label: 'Week' },
-  { key: 'journal', label: 'Journal' },
-]
-/** The Tasks tab's four segments: the list, the board, the bills, the notes. */
-type TasksTab = 'list' | 'board' | 'bills' | 'notes'
-const TASKS_TABS: { key: TasksTab; label: string }[] = [
-  { key: 'list', label: 'List' },
-  { key: 'board', label: 'Board' },
-  { key: 'bills', label: 'Bills' },
-  { key: 'notes', label: 'Notes' },
-]
-/** Old inbound links (drafter://…?view=board|bills|notes) still resolve: they
- *  land on the Tasks tab with that segment open. */
-const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', bills: 'bills', notes: 'notes' }
-/** …and the former Today / Review views land on the matching Home segment. */
-const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week' }
-
-/** An inbound link, held as parsed pieces so a replay keeps its provenance. */
-type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
-
-const VIEW_LABELS: Record<View, string> = {
-  home: 'Home',
-  tasks: 'Tasks',
-  calendar: 'Calendar',
-  people: 'People',
-  kitchen: 'Kitchen',
-}
-
-/** The line icon each view carries in the desktop tab strip. */
-const VIEW_ICONS: Record<View, IconName> = {
-  home: 'home',
-  tasks: 'tasks',
-  calendar: 'calendar',
-  people: 'people',
-  kitchen: 'kitchen',
-}
-
-/** Phone tab bar: the same five nouns as the desktop, no catch-all. Home carries
- *  the day, week and journal; Tasks the board, bills and notes. */
-const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
-  { id: 'home', icon: 'home', label: 'Home' },
-  { id: 'calendar', icon: 'calendar', label: 'Calendar' },
-  { id: 'tasks', icon: 'tasks', label: 'Tasks' },
-  { id: 'kitchen', icon: 'kitchen', label: 'Kitchen' },
-  { id: 'people', icon: 'people', label: 'People' },
-]
-
-const CAL_MODE_KEY = 'drafter:calendar-mode'
-const TASKS_TAB_KEY = 'drafter:tasks-tab'
-const PEOPLE_TAB_KEY = 'drafter:people-tab'
-
-interface Toast {
-  msg: string
-  undo?: () => void
-  /** A confirm step instead of an undo: the button runs `run` (e.g. a web link asking to write into the journal). */
-  action?: { label: string; run: () => void }
-}
+import {
+  CAL_MODE_KEY,
+  CALENDAR_MODES,
+  COMPACT_TABS,
+  HOME_TABS,
+  LEGACY_VIEW_TO_HOME,
+  LEGACY_VIEW_TO_TASKS,
+  PEOPLE_TAB_KEY,
+  TASKS_TAB_KEY,
+  TASKS_TABS,
+  VIEW_ICONS,
+  VIEW_LABELS,
+  VIEWS,
+  storedPeopleTab,
+  storedTasksTab,
+  type CalendarMode,
+  type HomeTab,
+  type PendingLink,
+  type PeopleTab,
+  type TasksTab,
+  type Toast,
+  type View,
+} from './planner/routes'
 
 export default function Planner() {
   const household = useHousehold()
@@ -127,26 +79,6 @@ export default function Planner() {
       return 'month'
     }
   })
-  // The two segmented views remember which half you chose — but only when you
-  // chose it. Everything else (a deep link, a nudge, the More sheet) moves the
-  // segment for that visit alone, so "Open review" cannot be hijacked by the
-  // last time the journal was read, and the People tab cannot get pinned to
-  // Places by one search result.
-  const storedTasksTab = (): TasksTab => {
-    try {
-      const t = localStorage.getItem(TASKS_TAB_KEY)
-      return t === 'board' || t === 'bills' || t === 'notes' ? t : 'list'
-    } catch {
-      return 'list'
-    }
-  }
-  const storedPeopleTab = (): PeopleTab => {
-    try {
-      return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
-    } catch {
-      return 'people'
-    }
-  }
   /** Move the Tasks segment for this visit only. */
   const [tasksTab, goTasksTab] = useState<TasksTab>(storedTasksTab)
   /** The project whose notepad the Notes segment is showing; null is the index
