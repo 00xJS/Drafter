@@ -1,0 +1,346 @@
+/* ---- Eating out ------------------------------------------------------- */
+/* A bought meal is planned in the same slot as a cooked one, so it needs to
+   read differently at a glance rather than sit in the list looking identical. */
+.meal-out-chip {
+  font-size: calc(0.72rem * var(--type-scale));
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.outing-meal {
+  /* no task behind it, so it must not look clickable like the rows beside it */
+  cursor: default;
+}
+
+/* ---- Add-to-a-day menu, and meals in the day sheet --------------------- */
+/* The + on a week day header asks "task or meal?" rather than silently
+   meaning task, which left no route to a meal from the calendar at all. */
+.cal-add-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.cal-add-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+}
+.cal-add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 44pt: this is a phone target sitting next to a 44pt day header */
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(0.9rem * var(--type-scale));
+  text-align: left;
+  cursor: pointer;
+}
+.cal-add-menu button:hover,
+.cal-add-menu button:focus-visible {
+  background: var(--surface-2);
+}
+
+.cal-sheet-eating {
+  padding: 8px 16px 4px;
+  border-top: 1px solid var(--border);
+}
+.cal-sheet-eating-head {
+  margin: 0 0 6px;
+  font-size: calc(0.78rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---- Adding a place while planning a meal ----------------------------- */
+/* Full width on its own row: the picker above it is already the width of the
+   slot, and a name field squeezed beside it would be unusable on a phone. */
+.meal-new-place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin-top: 6px;
+}
+.meal-new-place-name {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .meal-new-place > * {
+    /* thumb-sized, and never small enough to make WKWebView zoom on focus */
+    min-height: 44px;
+  }
+}
+
+/* ---- Event editor ------------------------------------------------------ */
+.event-modal .field-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+@media (pointer: coarse) {
+  /* a 13px checkbox is not a thumb target; the label is clickable too, but the
+     box itself has to be reachable */
+  .event-modal .field-inline input[type='checkbox'] {
+    width: 22px;
+    height: 22px;
+  }
+  .event-modal .field-inline {
+    min-height: 44px;
+  }
+}
+
+/* ---- Work days --------------------------------------------------------- */
+/* A work day is a property of the day, so it is a small badge on the day
+   header, never a pill that competes with the day's events and meals. */
+.cal-work-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: calc(0.68rem * var(--type-scale));
+  line-height: 1.4;
+}
+.cal-work-badge.home {
+  border-color: #34d399;
+  color: #34d399;
+}
+.cal-work-badge.office {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+.cal-cell .cal-work-badge {
+  margin: 0 0 2px;
+}
+.cal-weekday-open .cal-work-badge {
+  margin-top: 2px;
+}
+.cal-work-edit,
+.cal-work-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+  cursor: pointer;
+}
+.cal-work-edit {
+  border-style: solid;
+}
+.cal-work-edit-label {
+  color: var(--muted);
+}
+
+/* the editor */
+.event-kind {
+  margin-bottom: 12px;
+}
+.work-hours {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.work-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.work-day-chip {
+  min-width: 42px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(0.85rem * var(--type-scale));
+  cursor: pointer;
+}
+.work-day-chip.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.work-weeks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+@media (pointer: coarse) {
+  .work-day-chip,
+  .cal-work-edit,
+  .cal-work-set {
+    min-height: 44px;
+  }
+  .work-day-chip {
+    min-width: 44px;
+  }
+}
+
+/* ---- Bills -------------------------------------------------------------- */
+.bills-month {
+  min-width: 9ch;
+  text-align: center;
+  color: var(--text-2);
+}
+.bills-kpis {
+  margin: 8px 0 16px;
+}
+.bills-head {
+  margin: 14px 0 6px;
+  font-size: calc(0.78rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bills-head.overdue {
+  color: var(--danger);
+}
+.bill-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.bill-row.overdue {
+  border-color: var(--danger);
+}
+.bill-row.paid {
+  opacity: 0.75;
+}
+.bill-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.bill-glyph {
+  font-size: 1.2rem;
+}
+.bill-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.bill-copy strong,
+.bill-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bill-copy small {
+  color: var(--muted);
+}
+.bill-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.bill-pay {
+  margin-right: 8px;
+}
+.bill-field {
+  margin-bottom: 8px;
+}
+.bill-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.bill-fields .field-inline {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .bill-fields {
+    grid-template-columns: 1fr;
+  }
+}
+@media (pointer: coarse) {
+  .bill-pay {
+    min-height: 44px;
+  }
+}
+
+/* Bills: the totals read as a label above its figure everywhere, and a row
+   can never be wider than the screen — a grid track sized to its content let
+   the rows reach 381px in a 375pt viewport. */
+.bills-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.bills-kpis .stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.bills-kpis .stat-value {
+  font-size: calc(1.3rem * var(--type-scale));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.bill-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.bill-row {
+  min-width: 0;
+}
+

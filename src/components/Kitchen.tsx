@@ -17,7 +17,6 @@ import { dateKey, uid } from '../utils'
 import {
   buildGroceryList,
   cookStepsRecipeId,
-  dinnerOn,
   groceriesForMealDates,
   groceryId,
   heldGroceryLines,
@@ -767,10 +766,4 @@ function RecipeForm({
       </div>
     </div>
   )
-}
-
-export function tonightDinner(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe } | null {
-  const meal = dinnerOn(meals, day)
-  if (!meal) return null
-  return { meal, recipe: recipes.find(r => r.id === meal.recipeId) }
 }

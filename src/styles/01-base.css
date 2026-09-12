@@ -1,0 +1,181 @@
+:root {
+  color-scheme: dark;
+  /* Dynamic Type. 1 in every browser, where the reader's own zoom already does
+     this job; the iOS shell writes 0.9-1.6 here from the system text size
+     (watchTextSize in src/native.ts, which measures -apple-system-body).
+     The type ramp is `rem` and the root font-size below is the single multiply
+     that moves it, so almost nothing else has to read this — only the few
+     boxes that must grow with the text they hold. */
+  --type-scale: 1;
+  /* app chrome — dark by design. The neutrals carry a faint warm/blue bias
+     rather than pure grey, and the four surface steps are spaced far enough
+     apart that a card reads as raised off the ground without leaning on its
+     border. Elevation (the --shadow-* ramp) does the separating now; borders
+     are back to being hairlines. */
+  --bg: #0c0e12;
+  --surface: #15181f;
+  --surface-2: #1e222b;
+  --surface-3: #272c37;
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --hairline: rgba(255, 255, 255, 0.06);
+  --text: #edeff3;
+  --text-2: #a9b0be;
+  --muted: #737b8b;
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --on-accent: #1a1206;
+  /* accent as a wash, not a fill: tinted chips, active states, focus rings, the
+     glow under the primary button. color-mix keeps them all one hue apart. */
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 9%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
+  --accent-text: #fca560;
+  --danger: #f87171;
+  /* the "inverted" pill: light chip on the dark ground */
+  --inverse-bg: #e7e9ee;
+  --inverse-text: #0f1115;
+  --ok: #4ade80;
+  --warn-bg: rgba(245, 158, 11, 0.16);
+  --warn-text: #fcd34d;
+  /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
+     feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
+  --radius-sm: 9px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  /* elevation ramp. Two layers each: a tight contact shadow plus a softer
+     ambient one, so a raised surface reads as lifted rather than outlined. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.32), 0 18px 44px rgba(0, 0, 0, 0.46);
+  --glow-accent: 0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  /* phone chrome: everything that floats measures itself off these */
+  --tabbar-h: 56px;
+  /* The sticky .topbar's own height, safe area excluded: 10px + its tallest
+     control + 10px + the 1px border. On the desktop that control is a ~35px
+     .btn; on a phone it is the 40px .new-post-btn, so the phone block below
+     raises this. Everything that has to clear the bar — a KPI tile's jump, the
+     journal's scroll targets, the sticky month header — reads it from here
+     rather than keeping its own belief about the number.
+     The constant term is the padding plus the border; the scaled term is that
+     control's text box, so the bar follows Dynamic Type. Above scale 1 this
+     reads a little high (the phone's + is a fixed 40px square that does not
+     grow) — every reader of --topbar-h wants clearance under the bar, so
+     erring high only adds space while erring low parks a heading under the
+     chrome. Exactly 56px at scale 1. */
+  --topbar-h: calc(34px + 22px * var(--type-scale));
+  --fab-size: 52px;
+  --safe-b: env(safe-area-inset-bottom);
+  /* READ THIS BEFORE USING IT. Capacitor runs the keyboard at resize:'native',
+     so iOS shrinks the WebView itself and 100dvh is ALREADY keyboard-free.
+     --keyboard-h is a signal (how tall the keyboard is), never a layout inset:
+     spending it on padding/margin/bottom/height subtracts the keyboard twice
+     and collapses the sheet. Key layout off the `keyboard-open` class instead
+     (src/native.ts sets both). */
+  --keyboard-h: 0px;
+  /* chart tokens */
+  --viz-grid: #2b303b;
+  --viz-baseline: #3d4453;
+  --viz-series-1: #f97316;
+  --viz-series-1-hot: #fb923c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* One multiply for the whole ramp: every font-size that reads as prose or as
+     a control label is a rem off this, so raising --type-scale raises all of
+     them together. `rem` in the ROOT element's own font-size resolves against
+     font-size's initial value (CSS Values 4), i.e. the reader's default
+     (16px unless they changed it) -- not against this declaration -- so a
+     desktop reader who raised their browser's default font size keeps it, and
+     the rem values that were already in the sheet before the ramp existed go
+     on honouring it. At the usual 16px nothing moves until iOS reports that
+     the reader asked for larger text.
+     -webkit-text-size-adjust: 100% stops WKWebView inflating text by itself on
+     top of that, which would apply the same preference twice. */
+  font-size: calc(1rem * var(--type-scale));
+  -webkit-text-size-adjust: 100%;
+}
+
+/* the document body is the scroller, so jumps (a KPI tile to its section, the
+   journal to a day) animate rather than teleport. Phone-only, like the rest of
+   the phone work: a 1280px window keeps the instant jump it has always had, so
+   this changes nothing on the desktop. Journal.tsx passes `behavior: 'instant'`
+   at the two call sites that must not animate under this. */
+@media (max-width: 640px) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  /* Reduce Motion is a vestibular setting, not a taste for slower animation,
+     so it is honoured everywhere rather than rule by rule. 0.01ms rather than
+     0 so a transitionend / animationend listener still fires. Nothing here
+     needs motion to be usable: the swipe tray follows the finger from React
+     state, the tab bar's slide out of the keyboard's way is a transform on a
+     class, and the mood chips and the toast are readable the instant they are
+     painted. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* the app's base step is 14px, one notch under the 16px root every rem is
+     measured from; it carries the scale itself so inherited text follows too */
+  font-size: calc(14px * var(--type-scale));
+  line-height: 1.45;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+

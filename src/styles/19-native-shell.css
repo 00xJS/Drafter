@@ -1,0 +1,212 @@
+/* ============================================================
+   NATIVE SHELL  ·  html.native (and html.ios)
+   ------------------------------------------------------------
+   The iOS app is this same bundle in a WKWebView. Everything
+   that should feel built-for-iPhone rather than like a website
+   lives here and matches ONLY under html.native — which
+   native.ts stamps on inside the shell, and which ?native=1
+   forces on in a browser for previewing. The web layout is
+   never touched: these selectors carry the extra `.native`
+   class, so they outrank the phone media-query rules they
+   refine without a single !important.
+   ============================================================ */
+
+/* Kill the grey tap-flash and give scrolling iOS momentum — the two things
+   that most give a web view away as a web view. */
+.native * {
+  -webkit-tap-highlight-color: transparent;
+}
+.native body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- Large title. The page heading reads big, heavy and tight, the way a
+   native navigation title's large state does, instead of as body-sized text. */
+.native .today-head h2,
+.native .view-title {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.021em;
+  line-height: 1.12;
+}
+
+/* --- Card sheets. On the phone the editors were already full-height panels;
+   as a native card sheet they rise from the bottom with a grab handle and a
+   rounded top, leaving the dimmed app just visible above — the iOS pageSheet. */
+.native .modal-backdrop {
+  align-items: flex-end;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.native .modal {
+  width: 100%;
+  height: auto;
+  max-height: 94dvh;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: 0 -10px 44px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: sheet-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+/* the card sits below the status bar, so it drops the safe-area inset the
+   full-screen sheet needed and spends that space on the grab handle instead */
+.native .modal-head {
+  position: relative;
+  padding-top: 22px;
+  border-bottom-color: var(--hairline);
+}
+.native .modal-head::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 38px;
+  height: 5px;
+  margin-left: -19px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.native .modal-foot {
+  border-top-color: var(--hairline);
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+@media (prefers-reduced-motion: reduce) {
+  .native .modal {
+    animation: none;
+  }
+}
+
+/* --- Touch feedback. Rows and buttons dim on press rather than flashing, and
+   an active tab icon springs — the small physical responses iOS trains for. */
+.native .btn:active,
+.native .card:active,
+.native .stat-jump:active,
+.native .seg:active {
+  background: var(--surface-2);
+}
+.native .card:active {
+  transform: scale(0.995);
+}
+
+/* --- The frosted bottom tab bar reads as glass over the app: a hair more
+   translucent on native, with a bright top hairline like a real UITabBar. */
+.native .tabs-compact {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal,
+   Tasks' List/Board/Bills/Notes, People/Places, the calendar's Month/Week/
+   Timeline) become a filled track with a raised thumb that stretches the width,
+   the way UISegmentedControl does — not a row of separate buttons. Scoped to
+   those container classes so the grocery, settings and other segmented controls
+   keep their own shape. The household's Mine / Everyone shares the Tasks row
+   (.tasks-seg), so on iOS it becomes a second full-width track on its own line,
+   consistent with the switchers above it. */
+.native .people-tab-seg .segmented,
+.native .segmented.cal-mode {
+  display: flex;
+  width: 100%;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+}
+.native .people-tab-seg .segmented .seg,
+.native .segmented.cal-mode .seg {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: center;
+  font-weight: 600;
+}
+.native .people-tab-seg .segmented .seg.on,
+.native .segmented.cal-mode .seg.on {
+  /* the raised neutral thumb, brand-tinted text — iOS form, Drafter colour */
+  background: var(--surface);
+  color: var(--accent-text);
+  border: none;
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Pull to refresh. Only the disc moves: the body is the scroller and the
+   top bar is sticky, so translating .content would drag both. The disc sits
+   just under the bar (tucked behind it at rest): z 10 puts it above content
+   and its sticky headers (2–5) but under the top bar (20), so it slides out
+   from beneath the bar rather than across it; the tab bar (40) and every
+   sheet (45+) stay above it. Its travel is React state, not an
+   animation, so it follows the finger under Reduce Motion too; the spring only
+   plays on the way home. */
+.native .ptr {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top) - 44px);
+  z-index: 10;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  transition:
+    transform 0.2s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.15s;
+}
+.native .ptr-disc {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-md);
+  color: var(--text-2);
+}
+.native .ptr-disc svg {
+  transition: transform 0.1s;
+}
+/* past the line: the accent says letting go will do something */
+.native .ptr-armed .ptr-disc {
+  color: var(--accent-text);
+  border-color: var(--accent-ring);
+}
+.native .ptr-refreshing .ptr-disc svg {
+  /* a quick turn: the phone sheet caps every animation at 400ms so Reduce
+     Motion never takes away something long enough to miss */
+  animation: ptr-spin 0.4s linear infinite;
+}
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* "Refreshing…" for VoiceOver only; the disc is the visual */
+.native .ptr-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* the global rule freezes the spin, so busy has to read some other way: the
+     armed tint stays on and the disc dims — a state, not a motion */
+  .native .ptr-refreshing .ptr-disc svg {
+    animation: none;
+  }
+  .native .ptr-refreshing .ptr-disc {
+    color: var(--accent-text);
+    border-color: var(--accent-ring);
+    opacity: 0.7;
+  }
+}

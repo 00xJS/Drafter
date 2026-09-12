@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { plannerSource, sheetSource } from './source'
 import { describe, expect, it } from 'vitest'
 import { AXIS_LOCK, IDLE, PULL_HYSTERESIS, PULL_MAX, PULL_THRESHOLD, PullState, bandOf, damp, lockAxis, step } from '../pull'
 
@@ -141,8 +142,8 @@ describe('step: one pull, one buzz, one refresh', () => {
 describe('pull to refresh: wired the way the shell needs', () => {
   // comments are allowed to name what the code must not call
   const hook = read('../components/PullToRefresh.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-  const planner = read('../components/Planner.tsx')
-  const css = read('../styles.css')
+  const planner = plannerSource()
+  const css = sheetSource()
 
   it('gates on the html.native class so ?native=1 can preview it, not on isNative()', () => {
     expect(hook).toContain("classList.contains('native')")

@@ -1,0 +1,34 @@
+/* ===================== phone: no field may zoom the page ====================
+   WKWebView zooms the whole page whenever a focused field computes under 16px,
+   and it never zooms back out — the user is left at ~115% with no gesture that
+   restores 100%. A bare `input, select, textarea { font-size: 16px }` does not
+   hold the line, because any later class rule outranks an element selector:
+   .search-input (15px), .notes-input (13px), .check-item input[type='date']
+   (12px) and .copy-row input (12px) all escaped exactly that guard — which is
+   why this block replaced it rather than sitting beside it.
+
+   This block is LAST in the file and every arm carries at least two :not()s,
+   because each one counts as a class in the cascade — a bare `textarea` (0,0,1)
+   would still lose to `.notes-input` (0,1,0). Anything added below it must not
+   set a smaller size on a phone field. Do NOT "fix" this with maximum-scale=1
+   on the viewport meta — that also blocks deliberate pinch-zoom, which is an
+   accessibility control.
+
+   Fields that are already ABOVE 16px never zoomed and are restored after it. */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select:not([hidden]):not([multiple]),
+  textarea:not([hidden]):not([disabled]),
+  [contenteditable='true']:not([hidden]) {
+    /* A floor, not a pin. 16px is what stops the zoom; `1rem` lets a reader on
+       large Dynamic Type have fields as big as the prose around them instead of
+       shrinking every field back to 16px. max() is exactly 16px at scale 1. */
+    font-size: max(16px, 1rem);
+  }
+  /* the emoji picker sat at 18px and never zoomed; ties the catch-all on
+     specificity and wins on order, so it keeps its size */
+  .emoji-field input:not([type='checkbox']) {
+    font-size: max(18px, 1.125rem);
+  }
+}
+

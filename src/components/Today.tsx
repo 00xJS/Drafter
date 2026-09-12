@@ -17,7 +17,7 @@ import {
   TaskStatus,
   projectProgress,
 } from '../types'
-import { tonightDinner } from './Kitchen'
+import { tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'

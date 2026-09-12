@@ -1,0 +1,386 @@
+/* household */
+.assignee {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  /* initials drawn to a fixed circle, like .person-avatar above */
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+.mine-seg {
+  margin-left: auto;
+}
+/* Home and Calendar when the household's Mine filter is on: the switch is on
+   Tasks, so this is the only sign the screen is narrowed — and the way off */
+.mine-note {
+  display: block;
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.error-hero .error-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--danger);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  max-width: 640px;
+  margin: 0 auto 12px;
+  word-break: break-word;
+}
+
+/* people list (compact rows, uniform actions) */
+.people-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.people-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+.people-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.people-kpis {
+  margin-bottom: 12px;
+}
+.people-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.person-row + .person-row {
+  border-top: 1px solid var(--border);
+}
+.person-row.open {
+  background: var(--surface-2);
+}
+.person-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+}
+.person-summary:hover {
+  background: var(--surface-2);
+}
+.person-ident {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.person-ident small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-inline-stats {
+  display: flex;
+  gap: 14px;
+  flex: none;
+}
+.person-inline-stats span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.person-inline-stats small {
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+.person-caret {
+  color: var(--muted);
+  width: 12px;
+  flex: none;
+}
+.person-detail {
+  padding: 0 14px 14px 62px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* every action the same height and evenly spaced */
+.person-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.person-actions .btn {
+  flex: 1 1 120px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+/* people picker inside the task editor */
+.people-picker-search {
+  margin-top: 6px;
+  width: 100%;
+}
+.picker-results {
+  margin-top: 6px;
+  gap: 6px;
+}
+.attendees {
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .person-inline-stats {
+    display: none;
+  }
+  .person-detail {
+    padding-left: 14px;
+  }
+  .person-actions .btn {
+    flex: 1 1 45%;
+  }
+}
+
+/* connected Outlook accounts */
+.ms-account {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.ms-account .sync-line {
+  margin-top: 0;
+}
+
+/* Next up — the one list that answers "what now?" */
+.next-up {
+  border-color: var(--accent);
+}
+.next-up .why {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.stat-aside {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* settings: four groups instead of one long scroll */
+.settings-modal {
+  width: 760px;
+  max-width: 100%;
+  height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+}
+.settings-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-nav .seg {
+  flex: 1 1 auto;
+}
+
+/* settings: four groups instead of one 800-line scroll */
+.settings-modal {
+  width: 760px;
+  max-width: 100%;
+  height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+}
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+  padding: 2px 0 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-nav .seg {
+  flex: 1 1 auto;
+}
+/* only the chosen group is on screen */
+.settings-body .settings-section {
+  display: none;
+}
+.settings-body.showing-calendars .g-calendars,
+.settings-body.showing-reminders .g-reminders,
+.settings-body.showing-household .g-household,
+.settings-body.showing-data .g-data,
+.settings-body.showing-users .g-users,
+.settings-body.showing-backups .g-backups,
+.settings-body.showing-integrations .g-integrations,
+.settings-body.showing-domains .g-domains {
+  display: block;
+}
+
+.admin-health {
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.admin-health:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.admin-users .cal-source-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* the Data / Backups health lists: label left, figure right, scannable */
+.admin-stats {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.admin-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 0.8125rem;
+}
+.admin-stat:last-child {
+  border-bottom: none;
+}
+.admin-stat > span {
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+}
+.admin-stat > strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* zero backups is not a detail — give it the orange it deserves */
+.admin-alarm {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  padding: 10px 12px;
+  margin-bottom: 1.1rem;
+}
+.admin-alarm .field-hint {
+  color: var(--warn-text);
+}
+
+/* inline result of a live integration test */
+.admin-test {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+}
+.admin-test small {
+  color: var(--muted);
+}
+.admin-test-error {
+  display: block;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+/* on a phone the toast spanned a narrow column and sat under the New task
+   button, so a confirmation could be unreadable and its Undo unreachable */
+@media (max-width: 640px) {
+  /* above the tab bar AND above the action button, so Undo is always reachable */
+  .toast {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
+    justify-content: space-between;
+  }
+  .toast > span:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  /* the tab bar slides away with the keyboard up, so the toast would otherwise
+     float 56pt above nothing — and the viewport is already the short one */
+  .keyboard-open .toast {
+    bottom: calc(var(--safe-b) + 12px);
+  }
+}
+
+/* settings is a fixed-height dialog on desktop; on a phone it is a full sheet
+   (after the desktop rule above, so it wins) */
+@media (max-width: 640px) {
+  .settings-modal {
+    height: 100dvh;
+    width: 100%;
+  }
+}
+
+/* the signed-out pages have their own headers: keep them out from under the
+   status bar / Dynamic Island on an installed app */
+.landing-header {
+  padding-top: calc(14px + env(safe-area-inset-top));
+}
+.login-wrap {
+  padding-top: calc(24px + env(safe-area-inset-top));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+

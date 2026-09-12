@@ -1,8 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { sheetSource } from './source'
 
-const css = readFileSync(fileURLToPath(new URL('../styles.css', import.meta.url)), 'utf8')
+const css = sheetSource()
 
 /** Every `prop: …;` declaration in the sheet, paired with its property name. */
 function declarations(): { prop: string; value: string }[] {

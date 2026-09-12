@@ -1,0 +1,358 @@
+/* ---------- habits (Today dashboard card) ---------- */
+.habit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.habit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+.habit-row:hover {
+  background: var(--surface-2);
+}
+.habit-row.rest {
+  opacity: 0.6;
+}
+/* the tick: an outlined ring in the habit's colour that fills when done today */
+.habit-tick {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
+}
+.habit-tick:active {
+  transform: scale(0.88);
+}
+.habit-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.habit-name:hover {
+  color: var(--accent-text);
+}
+.habit-emoji {
+  font-size: 1.05rem;
+}
+.habit-streak {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.habit-row.rest .habit-streak {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* the add / edit form */
+.habit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.habit-form-top {
+  display: flex;
+  gap: 8px;
+}
+.habit-emoji-input {
+  width: 48px;
+  flex: none;
+  text-align: center;
+}
+.habit-name-input {
+  flex: 1;
+  min-width: 0;
+}
+.habit-days {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.habit-day {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.habit-day.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
+}
+.habit-days-hint {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.habit-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.habit-delete {
+  margin-left: auto;
+}
+
+/* ---------- routines (Today dashboard card) ---------- */
+/* Same bones as the habits card, but a row is a small list rather than a
+   single tick: a head line (name, when, x/y) then the steps as checkboxes. */
+.routine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.routine-row {
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+.routine-row:hover {
+  background: var(--surface-2);
+}
+.routine-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.routine-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+}
+/* The ellipsis goes on the name, not the button: a flex item will not shrink
+   below its text, so a long name would push the when-pill out of the button
+   and clip it — at 375pt the reader could not tell Morning from Evening. */
+.routine-name > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.routine-name:hover {
+  color: var(--accent-text);
+}
+.routine-when {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.routine-progress {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.routine-row.complete .routine-progress {
+  color: var(--accent-text);
+}
+.routine-steps {
+  list-style: none;
+  margin: 6px 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.routine-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.routine-step .done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+/* A tick is a store write that syncs, so a thumb that meant Water must not
+   land on Stretch: the row itself is the 44pt target, with the pitch equal
+   to the target so there is no dead strip between steps. */
+@media (pointer: coarse) {
+  .routine-steps {
+    gap: 0;
+  }
+  .routine-step {
+    min-height: 44px;
+  }
+}
+.routine-hidden {
+  color: var(--muted);
+  font-size: 0.875rem;
+  padding: 8px 6px;
+  margin: 0;
+}
+.routine-showall {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* the add / edit form */
+.routine-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.routine-name-input {
+  width: 100%;
+}
+.routine-steps-input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  font: inherit;
+}
+.routine-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.routine-delete {
+  margin-left: auto;
+}
+
+/* ---------- morning briefing (top of Today) ---------- */
+/* Sits above the KPI tiles, so it is the same card a hair tighter: the
+   counters below are the loud part, this is the glance before them. */
+.briefing {
+  padding: 12px 14px;
+}
+/* the one weather control: Off, the device, or a city. A native select so a
+   phone gets its own picker; kept small on desktop so it reads as a setting,
+   not a field. On the phone the zoom guard at the end of the file outranks
+   this and deliberately gives it 16px — the size that stops Safari zooming
+   in on focus — so there it is the largest text in the strip, on purpose */
+.briefing-weather-pick {
+  max-width: 12.5rem;
+  padding: 5px 8px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  border-radius: 999px;
+}
+.briefing-weather-pick:hover {
+  color: var(--text);
+}
+.briefing .chart-head {
+  margin-bottom: 8px;
+}
+.briefing-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.briefing-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  min-width: 0;
+}
+.briefing-glyph {
+  font-size: 1.1rem;
+  line-height: 1;
+  flex: none;
+}
+.briefing-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.briefing-main {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.briefing-sub {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+/* why "Use my location" did nothing — shown only after a refused prompt */
+.briefing-note {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+/* two tiles a row on the phone, so a full day is four lines, not a column */
+@media (max-width: 640px) {
+  .briefing-tile {
+    flex: 1 1 calc(50% - 4px);
+  }
+}
+

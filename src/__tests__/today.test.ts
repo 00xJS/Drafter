@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { plannerSource } from './source'
 import { describe, expect, it } from 'vitest'
 import { DEFER_LATCH, DEFER_TRAY, DONE_PULL, DragBand, bandOf } from '../components/Today'
 
@@ -64,7 +65,7 @@ describe("swipe bands: what letting go would do, and when it's worth a buzz", ()
 })
 
 const today = readFileSync(fileURLToPath(new URL('../components/Today.tsx', import.meta.url)), 'utf8')
-const planner = readFileSync(fileURLToPath(new URL('../components/Planner.tsx', import.meta.url)), 'utf8')
+const planner = plannerSource()
 
 describe("Today's first screen", () => {
   it('gives every task section an anchor for the tiles to jump to', () => {

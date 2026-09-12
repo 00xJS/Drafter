@@ -1,0 +1,511 @@
+/* ===================== v3: projects & tasks ===================== */
+
+.view-title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* project chips: the Board's cards, Today's stalled list and the notes index
+   name a project with one; nothing selects projects with them any more */
+.pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.pchip:hover {
+  background: var(--surface-2);
+}
+.pchip.static {
+  padding: 1px 8px 1px 4px;
+  font-size: 0.6875rem;
+  cursor: default;
+  background: var(--surface-2);
+  border-color: transparent;
+  max-width: 180px;
+}
+.pchip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+/* priority + due */
+.prio {
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+.due {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.due-overdue {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
+}
+.due-late {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fdba74;
+}
+.due-today {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+}
+.due-soon {
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
+}
+.card.prio-border-urgent {
+  border-left: 3px solid #f87171;
+}
+.card.prio-border-high {
+  border-left: 3px solid #fb923c;
+}
+.badge-blocked {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
+}
+.badge-doing {
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
+}
+
+/* progress bar */
+.progress {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  flex: 1;
+  min-width: 60px;
+}
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s;
+}
+
+/* today */
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+/* a KPI tile scrolls to the section it counts; .topbar is sticky, so the
+   heading has to clear it (plus the status bar the bar pads itself for) or the
+   section lands underneath the chrome */
+.today-grid > section {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.chart-card.warn-card {
+  border-color: rgba(244, 63, 94, 0.45);
+}
+.tlist .trow {
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+.tlist .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+.tlist .dash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tlist .trow > .due,
+.tlist .swipe-face > .due,
+.dash-list li > .due {
+  flex: 0 1 auto;
+  max-width: min(42%, 11rem);
+}
+
+/* ---------- swipe-to-defer rows ----------
+   The tray sits behind the row and the face slides off it. The face has to be
+   opaque and painted above: an earlier version left the buttons in normal flow
+   under a transparent row, so every list printed "Tomorrow / Next week" through
+   its own due badges. */
+.tlist .trow.swipe-row {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+.tlist .trow.swipe-row:hover {
+  background: transparent;
+}
+.swipe-face {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  position: relative;
+  z-index: 1;
+  /* matches the card behind it, so the tray can never show through */
+  background: var(--surface);
+  transition: transform 0.18s ease;
+  touch-action: pan-y;
+}
+.tlist .trow.swipe-row:hover .swipe-face {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+.warn-card .swipe-face,
+.next-up .swipe-face {
+  background: var(--surface);
+}
+.swipe-tray {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  z-index: 0;
+}
+.swipe-action {
+  border: 0;
+  padding: 0 14px;
+  min-width: 84px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(14, 165, 233, 0.25);
+  color: #7dd3fc;
+  cursor: pointer;
+}
+.swipe-action.next {
+  background: rgba(99, 102, 241, 0.28);
+  color: #a5b4fc;
+}
+/* the tap-equivalent of the swipe — the gesture alone is not discoverable */
+.swipe-handle {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1;
+  padding: 6px 4px;
+  border-radius: 8px;
+  opacity: 0;
+}
+.trow.swipe-row:hover .swipe-handle,
+.trow.swipe-row.tray-open .swipe-handle,
+.swipe-handle:focus-visible {
+  opacity: 1;
+}
+.swipe-handle:hover {
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.due-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.due-chips .btn {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+}
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.review-top-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.review-top-row input {
+  flex: 1;
+}
+.you-said-reflections {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.versions {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.versions summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.versions-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.versions-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.capture-fields {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 0.8125rem;
+}
+.capture-fields li {
+  margin: 4px 0;
+}
+.tlist .trow.done .dash-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.tcheck {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.project-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.project-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+.project-card:hover {
+  border-color: var(--muted);
+}
+.project-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.project-card-name {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-card-pct {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.project-card-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* roadmap */
+.roadmap .toolbar {
+  margin-bottom: 12px;
+}
+.rm-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.rm-canvas {
+  min-width: 100%;
+}
+.rm-header,
+.rm-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.rm-row:last-child {
+  border-bottom: 0;
+}
+.rm-label {
+  width: 260px;
+  flex: none;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  text-align: left;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+}
+.rm-label-head {
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 6px 12px;
+}
+.rm-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rm-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.rm-track {
+  position: relative;
+  flex: none;
+  min-height: 56px;
+}
+.rm-header .rm-track {
+  min-height: 28px;
+}
+.rm-month {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rm-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--surface-2);
+}
+.rm-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--danger);
+  opacity: 0.6;
+  z-index: 1;
+}
+.rm-bar {
+  position: absolute;
+  top: 14px;
+  height: 18px;
+  border-radius: 6px;
+  border: 0;
+  opacity: 0.85;
+  overflow: hidden;
+  padding: 0;
+}
+.rm-bar.inferred {
+  opacity: 0.35;
+  outline: 2px dashed currentColor;
+  outline-offset: -2px;
+}
+.rm-bar-fill {
+  display: block;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.35);
+}
+.rm-ms {
+  position: absolute;
+  top: 12px;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-7px) rotate(45deg);
+  background: var(--surface);
+  border: 2px solid;
+  border-radius: 2px;
+  padding: 0;
+  z-index: 2;
+}
+.rm-ms.done {
+  background: currentColor;
+}
+.rm-ms-name {
+  position: absolute;
+  left: 14px;
+  top: -6px;
+  transform: rotate(-45deg);
+  transform-origin: left top;
+  /* rotated into the roadmap's fixed track geometry, like .tick-label */
+  font-size: 10px;
+  color: var(--text-2);
+  white-space: nowrap;
+  pointer-events: none;
+  padding-left: 8px;
+}
+.rm-task {
+  position: absolute;
+  top: 38px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translateX(-4px);
+  border: 0;
+  padding: 0;
+  opacity: 0.9;
+}
+.rm-task.done {
+  background: var(--border);
+}
+.rm-task.blocked {
+  outline: 2px solid #fda4af;
+  outline-offset: 1px;
+}
+

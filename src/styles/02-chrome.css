@@ -1,0 +1,224 @@
+/* ---------- top bar ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  /* under the status bar / Dynamic Island on an installed app */
+  padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Frost the sticky header — desktop only. On a phone the header is the
+   containing block for the tab bar it holds (.tabs-compact is extracted to a
+   fixed bottom bar), and a backdrop-filter here would capture that fixed child
+   and pin it to the header instead of the viewport. The compact bar is hidden
+   on desktop, so the frost is safe above 640px. */
+@media (min-width: 641px) {
+  .topbar {
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    backdrop-filter: saturate(1.4) blur(16px);
+    -webkit-backdrop-filter: saturate(1.4) blur(16px);
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  /* a lit tile, not a flat square: a soft top-down accent gradient and a faint
+     glow give the mark some dimension. */
+  background: linear-gradient(160deg, var(--accent-hover), var(--accent) 62%, #e2620a);
+  color: var(--on-accent);
+  box-shadow: var(--glow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  font-size: 14px;
+}
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.tabs-compact {
+  display: none;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-weight: 500;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+/* desktop tab glyphs are line icons drawn to a fixed box */
+.tabs-full .tab-icon {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  opacity: 0.85;
+}
+.tabs-full .tab-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.tab:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tab.active .tab-icon {
+  opacity: 1;
+}
+
+.topbar .btn.primary {
+  margin-left: auto;
+}
+
+.new-post-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: 8px;
+}
+
+.btn:hover {
+  background: var(--surface-2);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn.subtle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.btn.subtle:hover {
+  background: var(--surface-2);
+}
+
+.btn.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.btn.subtle.danger {
+  border-color: transparent;
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+/* square, quiet icon buttons in the header (search, settings) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--text-2);
+}
+.icon-btn:hover {
+  color: var(--text);
+}
+.new-post-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.content {
+  flex: 1;
+  padding: 20px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ---------- chips & badges ---------- */
+
+.chips {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tag {
+  font-size: 0.6875rem;
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
