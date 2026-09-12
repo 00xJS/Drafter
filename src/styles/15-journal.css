@@ -528,3 +528,18 @@
   }
 }
 
+/* Yesterday's line under Today's journal card opens the journal. It is a
+   button now, so the keyboard reaches it; this draws it as the paragraph it
+   was. Its margins, colour and cursor stay with .journal-yesterday above. */
+button.journal-yesterday {
+  appearance: none;
+  display: block;
+  width: calc(100% - 8px);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: 1.5;
+  text-align: start;
+}
+

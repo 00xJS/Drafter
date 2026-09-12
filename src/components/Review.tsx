@@ -51,7 +51,9 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
             />
           )}
           <div className="dash-main">
-            <span className="dash-title">{t.title || 'Untitled'}</span>
+            <button type="button" className="row-open">
+              <span className="dash-title">{t.title || 'Untitled'}</span>
+            </button>
             <span className="dash-meta">{t.projectId && projectMap.get(t.projectId) && <ProjectChip project={projectMap.get(t.projectId)!} />}</span>
           </div>
           {t.status === 'done' ? <small className="muted">{fmtDate(t.completedAt)}</small> : <DueBadge task={t} />}
@@ -296,9 +298,11 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
               {data.projects.map(r => (
                 <li key={r.project.id} onClick={() => onOpenProject(r.project)}>
                   <div className="dash-main">
-                    <span className="dash-title">
-                      <ProjectChip project={r.project} />
-                    </span>
+                    <button type="button" className="row-open">
+                      <span className="dash-title">
+                        <ProjectChip project={r.project} />
+                      </span>
+                    </button>
                   </div>
                   <small className="muted">
                     {r.done} done · {r.open} open
@@ -308,9 +312,11 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
               {data.stalled.map(p => (
                 <li key={p.id} onClick={() => onOpenProject(p)}>
                   <div className="dash-main">
-                    <span className="dash-title">
-                      <ProjectChip project={p} />
-                    </span>
+                    <button type="button" className="row-open">
+                      <span className="dash-title">
+                        <ProjectChip project={p} />
+                      </span>
+                    </button>
                     <span className="dash-reason">Nothing moved — still worth doing?</span>
                   </div>
                   <span className="badge badge-blocked">stalled</span>

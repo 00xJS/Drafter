@@ -161,9 +161,11 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
             return (
               <li key={t.id} className="mpost" onClick={() => onOpen(t)}>
                 <div className="mpost-top">
-                  <span className="row-title">
-                    <PriorityMark priority={t.priority} /> {t.title || excerpt(t.description, 48) || 'Untitled'}
-                  </span>
+                  <button type="button" className="row-open">
+                    <span className="row-title">
+                      <PriorityMark priority={t.priority} /> {t.title || excerpt(t.description, 48) || 'Untitled'}
+                    </span>
+                  </button>
                   <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
                     {STATUS_META[t.status].label}
                   </span>
@@ -213,7 +215,9 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
                 return (
                   <tr key={t.id} onClick={() => onOpen(t)}>
                     <td>
-                      <div className="row-title">{t.title || excerpt(t.description, 48) || 'Untitled'}</div>
+                      <button type="button" className="row-open row-title">
+                        {t.title || excerpt(t.description, 48) || 'Untitled'}
+                      </button>
                       {t.title && t.description && <div className="row-body">{excerpt(t.description, 70)}</div>}
                     </td>
                     <td>{project ? <ProjectChip project={project} /> : <span className="muted">—</span>}</td>

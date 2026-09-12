@@ -309,7 +309,9 @@ function PlaceRow({
               {stats.visits.slice(0, 4).map(v =>
                 v.kind === 'task' ? (
                   <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
-                    <span>{v.task.title || 'Outing'}</span>
+                    <button type="button" className="row-open">
+                      <span>{v.task.title || 'Outing'}</span>
+                    </button>
                     <small className="muted">{fmtDate(v.at)}</small>
                   </li>
                 ) : (

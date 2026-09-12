@@ -222,3 +222,38 @@
   display: inline-block;
 }
 
+/* ---------- rows that open something ----------
+   A row that opens on click is reached from the keyboard through its title:
+   the title sits in a real button with no handler of its own, so Enter or
+   Space fires a click that bubbles to the row, while a tap, a swipe and the
+   row's other controls behave exactly as before. The button draws nothing of
+   its own: the `.stat-jump` reset, without the tile under it. A block no wider
+   than its row, so a title that ellipsizes still does (inside it) and the
+   ring is drawn clear of that clipping box. */
+.row-open {
+  appearance: none;
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.row-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* A dialog's panel takes focus when it opens so that Tab starts inside it.
+   That is bookkeeping, not a control, so it gets no ring. */
+[role='dialog']:focus {
+  outline: none;
+}
+

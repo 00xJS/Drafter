@@ -404,7 +404,9 @@ function PersonRow({
             <ul className="person-recent">
               {stats.visits.slice(0, 4).map(v => (
                 <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
-                  <span>{v.task.title || 'Visit'}</span>
+                  <button type="button" className="row-open">
+                    <span>{v.task.title || 'Visit'}</span>
+                  </button>
                   <small className="muted">{fmtDate(v.at)}</small>
                 </li>
               ))}

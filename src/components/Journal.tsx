@@ -364,11 +364,11 @@ export function JournalCard({
       </header>
       <JournalEditor entry={entry} date={today} people={people} onSave={onSave} onDelete={onDelete} rows={2} placeholder="A line about today…" />
       {yesterday && (yesterday.body.trim() || yesterday.mood) && (
-        <p className="journal-yesterday" onClick={onOpenAll} title="Open the journal">
+        <button type="button" className="journal-yesterday" onClick={onOpenAll} title="Open the journal">
           <span className="muted">Yesterday </span>
           {yesterday.mood ? `${MOOD_META[yesterday.mood].emoji} ` : ''}
           {excerpt(yesterday.body, 140) || MOOD_META[yesterday.mood!].label}
-        </p>
+        </button>
       )}
     </section>
   )

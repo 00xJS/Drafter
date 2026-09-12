@@ -134,7 +134,9 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                 <li key={r.id} className="recipe-card" onClick={() => setCooking(r)}>
                   <span className="recipe-emoji">{r.emoji || '🍽️'}</span>
                   <div className="dash-main">
-                    <span className="dash-title">{r.name}</span>
+                    <button type="button" className="row-open">
+                      <span className="dash-title">{r.name}</span>
+                    </button>
                     <span className="dash-meta">
                       {r.servings ? `${r.servings} servings` : 'No yield set'}
                       {r.ingredients.length > 0 && ` · ${r.ingredients.length} ingredient${r.ingredients.length === 1 ? '' : 's'}`}
