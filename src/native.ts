@@ -532,11 +532,28 @@ export async function authenticateAppLock(reason = 'Unlock Drafter'): Promise<bo
 }
 
 /**
- * Lock when the app returns from the background (native resume, or the tab
- * hidden for 12s). Does not steal URL / launch events from initNative.
+ * How long Drafter may be away before coming back asks to unlock again: long
+ * enough to glance at a message and return, short enough that a phone put
+ * down is locked. One number for the browser tab and the iOS app alike — the
+ * app used to ask on every resume, so answering a text cost a Face ID prompt.
+ * The App Switcher card is covered natively whatever this says (SceneDelegate).
+ */
+export const APP_LOCK_GRACE_MS = 12_000
+
+/** True when an absence that began at `awayAt` has outlasted the grace. */
+export function pastLockGrace(awayAt: number, now: number): boolean {
+  return now - awayAt > APP_LOCK_GRACE_MS
+}
+
+/**
+ * Lock when the app returns after more than APP_LOCK_GRACE_MS away — a hidden
+ * tab on the web, a background and resume in the app. Does not steal URL /
+ * launch events from initNative.
  */
 export async function watchAppLock(onLock: () => void): Promise<() => void> {
-  let hiddenAt = 0
+  // when the app was last seen leaving (0 = not yet): the tab hiding or the
+  // native `pause`, whichever reports it — in the app both mark one departure
+  let awayAt = 0
   // Synchronously, before onLock: raising the lock is a React state change, and
   // `resume` and `localNotificationActionPerformed` arrive in the same burst of
   // bridge callbacks. A reminder's Done button read this flag through
@@ -547,19 +564,25 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
     onLock()
   }
   const onVis = () => {
-    if (document.visibilityState === 'hidden') hiddenAt = Date.now()
-    else if (appLockEnabled() && hiddenAt && Date.now() - hiddenAt > 12_000) lock()
+    if (document.visibilityState === 'hidden') awayAt = Date.now()
+    else if (appLockEnabled() && awayAt && pastLockGrace(awayAt, Date.now())) lock()
   }
   document.addEventListener('visibilitychange', onVis)
   if (!isNative()) return () => document.removeEventListener('visibilitychange', onVis)
   try {
     const { App } = await import('@capacitor/app')
-    const handle = await App.addListener('resume', () => {
-      if (appLockEnabled()) lock()
+    const pause = await App.addListener('pause', () => {
+      awayAt = Date.now()
+    })
+    const resume = await App.addListener('resume', () => {
+      // a resume whose departure was never seen can't be timed, so it counts
+      // as a long absence: the lock fails closed
+      if (appLockEnabled() && (!awayAt || pastLockGrace(awayAt, Date.now()))) lock()
     })
     return () => {
       document.removeEventListener('visibilitychange', onVis)
-      void handle.remove()
+      void pause.remove()
+      void resume.remove()
     }
   } catch {
     return () => document.removeEventListener('visibilitychange', onVis)
