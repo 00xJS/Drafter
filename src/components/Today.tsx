@@ -33,6 +33,12 @@ import { HabitsCard } from './HabitsCard'
 import { RoutinesCard } from './RoutinesCard'
 import { BriefingCard, briefingFacts } from './BriefingCard'
 
+/** The line under a project on Today: its count once it has tasks, never "0/0 done" before then. */
+export function projectCardSub(progress: { done: number; total: number }, targetAt?: string): string {
+  const count = progress.total > 0 ? `${progress.done}/${progress.total} done` : 'No tasks yet'
+  return targetAt ? `${count} · target ${new Date(targetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : count
+}
+
 interface Props {
   tasks: Task[]
   /** Unfiltered tasks — visits are counted across every project. */
@@ -735,23 +741,25 @@ export function Today({
 
       {s.activeProjects.length > 0 && (
         <div className="project-cards">
-          {s.activeProjects.map(({ project, progress }) => (
-            <button key={project.id} className="project-card" onClick={() => onOpenProject(project)}>
-              <span className="project-card-head">
-                <span className="pdot" style={{ background: project.color }} />
-                <span className="project-card-name">
-                  {project.emoji && <span>{project.emoji} </span>}
-                  {project.name}
+          {s.activeProjects.map(({ project, progress }) => {
+            // a project with nothing in it has no progress yet: "0%" and an
+            // empty bar read as stalled when it is only new
+            const started = progress.total > 0
+            return (
+              <button key={project.id} className="project-card" onClick={() => onOpenProject(project)}>
+                <span className="project-card-head">
+                  <span className="pdot" style={{ background: project.color }} />
+                  <span className="project-card-name">
+                    {project.emoji && <span>{project.emoji} </span>}
+                    {project.name}
+                  </span>
+                  {started && <span className="project-card-pct">{progress.pct}%</span>}
                 </span>
-                <span className="project-card-pct">{progress.pct}%</span>
-              </span>
-              <ProgressBar pct={progress.pct} color={project.color} />
-              <span className="project-card-sub">
-                {progress.done}/{progress.total} done
-                {project.targetAt && ` · target ${new Date(project.targetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
-              </span>
-            </button>
-          ))}
+                {started && <ProgressBar pct={progress.pct} color={project.color} />}
+                <span className="project-card-sub">{projectCardSub(progress, project.targetAt)}</span>
+              </button>
+            )
+          })}
         </div>
       )}
 
