@@ -3,7 +3,7 @@ import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
 import { RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
-import { AiBusy, FormPatch, StepOp, commitStep, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
+import { AiBusy, FormPatch, StepOp, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
 import { CaptureProposal } from './taskeditor/CaptureProposal'
 import { DescriptionField, RefineProposal } from './taskeditor/DescriptionField'
@@ -11,11 +11,13 @@ import { ChecklistField } from './taskeditor/ChecklistField'
 import { CommentsField } from './taskeditor/CommentsField'
 import { AssignFields } from './taskeditor/AssignFields'
 import { DueFields } from './taskeditor/DueFields'
-import { BillCostRepeat } from './taskeditor/BillCostRepeat'
-import { PeoplePlaceTags } from './taskeditor/PeoplePlaceTags'
+import { BillCost } from './taskeditor/BillCost'
+import { PeoplePlace } from './taskeditor/PeoplePlace'
 import { LinksNotes } from './taskeditor/LinksNotes'
 import { Images } from './taskeditor/Images'
 import { Attachments } from './taskeditor/Attachments'
+import { RepeatField } from './taskeditor/RepeatField'
+import { TagsField } from './taskeditor/TagsField'
 import { VersionsPanel } from './taskeditor/VersionsPanel'
 
 interface Props {
@@ -86,7 +88,7 @@ export function TaskEditor({
   // added (a step, a comment, a search) stays in the section that owns it
   const [form, dispatch] = useReducer(formReducer, base, initForm)
   const set = (patch: FormPatch) => dispatch({ type: 'set', patch })
-  const { title, description, tags } = form
+  const { title, description } = form
 
   const [aiBusy, setAiBusy] = useState<AiBusy>(null)
   const [aiError, setAiError] = useState('')
@@ -110,7 +112,7 @@ export function TaskEditor({
       try {
         if (seed.url && !base.link) set({ link: seed.url })
         const parsed = await parseCapture(seed.text || seed.url || base.title, {
-          projectNames: projects.filter(p => p.status === 'active').map(p => p.name),
+          // no project names: there is one home project, and a sentence never files a new task under one
           personNames: people.map(p => p.name),
         })
         if (!live) return
@@ -154,11 +156,13 @@ export function TaskEditor({
         setProposal({ mode: kind, text })
       } else if (kind === 'tags') {
         const suggested = await suggestTags(description || title)
-        const existing = tags
-          .split(',')
-          .map(t => t.trim().replace(/^#/, ''))
-          .filter(Boolean)
-        set({ tags: [...existing, ...suggested.filter(t => !existing.includes(t))].join(', ') })
+        set(f => {
+          const existing = f.tags
+            .split(',')
+            .map(t => t.trim().replace(/^#/, ''))
+            .filter(Boolean)
+          return { tags: [...existing, ...suggested.filter(t => !existing.includes(t))].join(', ') }
+        })
       } else {
         const steps = await suggestChecklist(title, description)
         addChecks(steps)
@@ -261,8 +265,8 @@ export function TaskEditor({
             return
           }
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            // comment box keeps Cmd+Enter for adding a comment
-            if (tag === 'TEXTAREA' && target.closest('.comments')) return
+            // the comment box keeps Cmd+Enter for adding a comment
+            if (tag === 'TEXTAREA' && target.closest('.activity')) return
             e.preventDefault()
             save()
           }
@@ -278,56 +282,68 @@ export function TaskEditor({
           </button>
         </header>
 
-        <div className="modal-body editor-grid">
-          <div className="editor-main">
-            <label className="field">
-              <span>Title</span>
-              <input
-                value={title}
-                onChange={e => set({ title: e.target.value })}
-                placeholder="e.g. Book the electrician"
-                autoFocus={!task}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !task && !e.metaKey && !e.ctrlKey) {
-                    e.preventDefault()
-                    save()
-                  }
-                }}
+        <div className="modal-body">
+          <div className="editor-grid">
+            <div className="editor-main">
+              <label className="field">
+                <span>Title</span>
+                <input
+                  value={title}
+                  onChange={e => set({ title: e.target.value })}
+                  placeholder="e.g. Book the electrician"
+                  autoFocus={!task}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !task && !e.metaKey && !e.ctrlKey) {
+                      e.preventDefault()
+                      save()
+                    }
+                  }}
+                />
+              </label>
+
+              {captureProposal && (
+                <CaptureProposal proposal={captureProposal} parsing={aiBusy === 'capture'} onApply={() => applyCapture(captureProposal)} onDismiss={() => setCaptureProposal(null)} />
+              )}
+              {aiBusy === 'capture' && !captureProposal && <p className="muted">Parsing capture…</p>}
+
+              <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
+              <ChecklistField
+                checklist={form.checklist}
+                onType={onType}
+                onStep={onStep}
+                addChecks={addChecks}
+                title={title}
+                description={description}
+                aiBusy={aiBusy}
+                onBreakDown={() => runAI('checklist')}
               />
-            </label>
+            </div>
 
-            {captureProposal && (
-              <CaptureProposal proposal={captureProposal} parsing={aiBusy === 'capture'} onApply={() => applyCapture(captureProposal)} onDismiss={() => setCaptureProposal(null)} />
-            )}
-            {aiBusy === 'capture' && !captureProposal && <p className="muted">Parsing capture…</p>}
-
-            <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
-            <ChecklistField
-              checklist={form.checklist}
-              onType={onType}
-              onStep={onStep}
-              addChecks={addChecks}
-              title={title}
-              description={description}
-              aiBusy={aiBusy}
-              onBreakDown={() => runAI('checklist')}
-            />
-            <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
+            <aside className="editor-side">
+              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} />
+              <DueFields form={form} set={set} />
+              <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
+              <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} />
+              <LinksNotes form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
+              <Images mediaIds={form.mediaIds} set={set} />
+              <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
+            </aside>
           </div>
 
-          <aside className="editor-side">
-            <AssignFields form={form} set={set} projects={projects} members={members} candidates={candidates} taskId={base.id} />
-            <DueFields form={form} set={set} />
-            <BillCostRepeat form={form} set={set} />
-            <PeoplePlaceTags form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} aiBusy={aiBusy} onSuggestTags={() => runAI('tags')} />
-            <LinksNotes form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
-            <Images mediaIds={form.mediaIds} set={set} />
-            <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
+          {/* the foot of the form, full width: how often it comes round and its
+              tags, then the Activity feed, then earlier versions */}
+          <div className="editor-bottom">
+            <div className="editor-bottom-row">
+              <RepeatField freq={form.freq} set={set} />
+              <TagsField form={form} set={set} aiBusy={aiBusy} onSuggestTags={() => runAI('tags')} />
+            </div>
 
             {aiError && <p className="warn">{aiError}</p>}
 
+            <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
+
             {task && <VersionsPanel task={task} getLatest={getLatest} onCommit={onCommit} onClose={onClose} />}
-          </aside>
+          </div>
         </div>
 
         <footer className="modal-foot">

@@ -1,36 +1,24 @@
 import { useState } from 'react'
-import { AiBusy, SetForm, TaskForm } from '../../taskform'
+import { SetForm, TaskForm } from '../../taskform'
 import { PROJECT_COLORS, Person, Place } from '../../types'
 import { uid } from '../../utils'
 
 interface Props {
-  form: Pick<TaskForm, 'tags' | 'title' | 'description' | 'peopleIds' | 'placeId'>
+  form: Pick<TaskForm, 'peopleIds' | 'placeId'>
   set: SetForm
   people: Person[]
   places: Place[]
   onSavePlace?(p: Place): void
-  aiBusy: AiBusy
-  onSuggestTags(): void
 }
 
-/** Tags (with ✨ suggestions), who the task involves, and where it happens. */
-export function PeoplePlaceTags({ form, set, people, places, onSavePlace, aiBusy, onSuggestTags }: Props) {
-  const { tags, title, description, peopleIds, placeId } = form
+/** Who the task involves, and where it happens. */
+export function PeoplePlace({ form, set, people, places, onSavePlace }: Props) {
+  const { peopleIds, placeId } = form
   const [peopleQuery, setPeopleQuery] = useState('')
   const [placeQuery, setPlaceQuery] = useState('')
 
   return (
     <>
-      <label className="field">
-        <span>
-          Tags <small>(comma-separated)</small>
-        </span>
-        <input value={tags} onChange={e => set({ tags: e.target.value })} placeholder="home, errand" />
-        <button type="button" className="btn subtle ai-inline" disabled={(!description.trim() && !title.trim()) || aiBusy !== null} onClick={onSuggestTags}>
-          {aiBusy === 'tags' ? 'Suggesting…' : '✨ Suggest tags'}
-        </button>
-      </label>
-
       {people.length > 0 && (
         <div className="field">
           <span>

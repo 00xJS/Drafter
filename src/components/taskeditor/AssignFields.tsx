@@ -1,10 +1,9 @@
 import { SetForm, TaskForm } from '../../taskform'
-import { PRIORITIES, PRIORITY_META, Project, STATUS_META, Task, pickerStatuses } from '../../types'
+import { PRIORITIES, PRIORITY_META, STATUS_META, Task, pickerStatuses } from '../../types'
 
 interface Props {
-  form: Pick<TaskForm, 'projectId' | 'assigneeId' | 'status' | 'priority' | 'blockedBy'>
+  form: Pick<TaskForm, 'assigneeId' | 'status' | 'priority' | 'blockedBy'>
   set: SetForm
-  projects: Project[]
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
   /** Open tasks that could block this one. */
@@ -13,26 +12,15 @@ interface Props {
   taskId: string
 }
 
-/** Project, who's doing it, status, priority and blockers. */
-export function AssignFields({ form, set, projects, members, candidates, taskId }: Props) {
-  const { projectId, assigneeId, status, priority, blockedBy } = form
+/**
+ * Who's doing it, status, priority and blockers. There is no project picker:
+ * there is one home project, a new task takes one only from a preset, template
+ * or Draft a plan, and a saved task keeps its own.
+ */
+export function AssignFields({ form, set, members, candidates, taskId }: Props) {
+  const { assigneeId, status, priority, blockedBy } = form
   return (
     <>
-      <label className="field">
-        <span>Project</span>
-        <select value={projectId} onChange={e => set({ projectId: e.target.value })}>
-          <option value="">No project</option>
-          {projects
-            .filter(p => p.status !== 'archived' || p.id === projectId)
-            .map(p => (
-              <option key={p.id} value={p.id}>
-                {p.emoji ? `${p.emoji} ` : ''}
-                {p.name}
-              </option>
-            ))}
-        </select>
-      </label>
-
       {members.length > 1 && (
         <label className="field">
           <span>Who's doing it</span>

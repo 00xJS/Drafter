@@ -166,12 +166,18 @@ export const money = (v: string) => {
   return v.trim() && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined
 }
 
+/** Estimate and actual cost belong to bills. Any other task shows them only while it has a value, so none is hidden silently. */
+export function costsVisible(form: Pick<TaskForm, 'bill' | 'estimateCost' | 'actualCost'>, base: Pick<Task, 'estimateCost' | 'actualCost'>): boolean {
+  return !!form.bill || base.estimateCost !== undefined || base.actualCost !== undefined || !!form.estimateCost.trim() || !!form.actualCost.trim()
+}
+
 /** The form's current value for every editable field, in Task shape. */
 export function formValues(form: TaskForm, base: Task, persisted: boolean) {
   const { title, description, projectId, status, priority, dueAt, completedAt, tags, notes, link, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId } = form
   return {
     title: title.trim(),
     description,
+    // there is no project control: this is the task's own project (or a preset's), carried through untouched
     projectId: projectId || undefined,
     status,
     priority,

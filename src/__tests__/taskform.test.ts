@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FormPatch, TaskForm, commitStep, formReducer, formValues, initForm, isDirty, isEmpty, mergeOnto, money, pendingRenames, versionNote, versionRows } from '../taskform'
+import { FormPatch, TaskForm, commitStep, costsVisible, formReducer, formValues, initForm, isDirty, isEmpty, mergeOnto, money, pendingRenames, versionNote, versionRows } from '../taskform'
 import type { ChecklistItem, Task } from '../types'
 import { toLocalInput } from '../utils'
 
@@ -88,6 +88,38 @@ describe('what counts as empty and as unsaved', () => {
     const base = task({ dueAt: '2026-09-14T08:00:00.000Z', tags: ['home'], estimateCost: 40, bill: { kind: 'bill', payee: 'British Gas' }, recurrence: { freq: 'monthly' } })
     expect(isDirty(initForm(base), base, true)).toBe(false)
     expect(isDirty(edit(initForm(base), { estimateCost: '41' }), base, true)).toBe(true)
+  })
+})
+
+describe('the project', () => {
+  it('is carried through a save untouched — even one moved to another project meanwhile', () => {
+    const base = task({ projectId: 'pr1' })
+    const form = edit(initForm(base), { title: 'Fix the side gate' })
+    expect(mergeOnto(base, form, base, true).projectId).toBe('pr1')
+    const moved: Task = { ...base, projectId: 'pr2', updatedAt: LATER }
+    expect(mergeOnto(moved, form, base, true).projectId).toBe('pr2')
+  })
+
+  it('is nothing on a new task unless its preset brings one', () => {
+    const blank = task({ title: 'Call the council' })
+    expect(mergeOnto(blank, initForm(blank), blank, false).projectId).toBeUndefined()
+    const fromTemplate = task({ title: 'Paint the fence', projectId: 'pr1' })
+    expect(mergeOnto(fromTemplate, initForm(fromTemplate), fromTemplate, false).projectId).toBe('pr1')
+  })
+})
+
+describe('estimate and actual cost', () => {
+  it('shows for a bill, and for any other task only while it has a value', () => {
+    const plain = task()
+    expect(costsVisible(initForm(plain), plain)).toBe(false)
+    expect(costsVisible(edit(initForm(plain), { bill: { kind: 'bill' } }), plain)).toBe(true)
+    const estimated = task({ estimateCost: 40 })
+    expect(costsVisible(initForm(estimated), estimated)).toBe(true)
+    // cleared while open: still shown, so the field does not vanish under the cursor
+    expect(costsVisible(edit(initForm(estimated), { estimateCost: '' }), estimated)).toBe(true)
+    expect(costsVisible(initForm(task({ actualCost: 0 })), task({ actualCost: 0 }))).toBe(true)
+    // typed on a bill, then unticked: the amount stays in view
+    expect(costsVisible(edit(initForm(plain), { actualCost: '12' }), plain)).toBe(true)
   })
 })
 
