@@ -12,7 +12,24 @@ import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
-import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
+import {
+  NATIVE_UPDATE_NEEDED,
+  RETURN_COOKIE,
+  checkNativeCompletion,
+  clearCookieHeader,
+  completionMessage,
+  cookieHeader,
+  handoffChallenge,
+  handoffFresh,
+  isNativeState,
+  nativeHandoff,
+  nativeState,
+  newVerifier,
+  returnTarget,
+  stateFor,
+  validChallenge,
+  verifyState,
+} from './lib/oauth.mjs'
 import { pushEntry,
   authUrl,
   connectAccount,
@@ -43,9 +60,11 @@ async function start(url) {
   if (!microsoftConfigured()) return fail('not_configured')
   const handoff = url.searchParams.get('h') ?? ''
   const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
-  if (!row || !handoffFresh(row.oauth_handoff_at)) return fail('bad_state')
+  // the handoff carries the challenge of a verifier only the app holds (see lib/oauth.mjs)
+  const challenge = handoffChallenge(handoff)
+  if (!row || !handoffFresh(row.oauth_handoff_at) || !challenge) return fail('bad_state')
   const verifier = newVerifier()
-  const state = stateFor(verifier)
+  const state = nativeState(verifier, challenge)
   await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, ms_oauth_state: state, ms_state_at: new Date().toISOString() })
   const headers = new Headers({ location: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state) })
   headers.append('set-cookie', cookieHeader(MS_COOKIE, verifier))
@@ -54,12 +73,13 @@ async function start(url) {
 }
 
 async function callback(req, url) {
-  const back = q => {
-    const headers = new Headers({ location: `${returnTarget(req, url.origin)}?${q}` })
+  const to = (target, q) => {
+    const headers = new Headers({ location: `${target}?${q}` })
     headers.append('set-cookie', clearCookieHeader(MS_COOKIE))
     headers.append('set-cookie', clearCookieHeader(RETURN_COOKIE))
     return new Response(null, { status: 302, headers })
   }
+  const back = q => to(returnTarget(req, url.origin), q)
   if (!microsoftConfigured()) return back('microsoft=error&reason=not_configured')
   // Microsoft's own refusal (consent, account type, a secret problem it caught
   // early). The browser only ever gets a short code — the client would collapse
@@ -79,6 +99,12 @@ async function callback(req, url) {
   if (!verifyState(req, MS_COOKIE, state)) return back('microsoft=error&reason=state_mismatch')
   const row = await settingsFind('ms_oauth_state', state).catch(() => null)
   if (!row || !row.ms_state_at || Date.now() - Date.parse(row.ms_state_at) > STATE_TTL_MS) return back('microsoft=error&reason=bad_state')
+  if (isNativeState(state)) {
+    // Started in the app: the code goes back to it, and the app finishes the
+    // flow with its session and its verifier ('complete'), so whoever opened
+    // the link cannot attach their account to the one that started it.
+    return to('drafter://oauth', `microsoft=connected&${new URLSearchParams({ code, state })}`)
+  }
   await settingsSet(row.user_id, { ms_oauth_state: null, ms_state_at: null })
   let tokens
   try {
@@ -133,9 +159,11 @@ const handler = async req => {
 
     if (action === 'auth') {
       if (body.native) {
-        const handoff = newHandoff()
+        // the app keeps a verifier and sends only its challenge (see lib/oauth.mjs)
+        if (!validChallenge(body.challenge)) return Response.json({ error: NATIVE_UPDATE_NEEDED }, { status: 400 })
+        const handoff = nativeHandoff(body.challenge)
         await settingsSet(user.id, { oauth_handoff: handoff, oauth_handoff_at: new Date().toISOString() })
-        return Response.json({ url: `${url.origin}/api/microsoft/start?h=${handoff}` })
+        return Response.json({ url: `${url.origin}/api/microsoft/start?h=${encodeURIComponent(handoff)}` })
       }
       const verifier = newVerifier()
       const state = stateFor(verifier)
@@ -144,6 +172,34 @@ const handler = async req => {
         { url: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state, body.loginHint) },
         { headers: { 'set-cookie': cookieHeader(MS_COOKIE, verifier) } },
       )
+    }
+    if (action === 'complete') {
+      // the second half of a flow started in the app (see lib/oauth.mjs checkNativeCompletion)
+      const row = await settingsGet(user.id)
+      const code = String(body.code ?? '')
+      const check = checkNativeCompletion({
+        stored: row?.ms_oauth_state,
+        storedAt: row?.ms_state_at,
+        state: String(body.state ?? ''),
+        verifier: String(body.verifier ?? ''),
+        code,
+        ttlMs: STATE_TTL_MS,
+      })
+      if (!check.ok) return Response.json({ error: completionMessage(check.reason), reason: check.reason }, { status: 403 })
+      // used up before the exchange, so the same code and state cannot be tried twice
+      await settingsSet(user.id, { ms_oauth_state: null, ms_state_at: null })
+      let tokens
+      try {
+        tokens = await exchangeCode(code, redirectUriFor(url.origin))
+      } catch (e) {
+        // as at the callback: Microsoft's prose goes to the log, the app gets the short code
+        console.error('microsoft complete: token exchange failed —', e?.message)
+        const reason = e?.code ?? oauthFailureCode({ error_description: e?.message })
+        return Response.json({ error: `Microsoft refused the sign-in (${reason.replace(/_/g, ' ')}).`, reason }, { status: 502 })
+      }
+      if (!tokens.refresh_token) return Response.json({ error: 'Microsoft sent no refresh token. Connect again.', reason: 'no_refresh_token' }, { status: 400 })
+      const account = await connectAccount(user.id, tokens)
+      return Response.json({ ok: true, account })
     }
     if (action === 'disconnect') {
       await disconnectAccount(user.id, String(body.accountId ?? ''))

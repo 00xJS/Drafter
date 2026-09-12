@@ -9,7 +9,24 @@
 import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
-import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
+import {
+  NATIVE_UPDATE_NEEDED,
+  RETURN_COOKIE,
+  checkNativeCompletion,
+  clearCookieHeader,
+  completionMessage,
+  cookieHeader,
+  handoffChallenge,
+  handoffFresh,
+  isNativeState,
+  nativeHandoff,
+  nativeState,
+  newVerifier,
+  returnTarget,
+  stateFor,
+  validChallenge,
+  verifyState,
+} from './lib/oauth.mjs'
 import { SCOPES, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, randomToken, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
 
@@ -33,15 +50,28 @@ function consentUrl(origin, state, loginHint) {
   return `https://accounts.google.com/o/oauth2/v2/auth?${q}`
 }
 
+/** The connected account's address: shown in Settings, and how a reconnect is told from another account. Cosmetic if it fails. */
+async function googleEmail(accessToken) {
+  try {
+    const me = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { authorization: `Bearer ${accessToken}` } }).then(r => r.json())
+    return me?.email ?? ''
+  } catch {
+    return ''
+  }
+}
+
 /** Safari, opened by the iOS app with a one-time handoff: set the cookie here, then on to Google. */
 async function start(url) {
   const fail = reason => new Response(null, { status: 302, headers: { location: `drafter://oauth?google=error&reason=${encodeURIComponent(reason)}` } })
   if (!googleConfigured()) return fail('not_configured')
   const handoff = url.searchParams.get('h') ?? ''
   const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
-  if (!row || !handoffFresh(row.oauth_handoff_at)) return fail('bad_state')
+  // the handoff carries the challenge of a verifier only the app holds; one
+  // without it (an app build from before) could be finished by whoever opened it
+  const challenge = handoffChallenge(handoff)
+  if (!row || !handoffFresh(row.oauth_handoff_at) || !challenge) return fail('bad_state')
   const verifier = newVerifier()
-  const state = stateFor(verifier)
+  const state = nativeState(verifier, challenge)
   await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, google_oauth_state: state, google_state_at: new Date().toISOString() })
   const headers = new Headers({ location: consentUrl(url.origin, state) })
   headers.append('set-cookie', cookieHeader(GOOGLE_COOKIE, verifier))
@@ -50,12 +80,13 @@ async function start(url) {
 }
 
 async function callback(req, url) {
-  const back = q => {
-    const headers = new Headers({ location: `${returnTarget(req, url.origin)}?${q}` })
+  const to = (target, q) => {
+    const headers = new Headers({ location: `${target}?${q}` })
     headers.append('set-cookie', clearCookieHeader(GOOGLE_COOKIE))
     headers.append('set-cookie', clearCookieHeader(RETURN_COOKIE))
     return new Response(null, { status: 302, headers })
   }
+  const back = q => to(returnTarget(req, url.origin), q)
   if (!googleConfigured()) return back('google=error&reason=not_configured')
   if (url.searchParams.get('error')) return back(`google=error&reason=${encodeURIComponent(url.searchParams.get('error'))}`)
   const code = url.searchParams.get('code')
@@ -66,17 +97,19 @@ async function callback(req, url) {
   if (!verifyState(req, GOOGLE_COOKIE, state)) return back('google=error&reason=state_mismatch')
   const row = await settingsFind('google_oauth_state', state).catch(() => null)
   if (!row || !row.google_state_at || Date.now() - Date.parse(row.google_state_at) > STATE_TTL_MS) return back('google=error&reason=bad_state')
+  if (isNativeState(state)) {
+    // Started in the app. Finishing here would attach whoever consented in
+    // THIS browser — anyone who opened the link — to the account that started
+    // the flow. So the code goes back to the app, always, and the app finishes
+    // with its own session and the verifier only it holds ('complete'). The
+    // state stays on the row until then and is used up there.
+    return to('drafter://oauth', `google=connected&${new URLSearchParams({ code, state })}`)
+  }
   await settingsSet(row.user_id, { google_oauth_state: null, google_state_at: null })
   try {
     const tokens = await exchangeCode(code, redirectUriFor(url.origin))
     if (!tokens.refresh_token) return back('google=error&reason=no_refresh_token')
-    let email = ''
-    try {
-      const me = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { authorization: `Bearer ${tokens.access_token}` } }).then(r => r.json())
-      email = me?.email ?? ''
-    } catch {
-      /* cosmetic */
-    }
+    const email = await googleEmail(tokens.access_token)
     await settingsSet(row.user_id, reconnectPatch(row, tokens.refresh_token, email))
     return back('google=connected')
   } catch (e) {
@@ -117,15 +150,40 @@ const handler = async req => {
 
     if (action === 'auth') {
       if (body.native) {
-        // the app cannot hold the cookie; Safari will, via /start
-        const handoff = newHandoff()
+        // The app cannot hold the cookie; Safari will, via /start. The app
+        // keeps a verifier and sends only its challenge, so this flow can be
+        // finished by that app alone, signed in as this user ('complete').
+        if (!validChallenge(body.challenge)) return Response.json({ error: NATIVE_UPDATE_NEEDED }, { status: 400 })
+        const handoff = nativeHandoff(body.challenge)
         await settingsSet(user.id, { oauth_handoff: handoff, oauth_handoff_at: new Date().toISOString() })
-        return Response.json({ url: `${url.origin}/api/google/start?h=${handoff}` })
+        return Response.json({ url: `${url.origin}/api/google/start?h=${encodeURIComponent(handoff)}` })
       }
       const verifier = newVerifier()
       const state = stateFor(verifier)
       await settingsSet(user.id, { google_oauth_state: state, google_state_at: new Date().toISOString() })
       return Response.json({ url: consentUrl(url.origin, state, user.email) }, { headers: { 'set-cookie': cookieHeader(GOOGLE_COOKIE, verifier) } })
+    }
+    if (action === 'complete') {
+      // The second half of a flow started in the app: only the account that
+      // started it, presenting the verifier it kept, can attach the calendar.
+      const row = await settingsGet(user.id)
+      const code = String(body.code ?? '')
+      const check = checkNativeCompletion({
+        stored: row?.google_oauth_state,
+        storedAt: row?.google_state_at,
+        state: String(body.state ?? ''),
+        verifier: String(body.verifier ?? ''),
+        code,
+        ttlMs: STATE_TTL_MS,
+      })
+      if (!check.ok) return Response.json({ error: completionMessage(check.reason), reason: check.reason }, { status: 403 })
+      // used up before the exchange, so the same code and state cannot be tried twice
+      await settingsSet(user.id, { google_oauth_state: null, google_state_at: null })
+      const tokens = await exchangeCode(code, redirectUriFor(url.origin))
+      if (!tokens.refresh_token) return Response.json({ error: 'Google sent no refresh token. Connect again.', reason: 'no_refresh_token' }, { status: 400 })
+      const email = await googleEmail(tokens.access_token)
+      await settingsSet(user.id, reconnectPatch(row, tokens.refresh_token, email))
+      return Response.json({ ok: true, email })
     }
     if (action === 'disconnect') {
       await revoke(user.id)

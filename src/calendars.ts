@@ -4,6 +4,8 @@ import { CalendarEntry, CalendarEvent, CalendarSource, Item, OPEN_STATUSES, Proj
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
 import { hashId, newerStamp } from './itemops'
+import { oauthReasonLabel } from './links'
+import { isNative, onOAuthReturn, startOAuth } from './native'
 import { dateKey } from './utils'
 
 // External calendars are read through the session-gated /api/calendars proxy
@@ -1298,4 +1300,148 @@ export function useMicrosoftSync(
     [signature, myId],
   )
   return useMirrorSync(items, projects, targets, myId)
+}
+
+// ---- connecting an account -----------------------------------------------------
+//
+// On the web the consent screen replaces the page and the callback finishes
+// the job, bound to this browser by a short-lived cookie. The iOS app's web
+// view cannot share cookies with the Safari sheet consent runs in, so it used
+// to hand Safari a one-time link that minted the cookie there — and whoever
+// opened that link inside its two minutes could attach THEIR calendar to this
+// account. Now the app keeps a random verifier in memory and sends only its
+// challenge; the callback hands the code back to the app instead of finishing;
+// and the server finishes only for this signed-in account presenting that
+// verifier. The code reaches the device consent happened on, so a link opened
+// by anyone else leads nowhere.
+
+export type CalendarProvider = 'google' | 'microsoft'
+
+export interface OAuthSettled {
+  provider: CalendarProvider
+  ok: boolean
+  error?: string
+}
+
+export interface OAuthReturn {
+  provider: CalendarProvider
+  code?: string
+  state?: string
+  error?: string
+}
+
+const OAUTH_PENDING_MS = 10 * 60_000
+let pendingOAuth: { provider: CalendarProvider; verifier: string; at: number } | null = null
+let completingOAuth: CalendarProvider | null = null
+const oauthWatchers = new Set<(r: OAuthSettled) => void>()
+let oauthReturnArmed: Promise<unknown> | null = null
+
+const providerAction = (p: CalendarProvider): (<T>(action: string, payload?: Record<string, unknown>) => Promise<T>) => (p === 'google' ? googleAction : microsoftAction)
+
+function base64url(bytes: Uint8Array): string {
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** 256 random bits, base64url: the app's half of the handoff. Held in memory only, never stored or sent. */
+export function newOAuthVerifier(): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(32)))
+}
+
+/** base64url(SHA-256(verifier)), RFC 7636's S256 — what the server's challengeFor computes. */
+export async function oauthChallenge(verifier: string): Promise<string> {
+  return base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
+}
+
+/** What Safari hands back to the app: drafter://oauth?google=connected&code=…&state=…, or a refusal. */
+export function parseOAuthReturn(url: string): OAuthReturn | null {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return null
+  }
+  if (u.protocol !== 'drafter:' || u.hostname !== 'oauth') return null
+  const provider: CalendarProvider | null = u.searchParams.has('microsoft') ? 'microsoft' : u.searchParams.has('google') ? 'google' : null
+  if (!provider) return null
+  if (u.searchParams.get(provider) !== 'connected') return { provider, error: u.searchParams.get('reason') ?? 'unknown' }
+  return { provider, code: u.searchParams.get('code') ?? undefined, state: u.searchParams.get('state') ?? undefined }
+}
+
+/** Hear when a sign-in the app started has finished or failed; Settings refreshes on it. Returns a disposer. */
+export function onOAuthSettled(cb: (r: OAuthSettled) => void): () => void {
+  oauthWatchers.add(cb)
+  return () => {
+    oauthWatchers.delete(cb)
+  }
+}
+
+/** The provider whose sign-in the app is finishing at this moment, if any. */
+export function oauthCompleting(): CalendarProvider | null {
+  return completingOAuth
+}
+
+/** Begin the app's half of a handoff: a fresh verifier kept in memory, and the challenge to send for it. */
+export async function beginNativeOAuth(provider: CalendarProvider, now = Date.now()): Promise<{ challenge: string }> {
+  const verifier = newOAuthVerifier()
+  pendingOAuth = { provider, verifier, at: now }
+  return { challenge: await oauthChallenge(verifier) }
+}
+
+/**
+ * Finish a sign-in this app started, from the URL Safari handed back. Nothing
+ * happens for a return this app did not start a flow for (a link opened on
+ * another device), for the other provider, or once its verifier is stale; and
+ * a verifier is used once. `action` is the server call, stubbed in tests.
+ */
+export async function finishOAuthReturn(
+  url: string,
+  action: (provider: CalendarProvider, name: string, payload: Record<string, unknown>) => Promise<unknown> = (p, name, payload) => providerAction(p)(name, payload),
+  now = Date.now(),
+): Promise<OAuthSettled | null> {
+  const ret = parseOAuthReturn(url)
+  const pending = pendingOAuth
+  if (!ret || !pending || pending.provider !== ret.provider) return null
+  pendingOAuth = null
+  if (now - pending.at > OAUTH_PENDING_MS) return null
+  const who = ret.provider === 'google' ? 'Google Calendar' : 'Outlook'
+  let settled: OAuthSettled
+  if (ret.error || !ret.code || !ret.state) {
+    settled = { provider: ret.provider, ok: false, error: `${who} could not be connected (${oauthReasonLabel(ret.error ?? 'missing_code')}).` }
+  } else {
+    completingOAuth = ret.provider
+    try {
+      await action(ret.provider, 'complete', { code: ret.code, state: ret.state, verifier: pending.verifier })
+      settled = { provider: ret.provider, ok: true }
+    } catch (e) {
+      settled = { provider: ret.provider, ok: false, error: (e as Error).message }
+    } finally {
+      completingOAuth = null
+    }
+  }
+  for (const cb of [...oauthWatchers]) cb(settled)
+  return settled
+}
+
+/**
+ * Start connecting Google or an Outlook account. The web navigates to the
+ * consent screen ('redirect'); the app opens Safari's sheet ('native') and
+ * finishes the flow itself when Safari hands the code back.
+ */
+export async function connectCalendarAccount(provider: CalendarProvider): Promise<'native' | 'redirect'> {
+  const action = providerAction(provider)
+  if (!isNative()) {
+    const { url } = await action<{ url: string }>('auth')
+    return startOAuth(url)
+  }
+  if (!oauthReturnArmed) {
+    oauthReturnArmed = onOAuthReturn(url => void finishOAuthReturn(url)).catch(() => {
+      oauthReturnArmed = null
+    })
+  }
+  await oauthReturnArmed
+  const { challenge } = await beginNativeOAuth(provider)
+  const { url } = await action<{ url: string }>('auth', { native: true, challenge })
+  return startOAuth(url)
 }

@@ -57,6 +57,22 @@ export async function closeExternal(): Promise<void> {
 }
 
 /**
+ * Hear a calendar sign-in come back to the app (drafter://oauth…). A second
+ * listener beside initNative's: the planner still shows its toast and opens
+ * Settings, while the caller finishes the handoff with the verifier only this
+ * app holds (see connectCalendarAccount in calendars.ts). Returns a disposer;
+ * a no-op on the web, where the callback finishes the flow itself.
+ */
+export async function onOAuthReturn(cb: (url: string) => void): Promise<() => void> {
+  if (!isNative()) return () => {}
+  const { App } = await import('@capacitor/app')
+  const handle = await App.addListener('appUrlOpen', e => {
+    if (/^drafter:\/\/oauth\b/i.test(e.url)) cb(e.url)
+  })
+  return () => void handle.remove()
+}
+
+/**
  * The haptics plugin, loaded once. A swipe threshold has to buzz within a few
  * milliseconds of the finger crossing it, and a cold `import()` is a chunk
  * fetch — so the first crossing of a session was silent until this was

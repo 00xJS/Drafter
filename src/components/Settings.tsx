@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, disconnectOutlook, googlePushId, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, connectCalendarAccount, disconnectOutlook, googlePushId, oauthCompleting, onOAuthSettled, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -9,7 +9,7 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
-import { appLockEnabled, authenticateAppLock, checkAppLock, genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setGenericRemindersEnabled, setLocalRemindersEnabled, startOAuth } from '../native'
+import { appLockEnabled, authenticateAppLock, checkAppLock, genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setGenericRemindersEnabled, setLocalRemindersEnabled } from '../native'
 import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
@@ -69,12 +69,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const [copied, setCopied] = useState(false)
   const [ms, setMs] = useState<MicrosoftStatus | null>(null)
   const [msCals, setMsCals] = useState<{ account: { id: string; name: string; email: string }; calendars: MicrosoftCalendarInfo[]; error?: string }[] | null>(null)
-  const [msBusy, setMsBusy] = useState(false)
+  // the app may be finishing an Outlook sign-in as Settings reopens on its return
+  const [msBusy, setMsBusy] = useState(() => oauthCompleting() === 'microsoft')
   const [msError, setMsError] = useState('')
   const [google, setGoogle] = useState<GoogleStatus | null>(null)
   const [googleError, setGoogleError] = useState('')
   const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
-  const [googleBusy, setGoogleBusy] = useState(false)
+  const [googleBusy, setGoogleBusy] = useState(() => oauthCompleting() === 'google')
   const supabaseOn = isSupabaseConfigured()
   const [push, setPush] = useState<PushInfo | null>(null)
   const [pushError, setPushError] = useState('')
@@ -128,25 +129,46 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const mirroring = !!pushSource?.enabled
 
   useEffect(() => {
+    const loadMicrosoft = () =>
+      microsoftAction<MicrosoftStatus>('status')
+        .then(st => {
+          setMs(st)
+          if (st.accounts.length > 0) {
+            microsoftAction<{ accounts: typeof msCals }>('calendars')
+              .then(r => setMsCals(r.accounts))
+              .catch(e => setMsError((e as Error).message))
+          }
+        })
+        .catch(e => setMsError((e as Error).message))
+    const loadGoogle = () =>
+      googleAction<GoogleStatus>('status')
+        .then(st => {
+          setGoogle(st)
+          if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
+        })
+        .catch(e => setGoogleError((e as Error).message))
     fetchFeedInfo()
       .then(setFeed)
       .catch(e => setFeedError((e as Error).message))
-    microsoftAction<MicrosoftStatus>('status')
-      .then(st => {
-        setMs(st)
-        if (st.accounts.length > 0) {
-          microsoftAction<{ accounts: typeof msCals }>('calendars')
-            .then(r => setMsCals(r.accounts))
-            .catch(e => setMsError((e as Error).message))
-        }
-      })
-      .catch(e => setMsError((e as Error).message))
-    googleAction<GoogleStatus>('status')
-      .then(st => {
-        setGoogle(st)
-        if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
-      })
-      .catch(e => setGoogleError((e as Error).message))
+    // A sign-in the app is finishing right now reports below; asking for its
+    // status before it lands would offer "Connect" all over again.
+    const completing = oauthCompleting()
+    if (completing !== 'microsoft') void loadMicrosoft()
+    if (completing !== 'google') void loadGoogle()
+    // The iOS app finishes a calendar sign-in itself when Safari hands it back
+    // (connectCalendarAccount), and the planner reopens Settings as it does:
+    // the result, or the reason it failed, is heard here.
+    return onOAuthSettled(r => {
+      if (r.provider === 'google') {
+        setGoogleBusy(false)
+        if (r.ok) void loadGoogle()
+        else setGoogleError(r.error ?? 'Google Calendar could not be connected.')
+      } else {
+        setMsBusy(false)
+        if (r.ok) void loadMicrosoft()
+        else setMsError(r.error ?? 'Outlook could not be connected.')
+      }
+    })
   }, [])
 
   const runFeed = async (action: 'enable' | 'rotate' | 'disable') => {
@@ -165,8 +187,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
     setGoogleBusy(true)
     setGoogleError('')
     try {
-      const { url } = await googleAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-      const mode = await startOAuth(url)
+      const mode = await connectCalendarAccount('google')
       if (mode === 'native') setGoogleBusy(false)
     } catch (e) {
       setGoogleError((e as Error).message)
@@ -704,8 +725,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         setMsBusy(true)
                         setMsError('')
                         try {
-                          const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                          const mode = await startOAuth(url)
+                          const mode = await connectCalendarAccount('microsoft')
                           if (mode === 'native') setMsBusy(false)
                         } catch (e) {
                           setMsError((e as Error).message)
@@ -839,8 +859,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           setMsBusy(true)
                           setMsError('')
                           try {
-                            const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                            const mode = await startOAuth(url)
+                            const mode = await connectCalendarAccount('microsoft')
                             if (mode === 'native') setMsBusy(false)
                           } catch (e) {
                             setMsError((e as Error).message)
