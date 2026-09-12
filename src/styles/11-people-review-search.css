@@ -192,8 +192,10 @@
 }
 
 /* review */
+/* the column gap on .insights.review spaces the toolbar; the base .toolbar
+   margin would add 12px on top of it */
 .review .toolbar {
-  margin-bottom: 14px;
+  margin-bottom: 0;
   align-items: center;
 }
 .review .view-title {

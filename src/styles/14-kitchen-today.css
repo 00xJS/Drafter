@@ -113,18 +113,22 @@
   display: grid;
   place-items: center;
 }
-/* Today is one column of blocks — the header, the briefing, the KPI row, the
-   journal, habits, routines, Next up. This gap is the ONLY vertical spacing
-   between them: no block carries a margin of its own, so none can end up
-   flush against its neighbour and none can double up. The Week view is not
-   included; it lays its cards out in grids that space themselves. */
-.insights.today {
+/* Today and the Week view are each one column of blocks — Today: the header,
+   the briefing, the KPI row, the journal, habits, routines, Next up; Week: the
+   toolbar, You said, the KPI row, the summary and the grid of cards. This gap
+   is the ONLY vertical spacing between them: no block carries a margin of its
+   own, so none can end up flush against its neighbour and none can double up.
+   (Week once relied on the KPI row's own bottom margin; when that went, its
+   tiles sat flush on the Done card.) */
+.insights.today,
+.insights.review {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 @media (max-width: 640px) {
-  .insights.today {
+  .insights.today,
+  .insights.review {
     gap: 12px;
   }
 }
