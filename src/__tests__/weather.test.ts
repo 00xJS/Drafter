@@ -11,6 +11,9 @@ const mem = new Map<string, string>()
 
 beforeEach(() => {
   mem.clear()
+  // Node ships a real navigator, and getWeather reads its language to pick a
+  // scale — pinned, so the URL these tests capture is the same on every machine.
+  vi.stubGlobal('navigator', { language: 'en-GB' })
   globalThis.localStorage = {
     getItem: (k: string) => mem.get(k) ?? null,
     setItem: (k: string, v: string) => {
@@ -106,6 +109,12 @@ describe('fetchForecast', () => {
     const f = await fetchForecast(51.5, -0.12, fn as unknown as typeof fetch)
     expect(f).toEqual({ tempC: 18, hiC: 21, loC: 11, rainPct: 35, code: 2, unit: '°C' })
   })
+  it('names the scale it asked for when the body does not say', async () => {
+    const bare = { current: sample.current, daily: sample.daily }
+    const fn = async () => new Response(JSON.stringify(bare), { status: 200 })
+    expect((await fetchForecast(0, 0, fn as unknown as typeof fetch, 'f'))?.unit).toBe('°F')
+    expect((await fetchForecast(0, 0, fn as unknown as typeof fetch))?.unit).toBe('°C')
+  })
   it('returns null on a bad status, a malformed body, or a thrown fetch', async () => {
     expect(await fetchForecast(0, 0, async () => new Response('nope', { status: 500 }))).toBeNull()
     expect(await fetchForecast(0, 0, async () => new Response('{}', { status: 200 }))).toBeNull()
@@ -151,6 +160,7 @@ describe('getWeather', () => {
     const url = String(fn.mock.calls[0][0])
     expect(url).toContain('latitude=')
     expect(url).toContain('current=temperature_2m%2Cweather_code%2Cprecipitation')
+    expect(url).not.toContain('temperature_unit')
     const stored = readMem()
     expect(stored.fetchedAt).toBe(now)
     expect(stored.forecast.tempC).toBe(18)

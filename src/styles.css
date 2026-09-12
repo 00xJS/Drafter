@@ -6283,12 +6283,25 @@ textarea {
 .briefing {
   padding: 12px 14px;
 }
+/* the one weather control: Off, the device, or a city. A native select so a
+   phone gets its own picker; kept small on desktop so it reads as a setting,
+   not a field. On the phone the zoom guard at the end of the file outranks
+   this and deliberately gives it 16px — the size that stops Safari zooming
+   in on focus — so there it is the largest text in the strip, on purpose */
+.briefing-weather-pick {
+  max-width: 12.5rem;
+  padding: 5px 8px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  border-radius: 999px;
+}
+.briefing-weather-pick:hover {
+  color: var(--text);
+}
 .briefing .chart-head {
   margin-bottom: 8px;
-}
-.briefing-weather-btn {
-  flex: none;
-  font-size: 0.75rem;
 }
 .briefing-tiles {
   list-style: none;
@@ -6333,7 +6346,7 @@ textarea {
   color: var(--muted);
   font-size: 0.75rem;
 }
-/* why Enable did nothing — shown only after a refused location prompt */
+/* why "Use my location" did nothing — shown only after a refused prompt */
 .briefing-note {
   margin: 0 0 8px;
   font-size: 0.8125rem;
