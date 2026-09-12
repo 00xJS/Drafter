@@ -6,8 +6,6 @@ import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
 import { Board } from './Board'
-import { Calendar } from './Calendar'
-import { Roadmap } from './Roadmap'
 import { TasksTable } from './TasksTable'
 import { People } from './People'
 import { Places } from './Places'
@@ -27,6 +25,7 @@ import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
+import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
 import { TASKS_TABS, VIEW_LABELS } from './planner/routes'
 import { Toast } from './planner/Toast'
@@ -98,13 +97,13 @@ export default function Planner() {
   }
   // read inline below until each screen and the overlays move into planner/
   const { paletteCommands, mineOnly, setMineOnly, inHousehold, filteredTasks } = p
-  const { view, setView, calMode, setCalMode, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, setTasksTab, setPeopleTab } = p
+  const { view, setView, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, setTasksTab, setPeopleTab } = p
   const { placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
-  const { toast, setToast, calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
+  const { toast, setToast, calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
   const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
   const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, newProject, anyOpen, isOwner } = p
-  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent } = p
-  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule } = p
+  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, logVisit, logAttendance, planWith, planAt } = p
+  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus } = p
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -146,61 +145,7 @@ export default function Planner() {
               </button>
             )}
             {view === 'home' && <HomeScreen p={p} />}
-            {view === 'calendar' && (
-              <>
-                <div className="segmented cal-mode" role="tablist" aria-label="Calendar mode">
-                  <button className={calMode === 'month' ? 'seg on' : 'seg'} onClick={() => setCalMode('month')}>
-                    Month
-                  </button>
-                  <button className={calMode === 'week' ? 'seg on' : 'seg'} onClick={() => setCalMode('week')}>
-                    Week
-                  </button>
-                  <button className={calMode === 'timeline' ? 'seg on' : 'seg'} onClick={() => setCalMode('timeline')}>
-                    Timeline
-                  </button>
-                </div>
-                {calMode !== 'timeline' ? (
-                  <Calendar
-                    view={calMode}
-                    tasks={filteredTasks}
-                    projects={store.projects}
-                    projectMap={projectMap}
-                    people={store.people}
-                    meals={store.meals}
-                    recipes={store.recipes}
-                    places={store.places}
-                    onSaveMeal={saveMeal}
-                    onClearMeal={clearMeal}
-                    onCreatePlace={createPlaceInline}
-                    onCreateRecipe={createRecipeInline}
-                    onNewEvent={(startIso, work) => setEventEditor({ startIso, work })}
-                    onEditEvent={id => {
-                      const entry = store.events.find(e => e.id === id)
-                      if (entry) setEventEditor({ entry, startIso: entry.start })
-                    }}
-                    events={allEvents}
-                    sourceMap={sourceMap}
-                    onOpen={openTask}
-                    onNew={d => newTask({ status: 'todo', dueAt: d })}
-                    onReschedule={reschedule}
-                    onPlan={planForEvent}
-                    onAttendance={ev => setAttendance(ev)}
-                    onOpenProject={openProject}
-                    onPlanOccasion={planOccasion}
-                  />
-                ) : (
-                  <Roadmap
-                    projects={store.projects}
-                    tasks={store.tasks}
-                    events={allEvents}
-                    sourceMap={sourceMap}
-                    onOpenProject={openProject}
-                    onNewProject={newProject}
-                    onOpenTask={openTask}
-                  />
-                )}
-              </>
-            )}
+            {view === 'calendar' && <CalendarScreen p={p} />}
             {view === 'tasks' && (
               <>
                 {/* one workspace, four lenses on the same project data — the list,
