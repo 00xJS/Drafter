@@ -453,6 +453,61 @@ describe('personal kinds stay with their owner', () => {
   })
 })
 
+describe('grocery lines taken off the list', () => {
+  /** household() with Spaghetti (the pasta's) taken off the list and a hand-added Milk still on it. */
+  const withRemoved = (): Row[] => {
+    const rows = household()
+    rows.find(r => r.data.kind === 'grocery')!.data.items = [
+      { id: 'g1', name: 'Milk', state: 'need', recipeIds: [], manual: true },
+      { id: 'g2', name: 'Spaghetti', qty: 500, unit: 'g', state: 'need', recipeIds: ['pasta'], removed: true, removedRecipeIds: ['pasta'] },
+    ]
+    return rows
+  }
+  type Line = { id: string; name: string; state: string; qty?: number; unit?: string; removed?: boolean; removedRecipeIds?: string[] }
+
+  it('get_grocery_list and get_week_meals leave them out', async () => {
+    serveHousehold(withRemoved())
+    const list = (await tool('get_grocery_list').run({ date: DAY }, ctxFor())) as { count: number; items: Line[] }
+    expect(list.items.map(i => i.name)).toEqual(['Milk'])
+    expect(list.count).toBe(1)
+    serveHousehold(withRemoved())
+    const need = (await tool('get_grocery_list').run({ date: DAY, state: 'need' }, ctxFor())) as { items: Line[] }
+    expect(need.items.map(i => i.name)).toEqual(['Milk'])
+    serveHousehold(withRemoved())
+    const week = (await tool('get_week_meals').run({ date: DAY }, ctxFor())) as { grocery: { items: Line[] } }
+    expect(week.grocery.items.map(i => i.name)).toEqual(['Milk'])
+  })
+
+  it('add_grocery_item restores a removed line instead of adding a second one', async () => {
+    const sent = serveHousehold(withRemoved())
+    const out = await tool('add_grocery_item').run({ name: 'spaghetti', date: DAY }, ctxFor())
+    expect(out).toMatchObject({ added: 'restored a line that had been taken off the list', count: 2 })
+    const items = sent[0].items as Line[]
+    expect(items.filter(i => i.name.toLowerCase() === 'spaghetti')).toHaveLength(1)
+    const back = items.find(i => i.name === 'Spaghetti')!
+    expect(back).toMatchObject({ id: 'g2', state: 'need', qty: 500, unit: 'g' })
+    expect(back.removed).toBeUndefined()
+    expect(back.removedRecipeIds).toBeUndefined()
+  })
+
+  it('plan_meal keeps a removed line off the list while the same recipe is planned', async () => {
+    const sent = serveHousehold(withRemoved())
+    const out = (await tool('plan_meal').run({ date: DAY, recipeName: 'Pasta' }, ctxFor())) as { groceryItems: number }
+    expect(out.groceryItems).toBe(1)
+    const grocery = sent.find(i => i.kind === 'grocery')!
+    expect((grocery.items as Line[]).find(i => i.name === 'Spaghetti')).toMatchObject({ id: 'g2', removed: true, removedRecipeIds: ['pasta'] })
+  })
+
+  it('set_grocery_state will not tick a removed line, and says how to bring it back', async () => {
+    const sent = serveHousehold(withRemoved())
+    await expect(tool('set_grocery_state').run({ name: 'Spaghetti', state: 'done', date: DAY }, ctxFor())).rejects.toThrow(
+      /"Spaghetti" was taken off this week's list\. add_grocery_item puts it back/,
+    )
+    await expect(tool('set_grocery_state').run({ id: 'g2', state: 'have', date: DAY }, ctxFor())).rejects.toThrow(/taken off/)
+    expect(sent).toEqual([])
+  })
+})
+
 describe('"today" is the user\'s today', () => {
   const task = { kind: 'task', id: 'call', title: 'Call the bank', description: '', status: 'todo', priority: 'normal', tags: [], dueAt: '2026-09-11T20:00:00.000Z', updatedAt: STAMP }
   // 06:30 UTC on the 12th is 23:30 on the 11th in Los Angeles

@@ -19,7 +19,7 @@ import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK
 import { seenStatus, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
-import { buildGroceryList, groceryId, groceryWeekFor, ingredientKey, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
+import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue } from '../shared/today.mjs'
 
@@ -720,7 +720,8 @@ export const TOOLS = [
     name: 'get_week_meals',
     scope: 'read',
     annotations: READS,
-    description: 'The meal plan for the Sunday-start week containing a date (default today): every planned breakfast/lunch/dinner and the grocery list for that week.',
+    description:
+      'The meal plan for the Sunday-start week containing a date (default today): every planned breakfast/lunch/dinner and the grocery list for that week (lines taken off the list by hand are left out).',
     inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD, default today' } } },
     async run({ date } = {}, { db, clock }) {
       const day = date ? String(date).trim() : clock.todayKey()
@@ -733,7 +734,7 @@ export const TOOLS = [
         weekKey,
         days: weekDayKeys(day),
         meals: meals.map(m => ({ id: m.id, date: m.date, slot: m.slot, title: m.title, recipeId: m.recipeId ?? null, notes: m.notes ?? null })),
-        grocery: grocery ? { id: grocery.id, items: grocery.items ?? [] } : null,
+        grocery: grocery ? { id: grocery.id, items: activeGroceryLines(grocery.items) } : null,
       }
     },
   },
@@ -742,7 +743,7 @@ export const TOOLS = [
     scope: 'write',
     annotations: EDITS,
     description:
-      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes), a free-text title such as "Leftovers", or a meal you are buying rather than cooking (out: true, optionally placeName from list_places). Replaces whatever was in that slot and rebuilds the week\'s grocery list from every planned recipe, keeping Have / Got it ticks and hand-added lines. A bought meal adds nothing to the list, and once its day has passed it counts as an outing at that place.',
+      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes), a free-text title such as "Leftovers", or a meal you are buying rather than cooking (out: true, optionally placeName from list_places). Replaces whatever was in that slot and rebuilds the week\'s grocery list from every planned recipe, keeping Have / Got it ticks, hand-added lines and lines taken off the list (one comes back only when a newly planned recipe needs it). A bought meal adds nothing to the list, and once its day has passed it counts as an outing at that place.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -809,7 +810,7 @@ export const TOOLS = [
       assertStored(await db.syncWrite([meal, grocery]), [meal, grocery])
       return {
         planned: { id: meal.id, date: meal.date, slot: meal.slot, title: meal.title, recipeId: meal.recipeId ?? null, out: !!meal.out, placeId: meal.placeId ?? null },
-        groceryItems: grocery.items.length,
+        groceryItems: activeGroceryLines(grocery.items).length,
         weekKey,
       }
     },
@@ -818,7 +819,8 @@ export const TOOLS = [
     name: 'get_grocery_list',
     scope: 'read',
     annotations: READS,
-    description: 'The grocery list for the week containing a date (default today): each line with qty/unit, state (need|have|done) and the recipes it came from.',
+    description:
+      'The grocery list for the week containing a date (default today): each line with qty/unit, state (need|have|done) and the recipes it came from. Lines taken off the list by hand are left out; add_grocery_item puts one back.',
     inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD, default today' }, state: { type: 'string', enum: GROCERY_STATES } } },
     async run({ date, state } = {}, { db, clock }) {
       const day = date ? String(date).trim() : clock.todayKey()
@@ -826,7 +828,8 @@ export const TOOLS = [
       const weekKey = weekKeyOf(day)
       const all = await db.fetchAll({ kinds: ['grocery', 'meal', 'recipe'] })
       const list = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey) ?? buildGroceryList(weekKey, mealsInWeekOf(all.filter(i => i.kind === 'meal'), day), all.filter(i => i.kind === 'recipe'), null)
-      const items = state ? list.items.filter(i => i.state === oneOf(state, GROCERY_STATES, 'state')) : list.items
+      const lines = activeGroceryLines(list.items)
+      const items = state ? lines.filter(i => i.state === oneOf(state, GROCERY_STATES, 'state')) : lines
       return { weekKey, count: items.length, items }
     },
   },
@@ -834,7 +837,8 @@ export const TOOLS = [
     name: 'add_grocery_item',
     scope: 'write',
     annotations: ADDS,
-    description: 'Add a line by hand to the week\'s grocery list ("milk", "2 kg potatoes"). Hand-added lines survive when the list is rebuilt from the meal plan.',
+    description:
+      'Add a line by hand to the week\'s grocery list ("milk", "2 kg potatoes"). Hand-added lines survive when the list is rebuilt from the meal plan. A name already on the list goes back to need instead of being added twice, and a line that was taken off the list is restored rather than duplicated (without a unit or qty, the name alone matches).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -854,18 +858,14 @@ export const TOOLS = [
       const all = await db.fetchAll({ kinds: ['grocery', 'meal', 'recipe'] })
       const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey) ?? null
       const list = prev ?? buildGroceryList(weekKey, mealsInWeekOf(all.filter(i => i.kind === 'meal'), day), all.filter(i => i.kind === 'recipe'), null, clock.iso())
-      const key = ingredientKey(clean, unit)
-      const dup = (list.items ?? []).find(l => ingredientKey(l.name, l.unit) === key)
-      if (dup) {
-        dup.state = 'need'
-        if (qty != null && Number.isFinite(Number(qty))) dup.qty = (dup.qty ?? 0) + Number(qty)
-      } else {
-        list.items = [...(list.items ?? []), { id: newId(), name: clean, qty: qty != null && Number.isFinite(Number(qty)) ? Number(qty) : undefined, unit: unit ? String(unit).trim() || undefined : undefined, state: 'need', recipeIds: [], manual: true }]
-      }
+      // the Kitchen tab's add box runs the same rule: never twice, and a removed line comes back
+      const { items, outcome } = addGroceryItem(list.items ?? [], { name: clean, qty, unit }, newId)
+      list.items = items
       list.id = groceryId(weekKey)
       list.updatedAt = newerStamp(prev?.updatedAt)
       await db.writeItem(list)
-      return { weekKey, added: dup ? 'merged into an existing line' : clean, count: list.items.length }
+      const added = outcome === 'merged' ? 'merged into an existing line' : outcome === 'restored' ? 'restored a line that had been taken off the list' : clean
+      return { weekKey, added, count: activeGroceryLines(list.items).length }
     },
   },
   {
@@ -892,8 +892,14 @@ export const TOOLS = [
       const list = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey)
       if (!list) throw new Error(`No grocery list for week ${weekKey} yet. Plan a meal or add an item first.`)
       const needle = String(name ?? '').trim().toLowerCase()
-      const line = (list.items ?? []).find(l => (id && l.id === id) || (needle && l.name.toLowerCase() === needle)) ?? (needle ? (list.items ?? []).find(l => l.name.toLowerCase().includes(needle)) : null)
-      if (!line) throw new Error(`No line matches ${id ? `id "${id}"` : `"${name}"`} on this week's list.`)
+      const find = lines => lines.find(l => (id && l.id === id) || (needle && l.name.toLowerCase() === needle)) ?? (needle ? lines.find(l => l.name.toLowerCase().includes(needle)) : null)
+      // a line taken off the list is not on it: ticking one must not quietly bring it back
+      const line = find(activeGroceryLines(list.items))
+      if (!line) {
+        const off = find((list.items ?? []).filter(l => l && l.removed))
+        if (off) throw new Error(`"${off.name}" was taken off this week's list. add_grocery_item puts it back.`)
+        throw new Error(`No line matches ${id ? `id "${id}"` : `"${name}"`} on this week's list.`)
+      }
       line.state = next
       list.updatedAt = newerStamp(list.updatedAt)
       await db.writeItem(list)
