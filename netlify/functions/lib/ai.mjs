@@ -70,13 +70,16 @@ export async function completeNvidia({ system, prompt, maxTokens, json = false }
   if (system) messages.push({ role: 'system', content: system })
   messages.push({ role: 'user', content: prompt })
   const temperature = json ? 0.2 : 0.6
+  // the default model reasons before it answers, and its thinking counts
+  // against max_tokens: a small JSON budget ended mid-array
+  const budget = json ? Math.max(maxTokens ?? 0, 2048) : maxTokens
 
   const configured = process.env.NVIDIA_MODEL?.trim()
   const candidates = [...new Set([resolvedNvidiaModel, configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
 
   const tried = []
   for (const model of candidates) {
-    const attempt = await callNvidia(model, messages, maxTokens, { json, temperature })
+    const attempt = await callNvidia(model, messages, budget, { json, temperature })
     if (attempt.ok) {
       resolvedNvidiaModel = model
       const choice = attempt.data?.choices?.[0]

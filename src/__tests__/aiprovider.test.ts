@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { anthropicRequest } from '../../netlify/functions/lib/ai.mjs'
+import { describe, expect, it, vi } from 'vitest'
+import { anthropicRequest, completeNvidia } from '../../netlify/functions/lib/ai.mjs'
 
 // Anthropic is the backup for when NVIDIA is rate-limited or down, so this path
 // runs rarely and a bad request shape can hide for weeks — it did: every JSON
@@ -48,5 +48,25 @@ describe('the Anthropic backup request', () => {
     const haiku = anthropicRequest({ ...base, model: 'claude-haiku-4-5' })
     expect(haiku).not.toHaveProperty('fallbacks')
     expect(haiku).not.toHaveProperty('betas')
+  })
+})
+
+describe('the NVIDIA request', () => {
+  it('gives a JSON call room to reason before it answers; plain text keeps its budget', async () => {
+    const bodies: { max_tokens: number }[] = []
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body))
+      return new Response(JSON.stringify({ choices: [{ message: { content: '[]' } }] }), { status: 200 })
+    })
+    process.env.NVIDIA_API_KEY = 'test-key'
+    try {
+      await completeNvidia({ system: 's', prompt: 'p', maxTokens: 300, json: true })
+      await completeNvidia({ system: 's', prompt: 'p', maxTokens: 300, json: false })
+      expect(bodies[0].max_tokens).toBe(2048)
+      expect(bodies[1].max_tokens).toBe(300)
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.NVIDIA_API_KEY
+    }
   })
 })

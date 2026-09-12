@@ -9,7 +9,8 @@ import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
 
 class AIError extends Error {}
 
-async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
+/** One call to the proxy. Returns the model's text, which may be empty. */
+async function request(system: string, prompt: string, maxTokens: number, json: boolean): Promise<string> {
   let res: Response
   try {
     res = await apiFetch('/api/ai', {
@@ -29,18 +30,98 @@ async function complete(system: string, prompt: string, maxTokens = 2048, json =
   }
   const data: unknown = await res.json()
   const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
-  if (typeof text !== 'string' || !text.trim()) throw new AIError('The model returned an empty response.')
+  return typeof text === 'string' ? text : ''
+}
+
+async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
+  let text = await request(system, prompt, maxTokens, json)
+  // A reasoning model (NVIDIA's default is one) can spend its budget thinking
+  // and stop mid-answer — "Where should we go?" came back as half an array.
+  // Ask once more, with room and no preamble, before giving up.
+  if (json && !hasWholeJSON(text)) {
+    text = await request(`${system}\n\nReply with the JSON only — no reasoning and no commentary.`, prompt, Math.min(4096, Math.max(2048, maxTokens * 2)), json)
+  }
+  if (!text.trim()) throw new AIError('The model returned an empty response — try again in a moment.')
   return text
 }
 
-function extractJSON<T>(text: string): T {
-  const starts = ['{', '['].map(ch => text.indexOf(ch)).filter(i => i !== -1)
-  if (starts.length === 0) throw new AIError('The model returned no JSON.')
-  const start = Math.min(...starts)
-  const close = text[start] === '{' ? '}' : ']'
-  const end = text.lastIndexOf(close)
-  if (end <= start) throw new AIError('The model returned malformed JSON.')
-  return JSON.parse(text.slice(start, end + 1)) as T
+/**
+ * Where the first JSON value in `text` starts, where it ends when it is
+ * complete (else -1), and — for a top-level array — where its last complete
+ * element ends. String contents never count as brackets.
+ */
+function scanJSON(text: string): { start: number; end: number; lastItem: number } {
+  const start = text.search(/[[{]/)
+  let end = -1
+  let lastItem = -1
+  if (start === -1) return { start, end, lastItem }
+  const closers: string[] = []
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') {
+        inString = false
+        if (closers.length === 1 && text[start] === '[') lastItem = i
+      }
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{' || ch === '[') closers.push(ch === '{' ? '}' : ']')
+    else if (ch === '}' || ch === ']') {
+      closers.pop()
+      if (closers.length === 0) {
+        end = i
+        break
+      }
+      if (closers.length === 1 && text[start] === '[') lastItem = i
+    }
+  }
+  return { start, end, lastItem }
+}
+
+function parseLoose<T>(json: string): T {
+  try {
+    return JSON.parse(json) as T
+  } catch {
+    try {
+      // the commonest slip: a trailing comma before a closing bracket
+      return JSON.parse(json.replace(/,\s*([}\]])/g, '$1')) as T
+    } catch {
+      throw new AIError('The model returned malformed JSON — try again.')
+    }
+  }
+}
+
+/**
+ * The JSON in a model's reply. Models wrap it in ```json fences, add a
+ * sentence before or after it, leave a trailing comma, or stop mid-array when
+ * they run out of budget: take the first complete value, and failing that,
+ * keep the complete elements of a cut-off array.
+ */
+export function extractJSON<T>(text: string): T {
+  const clean = text.replace(/```(?:json)?/gi, '')
+  const { start, end, lastItem } = scanJSON(clean)
+  if (start === -1) throw new AIError('The model returned no JSON — try again.')
+  if (end >= 0) return parseLoose<T>(clean.slice(start, end + 1))
+  if (clean[start] === '[' && lastItem > start) return parseLoose<T>(`${clean.slice(start, lastItem + 1)}]`)
+  throw new AIError('The model’s answer was cut off — try again.')
+}
+
+/** True when `text` holds one complete, parseable JSON value (fences and chatter around it are fine). */
+export function hasWholeJSON(text: string): boolean {
+  const clean = text.replace(/```(?:json)?/gi, '')
+  const { end } = scanJSON(clean)
+  if (end < 0) return false
+  try {
+    extractJSON(clean)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Suggest a handful of tags for a task. */
@@ -160,7 +241,7 @@ export async function suggestOuting(input: {
   const text = await complete(
     'You suggest where someone could go next, drawn from places they already know and love. Favour places they used to visit often and have not been back to, then variety of category, then a favourite. Say when they last went. Keep ideas realistic for an ordinary week. Never invent places that are not in the lists; an idea may also be a walk or something free.',
     `It is ${input.weekday}.\nFavourites (most visited this year):\n${rows(input.favourites)}\nDrifted from (used to go, not lately):\n${rows(input.lapsed)}\nRecent outings:\n${input.recent.length ? input.recent.map(r => `- ${r.when}: ${r.name}`).join('\n') : '- none'}\n\nSuggest 4 ideas. Respond with ONLY a JSON array of objects {"title": "short imperative, under 60 chars", "why": "one sentence with the history behind it", "placeName": "exact name from the lists, or omit"}.`,
-    768,
+    1536,
     true,
   )
   const raw = extractJSON<unknown[]>(text)
