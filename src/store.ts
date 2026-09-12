@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template } from './types'
-import { haptic } from './native'
+import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
 import { browserKV } from './syncstate'
@@ -101,10 +101,10 @@ export function useItems(myId: string | null = null): Store {
     void e.boot(myId)
   }, [e, myId])
 
-  // periodic sync + sync when the app returns to the foreground
+  // the periodic sync, the foreground/background triggers and the shell's pause
   useEffect(() => {
     const stopPeriodic = e.start()
-    const stopLifecycle = watchLifecycle(e, { document, window })
+    const stopLifecycle = watchLifecycle(e, { document, window, onPause: onAppPause })
     return () => {
       stopLifecycle()
       stopPeriodic()

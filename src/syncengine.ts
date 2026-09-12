@@ -610,6 +610,21 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     return syncAfterFlight()
   }
 
+  /**
+   * The app is going to the background (or the page away): cancel the
+   * debounces, write the cache now and push what is dirty, once, best effort
+   * — iOS may kill a suspended app inside either debounce. Safe to call
+   * repeatedly; with nothing waiting it does nothing.
+   */
+  function flush(): void {
+    if (pushTimer !== undefined) {
+      timers.clearTimeout(pushTimer)
+      pushTimer = undefined
+    }
+    if (persistTimer !== undefined) void persistNow()
+    if (remote && state.loaded && dirty.size > 0) void sync()
+  }
+
   /** Start the periodic round. Returns stop. */
   function start(): () => void {
     if (periodic === undefined && remote) periodic = timers.setInterval(() => void sync(), PERIODIC_MS)
@@ -643,6 +658,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     stop,
     sync,
     fullResync,
+    flush,
     upsert,
     remove,
     restore,
@@ -663,19 +679,40 @@ interface Listenable {
 export interface LifecycleEnv {
   document: Listenable & { readonly visibilityState: string }
   window: Listenable
+  /** The shell's background event (Capacitor App `pause`); resolves to its disposer. */
+  onPause?: (cb: () => void) => Promise<() => void>
 }
 
-/** The periodic round's partner: a round whenever the app comes back to the foreground. Returns a disposer. */
-export function watchLifecycle(engine: Pick<SyncEngine, 'sync'>, env: LifecycleEnv): () => void {
+/**
+ * The page's comings and goings, wired to the engine: sync when the app comes
+ * back (visible, focus, online), flush when it goes (hidden, pagehide, the
+ * shell's pause). Returns a disposer.
+ */
+export function watchLifecycle(engine: Pick<SyncEngine, 'sync' | 'flush'>, env: LifecycleEnv): () => void {
   const onVisible = () => {
     if (env.document.visibilityState === 'visible') void engine.sync()
   }
-  env.document.addEventListener('visibilitychange', onVisible)
+  const onVisibility = () => {
+    if (env.document.visibilityState === 'hidden') engine.flush()
+    else onVisible()
+  }
+  const onLeave = () => engine.flush()
+  env.document.addEventListener('visibilitychange', onVisibility)
   env.window.addEventListener('focus', onVisible)
   env.window.addEventListener('online', onVisible)
+  env.window.addEventListener('pagehide', onLeave)
+  let disposed = false
+  let stopPause: (() => void) | null = null
+  void env.onPause?.(onLeave).then(stop => {
+    if (disposed) stop()
+    else stopPause = stop
+  })
   return () => {
-    env.document.removeEventListener('visibilitychange', onVisible)
+    disposed = true
+    env.document.removeEventListener('visibilitychange', onVisibility)
     env.window.removeEventListener('focus', onVisible)
     env.window.removeEventListener('online', onVisible)
+    env.window.removeEventListener('pagehide', onLeave)
+    stopPause?.()
   }
 }
