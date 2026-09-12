@@ -5,7 +5,6 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { Kitchen } from './Kitchen'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
@@ -21,6 +20,7 @@ import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
+import { KitchenScreen } from './planner/KitchenScreen'
 import { PeopleScreen } from './planner/PeopleScreen'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
@@ -94,11 +94,11 @@ export default function Planner() {
   // read inline below until each screen and the overlays move into planner/
   const { paletteCommands, mineOnly, setMineOnly, inHousehold } = p
   const { view, setView, goTasksTab, setNotesProjectId } = p
-  const { openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
+  const { openPlace, openJournal } = p
   const { toast, setToast, calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
   const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
   const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, anyOpen, isOwner } = p
-  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logAttendance } = p
+  const { sawThem, logAttendance } = p
   const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
 
   return (
@@ -141,25 +141,7 @@ export default function Planner() {
             {view === 'calendar' && <CalendarScreen p={p} />}
             {view === 'tasks' && <TasksScreen p={p} />}
             {view === 'people' && <PeopleScreen p={p} />}
-            {view === 'kitchen' && (
-              <Kitchen
-                recipes={store.recipes}
-                meals={store.meals}
-                groceries={store.groceries}
-                places={store.places}
-                onSaveMeal={saveMeal}
-                onClearMeal={clearMeal}
-                onCreatePlace={createPlaceInline}
-                onCreateRecipe={createRecipeInline}
-                onSave={item => store.upsert(item)}
-                onDelete={id => {
-                  store.remove(id)
-                  showToast('Removed', () => store.restore([id]))
-                }}
-                openRecipe={kitchenRecipe}
-                onOpenRecipeConsumed={() => setKitchenRecipe(null)}
-              />
-            )}
+            {view === 'kitchen' && <KitchenScreen p={p} />}
           </ErrorBoundary>
         )}
       </main>
