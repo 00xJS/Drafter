@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import { AskDoc, buildAskPrompt, parseAskAnswer } from './ask'
 import type { Task } from './types'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -206,6 +207,34 @@ export async function summarizeReview(input: {
     `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
     900,
   )
+}
+
+/**
+ * Ask Drafter's one model call. The question, the retrieved records and the
+ * facts go out; an answer comes back with the references it rests on. Only
+ * references to records that were sent survive — the answer is rebuilt without
+ * any other — so an invented citation can never become a chip.
+ */
+export async function askDrafter(question: string, docs: AskDoc[], facts: string[]): Promise<{ answer: string; cites: string[] }> {
+  const { system, prompt } = buildAskPrompt(question, docs, facts)
+  const text = await complete(system, prompt, 500, true)
+  let raw: { answer?: unknown; cites?: unknown } | null = null
+  try {
+    raw = extractJSON<{ answer?: unknown; cites?: unknown }>(text)
+  } catch {
+    raw = null
+  }
+  // a model that ignored the JSON instruction still answered; one that broke off mid-object did not
+  const said = raw && typeof raw.answer === 'string' ? raw.answer : /^\s*\{/.test(text) ? '' : text
+  const { parts, cites: inline } = parseAskAnswer(said.trim().slice(0, 1200), docs)
+  const answer = parts
+    .map(p => (typeof p === 'string' ? p : `[${p.ref}]`))
+    .join('')
+    .trim()
+  if (!answer) throw new AIError('The model returned no answer.')
+  const known = new Map(docs.map(d => [d.ref.toUpperCase(), d.ref]))
+  const listed = (raw && Array.isArray(raw.cites) ? raw.cites : []).map(c => known.get(String(c).trim().toUpperCase())).filter((r): r is string => !!r)
+  return { answer, cites: [...new Set([...listed, ...inline.map(d => d.ref)])] }
 }
 
 export interface DraftedPlan {
