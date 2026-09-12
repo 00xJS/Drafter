@@ -8,9 +8,11 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
   return (
     <>
       <div className="people-tab-seg">
-        <span className="segmented">
+        <span className="segmented" role="tablist" aria-label="People view">
           <button
             type="button"
+            role="tab"
+            aria-selected={peopleTab === 'people'}
             className={peopleTab === 'people' ? 'seg on' : 'seg'}
             onClick={() => setPeopleTab('people')}
           >
@@ -18,6 +20,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={peopleTab === 'places'}
             className={peopleTab === 'places' ? 'seg on' : 'seg'}
             onClick={() => setPeopleTab('places')}
           >

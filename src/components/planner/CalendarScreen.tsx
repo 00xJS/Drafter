@@ -9,13 +9,13 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
   return (
     <>
       <div className="segmented cal-mode" role="tablist" aria-label="Calendar mode">
-        <button className={calMode === 'month' ? 'seg on' : 'seg'} onClick={() => setCalMode('month')}>
+        <button type="button" role="tab" aria-selected={calMode === 'month'} className={calMode === 'month' ? 'seg on' : 'seg'} onClick={() => setCalMode('month')}>
           Month
         </button>
-        <button className={calMode === 'week' ? 'seg on' : 'seg'} onClick={() => setCalMode('week')}>
+        <button type="button" role="tab" aria-selected={calMode === 'week'} className={calMode === 'week' ? 'seg on' : 'seg'} onClick={() => setCalMode('week')}>
           Week
         </button>
-        <button className={calMode === 'timeline' ? 'seg on' : 'seg'} onClick={() => setCalMode('timeline')}>
+        <button type="button" role="tab" aria-selected={calMode === 'timeline'} className={calMode === 'timeline' ? 'seg on' : 'seg'} onClick={() => setCalMode('timeline')}>
           Timeline
         </button>
       </div>

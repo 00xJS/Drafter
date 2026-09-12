@@ -29,7 +29,15 @@ export function TopBar({ p }: { p: PlannerCtx }) {
       </div>
       <nav className="tabs tabs-full" aria-label="Views">
         {(Object.keys(VIEW_LABELS) as View[]).map(v => (
-          <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)} onPointerDown={() => preloadView(v)} onFocus={() => preloadView(v)}>
+          <button
+            key={v}
+            type="button"
+            className={view === v ? 'tab active' : 'tab'}
+            aria-current={view === v ? 'page' : undefined}
+            onClick={() => goView(v)}
+            onPointerDown={() => preloadView(v)}
+            onFocus={() => preloadView(v)}
+          >
             <span className="tab-icon" aria-hidden>
               <Icon name={VIEW_ICONS[v]} />
             </span>
