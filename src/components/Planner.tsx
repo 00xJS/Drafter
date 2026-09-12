@@ -5,7 +5,6 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { timeAgo } from '../utils'
 import { localDayKey } from '../journal'
 import { Board } from './Board'
 import { Calendar } from './Calendar'
@@ -28,12 +27,13 @@ import { Bills } from './Bills'
 import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
-import { Icon } from './Icon'
 import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { buildPaletteCommands } from './planner/commands'
-import { COMPACT_TABS, HOME_TABS, TASKS_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './planner/routes'
+import type { PlannerCtx } from './planner/ctx'
+import { HOME_TABS, TASKS_TABS, VIEW_LABELS } from './planner/routes'
 import { Toast } from './planner/Toast'
+import { TopBar } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
 import { useDeepLinks } from './planner/useDeepLinks'
 import { useLifeActions } from './planner/useLifeActions'
@@ -48,177 +48,73 @@ import { useToast } from './planner/useToast'
 export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
-  const { mineOnly, setMineOnly, inHousehold, filteredTasks } = useMineOnly({ store, household })
+  const mine = useMineOnly({ store, household })
 
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
   useEffect(() => forgetRetiredKeys(), [])
-  const {
-    view,
-    setView,
-    calMode,
-    setCalMode,
-    tasksTab,
-    goTasksTab,
-    notesProjectId,
-    setNotesProjectId,
-    peopleTab,
-    goPeopleTab,
-    homeTab,
-    setHomeTab,
-    setTasksTab,
-    setPeopleTab,
-    goView,
-    journalOpenDate,
-    setJournalOpenDate,
-    placeOpenId,
-    setPlaceOpenId,
-    openPlace,
-    openJournal,
-    kitchenRecipe,
-    setKitchenRecipe,
-  } = useNavigation()
-  const { toast, setToast, showToast } = useToast({ store })
+  const nav = useNavigation()
+  const toaster = useToast({ store })
+  const { showToast } = toaster
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
-  const { calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, syncing, manualSync } = useCalendarSync({ store, household, showToast })
-
-  const {
-    editor,
-    setEditor,
-    projectEditor,
-    setProjectEditor,
-    trashOpen,
-    setTrashOpen,
-    searchOpen,
-    setSearchOpen,
-    settingsOpen,
-    setSettingsOpen,
-    settingsNonce,
-    setSettingsNonce,
-    adminOpen,
-    setAdminOpen,
-    eventEditor,
-    setEventEditor,
-    attendance,
-    setAttendance,
-    openTask,
-    newTask,
-    openProject,
-    newProject,
-    anyOpen,
-  } = useOverlays()
-
-  const { isOwner } = useOwner()
+  const cal = useCalendarSync({ store, household, showToast })
+  const overlays = useOverlays()
+  const owner = useOwner()
 
   const { applyLinkRef } = useDeepLinks({
     store,
     showToast,
-    setSettingsNonce,
-    setSettingsOpen,
-    setAdminOpen,
-    setEditor,
-    newTask,
-    goTasksTab,
-    goPeopleTab,
-    setHomeTab,
-    setView,
-    openJournal,
-    openPlace,
+    ...nav,
+    ...overlays,
     // useTaskActions makes these further down, so its GitHub effects still
     // mount last; a link only ever runs after render, when both exist
-    changeStatus: (id, status) => changeStatus(id, status),
-    defer: (id, day) => defer(id, day),
+    changeStatus: (id, status) => taskActions.changeStatus(id, status),
+    defer: (id, day) => taskActions.defer(id, day),
   })
   useNativeShell({ store, applyLinkRef })
 
-  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent } = useLifeActions({
+  const lifeActions = useLifeActions({ store, showToast, newTask: overlays.newTask })
+  const taskActions = useTaskActions({
     store,
     showToast,
-    newTask,
+    setEditor: overlays.setEditor,
+    setProjectEditor: overlays.setProjectEditor,
+    setNotesProjectId: nav.setNotesProjectId,
   })
 
-  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule, defer, deferAll } = useTaskActions({
+  // Everything the top bar, the screens and the overlays read, rebuilt every
+  // render and handed down as one prop (see planner/ctx.ts).
+  const p: PlannerCtx = {
     store,
-    showToast,
-    setEditor,
-    setProjectEditor,
-    setNotesProjectId,
-  })
+    household,
+    projectMap,
+    paletteCommands: buildPaletteCommands(nav, overlays),
+    ...mine,
+    ...nav,
+    ...toaster,
+    ...cal,
+    ...overlays,
+    ...owner,
+    ...lifeActions,
+    ...taskActions,
+  }
+  // read inline below until each screen and the overlays move into planner/
+  const { paletteCommands, mineOnly, setMineOnly, inHousehold, filteredTasks } = p
+  const { view, setView, calMode, setCalMode, tasksTab, goTasksTab, notesProjectId, setNotesProjectId, peopleTab, homeTab, setHomeTab, setTasksTab, setPeopleTab } = p
+  const { journalOpenDate, setJournalOpenDate, placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
+  const { toast, setToast, calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
+  const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
+  const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, newProject, anyOpen, isOwner } = p
+  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent } = p
+  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule, defer, deferAll } = p
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
 
-  const paletteCommands = buildPaletteCommands({ goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab }, { newTask, newProject, setSettingsOpen })
-
   return (
     <div className="app">
-      <header className="topbar">
-        {/* the phone hides the wordmark span for width (src/styles/08-responsive.css), so the
-            name lives on the container and the glyph is decorative — otherwise
-            VoiceOver announces the header as "airplane". */}
-        <div className="brand" aria-label="Drafter">
-          <span className="brand-mark" aria-hidden>
-            <Icon name="brand" filled strokeWidth={0} />
-          </span>
-          <span>Drafter</span>
-        </div>
-        <nav className="tabs tabs-full" aria-label="Views">
-          {(Object.keys(VIEW_LABELS) as View[]).map(v => (
-            <button key={v} className={view === v ? 'tab active' : 'tab'} onClick={() => goView(v)}>
-              <span className="tab-icon" aria-hidden>
-                <Icon name={VIEW_ICONS[v]} />
-              </span>
-              {VIEW_LABELS[v]}
-            </button>
-          ))}
-        </nav>
-        <nav className="tabs tabs-compact" aria-label="Main">
-          {COMPACT_TABS.map(t => {
-            const active = view === t.id
-            return (
-              <button
-                key={t.id}
-                type="button"
-                className={active ? 'tab active' : 'tab'}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => goView(t.id)}
-              >
-                <span className="tab-icon" aria-hidden>
-                  <Icon name={t.icon} />
-                </span>
-                <span className="tab-label">{t.label}</span>
-              </button>
-            )
-          })}
-        </nav>
-        <span className="spacer" />
-        <button className="sync-btn" onClick={manualSync} aria-label={store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}>
-          <span className={store.syncInfo.online ? 'sync-dot on' : 'sync-dot'} />
-          <span className="sync-label">
-            {syncing ? 'Syncing…' : store.syncInfo.pending ? `${store.syncInfo.pending} unsynced` : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
-          </span>
-        </button>
-        <button className="btn subtle icon-btn" aria-label="Search (Cmd/Ctrl+K)" title="Search (Cmd/Ctrl+K)" onClick={() => setSearchOpen(true)}>
-          <Icon name="search" size={19} />
-        </button>
-        <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
-          <Icon name="settings" size={19} />
-        </button>
-        {/* hidden below 640px (it pushed "+ New task" off a 375pt header) —
-            the phone route is the Admin row in Settings ▸ Data */}
-        {isOwner && (
-          <button className="btn subtle admin-btn" aria-label="Admin" title="Admin" onClick={() => setAdminOpen(true)}>
-            Admin
-          </button>
-        )}
-        <button className="btn primary new-post-btn" onClick={() => newTask()} aria-label="New task" title="New task">
-          <span className="new-post-plus" aria-hidden>
-            <Icon name="plus" size={18} strokeWidth={2.2} />
-          </span>
-          <span className="new-post-label">New task</span>
-        </button>
-      </header>
+      <TopBar p={p} />
 
       {store.syncInfo.authError && (
         <div className="auth-banner">
