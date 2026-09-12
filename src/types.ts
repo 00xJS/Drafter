@@ -427,6 +427,17 @@ export interface GroceryLine {
   /** Recipe ids this line was generated from; empty when added by hand. */
   recipeIds: string[]
   manual?: boolean
+  /**
+   * Taken off the list by hand. The line stays in `items` so a rebuild from
+   * the meal plan does not put it straight back; it is left out of the list,
+   * the counts and every bulk action, and listed under "Removed" with Restore.
+   */
+  removed?: boolean
+  /**
+   * The recipes that wanted this line when it was removed. A rebuild that finds
+   * a recipe not in here brings the line back as need (shared/kitchen.mjs).
+   */
+  removedRecipeIds?: string[]
 }
 
 /** One grocery list per week (`id` = grocery~{weekKey}). */
