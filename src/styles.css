@@ -954,11 +954,10 @@ textarea {
   transform: none;
 }
 
-/* the bulk gesture the trimmed counters made room for. The bottom margin is its
-   own: top-level Today blocks stack flush (.insights has no gap), so without it
-   the full-width button's edge touches the card below. */
+/* the bulk gesture the trimmed counters made room for. Today's column gap
+   (.insights.today) spaces it like every other block. */
 .kpi-bulk {
-  margin: 12px 0 16px;
+  margin: 0;
 }
 
 .stat-label {
@@ -2447,7 +2446,6 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 16px;
-  margin-bottom: 16px;
   min-width: 0;
 }
 /* a KPI tile scrolls to the section it counts; .topbar is sticky, so the
@@ -4926,11 +4924,25 @@ textarea {
   display: grid;
   place-items: center;
 }
+/* Today is one column of blocks — the header, the briefing, the KPI row, the
+   journal, habits, routines, Next up. This gap is the ONLY vertical spacing
+   between them: no block carries a margin of its own, so none can end up
+   flush against its neighbour and none can double up. The Week view is not
+   included; it lays its cards out in grids that space themselves. */
+.insights.today {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .insights.today {
+    gap: 12px;
+  }
+}
 .today-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 12px;
 }
 .today-head h2 {
   margin: 0;
@@ -6269,7 +6281,6 @@ textarea {
 /* Sits above the KPI tiles, so it is the same card a hair tighter: the
    counters below are the loud part, this is the glance before them. */
 .briefing {
-  margin-bottom: 12px;
   padding: 12px 14px;
 }
 .briefing .chart-head {
@@ -6359,9 +6370,6 @@ textarea {
 
 /* --- Large title. The page heading reads big, heavy and tight, the way a
    native navigation title's large state does, instead of as body-sized text. */
-.native .today-head {
-  margin-bottom: 14px;
-}
 .native .today-head h2,
 .native .view-title {
   font-size: 1.7rem;
