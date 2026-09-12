@@ -260,12 +260,13 @@ describe('applySync', () => {
     expect(d.unconfirmed).toEqual(['x'])
   })
 
-  it('still abandons a rejected write the user has not touched since', () => {
+  it('keeps a rejected write the user has not touched since, so it can be retried or discarded', () => {
+    // swapping it for the server's copy is how edits lived on one device only in September
     const dead = task('x', '2026-09-10T09:00:00.000Z', { status: 'doing' })
     const d = applySync([dead], [dead], [task('x', '2026-09-10T08:00:00.000Z')], null, ['x'])
     expect(d.rejected).toEqual(['x'])
     expect(d.unconfirmed).toEqual([])
-    expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('todo')
+    expect((d.merged.find(i => i.id === 'x') as Task).status).toBe('doing')
   })
 
   it('keeps a rejected place that the server never stored so the next session can retry', () => {

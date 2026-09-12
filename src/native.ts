@@ -321,6 +321,27 @@ export async function clearAppBadge(): Promise<void> {
   }
 }
 
+// ---- background: save before iOS can suspend or kill the web view -----------
+
+/**
+ * Run `cb` when the shell is sent to the background (Capacitor's App `pause`).
+ * iOS may suspend the web view moments later and end it without another word,
+ * so this is the last dependable moment to write the local cache and push the
+ * edits still waiting on a debounce. The page's own `visibilitychange` and
+ * `pagehide` are listened to as well; whichever lands first does the work and
+ * the rest are no-ops. Returns a disposer; no-op on the web.
+ */
+export async function onAppPause(cb: () => void): Promise<() => void> {
+  if (!isNative()) return () => {}
+  try {
+    const { App } = await import('@capacitor/app')
+    const handle = await App.addListener('pause', () => cb())
+    return () => void handle.remove()
+  } catch {
+    return () => {}
+  }
+}
+
 // ---- keyboard: signal the keyboard, and give multi-line fields a Done key ----
 
 /**

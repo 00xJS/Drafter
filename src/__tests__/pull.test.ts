@@ -198,9 +198,11 @@ describe('pull to refresh: wired the way the shell needs', () => {
   it('waits for the sync already running instead of reporting done at once', () => {
     // a pull right after a foreground resume joins that sync; a false or an
     // early return would collapse the disc while the real sync is in flight
-    const store = read('../store.ts')
-    expect(store).toMatch(/if \(syncInflight\.current\) return syncInflight\.current/)
-    expect(store).not.toMatch(/syncBusy/)
+    // the round lives in the sync engine now; the store hands its sync to the pill
+    const engine = read('../syncengine.ts')
+    expect(engine).toMatch(/if \(inflight\) return inflight/)
+    expect(engine).not.toMatch(/syncBusy/)
+    expect(read('../store.ts')).toContain('syncNowManual: e.sync')
     const cal = read('../calendars.ts')
     const feeds = cal.slice(cal.indexOf('const refresh = useCallback('), cal.indexOf('// boot: serve the cache'))
     expect(feeds).toMatch(/if \(inflight\.current\) return inflight\.current/)
