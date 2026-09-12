@@ -9,6 +9,12 @@ export interface SyncResult {
   rejected: string[]
   /** True when the failure was an expired/invalid session rather than the network. */
   authError: boolean
+  /**
+   * True when the server answered in the { items, rejected } shape — it says
+   * what it refused. Then a sent row that is neither rejected nor echoed was
+   * accepted unchanged, and the caller may count it confirmed.
+   */
+  reportsRejections: boolean
 }
 
 type RemoteRow = Item & { syncedAt?: string }
@@ -19,25 +25,27 @@ type RemoteRow = Item & { syncedAt?: string }
  */
 export async function syncNow(outgoing: Item[], since: string | null): Promise<SyncResult> {
   const sb = getSupabase()
-  if (!sb) return { items: null, rejected: [], authError: false }
+  if (!sb) return { items: null, rejected: [], authError: false, reportsRejections: false }
   const { data, error } = await sb.rpc('sync_posts', { incoming: outgoing, since })
   if (error) {
     console.error('Supabase sync failed:', error.message)
     const msg = `${error.message} ${error.code ?? ''}`.toLowerCase()
     const authError = msg.includes('jwt') || msg.includes('401') || msg.includes('permission denied')
-    return { items: null, rejected: [], authError }
+    return { items: null, rejected: [], authError, reportsRejections: false }
   }
   // new shape: { items, rejected }; legacy array still accepted during rollout
   let rows: unknown[] = []
   let rejected: string[] = []
+  let reportsRejections = false
   if (Array.isArray(data)) {
     rows = data
   } else if (data && typeof data === 'object') {
+    reportsRejections = true
     const obj = data as { items?: unknown; rejected?: unknown }
     rows = Array.isArray(obj.items) ? obj.items : []
     rejected = Array.isArray(obj.rejected) ? obj.rejected.filter((x): x is string => typeof x === 'string') : []
   } else {
-    return { items: null, rejected: [], authError: false }
+    return { items: null, rejected: [], authError: false, reportsRejections: false }
   }
   const items: RemoteRow[] = []
   for (const raw of rows) {
@@ -48,7 +56,7 @@ export async function syncNow(outgoing: Item[], since: string | null): Promise<S
     const clean = sanitizeItem(raw)
     if (clean) items.push(syncedAt ? { ...clean, syncedAt } : clean)
   }
-  return { items, rejected, authError: false }
+  return { items, rejected, authError: false, reportsRejections }
 }
 
 /**

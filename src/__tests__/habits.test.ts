@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Habit } from '../types'
 import { isDueOn, isDoneOn, toggleDone, streakOf, rangeStats, habitsConsistency } from '../habits'
 import { sanitizeHabit } from '../schema'
@@ -33,6 +33,18 @@ describe('ticking a day', () => {
     expect(isDoneOn(h, '2026-09-10')).toBe(true)
     h = toggleDone(h, '2026-09-10')
     expect(h.done).toEqual(['2026-09-08'])
+  })
+  it('stamps strictly newer than the copy it was based on, even when this clock trails it', () => {
+    // a peer (or the server clamp) wrote 09:00:20; this device's clock says 09:00:05.
+    // A wall-clock stamp would lose the strictly-newer upsert silently.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-10T09:00:05.000Z'))
+      const h = toggleDone(habit({ updatedAt: '2026-09-10T09:00:20.000Z' }), '2026-09-10')
+      expect(h.updatedAt).toBe('2026-09-10T09:00:20.001Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

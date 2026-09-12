@@ -1,5 +1,6 @@
 import { Habit } from './types'
 import { dateKey } from './utils'
+import { newerStamp } from './itemops'
 
 // The rules a habit is kept by. Completions are day keys on the record; the
 // streak is derived from them and the schedule, never stored, so it can never
@@ -15,8 +16,14 @@ export function isDoneOn(habit: Habit, key: string): boolean {
   return habit.done.includes(key)
 }
 
-/** Tick or un-tick a day, returning the updated record (sorted, de-duped). */
-export function toggleDone(habit: Habit, key: string, now = new Date().toISOString()): Habit {
+/**
+ * Tick or un-tick a day, returning the updated record (sorted, de-duped).
+ * Stamped with newerStamp, not the wall clock: a tick made on a device whose
+ * clock trails the copy it pulled would carry an older updatedAt, the server's
+ * strictly-newer upsert would drop it silently — not rejected, not echoed —
+ * and the sync would still count it confirmed. Strictly newer always lands.
+ */
+export function toggleDone(habit: Habit, key: string, now = newerStamp(habit.updatedAt)): Habit {
   const done = habit.done.includes(key) ? habit.done.filter(k => k !== key) : [...habit.done, key].sort()
   return { ...habit, done, updatedAt: now }
 }

@@ -203,6 +203,21 @@ describe('applySync', () => {
     expect(d.unconfirmed).toEqual(['pending'])
   })
 
+  it('confirms a sent row the server accepted without echoing, once the server reports rejections', () => {
+    // unchanged rows are not echoed on a delta round; with rejections reported, silence means accepted
+    const sent = [task('a', '2026-09-10T09:00:00.000Z'), task('quiet', '2026-09-10T09:05:00.000Z')]
+    const remote = [task('a', '2026-09-10T09:00:00.000Z')]
+    const d = applySync([], sent, remote, '2026-09-10T08:00:00.000Z', [], true)
+    expect(d.unconfirmed).toEqual([])
+  })
+
+  it('still holds a row edited mid-round for another push, even when the server reports rejections', () => {
+    const current = [task('x', '2026-09-10T09:10:00.000Z')]
+    const sent = [task('x', '2026-09-10T09:05:00.000Z')]
+    const d = applySync(current, sent, [], '2026-09-10T08:00:00.000Z', [], true)
+    expect(d.unconfirmed).toEqual(['x'])
+  })
+
   it('leaves the cursor alone when the server returned nothing', () => {
     expect(applySync([], [], [], '2026-09-10T08:00:00.000Z').cursor).toBeNull()
   })

@@ -1,5 +1,6 @@
 import { Routine, RoutineStep, RoutineWhen } from './types'
 import { uid } from './utils'
+import { newerStamp } from './itemops'
 
 // The rules a routine runs by. A tick is 'day|stepId' on the record, so
 // "today's progress" is just the ticks that name today — there is no reset job
@@ -13,8 +14,13 @@ export function isStepDone(routine: Routine, day: string, stepId: string): boole
   return routine.ticks.includes(tickKey(day, stepId))
 }
 
-/** Tick or un-tick a step for a day, returning the updated record (sorted, de-duped). */
-export function toggleStep(routine: Routine, day: string, stepId: string, now = new Date().toISOString()): Routine {
+/**
+ * Tick or un-tick a step for a day, returning the updated record (sorted,
+ * de-duped). Stamped with newerStamp, not the wall clock, for the same reason
+ * as a habit tick: a stamp behind the copy last pulled is a silent no-op on the
+ * server's strictly-newer upsert, and the sync would call it confirmed.
+ */
+export function toggleStep(routine: Routine, day: string, stepId: string, now = newerStamp(routine.updatedAt)): Routine {
   const key = tickKey(day, stepId)
   const ticks = routine.ticks.includes(key) ? routine.ticks.filter(t => t !== key) : [...routine.ticks, key].sort()
   return { ...routine, ticks, updatedAt: now }

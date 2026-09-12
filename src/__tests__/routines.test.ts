@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Routine } from '../types'
 import { isStepDone, progressOn, stepsFromText, stepsToText, tickKey, toggleStep, whichToShow } from '../routines'
 import { sanitizeItem, sanitizeRoutine } from '../schema'
@@ -40,6 +40,18 @@ describe('ticking a step', () => {
     r = toggleStep(r, TODAY, 'a', NOW)
     expect(r.ticks).toEqual(['2026-09-10|b'])
     expect(isStepDone(r, TODAY, 'a')).toBe(false)
+  })
+  it('stamps strictly newer than the copy it was based on, even when this clock trails it', () => {
+    // a peer (or the server clamp) wrote 09:00:20; this device's clock says 09:00:05.
+    // A wall-clock stamp would lose the strictly-newer upsert silently.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-10T09:00:05.000Z'))
+      const r = toggleStep(routine({ updatedAt: '2026-09-10T09:00:20.000Z' }), TODAY, 'a')
+      expect(r.updatedAt).toBe('2026-09-10T09:00:20.001Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
   it("yesterday's ticks do not count today, so a new day starts fresh", () => {
     const r = toggleStep(toggleStep(routine(), YESTERDAY, 'a', NOW), YESTERDAY, 'b', NOW)

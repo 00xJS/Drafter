@@ -231,7 +231,7 @@ export function useItems(myId: string | null = null): Store {
       }
       let decision: ReturnType<typeof applySync> | null = null
       setItems(cur => {
-        decision = applySync(cur, outgoing, result.items!, since, result.rejected)
+        decision = applySync(cur, outgoing, result.items!, since, result.rejected, result.reportsRejections)
         const next = ensureProjects(purgeTombstones(decision.merged))
         const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
         return signature(next) === signature(cur) ? cur : next
@@ -241,7 +241,7 @@ export function useItems(myId: string | null = null): Store {
       // and drop it from the dirty set.
       const applied =
         (decision as ReturnType<typeof applySync> | null) ??
-        applySync(itemsRef.current, outgoing, result.items, since, result.rejected)
+        applySync(itemsRef.current, outgoing, result.items, since, result.rejected, result.reportsRejections)
       if (applied.cursor) writeCursor(applied.cursor)
       // clear confirmed + rejected from dirty; keep unconfirmed for retry.
       // Places/kitchen used to be dropped by an older sync_posts allow-list —
@@ -287,8 +287,13 @@ export function useItems(myId: string | null = null): Store {
       // while the server still has data (stuck after wipe / sign-out race).
       if (myId && cached.length === 0) prepareFullResync({ clearDirty: true })
       setItems(ensureProjects(cached))
-      const heal = cached.filter(i => RETRY_KINDS.has(i.kind)).map(i => i.id)
-      if (heal.length) markDirty(heal)
+      // No blanket re-push of RETRY_KINDS on boot any more. It dated from when
+      // the server dropped unknown kinds silently; now it reports them, and a
+      // rejected id is kept in the persisted dirty set (see keepRejected in
+      // doSync), so a new session pushes it again on its own. The blanket
+      // version re-sent every place, recipe, meal, grocery list, journal entry
+      // and event on every load — none of which the server echoed back, so
+      // none could ever be confirmed, and all of them read as "n unsynced".
       loadedRef.current = true
       setLoaded(true)
       doSyncRef.current()

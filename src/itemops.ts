@@ -60,7 +60,9 @@ export interface SyncDecision {
  * otherwise falls back to `updatedAt`. Rejected ids never clamp the cursor —
  * they are dead writes. Unconfirmed (not rejected, not returned) still hold the
  * cursor only when we have no dirty-set (legacy path); with a dirty set the
- * caller clears confirmed ids and retries the rest.
+ * caller clears confirmed ids and retries the rest. Once the server reports
+ * rejections, "not returned" is no longer "unconfirmed": an accepted row that
+ * did not change is simply not echoed.
  *
  * `sent` is a snapshot taken before the request; anything the user changed while
  * it was in flight has a newer local copy than the version the server echoed
@@ -74,6 +76,7 @@ export function applySync(
   remote: SyncRemote[],
   since: string | null,
   rejected: string[] = [],
+  serverReportsRejections = false,
 ): SyncDecision {
   const rejectedSet = new Set(rejected)
   const localStamp = new Map(current.map(c => [c.id, c.updatedAt]))
@@ -116,8 +119,15 @@ export function applySync(
   }
 
   const returned = new Map(remote.map(r => [r.id, r.updatedAt]))
+  // A server that reports rejections has accepted every sent row it did not
+  // reject; when the row was unchanged it is not echoed (nothing new since the
+  // cursor), and treating that silence as "unconfirmed" kept every place,
+  // recipe, meal, grocery list, journal entry and event dirty forever — pushed
+  // again every minute, counted in "n unsynced", never confirmable. Only a
+  // legacy server, which dropped kinds it did not know without saying so, still
+  // needs the echo as proof.
   const unconfirmed = sent.filter(
-    s => superseded.has(s.id) || (!rejectedSet.has(s.id) && (returned.get(s.id) ?? '') < s.updatedAt),
+    s => superseded.has(s.id) || (!serverReportsRejections && !rejectedSet.has(s.id) && (returned.get(s.id) ?? '') < s.updatedAt),
   )
 
   // rejected rows must NOT pin the cursor (that was the old bug)
