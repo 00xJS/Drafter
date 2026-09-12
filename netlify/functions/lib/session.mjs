@@ -63,8 +63,9 @@ export async function settingsGet(userId) {
   return rows?.[0] ?? null
 }
 
-export async function settingsFind(column, value) {
-  const rows = await rest(`?${column}=eq.${encodeURIComponent(value)}&select=*&limit=1`)
+/** `init` rides along to fetch, e.g. an abort signal from a caller on a deadline. */
+export async function settingsFind(column, value, init = {}) {
+  const rows = await rest(`?${column}=eq.${encodeURIComponent(value)}&select=*&limit=1`, init)
   return rows?.[0] ?? null
 }
 

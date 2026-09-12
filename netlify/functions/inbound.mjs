@@ -7,12 +7,47 @@
 //
 // After the raw task is safely stored, a best-effort AI second pass may refine
 // title / due / priority / tags without blocking the webhook.
+//
+// Every outbound call runs against one deadline that fits inside Netlify's
+// ten-second function limit. None had a timeout before, so one slow answer —
+// Supabase, or the AI provider on the triage pass — held the webhook open until
+// the platform killed it, and the mail service saw an error instead of a task.
 
 import { newerStamp } from '../../shared/domain.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 
 const MAX_BODY = 4000
+/** The whole webhook, from arrival to answer. */
+export const BUDGET_MS = 9_000
+/** The longest any single Supabase call may take. */
+export const CALL_MS = 4_000
+/** Kept back after triage for writing its answer. */
+const WRITE_BACK_MS = 2_000
+
+/** Run `work(signal)`, aborting it after `ms`. */
+async function withTimeout(ms, work) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), Math.max(0, ms))
+  try {
+    return await work(ctrl.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** `promise`'s value, or `fallback` once `ms` has passed. Nothing is cancelled; a late answer is simply not waited for. */
+async function settleWithin(promise, ms, fallback = null) {
+  let timer
+  const late = new Promise(resolve => {
+    timer = setTimeout(() => resolve(fallback), Math.max(0, ms))
+  })
+  try {
+    return await Promise.race([promise, late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 async function parseBody(req) {
   const type = req.headers.get('content-type') ?? ''
@@ -60,10 +95,18 @@ async function triageTask(task, { subject, text, from }) {
 export default async req => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
   if (!settingsStoreConfigured()) return new Response('Not configured', { status: 501 })
+  const deadline = Date.now() + BUDGET_MS
+  const left = (cap = CALL_MS) => Math.min(cap, deadline - Date.now())
   const url = new URL(req.url)
   const key = url.searchParams.get('key') ?? ''
   if (key.length < 16) return new Response('Not found', { status: 404 })
-  const row = await settingsFind('inbound_token', key).catch(() => null)
+  let row
+  try {
+    row = await withTimeout(left(), signal => settingsFind('inbound_token', key, { signal }))
+  } catch {
+    // a slow or unreachable store means "try again later", not "no such address"
+    return new Response('Temporarily unavailable', { status: 503 })
+  }
   if (!row) return new Response('Not found', { status: 404 })
 
   const { subject, text, from } = await parseBody(req)
@@ -86,40 +129,38 @@ export default async req => {
   }
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
-    method: 'POST',
-    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
-    // a future cursor means the RPC returns nothing: without it every inbound
-    // email makes Postgres aggregate the entire table into one json document
-    body: JSON.stringify({ incoming: [task], since: new Date(Date.now() + 86_400_000).toISOString() }),
-  })
-  if (!res.ok) return new Response('store failed', { status: 502 })
+  const supabase = (path, init) =>
+    withTimeout(left(), signal =>
+      fetch(`${supabaseUrl}/rest/v1/${path}`, {
+        ...init,
+        signal,
+        headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+      }),
+    )
+  // a future cursor means the RPC returns nothing: without it every inbound
+  // email makes Postgres aggregate the entire table into one json document
+  const store = item => supabase('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [item], since: new Date(Date.now() + 86_400_000).toISOString() }) })
   // sync_posts runs under the service key, so auth.uid() is null and the row
   // would otherwise be attributed to the site owner. Re-point it at whoever
   // owns this inbound token. (The LWW trigger allows this: data is unchanged.)
-  await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(task.id)}`, {
-    method: 'PATCH',
-    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
-    body: JSON.stringify({ user_id: row.user_id }),
-  }).catch(() => {})
+  const claim = () =>
+    supabase(`posts?id=eq.${encodeURIComponent(task.id)}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: row.user_id }) }).catch(() => {})
 
-  // Second pass: refine title/due after the raw task is safely stored.
+  const res = await store(task).catch(() => null)
+  if (!res?.ok) return new Response('store failed', { status: 502 })
+  await claim()
+
+  // Second pass: refine title/due after the raw task is safely stored, in
+  // whatever time is left. Running out is fine — the task is already saved.
   let triaged = false
   try {
-    const patch = await triageTask(task, { subject, text: body, from })
+    const room = deadline - Date.now() - WRITE_BACK_MS
+    const patch = room > 0 ? await settleWithin(triageTask(task, { subject, text: body, from }), room) : null
     if (patch) {
       const next = { ...task, ...patch, updatedAt: newerStamp(task.updatedAt) }
-      const up = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
-        method: 'POST',
-        headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ incoming: [next], since: new Date(Date.now() + 86_400_000).toISOString() }),
-      })
+      const up = await store(next)
       if (up.ok) {
-        await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(task.id)}`, {
-          method: 'PATCH',
-          headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
-          body: JSON.stringify({ user_id: row.user_id }),
-        }).catch(() => {})
+        await claim()
         triaged = true
         Object.assign(task, patch)
       }
