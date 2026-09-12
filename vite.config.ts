@@ -39,7 +39,9 @@ export default defineConfig({
       // and drop importScripts, leaving the service worker with no push handler
       workbox: {
         importScripts: ['sw-push.js'],
-        navigateFallbackDenylist: [/^\/api\//],
+        // the OAuth metadata and endpoints are functions, never the app shell;
+        // /oauth/authorize stays in: consent happens inside the app
+        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//, /^\/oauth\/(register|token|revoke)$/],
       },
     }),
   ],

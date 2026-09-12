@@ -66,7 +66,68 @@
   to = "/.netlify/functions/google/:splat"
   status = 200
 
+# Assistants: the hosted MCP endpoint, its connections, and the OAuth server
+# claude.ai and other MCP clients connect through. /oauth/authorize is left to
+# the SPA on purpose: consent happens inside the signed-in app.
+[[redirects]]
+  from = "/api/mcp"
+  to = "/.netlify/functions/mcp"
+  status = 200
+
+[[redirects]]
+  from = "/api/agents"
+  to = "/.netlify/functions/agents"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource"
+  to = "/.netlify/functions/oauth/prm"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource/*"
+  to = "/.netlify/functions/oauth/prm"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/oauth-authorization-server"
+  to = "/.netlify/functions/oauth/as"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/openid-configuration"
+  to = "/.netlify/functions/oauth/as"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/register"
+  to = "/.netlify/functions/oauth/register"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/token"
+  to = "/.netlify/functions/oauth/token"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/revoke"
+  to = "/.netlify/functions/oauth/revoke"
+  status = 200
+
+[[redirects]]
+  from = "/api/oauth/*"
+  to = "/.netlify/functions/oauth/app/:splat"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# No page of this site may be framed: the consent sheet grants an assistant
+# access to the planner, and a framed copy of it could be clickjacked.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Content-Security-Policy = "frame-ancestors 'none'"
