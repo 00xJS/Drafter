@@ -3,7 +3,7 @@
 
 import { legacyPostToTask } from './domain.mjs'
 import { seenStatus, upcomingOccasions, plannedVisit } from './people.mjs'
-import { bucketByDue } from './today.mjs'
+import { OPEN, bucketByDue, focusTasks } from './today.mjs'
 import { tonightLine } from './kitchen.mjs'
 import { placeCadenceStatus } from './places.mjs'
 import { PERSONAL_KINDS } from './kinds.mjs'
@@ -52,8 +52,11 @@ export function visibleItemsFor(rows, userId, peerIds, ownerId) {
 /**
  * Morning digest lines. `nudged` is { personId | placeId: dayKey } — a name
  * repeats at most every PERSON_NUDGE_GAP_DAYS. Returns { …, nudgedNext } to persist.
+ * `userId` is the reader: their focus for today opens the digest, and a
+ * household member's picks are left out. `extra.weekPlan` is Sunday's week-plan
+ * summary, worked out by the caller, which closes it.
  */
-export function buildDigest(items, tz, now, nudged = {}) {
+export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = {}) {
   const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
   const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
   const places = items.filter(i => i.kind === 'place' && !i.deletedAt)
@@ -114,8 +117,13 @@ export function buildDigest(items, tz, now, nudged = {}) {
   )
   // the week's meals are household-shared, so tonight's dinner is everyone's line
   const tonight = today ? tonightLine(items.filter(i => i.kind === 'meal'), items.filter(i => i.kind === 'recipe' && !i.deletedAt), today) : null
+  // Today's focus, set at last night's Shut down or this morning — only what is
+  // still open: a finished one needs no reminder.
+  const focus = today ? focusTasks(tasks, today, userId).filter(t => OPEN.includes(t.status)) : []
+  const weekPlan = typeof extra?.weekPlan === 'string' && extra.weekPlan.trim() ? extra.weekPlan.trim() : null
 
   const lines = []
+  if (focus.length) lines.push(`Focus: ${focus.slice(0, DIGEST_NAMES).map(t => t.title || 'Untitled task').join(' · ')}${focus.length > DIGEST_NAMES ? ` · +${focus.length - DIGEST_NAMES} more` : ''}`)
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
@@ -123,5 +131,6 @@ export function buildDigest(items, tz, now, nudged = {}) {
   if (peopleDue.length) lines.push(`Catch up with: ${named(peopleDue)}`)
   if (placesDue.length) lines.push(`Been a while: ${named(placesDue)}`)
   if (tonight) lines.push(tonight)
-  return { overdue, dueToday, occasions, peopleDue, placesDue, tonight, lines, nudgedNext }
+  if (weekPlan) lines.push(`Plan next week: ${weekPlan}`)
+  return { overdue, dueToday, occasions, peopleDue, placesDue, tonight, focus, weekPlan, lines, nudgedNext }
 }

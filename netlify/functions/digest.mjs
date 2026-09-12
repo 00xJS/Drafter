@@ -18,6 +18,7 @@ import { newerStamp } from '../../shared/domain.mjs'
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
 import { SYNC_KINDS } from '../../shared/kinds.mjs'
+import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { previousWeekIn } from './lib/reviewweek.mjs'
@@ -236,22 +237,28 @@ export default async () => {
       //    skipped or delayed run still delivers instead of silently dropping the day
       const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
       if (hour >= wantHour && u.last_digest_day !== day) {
-        const digest = buildDigest(items, tz, now, u.nudged ?? {})
-        // Sunday's digest is the doorway to the weekly review
+        // Sunday's digest is the doorway to the weekly review, and to planning the week it starts
         const sunday = weekday === 'Sun'
+        const weekPlan = sunday ? weekPlanSummary(proposeWeek(items, { todayKey: day, tz, userId: u.user_id, now })) : null
+        const digest = buildDigest(items, tz, now, u.nudged ?? {}, u.user_id, { weekPlan })
         if (sunday) {
           digest.lines.push('Sunday: your weekly review is ready.')
           await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz }).catch(() => null)
         }
+        // Either link only opens a sheet — Plan my day, or the week plan over the
+        // review — and the sheet writes nothing until its button is pressed. With
+        // nothing to plan, Sunday opens the review on its own.
+        const path = sunday ? (weekPlan ? '/?view=review&plan=week' : '/?view=review') : '/?plan=day'
         if (digest.lines.length > 0) {
           if (liveSubs.length && pushConfigured()) {
-            const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}/${sunday ? '?view=review' : ''}`, badge: digest.overdue.length + digest.dueToday.length })
+            const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}${path}`, badge: digest.overdue.length + digest.dueToday.length })
             if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
             sent += Math.max(0, liveSubs.length - failed.length)
           }
           if (u.digest_email) {
             const email = await userEmail(u.user_id).catch(() => null)
-            if (email) await sendEmail(email, `Today in Drafter: ${digest.dueToday.length} due, ${digest.overdue.length} overdue`, [...digest.lines, '', `Open Drafter: ${site}/`].join('\n'))
+            const plan = sunday ? (weekPlan ? `Plan the week: ${site}${path}` : null) : `Plan your day: ${site}${path}`
+            if (email) await sendEmail(email, `Today in Drafter: ${digest.dueToday.length} due, ${digest.overdue.length} overdue`, [...digest.lines, '', ...(plan ? [plan] : []), `Open Drafter: ${site}/`].join('\n'))
           }
         }
         patch.last_digest_day = day
