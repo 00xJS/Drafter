@@ -309,9 +309,11 @@ function TaskRow({
           onChange={() => onStatus(task.id, done ? 'todo' : 'done')}
         />
         <div className="dash-main">
-          <span className="dash-title">
-            <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 60) || 'Untitled'}
-          </span>
+          <button type="button" className="row-open">
+            <span className="dash-title">
+              <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 60) || 'Untitled'}
+            </span>
+          </button>
           <span className="dash-meta">
             {project && <ProjectChip project={project} />}
             {reason && <span className="why">{reason}</span>}
@@ -968,7 +970,9 @@ export function Today({
               <li key={t.id} className="trow done" onClick={() => onOpen(t)}>
                 <input type="checkbox" className="tcheck" checked readOnly aria-label="Done" onClick={e => e.stopPropagation()} onChange={() => onStatus(t.id, 'todo')} />
                 <div className="dash-main">
-                  <span className="dash-title">{t.title || excerpt(t.description, 60) || 'Untitled'}</span>
+                  <button type="button" className="row-open">
+                    <span className="dash-title">{t.title || excerpt(t.description, 60) || 'Untitled'}</span>
+                  </button>
                   <span className="dash-meta">{t.projectId && projectMap.get(t.projectId) && <ProjectChip project={projectMap.get(t.projectId)!} />}</span>
                 </div>
                 <span className="dash-reason">{timeAgo(t.completedAt!)}</span>

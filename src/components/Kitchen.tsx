@@ -29,6 +29,7 @@ import {
 import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
+import { Modal, ModalHead } from './Modal'
 
 type Seg = 'recipes' | 'week' | 'grocery'
 const SEG_KEY = 'drafter:kitchen-tab'
@@ -133,7 +134,9 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                 <li key={r.id} className="recipe-card" onClick={() => setCooking(r)}>
                   <span className="recipe-emoji">{r.emoji || '🍽️'}</span>
                   <div className="dash-main">
-                    <span className="dash-title">{r.name}</span>
+                    <button type="button" className="row-open">
+                      <span className="dash-title">{r.name}</span>
+                    </button>
                     <span className="dash-meta">
                       {r.servings ? `${r.servings} servings` : 'No yield set'}
                       {r.ingredients.length > 0 && ` · ${r.ingredients.length} ingredient${r.ingredients.length === 1 ? '' : 's'}`}
@@ -565,80 +568,77 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
     onClose()
   }
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}>
-      <div className="modal recipe-cook" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>
+    <Modal onClose={close} className="modal recipe-cook">
+      <ModalHead
+        title={
+          <>
             {recipe.emoji ? `${recipe.emoji} ` : ''}
             {recipe.name}
-          </h2>
-          <button className="btn subtle" onClick={close} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <p className="recipe-cook-meta">
-            {recipe.servings ? `${recipe.servings} servings` : 'No yield set'}
-            {recipe.ingredients.length > 0 && ` · ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? '' : 's'}`}
-            {recipe.steps?.length ? ` · ${recipe.steps.length} step${recipe.steps.length === 1 ? '' : 's'}` : ''}
-            {recipe.tags.length > 0 && ` · ${recipe.tags.join(', ')}`}
-          </p>
-          {recipe.ingredients.length > 0 && (
-            <div className="field">
-              <span>Ingredients</span>
-              <ul className="recipe-ings">
-                {recipe.ingredients.map(i => (
-                  <li key={i.id}>
-                    {i.qty != null ? `${i.qty}${i.unit ? ' ' + i.unit : ''} ` : ''}
-                    {i.name}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {recipe.steps && recipe.steps.length > 0 ? (
-            <div className="field">
-              <span>Steps</span>
-              <ol className="recipe-steps">
-                {recipe.steps.map((step, i) => (
-                  <li key={i} className={done[i] ? 'done' : undefined}>
-                    {/* a ticked step is only struck through, so aria-pressed is
-                        the whole announcement for a screen reader */}
-                    <button
-                      type="button"
-                      aria-pressed={!!done[i]}
-                      className="recipe-step"
-                      onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}
-                    >
-                      <span className="recipe-step-n">{i + 1}</span>
-                      <span>{step}</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : (
-            <p className="muted">No steps yet — tap Edit to add how you cook it.</p>
-          )}
-          {recipe.notes && <p className="recipe-notes">{recipe.notes}</p>}
-        </div>
-        <footer className="modal-foot">
-          <button
-            className="btn"
-            onClick={() => {
-              keepOnUnmount.current = true
-              onEdit()
-            }}
-          >
-            Edit
-          </button>
-          <span className="spacer" />
-          <button className="btn primary" onClick={close}>
-            Done
-          </button>
-        </footer>
+          </>
+        }
+      />
+      <div className="modal-body">
+        <p className="recipe-cook-meta">
+          {recipe.servings ? `${recipe.servings} servings` : 'No yield set'}
+          {recipe.ingredients.length > 0 && ` · ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? '' : 's'}`}
+          {recipe.steps?.length ? ` · ${recipe.steps.length} step${recipe.steps.length === 1 ? '' : 's'}` : ''}
+          {recipe.tags.length > 0 && ` · ${recipe.tags.join(', ')}`}
+        </p>
+        {recipe.ingredients.length > 0 && (
+          <div className="field">
+            <span>Ingredients</span>
+            <ul className="recipe-ings">
+              {recipe.ingredients.map(i => (
+                <li key={i.id}>
+                  {i.qty != null ? `${i.qty}${i.unit ? ' ' + i.unit : ''} ` : ''}
+                  {i.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {recipe.steps && recipe.steps.length > 0 ? (
+          <div className="field">
+            <span>Steps</span>
+            <ol className="recipe-steps">
+              {recipe.steps.map((step, i) => (
+                <li key={i} className={done[i] ? 'done' : undefined}>
+                  {/* a ticked step is only struck through, so aria-pressed is
+                      the whole announcement for a screen reader */}
+                  <button
+                    type="button"
+                    aria-pressed={!!done[i]}
+                    className="recipe-step"
+                    onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}
+                  >
+                    <span className="recipe-step-n">{i + 1}</span>
+                    <span>{step}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : (
+          <p className="muted">No steps yet — tap Edit to add how you cook it.</p>
+        )}
+        {recipe.notes && <p className="recipe-notes">{recipe.notes}</p>}
       </div>
-    </div>
+      <footer className="modal-foot">
+        <button
+          className="btn"
+          onClick={() => {
+            keepOnUnmount.current = true
+            onEdit()
+          }}
+        >
+          Edit
+        </button>
+        <span className="spacer" />
+        <button className="btn primary" onClick={close}>
+          Done
+        </button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -689,81 +689,74 @@ function RecipeForm({
   const setIng = (id: string, patch: Partial<RecipeIngredient>) => setIngredients(list => list.map(i => (i.id === id ? { ...i, ...patch } : i)))
 
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>{recipe ? `Edit ${recipe.name}` : 'New recipe'}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <div className="field-row">
-            <label className="field emoji-field">
-              <span>Icon</span>
-              <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🍝" maxLength={4} />
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus />
-            </label>
-            <label className="field" style={{ maxWidth: 90 }}>
-              <span>Servings</span>
-              <input inputMode="numeric" value={servings} onChange={e => setServings(e.target.value)} />
-            </label>
-          </div>
-          <div className="field">
-            <span>Ingredients</span>
-            {ingredients.map(ing => (
-              <div key={ing.id} className="ing-row">
-                <input
-                  className="ing-qty"
-                  inputMode="decimal"
-                  value={ing.qty ?? ''}
-                  onChange={e => setIng(ing.id, { qty: e.target.value ? Number(e.target.value) : undefined })}
-                  placeholder="1"
-                />
-                <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" />
-                <input
-                  className="ing-name"
-                  value={ing.name}
-                  onChange={e => setIng(ing.id, { name: e.target.value })}
-                  placeholder="onion"
-                />
-              </div>
-            ))}
-            <button type="button" className="btn subtle" onClick={() => setIngredients(list => [...list, newIngredient()])}>
-              + Ingredient
-            </button>
-          </div>
-          <label className="field">
-            <span>Steps (one per line)</span>
-            <textarea rows={5} value={steps} onChange={e => setSteps(e.target.value)} placeholder="Brown the mince…" />
+    <Modal onClose={onClose}>
+      <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
+      <div className="modal-body">
+        <div className="field-row">
+          <label className="field emoji-field">
+            <span>Icon</span>
+            <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🍝" maxLength={4} />
           </label>
           <label className="field">
-            <span>Tags</span>
-            <input value={tags} onChange={e => setTags(e.target.value)} placeholder="quick, chicken, freezer" />
+            <span>Name</span>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus />
           </label>
-          <label className="field">
-            <span>Notes</span>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Kids like extra cheese. Leftovers freeze." />
+          <label className="field" style={{ maxWidth: 90 }}>
+            <span>Servings</span>
+            <input inputMode="numeric" value={servings} onChange={e => setServings(e.target.value)} />
           </label>
         </div>
-        <footer className="modal-foot">
-          {recipe && onDelete && (
-            <ConfirmButton className="btn subtle danger" confirmLabel="Click again to remove" onConfirm={() => onDelete(recipe.id)}>
-              Delete
-            </ConfirmButton>
-          )}
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
+        <div className="field">
+          <span>Ingredients</span>
+          {ingredients.map(ing => (
+            <div key={ing.id} className="ing-row">
+              <input
+                className="ing-qty"
+                inputMode="decimal"
+                value={ing.qty ?? ''}
+                onChange={e => setIng(ing.id, { qty: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder="1"
+              />
+              <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" />
+              <input
+                className="ing-name"
+                value={ing.name}
+                onChange={e => setIng(ing.id, { name: e.target.value })}
+                placeholder="onion"
+              />
+            </div>
+          ))}
+          <button type="button" className="btn subtle" onClick={() => setIngredients(list => [...list, newIngredient()])}>
+            + Ingredient
           </button>
-          <button className="btn primary" onClick={save} disabled={!name.trim()}>
-            Save
-          </button>
-        </footer>
+        </div>
+        <label className="field">
+          <span>Steps (one per line)</span>
+          <textarea rows={5} value={steps} onChange={e => setSteps(e.target.value)} placeholder="Brown the mince…" />
+        </label>
+        <label className="field">
+          <span>Tags</span>
+          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="quick, chicken, freezer" />
+        </label>
+        <label className="field">
+          <span>Notes</span>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Kids like extra cheese. Leftovers freeze." />
+        </label>
       </div>
-    </div>
+      <footer className="modal-foot">
+        {recipe && onDelete && (
+          <ConfirmButton className="btn subtle danger" confirmLabel="Click again to remove" onConfirm={() => onDelete(recipe.id)}>
+            Delete
+          </ConfirmButton>
+        )}
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" onClick={save} disabled={!name.trim()}>
+          Save
+        </button>
+      </footer>
+    </Modal>
   )
 }

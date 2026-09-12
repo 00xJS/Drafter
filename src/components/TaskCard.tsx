@@ -28,9 +28,9 @@ export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
       onClick={() => onOpen(task)}
     >
       <div className="card-title-row">
-        <div className="card-title">
+        <button type="button" className="row-open card-title">
           <PriorityMark priority={task.priority} /> {task.title || excerpt(task.description, 40) || 'Untitled'}
-        </div>
+        </button>
         {onStatus && (
           <span className="card-status" onClick={e => e.stopPropagation()}>
             <span className="card-status-icon" aria-hidden>

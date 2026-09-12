@@ -1,4 +1,4 @@
-import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { DragEvent, useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode, BILL_KIND_META } from '../types'
 import { clock, dateKey, fmtTime } from '../utils'
 import {
@@ -20,6 +20,7 @@ import { plannedGift } from '../people'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { ProjectChip } from './bits'
+import { Modal } from './Modal'
 
 export type CalendarView = 'month' | 'week'
 
@@ -139,14 +140,7 @@ export function Calendar({
   const week = useMemo(() => weekDays(cursor), [cursor])
 
   const closeSheet = useCallback(() => setSheetDay(null), [])
-  useEffect(() => {
-    if (!sheetDay) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSheet()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [sheetDay, closeSheet])
+  const sheetTitleId = useId()
 
   const todayKey = dateKey(new Date())
   const label = view === 'week' ? weekLabel(cursor) : cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
@@ -444,216 +438,214 @@ export function Calendar({
       )}
 
       {sheetDay && (
-        <div className="cal-sheet-backdrop" onMouseDown={e => e.target === e.currentTarget && closeSheet()}>
-          <div className="cal-sheet" role="dialog" aria-modal="true" aria-label={fullDate(sheetDay)}>
-            <header className="cal-sheet-head">
-              <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, -1))} aria-label="Previous day">
-                ‹
-              </button>
-              <div className="cal-sheet-title">
-                <h2>{fullDate(sheetDay)}</h2>
-                <span className="cal-sheet-sub">{daySummary(sheetItems)}</span>
-                {(() => {
-                  const w = workOn(sheetDay)
-                  return w?.localId ? (
-                    <button
-                      className="cal-work-edit"
-                      onClick={() => {
-                        const id = w.localId!
-                        closeSheet()
-                        onEditEvent(id)
-                      }}
-                    >
-                      {workBadge(sheetDay)} <span className="cal-work-edit-label">Edit</span>
-                    </button>
-                  ) : (
-                    <button
-                      className="cal-work-set"
-                      onClick={() => {
-                        const d = sheetDay
-                        setSheetDay(null)
-                        onNewEvent(morningOf(d), 'home')
-                      }}
-                    >
-                      🏠 Set work day
-                    </button>
-                  )
-                })()}
-              </div>
-              <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, 1))} aria-label="Next day">
-                ›
-              </button>
-              <button className="btn subtle cal-sheet-close" onClick={closeSheet} aria-label="Close">
-                ✕
-              </button>
-            </header>
+        <Modal onClose={closeSheet} className="cal-sheet" backdropClassName="cal-sheet-backdrop" labelledBy={sheetTitleId}>
+          <header className="cal-sheet-head">
+            <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, -1))} aria-label="Previous day">
+              ‹
+            </button>
+            <div className="cal-sheet-title">
+              <h2 id={sheetTitleId}>{fullDate(sheetDay)}</h2>
+              <span className="cal-sheet-sub">{daySummary(sheetItems)}</span>
+              {(() => {
+                const w = workOn(sheetDay)
+                return w?.localId ? (
+                  <button
+                    className="cal-work-edit"
+                    onClick={() => {
+                      const id = w.localId!
+                      closeSheet()
+                      onEditEvent(id)
+                    }}
+                  >
+                    {workBadge(sheetDay)} <span className="cal-work-edit-label">Edit</span>
+                  </button>
+                ) : (
+                  <button
+                    className="cal-work-set"
+                    onClick={() => {
+                      const d = sheetDay
+                      setSheetDay(null)
+                      onNewEvent(morningOf(d), 'home')
+                    }}
+                  >
+                    🏠 Set work day
+                  </button>
+                )
+              })()}
+            </div>
+            <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, 1))} aria-label="Next day">
+              ›
+            </button>
+            <button className="btn subtle cal-sheet-close" onClick={closeSheet} aria-label="Close">
+              ✕
+            </button>
+          </header>
 
-            <div className="cal-sheet-body">
-              {sheetItems.length === 0 && <p className="empty">Nothing on this day yet.</p>}
-              <ul className="cal-rows">
-                {sheetItems.map(item => {
-                  if (item.kind === 'occasion') {
-                    const { person, kind } = item.occasion
-                    // Today's rule, not a copy of it: an open gift task near
-                    // this day means the gift is in hand, so open that one
-                    // rather than offering to plan a second
-                    const gift = plannedGift(person.id, kind, sheetDay, tasks)
-                    return (
-                      <li key={item.id} className="cal-row">
-                        <span className="cal-item-dot" style={{ background: person.color }} />
-                        <div className="cal-row-main">
-                          <span className="cal-row-title">
-                            {OCCASION_GLYPH[kind]} {itemTitle(item)}
-                          </span>
-                          <span className="cal-row-meta">{itemMeta(item)}</span>
-                        </div>
-                        {gift ? (
-                          <button
-                            className="btn cal-row-action"
-                            onClick={() => {
-                              closeSheet()
-                              onOpen(gift)
-                            }}
-                          >
-                            Gift planned
-                          </button>
-                        ) : (
-                          <button
-                            className="btn cal-row-action"
-                            onClick={() => {
-                              const at = sheetDay
-                              closeSheet()
-                              onPlanOccasion(person, kind, at)
-                            }}
-                          >
-                            Plan a gift
-                          </button>
-                        )}
-                      </li>
-                    )
-                  }
-                  if (item.kind === 'event') {
-                    const ev = item.event
-                    return (
-                      <li key={item.id} className="cal-row">
-                        <span className="cal-item-dot" style={{ background: eventColor(ev) }} />
-                        <div className="cal-row-main">
-                          <span className="cal-row-title">{ev.title}</span>
-                          <span className="cal-row-meta">{itemMeta(item)}</span>
-                        </div>
+          <div className="cal-sheet-body">
+            {sheetItems.length === 0 && <p className="empty">Nothing on this day yet.</p>}
+            <ul className="cal-rows">
+              {sheetItems.map(item => {
+                if (item.kind === 'occasion') {
+                  const { person, kind } = item.occasion
+                  // Today's rule, not a copy of it: an open gift task near
+                  // this day means the gift is in hand, so open that one
+                  // rather than offering to plan a second
+                  const gift = plannedGift(person.id, kind, sheetDay, tasks)
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <span className="cal-item-dot" style={{ background: person.color }} />
+                      <div className="cal-row-main">
+                        <span className="cal-row-title">
+                          {OCCASION_GLYPH[kind]} {itemTitle(item)}
+                        </span>
+                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                      </div>
+                      {gift ? (
                         <button
                           className="btn cal-row-action"
                           onClick={() => {
                             closeSheet()
-                            // ours to change; a feed row is read-only, so it
-                            // keeps offering to plan around it instead
-                            if (ev.localId) onEditEvent(ev.localId)
-                            else if (isPast(ev)) onAttendance(ev)
-                            else onPlan(ev)
+                            onOpen(gift)
                           }}
                         >
-                          {ev.localId ? 'Edit' : isPast(ev) ? 'Who was there?' : 'Plan for this'}
+                          Gift planned
                         </button>
-                      </li>
-                    )
-                  }
-                  if (item.kind === 'mark') {
-                    const { project } = item.mark
-                    return (
-                      <li key={item.id} className="cal-row">
+                      ) : (
                         <button
-                          className="cal-row-tap"
+                          className="btn cal-row-action"
                           onClick={() => {
+                            const at = sheetDay
                             closeSheet()
-                            onOpenProject(project)
+                            onPlanOccasion(person, kind, at)
                           }}
                         >
-                          <span className="cal-item-dot" style={{ background: project.color }} />
-                          <span className="cal-row-main">
-                            <span className="cal-row-title">◆ {itemTitle(item)}</span>
-                            <span className="cal-row-meta">{itemMeta(item)}</span>
-                          </span>
+                          Plan a gift
                         </button>
-                      </li>
-                    )
-                  }
-                  if (item.kind === 'meal') {
-                    return (
-                      <li key={item.id} className="cal-row">
-                        <span className="cal-item-dot" style={{ background: item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR }} />
-                        <div className="cal-row-main">
-                          <span className="cal-row-title">
-                            {mealGlyph(item.meal)} {item.meal.title}
-                          </span>
-                          <span className="cal-row-meta">{itemMeta(item)}</span>
-                        </div>
-                      </li>
-                    )
-                  }
-                  const t = item.task
-                  const project = taskProject(t)
+                      )}
+                    </li>
+                  )
+                }
+                if (item.kind === 'event') {
+                  const ev = item.event
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <span className="cal-item-dot" style={{ background: eventColor(ev) }} />
+                      <div className="cal-row-main">
+                        <span className="cal-row-title">{ev.title}</span>
+                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                      </div>
+                      <button
+                        className="btn cal-row-action"
+                        onClick={() => {
+                          closeSheet()
+                          // ours to change; a feed row is read-only, so it
+                          // keeps offering to plan around it instead
+                          if (ev.localId) onEditEvent(ev.localId)
+                          else if (isPast(ev)) onAttendance(ev)
+                          else onPlan(ev)
+                        }}
+                      >
+                        {ev.localId ? 'Edit' : isPast(ev) ? 'Who was there?' : 'Plan for this'}
+                      </button>
+                    </li>
+                  )
+                }
+                if (item.kind === 'mark') {
+                  const { project } = item.mark
                   return (
                     <li key={item.id} className="cal-row">
                       <button
                         className="cal-row-tap"
                         onClick={() => {
                           closeSheet()
-                          onOpen(t)
+                          onOpenProject(project)
                         }}
                       >
-                        <span className="cal-item-dot" style={{ background: project?.color ?? STATUS_META[t.status].color }} />
+                        <span className="cal-item-dot" style={{ background: project.color }} />
                         <span className="cal-row-main">
-                          <span className="cal-row-title">{itemTitle(item)}</span>
-                          <span className="cal-row-meta">
-                            <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
-                              {STATUS_META[t.status].label}
-                            </span>
-                            {project && <ProjectChip project={project} />}
-                            {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
-                          </span>
+                          <span className="cal-row-title">◆ {itemTitle(item)}</span>
+                          <span className="cal-row-meta">{itemMeta(item)}</span>
                         </span>
                       </button>
                     </li>
                   )
-                })}
-              </ul>
-            </div>
-
-            <section className="cal-sheet-eating" aria-label="Meals">
-              <h3 className="cal-sheet-eating-head">Eating</h3>
-              {MEAL_SLOTS.map(slot => (
-                <MealSlotRow
-                  onCreateRecipe={onCreateRecipe}
-                  key={slot}
-                  date={dateKey(sheetDay)}
-                  slot={slot}
-                  meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
-                  recipes={recipes}
-                  places={places}
-                  onSave={onSaveMeal}
-                  onClear={onClearMeal}
-                  onCreatePlace={onCreatePlace}
-                />
-              ))}
-            </section>
-
-            <footer className="cal-sheet-foot">
-              <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(sheetDay)}>
-                + New task this day
-              </button>
-              <button
-                className="btn cal-sheet-new"
-                onClick={() => {
-                  const d = sheetDay
-                  setSheetDay(null)
-                  onNewEvent(morningOf(d))
-                }}
-              >
-                🕘 New event
-              </button>
-            </footer>
+                }
+                if (item.kind === 'meal') {
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <span className="cal-item-dot" style={{ background: item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR }} />
+                      <div className="cal-row-main">
+                        <span className="cal-row-title">
+                          {mealGlyph(item.meal)} {item.meal.title}
+                        </span>
+                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                      </div>
+                    </li>
+                  )
+                }
+                const t = item.task
+                const project = taskProject(t)
+                return (
+                  <li key={item.id} className="cal-row">
+                    <button
+                      className="cal-row-tap"
+                      onClick={() => {
+                        closeSheet()
+                        onOpen(t)
+                      }}
+                    >
+                      <span className="cal-item-dot" style={{ background: project?.color ?? STATUS_META[t.status].color }} />
+                      <span className="cal-row-main">
+                        <span className="cal-row-title">{itemTitle(item)}</span>
+                        <span className="cal-row-meta">
+                          <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                            {STATUS_META[t.status].label}
+                          </span>
+                          {project && <ProjectChip project={project} />}
+                          {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
-        </div>
+
+          <section className="cal-sheet-eating" aria-label="Meals">
+            <h3 className="cal-sheet-eating-head">Eating</h3>
+            {MEAL_SLOTS.map(slot => (
+              <MealSlotRow
+                onCreateRecipe={onCreateRecipe}
+                key={slot}
+                date={dateKey(sheetDay)}
+                slot={slot}
+                meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
+                recipes={recipes}
+                places={places}
+                onSave={onSaveMeal}
+                onClear={onClearMeal}
+                onCreatePlace={onCreatePlace}
+              />
+            ))}
+          </section>
+
+          <footer className="cal-sheet-foot">
+            <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(sheetDay)}>
+              + New task this day
+            </button>
+            <button
+              className="btn cal-sheet-new"
+              onClick={() => {
+                const d = sheetDay
+                setSheetDay(null)
+                onNewEvent(morningOf(d))
+              }}
+            >
+              🕘 New event
+            </button>
+          </footer>
+        </Modal>
       )}
     </div>
   )

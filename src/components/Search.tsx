@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
 import { Icon, type IconName } from './Icon'
+import { Modal } from './Modal'
 
 /** A palette command: jump somewhere, or do something. `run` closes the palette
  *  itself (the caller wires the navigation/action). */
@@ -65,6 +66,10 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  // the results are a listbox the field drives: focus stays in the field, and
+  // aria-activedescendant names the row that Enter would open
+  const listId = useId()
+  const optionId = (i: number) => `${listId}-${i}`
   const projectName = useMemo(() => new Map(projects.map(p => [p.id, p.name])), [projects])
 
   useEffect(() => {
@@ -145,160 +150,163 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
   }
 
   return (
-    <div className="modal-backdrop search-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="search-palette" role="dialog" aria-modal="true" aria-label="Search">
-        <input
-          ref={input}
-          className="search-input"
-          value={q}
-          placeholder="Search or jump to anything — a task, a view, a person… or type to create"
-          onChange={e => setQ(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Escape') onClose()
-            else if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setCursor(c => Math.min(c + 1, Math.max(hits.length - 1, 0)))
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setCursor(c => Math.max(c - 1, 0))
-            } else if (e.key === 'Enter' && hits[cursor]) {
-              const h = hits[cursor]
-              // Enter edits, Shift+Enter captures without stopping at the editor
-              if (h.kind === 'create' && h.title) pick(h, !e.shiftKey)
-              else pick(h)
-            }
-          }}
-        />
-        {hits.length === 0 && q.trim() && <p className="empty search-empty">No matches. Keep typing to create “{q.trim()}”.</p>}
-        {hits.length === 0 && !q.trim() && (
-          <p className="empty search-empty">
-            No open tasks yet.{' '}
-            <button type="button" className="btn subtle" onClick={() => { onClose(); onCreateTask('', true) }}>
-              + New task
-            </button>
-          </p>
-        )}
-        {hits.length > 0 && (
-          <ul className="search-results">
-            {hits.map((h, i) => {
-              const active = i === cursor
-              if (h.kind === 'command')
-                return (
-                  <li key={h.command.id} className={active ? 'search-hit active command' : 'search-hit command'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">{h.command.icon ? <Icon name={h.command.icon} size={17} /> : '⌘'}</span>
-                    <span className="search-main">
-                      {h.command.label}
-                      {h.command.hint && <small>{h.command.hint}</small>}
-                    </span>
-                  </li>
-                )
-              if (h.kind === 'create')
-                return (
-                  <li key="create" className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">＋</span>
-                    <span className="search-main">
-                      Create task “{h.title}”<small>Enter to edit · Shift+Enter to capture</small>
-                    </span>
-                    {/* the touch route to capture: a phone has no Shift key, and a tap
-                        on the row itself opens the editor */}
-                    <button
-                      type="button"
-                      className="btn subtle"
-                      onClick={e => {
-                        e.stopPropagation()
-                        pick(h, false)
-                      }}
-                    >
-                      Capture
-                    </button>
-                  </li>
-                )
-              if (h.kind === 'task' || h.kind === 'recent')
-                return (
-                  <li key={h.task.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">☐</span>
-                    <span className="search-main">
-                      {h.task.title || 'Untitled'}
-                      <small>
-                        {h.task.projectId ? projectName.get(h.task.projectId) : 'No project'}
-                        {h.kind === 'task' && h.where ? ` · ${h.where}` : ''}
-                      </small>
-                    </span>
-                    <span className="badge" style={{ background: STATUS_META[h.task.status].bg, color: STATUS_META[h.task.status].color }}>
-                      {STATUS_META[h.task.status].label}
-                    </span>
-                  </li>
-                )
-              if (h.kind === 'project')
-                return (
-                  <li key={h.project.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">
-                      <span className="pdot" style={{ background: h.project.color }} />
-                    </span>
-                    <span className="search-main">
-                      {h.project.emoji ? `${h.project.emoji} ` : ''}
-                      {h.project.name}
-                      <small>Project{h.where ? ` · ${h.where}` : ''}</small>
-                    </span>
-                  </li>
-                )
-              if (h.kind === 'place')
-                return (
-                  <li key={h.place.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">
-                      <span className="person-avatar small" style={{ background: h.place.color }}>
-                        {h.place.emoji ?? PLACE_CATEGORY_META[h.place.category].emoji}
-                      </span>
-                    </span>
-                    <span className="search-main">
-                      {h.place.name}
-                      <small>
-                        {PLACE_CATEGORY_META[h.place.category].label}
-                        {h.where ? ` · ${h.where}` : ''}
-                      </small>
-                    </span>
-                  </li>
-                )
-              if (h.kind === 'journal')
-                return (
-                  <li key={h.entry.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                    <span className="search-kind">{h.entry.mood ? MOOD_META[h.entry.mood].emoji : '📓'}</span>
-                    <span className="search-main">
-                      {relativeDayLabel(h.entry.date)}
-                      <small>Journal · {h.where}</small>
-                    </span>
-                  </li>
-                )
+    <Modal onClose={onClose} className="search-palette" backdropClassName="modal-backdrop search-backdrop" label="Search">
+      <input
+        ref={input}
+        className="search-input"
+        role="combobox"
+        aria-label="Search"
+        aria-autocomplete="list"
+        aria-expanded={hits.length > 0}
+        aria-controls={hits.length > 0 ? listId : undefined}
+        aria-activedescendant={hits[cursor] ? optionId(cursor) : undefined}
+        value={q}
+        placeholder="Search or jump to anything — a task, a view, a person… or type to create"
+        onChange={e => setQ(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setCursor(c => Math.min(c + 1, Math.max(hits.length - 1, 0)))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setCursor(c => Math.max(c - 1, 0))
+          } else if (e.key === 'Enter' && hits[cursor]) {
+            const h = hits[cursor]
+            // Enter edits, Shift+Enter captures without stopping at the editor
+            if (h.kind === 'create' && h.title) pick(h, !e.shiftKey)
+            else pick(h)
+          }
+        }}
+      />
+      {hits.length === 0 && q.trim() && <p className="empty search-empty">No matches. Keep typing to create “{q.trim()}”.</p>}
+      {hits.length === 0 && !q.trim() && (
+        <p className="empty search-empty">
+          No open tasks yet.{' '}
+          <button type="button" className="btn subtle" onClick={() => { onClose(); onCreateTask('', true) }}>
+            + New task
+          </button>
+        </p>
+      )}
+      {hits.length > 0 && (
+        <ul className="search-results" id={listId} role="listbox" aria-label="Results">
+          {hits.map((h, i) => {
+            const active = i === cursor
+            if (h.kind === 'command')
               return (
-                <li key={h.person.id} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <li key={h.command.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active command' : 'search-hit command'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">{h.command.icon ? <Icon name={h.command.icon} size={17} /> : '⌘'}</span>
+                  <span className="search-main">
+                    {h.command.label}
+                    {h.command.hint && <small>{h.command.hint}</small>}
+                  </span>
+                </li>
+              )
+            if (h.kind === 'create')
+              return (
+                <li key="create" id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active create' : 'search-hit create'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">＋</span>
+                  <span className="search-main">
+                    Create task “{h.title}”<small>Enter to edit · Shift+Enter to capture</small>
+                  </span>
+                  {/* the touch route to capture: a phone has no Shift key, and a tap
+                      on the row itself opens the editor */}
+                  <button
+                    type="button"
+                    className="btn subtle"
+                    onClick={e => {
+                      e.stopPropagation()
+                      pick(h, false)
+                    }}
+                  >
+                    Capture
+                  </button>
+                </li>
+              )
+            if (h.kind === 'task' || h.kind === 'recent')
+              return (
+                <li key={h.task.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">☐</span>
+                  <span className="search-main">
+                    {h.task.title || 'Untitled'}
+                    <small>
+                      {h.task.projectId ? projectName.get(h.task.projectId) : 'No project'}
+                      {h.kind === 'task' && h.where ? ` · ${h.where}` : ''}
+                    </small>
+                  </span>
+                  <span className="badge" style={{ background: STATUS_META[h.task.status].bg, color: STATUS_META[h.task.status].color }}>
+                    {STATUS_META[h.task.status].label}
+                  </span>
+                </li>
+              )
+            if (h.kind === 'project')
+              return (
+                <li key={h.project.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind">
-                    <span className="person-avatar small" style={{ background: h.person.color }}>
-                      {h.person.emoji ?? h.person.name.slice(0, 1)}
+                    <span className="pdot" style={{ background: h.project.color }} />
+                  </span>
+                  <span className="search-main">
+                    {h.project.emoji ? `${h.project.emoji} ` : ''}
+                    {h.project.name}
+                    <small>Project{h.where ? ` · ${h.where}` : ''}</small>
+                  </span>
+                </li>
+              )
+            if (h.kind === 'place')
+              return (
+                <li key={h.place.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">
+                    <span className="person-avatar small" style={{ background: h.place.color }}>
+                      {h.place.emoji ?? PLACE_CATEGORY_META[h.place.category].emoji}
                     </span>
                   </span>
                   <span className="search-main">
-                    {h.person.name}
-                    <small>Person{h.where ? ` · ${h.where}` : ''}</small>
+                    {h.place.name}
+                    <small>
+                      {PLACE_CATEGORY_META[h.place.category].label}
+                      {h.where ? ` · ${h.where}` : ''}
+                    </small>
                   </span>
-                  {onSaw && (
-                    <button
-                      type="button"
-                      className="btn subtle"
-                      onClick={e => {
-                        e.stopPropagation()
-                        onClose()
-                        onSaw(h.person)
-                      }}
-                    >
-                      Saw {h.person.name.split(' ')[0]} today
-                    </button>
-                  )}
                 </li>
               )
-            })}
-          </ul>
-        )}
-      </div>
-    </div>
+            if (h.kind === 'journal')
+              return (
+                <li key={h.entry.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">{h.entry.mood ? MOOD_META[h.entry.mood].emoji : '📓'}</span>
+                  <span className="search-main">
+                    {relativeDayLabel(h.entry.date)}
+                    <small>Journal · {h.where}</small>
+                  </span>
+                </li>
+              )
+            return (
+              <li key={h.person.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                <span className="search-kind">
+                  <span className="person-avatar small" style={{ background: h.person.color }}>
+                    {h.person.emoji ?? h.person.name.slice(0, 1)}
+                  </span>
+                </span>
+                <span className="search-main">
+                  {h.person.name}
+                  <small>Person{h.where ? ` · ${h.where}` : ''}</small>
+                </span>
+                {onSaw && (
+                  <button
+                    type="button"
+                    className="btn subtle"
+                    onClick={e => {
+                      e.stopPropagation()
+                      onClose()
+                      onSaw(h.person)
+                    }}
+                  >
+                    Saw {h.person.name.split(' ')[0]} today
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Modal>
   )
 }

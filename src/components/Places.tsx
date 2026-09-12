@@ -18,6 +18,7 @@ import { OutingIdea, suggestOuting } from '../ai'
 import { Bars } from './People'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   places: Place[]
@@ -89,84 +90,77 @@ function PlaceForm({
     onClose()
   }
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal narrow" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>{place ? `Edit ${place.name}` : 'Add a place'}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <div className="field-row">
-            <label className="field emoji-field">
-              <span>Icon</span>
-              <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🍽️" maxLength={4} />
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Franco's" autoFocus />
-            </label>
-          </div>
-          <div className="field">
-            <span>Category</span>
-            <div className="segmented" style={{ flexWrap: 'wrap' }}>
-              {PLACE_CATEGORIES.map(c => (
-                <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} onClick={() => setCategory(c)}>
-                  {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="field">
-            <span>
-              How often do you want to go back? <small>(only then does it nudge)</small>
-            </span>
-            <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
-              <option value="">No target — just track it</option>
-              {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
-                <option key={c} value={c}>
-                  {CADENCE_META[c]}
-                </option>
-              ))}
-            </select>
+    <Modal onClose={onClose} className="modal narrow">
+      <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} />
+      <div className="modal-body">
+        <div className="field-row">
+          <label className="field emoji-field">
+            <span>Icon</span>
+            <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🍽️" maxLength={4} />
           </label>
-          <div className="field">
-            <span>Color</span>
-            <div className="swatches">
-              {PROJECT_COLORS.map(c => (
-                <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-              ))}
-            </div>
-          </div>
           <label className="field">
-            <span>Notes</span>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best table, booking tip, what to order…" />
+            <span>Name</span>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Franco's" autoFocus />
           </label>
         </div>
-        <footer className="modal-foot">
-          {place && onDelete && (
-            <ConfirmButton
-              className="btn subtle danger"
-              confirmLabel="Click again to remove"
-              onConfirm={() => {
-                onDelete(place.id)
-                onClose()
-              }}
-            >
-              Remove
-            </ConfirmButton>
-          )}
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>
-            Save
-          </button>
-        </footer>
+        <div className="field">
+          <span>Category</span>
+          <div className="segmented" style={{ flexWrap: 'wrap' }}>
+            {PLACE_CATEGORIES.map(c => (
+              <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} onClick={() => setCategory(c)}>
+                {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="field">
+          <span>
+            How often do you want to go back? <small>(only then does it nudge)</small>
+          </span>
+          <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
+            <option value="">No target — just track it</option>
+            {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
+              <option key={c} value={c}>
+                {CADENCE_META[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="field">
+          <span>Color</span>
+          <div className="swatches">
+            {PROJECT_COLORS.map(c => (
+              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
+            ))}
+          </div>
+        </div>
+        <label className="field">
+          <span>Notes</span>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best table, booking tip, what to order…" />
+        </label>
       </div>
-    </div>
+      <footer className="modal-foot">
+        {place && onDelete && (
+          <ConfirmButton
+            className="btn subtle danger"
+            confirmLabel="Click again to remove"
+            onConfirm={() => {
+              onDelete(place.id)
+              onClose()
+            }}
+          >
+            Remove
+          </ConfirmButton>
+        )}
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={!name.trim()} onClick={save}>
+          Save
+        </button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -188,61 +182,54 @@ function LogOuting({
   const [note, setNote] = useState('')
   const [ids, setIds] = useState<string[]>([])
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal narrow" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>Went to {place.name}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <label className="field">
-            <span>When</span>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>What did you do?</span>
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="Dinner, coffee, walk…" autoFocus />
-          </label>
-          {people.length > 0 && (
-            <div className="field">
-              <span>Who was there?</span>
-              <div className="platform-toggles">
-                {people.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={ids.includes(p.id) ? 'toggle on' : 'toggle'}
-                    onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
-                  >
-                    {p.emoji ? `${p.emoji} ` : ''}
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-              <small className="field-hint">Solo visits are fine — leave everyone unticked.</small>
+    <Modal onClose={onClose} className="modal narrow">
+      <ModalHead title={`Went to ${place.name}`} />
+      <div className="modal-body">
+        <label className="field">
+          <span>When</span>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>What did you do?</span>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Dinner, coffee, walk…" autoFocus />
+        </label>
+        {people.length > 0 && (
+          <div className="field">
+            <span>Who was there?</span>
+            <div className="platform-toggles">
+              {people.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={ids.includes(p.id) ? 'toggle on' : 'toggle'}
+                  onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
+                >
+                  {p.emoji ? `${p.emoji} ` : ''}
+                  {p.name}
+                </button>
+              ))}
             </div>
-          )}
-        </div>
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn primary"
-            disabled={!date}
-            onClick={() => {
-              onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
-              onClose()
-            }}
-          >
-            Log it
-          </button>
-        </footer>
+            <small className="field-hint">Solo visits are fine — leave everyone unticked.</small>
+          </div>
+        )}
       </div>
-    </div>
+      <footer className="modal-foot">
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="btn primary"
+          disabled={!date}
+          onClick={() => {
+            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
+            onClose()
+          }}
+        >
+          Log it
+        </button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -322,7 +309,9 @@ function PlaceRow({
               {stats.visits.slice(0, 4).map(v =>
                 v.kind === 'task' ? (
                   <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
-                    <span>{v.task.title || 'Outing'}</span>
+                    <button type="button" className="row-open">
+                      <span>{v.task.title || 'Outing'}</span>
+                    </button>
                     <small className="muted">{fmtDate(v.at)}</small>
                   </li>
                 ) : (

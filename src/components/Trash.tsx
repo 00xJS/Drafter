@@ -1,6 +1,7 @@
 import { Item, Project, STATUS_META, Task } from '../types'
 import { excerpt, fmtDateTime, timeAgo } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   items: Item[]
@@ -65,66 +66,59 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                 ? i.title || 'Untitled event'
                 : i.name
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>Trash</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <p className="field-hint">
-            Deleted items stay here for {RETENTION_DAYS} days, then disappear for good. Restore puts everything back exactly as it
-            was, on every device. Delete forever removes it from this device and marks it deleted for everyone — a stale copy cannot resurrect it.
-          </p>
-          {deleted.length === 0 ? (
-            <p className="empty">The trash is empty.</p>
-          ) : (
-            <ul className="dash-list trash-list">
-              {deleted.map(i => {
-                const t = i.kind === 'task' ? (i as Task) : null
-                const project = t?.projectId ? projectMap.get(t.projectId) : undefined
-                const expires = new Date(new Date(i.deletedAt!).getTime() + RETENTION_DAYS * 86_400_000)
-                return (
-                  <li key={i.id} className="trash-row">
-                    <div className="dash-main">
-                      <span className="dash-title">
-                        <small className="muted">{kindLabel(i.kind)}</small> {label(i)}
-                      </span>
-                      <span className="dash-meta">
-                        {t && (
-                          <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
-                            {STATUS_META[t.status].label}
-                          </span>
-                        )}
-                        {project && <small className="muted">{project.name}</small>}
-                        <small className="muted">
-                          deleted {timeAgo(i.deletedAt!)} · gone {fmtDateTime(expires.toISOString())}
-                        </small>
-                      </span>
-                    </div>
-                    <span className="trash-actions">
-                      <button className="btn" onClick={() => onRestore(i.id)}>
-                        Restore
-                      </button>
-                      <ConfirmButton className="btn subtle danger" confirmLabel="Forever? Click again" onConfirm={() => onPurge(i.id)}>
-                        Delete forever
-                      </ConfirmButton>
+    <Modal onClose={onClose}>
+      <ModalHead title="Trash" />
+      <div className="modal-body">
+        <p className="field-hint">
+          Deleted items stay here for {RETENTION_DAYS} days, then disappear for good. Restore puts everything back exactly as it
+          was, on every device. Delete forever removes it from this device and marks it deleted for everyone — a stale copy cannot resurrect it.
+        </p>
+        {deleted.length === 0 ? (
+          <p className="empty">The trash is empty.</p>
+        ) : (
+          <ul className="dash-list trash-list">
+            {deleted.map(i => {
+              const t = i.kind === 'task' ? (i as Task) : null
+              const project = t?.projectId ? projectMap.get(t.projectId) : undefined
+              const expires = new Date(new Date(i.deletedAt!).getTime() + RETENTION_DAYS * 86_400_000)
+              return (
+                <li key={i.id} className="trash-row">
+                  <div className="dash-main">
+                    <span className="dash-title">
+                      <small className="muted">{kindLabel(i.kind)}</small> {label(i)}
                     </span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button className="btn primary" onClick={onClose}>
-            Done
-          </button>
-        </footer>
+                    <span className="dash-meta">
+                      {t && (
+                        <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                          {STATUS_META[t.status].label}
+                        </span>
+                      )}
+                      {project && <small className="muted">{project.name}</small>}
+                      <small className="muted">
+                        deleted {timeAgo(i.deletedAt!)} · gone {fmtDateTime(expires.toISOString())}
+                      </small>
+                    </span>
+                  </div>
+                  <span className="trash-actions">
+                    <button className="btn" onClick={() => onRestore(i.id)}>
+                      Restore
+                    </button>
+                    <ConfirmButton className="btn subtle danger" confirmLabel="Forever? Click again" onConfirm={() => onPurge(i.id)}>
+                      Delete forever
+                    </ConfirmButton>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
-    </div>
+      <footer className="modal-foot">
+        <span className="spacer" />
+        <button className="btn primary" onClick={onClose}>
+          Done
+        </button>
+      </footer>
+    </Modal>
   )
 }

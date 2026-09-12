@@ -6,6 +6,7 @@ import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
+import { Modal, ModalHead } from './Modal'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
 
 interface Props {
@@ -68,94 +69,87 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
     onClose()
   }
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal narrow" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>{person ? `Edit ${person.name}` : 'Add a person'}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <div className="field-row">
-            <label className="field emoji-field">
-              <span>Icon</span>
-              <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="👵" maxLength={4} />
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mum" autoFocus />
-            </label>
-          </div>
-          <div className="field">
-            <span>Group</span>
-            <div className="segmented">
-              {PERSON_GROUPS.map(g => (
-                <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} onClick={() => setGroup(g)}>
-                  {PERSON_GROUP_META[g]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="field">
-            <span>
-              How often do you want to see them? <small>(drives the nudges)</small>
-            </span>
-            <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
-              <option value="">No target — just track it</option>
-              {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
-                <option key={c} value={c}>
-                  {CADENCE_META[c]}
-                </option>
-              ))}
-            </select>
+    <Modal onClose={onClose} className="modal narrow">
+      <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} />
+      <div className="modal-body">
+        <div className="field-row">
+          <label className="field emoji-field">
+            <span>Icon</span>
+            <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="👵" maxLength={4} />
           </label>
-          <div className="field-row">
-            <label className="field">
-              <span>Birthday</span>
-              <input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Anniversary</span>
-              <input type="date" value={anniversary} onChange={e => setAnniversary(e.target.value)} />
-            </label>
-          </div>
-          <div className="field">
-            <span>Color</span>
-            <div className="swatches">
-              {PROJECT_COLORS.map(c => (
-                <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-              ))}
-            </div>
-          </div>
           <label className="field">
-            <span>Notes</span>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Favourite restaurant, gift ideas, what to ask about next time…" />
+            <span>Name</span>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mum" autoFocus />
           </label>
         </div>
-        <footer className="modal-foot">
-          {person && onDelete && (
-            <ConfirmButton
-              className="btn subtle danger"
-              confirmLabel="Click again to remove"
-              onConfirm={() => {
-                onDelete(person.id)
-                onClose()
-              }}
-            >
-              Remove
-            </ConfirmButton>
-          )}
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>
-            Save
-          </button>
-        </footer>
+        <div className="field">
+          <span>Group</span>
+          <div className="segmented">
+            {PERSON_GROUPS.map(g => (
+              <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} onClick={() => setGroup(g)}>
+                {PERSON_GROUP_META[g]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="field">
+          <span>
+            How often do you want to see them? <small>(drives the nudges)</small>
+          </span>
+          <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
+            <option value="">No target — just track it</option>
+            {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
+              <option key={c} value={c}>
+                {CADENCE_META[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="field-row">
+          <label className="field">
+            <span>Birthday</span>
+            <input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Anniversary</span>
+            <input type="date" value={anniversary} onChange={e => setAnniversary(e.target.value)} />
+          </label>
+        </div>
+        <div className="field">
+          <span>Color</span>
+          <div className="swatches">
+            {PROJECT_COLORS.map(c => (
+              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
+            ))}
+          </div>
+        </div>
+        <label className="field">
+          <span>Notes</span>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Favourite restaurant, gift ideas, what to ask about next time…" />
+        </label>
       </div>
-    </div>
+      <footer className="modal-foot">
+        {person && onDelete && (
+          <ConfirmButton
+            className="btn subtle danger"
+            confirmLabel="Click again to remove"
+            onConfirm={() => {
+              onDelete(person.id)
+              onClose()
+            }}
+          >
+            Remove
+          </ConfirmButton>
+        )}
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={!name.trim()} onClick={save}>
+          Save
+        </button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -183,107 +177,100 @@ function LogVisit({
     : []
   const canCreate = !!placeQuery.trim() && !places.some(p => p.name.toLowerCase() === placeQuery.trim().toLowerCase()) && !!onSavePlace
   return (
-    <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal narrow" role="dialog" aria-modal="true">
-        <header className="modal-head">
-          <h2>Saw {person.name}</h2>
-          <button className="btn subtle" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          <label className="field">
-            <span>When</span>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>What did you do?</span>
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="Sunday lunch, walk in the park…" autoFocus />
-          </label>
-          {(places.length > 0 || onSavePlace) && (
-            <div className="field">
-              <span>Where?</span>
-              {selected && (
-                <div className="platform-toggles attendees">
-                  <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Remove">
-                    {selected.emoji ? `${selected.emoji} ` : ''}
-                    {selected.name} ✕
-                  </button>
-                </div>
-              )}
-              {!selected && (
-                <>
-                  <input
-                    className="people-picker-search"
-                    value={placeQuery}
-                    onChange={e => setPlaceQuery(e.target.value)}
-                    placeholder="Search places…"
-                  />
-                  {(placeQuery.trim() || canCreate) && (
-                    <div className="platform-toggles picker-results">
-                      {matches.map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className="toggle"
-                          onClick={() => {
-                            setPlaceId(p.id)
-                            setPlaceQuery('')
-                          }}
-                        >
-                          {p.emoji ? `${p.emoji} ` : ''}
-                          {p.name}
-                        </button>
-                      ))}
-                      {canCreate && (
-                        <button
-                          type="button"
-                          className="toggle"
-                          onClick={() => {
-                            const now = new Date().toISOString()
-                            const p: Place = {
-                              kind: 'place',
-                              id: uid(),
-                              name: placeQuery.trim(),
-                              color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-                              category: 'other',
-                              createdAt: now,
-                              updatedAt: now,
-                            }
-                            onSavePlace!(p)
-                            setPlaceId(p.id)
-                            setPlaceQuery('')
-                          }}
-                        >
-                          Create place “{placeQuery.trim()}”
-                        </button>
-                      )}
-                      {!canCreate && matches.length === 0 && placeQuery.trim() && <small className="muted">No match.</small>}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn primary"
-            disabled={!date}
-            onClick={() => {
-              onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
-              onClose()
-            }}
-          >
-            Log it
-          </button>
-        </footer>
+    <Modal onClose={onClose} className="modal narrow">
+      <ModalHead title={`Saw ${person.name}`} />
+      <div className="modal-body">
+        <label className="field">
+          <span>When</span>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>What did you do?</span>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Sunday lunch, walk in the park…" autoFocus />
+        </label>
+        {(places.length > 0 || onSavePlace) && (
+          <div className="field">
+            <span>Where?</span>
+            {selected && (
+              <div className="platform-toggles attendees">
+                <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Remove">
+                  {selected.emoji ? `${selected.emoji} ` : ''}
+                  {selected.name} ✕
+                </button>
+              </div>
+            )}
+            {!selected && (
+              <>
+                <input
+                  className="people-picker-search"
+                  value={placeQuery}
+                  onChange={e => setPlaceQuery(e.target.value)}
+                  placeholder="Search places…"
+                />
+                {(placeQuery.trim() || canCreate) && (
+                  <div className="platform-toggles picker-results">
+                    {matches.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="toggle"
+                        onClick={() => {
+                          setPlaceId(p.id)
+                          setPlaceQuery('')
+                        }}
+                      >
+                        {p.emoji ? `${p.emoji} ` : ''}
+                        {p.name}
+                      </button>
+                    ))}
+                    {canCreate && (
+                      <button
+                        type="button"
+                        className="toggle"
+                        onClick={() => {
+                          const now = new Date().toISOString()
+                          const p: Place = {
+                            kind: 'place',
+                            id: uid(),
+                            name: placeQuery.trim(),
+                            color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
+                            category: 'other',
+                            createdAt: now,
+                            updatedAt: now,
+                          }
+                          onSavePlace!(p)
+                          setPlaceId(p.id)
+                          setPlaceQuery('')
+                        }}
+                      >
+                        Create place “{placeQuery.trim()}”
+                      </button>
+                    )}
+                    {!canCreate && matches.length === 0 && placeQuery.trim() && <small className="muted">No match.</small>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
-    </div>
+      <footer className="modal-foot">
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="btn primary"
+          disabled={!date}
+          onClick={() => {
+            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
+            onClose()
+          }}
+        >
+          Log it
+        </button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -417,7 +404,9 @@ function PersonRow({
             <ul className="person-recent">
               {stats.visits.slice(0, 4).map(v => (
                 <li key={v.task.id} onClick={() => onOpenTask(v.task)}>
-                  <span>{v.task.title || 'Visit'}</span>
+                  <button type="button" className="row-open">
+                    <span>{v.task.title || 'Visit'}</span>
+                  </button>
                   <small className="muted">{fmtDate(v.at)}</small>
                 </li>
               ))}
