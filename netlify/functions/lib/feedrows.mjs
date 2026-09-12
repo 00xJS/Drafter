@@ -91,9 +91,18 @@ export function feedFor(items, site, tz, myId) {
   return feed
 }
 
-function serviceHeaders() {
+// feed.mjs reads with these. They came here with feedFor when the deploy was
+// unstuck (d1775f5) but were left private while feed.mjs kept calling them, so
+// every feed request threw: the household lookup quietly shrank to the reader
+// alone, and the rows loader answered 502. Nothing checked netlify/functions
+// for undefined names; src/__tests__/srv-feed.test.ts now runs the handler.
+
+/** Headers for a service-key read. */
+export function serviceHeaders() {
   const key = process.env.SUPABASE_SERVICE_KEY
   return { apikey: key, authorization: `Bearer ${key}` }
 }
 
-const baseUrl = () => process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+export function baseUrl() {
+  return process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+}

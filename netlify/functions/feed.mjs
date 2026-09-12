@@ -7,7 +7,7 @@
 
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
-import { feedFor, withOwner } from './lib/feedrows.mjs'
+import { baseUrl, feedFor, serviceHeaders, withOwner } from './lib/feedrows.mjs'
 import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../shared/domain.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
