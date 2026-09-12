@@ -298,8 +298,11 @@ async function findMirrored(userId, accountId, calendarId, taskId) {
   return page.value?.[0] ?? null
 }
 
-/** Mirror one task: upsert while open and dated, remove otherwise. */
-export async function pushTask(userId, accountId, calendarId, task, projectName, site) {
+/**
+ * Mirror one task: upsert while open and dated, remove otherwise.
+ * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task.
+ */
+export async function pushTask(userId, accountId, calendarId, task, projectName, site, opts = {}) {
   const wanted = task.kind === 'task' && !task.deletedAt && OPEN.includes(task.status) && !!task.dueAt
   const existing = await findMirrored(userId, accountId, calendarId, task.id)
   const path = id => `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
@@ -312,8 +315,8 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     }
     return 'skipped'
   }
-  const settings = await settingsGet(userId).catch(() => null)
-  const body = eventBodyFor(task, projectName, site, settings?.timezone)
+  const tz = 'tz' in opts ? (opts.tz ?? undefined) : (await settingsGet(userId).catch(() => null))?.timezone
+  const body = eventBodyFor(task, projectName, site, tz)
   if (existing) {
     await graph(userId, accountId, path(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'

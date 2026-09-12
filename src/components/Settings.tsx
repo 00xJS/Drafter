@@ -651,7 +651,15 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                   <input type="checkbox" checked={mirroring} onChange={e => setMirroring(e.target.checked)} />
                   <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar in Google</span>
                   <span className="cal-source-status">
-                    {googlePush.error ? <span className="warn">{googlePush.error}</span> : googlePush.pending ? <small>pushing…</small> : googlePush.lastAt ? <small>pushed {timeAgo(googlePush.lastAt)}</small> : null}
+                    {googlePush.error ? (
+                      <span className="warn">{googlePush.error}</span>
+                    ) : googlePush.pending ? (
+                      <small>pushing…</small>
+                    ) : googlePush.waiting ? (
+                      <small>{googlePush.waiting} waiting to go out — retrying</small>
+                    ) : googlePush.lastAt ? (
+                      <small>pushed {timeAgo(googlePush.lastAt)}</small>
+                    ) : null}
                   </span>
                 </label>
                 <p className="field-hint">
@@ -703,6 +711,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     {(msCals ?? ms.accounts.map(a => ({ account: a, calendars: [] as MicrosoftCalendarInfo[] }))).map(entry => {
                       const acct = entry.account
                       const mirrorSource = store.calendars.find(c => c.url === msPushUrl(acct.id))
+                      // each account's own trouble: one dead account no longer speaks for the rest
+                      const mirrorError = mirrorSource?.enabled ? microsoftSync.accountErrors?.[acct.id] : undefined
                       return (
                         <div key={acct.id} className="ms-account">
                           <p className="sync-line">
@@ -777,7 +787,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                             />
                             <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar here</span>
                             <span className="cal-source-status">
-                              {microsoftSync.error ? <span className="warn">{microsoftSync.error}</span> : microsoftSync.pending ? <small>syncing…</small> : microsoftSync.lastAt ? <small>synced {timeAgo(microsoftSync.lastAt)}</small> : null}
+                              {mirrorError ? (
+                                <span className="warn">{mirrorError}</span>
+                              ) : !mirrorSource?.enabled ? null : microsoftSync.pending ? (
+                                <small>syncing…</small>
+                              ) : microsoftSync.lastAt ? (
+                                <small>synced {timeAgo(microsoftSync.lastAt)}</small>
+                              ) : null}
                             </span>
                           </label>
                         </div>

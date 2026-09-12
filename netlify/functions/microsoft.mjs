@@ -10,7 +10,8 @@
 
 import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
-import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
+import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
+import { runMirrorBatch } from './lib/mirror.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
 import { pushEntry,
   authUrl,
@@ -158,24 +159,30 @@ const handler = async req => {
       return Response.json({ accounts: out })
     }
     if (action === 'push') {
+      const startedAt = Date.now()
       // judge "untimed" in the owner's zone, not UTC: adopt the device's zone
       // when the account has none, never overwriting one that was chosen
       await adoptTimeZone(user.id, body.timezone)
       const accountId = String(body.accountId ?? '')
-      const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 200) : []
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}
       const calendarId = await drafterCalendarId(user.id, accountId)
-      const results = { created: 0, updated: 0, removed: 0, skipped: 0 }
-      const errors = []
-      for (const t of tasks) {
-        try {
-          results[await pushTask(user.id, accountId, calendarId, t, t.projectId ? projectNames[t.projectId] : undefined, url.origin)]++
-        } catch (e) {
-          errors.push({ id: t.id, error: e?.message ?? String(e) })
-          if (e?.status === 409 || e?.status === 401 || e?.status === 403) break
-        }
-      }
-      return Response.json({ calendarId, ...results, errors })
+      const tz = (await settingsGet(user.id).catch(() => null))?.timezone ?? null
+      // `records` is the sweep (tasks and entries, chunked, budgeted, `left` to
+      // resend); `tasks` is an older app build, which keeps its old contract
+      const sweep = Array.isArray(body.records)
+      const records = sweep ? body.records : Array.isArray(body.tasks) ? body.tasks : []
+      const result = await runMirrorBatch(
+        records,
+        r => {
+          const project = r.projectId ? projectNames[r.projectId] : undefined
+          if (!sweep || r.kind === 'task') return pushTask(user.id, accountId, calendarId, r, project, url.origin, { tz })
+          if (r.kind === 'event') return pushEntry(user.id, accountId, calendarId, r, url.origin)
+          // pushTask treats anything that is not a task as "remove its copy"
+          throw Object.assign(new Error('not a task or an entry'), { status: 400 })
+        },
+        sweep ? { startedAt } : { budgetMs: Infinity },
+      )
+      return Response.json({ calendarId, ...result })
     }
     if (action === 'pull') {
       const accountId = String(body.accountId ?? '')

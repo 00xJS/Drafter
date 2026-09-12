@@ -200,8 +200,11 @@ async function findMirrored(userId, calendarId, taskId) {
   return newestCopy(page.items)
 }
 
-/** Mirror one task into the Drafter calendar: upsert when open with a due date, otherwise remove. */
-export async function pushTask(userId, calendarId, task, projectName, site) {
+/**
+ * Mirror one task into the Drafter calendar: upsert when open with a due date, otherwise remove.
+ * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task.
+ */
+export async function pushTask(userId, calendarId, task, projectName, site, opts = {}) {
   const wanted = task.kind === 'task' && !task.deletedAt && OPEN.includes(task.status) && !!task.dueAt
   const existing = await findMirrored(userId, calendarId, task.id)
   const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
@@ -222,8 +225,7 @@ export async function pushTask(userId, calendarId, task, projectName, site) {
     // could never come back to Google, even after it was reopened.
     return 'skipped'
   }
-  const settings = await settingsGet(userId).catch(() => null)
-  const tz = settings?.timezone ?? undefined
+  const tz = 'tz' in opts ? (opts.tz ?? undefined) : ((await settingsGet(userId).catch(() => null))?.timezone ?? undefined)
   const body = eventBodyFor(task, projectName, site, tz)
   if (live) {
     await gapi(userId, evPath(live.id), { method: 'PATCH', body: JSON.stringify(body) })
