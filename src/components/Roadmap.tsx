@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEvent, CalendarSource, PROJECT_STATUS_META, Project, Task, projectProgress } from '../types'
 import { DAY_MS, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
+import { getSupabase } from '../supabase'
 import { fmtDate } from '../utils'
 import { ProgressBar } from './bits'
 
@@ -15,7 +16,11 @@ interface Props {
   onOpenTask(t: Task): void
 }
 
-const PX_PER_DAY = 4
+/** A young history stretches to fill the width; an old one packs down to this and scrolls. */
+const MIN_PX_PER_DAY = 4
+const MAX_PX_PER_DAY = 48
+/** The project label column beside the track. */
+const LABEL_W = 260
 
 interface Row {
   project: Project
@@ -27,15 +32,74 @@ interface Row {
   dueTasks: Task[]
 }
 
+/**
+ * The span the Timeline draws: from the first day of the service to the end of
+ * today. The first day is when this account was created; in local mode, or
+ * before the session is known, it is the earliest project or task. Nothing past
+ * today is drawn — what is coming lives on the calendar's Month and Week.
+ */
+export function timelineRange(accountCreatedAt: string | null, projects: Project[], tasks: Task[], today: Date): { from: Date; to: Date } {
+  const account = accountCreatedAt ? Date.parse(accountCreatedAt) : NaN
+  let first = Number.isFinite(account) ? account : Infinity
+  if (!Number.isFinite(first)) {
+    for (const r of [...projects, ...tasks]) {
+      const t = Date.parse(r.createdAt)
+      if (Number.isFinite(t) && t < first) first = t
+    }
+  }
+  const from = startOfDay(new Date(Math.min(Number.isFinite(first) ? first : today.getTime(), today.getTime())))
+  // the end of today, so today's own marks are not cut off at the edge
+  const to = new Date(startOfDay(today).getTime() + DAY_MS)
+  return { from, to }
+}
+
+/** Pixels per day that fit `days` into `available` pixels, within the min and max. */
+export function pxPerDay(available: number, days: number): number {
+  if (!(available > 0) || !(days > 0)) return MIN_PX_PER_DAY
+  return Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, available / days))
+}
+
 export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onNewProject, onOpenTask }: Props) {
+  // the account's own creation day is the first day of the service
+  const [accountSince, setAccountSince] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    const sb = getSupabase()
+    if (sb)
+      void sb.auth.getSession().then(({ data }) => {
+        if (alive) setAccountSince(data.session?.user?.created_at ?? null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const empty = projects.length === 0
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [avail, setAvail] = useState(0)
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const measure = () => setAvail(el.clientWidth)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [empty])
+
   const model = useMemo(() => {
     const today = startOfDay()
-    const visible = projects.filter(p => p.status !== 'archived')
-    const rows: Row[] = visible.map(project => {
+    const { from, to } = timelineRange(accountSince, projects, tasks, today)
+    const ppd = pxPerDay(avail - LABEL_W, (to.getTime() - from.getTime()) / DAY_MS)
+    const x = (d: Date | number) => (((typeof d === 'number' ? d : d.getTime()) - from.getTime()) / DAY_MS) * ppd
+    const inRange = (ms: number) => ms >= from.getTime() && ms <= to.getTime()
+    const rows: Row[] = []
+    for (const project of projects.filter(p => p.status !== 'archived')) {
       const mine = tasks.filter(t => t.projectId === project.id)
-      const dueTasks = mine.filter(t => t.dueAt && t.status !== 'canceled').sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
+      const dated = mine.filter(t => t.dueAt && t.status !== 'canceled').sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
       const msDates = (project.milestones ?? []).filter(m => m.dueAt).map(m => new Date(m.dueAt!).getTime())
-      const taskDates = dueTasks.map(t => new Date(t.dueAt!).getTime())
+      const taskDates = dated.map(t => new Date(t.dueAt!).getTime())
       const explicitStart = project.startAt ? new Date(project.startAt) : null
       const explicitEnd = project.targetAt ? new Date(project.targetAt) : null
       const latest = Math.max(...msDates, ...taskDates, -Infinity)
@@ -43,33 +107,44 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
       const end =
         explicitEnd ??
         new Date(Math.max(Number.isFinite(latest) ? latest : 0, start.getTime() + 30 * DAY_MS, today.getTime() + 14 * DAY_MS))
-      return { project, start: startOfDay(start), end: startOfDay(end), inferred: !explicitStart && !explicitEnd, progress: projectProgress(mine), dueTasks }
-    })
-    const minStart = rows.length ? Math.min(...rows.map(r => r.start.getTime()), today.getTime()) : today.getTime()
-    const maxEnd = rows.length ? Math.max(...rows.map(r => r.end.getTime()), today.getTime() + 90 * DAY_MS) : today.getTime() + 180 * DAY_MS
-    // pad to whole months so the header lines up
-    const from = new Date(new Date(minStart).getFullYear(), new Date(minStart).getMonth() - 1, 1)
-    const to = new Date(new Date(maxEnd).getFullYear(), new Date(maxEnd).getMonth() + 2, 1)
-    const months: { label: string; left: number; width: number }[] = []
-    for (let m = new Date(from); m < to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
-      const next = new Date(m.getFullYear(), m.getMonth() + 1, 1)
-      months.push({
-        label: m.toLocaleDateString(undefined, { month: 'short', year: m.getMonth() === 0 || m.getTime() === from.getTime() ? '2-digit' : undefined }),
-        left: ((m.getTime() - from.getTime()) / DAY_MS) * PX_PER_DAY,
-        width: ((next.getTime() - m.getTime()) / DAY_MS) * PX_PER_DAY,
+      // drawn only between the first day and today
+      if (start.getTime() > to.getTime() || end.getTime() < from.getTime()) continue
+      rows.push({
+        project,
+        start: startOfDay(new Date(Math.max(start.getTime(), from.getTime()))),
+        end: new Date(Math.min(startOfDay(end).getTime(), to.getTime())),
+        inferred: !explicitStart && !explicitEnd,
+        progress: projectProgress(mine),
+        dueTasks: dated.filter(t => inRange(new Date(t.dueAt!).getTime())),
       })
     }
-    const x = (d: Date | number) => ((typeof d === 'number' ? d : d.getTime()) - from.getTime()) / DAY_MS * PX_PER_DAY
-    const width = x(to)
+    const months: { label: string; left: number; width: number }[] = []
+    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m < to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+      const next = new Date(m.getFullYear(), m.getMonth() + 1, 1)
+      const left = Math.max(m.getTime(), from.getTime())
+      const width = x(Math.min(next.getTime(), to.getTime())) - x(left)
+      months.push({
+        // a sliver of a month (the first day can fall on the 29th) keeps its line but not a label
+        label: width >= 28 ? m.toLocaleDateString(undefined, { month: 'short', year: m.getMonth() === 0 || months.length === 0 ? '2-digit' : undefined }) : '',
+        left: x(left),
+        width,
+      })
+    }
     rows.sort((a, b) => a.start.getTime() - b.start.getTime())
     const markers = events
       .map(ev => ({ ev, at: eventStartDate(ev) }))
-      .filter(m => m.at >= from && m.at < to)
+      .filter(m => inRange(m.at.getTime()))
       .slice(0, 400)
-    return { rows, months, x, width, today, todayX: x(today), markers }
-  }, [projects, tasks, events])
+    return { rows, months, x, inRange, from, width: x(to), todayX: x(today), markers }
+  }, [projects, tasks, events, accountSince, avail])
 
-  if (projects.length === 0) {
+  // open on today — the right-hand end — when the history is wider than the screen
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [model.width])
+
+  if (empty) {
     return (
       <div className="empty-hero">
         <h2>No projects yet</h2>
@@ -90,14 +165,16 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
     <div className="roadmap">
       <div className="toolbar">
         <h2 className="view-title">Timeline</h2>
-        <span className="cal-hint">Bars are project spans · ◆ milestones · dots are due tasks · click anything to open it</span>
+        <span className="cal-hint">
+          Since {fmtDate(model.from.toISOString())} · bars are project spans · ◆ milestones · dots are due tasks · click anything to open it
+        </span>
         <span className="spacer" />
         <button className="btn" onClick={onNewProject}>
           + New project
         </button>
       </div>
-      <div className="rm-scroll">
-        <div className="rm-canvas" style={{ width: model.width + 260 }}>
+      <div className="rm-scroll" ref={scrollRef}>
+        <div className="rm-canvas" style={{ width: model.width + LABEL_W }}>
           <div className="rm-header">
             <div className="rm-label rm-label-head">Project</div>
             <div className="rm-track" style={{ width: model.width }}>
@@ -163,7 +240,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
                     <span className="rm-bar-fill" style={{ width: `${row.progress.pct}%` }} />
                   </button>
                   {(row.project.milestones ?? [])
-                    .filter(m => m.dueAt)
+                    .filter(m => m.dueAt && model.inRange(new Date(m.dueAt).getTime()))
                     .map(m => (
                       <button
                         key={m.id}
