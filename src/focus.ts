@@ -12,14 +12,12 @@ import { isFocusFor } from '../shared/today.mjs'
 // store's setStatus, and the copies Undo puts back. The planner does the saving.
 
 /**
- * The fields B1 adds to Task and CalendarEntry, declared here until src/types.ts
- * carries them. src/schema.ts must learn them too — focusOn through a sanitizer
- * that takes only a real YYYY-MM-DD, focusBy and taskId as ids — because it
- * rebuilds every pulled row from a fixed field list: without that, a focus set
- * on one device vanishes on the next sync.
+ * Task and CalendarEntry carry focusOn / focusBy and taskId themselves (B1), and
+ * src/schema.ts keeps them through every sync. These names stay as plain
+ * aliases so the sheets and tests can say which role a record plays.
  */
-export type FocusTask = Task & { focusOn?: string; focusBy?: string }
-export type BlockEntry = CalendarEntry & { taskId?: string }
+export type FocusTask = Task
+export type BlockEntry = CalendarEntry
 
 export const MAX_FOCUS = 3
 

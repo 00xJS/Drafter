@@ -118,6 +118,14 @@ export interface Task extends Owned {
   blockedBy?: string[]
   /** Household member responsible (a Supabase user id). */
   assigneeId?: string
+  /**
+   * The local day (YYYY-MM-DD) this task is in today's focus for — set by Plan
+   * my day and Shut down. Past values are history and are never cleared, so a
+   * finished task still reads as "2 of 3 done" on its day.
+   */
+  focusOn?: string
+  /** The user id that chose that focus; absent in local mode, where there is no one else. */
+  focusBy?: string
   /** Tombstone: set instead of hard-deleting so deletes sync and can be undone. */
   deletedAt?: string
 }
@@ -229,6 +237,8 @@ export interface CalendarEntry extends Owned {
   peopleIds?: string[]
   /** Present on a work day: where it is spent. Its start and end are the working hours. */
   work?: WorkMode
+  /** On a time block made from a task (Plan my day): the task it is time for. */
+  taskId?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string
