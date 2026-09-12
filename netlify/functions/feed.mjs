@@ -7,8 +7,8 @@
 
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
-import { baseUrl, feedFor, serviceHeaders, withOwner } from './lib/feedrows.mjs'
-import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../shared/domain.mjs'
+import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
+import { isMineTask, isUntimed, localDate } from '../../shared/domain.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
 
@@ -34,9 +34,11 @@ async function visibleOwnerIds(userId) {
 /**
  * The feed reads with the service key, which bypasses RLS, so the owner filter
  * MUST be applied here: without it one feed token would dump every user's
- * tasks. Scope is the token's owner plus their household, matching the app.
+ * tasks. Scope is the token's owner plus their household, matching the app —
+ * minus a household member's personal kinds, which the policy keeps to their
+ * owner and readableItems does here.
  */
-async function loadItems(ownerIds) {
+async function loadItems(ownerIds, readerId) {
   if (!ownerIds.length) return []
   const list = ownerIds.map(id => `"${id}"`).join(',')
   // user_id comes back beside data on purpose. sync_posts strips `ownerId`
@@ -46,7 +48,7 @@ async function loadItems(ownerIds) {
   // project targets and unassigned tasks into this user's calendar.
   const res = await fetch(`${baseUrl()}/rest/v1/posts?select=data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`, { headers: serviceHeaders() })
   if (!res.ok) throw new Error(`Supabase ${res.status}`)
-  return (await res.json()).map(r => withOwner(legacyPostToTask(r.data), r.user_id))
+  return readableItems(await res.json(), readerId)
 }
 
 const feedUrl = (origin, token) => `${origin}/api/feed.ics?token=${encodeURIComponent(token)}`
@@ -62,7 +64,7 @@ const handler = async req => {
     if (!row) return new Response('Not found', { status: 404 })
     let items
     try {
-      items = await loadItems(await visibleOwnerIds(row.user_id))
+      items = await loadItems(await visibleOwnerIds(row.user_id), row.user_id)
     } catch (e) {
       return new Response(`feed unavailable: ${e?.message ?? e}`, { status: 502 })
     }

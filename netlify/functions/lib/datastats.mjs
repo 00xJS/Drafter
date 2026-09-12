@@ -3,8 +3,10 @@
 // that answer "is my data still there?" — no record contents ever leave the
 // server, only tallies.
 
-/** The kinds sync_posts accepts, plus place which rides along in data. */
-export const KINDS = ['task', 'project', 'person', 'place', 'calendar', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine']
+import { SYNC_KINDS } from '../../../shared/kinds.mjs'
+
+/** The kinds sync_posts accepts, each counted even at zero. */
+export const KINDS = [...SYNC_KINDS]
 
 /** Rows written before `kind` existed are legacy tasks; count them separately. */
 export const UNKNOWN_KIND = 'unknown'

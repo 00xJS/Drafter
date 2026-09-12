@@ -297,11 +297,31 @@ const handler = async req => {
       if (email && gate.owner && email === gate.owner) {
         return Response.json({ error: 'That is the owner account — deleting it would lock everyone out of Admin and of posts.' }, { status: 400 })
       }
-      // posts.user_id is ON DELETE SET NULL, so their records survive as
-      // unowned rows, which the policies then treat as the owner's
-      const owned = await count(`posts?select=id&user_id=eq.${encodeURIComponent(userId)}`).catch(() => null)
-      await authAdmin(`users/${userId}`, { method: 'DELETE' })
-      return Response.json({ ok: true, email: target?.email ?? null, orphanedRows: owned })
+      // posts.user_id is NOT NULL, so while the account owns a single row its
+      // auth delete fails (the foreign key's ON DELETE SET NULL breaks the
+      // constraint). admin_prepare_user_deletion hands the records over first,
+      // in one transaction: shared kinds to you, personal kinds and their
+      // history deleted.
+      let handed
+      try {
+        handed = await rest('rpc/admin_prepare_user_deletion', { method: 'POST', body: JSON.stringify({ target: userId, heir: user.id }) })
+      } catch (e) {
+        return Response.json({ error: `Could not hand their records over, so nothing was deleted: ${e?.message ?? e}` }, { status: 502 })
+      }
+      const counts = {
+        reassigned: Number(handed?.reassigned) || 0,
+        deleted: Number(handed?.deleted) || 0,
+        historyReassigned: Number(handed?.historyReassigned) || 0,
+        historyDeleted: Number(handed?.historyDeleted) || 0,
+      }
+      try {
+        await authAdmin(`users/${userId}`, { method: 'DELETE' })
+      } catch (e) {
+        // the records have moved and the sign-in is still there; running this
+        // again moves nothing twice and retries the delete
+        return Response.json({ error: `Their records were handed over, but the sign-in could not be deleted: ${e?.message ?? e}. Try again.`, ...counts }, { status: 502 })
+      }
+      return Response.json({ ok: true, email: target?.email ?? null, ...counts })
     }
 
     if (action === 'listBackups') {

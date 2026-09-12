@@ -269,8 +269,9 @@ export function Admin({ onClose }: Props) {
 
             <h4>Users</h4>
             <p className="field-hint">
-              Deleting an account removes the sign-in, not the records: <code>posts.user_id</code> is <code>on delete set null</code>, so their tasks, projects and people
-              stay in the database as unowned rows — which the policies then treat as the site owner’s legacy rows. Disable instead if you only want to lock someone out.
+              Deleting an account hands their shared records (tasks, projects, people, places, the kitchen, events) to you and deletes their personal ones (journal,
+              reviews, calendar subscriptions, habits, routines) together with their history. Backup snapshots already taken are left as they are. Disable instead if you
+              only want to lock someone out.
             </p>
             {users ? (
               <ul className="cal-sources admin-users">
@@ -303,11 +304,13 @@ export function Admin({ onClose }: Props) {
                       <ConfirmButton
                         className="btn subtle danger"
                         confirmLabel="Delete for good?"
-                        title={`Delete the ${u.email} sign-in. Their records stay, unowned.`}
+                        title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted.`}
                         onConfirm={() =>
                           run(async () => {
-                            const r = await adminAction<{ email: string | null; orphanedRows: number | null }>('deleteUser', { userId: u.id })
-                            setLinkOut(`Deleted ${r.email ?? u.email}. ${r.orphanedRows ?? 0} record(s) are now unowned and read as yours.`)
+                            const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number }>('deleteUser', { userId: u.id })
+                            setLinkOut(
+                              `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s) and ${r.historyDeleted} history row(s) were deleted.`,
+                            )
                             await Promise.all([refreshUsers(), refreshStats()])
                           })
                         }
