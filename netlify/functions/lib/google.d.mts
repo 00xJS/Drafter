@@ -49,3 +49,25 @@ export interface GoogleCopy {
 export declare function newestCopy(items: GoogleCopy[] | undefined | null): GoogleCopy | null
 /** True when the record was edited after its Google copy was cancelled. */
 export declare function editedSinceCancelled(existing: GoogleCopy | null, record: { updatedAt?: string }): boolean
+
+/** One of our entries as a provider holds it, in the CalendarEntry convention. */
+export interface EntryChangeRow {
+  eventId: string
+  deleted: boolean
+  title: string
+  start: string | null
+  end: string | null
+  allDay: boolean
+  updated: string
+}
+
+export interface TaskChangeRow {
+  taskId: string
+  deleted: boolean
+  start: string | null
+  allDay: boolean
+  updated: string
+}
+
+export declare function googleEntryChange(ev: unknown): EntryChangeRow | null
+export declare function googlePullRows(items: unknown[] | null | undefined): { changes: TaskChangeRow[]; entries: EntryChangeRow[] }

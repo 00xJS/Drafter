@@ -301,6 +301,75 @@ export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
   return 'created'
 }
 
+// ---- what moved in Google ---------------------------------------------------------
+
+/**
+ * One of our entries as Google now holds it, in the CalendarEntry convention:
+ * an ISO instant when timed, YYYY-MM-DD with an exclusive end when all-day.
+ * Google answers a timed event in the calendar's own offset
+ * ("15:00:00+01:00"), so it is read back as the instant — otherwise an entry
+ * nobody touched would look moved on every pull.
+ */
+export function googleEntryChange(ev) {
+  const eventId = ev?.extendedProperties?.private?.eventId
+  if (!eventId) return null
+  const allDay = !!ev.start?.date
+  const instant = v => {
+    const ms = Date.parse(v ?? '')
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null
+  }
+  return {
+    eventId,
+    deleted: ev.status === 'cancelled',
+    title: typeof ev.summary === 'string' ? ev.summary : '',
+    start: allDay ? (ev.start.date ?? null) : instant(ev.start?.dateTime),
+    end: allDay ? (ev.end?.date ?? null) : instant(ev.end?.dateTime),
+    allDay,
+    updated: ev.updated ?? '',
+  }
+}
+
+/** Changed Drafter events, split into task moves (keyed on taskId) and entry edits (keyed on eventId). */
+export function googlePullRows(items) {
+  const changes = []
+  const entries = []
+  for (const ev of Array.isArray(items) ? items : []) {
+    const p = ev?.extendedProperties?.private
+    if (p?.taskId) {
+      changes.push({
+        taskId: p.taskId,
+        deleted: ev.status === 'cancelled',
+        // date-only for all-day; client writes local midnight
+        start: ev.start?.dateTime ?? ev.start?.date ?? null,
+        allDay: !!ev.start?.date,
+        updated: ev.updated,
+      })
+      continue
+    }
+    const entry = googleEntryChange(ev)
+    if (entry) entries.push(entry)
+  }
+  return { changes, entries }
+}
+
+/**
+ * Every Drafter event changed since `sinceIso`, deleted ones included. Paged:
+ * a backfill leaves hundreds of fresh `updated` stamps behind it, and a single
+ * page of 250 dropped the rest while the pull cursor moved past them.
+ */
+export async function listChangedMirrors(userId, calendarId, sinceIso) {
+  const out = []
+  let pageToken
+  do {
+    const q = new URLSearchParams({ updatedMin: sinceIso, singleEvents: 'true', showDeleted: 'true', maxResults: '250', privateExtendedProperty: 'drafter=1' })
+    if (pageToken) q.set('pageToken', pageToken)
+    const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?${q}`)
+    for (const item of page?.items ?? []) out.push(item)
+    pageToken = page?.nextPageToken
+  } while (pageToken && out.length < 2500)
+  return out
+}
+
 /**
  * A cryptographically random token. These guard the calendar feed, the
  * email-in webhook and the OAuth state, all of which are the ONLY thing

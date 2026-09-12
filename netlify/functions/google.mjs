@@ -10,7 +10,7 @@ import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
-import { SCOPES, drafterCalendarId, exchangeCode, googleConfigured, listCalendars, missingGoogleEnv, pushEntry, pushTask, randomToken, revoke } from './lib/google.mjs'
+import { SCOPES, drafterCalendarId, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, randomToken, revoke } from './lib/google.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`
@@ -135,21 +135,14 @@ const handler = async req => {
       return Response.json({ calendars: await listCalendars(user.id) })
     }
     if (action === 'pull') {
-      // events in the Drafter calendar the user moved in Google since `since`
+      // Drafter events changed in Google since `since`: tasks moved or deleted
+      // there, and entries whose time or title was edited there. Stamped before
+      // reading, so a change that lands mid-read falls inside the next window.
+      const at = new Date().toISOString()
       const calendarId = await drafterCalendarId(user.id)
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
-      const page = await (await import('./lib/google.mjs')).gapi(user.id, `/calendars/${encodeURIComponent(calendarId)}/events?updatedMin=${encodeURIComponent(since)}&singleEvents=true&showDeleted=true&maxResults=250&privateExtendedProperty=${encodeURIComponent('drafter=1')}`)
-      const changes = (page.items ?? [])
-        .filter(ev => ev.extendedProperties?.private?.taskId)
-        .map(ev => ({
-          taskId: ev.extendedProperties.private.taskId,
-          deleted: ev.status === 'cancelled',
-          // date-only for all-day; client writes local midnight
-          start: ev.start?.dateTime ?? ev.start?.date ?? null,
-          allDay: !!ev.start?.date,
-          updated: ev.updated,
-        }))
-      return Response.json({ changes, at: new Date().toISOString() })
+      const { changes, entries } = googlePullRows(await listChangedMirrors(user.id, calendarId, since))
+      return Response.json({ changes, entries, calendarId, at })
     }
     if (action === 'push') {
       const startedAt = Date.now()

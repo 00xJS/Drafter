@@ -25,6 +25,26 @@ export type EntryPlan = { op: 'create' } | { op: 'skip' } | { op: 'patch'; id: s
  */
 export declare function oauthFailureCode(body: unknown): string
 
+/** One of our entries as a provider holds it, in the CalendarEntry convention. */
+export interface EntryChangeRow {
+  eventId: string
+  deleted: boolean
+  title: string
+  start: string | null
+  end: string | null
+  allDay: boolean
+  updated: string
+}
+
+export declare function graphEntryChange(ev: unknown): EntryChangeRow | null
+export declare function pullEntryChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<EntryChangeRow[]>
+export declare function mirroredTaskIds(userId: string, accountId: string, calendarId: string): Promise<{ ids: Set<string>; complete: boolean }>
+export declare function outlookMissing(
+  live: string[],
+  present: Set<string> | string[],
+  opts?: { maxAbs?: number; maxShare?: number },
+): { missing: string[]; suspicious: boolean; absent: string[] }
+
 /** Graph hard-deletes, so there is no cancelled state and no revive option. */
 export declare function graphEntryPlan(existing: { id: string } | null, entry: EntryLike): EntryPlan
 

@@ -383,11 +383,96 @@ export async function pushEntry(userId, accountId, calendarId, entry, site) {
   return 'created'
 }
 
-/** Mirrored events changed in Outlook since `since` — the pull half of the sync. */
+/**
+ * Every page of a Graph listing, up to `max` items. `complete` is false when it
+ * stopped before the end, and then nothing may be read as absent from it.
+ */
+async function graphPages(userId, accountId, first, init = {}, max = 2500) {
+  const items = []
+  let url = first
+  while (url && items.length < max) {
+    const page = await graph(userId, accountId, url, init)
+    for (const item of page?.value ?? []) items.push(item)
+    url = page?.['@odata.nextLink'] ?? null
+  }
+  return { items, complete: !url }
+}
+
+const utcStamp = v => (!v ? null : /(?:Z|[+-]\d\d:\d\d)$/i.test(v) ? v : `${v}Z`)
+
+/**
+ * One of our entries as Outlook now holds it, in the CalendarEntry convention.
+ * With the UTC Prefer header Graph answers "2026-09-10T14:00:00.0000000" and no
+ * zone; read back as the instant, so an untouched entry never looks moved.
+ */
+export function graphEntryChange(ev) {
+  const eventId = (ev?.singleValueExtendedProperties ?? []).find(p => p.id === EVENT_PROP)?.value
+  if (!eventId) return null
+  const allDay = !!ev.isAllDay
+  const instant = v => {
+    const ms = Date.parse(utcStamp(v) ?? '')
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null
+  }
+  return {
+    eventId,
+    deleted: !!ev.isCancelled,
+    title: typeof ev.subject === 'string' ? ev.subject : '',
+    start: allDay ? (utcStamp(ev.start?.dateTime)?.slice(0, 10) ?? null) : instant(ev.start?.dateTime),
+    end: allDay ? (utcStamp(ev.end?.dateTime)?.slice(0, 10) ?? null) : instant(ev.end?.dateTime),
+    allDay,
+    updated: ev.lastModifiedDateTime ?? '',
+  }
+}
+
+/**
+ * Entries edited in Outlook since `since`. Its own listing, because one $expand
+ * names one extended property, and the task pull expands TASK_PROP.
+ */
+export async function pullEntryChanges(userId, accountId, calendarId, sinceIso) {
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,subject,start,end,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(EVENT_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
+  return items.map(graphEntryChange).filter(Boolean)
+}
+
+/**
+ * The task ids the Drafter events in this calendar carry: what is actually
+ * there, to set against what the app believes it put there.
+ */
+export async function mirroredTaskIds(userId, accountId, calendarId) {
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})`
+  const { items, complete } = await graphPages(userId, accountId, q, {}, 5000)
+  const ids = new Set()
+  for (const ev of items) {
+    const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
+    if (taskId) ids.add(taskId)
+  }
+  return { ids, complete }
+}
+
+/**
+ * Tasks the app believes are in the Outlook calendar and are not: the owner
+ * deleted them there. Graph hard-deletes, so unlike Google's cancelled copy a
+ * delete never shows up as a change. Many at once is not someone deleting
+ * tasks one by one, though — it is the calendar emptied or swapped underneath —
+ * so then none is reported as deleted and `absent` goes back to be written
+ * again instead: writing a task back is safe, marking a dozen done is not.
+ */
+export function outlookMissing(live, present, opts = {}) {
+  const maxAbs = opts.maxAbs ?? 5
+  const maxShare = opts.maxShare ?? 0.5
+  const have = present instanceof Set ? present : new Set(present ?? [])
+  const believed = [...new Set((Array.isArray(live) ? live : []).filter(id => typeof id === 'string' && id))]
+  const absent = believed.filter(id => !have.has(id))
+  const suspicious = absent.length > maxAbs && absent.length > believed.length * maxShare
+  return { missing: suspicious ? [] : absent, suspicious, absent }
+}
+
+/** Mirrored tasks changed in Outlook since `since` — the pull half of the sync. */
 export async function pullChanges(userId, accountId, calendarId, sinceIso) {
   const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
-  const page = await graph(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
-  return (page.value ?? [])
+  // paged: one page of 250 dropped the rest of a busy window
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
+  return items
     .map(ev => {
       const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
       if (!taskId) return null

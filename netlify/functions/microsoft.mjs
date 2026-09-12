@@ -25,7 +25,10 @@ import { pushEntry,
   missingMicrosoftEnv,
   oauthFailureCode,
   publicAccount,
+  mirroredTaskIds,
+  outlookMissing,
   pullChanges,
+  pullEntryChanges,
   pushTask,
 } from './lib/microsoft.mjs'
 
@@ -186,9 +189,30 @@ const handler = async req => {
     }
     if (action === 'pull') {
       const accountId = String(body.accountId ?? '')
+      // stamped before reading, so a change that lands mid-read falls inside the next window
+      const at = new Date().toISOString()
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
+      const sinceGraph = since.replace(/\.\d{3}Z$/, 'Z')
       const calendarId = await drafterCalendarId(user.id, accountId)
-      return Response.json({ changes: await pullChanges(user.id, accountId, calendarId, since.replace(/\.\d{3}Z$/, 'Z')), at: new Date().toISOString() })
+      const changes = await pullChanges(user.id, accountId, calendarId, sinceGraph)
+      // entry edits need a listing of their own; only builds that apply them ask
+      const entries = body.entries === true ? await pullEntryChanges(user.id, accountId, calendarId, sinceGraph) : []
+      // Graph hard-deletes, so a task deleted in Outlook never shows up above.
+      // The app names the tasks it believes are there; the ones the calendar no
+      // longer holds were deleted by the owner, and the app treats them as it
+      // treats Google's cancelled copy. Only when the app's belief is about THIS
+      // calendar (not one since deleted and recreated), from a complete listing.
+      let missing = []
+      let resend = []
+      if (Array.isArray(body.live) && body.live.length && body.calendarId === calendarId) {
+        const present = await mirroredTaskIds(user.id, accountId, calendarId)
+        if (present.complete) {
+          const r = outlookMissing(body.live.slice(0, 2000).map(String), present.ids)
+          missing = r.missing
+          resend = r.suspicious ? r.absent : []
+        }
+      }
+      return Response.json({ changes, entries, missing, resend, calendarId, at })
     }
     if (action === 'push-event') {
       // one entry, one account: the client fans out across every enabled
