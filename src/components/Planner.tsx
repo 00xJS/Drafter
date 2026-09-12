@@ -5,8 +5,6 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { People } from './People'
-import { Places } from './Places'
 import { Kitchen } from './Kitchen'
 import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
@@ -23,6 +21,7 @@ import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
+import { PeopleScreen } from './planner/PeopleScreen'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
 import { Toast } from './planner/Toast'
@@ -94,12 +93,12 @@ export default function Planner() {
   }
   // read inline below until each screen and the overlays move into planner/
   const { paletteCommands, mineOnly, setMineOnly, inHousehold } = p
-  const { view, setView, goTasksTab, setNotesProjectId, peopleTab, setPeopleTab } = p
-  const { placeOpenId, setPlaceOpenId, openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
+  const { view, setView, goTasksTab, setNotesProjectId } = p
+  const { openPlace, openJournal, kitchenRecipe, setKitchenRecipe } = p
   const { toast, setToast, calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
   const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
   const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, anyOpen, isOwner } = p
-  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, logVisit, logAttendance, planWith, planAt } = p
+  const { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logAttendance } = p
   const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
 
   return (
@@ -141,71 +140,7 @@ export default function Planner() {
             {view === 'home' && <HomeScreen p={p} />}
             {view === 'calendar' && <CalendarScreen p={p} />}
             {view === 'tasks' && <TasksScreen p={p} />}
-            {view === 'people' && (
-              <>
-                <div className="people-tab-seg">
-                  <span className="segmented">
-                    <button
-                      type="button"
-                      className={peopleTab === 'people' ? 'seg on' : 'seg'}
-                      onClick={() => setPeopleTab('people')}
-                    >
-                      People
-                    </button>
-                    <button
-                      type="button"
-                      className={peopleTab === 'places' ? 'seg on' : 'seg'}
-                      onClick={() => setPeopleTab('places')}
-                    >
-                      Places
-                    </button>
-                  </span>
-                </div>
-                {peopleTab === 'places' ? (
-                  <Places
-                    places={store.places}
-                    people={store.people}
-                    tasks={store.tasks}
-                    meals={store.meals}
-                    onSave={p => store.upsert(p)}
-                    onDelete={id => {
-                      store.remove(id)
-                      showToast('Removed', () => store.restore([id]))
-                    }}
-                    onLogOuting={(place, at, note, peopleIds) =>
-                      logOuting({
-                        at,
-                        title: note || `Went to ${place.name}`,
-                        placeId: place.id,
-                        peopleIds,
-                      })
-                    }
-                    onPlan={planAt}
-                    onOpenTask={openTask}
-                    openId={placeOpenId}
-                    onOpenConsumed={() => setPlaceOpenId(null)}
-                    onNewTask={preset => newTask(preset)}
-                  />
-                ) : (
-                  <People
-                    people={store.people}
-                    places={store.places}
-                    tasks={store.tasks}
-                    journal={store.journal}
-                    onOpenJournal={date => openJournal(date)}
-                    onSave={p => store.upsert(p)}
-                    onDelete={id => {
-                      store.remove(id)
-                      showToast('Removed', () => store.restore([id]))
-                    }}
-                    onSavePlace={p => store.upsert(p)}
-                    onLogVisit={logVisit}
-                    onPlan={planWith}
-                    onOpenTask={openTask}
-                  />
-                )}
-              </>
-            )}
+            {view === 'people' && <PeopleScreen p={p} />}
             {view === 'kitchen' && (
               <Kitchen
                 recipes={store.recipes}
