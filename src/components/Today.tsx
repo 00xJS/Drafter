@@ -30,7 +30,7 @@ import { dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
 import { RoutinesCard } from './RoutinesCard'
-import { BriefingCard } from './BriefingCard'
+import { BriefingCard, briefingFacts } from './BriefingCard'
 
 interface Props {
   tasks: Task[]
@@ -69,12 +69,28 @@ interface Props {
   habits: Habit[]
   onSaveHabit(h: Habit): void
   onDeleteHabit(id: string): void
+  /** The signed-in person's display name, for the greeting. */
+  name?: string
   routines: Routine[]
   onSaveRoutine(r: Routine): void
   onDeleteRoutine(id: string): void
 }
 
 const STALE_DAYS = 14
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
+
+/**
+ * What to offer on a clear day: open wishlist items, most wanted first (by
+ * priority, then most recently touched), a handful so it reads as a nudge and
+ * not as another list.
+ */
+export function freeTimeWishlist(tasks: Task[], limit = 5): Task[] {
+  return tasks
+    .filter(t => t.status === 'wishlist' && !t.deletedAt)
+    .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9) || b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit)
+}
 
 interface Section {
   key: string
@@ -352,6 +368,7 @@ export function Today({
   habits,
   onSaveHabit,
   onDeleteHabit,
+  name,
   routines,
   onSaveRoutine,
   onDeleteRoutine,
@@ -463,6 +480,11 @@ export function Today({
     onSaveReview({ ...weekReview, topDone: next, updatedAt: newerStamp(weekReview.updatedAt) })
   }
 
+  // A clear day — no events, nothing due, nothing overdue — is the moment to
+  // surface the wishlist: the things you said you would do if there were time.
+  const clearDay = !briefingFacts(events, habits, new Date()).events && s.overdue.length === 0 && s.today.length === 0
+  const freeTime = clearDay ? freeTimeWishlist(tasks) : []
+
   if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft) {
     return (
       <div className="empty-hero">
@@ -525,7 +547,22 @@ export function Today({
         </div>
       </header>
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
-      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} />
+      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} />
+      {freeTime.length > 0 && (
+        <section className="chart-card wishlist-nudge">
+          <header className="chart-head">
+            <div>
+              <h3>Nothing due today — from your wishlist</h3>
+              <p className="chart-sub">Things you have been meaning to do, for when there is time</p>
+            </div>
+          </header>
+          <ul className="dash-list tlist">
+            {freeTime.map(t => (
+              <TaskRow key={t.id} task={t} project={t.projectId ? projectMap.get(t.projectId) : undefined} onOpen={onOpen} onStatus={onStatus} />
+            ))}
+          </ul>
+        </section>
+      )}
       {/* Below 640px the two `kpi-extra` tiles leave grid flow entirely and
           "Open" spans the row (see styles.css), so DOM order does not decide
           what the phone shows — it is the desktop row, left as it was. */}

@@ -1256,6 +1256,7 @@ export default function Planner() {
                       showToast('Journal entry removed', () => store.restore([id]))
                     }}
                     onOpenJournal={() => openJournal(localDayKey())}
+                    name={household.info?.me.displayName ?? undefined}
                     habits={store.habits}
                     onSaveHabit={h => store.upsert(h)}
                     onDeleteHabit={id => {

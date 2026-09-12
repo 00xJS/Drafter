@@ -7,10 +7,12 @@ import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, d
 import { tonightDinner } from './Kitchen'
 
 /** Same 17:00 line Today uses to move the journal card to the evening. */
-export function greeting(hour: number): string {
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+export function greeting(hour: number, name?: string): string {
+  const base = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  // first name only — "Good evening, Joseph", never the full account name;
+  // with no name known (local mode, an account without one) it stands alone
+  const first = (name ?? '').trim().split(/\s+/)[0]
+  return first ? `${base}, ${first}` : base
 }
 
 export interface BriefingFacts {
@@ -69,11 +71,14 @@ export function BriefingCard({
   habits,
   dinner,
   now,
+  name,
 }: {
   events: CalendarEvent[]
   habits: Habit[]
   dinner: ReturnType<typeof tonightDinner>
   now: Date
+  /** Who to greet; the first name is used. Absent, the greeting stands alone. */
+  name?: string
 }) {
   const [cache, setCache] = useState<WeatherCache>(() => readCache())
   // Only an enabled cache seeds the tile: a forecast left under enabled:false
@@ -155,7 +160,7 @@ export function BriefingCard({
     <section className="chart-card briefing" aria-label="Your day">
       <header className="chart-head">
         <div>
-          <h3>{greeting(now.getHours())}</h3>
+          <h3>{greeting(now.getHours(), name)}</h3>
         </div>
         <select
           className="briefing-weather-pick"

@@ -233,6 +233,11 @@ describe('the briefing greets by the hour', () => {
     expect(greeting(20)).toBe('Good evening')
     expect(greeting(17)).toBe('Good evening')
   })
+  it('says hello by first name when it knows one, and stands alone when it does not', () => {
+    expect(greeting(8, 'Joseph Suckling')).toBe('Good morning, Joseph')
+    expect(greeting(20, '  ')).toBe('Good evening')
+    expect(greeting(14, undefined)).toBe('Good afternoon')
+  })
 })
 
 describe('the briefing states only the facts the day has', () => {
