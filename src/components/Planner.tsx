@@ -1,18 +1,9 @@
 import { useEffect, useMemo } from 'react'
 import { useItems } from '../store'
-import { newerStamp } from '../itemops'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
-import { Search } from './Search'
-import { AttendancePicker } from './AttendancePicker'
-import { TaskEditor } from './TaskEditor'
-import { ProjectEditor } from './ProjectEditor'
-import { Trash } from './Trash'
-import { EventEditor } from './EventEditor'
-import { Settings } from './Settings'
-import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
@@ -21,6 +12,7 @@ import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
 import { KitchenScreen } from './planner/KitchenScreen'
+import { Overlays } from './planner/Overlays'
 import { PeopleScreen } from './planner/PeopleScreen'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
@@ -91,15 +83,8 @@ export default function Planner() {
     ...lifeActions,
     ...taskActions,
   }
-  // read inline below until each screen and the overlays move into planner/
-  const { paletteCommands, mineOnly, setMineOnly, inHousehold } = p
-  const { view, setView, goTasksTab, setNotesProjectId } = p
-  const { openPlace, openJournal } = p
-  const { toast, setToast, calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, manualSync } = p
-  const { editor, setEditor, projectEditor, setProjectEditor, trashOpen, setTrashOpen, searchOpen, setSearchOpen, settingsOpen, setSettingsOpen, settingsNonce } = p
-  const { adminOpen, setAdminOpen, eventEditor, setEventEditor, attendance, setAttendance, openTask, newTask, openProject, anyOpen, isOwner } = p
-  const { sawThem, logAttendance } = p
-  const { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
+  // what the shell itself reads: the screen switch, the Mine note, pull to refresh, the toast
+  const { view, mineOnly, setMineOnly, inHousehold, manualSync, anyOpen, toast, setToast } = p
 
   return (
     <div className="app">
@@ -146,176 +131,7 @@ export default function Planner() {
         )}
       </main>
 
-      {editor && (
-        <TaskEditor
-          task={editor.task}
-          preset={editor.preset}
-          capture={editor.capture}
-          projects={store.projects}
-          people={store.people}
-          places={store.places}
-          onSavePlace={p => store.upsert(p)}
-          members={inHousehold ? household.info!.members : []}
-          candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
-          getLatest={id => store.tasks.find(x => x.id === id)}
-          onSave={t => {
-            const before = store.tasks.find(x => x.id === t.id)
-            const isNew = !before
-            store.upsert(t)
-            setEditor(null)
-            if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => store.remove(t.id))
-            if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
-            if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
-          }}
-          onDiscard={() => showToast('Nothing to save — that task was empty.')}
-          onCommit={t => store.upsert(t)}
-          onDelete={id => {
-            const t = store.tasks.find(x => x.id === id)
-            if (t) deleteTask(t)
-          }}
-          onDuplicate={copy => {
-            store.upsert(copy)
-            setEditor({ task: copy })
-            showToast(`Duplicated “${copy.title || 'Untitled'}”`, () => {
-              store.remove(copy.id)
-              setEditor(cur => (cur?.task?.id === copy.id ? null : cur))
-            })
-          }}
-          onClose={() => setEditor(null)}
-        />
-      )}
-
-      {projectEditor && (
-        <ProjectEditor
-          project={projectEditor.project}
-          tasks={projectEditor.project ? store.tasks.filter(t => t.projectId === projectEditor.project!.id) : []}
-          getLatest={id => store.projects.find(x => x.id === id)}
-          onSave={p => {
-            // a new project just closes the editor: the person opened it from
-            // Today, the Timeline or the palette and stays put; it shows up in
-            // the Board's chips and on the Timeline on its own
-            store.upsert(p)
-            setProjectEditor(null)
-          }}
-          onDelete={id => {
-            const p = store.projects.find(x => x.id === id)
-            if (p) deleteProject(p)
-          }}
-          onClose={() => setProjectEditor(null)}
-          onOpenNotes={p => {
-            setProjectEditor(null)
-            setNotesProjectId(p.id)
-            goTasksTab('notes')
-            setView('tasks')
-          }}
-          templates={store.templates}
-          onCreateMany={(p, ts) => {
-            store.upsert(p)
-            for (const t of ts) store.upsert(t)
-            setProjectEditor(null)
-            // a template or a drafted plan just made a batch of dated tasks; the
-            // board, chips on, is where they show as a group (for this visit
-            // only — the toast names the project)
-            goTasksTab('board')
-            setView('tasks')
-            showToast(`${projectEditor.project ? 'Added' : 'Created'} ${ts.length} task${ts.length === 1 ? '' : 's'} in “${p.name}”`)
-          }}
-          onSaveTemplate={t => {
-            store.upsert(t)
-            showToast(`Template “${t.name}” saved — pick it when creating a project`)
-          }}
-        />
-      )}
-
-      {attendance && (
-        <AttendancePicker
-          event={attendance}
-          people={store.people}
-          places={store.places}
-          onSavePlace={p => store.upsert(p)}
-          onDone={(ids, placeId) => {
-            logAttendance(attendance, ids, placeId)
-            setAttendance(null)
-          }}
-          onClose={() => setAttendance(null)}
-        />
-      )}
-
-      {searchOpen && (
-        <Search
-          tasks={store.tasks}
-          projects={store.projects}
-          people={store.people}
-          commands={paletteCommands}
-          onOpenTask={openTask}
-          onOpenProject={openProject}
-          onOpenPerson={() => setView('people')}
-          places={store.places}
-          onOpenPlace={p => openPlace(p.id)}
-          journal={store.journal}
-          onOpenJournal={e => openJournal(e.date)}
-          onSaw={sawThem}
-          onCreateTask={(title, openEditor) => {
-            // Enter opens the editor so parseCapture can propose fields;
-            // Shift+Enter (openEditor=false) files the line as it is, Undo in the toast
-            if (openEditor === false && title.trim()) captureTask(title)
-            else newTask({ title, status: 'todo' }, { capture: true })
-          }}
-          onClose={() => setSearchOpen(false)}
-        />
-      )}
-
-      {eventEditor && (
-        <EventEditor
-          entry={eventEditor.entry}
-          defaultStartIso={eventEditor.startIso}
-          defaultWork={eventEditor.work}
-          onSave={saveEvents}
-          onDelete={deleteEvent}
-          onClose={() => setEventEditor(null)}
-        />
-      )}
-
-      {trashOpen && (
-        <Trash
-          items={store.visibleItems}
-          projectMap={projectMap}
-          onRestore={id => {
-            const row = store.allItems.find(x => x.id === id)
-            store.restore([id])
-            // A restored entry goes back out to the mirrors too, or it lives only in
-            // Drafter. Pushed as the live, newer record so the providers take it.
-            if (row?.kind === 'event') mirrorEvent({ ...row, deletedAt: undefined, updatedAt: newerStamp(row.updatedAt) }, { revive: true })
-            showToast('Restored')
-          }}
-          onPurge={id => {
-            // queued until the server takes it: offline or refused, it stays unsynced and is retried
-            void store.purge([id]).then(done => showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync'))
-          }}
-          onClose={() => setTrashOpen(false)}
-        />
-      )}
-
-      {settingsOpen && (
-        <Settings
-          key={settingsNonce}
-          store={store}
-          calendars={calendars}
-          googlePush={googlePush}
-          microsoftSync={microsoftSync}
-          household={household}
-          onClose={() => setSettingsOpen(false)}
-          onOpenAdmin={
-            isOwner
-              ? () => {
-                  setSettingsOpen(false)
-                  setAdminOpen(true)
-                }
-              : undefined
-          }
-        />
-      )}
-      {adminOpen && isOwner && <Admin onClose={() => setAdminOpen(false)} />}
+      <Overlays p={p} />
 
       <Toast toast={toast} setToast={setToast} />
     </div>
