@@ -536,3 +536,75 @@ describe('phone: Reduce Motion is honoured, not decorated', () => {
     expect(slow).toEqual([])
   })
 })
+
+describe('landscape: nothing sits under the notch or the Dynamic Island', () => {
+  // Info.plist allows landscape on iPhone, and every iPhone is wider than 640pt
+  // on its side, so the desktop header and layout render there, outside every
+  // phone rule, with the notch at one edge. Each rule takes the side inset as
+  // the second arm of a max() whose first arm is the padding it already had:
+  // portrait (insets 0) stays pixel-identical and landscape clears the inset.
+  const narrow = narrowBlocks()
+  const phone = (selector: string) => narrow.map(b => rule(b.body, selector)).find(Boolean) ?? ''
+  const flat = (s: string) => s.replace(/\s+/g, ' ')
+
+  it('declares the side insets beside the bottom one, falling back to 0px', () => {
+    const root = flat(rule(bare, ':root'))
+    expect(root).toContain('--safe-b: env(safe-area-inset-bottom);')
+    expect(root).toContain('--safe-l: env(safe-area-inset-left, 0px);')
+    expect(root).toContain('--safe-r: env(safe-area-inset-right, 0px);')
+  })
+
+  it('reads the side insets through those tokens and nowhere else', () => {
+    // one place carries the 0px fallback, and a search for the tokens finds every use
+    expect(bare.match(/env\(safe-area-inset-(?:left|right)\b/g)).toHaveLength(2)
+  })
+
+  // [rule, its declarations, what it has to say]. A four-value padding puts
+  // the right inset second and the left one last.
+  it.each<[string, string, string[]]>([
+    [
+      '.topbar',
+      rule(bare, '.topbar'),
+      ['padding: calc(10px + env(safe-area-inset-top)) max(20px, var(--safe-r)) 10px max(20px, var(--safe-l));'],
+    ],
+    [
+      'the phone .topbar',
+      phone('.topbar'),
+      ['padding: calc(10px + env(safe-area-inset-top)) max(12px, var(--safe-r)) 10px max(12px, var(--safe-l));'],
+    ],
+    [
+      '.content',
+      rule(bare, '.content'),
+      ['padding: 20px;', 'padding-left: max(20px, var(--safe-l));', 'padding-right: max(20px, var(--safe-r));'],
+    ],
+    ['.toast', rule(bare, '.toast'), ['max-width: min(560px, calc(100vw - 32px - var(--safe-l) - var(--safe-r)));']],
+    [
+      '.modal-backdrop',
+      rule(bare, '.modal-backdrop'),
+      ['padding: 40px max(16px, var(--safe-r)) 40px max(16px, var(--safe-l));'],
+    ],
+    ['the native card sheet', rule(bare, '.native .modal-backdrop'), ['padding: 0 var(--safe-r) 0 var(--safe-l);']],
+    [
+      '.cal-sheet-backdrop',
+      rule(bare, '.cal-sheet-backdrop'),
+      ['padding: 24px max(16px, var(--safe-r)) 24px max(16px, var(--safe-l));'],
+    ],
+    ['the phone .cal-sheet-backdrop', phone('.cal-sheet-backdrop'), ['padding: 0 var(--safe-r) 0 var(--safe-l);']],
+    [
+      'the phone .tabs-compact',
+      phone('.tabs-compact'),
+      ['padding: 6px max(6px, var(--safe-r)) calc(4px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));'],
+    ],
+  ])('insets %s', (_, declarations, wants) => {
+    expect(declarations, 'no such rule').not.toBe('')
+    for (const want of wants) expect(flat(declarations)).toContain(want)
+  })
+
+  it('still lets the phone .content padding win below 640px', () => {
+    // the base rule's side longhands lose to the phone's `padding: 12px` only
+    // on order — same specificity — so the phone block has to come after it
+    const block = narrow.find(b => /padding:\s*12px;/.test(rule(b.body, '.content')))
+    expect(block, 'no @media (max-width: 640px) .content { padding: 12px }').toBeTruthy()
+    expect(block!.at).toBeGreaterThan(bare.indexOf(rule(bare, '.content')))
+  })
+})

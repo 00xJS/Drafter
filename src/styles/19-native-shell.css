@@ -35,7 +35,8 @@
    rounded top, leaving the dimmed app just visible above — the iOS pageSheet. */
 .native .modal-backdrop {
   align-items: flex-end;
-  padding: 0;
+  /* edge to edge, but clear of the notch in landscape */
+  padding: 0 var(--safe-r) 0 var(--safe-l);
   background: rgba(0, 0, 0, 0.5);
 }
 .native .modal {
