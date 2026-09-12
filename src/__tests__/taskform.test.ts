@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FormPatch, TaskForm, formReducer, formValues, initForm, isDirty, isEmpty, mergeOnto, money, versionNote, versionRows } from '../taskform'
-import type { Task } from '../types'
+import { FormPatch, TaskForm, commitStep, formReducer, formValues, initForm, isDirty, isEmpty, mergeOnto, money, pendingRenames, versionNote, versionRows } from '../taskform'
+import type { ChecklistItem, Task } from '../types'
 import { toLocalInput } from '../utils'
 
 /*
@@ -25,6 +25,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   ...over,
 })
 const edit = (form: TaskForm, patch: FormPatch) => formReducer(form, { type: 'set', patch })
+const addSteps = (form: TaskForm, items: ChecklistItem[]) => formReducer(form, { type: 'step', op: { type: 'add', items } })
 
 describe('a save writes only what was changed, onto the freshest copy', () => {
   it('keeps a concurrent edit to a field the editor did not touch', () => {
@@ -80,7 +81,7 @@ describe('what counts as empty and as unsaved', () => {
     expect(isEmpty(mergeOnto(base, edit(form, { title: '   ', notes: '  ' }), base, false))).toBe(true)
     expect(isEmpty(mergeOnto(base, edit(form, { title: 'Call mum' }), base, false))).toBe(false)
     expect(isEmpty(mergeOnto(base, edit(form, { tags: '#home' }), base, false))).toBe(false)
-    expect(isEmpty(mergeOnto(base, formReducer(form, { type: 'addCheck', items: [{ id: 'c1', text: 'Ring', done: false }] }), base, false))).toBe(false)
+    expect(isEmpty(mergeOnto(base, addSteps(form, [{ id: 'c1', text: 'Ring', done: false }]), base, false))).toBe(false)
   })
 
   it('finds nothing to save in a form nobody touched', () => {
@@ -90,15 +91,18 @@ describe('what counts as empty and as unsaved', () => {
   })
 })
 
-describe('on a saved task the checklist and comments are written as they happen, never by the save', () => {
+describe('on a saved task every checklist edit and comment is written as it happens, never by the save', () => {
+  const a = { id: 'a', text: 'Buy hinges', done: false }
+  const b = { id: 'b', text: 'Oil them', done: false }
+
   it('never overwrites them with the form copy', () => {
-    const base = task({ checklist: [{ id: 'a', text: 'Buy hinges', done: false }], comments: [{ id: 'm1', body: 'Called Dave', createdAt: OPENED }] })
-    let form = formReducer(initForm(base), { type: 'addCheck', items: [{ id: 'b', text: 'Oil them', done: false }] })
+    const base = task({ checklist: [a], comments: [{ id: 'm1', body: 'Called Dave', createdAt: OPENED }] })
+    let form = addSteps(initForm(base), [b])
     form = edit(form, f => ({ title: 'Fix the side gate', comments: f.comments.filter(c => c.id !== 'm1') }))
     // meanwhile a tick landed from the phone, and a bot added a comment
     const current: Task = {
       ...base,
-      checklist: [{ id: 'a', text: 'Buy hinges', done: true }],
+      checklist: [{ ...a, done: true }],
       comments: [...base.comments!, { id: 'm2', body: 'Parts ordered', createdAt: LATER }],
       updatedAt: LATER,
     }
@@ -108,23 +112,65 @@ describe('on a saved task the checklist and comments are written as they happen,
     expect(next.comments).toEqual(current.comments)
   })
 
-  it('does not count a tick as an unsaved change there, while a new task saves its checklist', () => {
-    const base = task({ checklist: [{ id: 'a', text: 'Buy hinges', done: false }] })
-    const ticked = edit(initForm(base), f => ({ checklist: f.checklist.map(c => ({ ...c, done: true })) }))
-    expect(isDirty(ticked, base, true)).toBe(false)
-    expect(isDirty(ticked, base, false)).toBe(true)
+  it('writes an added, renamed, ticked or removed step at once, onto the freshest copy', () => {
+    // opened with a and b; since then the phone ticked a and added c
+    const current = task({ checklist: [{ ...a, done: true }, b, { id: 'c', text: 'Paint', done: false }], updatedAt: LATER })
+    const added = commitStep(current, { type: 'add', items: [{ id: 'd', text: '  Tidy up ', done: false }] })!
+    expect(added.checklist!.map(c => c.text)).toEqual(['Buy hinges', 'Oil them', 'Paint', 'Tidy up'])
+    expect(added.checklist![0].done).toBe(true)
+    expect(Date.parse(added.updatedAt)).toBeGreaterThan(Date.parse(LATER))
+
+    const renamed = commitStep(added, { type: 'rename', id: 'b', text: ' Oil them well ' })!
+    expect(renamed.checklist!.find(c => c.id === 'b')).toEqual({ id: 'b', text: 'Oil them well', done: false })
+    const ticked = commitStep(renamed, { type: 'tick', id: 'c', done: true })!
+    expect(ticked.checklist!.find(c => c.id === 'c')!.done).toBe(true)
+    const removed = commitStep(ticked, { type: 'remove', id: 'a' }, { type: 'remove', id: 'b' }, { type: 'remove', id: 'c' }, { type: 'remove', id: 'd' })!
+    expect(removed.checklist).toBeUndefined()
+  })
+
+  it('writes nothing for an edit that changes nothing', () => {
+    const current = task({ checklist: [a] })
+    expect(commitStep(current, { type: 'rename', id: 'a', text: 'Buy hinges ' })).toBeNull()
+    expect(commitStep(current, { type: 'rename', id: 'a', text: '   ' })).toBeNull()
+    expect(commitStep(current, { type: 'tick', id: 'gone', done: true })).toBeNull()
+    expect(commitStep(current, { type: 'add', items: [{ ...a }] })).toBeNull()
+    expect(commitStep(current, { type: 'add', items: [{ id: 'e', text: '  ', done: false }] })).toBeNull()
+  })
+
+  it('counts no step edit there as unsaved, while a new task keeps its steps for the save', () => {
+    const base = task({ checklist: [a, b] })
+    let form = formReducer(initForm(base), { type: 'step', op: { type: 'tick', id: 'a', done: true } })
+    form = formReducer(form, { type: 'step', op: { type: 'rename', id: 'b', text: 'Oil them well' } })
+    form = formReducer(form, { type: 'step', op: { type: 'remove', id: 'a' } })
+    form = addSteps(form, [{ id: 'c', text: 'Paint', done: false }])
+    expect(form.checklist.map(c => c.text)).toEqual(['Oil them well', 'Paint'])
+    expect(isDirty(form, base, true)).toBe(false)
+    expect(isDirty(form, base, false)).toBe(true)
+  })
+
+  it('flushes a rename still being typed, and only a step that was typed into', () => {
+    const form: ChecklistItem[] = [
+      { ...a, text: 'Buy brass hinges' }, // typed into
+      { ...b, text: 'Oil them' }, // only passed through
+      { id: 'c', text: '   ', done: false }, // typed to nothing
+    ]
+    expect(pendingRenames(form, new Set(['a', 'c']))).toEqual([{ type: 'rename', id: 'a', text: 'Buy brass hinges' }])
+    const current = task({ checklist: [a, { ...b, text: 'Oil them twice' }, { id: 'c', text: 'Paint', done: false }] })
+    const next = commitStep(current, ...pendingRenames(form, new Set(['a', 'c'])))!
+    expect(next.checklist!.map(c => c.text)).toEqual(['Buy brass hinges', 'Oil them twice', 'Paint'])
   })
 
   it("saves a new task's steps trimmed, without blank ones", () => {
     const base = task({ title: '' })
-    const form = formReducer(initForm(base), {
-      type: 'addCheck',
-      items: [
-        { id: 'a', text: '  Ring the council ', done: false },
-        { id: 'b', text: '   ', done: false },
-      ],
-    })
-    expect(formValues(form, base, false).checklist).toEqual([{ id: 'a', text: 'Ring the council', done: false }])
+    let form = addSteps(initForm(base), [
+      { id: 'a', text: 'Ring the council', done: false },
+      { id: 'b', text: '   ', done: false },
+    ])
+    form = edit(form, f => ({ checklist: [...f.checklist, { id: 'c', text: '  Chase them ', done: false }, { id: 'd', text: ' ', done: false }] }))
+    expect(formValues(form, base, false).checklist).toEqual([
+      { id: 'a', text: 'Ring the council', done: false },
+      { id: 'c', text: 'Chase them', done: false },
+    ])
   })
 })
 

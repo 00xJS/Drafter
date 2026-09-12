@@ -76,19 +76,25 @@ interface Named {
   name: string
 }
 
+/** One edit to a checklist. Items for an add are made by the caller (ids included) so the rules stay pure. */
+export type StepOp =
+  | { type: 'add'; items: ChecklistItem[] }
+  | { type: 'tick'; id: string; done: boolean }
+  | { type: 'rename'; id: string; text: string }
+  | { type: 'remove'; id: string }
+
 export type FormAction =
   | { type: 'set'; patch: FormPatch }
   /** Fields parsed from a captured sentence; project and people names are matched against these. */
   | { type: 'applyCapture'; capture: CapturedFields; projects: Named[]; people: Named[] }
-  /** Items are made by the caller (ids included) so the reducer stays pure. */
-  | { type: 'addCheck'; items: ChecklistItem[] }
+  | { type: 'step'; op: StepOp }
 
 export function formReducer(form: TaskForm, action: FormAction): TaskForm {
   switch (action.type) {
     case 'set':
       return { ...form, ...(typeof action.patch === 'function' ? action.patch(form) : action.patch) }
-    case 'addCheck':
-      return { ...form, checklist: [...form.checklist, ...action.items] }
+    case 'step':
+      return { ...form, checklist: applyStep(form.checklist, action.op) }
     case 'applyCapture': {
       const { capture: c, projects, people } = action
       const next = { ...form }
@@ -109,6 +115,50 @@ export function formReducer(form: TaskForm, action: FormAction): TaskForm {
     }
   }
 }
+
+// ---- the checklist -----------------------------------------------------------
+
+/** A checklist after one edit. Steps are trimmed, blank ones never added, and a rename to nothing is no rename. */
+export function applyStep(list: ChecklistItem[], op: StepOp): ChecklistItem[] {
+  switch (op.type) {
+    case 'add': {
+      const fresh = op.items.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text && !list.some(x => x.id === c.id))
+      return fresh.length > 0 ? [...list, ...fresh] : list
+    }
+    case 'tick':
+      return list.map(c => (c.id === op.id ? { ...c, done: op.done } : c))
+    case 'rename': {
+      const text = op.text.trim()
+      return text ? list.map(c => (c.id === op.id ? { ...c, text } : c)) : list
+    }
+    case 'remove':
+      return list.filter(c => c.id !== op.id)
+  }
+}
+
+/**
+ * On a saved task every checklist edit — add, tick, rename, remove — is written
+ * as it happens, onto the freshest copy (so a tick from the phone survives a
+ * rename here), and never by Save. Null when the edits change nothing.
+ */
+export function commitStep(current: Task, ...ops: StepOp[]): Task | null {
+  const before = current.checklist ?? []
+  const after = ops.reduce(applyStep, before)
+  if (JSON.stringify(after) === JSON.stringify(before)) return null
+  return { ...current, checklist: after.length > 0 ? after : undefined, updatedAt: newerStamp(current.updatedAt) }
+}
+
+/**
+ * Steps typed in but not yet written: a rename is written when its field is
+ * left, and Save or Close can come while it still has focus. `typed` holds the
+ * ids typed into since their last write, so a step only passed through never
+ * overwrites a rename made elsewhere.
+ */
+export function pendingRenames(checklist: ChecklistItem[], typed: ReadonlySet<string>): StepOp[] {
+  return checklist.filter(c => typed.has(c.id) && c.text.trim()).map(c => ({ type: 'rename', id: c.id, text: c.text }))
+}
+
+// ---- what a save writes ------------------------------------------------------------
 
 /** A typed amount, or undefined when it is blank, negative or not a number. */
 export const money = (v: string) => {
@@ -139,7 +189,7 @@ export function formValues(form: TaskForm, base: Task, persisted: boolean) {
       : checklist.length > 0
         ? checklist.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text)
         : undefined,
-    // comments and checklist ticks on a persisted task are committed as they're written
+    // comments and every checklist edit on a persisted task are committed as they're made
     comments: persisted ? base.comments : comments.length > 0 ? comments : undefined,
     mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
     recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
@@ -226,6 +276,8 @@ export function isEmpty(t: Task): boolean {
     !t.notes?.trim()
   )
 }
+
+// ---- versions ---------------------------------------------------------------------
 
 /** One earlier copy of a task, from posts_history. */
 export interface TaskVersion {

@@ -3,7 +3,7 @@ import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
 import { RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
-import { AiBusy, FormPatch, formReducer, initForm, isDirty, isEmpty, mergeOnto } from '../taskform'
+import { AiBusy, FormPatch, StepOp, commitStep, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
 import { CaptureProposal } from './taskeditor/CaptureProposal'
 import { DescriptionField, RefineProposal } from './taskeditor/DescriptionField'
@@ -37,7 +37,7 @@ interface Props {
   onSave(t: Task): void
   /** Called instead of onSave when a brand-new task had nothing in it. */
   onDiscard?(): void
-  /** Persist without closing (comments and checklist ticks land immediately). */
+  /** Persist without closing (comments and checklist edits land immediately). */
   onCommit(t: Task): void
   onDelete(id: string): void
   /** Persist a duplicated task and open it (parent owns store + navigation). */
@@ -86,7 +86,6 @@ export function TaskEditor({
   // added (a step, a comment, a search) stays in the section that owns it
   const [form, dispatch] = useReducer(formReducer, base, initForm)
   const set = (patch: FormPatch) => dispatch({ type: 'set', patch })
-  const addChecks = (texts: string[]) => dispatch({ type: 'addCheck', items: texts.map(text => ({ id: uid(), text, done: false })) })
   const { title, description, tags } = form
 
   const [aiBusy, setAiBusy] = useState<AiBusy>(null)
@@ -95,6 +94,11 @@ export function TaskEditor({
   const [proposal, setProposal] = useState<RefineProposal | null>(null)
   const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
   const modalRef = useRef<HTMLDivElement>(null)
+
+  /** The last copy this editor wrote: the store's reaches `getLatest` a render later, and a save straight after a write must build on it. */
+  const wrote = useRef<Task | null>(null)
+  /** Steps typed into since they were last written (see pendingRenames). */
+  const typed = useRef(new Set<string>())
 
   useEffect(() => {
     if (task || !capture) return
@@ -166,16 +170,54 @@ export function TaskEditor({
     }
   }
 
-  /** The freshest copy in the store: a save merges onto it, and on a saved task ticks and comments write straight onto it. */
-  const latest = () => getLatest(base.id) ?? base
+  /** The freshest copy there is: a save merges onto it, and on a saved task steps and comments write straight onto it. */
+  const latest = (): Task => {
+    const stored = getLatest(base.id)
+    const mine = wrote.current
+    return mine && (!stored || Date.parse(mine.updatedAt) > Date.parse(stored.updatedAt)) ? mine : (stored ?? base)
+  }
+  const commit = (t: Task) => {
+    wrote.current = t
+    onCommit(t)
+  }
   const merged = () => mergeOnto(latest(), form, base, persisted)
 
+  /** A checklist edit: the form shows it, and on a saved task it is written now, onto the freshest copy — never through Save. */
+  function onStep(op: StepOp) {
+    if (op.type === 'rename') {
+      // leaving a step you only passed through writes nothing
+      if (!typed.current.has(op.id)) return
+      typed.current.delete(op.id)
+    }
+    if (op.type === 'remove') typed.current.delete(op.id)
+    dispatch({ type: 'step', op })
+    if (!persisted) return
+    const next = commitStep(latest(), op)
+    if (next) commit(next)
+  }
+  const addChecks = (texts: string[]) => onStep({ type: 'add', items: texts.map(text => ({ id: uid(), text, done: false })) })
+  const onType = (id: string, text: string) => {
+    typed.current.add(id)
+    set(f => ({ checklist: f.checklist.map(x => (x.id === id ? { ...x, text } : x)) }))
+  }
+
+  /** A rename still in its field when Save, Close or Duplicate is pressed is written first. */
+  function flushSteps() {
+    if (!persisted || typed.current.size === 0) return
+    const ops = pendingRenames(form.checklist, typed.current)
+    typed.current.clear()
+    const next = commitStep(latest(), ...ops)
+    if (next) commit(next)
+  }
+
   function requestClose() {
+    flushSteps()
     if (isDirty(form, base, persisted) && !window.confirm('Discard your changes?')) return
     onClose()
   }
 
   function save() {
+    flushSteps()
     const next = merged()
     if (!task && isEmpty(next)) {
       // brand-new and blank: discard rather than litter the list with "Untitled",
@@ -189,8 +231,9 @@ export function TaskEditor({
 
   function duplicate() {
     if (!task || !onDuplicate) return
+    flushSteps()
     const current = merged()
-    if (isDirty(form, base, persisted)) onCommit(current)
+    if (isDirty(form, base, persisted)) commit(current)
     onDuplicate(duplicateTask(current))
   }
 
@@ -261,17 +304,15 @@ export function TaskEditor({
             <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
             <ChecklistField
               checklist={form.checklist}
-              set={set}
+              onType={onType}
+              onStep={onStep}
               addChecks={addChecks}
-              persisted={persisted}
-              latest={latest}
-              onCommit={onCommit}
               title={title}
               description={description}
               aiBusy={aiBusy}
               onBreakDown={() => runAI('checklist')}
             />
-            <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={onCommit} />
+            <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
           </div>
 
           <aside className="editor-side">
