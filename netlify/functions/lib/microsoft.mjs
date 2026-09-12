@@ -114,7 +114,16 @@ export async function exchangeCode(code, redirectUri) {
   return body
 }
 
-const cache = new Map() // `${userId}:${accountId}` -> { token, exp }
+// `${userId}:${accountId}` -> { token, exp, refresh }. `refresh` is the grant
+// the token came from: see checkCachedToken.
+const cache = new Map()
+
+/** Drop a cached access token minted from a grant this account no longer holds (reconnected, or rotated elsewhere). */
+function checkCachedToken(userId, account) {
+  const key = `${userId}:${account.id}`
+  const hit = cache.get(key)
+  if (hit && hit.refresh !== account.refreshToken) cache.delete(key)
+}
 
 /**
  * A live access token for one connected account. Microsoft rotates refresh
@@ -138,6 +147,7 @@ export async function accessToken(userId, accountId) {
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
+    cache.delete(key)
     if (body.error === 'invalid_grant') {
       throw Object.assign(new Error(`Microsoft access for ${account.email} expired or was revoked — reconnect it in Settings.`), { status: 409 })
     }
@@ -146,21 +156,30 @@ export async function accessToken(userId, accountId) {
   if (body.refresh_token && body.refresh_token !== account.refreshToken) {
     await saveAccounts(userId, accounts.map(a => (a.id === accountId ? { ...a, refreshToken: body.refresh_token } : a)))
   }
-  cache.set(key, { token: body.access_token, exp: Date.now() + (body.expires_in ?? 3600) * 1000 })
+  cache.set(key, { token: body.access_token, exp: Date.now() + (body.expires_in ?? 3600) * 1000, refresh: body.refresh_token ?? account.refreshToken })
   return body.access_token
 }
 
 export async function graph(userId, accountId, path, init = {}) {
-  const token = await accessToken(userId, accountId)
-  const res = await fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
-  })
-  if (res.status === 204) return null
-  const text = await res.text()
-  const body = text ? JSON.parse(text) : null
-  if (!res.ok) throw Object.assign(new Error(body?.error?.message ?? `Microsoft Graph ${res.status}`), { status: res.status })
-  return body
+  const key = `${userId}:${accountId}`
+  for (let attempt = 0; ; attempt++) {
+    const token = await accessToken(userId, accountId)
+    const res = await fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    })
+    // a refused token is dropped at once and the call made once more, rather
+    // than kept for up to an hour on a warm function (see lib/google.mjs gapi)
+    if (res.status === 401) {
+      if (cache.get(key)?.token === token) cache.delete(key)
+      if (attempt === 0) continue
+    }
+    if (res.status === 204) return null
+    const text = await res.text()
+    const body = text ? JSON.parse(text) : null
+    if (!res.ok) throw Object.assign(new Error(body?.error?.message ?? `Microsoft Graph ${res.status}`), { status: res.status })
+    return body
+  }
 }
 
 export async function connectAccount(userId, tokens) {
@@ -192,14 +211,28 @@ export async function disconnectAccount(userId, accountId) {
 
 // ----------------------------------------------------------------- reading
 
-export async function listCalendars(userId, accountId) {
-  const page = await graph(userId, accountId, '/me/calendars?$top=50&$select=id,name,color,canEdit,isDefaultCalendar')
-  return (page.value ?? []).map(c => ({
+/**
+ * One of the account's calendars as Settings lists it. `drafter` marks the
+ * account's own Drafter calendar: what it holds is Drafter's (mirrored tasks
+ * and entries), already on the grid from Drafter itself, so ticking it as an
+ * overlay showed every entry twice. Settings keeps it out of the picker.
+ */
+export function graphCalendarRow(c, drafterCalendarId) {
+  return {
     id: c.id,
     name: c.name,
     primary: !!c.isDefaultCalendar,
     writable: c.canEdit !== false,
-  }))
+    drafter: !!drafterCalendarId && c.id === drafterCalendarId,
+  }
+}
+
+/** True when this calendar is the account's own Drafter calendar (see graphCalendarRow). */
+export const isOwnDrafterCalendar = (account, calendarId) => !!account?.drafterCalendarId && account.drafterCalendarId === calendarId
+
+export async function listCalendars(userId, accountId, drafterCalendarId = null) {
+  const page = await graph(userId, accountId, '/me/calendars?$top=50&$select=id,name,color,canEdit,isDefaultCalendar')
+  return (page.value ?? []).map(c => graphCalendarRow(c, drafterCalendarId))
 }
 
 /** Graph event -> the app's CalendarEvent shape (null for our own mirrored tasks). */
@@ -243,22 +276,56 @@ export async function listEvents(userId, accountId, calendarId, fromIso, toIso) 
 
 const OPEN = ['todo', 'doing', 'blocked']
 
-/** The "Drafter" calendar in a connected account, created on first mirror. */
-export async function drafterCalendarId(userId, accountId) {
-  const accounts = await listAccounts(userId)
-  const account = accounts.find(a => a.id === accountId)
-  if (account?.drafterCalendarId) {
-    try {
-      await graph(userId, accountId, `/me/calendars/${encodeURIComponent(account.drafterCalendarId)}?$select=id`)
-      return account.drafterCalendarId
-    } catch (e) {
-      if (e.status !== 404 && e.status !== 410) throw e
+/** The account's Drafter calendar among its calendars: the stored one, else the lowest id, so everyone picks the same. */
+export function pickGraphDrafterCalendar(calendars, storedId) {
+  const ours = (Array.isArray(calendars) ? calendars : []).filter(c => c && c.name === 'Drafter' && c.writable)
+  if (ours.length === 0) return null
+  if (storedId && ours.some(c => c.id === storedId)) return storedId
+  return ours.map(c => c.id).sort()[0]
+}
+
+// `${userId}:${accountId}` -> the lookup in flight, shared by concurrent requests on one warm function
+const resolving = new Map()
+
+/**
+ * The "Drafter" calendar in a connected account: the stored one while it
+ * exists, else the one already there, else a new one. `replaced` says the
+ * stored one had gone, so the app writes everything again and says so.
+ */
+export function resolveDrafterCalendar(userId, accountId) {
+  const key = `${userId}:${accountId}`
+  const inflight = resolving.get(key)
+  if (inflight) return inflight
+  const run = (async () => {
+    const account = (await listAccounts(userId)).find(a => a.id === accountId)
+    if (!account) throw Object.assign(new Error('That Microsoft account is not connected.'), { status: 409 })
+    checkCachedToken(userId, account)
+    const stored = account.drafterCalendarId ?? null
+    if (stored) {
+      try {
+        await graph(userId, accountId, `/me/calendars/${encodeURIComponent(stored)}?$select=id`)
+        return { id: stored, replaced: false, created: false }
+      } catch (e) {
+        if (e.status !== 404 && e.status !== 410) throw e
+      }
     }
-  }
-  const existing = (await listCalendars(userId, accountId)).find(c => c.name === 'Drafter' && c.writable)
-  const id = existing?.id ?? (await graph(userId, accountId, '/me/calendars', { method: 'POST', body: JSON.stringify({ name: 'Drafter' }) })).id
-  await saveAccounts(userId, accounts.map(a => (a.id === accountId ? { ...a, drafterCalendarId: id } : a)))
-  return id
+    const found = pickGraphDrafterCalendar(await listCalendars(userId, accountId), null)
+    const id = found ?? (await graph(userId, accountId, '/me/calendars', { method: 'POST', body: JSON.stringify({ name: 'Drafter' }) })).id
+    // read the accounts again before writing them: a token refresh during the
+    // calls above may have rotated this account's refresh token, and writing
+    // back the list read at the start used to quietly undo that rotation
+    const fresh = await listAccounts(userId)
+    await saveAccounts(userId, fresh.map(a => (a.id === accountId ? { ...a, drafterCalendarId: id } : a)))
+    return { id, replaced: !!stored && id !== stored, created: !found }
+  })()
+  resolving.set(key, run)
+  void run.finally(() => resolving.delete(key)).catch(() => {})
+  return run
+}
+
+/** The Drafter calendar's id (see resolveDrafterCalendar). */
+export async function drafterCalendarId(userId, accountId) {
+  return (await resolveDrafterCalendar(userId, accountId)).id
 }
 
 function eventBodyFor(task, projectName, site, tz) {
@@ -298,8 +365,11 @@ async function findMirrored(userId, accountId, calendarId, taskId) {
   return page.value?.[0] ?? null
 }
 
-/** Mirror one task: upsert while open and dated, remove otherwise. */
-export async function pushTask(userId, accountId, calendarId, task, projectName, site) {
+/**
+ * Mirror one task: upsert while open and dated, remove otherwise.
+ * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task.
+ */
+export async function pushTask(userId, accountId, calendarId, task, projectName, site, opts = {}) {
   const wanted = task.kind === 'task' && !task.deletedAt && OPEN.includes(task.status) && !!task.dueAt
   const existing = await findMirrored(userId, accountId, calendarId, task.id)
   const path = id => `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
@@ -312,8 +382,8 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     }
     return 'skipped'
   }
-  const settings = await settingsGet(userId).catch(() => null)
-  const body = eventBodyFor(task, projectName, site, settings?.timezone)
+  const tz = 'tz' in opts ? (opts.tz ?? undefined) : (await settingsGet(userId).catch(() => null))?.timezone
+  const body = eventBodyFor(task, projectName, site, tz)
   if (existing) {
     await graph(userId, accountId, path(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
@@ -380,11 +450,96 @@ export async function pushEntry(userId, accountId, calendarId, entry, site) {
   return 'created'
 }
 
-/** Mirrored events changed in Outlook since `since` — the pull half of the sync. */
+/**
+ * Every page of a Graph listing, up to `max` items. `complete` is false when it
+ * stopped before the end, and then nothing may be read as absent from it.
+ */
+async function graphPages(userId, accountId, first, init = {}, max = 2500) {
+  const items = []
+  let url = first
+  while (url && items.length < max) {
+    const page = await graph(userId, accountId, url, init)
+    for (const item of page?.value ?? []) items.push(item)
+    url = page?.['@odata.nextLink'] ?? null
+  }
+  return { items, complete: !url }
+}
+
+const utcStamp = v => (!v ? null : /(?:Z|[+-]\d\d:\d\d)$/i.test(v) ? v : `${v}Z`)
+
+/**
+ * One of our entries as Outlook now holds it, in the CalendarEntry convention.
+ * With the UTC Prefer header Graph answers "2026-09-10T14:00:00.0000000" and no
+ * zone; read back as the instant, so an untouched entry never looks moved.
+ */
+export function graphEntryChange(ev) {
+  const eventId = (ev?.singleValueExtendedProperties ?? []).find(p => p.id === EVENT_PROP)?.value
+  if (!eventId) return null
+  const allDay = !!ev.isAllDay
+  const instant = v => {
+    const ms = Date.parse(utcStamp(v) ?? '')
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null
+  }
+  return {
+    eventId,
+    deleted: !!ev.isCancelled,
+    title: typeof ev.subject === 'string' ? ev.subject : '',
+    start: allDay ? (utcStamp(ev.start?.dateTime)?.slice(0, 10) ?? null) : instant(ev.start?.dateTime),
+    end: allDay ? (utcStamp(ev.end?.dateTime)?.slice(0, 10) ?? null) : instant(ev.end?.dateTime),
+    allDay,
+    updated: ev.lastModifiedDateTime ?? '',
+  }
+}
+
+/**
+ * Entries edited in Outlook since `since`. Its own listing, because one $expand
+ * names one extended property, and the task pull expands TASK_PROP.
+ */
+export async function pullEntryChanges(userId, accountId, calendarId, sinceIso) {
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,subject,start,end,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(EVENT_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
+  return items.map(graphEntryChange).filter(Boolean)
+}
+
+/**
+ * The task ids the Drafter events in this calendar carry: what is actually
+ * there, to set against what the app believes it put there.
+ */
+export async function mirroredTaskIds(userId, accountId, calendarId) {
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})`
+  const { items, complete } = await graphPages(userId, accountId, q, {}, 5000)
+  const ids = new Set()
+  for (const ev of items) {
+    const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
+    if (taskId) ids.add(taskId)
+  }
+  return { ids, complete }
+}
+
+/**
+ * Tasks the app believes are in the Outlook calendar and are not: the owner
+ * deleted them there. Graph hard-deletes, so unlike Google's cancelled copy a
+ * delete never shows up as a change. Many at once is not someone deleting
+ * tasks one by one, though — it is the calendar emptied or swapped underneath —
+ * so then none is reported as deleted and `absent` goes back to be written
+ * again instead: writing a task back is safe, marking a dozen done is not.
+ */
+export function outlookMissing(live, present, opts = {}) {
+  const maxAbs = opts.maxAbs ?? 5
+  const maxShare = opts.maxShare ?? 0.5
+  const have = present instanceof Set ? present : new Set(present ?? [])
+  const believed = [...new Set((Array.isArray(live) ? live : []).filter(id => typeof id === 'string' && id))]
+  const absent = believed.filter(id => !have.has(id))
+  const suspicious = absent.length > maxAbs && absent.length > believed.length * maxShare
+  return { missing: suspicious ? [] : absent, suspicious, absent }
+}
+
+/** Mirrored tasks changed in Outlook since `since` — the pull half of the sync. */
 export async function pullChanges(userId, accountId, calendarId, sinceIso) {
   const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
-  const page = await graph(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
-  return (page.value ?? [])
+  // paged: one page of 250 dropped the rest of a busy window
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
+  return items
     .map(ev => {
       const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
       if (!taskId) return null

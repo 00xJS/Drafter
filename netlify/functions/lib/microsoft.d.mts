@@ -25,6 +25,39 @@ export type EntryPlan = { op: 'create' } | { op: 'skip' } | { op: 'patch'; id: s
  */
 export declare function oauthFailureCode(body: unknown): string
 
+/** One of our entries as a provider holds it, in the CalendarEntry convention. */
+export interface EntryChangeRow {
+  eventId: string
+  deleted: boolean
+  title: string
+  start: string | null
+  end: string | null
+  allDay: boolean
+  updated: string
+}
+
+/** One of the account's calendars as Settings lists it; `drafter` marks the account's own Drafter calendar. */
+export declare function graphCalendarRow(
+  c: { id: string; name?: string; canEdit?: boolean; isDefaultCalendar?: boolean },
+  drafterCalendarId: string | null,
+): { id: string; name?: string; primary: boolean; writable: boolean; drafter: boolean }
+export declare function isOwnDrafterCalendar(account: { drafterCalendarId?: string | null } | null | undefined, calendarId: string): boolean
+
+/** One Graph call as the account; retries once with a fresh token after a 401. */
+export declare function graph(userId: string, accountId: string, path: string, init?: RequestInit): Promise<unknown>
+export declare function pickGraphDrafterCalendar(calendars: { id: string; name?: string; writable?: boolean }[] | null | undefined, storedId: string | null): string | null
+/** The account's Drafter calendar, found or made; `replaced` when the stored one had gone. */
+export declare function resolveDrafterCalendar(userId: string, accountId: string): Promise<{ id: string; replaced: boolean; created: boolean }>
+
+export declare function graphEntryChange(ev: unknown): EntryChangeRow | null
+export declare function pullEntryChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<EntryChangeRow[]>
+export declare function mirroredTaskIds(userId: string, accountId: string, calendarId: string): Promise<{ ids: Set<string>; complete: boolean }>
+export declare function outlookMissing(
+  live: string[],
+  present: Set<string> | string[],
+  opts?: { maxAbs?: number; maxShare?: number },
+): { missing: string[]; suspicious: boolean; absent: string[] }
+
 /** Graph hard-deletes, so there is no cancelled state and no revive option. */
 export declare function graphEntryPlan(existing: { id: string } | null, entry: EntryLike): EntryPlan
 

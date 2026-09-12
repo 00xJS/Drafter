@@ -10,13 +10,30 @@
 
 import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
-import { getUser, settingsFind, settingsSet } from './lib/session.mjs'
-import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
+import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
+import { runMirrorBatch } from './lib/mirror.mjs'
+import {
+  NATIVE_UPDATE_NEEDED,
+  RETURN_COOKIE,
+  checkNativeCompletion,
+  clearCookieHeader,
+  completionMessage,
+  cookieHeader,
+  handoffChallenge,
+  handoffFresh,
+  isNativeState,
+  nativeHandoff,
+  nativeState,
+  newVerifier,
+  returnTarget,
+  stateFor,
+  validChallenge,
+  verifyState,
+} from './lib/oauth.mjs'
 import { pushEntry,
   authUrl,
   connectAccount,
   disconnectAccount,
-  drafterCalendarId,
   exchangeCode,
   listAccounts,
   listCalendars,
@@ -24,8 +41,12 @@ import { pushEntry,
   missingMicrosoftEnv,
   oauthFailureCode,
   publicAccount,
+  mirroredTaskIds,
+  outlookMissing,
   pullChanges,
+  pullEntryChanges,
   pushTask,
+  resolveDrafterCalendar,
 } from './lib/microsoft.mjs'
 
 const redirectUriFor = origin => `${origin}/api/microsoft/callback`
@@ -39,9 +60,11 @@ async function start(url) {
   if (!microsoftConfigured()) return fail('not_configured')
   const handoff = url.searchParams.get('h') ?? ''
   const row = handoff ? await settingsFind('oauth_handoff', handoff).catch(() => null) : null
-  if (!row || !handoffFresh(row.oauth_handoff_at)) return fail('bad_state')
+  // the handoff carries the challenge of a verifier only the app holds (see lib/oauth.mjs)
+  const challenge = handoffChallenge(handoff)
+  if (!row || !handoffFresh(row.oauth_handoff_at) || !challenge) return fail('bad_state')
   const verifier = newVerifier()
-  const state = stateFor(verifier)
+  const state = nativeState(verifier, challenge)
   await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, ms_oauth_state: state, ms_state_at: new Date().toISOString() })
   const headers = new Headers({ location: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state) })
   headers.append('set-cookie', cookieHeader(MS_COOKIE, verifier))
@@ -50,12 +73,13 @@ async function start(url) {
 }
 
 async function callback(req, url) {
-  const back = q => {
-    const headers = new Headers({ location: `${returnTarget(req, url.origin)}?${q}` })
+  const to = (target, q) => {
+    const headers = new Headers({ location: `${target}?${q}` })
     headers.append('set-cookie', clearCookieHeader(MS_COOKIE))
     headers.append('set-cookie', clearCookieHeader(RETURN_COOKIE))
     return new Response(null, { status: 302, headers })
   }
+  const back = q => to(returnTarget(req, url.origin), q)
   if (!microsoftConfigured()) return back('microsoft=error&reason=not_configured')
   // Microsoft's own refusal (consent, account type, a secret problem it caught
   // early). The browser only ever gets a short code — the client would collapse
@@ -75,6 +99,12 @@ async function callback(req, url) {
   if (!verifyState(req, MS_COOKIE, state)) return back('microsoft=error&reason=state_mismatch')
   const row = await settingsFind('ms_oauth_state', state).catch(() => null)
   if (!row || !row.ms_state_at || Date.now() - Date.parse(row.ms_state_at) > STATE_TTL_MS) return back('microsoft=error&reason=bad_state')
+  if (isNativeState(state)) {
+    // Started in the app: the code goes back to it, and the app finishes the
+    // flow with its session and its verifier ('complete'), so whoever opened
+    // the link cannot attach their account to the one that started it.
+    return to('drafter://oauth', `microsoft=connected&${new URLSearchParams({ code, state })}`)
+  }
   await settingsSet(row.user_id, { ms_oauth_state: null, ms_state_at: null })
   let tokens
   try {
@@ -129,9 +159,11 @@ const handler = async req => {
 
     if (action === 'auth') {
       if (body.native) {
-        const handoff = newHandoff()
+        // the app keeps a verifier and sends only its challenge (see lib/oauth.mjs)
+        if (!validChallenge(body.challenge)) return Response.json({ error: NATIVE_UPDATE_NEEDED }, { status: 400 })
+        const handoff = nativeHandoff(body.challenge)
         await settingsSet(user.id, { oauth_handoff: handoff, oauth_handoff_at: new Date().toISOString() })
-        return Response.json({ url: `${url.origin}/api/microsoft/start?h=${handoff}` })
+        return Response.json({ url: `${url.origin}/api/microsoft/start?h=${encodeURIComponent(handoff)}` })
       }
       const verifier = newVerifier()
       const state = stateFor(verifier)
@@ -140,6 +172,34 @@ const handler = async req => {
         { url: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state, body.loginHint) },
         { headers: { 'set-cookie': cookieHeader(MS_COOKIE, verifier) } },
       )
+    }
+    if (action === 'complete') {
+      // the second half of a flow started in the app (see lib/oauth.mjs checkNativeCompletion)
+      const row = await settingsGet(user.id)
+      const code = String(body.code ?? '')
+      const check = checkNativeCompletion({
+        stored: row?.ms_oauth_state,
+        storedAt: row?.ms_state_at,
+        state: String(body.state ?? ''),
+        verifier: String(body.verifier ?? ''),
+        code,
+        ttlMs: STATE_TTL_MS,
+      })
+      if (!check.ok) return Response.json({ error: completionMessage(check.reason), reason: check.reason }, { status: 403 })
+      // used up before the exchange, so the same code and state cannot be tried twice
+      await settingsSet(user.id, { ms_oauth_state: null, ms_state_at: null })
+      let tokens
+      try {
+        tokens = await exchangeCode(code, redirectUriFor(url.origin))
+      } catch (e) {
+        // as at the callback: Microsoft's prose goes to the log, the app gets the short code
+        console.error('microsoft complete: token exchange failed —', e?.message)
+        const reason = e?.code ?? oauthFailureCode({ error_description: e?.message })
+        return Response.json({ error: `Microsoft refused the sign-in (${reason.replace(/_/g, ' ')}).`, reason }, { status: 502 })
+      }
+      if (!tokens.refresh_token) return Response.json({ error: 'Microsoft sent no refresh token. Connect again.', reason: 'no_refresh_token' }, { status: 400 })
+      const account = await connectAccount(user.id, tokens)
+      return Response.json({ ok: true, account })
     }
     if (action === 'disconnect') {
       await disconnectAccount(user.id, String(body.accountId ?? ''))
@@ -150,7 +210,7 @@ const handler = async req => {
       const out = []
       for (const a of accounts) {
         try {
-          out.push({ account: publicAccount(a), calendars: await listCalendars(user.id, a.id) })
+          out.push({ account: publicAccount(a), calendars: await listCalendars(user.id, a.id, a.drafterCalendarId ?? null) })
         } catch (e) {
           out.push({ account: publicAccount(a), calendars: [], error: e?.message ?? 'could not list calendars' })
         }
@@ -158,30 +218,59 @@ const handler = async req => {
       return Response.json({ accounts: out })
     }
     if (action === 'push') {
+      const startedAt = Date.now()
       // judge "untimed" in the owner's zone, not UTC: adopt the device's zone
       // when the account has none, never overwriting one that was chosen
       await adoptTimeZone(user.id, body.timezone)
       const accountId = String(body.accountId ?? '')
-      const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 200) : []
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}
-      const calendarId = await drafterCalendarId(user.id, accountId)
-      const results = { created: 0, updated: 0, removed: 0, skipped: 0 }
-      const errors = []
-      for (const t of tasks) {
-        try {
-          results[await pushTask(user.id, accountId, calendarId, t, t.projectId ? projectNames[t.projectId] : undefined, url.origin)]++
-        } catch (e) {
-          errors.push({ id: t.id, error: e?.message ?? String(e) })
-          if (e?.status === 409 || e?.status === 401 || e?.status === 403) break
-        }
-      }
-      return Response.json({ calendarId, ...results, errors })
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const calendarId = cal.id
+      const tz = (await settingsGet(user.id).catch(() => null))?.timezone ?? null
+      // `records` is the sweep (tasks and entries, chunked, budgeted, `left` to
+      // resend); `tasks` is an older app build, which keeps its old contract
+      const sweep = Array.isArray(body.records)
+      const records = sweep ? body.records : Array.isArray(body.tasks) ? body.tasks : []
+      const result = await runMirrorBatch(
+        records,
+        r => {
+          const project = r.projectId ? projectNames[r.projectId] : undefined
+          if (!sweep || r.kind === 'task') return pushTask(user.id, accountId, calendarId, r, project, url.origin, { tz })
+          if (r.kind === 'event') return pushEntry(user.id, accountId, calendarId, r, url.origin)
+          // pushTask treats anything that is not a task as "remove its copy"
+          throw Object.assign(new Error('not a task or an entry'), { status: 400 })
+        },
+        sweep ? { startedAt } : { budgetMs: Infinity },
+      )
+      return Response.json({ calendarId, replaced: cal.replaced, ...result })
     }
     if (action === 'pull') {
       const accountId = String(body.accountId ?? '')
+      // stamped before reading, so a change that lands mid-read falls inside the next window
+      const at = new Date().toISOString()
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
-      const calendarId = await drafterCalendarId(user.id, accountId)
-      return Response.json({ changes: await pullChanges(user.id, accountId, calendarId, since.replace(/\.\d{3}Z$/, 'Z')), at: new Date().toISOString() })
+      const sinceGraph = since.replace(/\.\d{3}Z$/, 'Z')
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const calendarId = cal.id
+      const changes = await pullChanges(user.id, accountId, calendarId, sinceGraph)
+      // entry edits need a listing of their own; only builds that apply them ask
+      const entries = body.entries === true ? await pullEntryChanges(user.id, accountId, calendarId, sinceGraph) : []
+      // Graph hard-deletes, so a task deleted in Outlook never shows up above.
+      // The app names the tasks it believes are there; the ones the calendar no
+      // longer holds were deleted by the owner, and the app treats them as it
+      // treats Google's cancelled copy. Only when the app's belief is about THIS
+      // calendar (not one since deleted and recreated), from a complete listing.
+      let missing = []
+      let resend = []
+      if (Array.isArray(body.live) && body.live.length && body.calendarId === calendarId) {
+        const present = await mirroredTaskIds(user.id, accountId, calendarId)
+        if (present.complete) {
+          const r = outlookMissing(body.live.slice(0, 2000).map(String), present.ids)
+          missing = r.missing
+          resend = r.suspicious ? r.absent : []
+        }
+      }
+      return Response.json({ changes, entries, missing, resend, calendarId, replaced: cal.replaced, at })
     }
     if (action === 'push-event') {
       // one entry, one account: the client fans out across every enabled
@@ -190,9 +279,9 @@ const handler = async req => {
       const entry = body.event && typeof body.event === 'object' ? body.event : null
       if (!accountId) return Response.json({ error: 'accountId required' }, { status: 400 })
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
-      const calendarId = await drafterCalendarId(user.id, accountId)
-      const result = await pushEntry(user.id, accountId, calendarId, entry, url.origin)
-      return Response.json({ calendarId, result })
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const result = await pushEntry(user.id, accountId, cal.id, entry, url.origin)
+      return Response.json({ calendarId: cal.id, replaced: cal.replaced, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {

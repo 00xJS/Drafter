@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, googlePushId, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, connectCalendarAccount, disconnectOutlook, googlePushId, oauthCompleting, onOAuthSettled, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -9,7 +9,7 @@ import { fmtDateTime, timeAgo, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../push'
 import { clearLocalData } from '../idb'
-import { appLockEnabled, authenticateAppLock, checkAppLock, genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setGenericRemindersEnabled, setLocalRemindersEnabled, startOAuth } from '../native'
+import { appLockEnabled, authenticateAppLock, checkAppLock, genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setAppLockEnabled, setGenericRemindersEnabled, setLocalRemindersEnabled } from '../native'
 import { buildLocalReminders } from '../reminders'
 import { householdAction } from '../household'
 import type { HouseholdInfo } from '../household'
@@ -69,12 +69,13 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const [copied, setCopied] = useState(false)
   const [ms, setMs] = useState<MicrosoftStatus | null>(null)
   const [msCals, setMsCals] = useState<{ account: { id: string; name: string; email: string }; calendars: MicrosoftCalendarInfo[]; error?: string }[] | null>(null)
-  const [msBusy, setMsBusy] = useState(false)
+  // the app may be finishing an Outlook sign-in as Settings reopens on its return
+  const [msBusy, setMsBusy] = useState(() => oauthCompleting() === 'microsoft')
   const [msError, setMsError] = useState('')
   const [google, setGoogle] = useState<GoogleStatus | null>(null)
   const [googleError, setGoogleError] = useState('')
   const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
-  const [googleBusy, setGoogleBusy] = useState(false)
+  const [googleBusy, setGoogleBusy] = useState(() => oauthCompleting() === 'google')
   const supabaseOn = isSupabaseConfigured()
   const [push, setPush] = useState<PushInfo | null>(null)
   const [pushError, setPushError] = useState('')
@@ -128,25 +129,46 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const mirroring = !!pushSource?.enabled
 
   useEffect(() => {
+    const loadMicrosoft = () =>
+      microsoftAction<MicrosoftStatus>('status')
+        .then(st => {
+          setMs(st)
+          if (st.accounts.length > 0) {
+            microsoftAction<{ accounts: typeof msCals }>('calendars')
+              .then(r => setMsCals(r.accounts))
+              .catch(e => setMsError((e as Error).message))
+          }
+        })
+        .catch(e => setMsError((e as Error).message))
+    const loadGoogle = () =>
+      googleAction<GoogleStatus>('status')
+        .then(st => {
+          setGoogle(st)
+          if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
+        })
+        .catch(e => setGoogleError((e as Error).message))
     fetchFeedInfo()
       .then(setFeed)
       .catch(e => setFeedError((e as Error).message))
-    microsoftAction<MicrosoftStatus>('status')
-      .then(st => {
-        setMs(st)
-        if (st.accounts.length > 0) {
-          microsoftAction<{ accounts: typeof msCals }>('calendars')
-            .then(r => setMsCals(r.accounts))
-            .catch(e => setMsError((e as Error).message))
-        }
-      })
-      .catch(e => setMsError((e as Error).message))
-    googleAction<GoogleStatus>('status')
-      .then(st => {
-        setGoogle(st)
-        if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
-      })
-      .catch(e => setGoogleError((e as Error).message))
+    // A sign-in the app is finishing right now reports below; asking for its
+    // status before it lands would offer "Connect" all over again.
+    const completing = oauthCompleting()
+    if (completing !== 'microsoft') void loadMicrosoft()
+    if (completing !== 'google') void loadGoogle()
+    // The iOS app finishes a calendar sign-in itself when Safari hands it back
+    // (connectCalendarAccount), and the planner reopens Settings as it does:
+    // the result, or the reason it failed, is heard here.
+    return onOAuthSettled(r => {
+      if (r.provider === 'google') {
+        setGoogleBusy(false)
+        if (r.ok) void loadGoogle()
+        else setGoogleError(r.error ?? 'Google Calendar could not be connected.')
+      } else {
+        setMsBusy(false)
+        if (r.ok) void loadMicrosoft()
+        else setMsError(r.error ?? 'Outlook could not be connected.')
+      }
+    })
   }, [])
 
   const runFeed = async (action: 'enable' | 'rotate' | 'disable') => {
@@ -165,8 +187,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
     setGoogleBusy(true)
     setGoogleError('')
     try {
-      const { url } = await googleAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-      const mode = await startOAuth(url)
+      const mode = await connectCalendarAccount('google')
       if (mode === 'native') setGoogleBusy(false)
     } catch (e) {
       setGoogleError((e as Error).message)
@@ -661,6 +682,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                   <ul className="cal-sources">
                     {googleCals.map(cal => {
                       const src = store.calendars.find(c => c.url === `google:${cal.id}`)
+                      // Drafter's own calendar is no overlay: what it holds is already on the grid. Listed only to untick one ticked before.
+                      if (cal.drafter && !src) return null
                       return (
                         <li key={cal.id} className="cal-source">
                           <input type="checkbox" checked={!!src?.enabled} aria-label={`Show ${cal.name}`} onChange={e => toggleGoogleCalendar(cal, e.target.checked)} />
@@ -668,6 +691,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           <span className="cal-source-name">
                             {cal.name}
                             {cal.primary && <small> · primary</small>}
+                            {cal.drafter && <small> · Drafter’s own calendar — untick it</small>}
                           </span>
                           <span className="cal-source-status">
                             {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}
@@ -683,9 +707,25 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                   <input type="checkbox" checked={mirroring} onChange={e => setMirroring(e.target.checked)} />
                   <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar in Google</span>
                   <span className="cal-source-status">
-                    {googlePush.error ? <span className="warn">{googlePush.error}</span> : googlePush.pending ? <small>pushing…</small> : googlePush.lastAt ? <small>pushed {timeAgo(googlePush.lastAt)}</small> : null}
+                    {googlePush.error ? (
+                      <span className="warn">{googlePush.error}</span>
+                    ) : googlePush.pending ? (
+                      <small>pushing…</small>
+                    ) : googlePush.waiting ? (
+                      <small>{googlePush.waiting} waiting to go out — retrying</small>
+                    ) : googlePush.lastAt ? (
+                      <small>pushed {timeAgo(googlePush.lastAt)}</small>
+                    ) : null}
                   </span>
                 </label>
+                {googlePush.notices?.google && (
+                  <p className="sync-line">
+                    <span className="warn">{googlePush.notices.google}</span>
+                    <button className="btn subtle" onClick={() => googlePush.dismissNotice?.('google')}>
+                      Got it
+                    </button>
+                  </p>
+                )}
                 <p className="field-hint">
                   Open tasks with a due date appear in Google within seconds of a change (and vanish when done). Google's
                   own events flow the other way through the ticked calendars above. Edit tasks in Drafter, not in Google.
@@ -717,8 +757,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                         setMsBusy(true)
                         setMsError('')
                         try {
-                          const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                          const mode = await startOAuth(url)
+                          const mode = await connectCalendarAccount('microsoft')
                           if (mode === 'native') setMsBusy(false)
                         } catch (e) {
                           setMsError((e as Error).message)
@@ -735,6 +774,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     {(msCals ?? ms.accounts.map(a => ({ account: a, calendars: [] as MicrosoftCalendarInfo[] }))).map(entry => {
                       const acct = entry.account
                       const mirrorSource = store.calendars.find(c => c.url === msPushUrl(acct.id))
+                      // each account's own trouble: one dead account no longer speaks for the rest
+                      const mirrorError = mirrorSource?.enabled ? microsoftSync.accountErrors?.[acct.id] : undefined
                       return (
                         <div key={acct.id} className="ms-account">
                           <p className="sync-line">
@@ -745,10 +786,20 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                               className="btn subtle danger"
                               confirmLabel="Disconnect?"
                               onConfirm={async () => {
-                                for (const c of store.calendars.filter(c => c.url.includes(acct.id))) store.remove(c.id)
-                                await microsoftAction('disconnect', { accountId: acct.id })
-                                setMs(await microsoftAction<MicrosoftStatus>('status'))
+                                setMsError('')
+                                // the server first: a refused disconnect must not look done here
+                                try {
+                                  await disconnectOutlook(acct.id, store.calendars, id => store.remove(id))
+                                } catch (e) {
+                                  setMsError(`Could not disconnect ${acct.email || acct.name}: ${(e as Error).message} Nothing was changed.`)
+                                  return
+                                }
                                 setMsCals(cur => (cur ?? []).filter(x => x.account.id !== acct.id))
+                                try {
+                                  setMs(await microsoftAction<MicrosoftStatus>('status'))
+                                } catch {
+                                  setMs(cur => (cur ? { ...cur, accounts: cur.accounts.filter(a => a.id !== acct.id) } : cur))
+                                }
                               }}
                             >
                               Disconnect
@@ -760,6 +811,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                             <ul className="cal-sources">
                               {entry.calendars.map(cal => {
                                 const src = store.calendars.find(c => c.url === msSourceUrl(acct.id, cal.id))
+                                // the account's own Drafter calendar would draw every entry twice; listed only to untick one ticked before
+                                if (cal.drafter && !src) return null
                                 return (
                                   <li key={cal.id} className="cal-source">
                                     <input
@@ -783,6 +836,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                                     <span className="cal-source-name">
                                       {cal.name}
                                       {cal.primary && <small> · primary</small>}
+                                      {cal.drafter && <small> · Drafter’s own calendar — untick it</small>}
                                     </span>
                                     <span className="cal-source-status">
                                       {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}
@@ -809,9 +863,23 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                             />
                             <span className="cal-source-name">Mirror my tasks into a “Drafter” calendar here</span>
                             <span className="cal-source-status">
-                              {microsoftSync.error ? <span className="warn">{microsoftSync.error}</span> : microsoftSync.pending ? <small>syncing…</small> : microsoftSync.lastAt ? <small>synced {timeAgo(microsoftSync.lastAt)}</small> : null}
+                              {mirrorError ? (
+                                <span className="warn">{mirrorError}</span>
+                              ) : !mirrorSource?.enabled ? null : microsoftSync.pending ? (
+                                <small>syncing…</small>
+                              ) : microsoftSync.lastAt ? (
+                                <small>synced {timeAgo(microsoftSync.lastAt)}</small>
+                              ) : null}
                             </span>
                           </label>
+                          {microsoftSync.notices?.[acct.id] && (
+                            <p className="sync-line">
+                              <span className="warn">{microsoftSync.notices[acct.id]}</span>
+                              <button className="btn subtle" onClick={() => microsoftSync.dismissNotice?.(acct.id)}>
+                                Got it
+                              </button>
+                            </p>
+                          )}
                         </div>
                       )
                     })}
@@ -823,8 +891,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           setMsBusy(true)
                           setMsError('')
                           try {
-                            const { url } = await microsoftAction<{ url: string }>('auth', isNative() ? { native: true } : {})
-                            const mode = await startOAuth(url)
+                            const mode = await connectCalendarAccount('microsoft')
                             if (mode === 'native') setMsBusy(false)
                           } catch (e) {
                             setMsError((e as Error).message)
