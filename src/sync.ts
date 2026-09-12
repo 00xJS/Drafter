@@ -5,7 +5,7 @@ import { getSupabase } from './supabase'
 export interface SyncResult {
   /** Items newer than `since` (everything when since is null). Null when unreachable. */
   items: Item[] | null
-  /** Ids the server refused to store — drop from the dirty set; do not clamp the cursor. */
+  /** Ids the server refused to store. They stay dirty and are retried with backoff; they never clamp the cursor. */
   rejected: string[]
   /** Why the server refused an id, when it said. */
   reasons: Record<string, string>
@@ -112,13 +112,15 @@ export async function syncNow(outgoing: Item[], since: string | null): Promise<S
 }
 
 /**
- * The content-free tombstone "Delete forever" pushes for a kind. Every
+ * The content-free tombstone "Delete forever" writes for a kind. Every
  * sanitizer accepts this shape when deletedAt is set (see schema.ts), or a
  * device that still holds the live copy would discard the tombstone and keep
- * showing the record.
+ * showing the record. `now` is its updatedAt — newerStamp of the record it
+ * replaces, so it wins against that copy everywhere — and `deletedAt`, which
+ * starts the 90-day clock, is the wall clock (the same instant by default).
  */
-export function purgeTombstone(kind: Item['kind'], id: string, now: string): Record<string, unknown> {
-  const base = { kind, id, deletedAt: now, purged: true, updatedAt: now, createdAt: now }
+export function purgeTombstone(kind: Item['kind'], id: string, now: string, deletedAt = now): Record<string, unknown> {
+  const base = { kind, id, deletedAt, purged: true, updatedAt: now, createdAt: now }
   switch (kind) {
     case 'task':
       return { ...base, title: '', description: '', status: 'canceled', priority: 'normal', tags: [] }
@@ -143,18 +145,4 @@ export function purgeTombstone(kind: Item['kind'], id: string, now: string): Rec
     default:
       return base
   }
-}
-
-/**
- * Soft-purge: push stripped tombstones with purged:true so peers see the delete.
- * A nightly job hard-deletes tombstones older than the TTL.
- */
-export async function purgeRemote(ids: string[], items: Item[]): Promise<void> {
-  const sb = getSupabase()
-  if (!sb || ids.length === 0) return
-  const byId = new Map(items.map(i => [i.id, i]))
-  const now = new Date().toISOString()
-  const tombstones = ids.map(id => purgeTombstone(byId.get(id)?.kind ?? 'task', id, now))
-  const { error } = await sb.rpc('sync_posts', { incoming: tombstones, since: null })
-  if (error) throw new Error(error.message)
 }

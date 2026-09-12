@@ -3,10 +3,11 @@ import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, 
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
-import { browserKV } from './syncstate'
+import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
 import {
   createSyncEngine,
+  recordLabel,
   watchLifecycle,
   type EngineConflict,
   type ImportSummary,
@@ -25,6 +26,12 @@ export { conflictMessage, stampStatus } from './syncengine'
 
 /** Kinds that belong to one account even inside a household. */
 const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
+
+/** A row the server refused, as Settings lists it. */
+export interface FailedSync extends SyncFailure {
+  kind?: Item['kind']
+  label: string
+}
 
 export interface Store {
   /** Live tasks (tombstoned ones filtered out) — what every view renders. */
@@ -61,11 +68,17 @@ export interface Store {
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
   syncInfo: SyncInfo
+  /** Rows the server refused: still dirty, retried with backoff, counted as unsynced. */
+  failures: FailedSync[]
   upsert(item: Item): void
   remove(id: string): void
   restore(ids: string[]): void
-  /** Hard-delete: gone from this device and from the database, no undo. */
-  purge(ids: string[]): Promise<void>
+  /**
+   * Hard-delete: a content-free tombstone replaces the record here at once and
+   * is pushed like any change, retried until the server takes it. Resolves true
+   * when the server already has it, false while it is still queued.
+   */
+  purge(ids: string[]): Promise<boolean>
   /** Returns what changed so the caller can offer Undo. */
   setStatus(id: string, status: TaskStatus): StatusChange | null
   importItems(incoming: unknown[]): ImportSummary
@@ -74,6 +87,10 @@ export interface Store {
   fullResync(): Promise<boolean>
   /** Drop peer-owned rows after leaving a household (keeps unowned + mine). */
   retainMine(myId: string | null): void
+  /** Push a refused row now instead of waiting out its backoff. */
+  retrySync(id: string): Promise<boolean>
+  /** Drop this device's version of a refused row; the server's copy comes back. */
+  discardLocal(id: string): void
   /** Called, each round that has any, with the records whose local edit lost a field to another device's. */
   onConflict(listener: (conflicts: EngineConflict[]) => void): () => void
   /** Put this device's values back for those conflicts, as a new and newer edit. */
@@ -85,7 +102,8 @@ let shared: SyncEngine | null = null
 /** One engine per page: the dirty set and cursor it keeps belong to the device, not to a component. */
 function engine(): SyncEngine {
   shared ??= createSyncEngine({
-    rpc: syncNow,
+    // local mode (no Supabase env) has nothing to sync, so nothing is ever "unsynced"
+    rpc: getSupabase() ? syncNow : null,
     storage: {
       readSnapshot: () => idbGet('posts', 'all'),
       writeSnapshot: record => idbSet('posts', 'all', record),
@@ -219,6 +237,13 @@ export function useItems(myId: string | null = null): Store {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, myId],
   )
+  const failures = useMemo(() => {
+    const byId = new Map(items.map(i => [i.id, i]))
+    return snap.failures.map(f => {
+      const row = byId.get(f.id)
+      return { ...f, kind: row?.kind, label: recordLabel(row) }
+    })
+  }, [snap.failures, items])
 
   return {
     tasks,
@@ -239,6 +264,7 @@ export function useItems(myId: string | null = null): Store {
     visibleItems,
     loaded: snap.loaded,
     syncInfo: snap.syncInfo,
+    failures,
     upsert: e.upsert,
     remove: e.remove,
     restore: e.restore,
@@ -252,6 +278,8 @@ export function useItems(myId: string | null = null): Store {
     syncNowManual: e.sync,
     fullResync: e.fullResync,
     retainMine: e.retainMine,
+    retrySync: e.retry,
+    discardLocal: e.discard,
     onConflict: e.onConflict,
     keepMine: e.keepMine,
   }

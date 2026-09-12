@@ -229,4 +229,14 @@ describe('deletes against edits', () => {
     a.engine.restore(['t'])
     expect(a.item<Task>('t')).toMatchObject({ title: 'Buy blue paint', deletedAt: undefined })
   })
+
+  it('Delete forever beats an edit made elsewhere', async () => {
+    const { server, a, b } = await pair('new', paintJob())
+    edit(b, 't', { title: 'Buy blue paint' })
+    await b.engine.sync()
+    expect(await a.engine.purge(['t'])).toBe(true)
+    expect(server.row<Task>('t')).toMatchObject({ purged: true, title: '' })
+    await b.engine.sync()
+    expect(b.item<Task>('t')).toMatchObject({ purged: true })
+  })
 })

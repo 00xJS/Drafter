@@ -278,6 +278,38 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                 retried on every sync.
               </p>
             )}
+            {store.failures.length > 0 && (
+              <>
+                <p className="warn">
+                  <strong>Couldn’t sync ({store.failures.length})</strong> — the server refused these. They stay on this device and are
+                  tried again on their own; discard this device’s copy to take the server’s instead.
+                </p>
+                <ul className="dash-list">
+                  {store.failures.map(f => (
+                    <li key={f.id} className="trash-row">
+                      <div className="dash-main">
+                        <span className="dash-title">
+                          {f.kind && <small className="muted">{f.kind[0].toUpperCase() + f.kind.slice(1)}</small>} {f.label}
+                        </span>
+                        <span className="dash-meta">
+                          <small className="muted">
+                            {f.reason ? `${f.reason} · ` : ''}refused {f.attempts === 1 ? 'once' : `${f.attempts} times`}
+                          </small>
+                        </span>
+                      </div>
+                      <span className="trash-actions">
+                        <button className="btn" onClick={() => void store.retrySync(f.id)}>
+                          Try again
+                        </button>
+                        <ConfirmButton className="btn subtle danger" confirmLabel="Discard? Click again" onConfirm={() => store.discardLocal(f.id)}>
+                          Discard my copy
+                        </ConfirmButton>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
             <p className="sync-line">
               <button
                 className="btn"

@@ -2,6 +2,8 @@
 export const CURSOR_KEY = 'drafter:sync-cursor'
 /** Ids waiting to push; only used when a cursor is present. */
 export const DIRTY_KEY = 'drafter:dirty-ids'
+/** Ids the server refused, with the reason and when to try each again. */
+export const FAILURES_KEY = 'drafter:sync-failures'
 
 /** The small synchronous store this state lives in: localStorage in the app, a Map in tests. */
 export interface KV {
@@ -76,4 +78,48 @@ export function clearDirtyIds(kv: KV = browserKV): void {
 export function prepareFullResync(opts?: { clearDirty?: boolean }, kv: KV = browserKV): void {
   clearSyncCursor(kv)
   if (opts?.clearDirty) clearDirtyIds(kv)
+}
+
+/** A row the server refused. It stays dirty and is pushed again once `nextAt` passes. */
+export interface SyncFailure {
+  id: string
+  /** What the server said, when it said anything. */
+  reason?: string
+  /** Refusals in a row; the wait before the next try doubles with each. */
+  attempts: number
+  /** Epoch ms before which the row is not pushed again (a full exchange sends it anyway). */
+  nextAt: number
+  /** Epoch ms of the first refusal in this run. */
+  firstAt: number
+}
+
+export function readFailures(kv: KV = browserKV): Map<string, SyncFailure> {
+  const out = new Map<string, SyncFailure>()
+  try {
+    const raw = kv.getItem(FAILURES_KEY)
+    const arr = raw ? JSON.parse(raw) : []
+    for (const f of Array.isArray(arr) ? arr : []) {
+      if (!f || typeof f !== 'object' || typeof f.id !== 'string') continue
+      const n = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+      out.set(f.id, {
+        id: f.id,
+        reason: typeof f.reason === 'string' && f.reason ? f.reason : undefined,
+        attempts: Math.max(1, Math.round(n(f.attempts, 1))),
+        nextAt: n(f.nextAt, 0),
+        firstAt: n(f.firstAt, 0),
+      })
+    }
+  } catch {
+    /* a corrupt entry only costs the backoff, never the dirty row */
+  }
+  return out
+}
+
+export function writeFailures(failures: Map<string, SyncFailure>, kv: KV = browserKV): void {
+  try {
+    if (failures.size === 0) kv.removeItem(FAILURES_KEY)
+    else kv.setItem(FAILURES_KEY, JSON.stringify([...failures.values()]))
+  } catch {
+    /* ignore */
+  }
 }

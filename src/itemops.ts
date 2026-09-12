@@ -71,7 +71,7 @@ export interface SyncDecision {
    * three-way merge produced a version the server does not have yet.
    */
   unconfirmed: string[]
-  /** Ids the server rejected (validation/RLS) — drop from the dirty set; do not clamp. */
+  /** Ids the server rejected (validation/RLS). The caller keeps them dirty; they never clamp the cursor. */
   rejected: string[]
   /** Dirty records merged with a concurrent server copy that still differ from it: stamped newer, in `unconfirmed`. */
   remerged: string[]
@@ -117,7 +117,10 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
  * it was in flight has a newer local copy than the version the server echoed
  * back. Those ids count as unconfirmed (not confirmed-and-clean) and, when the
  * server rejected the version we sent, keep their local copy — the rejection
- * was about the copy we sent, not the one the user is now looking at.
+ * was about the copy we sent, not the one the user is now looking at. A
+ * rejected write the user has not touched since is kept too: it stays dirty
+ * and is retried until it lands or the user discards it, because dropping it
+ * is exactly how edits vanished in September.
  *
  * Given `ctx`, a dirty record the server holds a concurrent copy of — one it
  * reports `stale`, or any copy that is neither our push echoed nor the base
@@ -178,15 +181,13 @@ export function applySync(
     for (const r of remote as Item[]) byId.set(r.id, r)
     const sentIds = new Set(sent.map(s => s.id))
     for (const c of current) {
-      // Rejected write the server already has: keep the server copy (unless the
-      // user edited after we sent). Rejected write the server never stored: keep
-      // the local row even if it was not in this push — dropping it here made
-      // places vanish after a full resync.
-      if (rejectedSet.has(c.id) && !superseded.has(c.id) && byId.has(c.id)) continue
       const r = byId.get(c.id)
       if (r) {
         if (c.updatedAt > r.updatedAt) byId.set(c.id, c)
-      } else if (sentIds.has(c.id) || rejectedSet.has(c.id)) {
+      } else if (sentIds.has(c.id) || rejectedSet.has(c.id) || dirty.has(c.id)) {
+        // A write the server never stored (refused, or still waiting out its
+        // backoff) is a pending change, not a ghost: dropping it here made
+        // places vanish after a full resync.
         byId.set(c.id, c)
       }
     }

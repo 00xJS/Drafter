@@ -4,8 +4,19 @@ import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTomb
 import { applyLocalChoice } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
-import { purgeRemote, type SyncResult } from './sync'
-import { clearSyncCursor, prepareFullResync, readCursor, readDirty, writeCursor, writeDirty, type KV } from './syncstate'
+import { purgeTombstone, type SyncResult } from './sync'
+import {
+  clearSyncCursor,
+  prepareFullResync,
+  readCursor,
+  readDirty,
+  readFailures,
+  writeCursor,
+  writeDirty,
+  writeFailures,
+  type KV,
+  type SyncFailure,
+} from './syncstate'
 
 // The sync engine: everything that keeps this device's records and the
 // server's in step, as a plain module with its world injected — the RPC, the
@@ -21,17 +32,22 @@ const PERSIST_MS = 300
 /** A local edit is pushed this long after the last one, so a burst of typing is one round. */
 const PUSH_MS = 2000
 const PERIODIC_MS = 60_000
-/** Kinds the server used to drop silently — keep retrying so they survive a new session. */
-const RETRY_KINDS = new Set(['place', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine'])
+const BACKOFF_BASE_MS = 30_000
+const BACKOFF_CAP_MS = 30 * 60_000
+
+/** How long a row refused `attempts` times in a row waits before the next try: 30s, 1m, 2m … capped at 30 min. */
+export function backoffMs(attempts: number): number {
+  return Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** Math.max(0, attempts - 1))
+}
 
 export interface SyncInfo {
   online: boolean
   lastAt?: string
   /** The session is expired/invalid — the fix is signing in, not waiting. */
   authError: boolean
-  /** Changes waiting to push (dirty set size). */
+  /** Changes waiting to push (dirty set size, refused rows included). Never set in local mode. */
   pending?: number
-  /** Ids the server rejected on the last round (validation/RLS) — no longer retried. */
+  /** Ids the server rejected on the last round (validation/RLS) — still dirty, retried with backoff. */
   rejected?: string[]
 }
 
@@ -90,7 +106,7 @@ export interface SyncEngineDeps {
   /** The sync_posts round trip, or null in local mode — no backend, nothing to sync, nothing "unsynced". */
   rpc: ((outgoing: Item[], since: string | null) => Promise<SyncResult>) | null
   storage: SyncStorage
-  /** Epoch ms; deletions and "last synced" read it. Stamps use newerStamp (Date.now). */
+  /** Epoch ms; backoff, deletions and "last synced" read it. Stamps use newerStamp (Date.now). */
   now?: () => number
   timers?: SyncTimers
 }
@@ -100,6 +116,8 @@ export interface EngineState {
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
   syncInfo: SyncInfo
+  /** Rows the server refused, oldest refusal first. */
+  failures: SyncFailure[]
 }
 
 const defaultTimers: SyncTimers = {
@@ -222,7 +240,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   const now = deps.now ?? (() => Date.now())
   const timers = deps.timers ?? defaultTimers
 
-  let state: EngineState = { items: [], loaded: false, syncInfo: { online: false, authError: false } }
+  let state: EngineState = { items: [], loaded: false, syncInfo: { online: false, authError: false }, failures: [] }
   const listeners = new Set<() => void>()
   const conflictListeners = new Set<(conflicts: EngineConflict[]) => void>()
 
@@ -232,6 +250,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   let dirty = new Set<string>()
   /** The last version the server confirmed of each dirty record: the base a concurrent edit merges against. */
   let shadows = new Map<string, Item>()
+  let failures = new Map<string, SyncFailure>()
 
   let persistTimer: unknown = undefined
   let pushTimer: unknown = undefined
@@ -241,6 +260,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   let inflight: Promise<boolean> | null = null
   /** A local edit landed while a round was in flight: it missed that round's snapshot and gets its own push. */
   let editedMidRound = false
+  /** Ids discarded outright while a round was in flight: its answer must not bring the local copy back. */
+  const removedMidRound = new Set<string>()
   /** The next successful round is a full exchange, whatever the stored cursor says. */
   let forceFull = false
 
@@ -249,12 +270,17 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     for (const l of [...listeners]) l()
   }
 
+  function failureList(): SyncFailure[] {
+    return [...failures.values()].sort((a, b) => a.firstAt - b.firstAt || a.id.localeCompare(b.id))
+  }
+
   function pendingCount(): number {
     return remote ? dirty.size : 0
   }
 
   function saveBookkeeping(): void {
     writeDirty(dirty, kv)
+    writeFailures(failures, kv)
   }
 
   /** Drop bookkeeping for ids with nothing left to push (removed by retainMine, a wipe, an old purge). */
@@ -267,6 +293,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       changed = true
     }
     for (const id of [...shadows.keys()]) if (!dirty.has(id)) shadows.delete(id)
+    for (const id of [...failures.keys()]) {
+      if (dirty.has(id)) continue
+      failures.delete(id)
+      changed = true
+    }
     if (changed) saveBookkeeping()
   }
 
@@ -360,19 +391,22 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }
     // reread after a possible wipe: the bookkeeping belongs to whoever the cache belongs to
     dirty = remote ? readDirty(kv) : new Set()
+    failures = remote ? readFailures(kv) : new Map()
     // Empty local + cloud: a leftover cursor would delta-pull nothing → blank UI
     // while the server still has data (stuck after wipe / sign-out race).
     if (myId && cached.items.length === 0) {
       prepareFullResync({ clearDirty: true }, kv)
       dirty = new Set()
+      failures = new Map()
+      writeFailures(failures, kv)
     }
     shadows = new Map(cached.shadows.filter(s => dirty.has(s.id)).map(s => [s.id, s]))
-    // No blanket re-push of whole kinds on boot: a rejected id of a retried kind stays in
-    // the persisted dirty set, so a new session pushes it again on its own. The
+    // No blanket re-push of whole kinds on boot: a rejected id stays in the
+    // persisted dirty set, so a new session pushes it again on its own. The
     // blanket version re-sent every place, recipe, meal, grocery list, journal
     // entry and event on every load — none of which the server echoed back,
     // so none could ever be confirmed, and all of them read as "n unsynced".
-    publish({ items: ensureProjects(cached.items), loaded: true })
+    publish({ items: ensureProjects(cached.items), loaded: true, failures: failureList() })
     schedulePersist()
     void sync()
   }
@@ -385,8 +419,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     account = nextAccount
     dirty = new Set()
     shadows = new Map()
+    failures = new Map()
     saveBookkeeping()
-    publish({ items: [], syncInfo: { online: false, authError: false } })
+    publish({ items: [], failures: [], syncInfo: { online: false, authError: false } })
   }
 
   /**
@@ -441,11 +476,13 @@ export function createSyncEngine(deps: SyncEngineDeps) {
           if (base) shadows.set(id, base)
         }
         dirty.add(id)
+        // a new version deserves a prompt push, whatever the last one's backoff was
+        failures.delete(id)
       }
       saveBookkeeping()
       if (inflight) editedMidRound = true
     }
-    publish({ items: next })
+    publish({ items: next, failures: remote ? failureList() : state.failures })
     schedulePersist()
     schedulePush()
   }
@@ -552,17 +589,33 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     pruneBookkeeping()
   }
 
-  /** Hard-delete: gone from this device and from the database, no undo. */
-  async function purge(ids: string[]): Promise<void> {
-    const snapshot = state.items
+  /**
+   * "Delete forever": the record becomes a content-free tombstone stamped
+   * newer than it, and that tombstone is an ordinary dirty row — written to
+   * the cache at once, retried like any other push (backoff included when
+   * refused), and dropped from the queue only when the server takes it.
+   * Resolves true once the server has every one of them.
+   */
+  async function purge(ids: string[]): Promise<boolean> {
     const set = new Set(ids)
-    for (const id of ids) {
-      dirty.delete(id)
-      shadows.delete(id)
+    const list = state.items
+    if (!remote) {
+      // no server to tell: gone from this device is gone
+      commit(list.filter(p => !set.has(p.id)))
+      await persistNow()
+      return true
     }
-    saveBookkeeping()
-    replaceItems(snapshot.filter(p => !set.has(p.id)))
-    await purgeRemote(ids, snapshot)
+    const deletedAt = new Date(now()).toISOString()
+    const next = list.map(p => {
+      if (!set.has(p.id) || p.purged) return p
+      const tomb = sanitizeItem(purgeTombstone(p.kind, p.id, newerStamp(p.updatedAt), deletedAt))
+      return tomb ? { ...tomb, ownerId: p.ownerId } : p
+    })
+    commit(next, [...set].filter(id => next.some(p => p.id === id)))
+    // the purge must survive the app being killed before the debounce fires
+    await persistNow()
+    await syncAfterFlight()
+    return ids.every(id => !dirty.has(id))
   }
 
   /** "Keep mine" on a conflict toast: put this device's values back, as a new edit stamped newer than the merge. */
@@ -578,6 +631,44 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       return { ...back, updatedAt: newerStamp(i.updatedAt) }
     })
     if (touched.length > 0) commit(next, touched)
+  }
+
+  /** Push a refused row now rather than when its backoff runs out. */
+  function retry(id: string): Promise<boolean> {
+    const f = failures.get(id)
+    if (f) {
+      failures.set(id, { ...f, nextAt: 0 })
+      saveBookkeeping()
+      publish({ failures: failureList() })
+    }
+    return syncAfterFlight()
+  }
+
+  /**
+   * "Discard my copy" of a refused row: this device's version goes. With a
+   * shadow it is replaced by the server's copy as last confirmed (a delta
+   * round brings anything newer); without one there is no server copy here,
+   * so the row is removed and the next round is a full exchange, which
+   * brings back the server's version if it has one.
+   */
+  function discard(id: string): void {
+    const base = shadows.get(id)
+    dirty.delete(id)
+    shadows.delete(id)
+    failures.delete(id)
+    saveBookkeeping()
+    const list = state.items
+    if (base) {
+      replaceItems(list.map(i => (i.id === id ? base : i)))
+    } else {
+      if (inflight) removedMidRound.add(id)
+      forceFull = true
+      clearSyncCursor(kv)
+      replaceItems(list.filter(i => i.id !== id))
+    }
+    publish({ failures: failureList() })
+    void persistNow()
+    void syncAfterFlight()
   }
 
   // ---- the round ---------------------------------------------------------------
@@ -596,9 +687,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     return null
   }
 
-  /** What goes out: the dirty set (not "updatedAt > cursor") so late/offline stamps still go out; everything in a full exchange. */
-  function outgoingFor(since: string | null): Item[] {
-    return since ? state.items.filter(p => dirty.has(p.id)) : state.items
+  /**
+   * What goes out: the dirty set (not "updatedAt > cursor") so late/offline
+   * stamps still go out. A refused row waits out its backoff — except in a
+   * full exchange, which sends everything.
+   */
+  function outgoingFor(since: string | null, clock: number): Item[] {
+    if (!since) return state.items
+    return state.items.filter(p => dirty.has(p.id) && (failures.get(p.id)?.nextAt ?? 0) <= clock)
   }
 
   /** One round of push-and-pull; sync() is the only caller and serialises it. */
@@ -612,14 +708,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // pushed blind, this device's newer stamp would win last-write-wins and
     // erase the other edit wholesale — the server reports `stale` only when
     // ours is the older one.
-    if (since && outgoingFor(since).some(p => shadows.has(p.id))) {
+    if (since && outgoingFor(since, clock).some(p => shadows.has(p.id))) {
       const pulled = await call([], since)
       if (!pulled) return false
       settle(pulled, [], since, clock)
       since = readCursor(kv)
     }
     editedMidRound = false
-    const outgoing = outgoingFor(since)
+    const outgoing = outgoingFor(since, clock)
     const result = await call(outgoing, since)
     if (!result) return false
     settle(result, outgoing, since, clock)
@@ -632,30 +728,37 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // Merge onto the list as it is NOW, not the snapshot the request was built
     // from: an edit made while the request was in flight must survive it.
     const current = state.items
+    const gone = new Set(result.gone)
     const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
       dirty,
       shadows,
       stale: result.stale,
     })
-    const next = ensureProjects(purgeTombstones(decision.merged, clock))
+    let next = decision.merged
+    // purged for good on the server: removed here, never pushed again
+    if (gone.size > 0 || removedMidRound.size > 0) next = next.filter(i => !gone.has(i.id) && !removedMidRound.has(i.id))
+    next = ensureProjects(purgeTombstones(next, clock))
     if (decision.cursor) writeCursor(decision.cursor, kv)
 
-    // What still has to go out: anything unconfirmed or merged anew. Places,
-    // kitchen and the newer kinds used to be dropped by an older sync_posts
-    // allow-list — a rejected id of those kinds stays dirty so the next
-    // session pushes it again; any other rejected id is dropped.
+    // What still has to go out: anything unconfirmed, merged anew, or refused.
     const retryIds = new Set(decision.unconfirmed)
-    const keepRejected = new Set(
-      decision.rejected.filter(id => {
-        const row = outgoing.find(i => i.id === id) ?? current.find(i => i.id === id)
-        return row != null && RETRY_KINDS.has(row.kind)
-      }),
-    )
-    for (const o of outgoing) if (!retryIds.has(o.id) && !keepRejected.has(o.id)) dirty.delete(o.id)
+    const refused = new Set(decision.rejected)
+    for (const o of outgoing) if (!retryIds.has(o.id) && !refused.has(o.id)) dirty.delete(o.id)
     for (const id of decision.settled) dirty.delete(id)
-    for (const id of decision.remerged) dirty.add(id)
-    for (const id of keepRejected) dirty.add(id)
-    for (const id of decision.rejected) if (!keepRejected.has(id)) dirty.delete(id)
+    for (const id of decision.remerged) {
+      dirty.add(id)
+      failures.delete(id)
+    }
+    // A refused row is never dropped: it stays dirty, waits out a growing
+    // backoff, and is listed in Settings until it lands or is discarded.
+    // Dropping them is how edits lived on one device only in September.
+    for (const id of refused) {
+      dirty.add(id)
+      const prev = failures.get(id)
+      const attempts = (prev?.attempts ?? 0) + 1
+      failures.set(id, { id, reason: result.reasons[id] ?? prev?.reason, attempts, nextAt: clock + backoffMs(attempts), firstAt: prev?.firstAt ?? clock })
+    }
+    for (const id of gone) dirty.delete(id)
 
     // The server now holds what we sent: that is the base for any edit still waiting.
     const remoteById = new Map(result.items!.map(r => [r.id, r]))
@@ -669,13 +772,16 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       if (r) shadows.set(id, r)
     }
     for (const id of [...shadows.keys()]) if (!dirty.has(id)) shadows.delete(id)
+    for (const id of [...failures.keys()]) if (!dirty.has(id)) failures.delete(id)
     saveBookkeeping()
 
     const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
-    const changed = decision.remerged.length > 0 || decision.settled.length > 0 || signature(next) !== signature(current)
+    const changed =
+      decision.remerged.length > 0 || decision.settled.length > 0 || gone.size > 0 || removedMidRound.size > 0 || signature(next) !== signature(current)
     const items = changed ? next : current
     publish({
       items,
+      failures: failureList(),
       syncInfo: {
         online: true,
         lastAt: new Date(clock).toISOString(),
@@ -698,6 +804,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (inflight) return inflight
     inflight = runRound().finally(() => {
       inflight = null
+      removedMidRound.clear()
       if (editedMidRound) {
         editedMidRound = false
         schedulePush()
@@ -781,8 +888,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     importItems,
     retainMine,
     keepMine,
+    retry,
+    discard,
     /** What the engine holds for the next round — for tests and diagnostics. */
-    inspect: () => ({ dirty: [...dirty].sort(), shadows: new Map(shadows), cursor: readCursor(kv), syncing: inflight !== null }),
+    inspect: () => ({ dirty: [...dirty].sort(), shadows: new Map(shadows), failures: failureList(), cursor: readCursor(kv), syncing: inflight !== null }),
   }
 }
 

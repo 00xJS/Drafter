@@ -1660,10 +1660,8 @@ export default function Planner() {
             showToast('Restored')
           }}
           onPurge={id => {
-            store.purge([id]).then(
-              () => showToast('Deleted forever'),
-              e => showToast(`Removed here, but the server refused: ${(e as Error).message}`),
-            )
+            // queued until the server takes it: offline or refused, it stays unsynced and is retried
+            void store.purge([id]).then(done => showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync'))
           }}
           onClose={() => setTrashOpen(false)}
         />
