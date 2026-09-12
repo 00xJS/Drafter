@@ -17,7 +17,7 @@ import { Places } from './Places'
 import { Kitchen } from './Kitchen'
 import { Review } from './Review'
 import { JournalView } from './Journal'
-import { Search, type Command } from './Search'
+import { Search } from './Search'
 import { AttendancePicker } from './AttendancePicker'
 import { TaskEditor } from './TaskEditor'
 import { ProjectEditor } from './ProjectEditor'
@@ -31,6 +31,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { PullToRefresh } from './PullToRefresh'
 import { forgetRetiredKeys } from '../retiredkeys'
+import { buildPaletteCommands } from './planner/commands'
 import { COMPACT_TABS, HOME_TABS, TASKS_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './planner/routes'
 import { Toast } from './planner/Toast'
 import { useCalendarSync } from './planner/useCalendarSync'
@@ -148,28 +149,7 @@ export default function Planner() {
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
 
-  // The command palette's own rows: the things you can do and the places you can
-  // go, beside the search results. Navigation lands on the same segment a tab
-  // tap would; the actions open the same editors the toolbar buttons do.
-  const paletteCommands: Command[] = [
-    { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
-    // reachable by typing, not a quick action: templates and "draft a plan" still
-    // need projects to exist, but adding one has come off the front door
-    { id: 'new-project', label: 'New project', icon: 'plus', quick: false, keywords: 'add create', run: newProject },
-    { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
-    { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
-    { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },
-    { id: 'go-journal', label: 'Journal', icon: 'journal', keywords: 'diary write', run: () => openJournal(localDayKey()) },
-    { id: 'go-tasks', label: 'Tasks', icon: 'tasks', keywords: 'list', run: () => { goTasksTab('list'); setView('tasks') } },
-    { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
-    { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
-    { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
-    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => setView('calendar') },
-    { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
-    { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
-    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
-    { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
-  ]
+  const paletteCommands = buildPaletteCommands({ goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab }, { newTask, newProject, setSettingsOpen })
 
   return (
     <div className="app">
