@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template } from './types'
+import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Note, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
@@ -54,6 +54,11 @@ export interface Store {
   habits: Habit[]
   /** Your routines (personal), in card order. */
   routines: Routine[]
+  /**
+   * Note records (shared with the household, like tasks): pinned first, then the
+   * most recently edited. Project pads (Project.notesHtml) are not in here.
+   */
+  notes: Note[]
   templates: Template[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
@@ -93,6 +98,11 @@ export interface Store {
   onConflict(listener: (conflicts: EngineConflict[]) => void): () => void
   /** Put this device's values back for those conflicts, as a new and newer edit. */
   keepMine(conflicts: EngineConflict[]): void
+}
+
+/** The Notes list order: pinned first, then the most recently edited (ties by id, so the order is stable). */
+export function sortNotes(notes: Note[]): Note[] {
+  return [...notes].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
 }
 
 let shared: SyncEngine | null = null
@@ -223,6 +233,8 @@ export function useItems(myId: string | null = null): Store {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, myId],
   )
+  // Household-shared like tasks: a peer's note shows, so no isMine filter.
+  const notes = useMemo(() => sortNotes(items.filter((i): i is Note => i.kind === 'note' && !i.deletedAt)), [items])
   const templates = useMemo(
     () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
     [items],
@@ -257,6 +269,7 @@ export function useItems(myId: string | null = null): Store {
     reviews,
     habits,
     routines,
+    notes,
     templates,
     allItems: items,
     visibleItems,

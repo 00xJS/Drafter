@@ -528,7 +528,29 @@ export interface Routine extends Owned {
   archivedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine
+/**
+ * A note: one titled page of rich text. Before notes existed each project had a
+ * single pad (Project.notesHtml); those pads are never rewritten into notes —
+ * the Notes screen lists each non-empty one beside these records and still
+ * saves it to its project. Shared with the household, like tasks.
+ */
+export interface Note extends Owned {
+  kind: 'note'
+  id: string
+  /** May be empty on a note that so far is only text; the UI calls it "Untitled note". */
+  title: string
+  /** The sanitized HTML subset Project.notesHtml stores (src/richtext.ts); photos are <img data-media="id">. */
+  body: string
+  /** The project it is about, if any. A note with none is a household note. */
+  projectId?: string
+  /** Kept at the top of the list. */
+  pinned?: boolean
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

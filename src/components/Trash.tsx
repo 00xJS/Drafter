@@ -1,4 +1,5 @@
 import { Item, Project, STATUS_META, Task } from '../types'
+import { htmlToText } from '../richtext'
 import { excerpt, fmtDateTime, timeAgo } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -43,6 +44,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Habit'
     case 'routine':
       return 'Routine'
+    case 'note':
+      return 'Note'
   }
 }
 
@@ -63,7 +66,9 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
               ? `${i.date} · ${excerpt(i.body, 50) || 'no text'}`
               : i.kind === 'event'
                 ? i.title || 'Untitled event'
-                : i.name
+                : i.kind === 'note'
+                  ? i.title || excerpt(htmlToText(i.body), 50) || 'Untitled note'
+                  : i.name
   return (
     <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true">

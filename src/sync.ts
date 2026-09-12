@@ -142,6 +142,8 @@ export function purgeTombstone(kind: Item['kind'], id: string, now: string, dele
       return { ...base, period: 'week', key: '', top: [] }
     case 'calendar':
       return { ...base, name: '', url: '', color: '#888', enabled: false }
+    case 'note':
+      return { ...base, title: '', body: '' }
     default:
       return base
   }

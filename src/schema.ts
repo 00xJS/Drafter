@@ -49,9 +49,11 @@ import {
   Task,
   TaskStatus,
   GithubProjectSync,
+  Note,
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
+import { sanitizeHtml } from './richtext'
 
 // Hand-rolled validation instead of a schema library: JSON backups and pre-v3
 // records still live in the database, so the goal is coerce-and-repair, not
@@ -702,6 +704,38 @@ export function sanitizeRoutine(raw: unknown): Routine | null {
   }
 }
 
+/**
+ * Coerce arbitrary data into a valid Note. The body goes through sanitizeHtml —
+ * the rules RichNotes applies to a project pad on every change and render — so
+ * whatever wrote it (an import, another device, an agent), the store only ever
+ * holds that HTML subset, photos as <img data-media="id">. A live note needs a
+ * title or some body; a tombstone (deletedAt) needs only its id, so a "Delete
+ * forever" with an empty title still reaches every device.
+ */
+export function sanitizeNote(raw: unknown): Note | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const title = str(r.title)?.trim() ?? ''
+  const body = sanitizeHtml(str(r.body) ?? '')
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (!title && !body.trim() && !deletedAt)) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'note',
+    id,
+    title,
+    body,
+    projectId: idOrUndefined(r.projectId),
+    pinned: r.pinned === true || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -807,6 +841,7 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'event') return sanitizeEvent(converted)
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
+  if (converted.kind === 'note') return sanitizeNote(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null
   return sanitizeTask(converted)
 }
