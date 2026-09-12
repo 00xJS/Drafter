@@ -207,7 +207,9 @@ export function useItems(myId: string | null = null): Store {
   const loadedRef = useRef(false)
   const pushTimer = useRef<number | undefined>(undefined)
   const persistTimer = useRef<number | undefined>(undefined)
-  const syncBusy = useRef(false)
+  // the sync in flight, if any: a second call joins it instead of starting
+  // another, so a pull-down during the foreground sync waits for that sync
+  const syncInflight = useRef<Promise<boolean> | null>(null)
 
   const markDirty = (ids: string | string[]) => {
     const dirty = readDirty()
@@ -215,65 +217,68 @@ export function useItems(myId: string | null = null): Store {
     writeDirty(dirty)
   }
 
-  const doSync = async (): Promise<boolean> => {
-    if (syncBusy.current || !loadedRef.current) return false
-    syncBusy.current = true
-    try {
-      const since = readCursor()
-      const dirty = readDirty()
-      const local = itemsRef.current
-      // push the dirty set (not "updatedAt > cursor") so late/offline stamps still go out
-      const outgoing = since ? local.filter(p => dirty.has(p.id)) : local
-      const result = await syncNow(outgoing, pullSince(since))
-      if (result.items === null) {
-        setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError, pending: dirty.size, rejected: s.rejected }))
-        return false
-      }
-      let decision: ReturnType<typeof applySync> | null = null
-      setItems(cur => {
-        decision = applySync(cur, outgoing, result.items!, since, result.rejected, result.reportsRejections)
-        const next = ensureProjects(purgeTombstones(decision.merged))
-        const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
-        return signature(next) === signature(cur) ? cur : next
-      })
-      // React does not promise the updater above ran synchronously; without a
-      // fallback the bookkeeping below would treat every pushed id as confirmed
-      // and drop it from the dirty set.
-      const applied =
-        (decision as ReturnType<typeof applySync> | null) ??
-        applySync(itemsRef.current, outgoing, result.items, since, result.rejected, result.reportsRejections)
-      if (applied.cursor) writeCursor(applied.cursor)
-      // clear confirmed + rejected from dirty; keep unconfirmed for retry.
-      // Places/kitchen used to be dropped by an older sync_posts allow-list —
-      // leave those ids dirty so the next session pushes them again.
-      const still = readDirty()
-      const retry = new Set(applied.unconfirmed)
-      const keepRejected = new Set(
-        applied.rejected.filter(id => {
-          const row = outgoing.find(i => i.id === id) ?? itemsRef.current.find(i => i.id === id)
-          return row != null && RETRY_KINDS.has(row.kind)
-        }),
-      )
-      for (const o of outgoing) {
-        if (retry.has(o.id) || keepRejected.has(o.id)) continue
-        still.delete(o.id)
-      }
-      for (const id of keepRejected) still.add(id)
-      for (const id of applied.rejected) {
-        if (!keepRejected.has(id)) still.delete(id)
-      }
-      writeDirty(still)
-      setSyncInfo({
-        online: true,
-        lastAt: new Date().toISOString(),
-        authError: false,
-        pending: still.size,
-        rejected: applied.rejected.length ? applied.rejected : undefined,
-      })
-      return true
-    } finally {
-      syncBusy.current = false
+  /** One round of push-and-pull; doSync is the only caller and serialises it. */
+  const runSync = async (): Promise<boolean> => {
+    const since = readCursor()
+    const dirty = readDirty()
+    const local = itemsRef.current
+    // push the dirty set (not "updatedAt > cursor") so late/offline stamps still go out
+    const outgoing = since ? local.filter(p => dirty.has(p.id)) : local
+    const result = await syncNow(outgoing, pullSince(since))
+    if (result.items === null) {
+      setSyncInfo(s => ({ online: false, lastAt: s.lastAt, authError: result.authError, pending: dirty.size, rejected: s.rejected }))
+      return false
     }
+    let decision: ReturnType<typeof applySync> | null = null
+    setItems(cur => {
+      decision = applySync(cur, outgoing, result.items!, since, result.rejected, result.reportsRejections)
+      const next = ensureProjects(purgeTombstones(decision.merged))
+      const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
+      return signature(next) === signature(cur) ? cur : next
+    })
+    // React does not promise the updater above ran synchronously; without a
+    // fallback the bookkeeping below would treat every pushed id as confirmed
+    // and drop it from the dirty set.
+    const applied =
+      (decision as ReturnType<typeof applySync> | null) ??
+      applySync(itemsRef.current, outgoing, result.items, since, result.rejected, result.reportsRejections)
+    if (applied.cursor) writeCursor(applied.cursor)
+    // clear confirmed + rejected from dirty; keep unconfirmed for retry.
+    // Places/kitchen used to be dropped by an older sync_posts allow-list —
+    // leave those ids dirty so the next session pushes them again.
+    const still = readDirty()
+    const retry = new Set(applied.unconfirmed)
+    const keepRejected = new Set(
+      applied.rejected.filter(id => {
+        const row = outgoing.find(i => i.id === id) ?? itemsRef.current.find(i => i.id === id)
+        return row != null && RETRY_KINDS.has(row.kind)
+      }),
+    )
+    for (const o of outgoing) {
+      if (retry.has(o.id) || keepRejected.has(o.id)) continue
+      still.delete(o.id)
+    }
+    for (const id of keepRejected) still.add(id)
+    for (const id of applied.rejected) {
+      if (!keepRejected.has(id)) still.delete(id)
+    }
+    writeDirty(still)
+    setSyncInfo({
+      online: true,
+      lastAt: new Date().toISOString(),
+      authError: false,
+      pending: still.size,
+      rejected: applied.rejected.length ? applied.rejected : undefined,
+    })
+    return true
+  }
+  const doSync = (): Promise<boolean> => {
+    if (!loadedRef.current) return Promise.resolve(false)
+    if (syncInflight.current) return syncInflight.current
+    syncInflight.current = runSync().finally(() => {
+      syncInflight.current = null
+    })
+    return syncInflight.current
   }
   const doSyncRef = useRef(doSync)
   doSyncRef.current = doSync

@@ -24,6 +24,7 @@ export type IconName =
   | 'search'
   | 'settings'
   | 'plus'
+  | 'refresh'
   | 'brand'
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -117,6 +118,13 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  // a circular arrow: the pull-to-refresh disc, spun by CSS while a sync runs
+  refresh: (
+    <>
+      <path d="M20 12a8 8 0 1 1-2.6-5.9L20 8.4" />
+      <path d="M20 4v4.4h-4.4" />
+    </>
+  ),
   brand: <path d="M7 4.6h4.4a7.4 7.4 0 0 1 0 14.8H7z" />,
 }
 

@@ -17,10 +17,12 @@ interface PaneProps {
   getLatest(id: string): Project | undefined
   onSave(p: Project): void
   onCreateTask(title: string, projectId: string): void
+  /** Back to the index of every project's notes — the pad's only way out now that no bar selects projects. */
+  onBack(): void
 }
 
 /** One project's notes pad, autosaving as you type (debounced). */
-function NotesPane({ project, getLatest, onSave, onCreateTask }: PaneProps) {
+function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PaneProps) {
   const [text, setText] = useState(() => noteHtml(project))
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
   const [dirty, setDirty] = useState(false)
@@ -71,6 +73,9 @@ function NotesPane({ project, getLatest, onSave, onCreateTask }: PaneProps) {
   return (
     <div className="notes-page">
       <header className="notes-page-head">
+        <button type="button" className="btn subtle notes-back" onClick={onBack}>
+          All notes
+        </button>
         <h2 className="view-title">
           <span className="pdot" style={{ background: project.color }} /> {project.emoji ? `${project.emoji} ` : ''}
           {project.name} · Notes
@@ -83,17 +88,20 @@ function NotesPane({ project, getLatest, onSave, onCreateTask }: PaneProps) {
 
 interface Props {
   projects: Project[]
-  /** The project selected in the project bar, if any. */
+  /** The project whose pad is open; undefined shows the index of every project's notes. */
   project?: Project
   getLatest(id: string): Project | undefined
   onSave(p: Project): void
+  /** Open one project's pad. A selection local to the Notes segment — it must never filter the other views. */
   onSelectProject(id: string): void
+  /** Close the pad and show the index again. */
+  onBack(): void
   onNewProject(): void
   onCreateTask(title: string, projectId: string): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onNewProject, onCreateTask }: Props) {
-  if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} onCreateTask={onCreateTask} />
+export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask }: Props) {
+  if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} onCreateTask={onCreateTask} onBack={onBack} />
 
   const visible = projects.filter(p => p.status !== 'archived')
   if (visible.length === 0) {
@@ -114,7 +122,7 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
     <div className="notes-index">
       <div className="toolbar">
         <h2 className="view-title">Notes</h2>
-        <span className="cal-hint">Pick a project to open its pad, or select one in the bar above</span>
+        <span className="cal-hint">Pick a project to open its pad</span>
       </div>
       <div className="project-cards notes-cards">
         {visible.map(p => {

@@ -118,7 +118,7 @@ describe('the journal is two taps away, and never moves under the caret', () => 
   it('keeps the phone to five tabs and no More drawer', () => {
     // Board, Bills and Notes moved into the Tasks tab as segments, so the
     // catch-all sheet is gone — its data and its open-state with it.
-    const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const FILTER_KEY'))
+    const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const CAL_MODE_KEY'))
     expect(bar.match(/id: '/g)).toHaveLength(5)
     expect(planner).not.toMatch(/MORE_VIEWS/)
     expect(planner).not.toMatch(/moreOpen/)
@@ -128,6 +128,64 @@ describe('the journal is two taps away, and never moves under the caret', () => 
     expect(planner).toMatch(/onOpenJournal=\{\(\) => openJournal\(localDayKey\(\)\)\}/)
     // openJournal moves Home to its journal segment and opens the day asked for
     expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[\s\S]*?setJournalOpenDate\(date\)[\s\S]*?setHomeTab\('journal'\)[\s\S]*?setView\('home'\)/)
+  })
+})
+
+describe('one home project: the bar and its filter are gone', () => {
+  it('no longer reads, writes or applies a project filter', () => {
+    // a value a device saved before the update must not silently hide tasks;
+    // the key is retired in retiredkeys.ts, so Planner never names it
+    expect(planner).not.toMatch(/drafter:project-filter/)
+    expect(planner).not.toMatch(/FILTER_KEY|projectFilter|setProjectFilter|activeFilter|filterProject|barProjects/)
+    expect(planner).toMatch(/forgetRetiredKeys\(\)/)
+  })
+
+  it('has no project bar, and no view narrowed to one project', () => {
+    expect(planner).not.toMatch(/project-bar|pchip/)
+    expect(planner).not.toMatch(/projects=\{filterProject/)
+    expect(planner.match(/projects=\{store\.projects\}/g)!.length).toBeGreaterThanOrEqual(4)
+    // the only narrowing left is the household's Mine / Everyone
+    expect(planner).toMatch(/const filteredTasks = useMemo\(\(\) => \{[\s\S]*?return store\.tasks\s*\}, \[store\.tasks, mineOnly, inHousehold, household\.myId\]\)/)
+    expect(planner).not.toMatch(/showProject/)
+  })
+
+  it('keeps Mine / Everyone, at the right of the Tasks segment row', () => {
+    expect(planner).toMatch(/className="people-tab-seg tasks-seg"[\s\S]{0,900}\{inHousehold && \([\s\S]{0,80}className="segmented mine-seg"/)
+    expect([...planner.matchAll(/localStorage\.setItem\('drafter:mine-only'/g)]).toHaveLength(1)
+  })
+
+  it('keeps the switch out of the Tasks tablist, as a named group beside it', () => {
+    // VoiceOver reads a tablist's children as tabs; Mine / Everyone are not
+    expect(planner).toMatch(/<div className="people-tab-seg tasks-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
+    expect(planner).toMatch(/className="segmented mine-seg" role="group" aria-label="Whose tasks"/)
+  })
+
+  it('says so on Home and Calendar when Mine is on, with the way off', () => {
+    // Mine survives a relaunch and the launch lands on Home, where there is
+    // no switch: a narrowed screen must never be a silent one
+    expect(planner).toMatch(/\{inHousehold && mineOnly && \(view === 'home' \|\| view === 'calendar'\) && \(\s*<button type="button" className="mine-note" onClick=\{\(\) => setMineOnly\(false\)\}>/)
+  })
+
+  it('starts a new user with a project, from a button that exists', () => {
+    // the + Project chip went with the project bar; the hero offers its own
+    expect(today).not.toMatch(/\+ Project<\/strong>/)
+    expect(today).toMatch(/<button className="btn primary" onClick=\{onNewProject\}>\s*\+ New project/)
+    expect(planner).toMatch(/<Today\b[\s\S]*?onNewProject=\{newProject\}/)
+  })
+
+  it("selects a project for Notes locally, never through a global filter", () => {
+    expect(planner).toMatch(/const \[notesProjectId, setNotesProjectId\] = useState<string \| null>\(null\)/)
+    expect(planner).toMatch(/onSelectProject=\{id => setNotesProjectId\(id\)\}/)
+    expect(planner).toMatch(/onBack=\{\(\) => setNotesProjectId\(null\)\}/)
+    // a place within a visit, not a preference: nothing persists it
+    expect(planner).not.toMatch(/NOTES_PROJECT_KEY|localStorage\.setItem\('drafter:notes/)
+    // "Open notes" from the project editor lands on that pad for this visit only
+    expect(planner).toMatch(/onOpenNotes=\{p => \{[\s\S]*?setNotesProjectId\(p\.id\)[\s\S]*?goTasksTab\('notes'\)[\s\S]*?setView\('tasks'\)/)
+    expect(planner).not.toMatch(/onOpenNotes=\{p => \{[\s\S]{0,300}setTasksTab\(/)
+  })
+
+  it('keeps "New project" reachable by typing but off the quick actions', () => {
+    expect(planner).toMatch(/id: 'new-project'[^\n]*quick: false/)
   })
 })
 

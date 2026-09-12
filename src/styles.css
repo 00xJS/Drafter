@@ -2324,21 +2324,8 @@ textarea {
   color: var(--muted);
 }
 
-/* project bar under the top bar */
-.project-bar {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 8px 20px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.project-bar::-webkit-scrollbar {
-  display: none;
-}
-
+/* project chips: the Board's cards, Today's stalled list and the notes index
+   name a project with one; nothing selects projects with them any more */
 .pchip {
   display: inline-flex;
   align-items: center;
@@ -2354,19 +2341,6 @@ textarea {
 }
 .pchip:hover {
   background: var(--surface-2);
-}
-.pchip.on {
-  background: var(--inverse-bg);
-  color: var(--inverse-text);
-  border-color: var(--text);
-}
-.pchip.on .pdot {
-  box-shadow: 0 0 0 2px rgba(15, 17, 21, 0.35);
-}
-.pchip.add,
-.pchip.edit {
-  border-style: dashed;
-  color: var(--muted);
 }
 .pchip.static {
   padding: 1px 8px 1px 4px;
@@ -3093,9 +3067,6 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  .project-bar {
-    padding: 8px 12px;
-  }
   .today-grid {
     grid-template-columns: 1fr;
   }
@@ -3939,96 +3910,6 @@ textarea {
   }
 }
 
-.more-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 45;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.more-sheet {
-  width: 100%;
-  max-width: 520px;
-  background: var(--surface);
-  border-radius: 16px 16px 0 0;
-  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
-}
-.more-handle {
-  width: 36px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--border);
-  margin: 4px auto 10px;
-}
-.more-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.more-head h2 {
-  margin: 0;
-  font-size: 1.0625rem;
-}
-.more-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.more-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  padding: 12px 10px;
-  margin: 0 -10px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  min-height: 52px;
-}
-.more-item:hover,
-.more-item.on {
-  background: var(--surface-2);
-}
-.more-item.on {
-  color: var(--accent-text);
-}
-.more-item-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: var(--surface-2);
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-}
-.more-item.on .more-item-icon {
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
-.more-item-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.more-item-copy strong {
-  font-size: 0.9375rem;
-}
-.more-item-copy small {
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
 /* templates + AI plan */
 .plan-list {
   list-style: none;
@@ -4103,6 +3984,21 @@ textarea {
 }
 .mine-seg {
   margin-left: auto;
+}
+/* Home and Calendar when the household's Mine filter is on: the switch is on
+   Tasks, so this is the only sign the screen is narrowed — and the way off */
+.mine-note {
+  display: block;
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .error-hero .error-detail {
@@ -4246,11 +4142,6 @@ textarea {
   }
   .person-actions .btn {
     flex: 1 1 45%;
-  }
-  /* the project bar must never hide a project off-screen on a phone */
-  .project-bar {
-    flex-wrap: wrap;
-    overflow-x: visible;
   }
 }
 
@@ -4850,6 +4741,18 @@ textarea {
 /* ---------- Kitchen ---------- */
 .people-tab-seg {
   margin: 4px 0 14px;
+}
+/* the household's Mine / Everyone sits at the right of the Tasks segment row
+   (.mine-seg pushes it there); on a narrow phone it wraps under the segments */
+.tasks-seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* the pad's way back to the index, left of the title */
+.notes-back {
+  margin-right: 12px;
 }
 .people-toolbar {
   display: flex;
@@ -6476,7 +6379,6 @@ textarea {
 /* --- Touch feedback. Rows and buttons dim on press rather than flashing, and
    an active tab icon springs — the small physical responses iOS trains for. */
 .native .btn:active,
-.native .more-item:active,
 .native .card:active,
 .native .stat-jump:active,
 .native .seg:active {
@@ -6498,7 +6400,9 @@ textarea {
    Timeline) become a filled track with a raised thumb that stretches the width,
    the way UISegmentedControl does — not a row of separate buttons. Scoped to
    those container classes so the grocery, settings and other segmented controls
-   keep their own shape. */
+   keep their own shape. The household's Mine / Everyone shares the Tasks row
+   (.tasks-seg), so on iOS it becomes a second full-width track on its own line,
+   consistent with the switchers above it. */
 .native .people-tab-seg .segmented,
 .native .segmented.cal-mode {
   display: flex;
@@ -6528,4 +6432,74 @@ textarea {
   color: var(--accent-text);
   border: none;
   box-shadow: var(--shadow-sm);
+}
+
+/* --- Pull to refresh. Only the disc moves: the body is the scroller and the
+   top bar is sticky, so translating .content would drag both. The disc sits
+   just under the bar (tucked behind it at rest): z 10 puts it above content
+   and its sticky headers (2–5) but under the top bar (20), so it slides out
+   from beneath the bar rather than across it; the tab bar (40) and every
+   sheet (45+) stay above it. Its travel is React state, not an
+   animation, so it follows the finger under Reduce Motion too; the spring only
+   plays on the way home. */
+.native .ptr {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top) - 44px);
+  z-index: 10;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  transition:
+    transform 0.2s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.15s;
+}
+.native .ptr-disc {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-md);
+  color: var(--text-2);
+}
+.native .ptr-disc svg {
+  transition: transform 0.1s;
+}
+/* past the line: the accent says letting go will do something */
+.native .ptr-armed .ptr-disc {
+  color: var(--accent-text);
+  border-color: var(--accent-ring);
+}
+.native .ptr-refreshing .ptr-disc svg {
+  /* a quick turn: the phone sheet caps every animation at 400ms so Reduce
+     Motion never takes away something long enough to miss */
+  animation: ptr-spin 0.4s linear infinite;
+}
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* "Refreshing…" for VoiceOver only; the disc is the visual */
+.native .ptr-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* the global rule freezes the spin, so busy has to read some other way: the
+     armed tint stays on and the disc dims — a state, not a motion */
+  .native .ptr-refreshing .ptr-disc svg {
+    animation: none;
+  }
+  .native .ptr-refreshing .ptr-disc {
+    color: var(--accent-text);
+    border-color: var(--accent-ring);
+    opacity: 0.7;
+  }
 }

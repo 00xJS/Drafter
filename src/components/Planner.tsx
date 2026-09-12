@@ -40,7 +40,9 @@ import { Settings } from './Settings'
 import { Admin } from './Admin'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Icon, type IconName } from './Icon'
+import { PullToRefresh } from './PullToRefresh'
 import { fetchAdminMe } from '../admin'
+import { forgetRetiredKeys } from '../retiredkeys'
 
 // Each tab that shows the same data more than one way holds those ways as
 // segments instead of splitting into peer tabs: Home holds the day, the week
@@ -102,7 +104,6 @@ const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
   { id: 'people', icon: 'people', label: 'People' },
 ]
 
-const FILTER_KEY = 'drafter:project-filter'
 const CAL_MODE_KEY = 'drafter:calendar-mode'
 const TASKS_TAB_KEY = 'drafter:tasks-tab'
 const PEOPLE_TAB_KEY = 'drafter:people-tab'
@@ -118,13 +119,6 @@ export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
   const [view, setView] = useState<View>('home')
-  const [projectFilter, setProjectFilter] = useState<string>(() => {
-    try {
-      return localStorage.getItem(FILTER_KEY) ?? 'all'
-    } catch {
-      return 'all'
-    }
-  })
   const [calMode, setCalMode] = useState<CalendarMode>(() => {
     try {
       const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
@@ -155,6 +149,12 @@ export default function Planner() {
   }
   /** Move the Tasks segment for this visit only. */
   const [tasksTab, goTasksTab] = useState<TasksTab>(storedTasksTab)
+  /** The project whose notepad the Notes segment is showing; null is the index
+   *  of every project's notes. Not persisted: it is a place within a visit,
+   *  not a preference, and a remembered pad would reopen on a project the
+   *  person may have stopped thinking about. It is the only project selection
+   *  left in the app — nothing filters the other views any more. */
+  const [notesProjectId, setNotesProjectId] = useState<string | null>(null)
   /** Move the People segment for this visit only. */
   const [peopleTab, goPeopleTab] = useState<PeopleTab>(storedPeopleTab)
   /** Home's segment. It is not persisted: tapping Home always returns to the
@@ -231,13 +231,9 @@ export default function Planner() {
   const [syncing, setSyncing] = useState(false)
   const toastTimer = useRef<number | undefined>(undefined)
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(FILTER_KEY, projectFilter)
-    } catch {
-      /* ignore */
-    }
-  }, [projectFilter])
+  // the multi-project bar is gone; a filter a device saved before the update
+  // must not silently hide tasks, so it is dropped rather than read
+  useEffect(() => forgetRetiredKeys(), [])
   useEffect(() => {
     try {
       localStorage.setItem(CAL_MODE_KEY, calMode)
@@ -452,7 +448,7 @@ export default function Planner() {
     }
     if (parsed.capture) {
       // through newTask, so the quick action and the + button file a new task
-      // the same way — including into the project the list is filtered to
+      // the same way
       newTask(
         {
           title: parsed.capture.title,
@@ -585,13 +581,13 @@ export default function Planner() {
     household.myId,
   )
 
-  const activeFilter = projectFilter !== 'all' && projectMap.has(projectFilter) ? projectFilter : 'all'
+  // Every view reads this, so the household's Mine / Everyone applies app-wide;
+  // there is no project filter any more — the person is always on their one
+  // home project, and every view gets the full set.
   const filteredTasks = useMemo(() => {
-    let list = activeFilter === 'all' ? store.tasks : store.tasks.filter(t => t.projectId === activeFilter)
-    if (mineOnly && inHousehold && household.myId) list = list.filter(t => (t.assigneeId ? t.assigneeId === household.myId : t.ownerId === household.myId || !t.ownerId))
-    return list
-  }, [store.tasks, activeFilter, mineOnly, inHousehold, household.myId])
-  const barProjects = useMemo(() => store.projects.filter(p => p.status !== 'archived'), [store.projects])
+    if (mineOnly && inHousehold && household.myId) return store.tasks.filter(t => (t.assigneeId ? t.assigneeId === household.myId : t.ownerId === household.myId || !t.ownerId))
+    return store.tasks
+  }, [store.tasks, mineOnly, inHousehold, household.myId])
 
   /**
    * Planning a meal always writes its week's grocery list in the same round —
@@ -751,7 +747,7 @@ export default function Planner() {
   const openTask = (task: Task) => setEditor({ task })
   const newTask = (preset?: Partial<Task>, opts?: { capture?: boolean }) =>
     setEditor({
-      preset: { ...(activeFilter !== 'all' ? { projectId: activeFilter } : {}), ...preset },
+      preset,
       capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
   const openProject = (project: Project) => setProjectEditor({ project })
@@ -763,7 +759,7 @@ export default function Planner() {
    * said where it went, so a merge that moves it (a project, a date) says so
    * again with its own undo, and a date the toast already announced is kept —
    * the model may add to the task, not contradict what was read out. Bypasses
-   * newTask on purpose: an active project filter must not project a capture.
+   * newTask on purpose: a capture lands exactly as typed, with no preset of its own.
    */
   const captureTask = (line: string) => {
     const now = new Date()
@@ -902,7 +898,8 @@ export default function Planner() {
     if (count > 0 && !window.confirm(`Delete “${p.name}”? Its ${count} task${count === 1 ? '' : 's'} stay, unassigned.`)) return
     store.remove(p.id)
     setProjectEditor(null)
-    if (activeFilter === p.id) setProjectFilter('all')
+    // a deleted project's notepad closes back to the index
+    setNotesProjectId(cur => (cur === p.id ? null : cur))
     showToast(`Deleted project “${p.name}”`, () => store.restore([p.id]))
   }
 
@@ -1035,20 +1032,34 @@ export default function Planner() {
     })
   }
 
+  /**
+   * One refresh for both the header pill and the pull-down: the set that runs
+   * when the app comes back to the foreground — the items sync, the calendar
+   * feeds, and what moved in Google or Outlook. allSettled so one failing feed
+   * cannot stop the items sync; each piece reports its own error in its own
+   * place. The GitHub board pull and the weather card refresh themselves on
+   * foreground and are left to their own timers here.
+   */
   const manualSync = async () => {
     setSyncing(true)
-    await store.syncNowManual()
-    setSyncing(false)
+    try {
+      await Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])
+    } finally {
+      setSyncing(false)
+    }
   }
 
-  const filterProject = activeFilter !== 'all' ? projectMap.get(activeFilter) : undefined
+  // a map lookup so an id whose project was deleted degrades to the index
+  const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
 
   // The command palette's own rows: the things you can do and the places you can
   // go, beside the search results. Navigation lands on the same segment a tab
   // tap would; the actions open the same editors the toolbar buttons do.
   const paletteCommands: Command[] = [
     { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
-    { id: 'new-project', label: 'New project', icon: 'plus', quick: true, keywords: 'add create', run: newProject },
+    // reachable by typing, not a quick action: templates and "draft a plan" still
+    // need projects to exist, but adding one has come off the front door
+    { id: 'new-project', label: 'New project', icon: 'plus', quick: false, keywords: 'add create', run: newProject },
     { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
     { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },
@@ -1133,47 +1144,6 @@ export default function Planner() {
         </button>
       </header>
 
-      {store.loaded && (
-        <div className="project-bar" role="tablist" aria-label="Projects">
-          <button className={activeFilter === 'all' ? 'pchip on' : 'pchip'} onClick={() => setProjectFilter('all')}>
-            All projects
-          </button>
-          {barProjects.map(p => (
-            <button
-              key={p.id}
-              className={activeFilter === p.id ? 'pchip on' : 'pchip'}
-              onClick={() => setProjectFilter(p.id)}
-              onDoubleClick={() => openProject(p)}
-              title="Click to filter · double-click to edit"
-            >
-              <span className="pdot" style={{ background: p.color }} />
-              {p.emoji && <span className="pchip-emoji">{p.emoji}</span>}
-              <span className="pchip-name">{p.name}</span>
-            </button>
-          ))}
-          {filterProject && (
-            <>
-              <button className="pchip edit" onClick={() => openProject(filterProject)} aria-label="Edit project">
-                ✎
-              </button>
-            </>
-          )}
-          <button className="pchip add" onClick={newProject}>
-            + Project
-          </button>
-          {inHousehold && (
-            <span className="segmented mine-seg">
-              <button className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
-                Mine
-              </button>
-              <button className={!mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(false)}>
-                Everyone
-              </button>
-            </span>
-          )}
-        </div>
-      )}
-
       {store.syncInfo.authError && (
         <div className="auth-banner">
           Your session expired — changes are staying on this device only.
@@ -1190,9 +1160,22 @@ export default function Planner() {
         </div>
       )}
 
+      {/* iOS: drag down from the top of a tab to refresh — the same set the
+          foreground resume runs. Off while an editor or sheet owns the screen;
+          the day sheet lives inside main and is refused by the touch target. */}
+      <PullToRefresh enabled={!editor && !projectEditor && !eventEditor && !attendance && !searchOpen && !settingsOpen && !trashOpen && !adminOpen} onRefresh={manualSync} />
+
       <main className="content">
         {store.loaded && (
           <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
+            {/* Mine is remembered across launches and the switch lives on Tasks,
+                so a Home or Calendar that opens already narrowed says so — and
+                offers the way off — rather than quietly hiding the others' tasks */}
+            {inHousehold && mineOnly && (view === 'home' || view === 'calendar') && (
+              <button type="button" className="mine-note" onClick={() => setMineOnly(false)}>
+                Showing only your tasks · Show everyone
+              </button>
+            )}
             {view === 'home' && (
               <>
                 {/* one Home across three time horizons: the day, the week’s
@@ -1230,13 +1213,14 @@ export default function Planner() {
                     onPlanOccasion={planOccasion}
                     onSaw={sawThem}
                     onSaveReview={r => store.upsert(r)}
-                    projects={filterProject ? [filterProject] : store.projects}
+                    projects={store.projects}
                     projectMap={projectMap}
                     events={allEvents}
                     sourceMap={sourceMap}
                     onPlan={planForEvent}
                     onOpen={openTask}
                     onOpenProject={openProject}
+                    onNewProject={newProject}
                     onStatus={changeStatus}
                     onDefer={defer}
                     onDeferAll={deferAll}
@@ -1327,7 +1311,7 @@ export default function Planner() {
                   <Calendar
                     view={calMode}
                     tasks={filteredTasks}
-                    projects={filterProject ? [filterProject] : store.projects}
+                    projects={store.projects}
                     projectMap={projectMap}
                     people={store.people}
                     meals={store.meals}
@@ -1354,7 +1338,7 @@ export default function Planner() {
                   />
                 ) : (
                   <Roadmap
-                    projects={filterProject ? [filterProject] : store.projects}
+                    projects={store.projects}
                     tasks={store.tasks}
                     events={allEvents}
                     sourceMap={sourceMap}
@@ -1369,14 +1353,27 @@ export default function Planner() {
               <>
                 {/* one workspace, four lenses on the same project data — the list,
                     the board, the bills and the project notes */}
-                <div className="people-tab-seg tasks-seg" role="tablist" aria-label="Tasks view">
-                  <span className="segmented">
+                <div className="people-tab-seg tasks-seg">
+                  <span className="segmented" role="tablist" aria-label="Tasks view">
                     {TASKS_TABS.map(t => (
                       <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>
                         {t.label}
                       </button>
                     ))}
                   </span>
+                  {/* whose tasks, not which lens — so a group beside the tablist,
+                      not a tab; it narrows Today, the list and the board alike
+                      (see filteredTasks) */}
+                  {inHousehold && (
+                    <span className="segmented mine-seg" role="group" aria-label="Whose tasks">
+                      <button type="button" className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
+                        Mine
+                      </button>
+                      <button type="button" className={!mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(false)}>
+                        Everyone
+                      </button>
+                    </span>
+                  )}
                 </div>
                 {tasksTab === 'list' && (
                   <TasksTable
@@ -1395,7 +1392,6 @@ export default function Planner() {
                     tasks={filteredTasks}
                     projects={projectMap}
                     members={household.info?.members ?? []}
-                    showProject={activeFilter === 'all'}
                     onOpen={openTask}
                     onStatus={changeStatus}
                     onNew={s => newTask({ status: s })}
@@ -1414,10 +1410,11 @@ export default function Planner() {
                 {tasksTab === 'notes' && (
                   <NotesView
                     projects={store.projects}
-                    project={filterProject}
+                    project={notesProject}
                     getLatest={id => store.projects.find(x => x.id === id)}
                     onSave={p => store.upsert(p)}
-                    onSelectProject={id => setProjectFilter(id)}
+                    onSelectProject={id => setNotesProjectId(id)}
+                    onBack={() => setNotesProjectId(null)}
                     onNewProject={newProject}
                     onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
                   />
@@ -1557,9 +1554,11 @@ export default function Planner() {
           tasks={projectEditor.project ? store.tasks.filter(t => t.projectId === projectEditor.project!.id) : []}
           getLatest={id => store.projects.find(x => x.id === id)}
           onSave={p => {
+            // a new project just closes the editor: the person opened it from
+            // Today, the Timeline or the palette and stays put; it shows up in
+            // the Board's chips and on the Timeline on its own
             store.upsert(p)
             setProjectEditor(null)
-            if (!projectEditor.project) setProjectFilter(p.id)
           }}
           onDelete={id => {
             const p = store.projects.find(x => x.id === id)
@@ -1568,7 +1567,7 @@ export default function Planner() {
           onClose={() => setProjectEditor(null)}
           onOpenNotes={p => {
             setProjectEditor(null)
-            setProjectFilter(p.id)
+            setNotesProjectId(p.id)
             goTasksTab('notes')
             setView('tasks')
           }}
@@ -1577,7 +1576,11 @@ export default function Planner() {
             store.upsert(p)
             for (const t of ts) store.upsert(t)
             setProjectEditor(null)
-            setProjectFilter(p.id)
+            // a template or a drafted plan just made a batch of dated tasks; the
+            // board, chips on, is where they show as a group (for this visit
+            // only — the toast names the project)
+            goTasksTab('board')
+            setView('tasks')
             showToast(`${projectEditor.project ? 'Added' : 'Created'} ${ts.length} task${ts.length === 1 ? '' : 's'} in “${p.name}”`)
           }}
           onSaveTemplate={t => {

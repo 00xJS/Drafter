@@ -26,6 +26,7 @@ import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjec
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
+import { lockAxis } from '../pull'
 import { dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
@@ -53,6 +54,8 @@ interface Props {
   onPlan(ev: CalendarEvent): void
   onOpen(t: Task): void
   onOpenProject(p: Project): void
+  /** The welcome hero's first step: there is no project bar to start one from. */
+  onNewProject(): void
   onStatus(id: string, s: TaskStatus): void
   onDefer(id: string, day: Date): void
   onDeferAll(ids: string[], day: Date): void
@@ -243,9 +246,12 @@ function TaskRow({
           const ddx = e.touches[0].clientX - d.x
           const ddy = e.touches[0].clientY - d.y
           if (d.axis === '?') {
-            if (Math.abs(ddx) < 6 && Math.abs(ddy) < 6) return
-            d.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y'
-            if (d.axis === 'x') setDragging(true)
+            // the same dead zone and tie-break as the pull-down, so a diagonal
+            // start is claimed by exactly one of them
+            const axis = lockAxis(ddx, ddy)
+            if (!axis) return
+            d.axis = axis
+            if (axis === 'x') setDragging(true)
           }
           if (d.axis !== 'x') return
           swiped.current = true
@@ -352,6 +358,7 @@ export function Today({
   onPlan,
   onOpen,
   onOpenProject,
+  onNewProject,
   onStatus,
   onDefer,
   onDeferAll,
@@ -490,11 +497,14 @@ export function Today({
       <div className="empty-hero">
         <h2>Welcome to your planner</h2>
         <p>
-          Create a project from the <strong>+ Project</strong> chip, then add tasks with due dates. This page becomes
-          your daily driver: what's overdue, what's due today, and what the week looks like.
+          Start with a project, then add tasks with due dates. This page becomes your daily driver: what's overdue,
+          what's due today, and what the week looks like.
         </p>
         <p>
-          <button className="btn primary" onClick={() => onNew()}>
+          <button className="btn primary" onClick={onNewProject}>
+            + New project
+          </button>{' '}
+          <button className="btn" onClick={() => onNew()}>
             + New task
           </button>
         </p>

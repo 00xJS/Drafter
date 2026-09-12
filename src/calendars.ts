@@ -215,6 +215,12 @@ export interface GooglePushState {
   error?: string
   pending: boolean
   pushNow(): Promise<void>
+  /**
+   * Fetch what moved on the other side without pushing first — the pass the
+   * foreground resume runs, and what pull-to-refresh asks for. pushNow only
+   * pulls after it has pushed, so with nothing dirty it never looks.
+   */
+  pullNow(): Promise<void>
 }
 
 export interface GoogleChange {
@@ -319,9 +325,21 @@ export function useGooglePush(
     return () => window.clearTimeout(timer.current)
   }, [items, enabled, pushNow])
 
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
+  const pullNow = useCallback(async () => {
+    if (!enabledRef.current || !onPulledRef.current) return
+    try {
+      const changes = await pullGoogleChanges()
+      if (changes.length) onPulledRef.current?.(changes)
+    } catch {
+      /* pull is best-effort */
+    }
+  }, [])
+
   useEffect(() => {
     if (!enabled || !onPulledRef.current) return
-    const pull = () => pullGoogleChanges().then(c => c.length && onPulledRef.current?.(c)).catch(() => {})
+    const pull = () => pullNow()
     const onVisible = () => {
       if (document.visibilityState === 'visible') pull()
     }
@@ -332,9 +350,9 @@ export function useGooglePush(
       window.clearInterval(t)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [enabled])
+  }, [enabled, pullNow])
 
-  return { ...state, pushNow }
+  return { ...state, pushNow, pullNow }
 }
 
 /** Forget the push cursor so the next push re-mirrors everything (after connecting or reconnecting). */
@@ -380,31 +398,36 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
   // pseudo-sources (task mirrors) are not feeds to fetch
   const enabled = sources.filter(s => s.enabled && s.url !== GOOGLE_PUSH_URL && !s.url.startsWith('ms-push:'))
   const signature = enabled.map(s => s.id + '|' + s.url).join('\n')
-  const busy = useRef(false)
+  // the fetch in flight, if any: a refresh asked for mid-fetch (the pull-down
+  // right after a foreground resume) waits for that one rather than returning
+  // at once and reporting done while the feeds are still loading
+  const inflight = useRef<Promise<void> | null>(null)
   const sigRef = useRef(signature)
   sigRef.current = signature
   const sourcesRef = useRef(enabled)
   sourcesRef.current = enabled
 
-  const refresh = useCallback(async () => {
-    if (busy.current) return
+  const refresh = useCallback((): Promise<void> => {
+    if (inflight.current) return inflight.current
     const list = sourcesRef.current
     if (list.length === 0) {
       setState({ events: [], errors: {}, names: {}, loading: false })
       idbSet('posts', CACHE_KEY, { at: new Date().toISOString(), events: [], errors: {}, names: {}, signature: '' }).catch(() => {})
-      return
+      return Promise.resolve()
     }
-    busy.current = true
     setState(s => ({ ...s, loading: true, error: undefined }))
-    try {
-      const fresh = await fetchEvents(list)
-      setState({ ...fresh, lastAt: fresh.at, loading: false })
-      idbSet('posts', CACHE_KEY, { ...fresh, signature: sigRef.current }).catch(() => {})
-    } catch (e) {
-      setState(s => ({ ...s, loading: false, error: (e as Error).message }))
-    } finally {
-      busy.current = false
-    }
+    inflight.current = fetchEvents(list)
+      .then(fresh => {
+        setState({ ...fresh, lastAt: fresh.at, loading: false })
+        idbSet('posts', CACHE_KEY, { ...fresh, signature: sigRef.current }).catch(() => {})
+      })
+      .catch((e: Error) => {
+        setState(s => ({ ...s, loading: false, error: e.message }))
+      })
+      .finally(() => {
+        inflight.current = null
+      })
+    return inflight.current
   }, [])
 
   // boot: serve the cache immediately, refresh if stale or the source list changed
@@ -599,5 +622,7 @@ export function useMicrosoftSync(
     return () => window.clearTimeout(timer.current)
   }, [items, accountIds, pushNow])
 
-  return { ...state, pushNow }
+  // Outlook pulls every account in the same pass as the push, and with nothing
+  // dirty that pass goes straight to the pull — so the pull is the push
+  return { ...state, pushNow, pullNow: pushNow }
 }
