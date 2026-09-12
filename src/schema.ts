@@ -51,6 +51,7 @@ import {
   GithubProjectSync,
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
+import { SYNC_KINDS } from '../shared/kinds.mjs'
 
 // Hand-rolled validation instead of a schema library: JSON backups and pre-v3
 // records still live in the database, so the goal is coerce-and-repair, not
@@ -365,8 +366,8 @@ const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
 const ROUTINE_WHEN_SET = new Set<string>(ROUTINE_WHENS)
-/** Exported so a test can hold the newest sync_posts migration to the same list. */
-export const KNOWN_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine'])
+/** Every kind sync_posts accepts — one list, in shared/kinds.mjs; a test holds the newest migration to it. */
+export const KNOWN_KINDS = SYNC_KINDS
 
 /** Coerce arbitrary data into a valid Person. */
 export function sanitizePerson(raw: unknown): Person | null {

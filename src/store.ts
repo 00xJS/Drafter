@@ -5,6 +5,7 @@ import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
+import { PERSONAL_KINDS } from '../shared/kinds.mjs'
 import {
   createSyncEngine,
   recordLabel,
@@ -23,9 +24,6 @@ import {
 
 export type { EngineConflict, ImportSummary, StatusChange, SyncInfo }
 export { conflictMessage, stampStatus } from './syncengine'
-
-/** Kinds that belong to one account even inside a household. */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
 
 /** A row the server refused, as Settings lists it. */
 export interface FailedSync extends SyncFailure {

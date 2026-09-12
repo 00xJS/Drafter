@@ -6,11 +6,11 @@ import { visibleItemsFor } from '../../shared/digest.mjs'
 import { KINDS } from '../../netlify/functions/lib/datastats.mjs'
 import { KNOWN_KINDS } from '../schema'
 
-// shared/kinds.mjs is the one list the server-side readers use. Until the app
-// imports it too, every other copy is held to it here: the client's two sets,
-// the digest's visibility mirror, and the kind lists written into migrations.
-// A personal kind the policy forgets is how habits and routines reached a
-// household peer's device through v3.9.
+// shared/kinds.mjs is the one list: the app, the digest and the server-side
+// readers all import it. What can't import it — the kind lists written into
+// migrations, and the Admin tallies — is held to it here, and the app is held
+// to importing rather than keeping a copy. A personal kind the policy forgets
+// is how habits and routines reached a household peer's device through v3.9.
 
 const root = new URL('../../', import.meta.url)
 const dir = fileURLToPath(new URL('supabase/migrations/', root))
@@ -55,11 +55,16 @@ describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
     expect(sorted(deletion)).toEqual(sorted(PERSONAL_KINDS))
   })
 
-  it('matches the client’s own set in src/store.ts', () => {
-    const store = readFileSync(fileURLToPath(new URL('src/store.ts', root)), 'utf8')
-    const m = /const PERSONAL_KINDS = new Set\(\[([^\]]*)\]\)/.exec(store)
-    expect(m, 'src/store.ts no longer declares PERSONAL_KINDS inline — import it from shared/kinds.mjs and drop this check').not.toBeNull()
-    expect(sorted([...m![1].matchAll(/'([a-z]+)'/g)].map(x => x[1]))).toEqual(sorted(PERSONAL_KINDS))
+  it('is what the app reads too — imported, never copied', () => {
+    const src = (p: string) => readFileSync(fileURLToPath(new URL(p, root)), 'utf8')
+    const store = src('src/store.ts')
+    const schema = src('src/schema.ts')
+    expect(store).toMatch(/import \{[^}]*\bPERSONAL_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mjs'/)
+    expect(schema).toMatch(/import \{[^}]*\bSYNC_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mjs'/)
+    // a second hand-written list is how the copies drifted before
+    for (const [file, text] of [['src/store.ts', store], ['src/schema.ts', schema]]) {
+      expect(text, `${file} keeps its own kinds list again`).not.toMatch(/new Set\(\[\s*'(task|journal)'/)
+    }
   })
 
   it('is a subset of the kinds the server stores', () => {
