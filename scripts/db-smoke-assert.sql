@@ -868,3 +868,289 @@ begin
   end loop;
   raise notice 'ok v3.11-6: sync_posts and its helpers run for authenticated and service_role, not anon';
 end $$;
+
+-- ===== v3.12 agent access (level-up P3-1a) =====
+-- 20260921000000_agent_access: the three tables behind /api/mcp and the OAuth
+-- server are the service role's alone, and their functions do what the
+-- functions rely on. Inside one transaction now() stands still, which is what
+-- lets these blocks move a window or a grace period by editing a timestamp.
+
+-- ------------------------------ v3.12-1. RLS on, no policies, service role only
+do $$
+declare t text;
+begin
+  foreach t in array array['oauth_clients', 'agent_tokens', 'oauth_codes'] loop
+    if not (select c.relrowsecurity from pg_class c where c.oid = ('public.' || t)::regclass) then
+      raise exception 'FAIL v3.12-1: % has row level security off', t;
+    end if;
+    if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t) then
+      raise exception 'FAIL v3.12-1: % has a policy; it must have none', t;
+    end if;
+    if has_table_privilege('anon', 'public.' || t, 'select') or has_table_privilege('authenticated', 'public.' || t, 'select')
+       or has_table_privilege('authenticated', 'public.' || t, 'insert') or has_table_privilege('authenticated', 'public.' || t, 'update')
+       or has_table_privilege('authenticated', 'public.' || t, 'delete') then
+      raise exception 'FAIL v3.12-1: a client role holds a privilege on %', t;
+    end if;
+    if not (has_table_privilege('service_role', 'public.' || t, 'select') and has_table_privilege('service_role', 'public.' || t, 'insert')
+            and has_table_privilege('service_role', 'public.' || t, 'update') and has_table_privilege('service_role', 'public.' || t, 'delete')) then
+      raise exception 'FAIL v3.12-1: service_role lacks a privilege on % (a new table needs explicit grants)', t;
+    end if;
+  end loop;
+  raise notice 'ok v3.12-1: oauth_clients, agent_tokens and oauth_codes have RLS on, no policies, and grants for the service role only';
+end $$;
+
+-- ------------------------------------------------ v3.12-2. the functions are service-only
+do $$
+declare f text;
+begin
+  foreach f in array array[
+    'public.agent_token_use(text, integer)', 'public.oauth_redeem_code(text)', 'public.oauth_attach_grant(text, uuid)',
+    'public.agent_token_rotate(text, text, text, text, interval, interval, interval)', 'public.oauth_client_use(text, integer)', 'public.oauth_prune()'
+  ] loop
+    if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
+      raise exception 'FAIL v3.12-2: a client role can execute %', f;
+    end if;
+    if not has_function_privilege('service_role', f, 'execute') then
+      raise exception 'FAIL v3.12-2: service_role cannot execute %', f;
+    end if;
+  end loop;
+  raise notice 'ok v3.12-2: the agent-access functions run for the service role only';
+end $$;
+
+-- ----------------------------------- v3.12-3. a signed-in client can read none of it
+insert into public.oauth_clients (client_id, client_name, redirect_uris)
+values ('dcr_smoke_seen_by_nobody', 'Seed', array['https://claude.ai/cb']);
+insert into public.agent_tokens (user_id, kind, name, scopes, token_prefix, access_hash)
+values ('00000000-0000-0000-0000-00000000000a', 'token', 'Seed', array['read'], 'drft_Seed', 'hash-seen-by-nobody');
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare t text;
+begin
+  foreach t in array array['oauth_clients', 'agent_tokens', 'oauth_codes'] loop
+    begin
+      execute format('select count(*) from public.%I', t);
+      raise exception 'FAIL v3.12-3: the owner, signed in, could read %', t;
+    exception when insufficient_privilege then
+      null;
+    end;
+  end loop;
+  begin
+    perform public.agent_token_use('hash-seen-by-nobody', 60);
+    raise exception 'FAIL v3.12-3: a signed-in client could check a token hash';
+  exception when insufficient_privilege then
+    null;
+  end;
+  raise notice 'ok v3.12-3: a signed-in client can neither read the tables nor call their functions, not even for its own rows';
+end $$;
+commit;
+
+-- ------------------------------------- v3.12-4. agent_token_use: live tokens, and the window
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  insert into public.agent_tokens (user_id, kind, name, scopes, token_prefix, access_hash)
+  values ('00000000-0000-0000-0000-00000000000b', 'token', 'Laptop', array['read', 'write'], 'drft_Ab3x', 'hash-manual');
+  r := public.agent_token_use('hash-manual', 2);
+  if r ->> 'user_id' is distinct from '00000000-0000-0000-0000-00000000000b' or r ->> 'kind' is distinct from 'token'
+     or r -> 'scopes' is distinct from '["read", "write"]'::jsonb or (r ->> 'over_limit')::boolean or r ->> 'grant_id' is null then
+    raise exception 'FAIL v3.12-4: a live manual token should come back as its grant, got %', r;
+  end if;
+  if (select last_used_at from public.agent_tokens where access_hash = 'hash-manual') is null then
+    raise exception 'FAIL v3.12-4: agent_token_use should stamp last_used_at';
+  end if;
+  if (public.agent_token_use('hash-manual', 2) ->> 'over_limit')::boolean then
+    raise exception 'FAIL v3.12-4: the second call of a two-a-minute window is within it';
+  end if;
+  if not (public.agent_token_use('hash-manual', 2) ->> 'over_limit')::boolean then
+    raise exception 'FAIL v3.12-4: the third call of a two-a-minute window is over it';
+  end if;
+  update public.agent_tokens set window_start = now() - interval '2 minutes' where access_hash = 'hash-manual';
+  -- its own statement: a subquery beside the call would read the row as it was before the call
+  r := public.agent_token_use('hash-manual', 2);
+  if (r ->> 'over_limit')::boolean or (select window_count from public.agent_tokens where access_hash = 'hash-manual') <> 1 then
+    raise exception 'FAIL v3.12-4: a window that started over a minute ago should start again at 1';
+  end if;
+  if public.agent_token_use('no-such-hash', 60) is not null then
+    raise exception 'FAIL v3.12-4: an unknown hash should be null';
+  end if;
+  update public.agent_tokens set revoked_at = now() where access_hash = 'hash-manual';
+  if public.agent_token_use('hash-manual', 60) is not null then
+    raise exception 'FAIL v3.12-4: a revoked token should be null';
+  end if;
+  insert into public.oauth_clients (client_id, client_name, redirect_uris) values ('dcr_smoke_expiry', 'Expiry', array['https://claude.ai/cb']);
+  insert into public.agent_tokens (user_id, kind, name, client_id, scopes, access_hash, access_expires_at, refresh_hash, refresh_expires_at)
+  values ('00000000-0000-0000-0000-00000000000b', 'oauth', 'Expiry', 'dcr_smoke_expiry', array['read'], 'hash-expired', now() - interval '1 second', 'rt-expired', now() + interval '1 day');
+  if public.agent_token_use('hash-expired', 60) is not null then
+    raise exception 'FAIL v3.12-4: an expired access token should be null';
+  end if;
+  begin
+    insert into public.agent_tokens (user_id, kind, name, scopes) values ('00000000-0000-0000-0000-00000000000b', 'token', 'Bad', array['admin']);
+    raise exception 'FAIL v3.12-4: a scope outside read/write/journal was stored';
+  exception when check_violation then
+    null;
+  end;
+  begin
+    insert into public.agent_tokens (user_id, kind, name) values ('00000000-0000-0000-0000-00000000000b', 'oauth', 'No client');
+    raise exception 'FAIL v3.12-4: an oauth row without a client was stored';
+  exception when check_violation then
+    null;
+  end;
+  raise notice 'ok v3.12-4: agent_token_use returns a live token''s grant and counts its minute; unknown, revoked and expired tokens are null';
+end $$;
+commit;
+
+-- -------------------------- v3.12-5. codes redeem once; a replay revokes what the code made
+begin;
+set local role service_role;
+do $$
+declare
+  r jsonb;
+  made uuid;
+begin
+  insert into public.oauth_clients (client_id, client_name, redirect_uris) values ('dcr_smoke_codes', 'Claude', array['https://claude.ai/cb']);
+  insert into public.oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at)
+  values ('code-live', 'dcr_smoke_codes', '00000000-0000-0000-0000-00000000000a', 'https://claude.ai/cb', 'the-challenge',
+          array['read', 'write'], 'https://site.test/api/mcp', now() + interval '5 minutes');
+  r := public.oauth_redeem_code('code-live');
+  if r is distinct from jsonb_build_object('outcome', 'ok', 'client_id', 'dcr_smoke_codes', 'user_id', '00000000-0000-0000-0000-00000000000a',
+       'redirect_uri', 'https://claude.ai/cb', 'code_challenge', 'the-challenge', 'scopes', '["read", "write"]'::jsonb, 'resource', 'https://site.test/api/mcp') then
+    raise exception 'FAIL v3.12-5: a live code should redeem with everything it was bound to, got %', r;
+  end if;
+  insert into public.agent_tokens (user_id, kind, name, client_id, scopes, access_hash, access_expires_at, refresh_hash, refresh_expires_at)
+  values ('00000000-0000-0000-0000-00000000000a', 'oauth', 'Claude', 'dcr_smoke_codes', array['read', 'write'], 'at-from-code', now() + interval '1 hour', 'rt-from-code', now() + interval '90 days')
+  returning id into made;
+  if not public.oauth_attach_grant('code-live', made) then
+    raise exception 'FAIL v3.12-5: oauth_attach_grant should find the code';
+  end if;
+  r := public.oauth_redeem_code('code-live');
+  if r ->> 'outcome' is distinct from 'reused' then
+    raise exception 'FAIL v3.12-5: a second redemption should be reused, got %', r;
+  end if;
+  if (select revoked_at from public.agent_tokens where id = made) is null or public.agent_token_use('at-from-code', 60) is not null then
+    raise exception 'FAIL v3.12-5: replaying a code must revoke the connection it made';
+  end if;
+  insert into public.oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at)
+  values ('code-stale', 'dcr_smoke_codes', '00000000-0000-0000-0000-00000000000a', 'https://claude.ai/cb', 'c', array['read'], 'https://site.test/api/mcp', now() - interval '1 second');
+  if public.oauth_redeem_code('code-stale') ->> 'outcome' is distinct from 'invalid' or public.oauth_redeem_code('code-none') ->> 'outcome' is distinct from 'invalid' then
+    raise exception 'FAIL v3.12-5: an expired or unknown code should be invalid';
+  end if;
+  if (select used_at from public.oauth_codes where code_hash = 'code-stale') is not null then
+    raise exception 'FAIL v3.12-5: an expired code must not be marked used';
+  end if;
+  raise notice 'ok v3.12-5: a code redeems once with its bindings; a replay is refused and revokes its connection; expired and unknown codes are invalid';
+end $$;
+commit;
+
+-- ------------------- v3.12-6. refresh tokens rotate, forgive a retry, revoke on a replay
+begin;
+set local role service_role;
+do $$
+declare
+  r jsonb;
+  g uuid;
+begin
+  insert into public.oauth_clients (client_id, client_name, redirect_uris) values
+    ('dcr_smoke_rotate', 'Claude', array['https://claude.ai/cb']),
+    ('dcr_smoke_other', 'Other', array['https://claude.ai/cb']);
+  insert into public.agent_tokens (user_id, kind, name, client_id, scopes, access_hash, access_expires_at, refresh_hash, refresh_expires_at)
+  values ('00000000-0000-0000-0000-00000000000a', 'oauth', 'Claude', 'dcr_smoke_rotate', array['read', 'write', 'journal'], 'at-1', now() + interval '1 hour', 'rt-1', now() + interval '90 days')
+  returning id into g;
+
+  r := public.agent_token_rotate('dcr_smoke_rotate', 'rt-1', 'at-2', 'rt-2');
+  if r is distinct from jsonb_build_object('outcome', 'rotated', 'grant_id', g, 'user_id', '00000000-0000-0000-0000-00000000000a', 'scopes', '["read", "write", "journal"]'::jsonb) then
+    raise exception 'FAIL v3.12-6: the current refresh token should rotate, got %', r;
+  end if;
+  if (select (refresh_hash, prev_refresh_hash, access_hash) from public.agent_tokens where id = g) is distinct from ('rt-2'::text, 'rt-1'::text, 'at-2'::text)
+     or public.agent_token_use('at-1', 60) is not null or public.agent_token_use('at-2', 60) is null then
+    raise exception 'FAIL v3.12-6: rotation should replace both hashes and keep the old refresh as prev';
+  end if;
+  if public.agent_token_rotate('dcr_smoke_other', 'rt-2', 'x-1', 'x-2') ->> 'outcome' is distinct from 'invalid' then
+    raise exception 'FAIL v3.12-6: another client cannot rotate this refresh token';
+  end if;
+
+  -- the client never saw that answer and retries with rt-1 inside the grace window
+  r := public.agent_token_rotate('dcr_smoke_rotate', 'rt-1', 'at-3', 'rt-3');
+  if r ->> 'outcome' is distinct from 'rotated' or (select refresh_hash from public.agent_tokens where id = g) is distinct from 'rt-3' then
+    raise exception 'FAIL v3.12-6: the previous refresh token inside the grace window should rotate again, got %', r;
+  end if;
+  if public.agent_token_rotate('dcr_smoke_rotate', 'rt-2', 'x-3', 'x-4') ->> 'outcome' is distinct from 'invalid' then
+    raise exception 'FAIL v3.12-6: the pair a grace retry replaced must be dead';
+  end if;
+
+  -- a minute later rt-1 can only be a stolen copy
+  update public.agent_tokens set refreshed_at = now() - interval '2 minutes' where id = g;
+  r := public.agent_token_rotate('dcr_smoke_rotate', 'rt-1', 'at-4', 'rt-4');
+  if r ->> 'outcome' is distinct from 'reused' or (select revoked_at from public.agent_tokens where id = g) is null then
+    raise exception 'FAIL v3.12-6: a replayed refresh token after the grace window must revoke the connection, got %', r;
+  end if;
+  if public.agent_token_rotate('dcr_smoke_rotate', 'rt-3', 'x-5', 'x-6') ->> 'outcome' is distinct from 'invalid' or public.agent_token_use('at-3', 60) is not null then
+    raise exception 'FAIL v3.12-6: nothing of a revoked connection may work';
+  end if;
+
+  insert into public.agent_tokens (user_id, kind, name, client_id, scopes, access_hash, access_expires_at, refresh_hash, refresh_expires_at)
+  values ('00000000-0000-0000-0000-00000000000a', 'oauth', 'Old', 'dcr_smoke_rotate', array['read'], 'at-old', now() - interval '1 day', 'rt-old', now() - interval '1 second');
+  if public.agent_token_rotate('dcr_smoke_rotate', 'rt-old', 'x-7', 'x-8') ->> 'outcome' is distinct from 'invalid' then
+    raise exception 'FAIL v3.12-6: an expired refresh token should be invalid';
+  end if;
+  raise notice 'ok v3.12-6: refresh tokens rotate for their own client, a retry inside 60 s rotates again, a later replay revokes the connection';
+end $$;
+commit;
+
+-- ------------------------------ v3.12-7. the token-endpoint throttle, and housekeeping
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  insert into public.oauth_clients (client_id, client_name, redirect_uris) values ('dcr_smoke_throttle', 'Busy', array['https://claude.ai/cb']);
+  r := public.oauth_client_use('dcr_smoke_throttle', 2);
+  if r is distinct from jsonb_build_object('client_id', 'dcr_smoke_throttle', 'client_name', 'Busy', 'redirect_uris', '["https://claude.ai/cb"]'::jsonb, 'over_limit', false) then
+    raise exception 'FAIL v3.12-7: oauth_client_use should return the client, got %', r;
+  end if;
+  perform public.oauth_client_use('dcr_smoke_throttle', 2);
+  if not (public.oauth_client_use('dcr_smoke_throttle', 2) ->> 'over_limit')::boolean then
+    raise exception 'FAIL v3.12-7: the third token request of a two-a-minute window is over it';
+  end if;
+  if public.oauth_client_use('dcr_nobody', 30) is not null then
+    raise exception 'FAIL v3.12-7: an unknown client should be null';
+  end if;
+
+  insert into public.oauth_clients (client_id, client_name, redirect_uris, created_at) values
+    ('dcr_smoke_abandoned', 'Never finished', array['https://claude.ai/cb'], now() - interval '8 days'),
+    ('dcr_smoke_fresh', 'Just registered', array['https://claude.ai/cb'], now());
+  update public.oauth_clients set created_at = now() - interval '8 days' where client_id = 'dcr_smoke_codes';
+  insert into public.oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at)
+  values ('code-ancient', 'dcr_smoke_fresh', '00000000-0000-0000-0000-00000000000a', 'https://claude.ai/cb', 'c', array['read'], 'https://site.test/api/mcp', now() - interval '2 days');
+  perform public.oauth_prune();
+  if exists (select 1 from public.oauth_clients where client_id = 'dcr_smoke_abandoned') then
+    raise exception 'FAIL v3.12-7: a week-old client with no connection should be pruned';
+  end if;
+  if not exists (select 1 from public.oauth_clients where client_id = 'dcr_smoke_codes') or not exists (select 1 from public.oauth_clients where client_id = 'dcr_smoke_fresh') then
+    raise exception 'FAIL v3.12-7: a client with a connection, or a new one, must survive the prune';
+  end if;
+  if exists (select 1 from public.oauth_codes where code_hash = 'code-ancient') or not exists (select 1 from public.oauth_codes where code_hash = 'code-live') then
+    raise exception 'FAIL v3.12-7: only codes a day past expiry are pruned';
+  end if;
+  raise notice 'ok v3.12-7: oauth_client_use throttles per client; oauth_prune drops abandoned clients and day-old expired codes only';
+end $$;
+commit;
+
+-- ---------------------------------- v3.12-8. deleting an account deletes its connections
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000d1', 'leaving@example.test');
+insert into public.agent_tokens (user_id, kind, name, scopes, access_hash)
+values ('00000000-0000-0000-0000-0000000000d1', 'token', 'Leaving', array['read'], 'hash-leaving');
+insert into public.oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at)
+values ('code-leaving', 'dcr_smoke_fresh', '00000000-0000-0000-0000-0000000000d1', 'https://claude.ai/cb', 'c', array['read'], 'https://site.test/api/mcp', now() + interval '5 minutes');
+delete from auth.users where id = '00000000-0000-0000-0000-0000000000d1';
+do $$
+begin
+  if exists (select 1 from public.agent_tokens where user_id = '00000000-0000-0000-0000-0000000000d1')
+     or exists (select 1 from public.oauth_codes where user_id = '00000000-0000-0000-0000-0000000000d1') then
+    raise exception 'FAIL v3.12-8: an account''s tokens and codes must go with it';
+  end if;
+  raise notice 'ok v3.12-8: deleting an account deletes its tokens and codes';
+end $$;
