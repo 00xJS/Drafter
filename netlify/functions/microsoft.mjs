@@ -17,7 +17,6 @@ import { pushEntry,
   authUrl,
   connectAccount,
   disconnectAccount,
-  drafterCalendarId,
   exchangeCode,
   listAccounts,
   listCalendars,
@@ -30,6 +29,7 @@ import { pushEntry,
   pullChanges,
   pullEntryChanges,
   pushTask,
+  resolveDrafterCalendar,
 } from './lib/microsoft.mjs'
 
 const redirectUriFor = origin => `${origin}/api/microsoft/callback`
@@ -168,7 +168,8 @@ const handler = async req => {
       await adoptTimeZone(user.id, body.timezone)
       const accountId = String(body.accountId ?? '')
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}
-      const calendarId = await drafterCalendarId(user.id, accountId)
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const calendarId = cal.id
       const tz = (await settingsGet(user.id).catch(() => null))?.timezone ?? null
       // `records` is the sweep (tasks and entries, chunked, budgeted, `left` to
       // resend); `tasks` is an older app build, which keeps its old contract
@@ -185,7 +186,7 @@ const handler = async req => {
         },
         sweep ? { startedAt } : { budgetMs: Infinity },
       )
-      return Response.json({ calendarId, ...result })
+      return Response.json({ calendarId, replaced: cal.replaced, ...result })
     }
     if (action === 'pull') {
       const accountId = String(body.accountId ?? '')
@@ -193,7 +194,8 @@ const handler = async req => {
       const at = new Date().toISOString()
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
       const sinceGraph = since.replace(/\.\d{3}Z$/, 'Z')
-      const calendarId = await drafterCalendarId(user.id, accountId)
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const calendarId = cal.id
       const changes = await pullChanges(user.id, accountId, calendarId, sinceGraph)
       // entry edits need a listing of their own; only builds that apply them ask
       const entries = body.entries === true ? await pullEntryChanges(user.id, accountId, calendarId, sinceGraph) : []
@@ -212,7 +214,7 @@ const handler = async req => {
           resend = r.suspicious ? r.absent : []
         }
       }
-      return Response.json({ changes, entries, missing, resend, calendarId, at })
+      return Response.json({ changes, entries, missing, resend, calendarId, replaced: cal.replaced, at })
     }
     if (action === 'push-event') {
       // one entry, one account: the client fans out across every enabled
@@ -221,9 +223,9 @@ const handler = async req => {
       const entry = body.event && typeof body.event === 'object' ? body.event : null
       if (!accountId) return Response.json({ error: 'accountId required' }, { status: 400 })
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
-      const calendarId = await drafterCalendarId(user.id, accountId)
-      const result = await pushEntry(user.id, accountId, calendarId, entry, url.origin)
-      return Response.json({ calendarId, result })
+      const cal = await resolveDrafterCalendar(user.id, accountId)
+      const result = await pushEntry(user.id, accountId, cal.id, entry, url.origin)
+      return Response.json({ calendarId: cal.id, replaced: cal.replaced, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {

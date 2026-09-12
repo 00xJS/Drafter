@@ -36,6 +36,12 @@ export interface EntryChangeRow {
   updated: string
 }
 
+/** One Graph call as the account; retries once with a fresh token after a 401. */
+export declare function graph(userId: string, accountId: string, path: string, init?: RequestInit): Promise<unknown>
+export declare function pickGraphDrafterCalendar(calendars: { id: string; name?: string; writable?: boolean }[] | null | undefined, storedId: string | null): string | null
+/** The account's Drafter calendar, found or made; `replaced` when the stored one had gone. */
+export declare function resolveDrafterCalendar(userId: string, accountId: string): Promise<{ id: string; replaced: boolean; created: boolean }>
+
 export declare function graphEntryChange(ev: unknown): EntryChangeRow | null
 export declare function pullEntryChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<EntryChangeRow[]>
 export declare function mirroredTaskIds(userId: string, accountId: string, calendarId: string): Promise<{ ids: Set<string>; complete: boolean }>

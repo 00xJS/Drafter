@@ -662,6 +662,14 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                     ) : null}
                   </span>
                 </label>
+                {googlePush.notices?.google && (
+                  <p className="sync-line">
+                    <span className="warn">{googlePush.notices.google}</span>
+                    <button className="btn subtle" onClick={() => googlePush.dismissNotice?.('google')}>
+                      Got it
+                    </button>
+                  </p>
+                )}
                 <p className="field-hint">
                   Open tasks with a due date appear in Google within seconds of a change (and vanish when done). Google's
                   own events flow the other way through the ticked calendars above. Edit tasks in Drafter, not in Google.
@@ -796,6 +804,14 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                               ) : null}
                             </span>
                           </label>
+                          {microsoftSync.notices?.[acct.id] && (
+                            <p className="sync-line">
+                              <span className="warn">{microsoftSync.notices[acct.id]}</span>
+                              <button className="btn subtle" onClick={() => microsoftSync.dismissNotice?.(acct.id)}>
+                                Got it
+                              </button>
+                            </p>
+                          )}
                         </div>
                       )
                     })}

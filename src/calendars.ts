@@ -130,8 +130,9 @@ export function pushEventToGoogle(entry: CalendarEntry, opts: { revive?: boolean
   return withMirrorLock([key], async () => {
     // `revive` is for Drafter's own Undo: Google keeps our deletion as a
     // cancelled event, which would otherwise read as "deleted in Google on purpose"
-    const r = await googleAction<{ result: string }>('push-event', { event: entry, revive: opts.revive === true })
+    const r = await googleAction<{ result: string; replaced?: boolean }>('push-event', { event: entry, revive: opts.revive === true })
     singles.set(key, mirrorStamp(entry.updatedAt))
+    if (r.replaced) recreatedBy.add(GOOGLE_LOCK)
     return r
   })
 }
@@ -144,8 +145,9 @@ export function pushEventToGoogle(entry: CalendarEntry, opts: { revive?: boolean
 export function pushEventToMicrosoft(entry: CalendarEntry, accountId: string): Promise<{ result: string }> {
   const key = lockKey(msLock(accountId), entry.id)
   return withMirrorLock([key], async () => {
-    const r = await microsoftAction<{ result: string }>('push-event', { event: entry, accountId })
+    const r = await microsoftAction<{ result: string; replaced?: boolean }>('push-event', { event: entry, accountId })
     singles.set(key, mirrorStamp(entry.updatedAt))
+    if (r.replaced) recreatedBy.add(msLock(accountId))
     return r
   })
 }
@@ -404,6 +406,8 @@ export interface MirrorBatchReply {
   left?: string[]
   fatal?: boolean
   calendarId?: string
+  /** The stored Drafter calendar had gone, so the server found or made another. */
+  replaced?: boolean
 }
 
 export interface MirrorTarget {
@@ -426,6 +430,8 @@ export interface SweepResult {
   stalled: boolean
   /** The provider calendar was not the one the ledger knew, so everything was owed to the new one. */
   replaced: boolean
+  /** ...because the server found the old one deleted. */
+  recreated: boolean
   /** Owed and sendable now (not waiting out a refusal). */
   ready: number
   /** Owed at all. */
@@ -456,6 +462,7 @@ export async function sweepMirror(
   const failedNow = new Set<string>()
   let confirmed = 0
   let replaced = false
+  let recreated = false
   let stalled = false
   let fatal: string | undefined
   for (let round = 0; round < rounds; round++) {
@@ -483,12 +490,13 @@ export async function sweepMirror(
       fatal = (e as Error).message || 'The calendar could not be reached.'
       break
     }
-    if (!replaced && reply.calendarId && ledger.cal && reply.calendarId !== ledger.cal) {
+    if (!replaced && (reply.replaced || (reply.calendarId && ledger.cal && reply.calendarId !== ledger.cal))) {
       // these confirmations were for a calendar that is gone (deleted, or a
       // reconnect to another account): everything is owed to the new one. What
       // this reply confirmed went into the new calendar, so it counts below.
       ledger = { v: 1, seen: {} }
       replaced = true
+      recreated = !!reply.replaced
     }
     if (reply.calendarId) ledger.cal = reply.calendarId
     const sent = new Map(batch.map(r => [r.id, r]))
@@ -522,6 +530,7 @@ export async function sweepMirror(
     fatal,
     stalled,
     replaced,
+    recreated,
     ready: mirrorCandidates(items, ledger, myId, r => refused(target.lock, r, now())).length,
     waiting: mirrorCandidates(items, ledger, myId).length,
   }
@@ -542,6 +551,8 @@ export interface PullOutcome {
   calendarId?: string
   /** Records the ledger thought were there that should be written again rather than read as deleted. */
   resend?: string[]
+  /** The stored Drafter calendar had gone, so the server found or made another. */
+  replaced?: boolean
 }
 
 export interface PassResult {
@@ -552,10 +563,28 @@ export interface PassResult {
   more: boolean
   /** Something failed: retry later, backing off. */
   failed: boolean
+  /** Something the owner should hear, by target id: the Drafter calendar was replaced. */
+  notices: Record<string, string>
 }
 
 const describeRefusals = (errors: { error: string }[]) =>
   errors.length === 1 ? errors[0].error : `${errors.length} could not be mirrored — ${errors[0].error}`
+
+/** Locks whose push-event found the stored Drafter calendar deleted, so the next pass can say so. */
+const recreatedBy = new Set<string>()
+
+/**
+ * What Settings says when a target's Drafter calendar is not the one its
+ * ledger confirmed into. A deleted calendar used to be recreated empty with
+ * nothing said; now everything is written into the new one, and the owner hears why.
+ */
+function calendarNotice(t: PassTarget, recreated: boolean): string {
+  const flagged = recreatedBy.delete(t.lock)
+  const where = t.id === 'google' ? 'Google' : 'this Outlook account'
+  return recreated || flagged
+    ? `The Drafter calendar in ${where} had been deleted, so a new one was made and everything is being written into it again.`
+    : `Mirroring now goes to a different Drafter calendar in ${where}, so everything is being written into it again.`
+}
 
 /**
  * One pass over every target, each on its own. One account that refuses (a
@@ -571,6 +600,7 @@ export async function mirrorPass(
   opts: { pull: boolean; now?: () => number },
 ): Promise<PassResult> {
   const accountErrors: Record<string, string> = {}
+  const notices: Record<string, string> = {}
   let waiting = 0
   let more = false
   let failed = false
@@ -584,6 +614,7 @@ export async function mirrorPass(
       continue
     }
     waiting += res.waiting
+    if (res.replaced) notices[t.id] = calendarNotice(t, res.recreated)
     if (res.fatal || res.errors.length || res.stalled) failed = true
     if (res.fatal) {
       accountErrors[t.id] = res.fatal
@@ -601,9 +632,12 @@ export async function mirrorPass(
       failed = true
       continue
     }
-    if (out && settlePull(t.key, out)) more = true
+    if (!out) continue
+    const settled = settlePull(t.key, out)
+    if (settled.work) more = true
+    if (settled.switched) notices[t.id] = calendarNotice(t, !!out.replaced)
   }
-  return { accountErrors, waiting, more, failed }
+  return { accountErrors, waiting, more, failed, notices }
 }
 
 /**
@@ -611,15 +645,15 @@ export async function mirrorPass(
  * ledger confirmed into (the owner deleted it and it was made again, or a
  * reconnect landed on another account) holds none of it, so everything is
  * owed again. Tasks a scan could not trust as deleted are owed again as well:
- * writing them back is safe, marking them all done is not. True when the sweep
- * has work again.
+ * writing them back is safe, marking them all done is not. `work` when the
+ * sweep has something to send again; `switched` when the calendar changed.
  */
-function settlePull(key: string, out: PullOutcome): boolean {
+function settlePull(key: string, out: PullOutcome): { work: boolean; switched: boolean } {
   const ledger = readLedger(key)
-  if (!ledger) return false
-  if (out.calendarId && ledger.cal && out.calendarId !== ledger.cal) {
-    writeLedger(key, { v: 1, cal: out.calendarId, seen: {} })
-    return true
+  if (!ledger) return { work: false, switched: false }
+  if (out.replaced || (out.calendarId && ledger.cal && out.calendarId !== ledger.cal)) {
+    writeLedger(key, { v: 1, cal: out.calendarId ?? ledger.cal, seen: {} })
+    return { work: true, switched: true }
   }
   let changed = false
   if (out.calendarId && !ledger.cal) {
@@ -633,7 +667,7 @@ function settlePull(key: string, out: PullOutcome): boolean {
     resend = true
   }
   if (changed || resend) writeLedger(key, ledger)
-  return resend
+  return { work: resend, switched: false }
 }
 
 export interface GooglePushState {
@@ -644,6 +678,9 @@ export interface GooglePushState {
   accountErrors?: Record<string, string>
   /** Records still owed to a provider (refused, unreachable or not reached yet); they are retried. */
   waiting?: number
+  /** Something to tell the owner, by target ('google' or an Outlook account id), kept until dismissed. */
+  notices?: Record<string, string>
+  dismissNotice?(id: string): void
   /** Send what is owed; pulls afterwards when anything went out. */
   pushNow(): Promise<void>
   /**
@@ -653,7 +690,19 @@ export interface GooglePushState {
   pullNow(): Promise<void>
 }
 
-type MirrorStatus = Omit<GooglePushState, 'pushNow' | 'pullNow'>
+type MirrorStatus = Omit<GooglePushState, 'pushNow' | 'pullNow' | 'dismissNotice'>
+
+const NOTICE_PREFIX = 'drafter:mirror-notice:'
+
+/** Notices outlive a reload until dismissed: a recreated calendar is worth hearing about even if Settings was closed at the time. */
+function storedNotices(targets: PassTarget[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const t of targets) {
+    const text = readCursor(NOTICE_PREFIX + t.key)
+    if (text) out[t.id] = text
+  }
+  return out
+}
 
 /**
  * The React side both mirrors share: when a pass runs, and what it reports. A
@@ -663,7 +712,7 @@ type MirrorStatus = Omit<GooglePushState, 'pushNow' | 'pullNow'>
  * to half an hour while something is failing.
  */
 function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[], myId?: string | null): GooglePushState {
-  const [state, setState] = useState<MirrorStatus>({ pending: false })
+  const [state, setState] = useState<MirrorStatus>(() => ({ pending: false, notices: storedNotices(targets) }))
   const itemsRef = useRef(items)
   itemsRef.current = items
   const projectsRef = useRef(projects)
@@ -693,7 +742,15 @@ function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[]
           setState(s => ({ ...s, pending: true }))
           const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
           const pass = await mirrorPass(list, itemsRef.current, names, myIdRef.current, { pull: want.pull })
-          setState({ lastAt: new Date().toISOString(), pending: false, error: Object.values(pass.accountErrors)[0], accountErrors: pass.accountErrors, waiting: pass.waiting })
+          for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
+          setState({
+            lastAt: new Date().toISOString(),
+            pending: false,
+            error: Object.values(pass.accountErrors)[0],
+            accountErrors: pass.accountErrors,
+            waiting: pass.waiting,
+            notices: storedNotices(list),
+          })
           window.clearTimeout(retry.current.timer)
           let delay = 0
           if (pass.failed) delay = retry.current.delay = Math.min(30 * 60_000, retry.current.delay ? retry.current.delay * 2 : 60_000)
@@ -729,6 +786,7 @@ function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[]
       setState({ pending: false })
       return
     }
+    setState(s => ({ ...s, notices: storedNotices(targetsRef.current) }))
     const onVisible = () => {
       if (document.visibilityState === 'visible') void trigger(true)
     }
@@ -748,7 +806,22 @@ function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[]
 
   const pushNow = useCallback(() => trigger(false), [trigger])
   const pullNow = useCallback(() => trigger(true), [trigger])
-  return { ...state, pushNow, pullNow }
+  const dismissNotice = useCallback((id: string) => {
+    const t = targetsRef.current.find(x => x.id === id)
+    if (t) {
+      try {
+        localStorage.removeItem(NOTICE_PREFIX + t.key)
+      } catch {
+        /* ignore */
+      }
+    }
+    setState(s => {
+      const notices = { ...(s.notices ?? {}) }
+      delete notices[id]
+      return { ...s, notices }
+    })
+  }, [])
+  return { ...state, pushNow, pullNow, dismissNotice }
 }
 
 export interface GoogleChange {

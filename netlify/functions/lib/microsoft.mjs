@@ -114,7 +114,16 @@ export async function exchangeCode(code, redirectUri) {
   return body
 }
 
-const cache = new Map() // `${userId}:${accountId}` -> { token, exp }
+// `${userId}:${accountId}` -> { token, exp, refresh }. `refresh` is the grant
+// the token came from: see checkCachedToken.
+const cache = new Map()
+
+/** Drop a cached access token minted from a grant this account no longer holds (reconnected, or rotated elsewhere). */
+function checkCachedToken(userId, account) {
+  const key = `${userId}:${account.id}`
+  const hit = cache.get(key)
+  if (hit && hit.refresh !== account.refreshToken) cache.delete(key)
+}
 
 /**
  * A live access token for one connected account. Microsoft rotates refresh
@@ -138,6 +147,7 @@ export async function accessToken(userId, accountId) {
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
+    cache.delete(key)
     if (body.error === 'invalid_grant') {
       throw Object.assign(new Error(`Microsoft access for ${account.email} expired or was revoked — reconnect it in Settings.`), { status: 409 })
     }
@@ -146,21 +156,30 @@ export async function accessToken(userId, accountId) {
   if (body.refresh_token && body.refresh_token !== account.refreshToken) {
     await saveAccounts(userId, accounts.map(a => (a.id === accountId ? { ...a, refreshToken: body.refresh_token } : a)))
   }
-  cache.set(key, { token: body.access_token, exp: Date.now() + (body.expires_in ?? 3600) * 1000 })
+  cache.set(key, { token: body.access_token, exp: Date.now() + (body.expires_in ?? 3600) * 1000, refresh: body.refresh_token ?? account.refreshToken })
   return body.access_token
 }
 
 export async function graph(userId, accountId, path, init = {}) {
-  const token = await accessToken(userId, accountId)
-  const res = await fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
-  })
-  if (res.status === 204) return null
-  const text = await res.text()
-  const body = text ? JSON.parse(text) : null
-  if (!res.ok) throw Object.assign(new Error(body?.error?.message ?? `Microsoft Graph ${res.status}`), { status: res.status })
-  return body
+  const key = `${userId}:${accountId}`
+  for (let attempt = 0; ; attempt++) {
+    const token = await accessToken(userId, accountId)
+    const res = await fetch(path.startsWith('http') ? path : `${GRAPH}${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    })
+    // a refused token is dropped at once and the call made once more, rather
+    // than kept for up to an hour on a warm function (see lib/google.mjs gapi)
+    if (res.status === 401) {
+      if (cache.get(key)?.token === token) cache.delete(key)
+      if (attempt === 0) continue
+    }
+    if (res.status === 204) return null
+    const text = await res.text()
+    const body = text ? JSON.parse(text) : null
+    if (!res.ok) throw Object.assign(new Error(body?.error?.message ?? `Microsoft Graph ${res.status}`), { status: res.status })
+    return body
+  }
 }
 
 export async function connectAccount(userId, tokens) {
@@ -243,22 +262,56 @@ export async function listEvents(userId, accountId, calendarId, fromIso, toIso) 
 
 const OPEN = ['todo', 'doing', 'blocked']
 
-/** The "Drafter" calendar in a connected account, created on first mirror. */
-export async function drafterCalendarId(userId, accountId) {
-  const accounts = await listAccounts(userId)
-  const account = accounts.find(a => a.id === accountId)
-  if (account?.drafterCalendarId) {
-    try {
-      await graph(userId, accountId, `/me/calendars/${encodeURIComponent(account.drafterCalendarId)}?$select=id`)
-      return account.drafterCalendarId
-    } catch (e) {
-      if (e.status !== 404 && e.status !== 410) throw e
+/** The account's Drafter calendar among its calendars: the stored one, else the lowest id, so everyone picks the same. */
+export function pickGraphDrafterCalendar(calendars, storedId) {
+  const ours = (Array.isArray(calendars) ? calendars : []).filter(c => c && c.name === 'Drafter' && c.writable)
+  if (ours.length === 0) return null
+  if (storedId && ours.some(c => c.id === storedId)) return storedId
+  return ours.map(c => c.id).sort()[0]
+}
+
+// `${userId}:${accountId}` -> the lookup in flight, shared by concurrent requests on one warm function
+const resolving = new Map()
+
+/**
+ * The "Drafter" calendar in a connected account: the stored one while it
+ * exists, else the one already there, else a new one. `replaced` says the
+ * stored one had gone, so the app writes everything again and says so.
+ */
+export function resolveDrafterCalendar(userId, accountId) {
+  const key = `${userId}:${accountId}`
+  const inflight = resolving.get(key)
+  if (inflight) return inflight
+  const run = (async () => {
+    const account = (await listAccounts(userId)).find(a => a.id === accountId)
+    if (!account) throw Object.assign(new Error('That Microsoft account is not connected.'), { status: 409 })
+    checkCachedToken(userId, account)
+    const stored = account.drafterCalendarId ?? null
+    if (stored) {
+      try {
+        await graph(userId, accountId, `/me/calendars/${encodeURIComponent(stored)}?$select=id`)
+        return { id: stored, replaced: false, created: false }
+      } catch (e) {
+        if (e.status !== 404 && e.status !== 410) throw e
+      }
     }
-  }
-  const existing = (await listCalendars(userId, accountId)).find(c => c.name === 'Drafter' && c.writable)
-  const id = existing?.id ?? (await graph(userId, accountId, '/me/calendars', { method: 'POST', body: JSON.stringify({ name: 'Drafter' }) })).id
-  await saveAccounts(userId, accounts.map(a => (a.id === accountId ? { ...a, drafterCalendarId: id } : a)))
-  return id
+    const found = pickGraphDrafterCalendar(await listCalendars(userId, accountId), null)
+    const id = found ?? (await graph(userId, accountId, '/me/calendars', { method: 'POST', body: JSON.stringify({ name: 'Drafter' }) })).id
+    // read the accounts again before writing them: a token refresh during the
+    // calls above may have rotated this account's refresh token, and writing
+    // back the list read at the start used to quietly undo that rotation
+    const fresh = await listAccounts(userId)
+    await saveAccounts(userId, fresh.map(a => (a.id === accountId ? { ...a, drafterCalendarId: id } : a)))
+    return { id, replaced: !!stored && id !== stored, created: !found }
+  })()
+  resolving.set(key, run)
+  void run.finally(() => resolving.delete(key)).catch(() => {})
+  return run
+}
+
+/** The Drafter calendar's id (see resolveDrafterCalendar). */
+export async function drafterCalendarId(userId, accountId) {
+  return (await resolveDrafterCalendar(userId, accountId)).id
 }
 
 function eventBodyFor(task, projectName, site, tz) {

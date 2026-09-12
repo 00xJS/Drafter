@@ -69,5 +69,26 @@ export interface TaskChangeRow {
   updated: string
 }
 
+export declare const DRAFTER_DESCRIPTION: string
+
+export interface CalendarListRow {
+  id: string
+  summary?: string
+  summaryOverride?: string
+  description?: string
+  accessRole?: string
+  hidden?: boolean
+  deleted?: boolean
+}
+
+/** Which of the account's calendars is Drafter's: the stored one, else the lowest id among ours. */
+export declare function pickDrafterCalendar(items: CalendarListRow[] | null | undefined, storedId: string | null): string | null
+/** The Drafter calendar, found or made; `replaced` when the stored one had gone. */
+export declare function resolveDrafterCalendar(userId: string): Promise<{ id: string; replaced: boolean; created: boolean }>
+/** One Calendar API call as the user; retries once with a fresh token after a 401. */
+export declare function gapi(userId: string, path: string, init?: RequestInit): Promise<unknown>
+/** The settings a completed connect writes: the calendar id survives only a same-account reconnect. */
+export declare function reconnectPatch(row: { google_email?: string | null } | null, refreshToken: string, email: string): Record<string, unknown>
+
 export declare function googleEntryChange(ev: unknown): EntryChangeRow | null
 export declare function googlePullRows(items: unknown[] | null | undefined): { changes: TaskChangeRow[]; entries: EntryChangeRow[] }

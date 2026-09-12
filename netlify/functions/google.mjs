@@ -10,7 +10,7 @@ import { adoptTimeZone } from './lib/timezone.mjs'
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet } from './lib/session.mjs'
 import { RETURN_COOKIE, clearCookieHeader, cookieHeader, handoffFresh, newHandoff, newVerifier, returnTarget, stateFor, verifyState } from './lib/oauth.mjs'
-import { SCOPES, drafterCalendarId, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, randomToken, revoke } from './lib/google.mjs'
+import { SCOPES, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, randomToken, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`
@@ -77,7 +77,7 @@ async function callback(req, url) {
     } catch {
       /* cosmetic */
     }
-    await settingsSet(row.user_id, { google_refresh_token: tokens.refresh_token, google_email: email, google_drafter_calendar_id: null })
+    await settingsSet(row.user_id, reconnectPatch(row, tokens.refresh_token, email))
     return back('google=connected')
   } catch (e) {
     return back(`google=error&reason=${encodeURIComponent(e?.message ?? 'exchange_failed')}`)
@@ -139,10 +139,11 @@ const handler = async req => {
       // there, and entries whose time or title was edited there. Stamped before
       // reading, so a change that lands mid-read falls inside the next window.
       const at = new Date().toISOString()
-      const calendarId = await drafterCalendarId(user.id)
+      const cal = await resolveDrafterCalendar(user.id)
+      const calendarId = cal.id
       const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
       const { changes, entries } = googlePullRows(await listChangedMirrors(user.id, calendarId, since))
-      return Response.json({ changes, entries, calendarId, at })
+      return Response.json({ changes, entries, calendarId, replaced: cal.replaced, at })
     }
     if (action === 'push') {
       const startedAt = Date.now()
@@ -150,7 +151,8 @@ const handler = async req => {
       // when the account has none, never overwriting one that was chosen
       await adoptTimeZone(user.id, body.timezone)
       const projectNames = body.projects && typeof body.projects === 'object' ? body.projects : {}
-      const calendarId = await drafterCalendarId(user.id)
+      const cal = await resolveDrafterCalendar(user.id)
+      const calendarId = cal.id
       const tz = (await settingsGet(user.id).catch(() => null))?.timezone ?? null
       // `records` is the sweep: tasks and entries together, in small chunks, cut
       // short by the time budget with `left` naming what to send again. `tasks`
@@ -169,15 +171,15 @@ const handler = async req => {
         },
         sweep ? { startedAt } : { budgetMs: Infinity },
       )
-      return Response.json({ calendarId, ...result })
+      return Response.json({ calendarId, replaced: cal.replaced, ...result })
     }
     if (action === 'push-event') {
       // one entry at a time: this fires on save, not on a sweep
       const entry = body.event && typeof body.event === 'object' ? body.event : null
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
-      const calendarId = await drafterCalendarId(user.id)
-      const result = await (await import('./lib/google.mjs')).pushEntry(user.id, calendarId, entry, url.origin, { revive: body.revive === true })
-      return Response.json({ calendarId, result })
+      const cal = await resolveDrafterCalendar(user.id)
+      const result = await pushEntry(user.id, cal.id, entry, url.origin, { revive: body.revive === true })
+      return Response.json({ calendarId: cal.id, replaced: cal.replaced, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {
