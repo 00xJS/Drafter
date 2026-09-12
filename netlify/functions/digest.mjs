@@ -11,8 +11,8 @@
 import { newerStamp } from '../../shared/domain.mjs'
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
-import { weekKeyOf } from '../../shared/weeks.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
+import { previousWeekIn } from './lib/reviewweek.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -33,31 +33,14 @@ async function rest(path, init = {}) {
   return text ? JSON.parse(text) : null
 }
 
-/** Sunday-start week key matching src/review.ts weekRange (for previous week on Sunday). */
-function previousWeekMeta(now) {
-  const s = new Date(now)
-  s.setHours(0, 0, 0, 0)
-  s.setDate(s.getDate() - s.getDay() - 7) // start of last week
-  const e = new Date(s)
-  e.setDate(e.getDate() + 7)
-  const fmt = x => x.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
-  const last = new Date(e.getTime() - DAY)
-  const dayKey = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`
-  return {
-    key: weekKeyOf(dayKey),
-    label: `${fmt(s)} – ${fmt(last)}`,
-    start: s,
-    end: e,
-  }
-}
-
 /**
  * Draft a weekly review summary into posts when the owner hasn't written one.
- * Never clobbers reflections or an existing summary.
+ * Never clobbers reflections or an existing summary. `opts.timezone` is the
+ * reader's zone, which decides what "last week" is (lib/reviewweek.mjs).
  */
 export async function upsertSundayReview(userId, items, now = new Date(), opts = {}) {
   if (!resolveProvider()) return null
-  const meta = previousWeekMeta(now)
+  const meta = previousWeekIn(now, opts.timezone)
   // reviews are personal: only this user's row counts, never a household peer's for the same week
   const existing = (items ?? []).find(i => i.kind === 'review' && i.period === 'week' && i.key === meta.key && !i.deletedAt && (i.ownerId == null || i.ownerId === userId))
   if (existing?.summary?.trim() || existing?.reflections?.trim()) return null
@@ -75,15 +58,14 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
     .map(p => p.name)
     .slice(0, 20)
   // the journal is personal: only this user's own entries, never a household peer's
-  const dayKeyOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   // …and it reaches the model only when the account opted in (user_settings.digest_journal);
   // the on-demand summary the user presses for is explicit consent and always may
   const wrote = opts.journal
     ? journalLines(
         entriesBetween(
           (items ?? []).filter(i => i.kind === 'journal' && (i.ownerId == null || i.ownerId === userId)),
-          dayKeyOf(meta.start),
-          dayKeyOf(meta.end),
+          meta.startKey,
+          meta.endKey,
         ),
         10,
         220,
@@ -215,7 +197,7 @@ export default async () => {
         const sunday = weekday === 'Sun'
         if (sunday) {
           digest.lines.push('Sunday: your weekly review is ready.')
-          await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal }).catch(() => null)
+          await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz }).catch(() => null)
         }
         if (digest.lines.length > 0) {
           if (liveSubs.length && pushConfigured()) {
