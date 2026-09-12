@@ -8,6 +8,8 @@
 // hard-deletes purged tombstones past TOMBSTONE_TTL_MS (peers have had time to
 // see them).
 
+import { kindOf, readableKind } from '../../../shared/kinds.mjs'
+
 const DAY = 86_400_000
 export const KEEP_BACKUPS = 14
 export const HISTORY_TTL_MS = 60 * DAY
@@ -93,12 +95,18 @@ export function isSnapshotPath(path) {
   return typeof path === 'string' && new RegExp(`^${PREFIX}/[0-9a-f-]{36}/\\d{4}-\\d{2}-\\d{2}\\.json$`, 'i').test(path)
 }
 
-/** The snapshot body, exactly as it is written. Pure, so tests can pin the shape. */
+/**
+ * The snapshot body, exactly as it is written. Pure, so tests can pin the shape.
+ * runBackup hands each account only the rows it owns; the filter is the belt to
+ * those braces. A snapshot is one signed link away from whoever holds Admin, so
+ * another member's journal, reviews, calendars, habits or routines must never
+ * ride in this account's file, even if a caller passes the household's rows.
+ */
 export function buildSnapshot(userId, rows, exportedAt = new Date()) {
   return {
     exportedAt: new Date(exportedAt).toISOString(),
     userId,
-    items: (rows ?? []).map(r => r.data),
+    items: (rows ?? []).filter(r => readableKind(kindOf(r?.data), r?.user_id, userId)).map(r => r.data),
   }
 }
 
@@ -164,7 +172,8 @@ export async function signSnapshotUrl(objectPath, expiresIn = 300) {
 }
 
 export async function backupUser(userId, rows, date = dayKey(), exportedAt = new Date()) {
-  const body = JSON.stringify(buildSnapshot(userId, rows, exportedAt))
+  const snapshot = buildSnapshot(userId, rows, exportedAt)
+  const body = JSON.stringify(snapshot)
   const path = backupPath(userId, date)
   await storage(`/object/${BUCKET}/${path}`, {
     method: 'POST',
@@ -184,7 +193,7 @@ export async function backupUser(userId, rows, date = dayKey(), exportedAt = new
       body: JSON.stringify({ prefixes: drop.map(name => `${PREFIX}/${userId}/${name}`) }),
     }).catch(() => null)
   }
-  return { userId, path, items: (rows ?? []).length, bytes: Buffer.byteLength(body), kept: kept.length, dropped: drop.length }
+  return { userId, path, items: snapshot.items.length, bytes: Buffer.byteLength(body), kept: kept.length, dropped: drop.length }
 }
 
 /** Drop history rows older than the TTL. Returns the row count, or null if the server didn't say. */

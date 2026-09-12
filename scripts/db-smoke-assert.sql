@@ -282,9 +282,300 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 do $$
 begin
   if (select count(*) from public.posts where id = 'ev1') <> 1 then
-    raise exception 'FAIL 12: a household peer should see an event (only journal/review/calendar are private)';
+    raise exception 'FAIL 12: a household peer should see an event (only journal, review, calendar, habit and routine are private)';
   end if;
   raise notice 'ok 12: a household peer sees the event';
+end $$;
+commit;
+
+-- ===== v3.10 (level-up 1A) =====
+
+-- ------- 13. habits and routines are owner-only at the database, not just in the app
+-- v3.9 accepted both kinds but left the policies at journal/review/calendar, so a
+-- household peer's sync pull and a direct select both handed them over.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"habit","id":"habit-walk","name":"Walk","days":[],"done":["2026-09-08"],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"},
+    {"kind":"routine","id":"routine-am","name":"Morning","slot":"morning","steps":[],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL 13: the owner''s habit or routine was rejected: %', r -> 'rejected';
+  end if;
+  -- an edit, so the habit has a history row the peer must not read either
+  r := public.sync_posts('[{"kind":"habit","id":"habit-walk","name":"Walk","days":[],"done":["2026-09-08","2026-09-09"],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-09T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select count(*) from public.posts_history where id = 'habit-walk') <> 1 then
+    raise exception 'FAIL 13: the habit edit should leave one history row';
+  end if;
+  raise notice 'ok 13: the owner stores a habit and a routine';
+end $$;
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select array_agg(x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
+  if ids && array['habit-walk', 'routine-am'] then
+    raise exception 'FAIL 13: a peer''s sync pull returns the owner''s habit or routine: %', ids;
+  end if;
+  if not (ids @> array['t1', 'p1', 'nopi', 'pasta', 'ev1']) then
+    raise exception 'FAIL 13: the peer should still see the shared kinds, saw %', ids;
+  end if;
+  if (select count(*) from public.posts where id in ('habit-walk', 'routine-am')) <> 0 then
+    raise exception 'FAIL 13: direct select shows the peer the owner''s habit or routine';
+  end if;
+  if (select count(*) from public.posts_history where id = 'habit-walk') <> 0 then
+    raise exception 'FAIL 13: the peer can read the owner''s habit history';
+  end if;
+  -- nor write over one: the upsert fails the USING check and comes back rejected
+  r := public.sync_posts('[{"kind":"routine","id":"routine-am","name":"Mine now","slot":"morning","steps":[],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-10T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["routine-am"]'::jsonb then
+    raise exception 'FAIL 13: the peer''s write onto the owner''s routine should be rejected, got %', r -> 'rejected';
+  end if;
+  raise notice 'ok 13: a peer sees no habit, routine or their history, and still sees the shared kinds';
+end $$;
+commit;
+do $$
+begin
+  if (select data ->> 'name' from public.posts where id = 'routine-am') <> 'Morning' then
+    raise exception 'FAIL 13: the owner''s routine was changed by a peer';
+  end if;
+end $$;
+
+-- ------------------------------ 14. an account that owns rows can be deleted
+-- posts.user_id is ON DELETE SET NULL and NOT NULL at once, so deleting any
+-- account with a single row failed outright (Admin's deleteUser promised the
+-- rows would survive unowned). admin_prepare_user_deletion hands the shared rows
+-- to the heir and removes the personal rows and their history first.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000d', 'leaving@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-00000000000d', 'member');
+insert into public.households (id, name, created_by) values
+  ('00000000-0000-0000-0000-0000000000f1', 'Flat', '00000000-0000-0000-0000-00000000000d'),
+  ('00000000-0000-0000-0000-0000000000f2', 'Cousins', '00000000-0000-0000-0000-00000000000c');
+insert into public.household_invites (household_id, user_id, invited_by) values
+  ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000d'),
+  ('00000000-0000-0000-0000-0000000000f2', '00000000-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-00000000000c');
+insert into public.user_settings (user_id) values ('00000000-0000-0000-0000-00000000000d');
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","role":"authenticated","email":"leaving@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"task","id":"d-task","title":"Fix the gate","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"},
+    {"kind":"person","id":"d-person","name":"Gran","color":"#f472b6","group":"family","createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"},
+    {"kind":"habit","id":"d-habit","name":"Stretch","days":[],"done":[],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"},
+    {"kind":"journal","id":"journal~2026-09-08~d1","date":"2026-09-08","body":"Moving out","createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL 14: the leaving account''s rows were rejected: %', r -> 'rejected';
+  end if;
+  -- edits, so a shared row and a personal row both carry history
+  r := public.sync_posts('[
+    {"kind":"task","id":"d-task","title":"Fix the gate hinge","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T10:00:00.000Z"},
+    {"kind":"journal","id":"journal~2026-09-08~d1","date":"2026-09-08","body":"Moving out on Friday","createdAt":"2026-09-08T09:00:00.000Z","updatedAt":"2026-09-08T10:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if (select count(*) from public.posts_history where user_id = '00000000-0000-0000-0000-00000000000d') <> 2 then
+    raise exception 'FAIL 14: expected two history rows for the leaving account';
+  end if;
+end $$;
+commit;
+
+create temp table d_before as
+  select id, updated_at, synced_at, data from public.posts where user_id = '00000000-0000-0000-0000-00000000000d';
+
+do $$
+begin
+  begin
+    delete from auth.users where id = '00000000-0000-0000-0000-00000000000d';
+  exception when not_null_violation then
+    raise notice 'ok 14: unprepared, the delete fails on posts.user_id, as it did in production';
+    return;
+  end;
+  raise exception 'FAIL 14: deleting an account that owns rows should fail until it is prepared';
+end $$;
+
+do $$
+begin
+  if has_function_privilege('authenticated', 'public.admin_prepare_user_deletion(uuid, uuid)', 'execute')
+     or has_function_privilege('anon', 'public.admin_prepare_user_deletion(uuid, uuid)', 'execute') then
+    raise exception 'FAIL 14: admin_prepare_user_deletion must be service-role only';
+  end if;
+  if not has_function_privilege('service_role', 'public.admin_prepare_user_deletion(uuid, uuid)', 'execute') then
+    raise exception 'FAIL 14: the service role must be able to run admin_prepare_user_deletion';
+  end if;
+end $$;
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  begin
+    perform public.admin_prepare_user_deletion('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b');
+    raise exception 'FAIL 14: the site owner must never be prepared for deletion';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+  end;
+  begin
+    perform public.admin_prepare_user_deletion('00000000-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-00000000000d');
+    raise exception 'FAIL 14: an account must not inherit its own records';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+  end;
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-00000000000a');
+  if r <> '{"reassigned": 2, "deleted": 2, "historyReassigned": 1, "historyDeleted": 1}'::jsonb then
+    raise exception 'FAIL 14: unexpected counts from admin_prepare_user_deletion: %', r;
+  end if;
+  raise notice 'ok 14: prepared as the service role: %', r;
+end $$;
+commit;
+
+do $$
+begin
+  delete from auth.users where id = '00000000-0000-0000-0000-00000000000d';
+exception when others then
+  raise exception 'FAIL 14: the prepared account still cannot be deleted: %', sqlerrm;
+end $$;
+
+do $$
+begin
+  if (select count(*) from public.posts where id in ('d-task', 'd-person') and user_id = '00000000-0000-0000-0000-00000000000a') <> 2 then
+    raise exception 'FAIL 14: the shared rows should now belong to the heir';
+  end if;
+  if (select count(*) from public.posts where id in ('d-habit', 'journal~2026-09-08~d1')) <> 0 then
+    raise exception 'FAIL 14: the personal rows should be gone';
+  end if;
+  if (select count(*) from public.posts_history where id = 'journal~2026-09-08~d1') <> 0 then
+    raise exception 'FAIL 14: the journal''s history should be gone with it';
+  end if;
+  if (select count(*) from public.posts_history where id = 'd-task' and user_id = '00000000-0000-0000-0000-00000000000a') <> 1 then
+    raise exception 'FAIL 14: the shared task''s history should follow it to the heir';
+  end if;
+  if exists (select 1 from public.posts where user_id = '00000000-0000-0000-0000-00000000000d')
+     or exists (select 1 from public.posts_history where user_id = '00000000-0000-0000-0000-00000000000d') then
+    raise exception 'FAIL 14: rows still point at the deleted account';
+  end if;
+  -- only the owner moved: enforce_lww let it through, content and stamp are as
+  -- they were, and synced_at moved so every device pulls the new owner
+  if exists (
+    select 1 from public.posts p join d_before b using (id)
+     where p.data is distinct from b.data or p.updated_at <> b.updated_at or p.synced_at <= b.synced_at
+  ) then
+    raise exception 'FAIL 14: reassignment must change only the owner and synced_at';
+  end if;
+  if (select count(*) from public.posts_history where id in ('d-task', 'd-person')) <> 1 then
+    raise exception 'FAIL 14: an ownership change must not add a history row';
+  end if;
+  if exists (select 1 from public.household_members where user_id = '00000000-0000-0000-0000-00000000000d')
+     or exists (select 1 from public.household_invites where user_id = '00000000-0000-0000-0000-00000000000d')
+     or exists (select 1 from public.user_settings where user_id = '00000000-0000-0000-0000-00000000000d') then
+    raise exception 'FAIL 14: membership, invitations or settings outlived the account';
+  end if;
+  if (select created_by from public.households where id = '00000000-0000-0000-0000-0000000000f1') is not null
+     or (select invited_by from public.household_invites where household_id = '00000000-0000-0000-0000-0000000000f1') is not null then
+    raise exception 'FAIL 14: households.created_by and household_invites.invited_by should be set null';
+  end if;
+  raise notice 'ok 14: the account is gone; shared rows and their history belong to the heir, personal rows and their history are deleted';
+end $$;
+drop table d_before;
+
+-- --------------- 15. the sync canary: every kind stores, and nothing stays
+do $$
+begin
+  if has_function_privilege('authenticated', 'public.sync_canary(text[])', 'execute')
+     or has_function_privilege('anon', 'public.sync_canary(text[])', 'execute') then
+    raise exception 'FAIL 15: sync_canary must be service-role only';
+  end if;
+  if not has_function_privilege('service_role', 'public.sync_canary(text[])', 'execute') then
+    raise exception 'FAIL 15: the service role must be able to run sync_canary';
+  end if;
+end $$;
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb; posts_before bigint; history_before bigint;
+begin
+  select count(*) into posts_before from public.posts;
+  select count(*) into history_before from public.posts_history;
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine']);
+  if r <> '{"ok": true, "checked": 14, "failures": []}'::jsonb then
+    raise exception 'FAIL 15: the canary should pass for all 14 kinds, got %', r;
+  end if;
+  r := public.sync_canary(array['task', 'bogus']);
+  if r <> '{"ok": false, "checked": 2, "failures": [{"kind": "bogus", "reason": "rejected"}]}'::jsonb then
+    raise exception 'FAIL 15: a kind sync_posts does not know must fail, got %', r;
+  end if;
+  if (select count(*) from public.posts) <> posts_before or (select count(*) from public.posts_history) <> history_before then
+    raise exception 'FAIL 15: the canary left rows behind';
+  end if;
+  raise notice 'ok 15: the canary passes all 14 kinds, fails a bogus one, and leaves posts and history as they were';
+end $$;
+commit;
+do $$
+begin
+  if exists (select 1 from public.posts where id like 'canary~%') or exists (select 1 from public.posts_history where id like 'canary~%') then
+    raise exception 'FAIL 15: a canary row was committed';
+  end if;
+end $$;
+
+-- ...and it would have caught September: put the ambiguous `id` variable back
+-- into sync_posts inside a transaction that is rolled back, and every kind fails
+begin;
+create or replace function public.sync_posts(incoming jsonb, since timestamptz default null)
+returns jsonb
+language plpgsql
+as $$
+declare
+  item jsonb;
+  id text;
+  rejected jsonb := '[]'::jsonb;
+begin
+  for item in select value from jsonb_array_elements(incoming) loop
+    id := item->>'id';
+    begin
+      insert into public.posts as p (id, updated_at, synced_at, data, user_id)
+      values (item->>'id', (item->>'updatedAt')::timestamptz, clock_timestamp(), item, public.owner_user_id())
+      on conflict (id) do update set data = excluded.data where excluded.updated_at > p.updated_at;
+    exception when others then
+      rejected := rejected || jsonb_build_array(id);
+    end;
+  end loop;
+  return jsonb_build_object('items', '[]'::jsonb, 'rejected', rejected);
+end;
+$$;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.sync_canary(array['task', 'journal', 'habit']);
+  if (r ->> 'ok')::boolean or jsonb_array_length(r -> 'failures') <> 3 then
+    raise exception 'FAIL 15: with the September bug back, the canary must fail every kind, got %', r;
+  end if;
+  raise notice 'ok 15: with the ambiguous id put back, the canary fails every kind (%)', r -> 'failures' -> 0;
+end $$;
+rollback;
+
+begin;
+set local role service_role;
+do $$
+begin
+  if not (public.sync_canary(array['task']) ->> 'ok')::boolean then
+    raise exception 'FAIL 15: sync_posts should be itself again after the rolled-back break';
+  end if;
 end $$;
 commit;
 

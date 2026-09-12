@@ -13,6 +13,28 @@ export async function getUser(req) {
   return { user: { id: u.id, email: u.email ?? '' }, response: null }
 }
 
+/**
+ * getUser, failing closed, for the endpoints that spend the owner's keys
+ * (/api/ai, /api/github). They used to skip the check entirely when the auth
+ * settings were missing, which would have served anyone; now that is a 503
+ * that names what is missing, and no valid session is a 401.
+ */
+export async function requireUser(req) {
+  const { user, response, unconfigured } = await getUser(req)
+  if (unconfigured) {
+    return {
+      user: null,
+      response: Response.json(
+        { error: 'Sign-in is not configured on this site (SUPABASE_URL and SUPABASE_ANON_KEY are missing on the host), so this endpoint is switched off.' },
+        { status: 503 },
+      ),
+    }
+  }
+  if (response) return { user: null, response }
+  if (!user?.id) return { user: null, response: Response.json({ error: 'invalid session' }, { status: 401 }) }
+  return { user, response: null }
+}
+
 // ---- user_settings (service role only) ----------------------------------------
 
 function env() {
@@ -41,8 +63,9 @@ export async function settingsGet(userId) {
   return rows?.[0] ?? null
 }
 
-export async function settingsFind(column, value) {
-  const rows = await rest(`?${column}=eq.${encodeURIComponent(value)}&select=*&limit=1`)
+/** `init` rides along to fetch, e.g. an abort signal from a caller on a deadline. */
+export async function settingsFind(column, value, init = {}) {
+  const rows = await rest(`?${column}=eq.${encodeURIComponent(value)}&select=*&limit=1`, init)
   return rows?.[0] ?? null
 }
 

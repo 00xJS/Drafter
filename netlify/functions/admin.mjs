@@ -1,7 +1,7 @@
 // Site-owner Admin API (service role): integration health, live integration
 // tests, data/backup visibility, and Auth user ops.
 //   POST /api/admin { action } — session-gated
-//     me | status | dataStats
+//     me | status | dataStats | runSyncCanary
 //     listUsers | createUser | inviteUser | resetPassword | setDisabled | deleteUser
 //     listBackups | runBackup | downloadBackup
 //     testAi | testPush | runDigest
@@ -16,6 +16,7 @@ import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
 import { complete } from './lib/ai.mjs'
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, runBackup, signSnapshotUrl } from './lib/backup.mjs'
+import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
 import { buildPeerMap, sendEmail } from './digest.mjs'
@@ -49,6 +50,11 @@ async function count(path) {
   if (!res.ok) return null
   const m = /\/(\d+|\*)$/.exec(res.headers.get('content-range') ?? '')
   return m && m[1] !== '*' ? Number(m[1]) : null
+}
+
+/** Admin → Data's view of the latest sync canary: the stored record and one sentence about it. */
+function syncCheck(record) {
+  return { sentence: canarySentence(record, new Date()), record: record ?? null }
 }
 
 /** Page through a select with Range so a big table can't be silently truncated. */
@@ -213,12 +219,23 @@ const handler = async req => {
       const rows = await fetchAll('posts?select=user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged&order=id.asc')
       const users = await listUsers().catch(() => [])
       const emails = Object.fromEntries(users.map(u => [u.id, u.email]))
-      const [historyRows, households, householdMembers] = await Promise.all([
+      const [historyRows, households, householdMembers, canary] = await Promise.all([
         count('posts_history?select=id').catch(() => null),
         count('households?select=id').catch(() => null),
         count('household_members?select=user_id').catch(() => null),
+        readCanary(rest).catch(() => null),
       ])
-      return Response.json({ ...shapeDataStats(rows, { emails }), historyRows, households, householdMembers })
+      return Response.json({ ...shapeDataStats(rows, { emails }), historyRows, households, householdMembers, syncCheck: syncCheck(canary) })
+    }
+
+    if (action === 'runSyncCanary') {
+      // by hand, e.g. straight after `supabase db push`. Stored like the hourly
+      // run's, so "first seen" and the alert throttle carry on, but it never
+      // alerts: the owner is the one looking at it
+      const prev = await readCanary(rest).catch(() => null)
+      const { record } = nextCanaryRecord(prev, await runSyncCanary(rest), new Date())
+      await writeCanary(rest, record)
+      return Response.json(syncCheck(record))
     }
 
     if (action === 'listUsers') return Response.json({ users: await listUsers(), ownerEmail: gate.owner })
@@ -297,11 +314,31 @@ const handler = async req => {
       if (email && gate.owner && email === gate.owner) {
         return Response.json({ error: 'That is the owner account — deleting it would lock everyone out of Admin and of posts.' }, { status: 400 })
       }
-      // posts.user_id is ON DELETE SET NULL, so their records survive as
-      // unowned rows, which the policies then treat as the owner's
-      const owned = await count(`posts?select=id&user_id=eq.${encodeURIComponent(userId)}`).catch(() => null)
-      await authAdmin(`users/${userId}`, { method: 'DELETE' })
-      return Response.json({ ok: true, email: target?.email ?? null, orphanedRows: owned })
+      // posts.user_id is NOT NULL, so while the account owns a single row its
+      // auth delete fails (the foreign key's ON DELETE SET NULL breaks the
+      // constraint). admin_prepare_user_deletion hands the records over first,
+      // in one transaction: shared kinds to you, personal kinds and their
+      // history deleted.
+      let handed
+      try {
+        handed = await rest('rpc/admin_prepare_user_deletion', { method: 'POST', body: JSON.stringify({ target: userId, heir: user.id }) })
+      } catch (e) {
+        return Response.json({ error: `Could not hand their records over, so nothing was deleted: ${e?.message ?? e}` }, { status: 502 })
+      }
+      const counts = {
+        reassigned: Number(handed?.reassigned) || 0,
+        deleted: Number(handed?.deleted) || 0,
+        historyReassigned: Number(handed?.historyReassigned) || 0,
+        historyDeleted: Number(handed?.historyDeleted) || 0,
+      }
+      try {
+        await authAdmin(`users/${userId}`, { method: 'DELETE' })
+      } catch (e) {
+        // the records have moved and the sign-in is still there; running this
+        // again moves nothing twice and retries the delete
+        return Response.json({ error: `Their records were handed over, but the sign-in could not be deleted: ${e?.message ?? e}. Try again.`, ...counts }, { status: 502 })
+      }
+      return Response.json({ ok: true, email: target?.email ?? null, ...counts })
     }
 
     if (action === 'listBackups') {

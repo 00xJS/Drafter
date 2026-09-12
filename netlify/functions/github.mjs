@@ -1,10 +1,13 @@
 import { withCors } from './lib/cors.mjs'
+import { requireUser } from './lib/session.mjs'
 // GitHub link cards: the app pastes an issue / PR / repo / Projects URL onto a
 // task and this proxy returns its live state. Read-only. Uses GITHUB_TOKEN
 // when set (needed for private repos and for Projects v2, which is GraphQL-only);
 // public issues and repos work unauthenticated at GitHub's low anonymous rate.
 //
-// Session-gated exactly like /api/ai so the public site can't relay requests.
+// Session-gated exactly like /api/ai so the public site can't relay requests,
+// and failing closed the same way (requireUser): GITHUB_TOKEN can write, so a
+// host missing its auth settings answers 503 instead of relaying for anyone.
 
 const API = 'https://api.github.com'
 
@@ -370,16 +373,8 @@ async function write(req, url) {
 const handler = async req => {
   if (req.method !== 'GET' && req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
-  if (supabaseUrl && anonKey) {
-    const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
-    if (!token) return Response.json({ error: 'sign in required' }, { status: 401 })
-    const check = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: { apikey: anonKey, authorization: `Bearer ${token}` },
-    })
-    if (!check.ok) return Response.json({ error: 'invalid session' }, { status: 401 })
-  }
+  const { response } = await requireUser(req)
+  if (response) return response
 
   if (req.method === 'POST') return write(req, new URL(req.url))
   const url = new URL(req.url).searchParams.get('url') ?? ''

@@ -23,6 +23,21 @@ const KIND_LABELS: [string, string][] = [
   ['unknown', 'Legacy rows (no kind)'],
 ]
 
+/** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
+interface SyncCheck {
+  sentence: string
+  record: {
+    ok: boolean
+    checked: number
+    failures: { kind: string | null; reason: string }[]
+    error: string | null
+    at: string
+    failingSince: string | null
+    alertedAt: string | null
+  } | null
+}
+type Stats = DataStats & { syncCheck?: SyncCheck }
+
 interface Props {
   onClose(): void
 }
@@ -65,6 +80,36 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
   )
 }
 
+/** Admin → Data's card for the hourly sync check: what it last found, the kinds that failed, and a way to run it now. */
+function SyncCheckCard({ check, busy, checking, onCheck }: { check?: SyncCheck; busy: boolean; checking: boolean; onCheck(): void }) {
+  const record = check?.record ?? null
+  return (
+    <div className={record && !record.ok ? 'admin-health admin-alarm' : 'admin-health'}>
+      <p className="sync-line">
+        <strong>Sync check</strong>
+        <span className={record?.ok ? 'sync-ok' : 'warn'}>{!check ? 'Unknown' : !record ? 'Not run yet' : record.ok ? 'Passing' : 'Failing'}</span>
+      </p>
+      <p className="field-hint">{check?.sentence ?? 'The server did not report a sync check.'}</p>
+      {record && record.failures.length > 0 && (
+        <ul className="admin-stats">
+          {record.failures.map((f, i) => (
+            <Stat key={`${f.kind}-${i}`} label={f.kind ?? '(no kind)'} value={f.reason} tone="warn" />
+          ))}
+        </ul>
+      )}
+      <div className="check-add">
+        <button className="btn" disabled={busy} onClick={onCheck}>
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+      </div>
+      <p className="field-hint">
+        Every hour the digest writes one test row of each kind through <code>sync_posts</code> and rolls it back, so nothing is kept. If the server refuses one, you
+        are told through the digest’s push or email, at most every 12 hours.
+      </p>
+    </div>
+  )
+}
+
 function TestLine({ ok, detail, error }: { ok: boolean; detail?: string; error?: string | null }) {
   return (
     <p className="admin-test">
@@ -80,7 +125,7 @@ export function Admin({ onClose }: Props) {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
   const [status, setStatus] = useState<AdminStatus | null>(null)
-  const [stats, setStats] = useState<DataStats | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
   const [backups, setBackups] = useState<BackupList | null>(null)
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
   const [downloadUrl, setDownloadUrl] = useState('')
@@ -104,7 +149,7 @@ export function Admin({ onClose }: Props) {
       setOwnerEmail(r.ownerEmail)
     })
   const refreshStatus = () => adminAction<AdminStatus>('status').then(setStatus)
-  const refreshStats = () => adminAction<DataStats>('dataStats').then(setStats)
+  const refreshStats = () => adminAction<Stats>('dataStats').then(setStats)
   const refreshBackups = () => adminAction<BackupList>('listBackups').then(setBackups)
 
   useEffect(() => {
@@ -269,8 +314,9 @@ export function Admin({ onClose }: Props) {
 
             <h4>Users</h4>
             <p className="field-hint">
-              Deleting an account removes the sign-in, not the records: <code>posts.user_id</code> is <code>on delete set null</code>, so their tasks, projects and people
-              stay in the database as unowned rows — which the policies then treat as the site owner’s legacy rows. Disable instead if you only want to lock someone out.
+              Deleting an account hands their shared records (tasks, projects, people, places, the kitchen, events) to you and deletes their personal ones (journal,
+              reviews, calendar subscriptions, habits, routines) together with their history. Backup snapshots already taken are left as they are. Disable instead if you
+              only want to lock someone out.
             </p>
             {users ? (
               <ul className="cal-sources admin-users">
@@ -303,11 +349,13 @@ export function Admin({ onClose }: Props) {
                       <ConfirmButton
                         className="btn subtle danger"
                         confirmLabel="Delete for good?"
-                        title={`Delete the ${u.email} sign-in. Their records stay, unowned.`}
+                        title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted.`}
                         onConfirm={() =>
                           run(async () => {
-                            const r = await adminAction<{ email: string | null; orphanedRows: number | null }>('deleteUser', { userId: u.id })
-                            setLinkOut(`Deleted ${r.email ?? u.email}. ${r.orphanedRows ?? 0} record(s) are now unowned and read as yours.`)
+                            const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number }>('deleteUser', { userId: u.id })
+                            setLinkOut(
+                              `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s) and ${r.historyDeleted} history row(s) were deleted.`,
+                            )
                             await Promise.all([refreshUsers(), refreshStats()])
                           })
                         }
@@ -331,6 +379,17 @@ export function Admin({ onClose }: Props) {
             </p>
             {stats ? (
               <>
+                <SyncCheckCard
+                  check={stats.syncCheck}
+                  busy={busy}
+                  checking={pending === 'syncCheck'}
+                  onCheck={() =>
+                    runNamed('syncCheck', async () => {
+                      const check = await adminAction<SyncCheck>('runSyncCanary')
+                      setStats(s => (s ? { ...s, syncCheck: check } : s))
+                    })
+                  }
+                />
                 <ul className="admin-stats">
                   <Stat label="Live records" value={stats.live} tone={stats.live > 0 ? 'ok' : 'warn'} />
                   {KIND_LABELS.filter(([k]) => (stats.kinds[k] ?? 0) > 0 || k === 'task').map(([k, label]) => (
