@@ -6,7 +6,7 @@
 import { withCors } from './lib/cors.mjs'
 import { expandEvents, parseICS } from '../../shared/ics.mjs'
 import { listEvents, toEvent } from './lib/google.mjs'
-import { listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
+import { isOwnDrafterCalendar, listAccounts as msListAccounts, listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
 import { getUser } from './lib/session.mjs'
 
 const MAX_SOURCES = 12
@@ -69,6 +69,9 @@ const handler = async req => {
     if (s && s.id) errors[String(s.id)] = `Only ${MAX_SOURCES} calendars can be shown at once. Untick another to see this one.`
   }
   const names = {}
+  // read once, and only when an Outlook calendar is asked for
+  let msAccounts = null
+  const outlookAccounts = () => (msAccounts ??= msListAccounts(user.id).catch(() => []))
   await Promise.all(
     sources.map(async src => {
       const id = String(src?.id ?? '')
@@ -83,6 +86,14 @@ const handler = async req => {
         if (!accountId || !calendarId) return
         if (!user) {
           errors[id] = 'Outlook calendars need a signed-in account'
+          return
+        }
+        // The account's own Drafter calendar holds Drafter's mirrored entries,
+        // which the grid already draws from Drafter itself: overlaid, every one
+        // showed twice. Settings no longer offers it; one ticked before is
+        // refused here with a reason rather than drawn.
+        if (isOwnDrafterCalendar((await outlookAccounts()).find(a => a.id === accountId), calendarId)) {
+          errors[id] = 'This is Drafter’s own calendar in Outlook: its entries already show here, so it is not overlaid. Untick it.'
           return
         }
         try {

@@ -36,6 +36,13 @@ export interface EntryChangeRow {
   updated: string
 }
 
+/** One of the account's calendars as Settings lists it; `drafter` marks the account's own Drafter calendar. */
+export declare function graphCalendarRow(
+  c: { id: string; name?: string; canEdit?: boolean; isDefaultCalendar?: boolean },
+  drafterCalendarId: string | null,
+): { id: string; name?: string; primary: boolean; writable: boolean; drafter: boolean }
+export declare function isOwnDrafterCalendar(account: { drafterCalendarId?: string | null } | null | undefined, calendarId: string): boolean
+
 /** One Graph call as the account; retries once with a fresh token after a 401. */
 export declare function graph(userId: string, accountId: string, path: string, init?: RequestInit): Promise<unknown>
 export declare function pickGraphDrafterCalendar(calendars: { id: string; name?: string; writable?: boolean }[] | null | undefined, storedId: string | null): string | null

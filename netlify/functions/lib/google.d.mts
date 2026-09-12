@@ -81,6 +81,12 @@ export interface CalendarListRow {
   deleted?: boolean
 }
 
+/** One calendar as Settings lists it; `drafter` marks Drafter's own calendar. */
+export declare function googleCalendarRow(
+  c: CalendarListRow & { backgroundColor?: string; primary?: boolean },
+  storedId: string | null,
+): { id: string; name?: string; color?: string; primary: boolean; writable: boolean; drafter: boolean }
+
 /** Which of the account's calendars is Drafter's: the stored one, else the lowest id among ours. */
 export declare function pickDrafterCalendar(items: CalendarListRow[] | null | undefined, storedId: string | null): string | null
 /** The Drafter calendar, found or made; `replaced` when the stored one had gone. */

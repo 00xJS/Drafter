@@ -135,15 +135,26 @@ export async function listEvents(userId, calendarId, fromIso, toIso) {
   return out
 }
 
-export async function listCalendars(userId) {
-  const page = await gapi(userId, '/users/me/calendarList?minAccessRole=reader&showHidden=false')
-  return (page.items ?? []).map(c => ({
+/**
+ * One calendar as Settings lists it. `drafter` marks Drafter's own calendar
+ * (the stored one, or one that is ours by title or description): its events
+ * are Drafter's, already on the grid, so Settings keeps it out of the overlay
+ * picker rather than offer a row that can only ever show "0 events".
+ */
+export function googleCalendarRow(c, storedId) {
+  return {
     id: c.id,
     name: c.summaryOverride || c.summary,
     color: c.backgroundColor,
     primary: !!c.primary,
     writable: c.accessRole === 'owner' || c.accessRole === 'writer',
-  }))
+    drafter: (!!storedId && c.id === storedId) || pickDrafterCalendar([c], null) === c.id,
+  }
+}
+
+export async function listCalendars(userId) {
+  const [page, settings] = await Promise.all([gapi(userId, '/users/me/calendarList?minAccessRole=reader&showHidden=false'), settingsGet(userId).catch(() => null)])
+  return (page.items ?? []).map(c => googleCalendarRow(c, settings?.google_drafter_calendar_id ?? null))
 }
 
 /** What Drafter writes on the calendar it makes, and one way it recognises it again. */

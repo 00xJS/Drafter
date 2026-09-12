@@ -154,7 +154,7 @@ const handler = async req => {
       const out = []
       for (const a of accounts) {
         try {
-          out.push({ account: publicAccount(a), calendars: await listCalendars(user.id, a.id) })
+          out.push({ account: publicAccount(a), calendars: await listCalendars(user.id, a.id, a.drafterCalendarId ?? null) })
         } catch (e) {
           out.push({ account: publicAccount(a), calendars: [], error: e?.message ?? 'could not list calendars' })
         }

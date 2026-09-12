@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Store } from '../store'
-import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, googlePushId, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
+import { CalendarFeedInfo, CalendarState, GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, disconnectOutlook, googlePushId, mirrorToggle, GoogleCalendarInfo, GooglePushState, GoogleStatus, MicrosoftCalendarInfo, MicrosoftStatus, feedAction, fetchFeedInfo, googleAction, inboundAction, isGoogleSource, isMicrosoftSource, microsoftAction, msPushId, msPushUrl, msSourceUrl, resetGooglePushCursor, resetMicrosoftPushCursor } from '../calendars'
 import { newerStamp } from '../itemops'
 import { enableNotifications, notificationPermission } from '../notify'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
@@ -629,6 +629,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                   <ul className="cal-sources">
                     {googleCals.map(cal => {
                       const src = store.calendars.find(c => c.url === `google:${cal.id}`)
+                      // Drafter's own calendar is no overlay: what it holds is already on the grid. Listed only to untick one ticked before.
+                      if (cal.drafter && !src) return null
                       return (
                         <li key={cal.id} className="cal-source">
                           <input type="checkbox" checked={!!src?.enabled} aria-label={`Show ${cal.name}`} onChange={e => toggleGoogleCalendar(cal, e.target.checked)} />
@@ -636,6 +638,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                           <span className="cal-source-name">
                             {cal.name}
                             {cal.primary && <small> · primary</small>}
+                            {cal.drafter && <small> · Drafter’s own calendar — untick it</small>}
                           </span>
                           <span className="cal-source-status">
                             {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}
@@ -731,10 +734,20 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                               className="btn subtle danger"
                               confirmLabel="Disconnect?"
                               onConfirm={async () => {
-                                for (const c of store.calendars.filter(c => c.url.includes(acct.id))) store.remove(c.id)
-                                await microsoftAction('disconnect', { accountId: acct.id })
-                                setMs(await microsoftAction<MicrosoftStatus>('status'))
+                                setMsError('')
+                                // the server first: a refused disconnect must not look done here
+                                try {
+                                  await disconnectOutlook(acct.id, store.calendars, id => store.remove(id))
+                                } catch (e) {
+                                  setMsError(`Could not disconnect ${acct.email || acct.name}: ${(e as Error).message} Nothing was changed.`)
+                                  return
+                                }
                                 setMsCals(cur => (cur ?? []).filter(x => x.account.id !== acct.id))
+                                try {
+                                  setMs(await microsoftAction<MicrosoftStatus>('status'))
+                                } catch {
+                                  setMs(cur => (cur ? { ...cur, accounts: cur.accounts.filter(a => a.id !== acct.id) } : cur))
+                                }
                               }}
                             >
                               Disconnect
@@ -746,6 +759,8 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                             <ul className="cal-sources">
                               {entry.calendars.map(cal => {
                                 const src = store.calendars.find(c => c.url === msSourceUrl(acct.id, cal.id))
+                                // the account's own Drafter calendar would draw every entry twice; listed only to untick one ticked before
+                                if (cal.drafter && !src) return null
                                 return (
                                   <li key={cal.id} className="cal-source">
                                     <input
@@ -769,6 +784,7 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
                                     <span className="cal-source-name">
                                       {cal.name}
                                       {cal.primary && <small> · primary</small>}
+                                      {cal.drafter && <small> · Drafter’s own calendar — untick it</small>}
                                     </span>
                                     <span className="cal-source-status">
                                       {src && calendars.errors[src.id] ? <span className="warn">{calendars.errors[src.id]}</span> : src ? <small>{calendars.events.filter(e => e.sourceId === src.id).length} events</small> : null}

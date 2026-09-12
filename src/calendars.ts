@@ -62,6 +62,8 @@ export interface GoogleCalendarInfo {
   color?: string
   primary: boolean
   writable: boolean
+  /** Drafter's own mirror calendar: what it holds is already on the grid, so it is no overlay. */
+  drafter?: boolean
 }
 
 export function googleAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -1123,6 +1125,8 @@ export interface MicrosoftCalendarInfo {
   name: string
   primary: boolean
   writable: boolean
+  /** The account's own Drafter calendar: overlaid, every entry showed twice. */
+  drafter?: boolean
 }
 
 export function microsoftAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -1140,6 +1144,29 @@ export const msSourceUrl = (accountId: string, calendarId: string) => `ms:${acco
 export const msPushUrl = (accountId: string) => `ms-push:${accountId}`
 export const msPushId = (accountId: string) => `ms-push-${accountId}`
 export const isMicrosoftSource = (s: CalendarSource) => s.url.startsWith('ms:') || s.url.startsWith('ms-push:')
+
+/** The calendar rows that belong to one Outlook account — its overlays and its mirror switch — and no other account's. */
+export function outlookSourcesFor(accountId: string, sources: CalendarSource[]): CalendarSource[] {
+  return sources.filter(c => c.url.startsWith(`ms:${accountId}:`) || c.url === msPushUrl(accountId))
+}
+
+/**
+ * Disconnect one Outlook account: the server first, and only once it has
+ * forgotten the account are this device's rows for it removed. It used to be
+ * the other way round, so a disconnect the server refused (offline, a lapsed
+ * session) looked done here while the account stayed connected there. Throws
+ * with the server's reason, and then nothing here has changed.
+ */
+export async function disconnectOutlook(
+  accountId: string,
+  sources: CalendarSource[],
+  remove: (id: string) => void,
+  action: (name: string, payload: Record<string, unknown>) => Promise<unknown> = microsoftAction,
+): Promise<void> {
+  await action('disconnect', { accountId })
+  for (const c of outlookSourcesFor(accountId, sources)) remove(c.id)
+  resetMicrosoftPushCursor(accountId)
+}
 
 const MS_PUSH_CURSOR = 'drafter:ms-push-cursor'
 const MS_PULL_CURSOR = 'drafter:ms-pull-cursor'

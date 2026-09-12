@@ -211,14 +211,28 @@ export async function disconnectAccount(userId, accountId) {
 
 // ----------------------------------------------------------------- reading
 
-export async function listCalendars(userId, accountId) {
-  const page = await graph(userId, accountId, '/me/calendars?$top=50&$select=id,name,color,canEdit,isDefaultCalendar')
-  return (page.value ?? []).map(c => ({
+/**
+ * One of the account's calendars as Settings lists it. `drafter` marks the
+ * account's own Drafter calendar: what it holds is Drafter's (mirrored tasks
+ * and entries), already on the grid from Drafter itself, so ticking it as an
+ * overlay showed every entry twice. Settings keeps it out of the picker.
+ */
+export function graphCalendarRow(c, drafterCalendarId) {
+  return {
     id: c.id,
     name: c.name,
     primary: !!c.isDefaultCalendar,
     writable: c.canEdit !== false,
-  }))
+    drafter: !!drafterCalendarId && c.id === drafterCalendarId,
+  }
+}
+
+/** True when this calendar is the account's own Drafter calendar (see graphCalendarRow). */
+export const isOwnDrafterCalendar = (account, calendarId) => !!account?.drafterCalendarId && account.drafterCalendarId === calendarId
+
+export async function listCalendars(userId, accountId, drafterCalendarId = null) {
+  const page = await graph(userId, accountId, '/me/calendars?$top=50&$select=id,name,color,canEdit,isDefaultCalendar')
+  return (page.value ?? []).map(c => graphCalendarRow(c, drafterCalendarId))
 }
 
 /** Graph event -> the app's CalendarEvent shape (null for our own mirrored tasks). */
