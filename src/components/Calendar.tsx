@@ -16,6 +16,7 @@ import {
   weekLabel,
 } from '../calgrid'
 import { mealsByDay } from '../kitchen'
+import { plannedGift } from '../people'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { ProjectChip } from './bits'
@@ -493,6 +494,10 @@ export function Calendar({
                 {sheetItems.map(item => {
                   if (item.kind === 'occasion') {
                     const { person, kind } = item.occasion
+                    // Today's rule, not a copy of it: an open gift task near
+                    // this day means the gift is in hand, so open that one
+                    // rather than offering to plan a second
+                    const gift = plannedGift(person.id, kind, sheetDay, tasks)
                     return (
                       <li key={item.id} className="cal-row">
                         <span className="cal-item-dot" style={{ background: person.color }} />
@@ -502,16 +507,28 @@ export function Calendar({
                           </span>
                           <span className="cal-row-meta">{itemMeta(item)}</span>
                         </div>
-                        <button
-                          className="btn cal-row-action"
-                          onClick={() => {
-                            const at = sheetDay
-                            closeSheet()
-                            onPlanOccasion(person, kind, at)
-                          }}
-                        >
-                          Plan a gift
-                        </button>
+                        {gift ? (
+                          <button
+                            className="btn cal-row-action"
+                            onClick={() => {
+                              closeSheet()
+                              onOpen(gift)
+                            }}
+                          >
+                            Gift planned
+                          </button>
+                        ) : (
+                          <button
+                            className="btn cal-row-action"
+                            onClick={() => {
+                              const at = sheetDay
+                              closeSheet()
+                              onPlanOccasion(person, kind, at)
+                            }}
+                          >
+                            Plan a gift
+                          </button>
+                        )}
                       </li>
                     )
                   }
