@@ -19,12 +19,20 @@ export function isOpen(t: Task): boolean {
 
 export type DueTone = 'overdue' | 'late' | 'today' | 'soon' | 'later' | 'none'
 
+/** A due date stored at local midnight is a day with no time (the editor, reminders and calendar all read it so). */
+export function hasDueTime(iso: string): boolean {
+  const d = new Date(iso)
+  return d.getHours() + d.getMinutes() > 0
+}
+
 export function dueTone(t: Task, now: Date = new Date()): DueTone {
   if (!t.dueAt || !isOpen(t)) return 'none'
-  const due = new Date(t.dueAt).getTime()
   const off = dayOffset(t.dueAt, now)
-  if (due < now.getTime()) return off === 0 ? 'late' : 'overdue'
-  if (off === 0) return 'today'
+  if (off < 0) return 'overdue'
+  // "late" means a time that has passed. An untimed task is due all day, so it
+  // stays "today" until midnight and is overdue from then — its 00:00 stamp is
+  // a day, not a deadline, and must not read as late from the moment you wake.
+  if (off === 0) return hasDueTime(t.dueAt) && new Date(t.dueAt).getTime() < now.getTime() ? 'late' : 'today'
   if (off <= 7) return 'soon'
   return 'later'
 }
@@ -36,10 +44,11 @@ export function dueLabel(t: Task, now: Date = new Date()): string {
   if (!t.dueAt) return ''
   const off = dayOffset(t.dueAt, now)
   const dueDate = new Date(t.dueAt)
-  const hasTime = dueDate.getHours() + dueDate.getMinutes() > 0
+  const hasTime = hasDueTime(t.dueAt)
   const time = hasTime ? ` ${fmtTime(t.dueAt)}` : ''
   if (isOpen(t) && off < 0) return `Overdue ${-off}d`
-  if (isOpen(t) && off === 0 && dueDate.getTime() < now.getTime()) return hasTime ? `Was${time}` : 'Was earlier'
+  // same rule as dueTone: only a time can already have passed today
+  if (isOpen(t) && off === 0 && hasTime && dueDate.getTime() < now.getTime()) return `Was${time}`
   if (off === 0) return `Today${time}`
   if (off === 1) return `Tomorrow${time}`
   if (off > 1 && off <= 6) return `${WEEKDAY_FMT.format(dueDate)}${time}`
