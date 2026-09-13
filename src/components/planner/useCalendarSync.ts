@@ -1,9 +1,22 @@
 import { useMemo, useRef, useState } from 'react'
-import type { CalendarEntry, TaskStatus } from '../../types'
+import type { CalendarEntry } from '../../types'
 import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
-import { newerStamp, localMidnightIso } from '../../itemops'
-import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, useCalendarEvents, useGooglePush, useMicrosoftSync, entryPullWrites, type EntryChange } from '../../calendars'
+import {
+  entryToEvent,
+  pushEventToGoogle,
+  pushEventToMicrosoft,
+  GOOGLE_PUSH_ID,
+  googlePushId,
+  useCalendarEvents,
+  useGooglePush,
+  useMicrosoftSync,
+  entryPullWrites,
+  mirrorChangeWrites,
+  type EntryChange,
+  type GoogleChange,
+  type MirrorDone,
+} from '../../calendars'
 import type { useToast } from './useToast'
 
 interface Deps {
@@ -42,49 +55,16 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     entries => applyEntryChanges(entries, 'Google Calendar'),
   )
 
-  /** A mirrored task moved (or was deleted) in an external calendar. */
-  const applyMirrorChanges = (
-    changes: { taskId: string; deleted: boolean; start: string | null; updated: string; allDay?: boolean }[],
-    source: string,
-  ) => {
-    let moved = 0
-    const undone: { id: string; status: TaskStatus }[] = []
-    for (const c of changes) {
-      const t = store.tasks.find(x => x.id === c.taskId)
-      if (!t || c.updated <= t.updatedAt) continue
-      if (c.deleted) {
-        // A cancelled event for a task that is no longer mirrored is our OWN
-        // delete echoing back, not the owner deleting it in the provider: the
-        // mirror removes the event the moment a task leaves the open, dated set
-        // (wishlist, due date cleared, done, canceled), and the pull then sees
-        // that cancellation. Reading it as "deleted in Google, so done" marked a
-        // task done seconds after it was moved to Wishlist. Same rule the server
-        // uses to decide what to mirror (lib/google.mjs pushTask `wanted`).
-        if (!isMirroredTask(t)) continue
-        const change = store.setStatus(t.id, 'done')
-        if (change) undone.push({ id: t.id, status: change.prev.status })
-        continue
-      }
-      if (!c.start) continue
-      const next = c.allDay
-        ? localMidnightIso(/^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10))
-        : new Date(c.start).toISOString()
-      if (!next || next === t.dueAt) continue
-      // compare all-day by local date key so a 09:00 rewrite is ignored
-      if (c.allDay && t.dueAt) {
-        const localKey = (iso: string) => {
-          const d = new Date(iso)
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        }
-        if (localKey(t.dueAt) === next.slice(0, 10) || localKey(t.dueAt) === c.start.slice(0, 10)) continue
-      }
-      store.upsert({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
-      moved++
-    }
-    if (moved) showToast(`${moved} task${moved === 1 ? '' : 's'} moved from ${source}`)
+  /** A mirrored task moved (or was deleted) in an external calendar: mirrorChangeWrites decides, this saves and says so. */
+  const applyMirrorChanges = (changes: GoogleChange[], source: string) => {
+    const { writes, done } = mirrorChangeWrites(store.tasks, changes)
+    for (const t of writes) store.upsert(t)
+    const undone: MirrorDone[] = []
+    for (const d of done) if (store.setStatus(d.id, 'done')) undone.push(d)
+    if (writes.length) showToast(`${writes.length} task${writes.length === 1 ? '' : 's'} moved from ${source}`)
     if (undone.length)
       showToast(`${undone.length} task${undone.length === 1 ? '' : 's'} marked done from ${source}`, () => {
-        for (const u of undone) store.setStatus(u.id, u.status)
+        for (const u of undone) store.setStatus(u.id, u.prevStatus)
       })
   }
 
