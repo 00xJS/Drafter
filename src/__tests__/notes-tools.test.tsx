@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { NotePane } from '../components/notes/NotePane'
 import { NotesView } from '../components/NotesView'
 import { RichNotes } from '../components/RichNotes'
+import { keepsTipOnScroll } from '../components/notes/tips'
 import { migrateStored, sanitizeItem, sanitizeProject } from '../schema'
 import { Note, Project } from '../types'
 import { sheetSource } from './source'
@@ -95,6 +96,34 @@ describe('a notepad’s pin', () => {
     const src = read('../components/NotesView.tsx')
     expect(src).toContain('persist(current => ({ notesPinned: current.notesPinned ? undefined : true }))')
     expect(src).toContain('onSave({ ...current, ...words, ...also?.(current), updatedAt: newerStamp(current.updatedAt) })')
+  })
+})
+
+describe('a tip through a scroll', () => {
+  const W = 390
+  const H = 800
+  /** A 30px button with its top edge at `top` and its left edge at `left`. */
+  const button = (top: number, left = 100) => ({ top, bottom: top + 30, left, right: left + 30 })
+
+  it('stays with a button that keyboard focus scrolled into view', () => {
+    expect(keepsTipOnScroll(false, button(12), W, H)).toBe(true)
+    // half of it past the top edge is still in the window
+    expect(keepsTipOnScroll(false, button(-15), W, H)).toBe(true)
+  })
+
+  it('goes once the button has left the window, on any side', () => {
+    for (const at of [button(-30), button(H), button(100, -30), button(100, W)]) expect(keepsTipOnScroll(false, at, W, H), JSON.stringify(at)).toBe(false)
+  })
+
+  it('goes under the mouse, which is no longer on its button', () => {
+    expect(keepsTipOnScroll(true, button(12), W, H)).toBe(false)
+  })
+
+  it('is moved by a scroll, not put away by it', () => {
+    const src = read('../components/notes/NoteTips.tsx')
+    expect(src).toContain("window.addEventListener('scroll', scrolled, true)")
+    expect(src).not.toMatch(/addEventListener\('scroll', hide/)
+    expect(src).toContain('keepsTipOnScroll(up.mouse, at, page.clientWidth, page.clientHeight)')
   })
 })
 

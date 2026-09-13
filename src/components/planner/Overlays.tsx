@@ -151,12 +151,12 @@ export function Overlays({ p }: { p: PlannerCtx }) {
         <Layer name="the project editor">
           <ProjectEditor
             project={projectEditor.project}
-            tasks={projectEditor.project ? store.tasks.filter(t => t.projectId === projectEditor.project!.id) : []}
+            tasks={store.tasks.filter(t => t.projectId === projectEditor.project.id)}
             getLatest={id => store.projects.find(x => x.id === id)}
             onSave={p => {
-              // a new project just closes the editor: the person opened it from
-              // Today, the Timeline or the palette and stays put; it shows up in
-              // the Board's chips and on the Timeline on its own
+              // the editor only ever opens on the existing project, from its
+              // Timeline bar, a milestone in a calendar day or search; saving
+              // closes it and leaves the person where they were
               store.upsert(p)
               setProjectEditor(null)
             }}
@@ -176,16 +176,16 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               store.upsert(p)
               for (const t of ts) store.upsert(t)
               setProjectEditor(null)
-              // a template or a drafted plan just made a batch of dated tasks; the
-              // board, chips on, is where they show as a group (for this visit
-              // only — the toast names the project)
+              // a template or a drafted plan just added a batch of dated tasks
+              // to the project: the Board shows them together, and the toast
+              // says how many
               goTasksTab('board')
               setView('tasks')
-              showToast(`${projectEditor.project ? 'Added' : 'Created'} ${ts.length} task${ts.length === 1 ? '' : 's'} in “${p.name}”`)
+              showToast(`Added ${ts.length} task${ts.length === 1 ? '' : 's'} to “${p.name}”`)
             }}
             onSaveTemplate={t => {
               store.upsert(t)
-              showToast(`Template “${t.name}” saved — pick it when creating a project`)
+              showToast(`Template “${t.name}” saved — pick it in the project editor to add its tasks`)
             }}
           />
         </Layer>

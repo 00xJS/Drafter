@@ -183,6 +183,24 @@ export function instantiateTemplate(tpl: Template, start: Date, overrides: Parti
   return { project, tasks }
 }
 
+/**
+ * A template's (or a drafted plan's) tasks and milestones added to a project
+ * that already exists, dated from `start`. The project is passed as it now
+ * stands and keeps everything of its own — name, colour, emoji, description,
+ * dates, notepad, pin, owner — and only gains the milestones; its notepad takes
+ * the template's notes only when it has none of any kind. Its start and target
+ * are never filled in: a template's span is not the project's, and the one
+ * ongoing project has no end (a target date would end its Timeline bar there).
+ * The caller stamps it.
+ */
+export function extendProject(project: Project, tpl: Template, start: Date): { project: Project; tasks: Task[] } {
+  const made = instantiateTemplate(tpl, start, { id: project.id })
+  const milestones = [...(project.milestones ?? []), ...(made.project.milestones ?? [])]
+  const next: Project = { ...project, milestones: milestones.length > 0 ? milestones : undefined }
+  if (next.notesHtml === undefined && !next.notes && tpl.notesHtml) next.notesHtml = tpl.notesHtml
+  return { project: next, tasks: made.tasks }
+}
+
 /** Capture an existing project as a reusable template (offsets relative to its start). */
 export function templateFromProject(project: Project, tasks: Task[]): Template {
   const anchor = startOfDay(new Date(project.startAt ?? project.createdAt)).getTime()

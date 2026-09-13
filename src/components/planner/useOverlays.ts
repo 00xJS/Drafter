@@ -13,7 +13,7 @@ export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
-  const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
+  const [projectEditor, setProjectEditor] = useState<{ project: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
