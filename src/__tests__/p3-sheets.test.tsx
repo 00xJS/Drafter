@@ -434,7 +434,7 @@ describe('Shut down (B3)', () => {
     expect(c('dueToday', 'due 3pm')).toBe('due 3pm tomorrow')
     expect(c('nextUp', 'due tomorrow')).toBe('due the day after')
     expect(c('nextUp', 'due 9h ago')).toBe('due tomorrow')
-    expect(c('nextUp', 'project is moving')).toBe('project is moving')
+    expect(c('nextUp', 'untouched 30d')).toBe('untouched 30d')
   })
 
   it('remembers a closed day on this device only, and Undo reopens it', () => {

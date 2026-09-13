@@ -53,17 +53,10 @@ const PRIORITY_POINTS = { urgent: 3, high: 2, normal: 1, low: 0 }
  * as Today does. `exclude` leaves tasks out without changing how the rest
  * score: today's focus has a card of its own and is not listed twice.
  */
-export function nextUp(tasks, projects, limit = 6, now = new Date(), pinnedTitles = [], exclude = new Set()) {
+export function nextUp(tasks, _projects, limit = 6, now = new Date(), pinnedTitles = [], exclude = new Set()) {
   const nowMs = now.getTime()
   const open = (tasks ?? []).filter(t => OPEN.includes(t.status) && !exclude.has(t.id))
   // a project touched recently is one you are actually in the middle of
-  const projectTouched = new Map()
-  for (const t of tasks ?? []) {
-    if (!t.projectId) continue
-    const at = Date.parse(t.updatedAt)
-    if (Number.isFinite(at)) projectTouched.set(t.projectId, Math.max(projectTouched.get(t.projectId) ?? 0, at))
-  }
-  const active = new Set((projects ?? []).filter(p => p.status === 'active').map(p => p.id))
   const pinSet = new Set((pinnedTitles ?? []).map(t => t.trim().toLowerCase()).filter(Boolean))
 
   const scored = open.map(t => {
@@ -104,12 +97,12 @@ export function nextUp(tasks, projects, limit = 6, now = new Date(), pinnedTitle
       score += 200 - Math.min(days, 90)
       reason = `due in ${days}d`
     } else {
-      // undated: the backlog this list exists to surface
-      const touched = t.projectId ? projectTouched.get(t.projectId) ?? 0 : 0
-      const projectIsMoving = touched > nowMs - 14 * DAY_MS
+      // undated: the backlog this list exists to surface, longest untouched
+      // first. A project no longer lifts a task: with one home project every
+      // task sat in a "moving" project, so it ranked and read the same for all.
       const idleDays = Math.floor((nowMs - Date.parse(t.updatedAt)) / DAY_MS)
-      score += 300 + (projectIsMoving ? 80 : 0) + Math.min(idleDays, 60)
-      reason = projectIsMoving ? 'project is moving' : idleDays > 21 ? `untouched ${idleDays}d` : 'no date yet'
+      score += 300 + Math.min(idleDays, 60)
+      reason = idleDays > 21 ? `untouched ${idleDays}d` : 'no date yet'
     }
 
     if (t.status === 'blocked') {
@@ -118,7 +111,6 @@ export function nextUp(tasks, projects, limit = 6, now = new Date(), pinnedTitle
     }
     // a row an agent wrote without a priority reads as normal, as the app's sanitizer would make it
     score += (PRIORITY_POINTS[t.priority] ?? 1) * 40
-    if (t.projectId && active.has(t.projectId)) score += 25
     return { task: t, reason, score }
   })
 
