@@ -2,11 +2,13 @@ import { Fragment, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, 
 import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { newerStamp } from '../itemops'
 import {
+  JournalDraft,
   MoodSeries,
   SEARCH_PAGE,
   WEEKDAY_MOOD_MIN,
   WeekdayMood,
   dayLabel,
+  draftOf,
   entriesOn,
   entryOn,
   faceGroup,
@@ -14,6 +16,7 @@ import {
   journalDays,
   localDayKey,
   lowestMoodWeekday,
+  mergeDraft,
   moodAverage,
   moodByWeekday,
   moodIndexAt,
@@ -39,16 +42,6 @@ import { StatTile } from './bits'
 
 /** How long after the last keystroke an entry is written. Blur and unmount write at once. */
 const SAVE_DELAY = 700
-
-/** What the editor holds for a day; compared field by field to decide whether a remote edit may be adopted. */
-interface Draft {
-  body: string
-  mood?: Mood
-  peopleIds: string[]
-}
-
-const draftOf = (entry?: JournalEntry): Draft => ({ body: entry?.body ?? '', mood: entry?.mood, peopleIds: entry?.peopleIds ?? [] })
-const sameDraft = (a: Draft, b: Draft) => a.body === b.body && a.mood === b.mood && samePeople(a.peopleIds, b.peopleIds)
 
 /**
  * Small round faces for the people an entry names (Today does the same for
@@ -110,10 +103,10 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
   const [mood, setMood] = useState<Mood | undefined>(entry?.mood)
   const [peopleIds, setPeopleIds] = useState<string[]>(entry?.peopleIds ?? [])
   const [showPeople, setShowPeople] = useState(!!peopleOpen)
-  const latest = useRef<Draft>({ body, mood, peopleIds })
+  const latest = useRef<JournalDraft>({ body, mood, peopleIds })
   latest.current = { body, mood, peopleIds }
   const created = useRef<JournalEntry | null>(null)
-  const seen = useRef<Draft>(draftOf(entry))
+  const seen = useRef<JournalDraft>(draftOf(entry))
   const timer = useRef<number | undefined>(undefined)
   const [savedAt, setSavedAt] = useState<string | undefined>(entry?.updatedAt)
 
@@ -159,35 +152,22 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
   const deletedId = useRef<string | null>(null)
 
   useEffect(() => {
+    // Typing while a change lands from elsewhere (the other editor on this day,
+    // another device, a Shortcut, an agent): mergeDraft keeps what was typed
+    // here, takes every field that was not touched here, and carries an
+    // appended line along instead of overwriting it.
     const cur = latest.current
-    const prev = seen.current
-    const remote = draftOf(entry)
-    const dirty = !sameDraft(cur, prev)
-    if (!dirty || !entry) {
-      setBody(remote.body)
-      setMood(remote.mood)
-      setPeopleIds(remote.peopleIds)
-    } else {
-      // Typing while a change lands from elsewhere (another device, a Shortcut,
-      // an agent): keep what was typed here, take every field that was not
-      // touched here, and carry an appended line along instead of overwriting it.
-      if (cur.mood === prev.mood && remote.mood !== prev.mood) setMood(remote.mood)
-      if (samePeople(cur.peopleIds, prev.peopleIds) && !samePeople(remote.peopleIds, prev.peopleIds)) setPeopleIds(remote.peopleIds)
-      if (cur.body === prev.body) {
-        setBody(remote.body)
-      } else if (remote.body !== prev.body) {
-        const known = prev.body.replace(/\s+$/, '')
-        const added = remote.body.startsWith(known) ? remote.body.slice(known.length) : ''
-        if (added.trim() && !cur.body.includes(added.trim())) {
-          // appendEntry writes a bare line when the day was blank; keep the two texts on separate lines
-          const base = cur.body.replace(/\s+$/, '')
-          setBody(base + (base && !/^\s*\n/.test(added) ? '\n' : '') + added)
-          window.clearTimeout(timer.current)
-          timer.current = window.setTimeout(() => commitRef.current(), SAVE_DELAY)
-        }
-      }
+    const { draft, carried } = mergeDraft(cur, seen.current, entry)
+    // only the fields that moved are written
+    if (draft.body !== cur.body) setBody(draft.body)
+    if (draft.mood !== cur.mood) setMood(draft.mood)
+    if (!samePeople(draft.peopleIds, cur.peopleIds)) setPeopleIds(draft.peopleIds)
+    if (carried) {
+      // the carried line is only on screen so far: save it with what was typed here
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => commitRef.current(), SAVE_DELAY)
     }
-    seen.current = remote
+    seen.current = draftOf(entry)
     if (entry) {
       created.current = null
       // any live entry reaching here (a new id, or the deleted one restored) may be edited again
