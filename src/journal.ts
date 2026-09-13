@@ -64,6 +64,60 @@ export function samePeople(a?: readonly string[], b?: readonly string[]): boolea
   return x.length === y.length && x.every((id, i) => id === y[i])
 }
 
+/**
+ * What a journal editor holds for a day: the three fields it edits. Compared
+ * field by field to decide whether a change arriving from elsewhere may be adopted.
+ */
+export interface JournalDraft {
+  body: string
+  mood?: Mood
+  peopleIds: string[]
+}
+
+export const draftOf = (entry?: JournalEntry): JournalDraft => ({ body: entry?.body ?? '', mood: entry?.mood, peopleIds: entry?.peopleIds ?? [] })
+export const sameDraft = (a: JournalDraft, b: JournalDraft): boolean => a.body === b.body && a.mood === b.mood && samePeople(a.peopleIds, b.peopleIds)
+
+/** What an editor shows once its day's entry changes, and whether it has to write that back. */
+export interface DraftMerge {
+  draft: JournalDraft
+  /** A line from elsewhere was carried under the text typed here; it is only on screen until the editor saves. */
+  carried: boolean
+}
+
+/**
+ * A journal editor's answer to its day's entry changing under it: its own
+ * save coming back, the other editor on the same day (Today's card and Shut
+ * down both edit today's entry), another device, a Shortcut or an agent.
+ * `local` is what the editor holds, `seen` the entry as it last saw it and
+ * `entry` what just arrived.
+ *
+ * With nothing typed since `seen`, or no entry left for the day, the editor
+ * shows the entry as it is. Otherwise what was typed here stays, a field not
+ * touched here comes from the entry, and a line appended elsewhere is carried
+ * onto its own line after the local text, where the next save would have
+ * overwritten it. `draft` is `local` itself whenever nothing moves.
+ */
+export function mergeDraft(local: JournalDraft, seen: JournalDraft, entry?: JournalEntry): DraftMerge {
+  const remote = draftOf(entry)
+  if (!entry || sameDraft(local, seen)) return { draft: sameDraft(remote, local) ? local : remote, carried: false }
+  const mood = local.mood === seen.mood ? remote.mood : local.mood
+  const peopleIds = samePeople(local.peopleIds, seen.peopleIds) ? remote.peopleIds : local.peopleIds
+  let body = local.body === seen.body ? remote.body : local.body
+  let carried = false
+  if (local.body !== seen.body && remote.body !== seen.body) {
+    const known = seen.body.replace(/\s+$/, '')
+    const added = remote.body.startsWith(known) ? remote.body.slice(known.length) : ''
+    if (added.trim() && !local.body.includes(added.trim())) {
+      // appendEntry writes a bare line when the day was blank; keep the two texts on separate lines
+      const base = local.body.replace(/\s+$/, '')
+      body = base + (base && !/^\s*\n/.test(added) ? '\n' : '') + added
+      carried = true
+    }
+  }
+  const next = { body, mood, peopleIds }
+  return { draft: sameDraft(next, local) ? local : next, carried }
+}
+
 /** Entries inside a review range (end exclusive), newest day first. */
 export function entriesInRange(entries: JournalEntry[], range: { start: Date; end: Date }): JournalEntry[] {
   return sharedBetween(entries, dateKey(range.start), dateKey(range.end))
