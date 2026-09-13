@@ -86,6 +86,19 @@ export function acceptedPlan(plan: WeekPlan, c: WeekPlanChoices): AcceptedPlan {
   return { dinners, people, resched, wishlist, top3, dismissed }
 }
 
+/**
+ * Where Swap moves in a night's cycle (its own pick, then its alternatives):
+ * the first choice after `current` that no other ticked night has, so a week
+ * never gets one dish twice. Null when every other choice is taken.
+ */
+export function nextSwap(cycle: readonly string[], current: number, taken: ReadonlySet<string>): number | null {
+  for (let step = 1; step < cycle.length; step++) {
+    const i = (current + step) % cycle.length
+    if (!taken.has(cycle[i])) return i
+  }
+  return null
+}
+
 /** How many things "Add N to next week" adds. */
 export const acceptedCount = (a: AcceptedPlan) => a.dinners.length + a.people.length + a.resched.length + a.wishlist.length + a.top3.length
 
@@ -158,12 +171,15 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
   const setPerson = (key: string, patch: Partial<WeekPlanChoices['people'][string]>) => setC(cur => ({ ...cur, people: { ...cur.people, [key]: { ...cur.people[key], ...patch } } }))
   const setOverdue = (key: string, patch: Partial<WeekPlanChoices['overdue'][string]>) => setC(cur => ({ ...cur, overdue: { ...cur.overdue, [key]: { ...cur.overdue[key], ...patch } } }))
 
-  /** Swap cycles the night's own pick and its alternatives — never another night's. */
+  /** Swap cycles the night's own pick and its alternatives — never another night's — past any dish another ticked night has. */
   const cycleOf = (d: DinnerItem) => [d.recipeId, ...d.alternatives].filter(id => recipeById.has(id))
+  const takenBy = (d: DinnerItem) =>
+    new Set(plan.dinners.filter(o => o.key !== d.key && c.dinners[o.key]?.on).flatMap(o => (c.dinners[o.key].pick.recipeId ? [c.dinners[o.key].pick.recipeId!] : [])))
+  const swapTo = (d: DinnerItem) => nextSwap(cycleOf(d), c.dinners[d.key].alt, takenBy(d))
   const swap = (d: DinnerItem) => {
     const cycle = cycleOf(d)
-    if (cycle.length < 2) return
-    const alt = (c.dinners[d.key].alt + 1) % cycle.length
+    const alt = swapTo(d)
+    if (alt === null) return
     const r = recipeById.get(cycle[alt])!
     setDinner(d.key, { alt, on: true, pick: { recipeId: r.id, title: r.name } })
   }
@@ -252,7 +268,6 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
                 <ul className="week-plan-rows">
                   {plan.dinners.map(d => {
                     const x = c.dinners[d.key]
-                    const cycle = cycleOf(d)
                     const proposed = x.pick.recipeId === d.recipeId && !x.pick.out
                     const suggestion = polishedDinner(d.date)
                     return (
@@ -275,7 +290,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
                           </span>
                           {suggestion && suggestion.id !== x.pick.recipeId && <span className="week-plan-ai">✨ The assistant would cook {suggestion.name}</span>}
                           <div className="week-plan-actions">
-                            <button type="button" className="btn subtle" onClick={() => swap(d)} disabled={cycle.length < 2}>
+                            <button type="button" className="btn subtle" onClick={() => swap(d)} disabled={swapTo(d) === null}>
                               Swap
                             </button>
                             <button type="button" className="btn subtle" aria-expanded={picking === d.key} onClick={() => setPicking(p => (p === d.key ? null : d.key))}>

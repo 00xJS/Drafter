@@ -178,20 +178,22 @@ Tasks, projects, people, places, recipes, meals, groceries, events, habits, rout
 ## Development
 
 ```bash
-npm test             # vitest, ~1s
-npm run lint         # eslint src --max-warnings 0
-npm run check        # tests + type-check + production build (what Netlify runs)
+npm test             # vitest
+npm run lint         # eslint over src, netlify/functions, mcp, shared and scripts, --max-warnings 0
+npm run check        # lint + tests + both type-checks + production build + precache check (what Netlify runs)
 npm run db:smoke     # throwaway Postgres: apply every migration, exercise sync_posts and the policies
 npm run mcp:smoke    # ...and drive the real MCP server process against it, end to end
 ```
 
+`check` type-checks twice: the app with `tsc --noEmit`, and the server code (Netlify functions, `mcp/`, `shared/`) with `tsc -p tsconfig.server.json`, which reads that JavaScript through its `.d.mts` declarations. It ends with `scripts/check-precache.mjs`, which fails the build if any file in `dist/assets` is missing from the service worker's precache, so the installed app can never go offline without part of itself.
+
 `db:smoke` needs the PostgreSQL binaries on PATH (`brew install postgresql@17`). It stubs what Supabase provides (auth, storage, roles), applies `supabase/migrations` in order, then writes every record kind as a signed-in user, checks a household peer sees shared kinds but not the owner's journal, review or calendar, that the service role writes as the owner, that last-write-wins holds, that history is kept and scoped, and that a purge tombstone is accepted. Run it after any migration: a function can compile and still reject every write.
 
-`mcp:smoke` starts the same throwaway database (both share the boot-and-migrate loop in `scripts/lib/pgtest.sh`), serves a minimal PostgREST shim over it that translates the handful of requests `mcp/server.mjs` makes into SQL — and answers **501 with the path** for anything else, so an unimplemented request can never look like an empty result — then spawns `node mcp/server.mjs` and speaks JSON-RPC to it over stdio. Projects, tasks, recurrence, visits, places, meals, groceries and the journal are each written through a real tool call and then read back straight from Postgres, with the legacy bare-array RPC shape and a rejected id covered too. Neither smoke test is part of `npm run check`: Netlify has no Postgres.
+`mcp:smoke` starts the same throwaway database (both share the boot-and-migrate loop in `scripts/lib/pgtest.sh`), serves a minimal PostgREST shim over it that translates the handful of requests `mcp/server.mjs` makes into SQL — and answers **501 with the path** for anything else, so an unimplemented request can never look like an empty result — then spawns `node mcp/server.mjs` and speaks JSON-RPC to it over stdio. Projects, tasks, recurrence, today's focus, notes, visits, places, meals, groceries and the journal are each written through a real tool call and then read back straight from Postgres, with the legacy bare-array RPC shape and a rejected id covered too. It then serves the hosted endpoint and checks each way in — an agent token over HTTP, the stdio proxy and an OAuth connection — for whose rows it can reach. Neither smoke test is part of `npm run check`: Netlify has no Postgres.
 
 ## AI agents
 
-`mcp/server.mjs` is a zero-dependency MCP server whose tools cover the whole planner and write through the same merge-safe RPC as the app: projects and tasks (`list_projects`, `create_task`, `update_task`, `complete_task`, `add_comment`, `get_overview`, …), people and places (`list_people`, `list_places`, `create_place`, `log_visit` — a person, a place, or both), the kitchen (`list_recipes`, `get_week_meals`, `plan_meal` which also rebuilds the grocery list, `get_grocery_list`, `add_grocery_item`, `set_grocery_state`) and the journal (`list_journal`, `add_journal_entry` — appends, never overwrites). The rules an agent needs — week keys, grocery merging, place matching, journal appends — live in `shared/*.mjs` and are the same code the app runs. Registration and the raw HTTP alternative are in the local, unpublished `BOTS.md`.
+Drafter is an MCP server: 28 tools that cover the whole planner and write through the same merge-safe RPC as the app — projects and tasks (with today's focus), notes, people and places, the kitchen, the journal, the Today overview, and a read-only proposal for next week. It runs hosted at `/api/mcp` (stateless JSON-RPC over HTTP). Add Claude as a custom connector with that URL and approve it on Drafter's consent screen (OAuth 2.1 with PKCE and dynamic client registration), or create a token in Settings → Assistants for anything that launches a local process: `mcp/server.mjs` then forwards stdio to the hosted endpoint. Every call runs as the signed-in user under the database's row policies, a connection sees only the tools its scopes allow (read, write, journal), and Settings → Assistants lists every connection and revokes any of them. The rules an agent needs — week keys, grocery merging, place matching, journal appends, the week plan — live in `shared/*.mjs` and are the same code the app runs. Registration details and the raw HTTP alternative are in the local, unpublished `BOTS.md`.
 
 ## Later
 

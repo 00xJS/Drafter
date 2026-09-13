@@ -25,14 +25,14 @@ describe('ConfirmButton can be given a name', () => {
     expect(html).toBe('<button type="button" class="btn danger" aria-label="Delete Milk">✕</button>')
   })
 
-  it('keeps the name while armed, when the text turns into the confirm step', () => {
+  it('keeps the name while armed and adds the confirm step, which a screen reader would otherwise never hear', () => {
     armed.on = true
     const html = renderToStaticMarkup(
       <ConfirmButton ariaLabel="Delete Milk" confirmLabel="Sure?" onConfirm={() => {}}>
         ✕
       </ConfirmButton>,
     )
-    expect(html).toBe('<button type="button" class="btn danger armed" aria-label="Delete Milk">Sure?</button>')
+    expect(html).toBe('<button type="button" class="btn danger armed" aria-label="Delete Milk: Sure?">Sure?</button>')
   })
 
   it('adds no aria-label when it is not given one, armed or not', () => {

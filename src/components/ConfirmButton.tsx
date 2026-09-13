@@ -8,7 +8,11 @@ interface Props {
   confirmLabel?: string
   className?: string
   title?: string
-  /** The button's accessible name, for when its text alone does not say what it acts on (a bare ✕). The same while armed. */
+  /**
+   * The button's accessible name, for when its text alone does not say what it
+   * acts on (a bare ✕). While armed the confirm step follows it ("Delete Milk:
+   * Click again to delete"), or a screen reader would never hear that step.
+   */
   ariaLabel?: string
   stopPropagation?: boolean
 }
@@ -37,7 +41,7 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again
       type="button"
       className={armed ? `${className} armed` : className}
       title={title}
-      aria-label={ariaLabel}
+      aria-label={ariaLabel && armed ? `${ariaLabel}: ${confirmLabel}` : ariaLabel}
       onBlur={() => setArmed(false)}
       onClick={e => {
         if (stopPropagation) e.stopPropagation()
