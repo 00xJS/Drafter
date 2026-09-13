@@ -1,4 +1,4 @@
-import { Meal, Person, Place, Task } from './types'
+import { Meal, PLACE_CATEGORY_META, Person, Place, Task } from './types'
 import { visitSummary, visitsFor } from './people'
 import { Outing, PlaceCadenceState, PlaceCadenceStatus, matchPlace as sharedMatchPlace, normalisePlaceText, placeCadenceStatus, outingsAt as sharedOutingsAt } from '../shared/places.mjs'
 
@@ -22,6 +22,29 @@ export function placeByName(name: string | null | undefined, places: Place[]): P
   const key = normalisePlaceText(name ?? '')
   if (!key) return undefined
   return places.find(p => !p.deletedAt && normalisePlaceText(p.name) === key)
+}
+
+/**
+ * A place name being typed into a Where picker: the name tidied, the saved
+ * place it already means, and up to eight places whose names hold it, that one
+ * first. The saved place is placeByName's, so "Cafe Kafka" is "Café Kafka" and
+ * the picker reuses it instead of offering to make a second copy; the plain
+ * case-insensitive test backs it up for a name in a script normalising drops.
+ */
+export function placeSearch(query: string, places: readonly Place[]): { name: string; exact?: Place; matches: Place[] } {
+  const name = query.trim().replace(/\s+/g, ' ')
+  if (!name) return { name, exact: undefined, matches: [] }
+  const lower = name.toLowerCase()
+  const key = normalisePlaceText(name)
+  const live = places.filter(p => !p.deletedAt)
+  const exact = placeByName(name, live) ?? live.find(p => p.name.trim().replace(/\s+/g, ' ').toLowerCase() === lower)
+  const hits = live.filter(p => p.id !== exact?.id && ((key && normalisePlaceText(p.name).includes(key)) || p.name.toLowerCase().includes(lower)))
+  return { name, exact, matches: (exact ? [exact, ...hits] : hits).slice(0, 8) }
+}
+
+/** A place's own emoji, else its category's: what its row on Places shows. */
+export function placeEmoji(p: Place): string {
+  return p.emoji || PLACE_CATEGORY_META[p.category].emoji
 }
 
 /** How long a loved place can go unvisited before it counts as lapsed. */
@@ -133,6 +156,17 @@ export function placeStats(place: Place, tasks: Task[], people: Person[], now: D
     reason: nagging ? `${base} — you aimed for every ${cadence.cadenceDays} days` : base,
     status: cadence.status,
   }
+}
+
+/**
+ * The newest outings anywhere, read off each place's own: a done task there or
+ * a past meal eaten out there, as the rows and the Kitchen count them.
+ */
+export function recentOutings(stats: PlaceStats[], limit = 6): { place: Place; outing: Outing }[] {
+  return stats
+    .flatMap(s => s.visits.map(outing => ({ place: s.place, outing })))
+    .sort((a, b) => b.outing.at.localeCompare(a.outing.at))
+    .slice(0, limit)
 }
 
 export interface PlaceWithPerson {

@@ -3,7 +3,7 @@ import { People, Places } from './lazy'
 
 /** People, with Places as its second segment. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, openJournal } = p
+  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, openPlace, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor } = p
   return (
     <>
@@ -68,6 +68,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
             showToast('Removed', () => store.restore([id]))
           }}
           onSavePlace={p => store.upsert(p)}
+          // Places with that row open, as search opens one; the segment moves
+          // for this visit only, like any link to it
+          onOpenPlace={place => openPlace(place.id)}
           onLogVisit={logVisit}
           onPlan={planWith}
           onOpenTask={openTask}

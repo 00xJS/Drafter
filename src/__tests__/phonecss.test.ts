@@ -184,7 +184,7 @@ describe('phone: the journal is writable with a thumb', () => {
     // a bare min-height does nothing to a button whose text is its only content
     expect(rule(chipRule!.body, '.mood-chip')).toMatch(/display:\s*inline-flex/)
     // `button.` so the read-only `<span class="toggle on">` summary chips on
-    // People and Places keep their 27pt
+    // Places (a place's companions) keep their 27pt
     const pills = coarse.find(b => rule(b.body, 'button.toggle, button.seg'))
     expect(pills, 'no @media (pointer: coarse) rule for .toggle/.seg').toBeTruthy()
     expect(rule(pills!.body, 'button.toggle, button.seg')).toMatch(/min-height:\s*44px/)

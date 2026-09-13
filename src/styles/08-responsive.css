@@ -536,8 +536,9 @@
      Review|Journal and People|Places segments are the only route to those two
      surfaces. Only the height is missing — the widths already clear 44pt — so
      the padding moves onto the box instead of the text. `button.` keeps the
-     read-only `<span class="toggle on">` summary chips (a person's recent
-     places, a place's companions) at their 27pt, and the 4px gap replaces the
+     read-only `<span class="toggle on">` summary chips (a place's companions)
+     at their 27pt — a person's "Where we go" chips open the place, so they are
+     buttons and get the floor — and the 4px gap replaces the
      whitespace inline-flex strips between a label and its count span. */
   button.toggle,
   button.seg {

@@ -12,9 +12,9 @@ import {
   Task,
 } from '../types'
 import { newerStamp } from '../itemops'
-import { PlaceStats, favourites, lapsed, placeStats } from '../places'
+import { PlaceStats, favourites, lapsed, placeStats, placesWith, recentOutings } from '../places'
 import { SEEN_META } from '../people'
-import { OutingIdea, suggestOuting } from '../ai'
+import { OutingIdea, OutingInput, suggestOuting } from '../ai'
 import { Bars } from './People'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
@@ -255,7 +255,7 @@ function PlaceRow({
   // Only a place with a rhythm gets a badge; the rest are just tracked.
   const meta = stats.status === 'none' ? null : SEEN_META[stats.status]
   return (
-    <li className={open ? 'person-row open' : 'person-row'}>
+    <li id={`place-${place.id}`} className={open ? 'person-row open' : 'person-row'}>
       <button className="person-summary" onClick={onToggle} aria-expanded={open}>
         <span className="person-avatar" style={{ background: place.color }}>
           {place.emoji ?? cat.emoji}
@@ -357,6 +357,44 @@ function PlaceRow({
   )
 }
 
+/**
+ * What "Where should we go?" sends: your favourites, the places you drifted
+ * from, the newest outings of any kind (a meal eaten out is one, as it is on
+ * every row), and for whoever is coming, where you have been together.
+ */
+export function outingIdeasInput(o: { places: Place[]; people: Person[]; tasks: Task[]; meals: Meal[]; withIds: string[]; now?: Date }): OutingInput {
+  const now = o.now ?? new Date()
+  const row = (s: PlaceStats) => ({
+    name: s.place.name,
+    category: PLACE_CATEGORY_META[s.place.category].label,
+    times: s.visits.length,
+    lastWent: s.lastAt ? fmtDate(s.lastAt) : 'never',
+  })
+  const stats = o.places.map(p => placeStats(p, o.tasks, o.people, now, o.meals))
+  return {
+    weekday: now.toLocaleDateString(undefined, { weekday: 'long' }),
+    favourites: favourites(o.places, o.tasks, o.people, now, o.meals).slice(0, 6).map(row),
+    lapsed: lapsed(o.places, o.tasks, o.people, now, o.meals).slice(0, 6).map(row),
+    recent: recentOutings(stats).map(r => ({ name: r.place.name, when: fmtDate(r.outing.at) })),
+    allNames: o.places.map(p => p.name),
+    // names and shared places only: a person's notes never go out
+    with: o.withIds.flatMap(id => {
+      const person = o.people.find(p => p.id === id)
+      if (!person) return []
+      const together = placesWith(id, o.places, o.tasks).slice(0, 5)
+      return [{ name: person.name, group: person.group, places: together.map(r => ({ name: r.place.name, category: PLACE_CATEGORY_META[r.place.category].label, times: r.count, lastWent: fmtDate(r.lastAt) })) }]
+    }),
+  }
+}
+
+/** A tapped idea as a task: at its place when it named one of yours, and with whoever is coming. */
+export function outingIdeaTask(idea: OutingIdea, place: Place | undefined, peopleIds: string[]): Partial<Task> {
+  return { title: idea.title, status: 'todo', placeId: place?.id, tags: ['visit'], ...(peopleIds.length ? { peopleIds } : {}) }
+}
+
+/** "Mum", "Mum and Sam", "Mum, Sam and Jo". */
+const namesOf = (ps: Person[]) => (ps.length < 2 ? (ps[0]?.name ?? '') : `${ps.slice(0, -1).map(p => p.name).join(', ')} and ${ps[ps.length - 1].name}`)
+
 export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, meals }: Props) {
   const [editing, setEditing] = useState<{ place?: Place } | null>(null)
   const [logging, setLogging] = useState<Place | null>(null)
@@ -369,42 +407,47 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
+  // who is coming, if you say: the ideas draw on where you go together, and
+  // the task a tapped idea makes has them on it
+  const [withIds, setWithIds] = useState<string[]>([])
+  const [askedWith, setAskedWith] = useState<string[] | null>(null)
+  const [withAll, setWithAll] = useState(false)
 
   useEffect(() => {
     if (!wantOpen) return
     setOpenId(wantOpen)
     setQ('')
     setCategory('all')
+    // a long list can hold the row below the fold; one already in view stays put
+    window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
     onOpenConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOpen])
 
   const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals)), [places, tasks, people, meals])
 
+  // who you go out with most, first: the With row offers them, "+ Who" everyone
+  const company = useMemo(
+    () =>
+      people
+        .map(person => ({ person, outings: placesWith(person.id, places, tasks).reduce((n, r) => n + r.count, 0) }))
+        .sort((a, b) => b.outings - a.outings || a.person.name.localeCompare(b.person.name)),
+    [people, places, tasks],
+  )
+  const usual = new Set(company.filter(c => c.outings > 0).slice(0, 6).map(c => c.person.id))
+  const withShown = withAll ? company : company.filter(c => usual.has(c.person.id) || withIds.includes(c.person.id))
+  const withPeople = people.filter(p => withIds.includes(p.id))
+  const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id))
+  // the ideas on screen were asked for someone else, or not at all
+  const askAgain = !!ideasError || (askedWith !== null && !sameIds(askedWith, withPeople.map(p => p.id)))
+
   const getIdeas = async () => {
+    const asked = withPeople.map(p => p.id)
     setIdeasBusy(true)
     setIdeasError('')
+    setAskedWith(asked)
     try {
-      const row = (s: PlaceStats) => ({
-        name: s.place.name,
-        category: PLACE_CATEGORY_META[s.place.category].label,
-        times: s.visits.length,
-        lastWent: s.lastAt ? fmtDate(s.lastAt) : 'never',
-      })
-      const recent = tasks
-        .filter(t => t.status === 'done' && t.completedAt && t.placeId)
-        .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
-        .slice(0, 6)
-        .map(t => ({ name: places.find(p => p.id === t.placeId)?.name ?? t.title, when: fmtDate(t.completedAt) }))
-      setIdeas(
-        await suggestOuting({
-          weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
-          favourites: favourites(places, tasks, people, new Date(), meals).slice(0, 6).map(row),
-          lapsed: lapsed(places, tasks, people, new Date(), meals).slice(0, 6).map(row),
-          recent,
-          allNames: places.map(p => p.name),
-        }),
-      )
+      setIdeas(await suggestOuting(outingIdeasInput({ places, people, tasks, meals, withIds: asked })))
     } catch (e) {
       setIdeasError((e as Error).message)
     } finally {
@@ -466,12 +509,50 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
           <header className="chart-head">
             <div>
               <h3>Where should we go?</h3>
-              <p className="chart-sub">From your favourites and the places you've drifted from — tap one to plan it</p>
+              <p className="chart-sub">
+                From your favourites and the places you've drifted from — tap one to plan it{withPeople.length ? ` with ${namesOf(withPeople)}` : ''}
+              </p>
             </div>
-            <button className="btn subtle" onClick={() => setIdeas(null)} aria-label="Dismiss ideas">
+            <button
+              className="btn subtle"
+              onClick={() => {
+                setIdeas(null)
+                setIdeasError('')
+              }}
+              aria-label="Dismiss ideas"
+            >
               ✕
             </button>
           </header>
+          {people.length > 0 && (
+            <div className="field outing-with">
+              <span className="muted">With</span>
+              <div className="platform-toggles">
+                {withShown.map(({ person: p }) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={withIds.includes(p.id) ? 'toggle on' : 'toggle'}
+                    aria-pressed={withIds.includes(p.id)}
+                    onClick={() => setWithIds(ids => (ids.includes(p.id) ? ids.filter(x => x !== p.id) : [...ids, p.id]))}
+                  >
+                    {p.emoji ? `${p.emoji} ` : ''}
+                    {p.name}
+                  </button>
+                ))}
+                {(withAll || withShown.length < company.length) && (
+                  <button type="button" className="btn subtle" onClick={() => setWithAll(v => !v)} aria-expanded={withAll}>
+                    {withAll ? 'Hide' : '+ Who'}
+                  </button>
+                )}
+                {askAgain && (
+                  <button type="button" className="btn" disabled={ideasBusy} onClick={getIdeas}>
+                    {ideasBusy ? 'Thinking…' : '✨ Ask again'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {ideasError ? (
             <p className="warn">{ideasError}</p>
           ) : (
@@ -484,7 +565,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
                       type="button"
                       className="person-idea"
                       title="Turn into a task"
-                      onClick={() => onNewTask?.({ title: i.title, status: 'todo', placeId: target?.id, tags: ['visit'] })}
+                      onClick={() => onNewTask?.(outingIdeaTask(i, target, withPeople.map(p => p.id)))}
                     >
                       <strong>
                         {target ? `${target.emoji ?? PLACE_CATEGORY_META[target.category].emoji} ` : ''}
