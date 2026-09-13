@@ -49,6 +49,9 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
   }, [tasks, q, status, priority, sort])
 
   const visible = showAll ? filtered : filtered.slice(0, 200)
+  const needle = q.trim()
+  // with no search, a task the priority filter keeps but the list does not show is one the status filter hides
+  const hiddenByStatus = !needle && status !== 'all' && tasks.some(t => priority === 'all' || t.priority === priority)
   const statusChoices = useMemo(() => {
     const leftover = TASK_STATUSES.filter(s => !BOARD_STATUSES.includes(s) && tasks.some(t => t.status === s))
     return leftover.length ? [...BOARD_STATUSES, ...leftover] : BOARD_STATUSES
@@ -241,13 +244,66 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
         </button>
       )}
       {filtered.length === 0 && (
-        <p className="empty">
-          No tasks match.{' '}
-          <button type="button" className="btn subtle" onClick={() => onNew()}>
-            + New task
-          </button>
-        </p>
+        <TasksEmpty
+          query={needle}
+          status={status}
+          hiddenByStatus={hiddenByStatus}
+          noTasks={tasks.length === 0}
+          onNew={() => onNew()}
+          onShowAll={() => setStatus('all')}
+        />
       )}
     </div>
+  )
+}
+
+/**
+ * An empty list says why it is empty. A search that found nothing says what
+ * was searched for. A status filter hiding every task — everything done, say —
+ * is good news rather than a failed search, so it says so and offers the way
+ * back to all of them. Otherwise the priority filter left nothing, or there
+ * are no tasks at all.
+ */
+export function TasksEmpty({
+  query,
+  status,
+  hiddenByStatus,
+  noTasks,
+  onNew,
+  onShowAll,
+}: {
+  query: string
+  status: TaskStatus | 'all' | 'open'
+  /** The list would have rows with every status showing. */
+  hiddenByStatus: boolean
+  noTasks: boolean
+  onNew(): void
+  onShowAll(): void
+}) {
+  const byStatus = !query && hiddenByStatus && status !== 'all'
+  const text = query
+    ? `No tasks match “${query}”.`
+    : byStatus
+      ? status === 'open'
+        ? 'Nothing open here — nice.'
+        : `Nothing in ${STATUS_META[status].label}.`
+      : noTasks
+        ? 'No tasks yet.'
+        : 'No tasks match.'
+  return (
+    <p className="empty">
+      {text}{' '}
+      <button type="button" className="btn subtle" onClick={onNew}>
+        + New task
+      </button>
+      {byStatus && (
+        <>
+          {' '}
+          <button type="button" className="btn subtle" onClick={onShowAll}>
+            Show all statuses
+          </button>
+        </>
+      )}
+    </p>
   )
 }

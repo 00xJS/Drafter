@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { CapturedFields } from '../ai'
 import { sanitizePerson } from '../schema'
 import {
   FormPatch,
@@ -362,27 +363,28 @@ describe('on a saved task every checklist edit and comment is written as it happ
 })
 
 describe('applying a captured sentence', () => {
-  it('matches project and people by name, merges tags, and sets the date and repeat', () => {
+  it('matches people by name, merges tags, and sets the date and repeat — never a project', () => {
     const base = task({ title: 'dentist tomorrow 3pm' })
     const form = edit(initForm(base), { tags: 'health', peopleIds: ['p1'] })
     const next = formReducer(form, {
       type: 'applyCapture',
-      capture: { title: 'Dentist', dueAt: '2026-09-13T14:00:00.000Z', priority: 'high', projectName: 'home', peopleNames: ['Mum', 'Nobody'], tags: ['health', 'teeth'], recurrence: 'monthly' },
-      projects: [{ id: 'pr1', name: 'Home' }],
+      capture: { title: 'Dentist', dueAt: '2026-09-13T14:00:00.000Z', priority: 'high', peopleNames: ['Mum', 'Nobody'], tags: ['health', 'teeth'], recurrence: 'monthly' },
       people: [
         { id: 'p1', name: 'Dad' },
         { id: 'p2', name: 'mum' },
       ],
     })
-    expect(next).toMatchObject({ title: 'Dentist', priority: 'high', projectId: 'pr1', peopleIds: ['p1', 'p2'], tags: 'health, teeth', freq: 'monthly' })
+    expect(next).toMatchObject({ title: 'Dentist', priority: 'high', projectId: '', peopleIds: ['p1', 'p2'], tags: 'health, teeth', freq: 'monthly' })
     expect(next.dueAt).toBe(toLocalInput('2026-09-13T14:00:00.000Z'))
   })
 
-  it('leaves alone whatever the sentence did not mention', () => {
+  it('leaves alone whatever the sentence did not mention, the project included', () => {
     const base = task({ title: 'Gate', projectId: 'pr9', priority: 'low' })
     const form = initForm(base)
-    const next = formReducer(form, { type: 'applyCapture', capture: { title: '', projectName: 'Unknown' }, projects: [], people: [] })
+    // a model that still answers with a project name (an older prompt) is not listened to
+    const next = formReducer(form, { type: 'applyCapture', capture: { title: '', projectName: 'Unknown' } as CapturedFields, people: [] })
     expect(next).toEqual(form)
+    expect(next.projectId).toBe('pr9')
   })
 })
 

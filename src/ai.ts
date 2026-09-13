@@ -355,10 +355,11 @@ export async function draftPlan(goal: string, name: string, context?: string): P
   return { durationDays: Math.max(1, num(raw.durationDays, Math.max(...tasks.map(t => t.offsetDays), 7))), tasks, milestones }
 }
 
+// No project in either: there is one ongoing project, and a captured sentence
+// never files a task under one — from the palette or the editor.
 export interface CaptureCtx {
   now?: Date
   timeZone?: string
-  projectNames?: string[]
   personNames?: string[]
 }
 
@@ -366,7 +367,6 @@ export interface CapturedFields {
   title: string
   dueAt?: string
   priority?: 'low' | 'normal' | 'high' | 'urgent'
-  projectName?: string
   peopleNames?: string[]
   tags?: string[]
   recurrence?: 'daily' | 'weekly' | 'biweekly' | 'monthly'
@@ -385,7 +385,7 @@ export function captureSeed(title: string, description = '', link?: string): { t
 /** True when the only structured find is a date/time — apply it without a Review tap. */
 export function isSimpleDateCapture(parsed: CapturedFields, original: string, now = new Date()): boolean {
   if (!parsed.dueAt) return false
-  if (parsed.priority || parsed.projectName || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence) return false
+  if (parsed.priority || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence) return false
   return !!deterministicCapture(original, now)?.dueAt
 }
 
@@ -491,12 +491,11 @@ export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<
   const now = ctx.now ?? new Date()
   const local = deterministicCapture(text, now)
   const tz = ctx.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-  const projects = (ctx.projectNames ?? []).slice(0, 40)
   const people = (ctx.personNames ?? []).slice(0, 40)
   try {
     const modelText = await complete(
-      'You parse a single personal-task capture sentence into structured fields. Never invent project or person names that are not in the lists. Prefer imperative short titles. Respond with ONLY JSON.',
-      `Now: ${now.toISOString()} (${tz})\nActive projects: ${JSON.stringify(projects)}\nPeople: ${JSON.stringify(people)}\n\nSentence:\n"""\n${text.trim()}\n"""\n\nRespond with ONLY JSON: {"title":"…","dueAt":"ISO optional","priority":"low|normal|high|urgent optional","projectName":"exact name or omit","peopleNames":["exact names"],"tags":["…"],"recurrence":"daily|weekly|biweekly|monthly optional"}`,
+      'You parse a single personal-task capture sentence into structured fields. Never invent person names that are not in the list. Prefer imperative short titles. Respond with ONLY JSON.',
+      `Now: ${now.toISOString()} (${tz})\nPeople: ${JSON.stringify(people)}\n\nSentence:\n"""\n${text.trim()}\n"""\n\nRespond with ONLY JSON: {"title":"…","dueAt":"ISO optional","priority":"low|normal|high|urgent optional","peopleNames":["exact names"],"tags":["…"],"recurrence":"daily|weekly|biweekly|monthly optional"}`,
       300,
       true,
     )
@@ -505,10 +504,6 @@ export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<
     const dueRaw = typeof raw.dueAt === 'string' ? Date.parse(raw.dueAt) : NaN
     const dueAt = Number.isFinite(dueRaw) ? new Date(dueRaw).toISOString() : local?.dueAt
     const priority = (['low', 'normal', 'high', 'urgent'] as const).find(p => p === raw.priority)
-    const projectRaw = typeof raw.projectName === 'string' ? raw.projectName.trim() : ''
-    const projectName = projectRaw
-      ? projects.find(n => n.toLowerCase() === projectRaw.toLowerCase())
-      : undefined
     const peopleNames = Array.isArray(raw.peopleNames)
       ? raw.peopleNames
           .map(String)
@@ -518,7 +513,7 @@ export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<
       : undefined
     const tags = Array.isArray(raw.tags) ? raw.tags.map(String).map(t => t.trim().toLowerCase()).filter(Boolean).slice(0, 8) : undefined
     const recurrence = (['daily', 'weekly', 'biweekly', 'monthly'] as const).find(f => f === raw.recurrence)
-    return { title, dueAt, priority, projectName, peopleNames, tags, recurrence }
+    return { title, dueAt, priority, peopleNames, tags, recurrence }
   } catch {
     if (local) return local
     return { title: text.trim().slice(0, 140) }
@@ -535,22 +530,20 @@ export function quickCaptureFields(line: string, now = new Date()): CapturedFiel
   return deterministicCapture(line, now) ?? { title: line.trim().slice(0, 140) }
 }
 
-/** The names a capture can resolve against — projects and people, matched by name. */
+/** The names a capture can resolve against — people, matched by name. */
 export interface CaptureLookup {
-  projects: { id: string; name: string }[]
   people: { id: string; name: string }[]
 }
 
 /**
  * Captured fields → a whole task, mapped exactly as the editor's applyCapture
  * would: names become ids by case-insensitive match, unknown names are
- * dropped, and nothing is set that the sentence did not say — so an undated,
- * unprojected line lands in Today's Inbox.
+ * dropped, and nothing is set that the sentence did not say. It is never filed
+ * under a project, so an undated line lands in Today's Inbox.
  */
 export function buildCapturedTask(fields: CapturedFields, lookup: CaptureLookup, opts: { id: string; now: Date }): Task {
   const stamp = opts.now.toISOString()
   const title = fields.title.trim().slice(0, 140)
-  const projectId = fields.projectName ? lookup.projects.find(p => p.name.toLowerCase() === fields.projectName!.toLowerCase())?.id : undefined
   const peopleIds = [
     ...new Set((fields.peopleNames ?? []).map(n => lookup.people.find(p => p.name.toLowerCase() === n.toLowerCase())?.id).filter((id): id is string => !!id)),
   ]
@@ -565,7 +558,6 @@ export function buildCapturedTask(fields: CapturedFields, lookup: CaptureLookup,
     createdAt: stamp,
     updatedAt: stamp,
     tags,
-    ...(projectId ? { projectId } : {}),
     ...(fields.dueAt ? { dueAt: fields.dueAt } : {}),
     ...(peopleIds.length ? { peopleIds } : {}),
     ...(fields.recurrence ? { recurrence: { freq: fields.recurrence } } : {}),

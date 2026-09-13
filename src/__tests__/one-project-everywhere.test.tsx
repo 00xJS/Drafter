@@ -2,14 +2,17 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { Landing } from '../components/Landing'
 import { NotesIndex } from '../components/notes/NotesIndex'
 import { NotesView } from '../components/NotesView'
 import { Roadmap } from '../components/Roadmap'
 import { Search } from '../components/Search'
 import { TaskCard } from '../components/TaskCard'
 import { buildPaletteCommands } from '../components/planner/commands'
+import { CaptureProposal } from '../components/taskeditor/CaptureProposal'
+import { inInbox } from '../taskutils'
 import { Note, Project, Task } from '../types'
-import { plannerSource } from './source'
+import { plannerSource, sheetSource } from './source'
 
 // There is one ongoing project — the owner's LIFE — so no task row names it,
 // nothing starts a second one, and nothing asks which project something
@@ -93,5 +96,72 @@ describe('nothing starts a second project', () => {
     expect(read('../components/planner/CalendarScreen.tsx')).toMatch(/<Roadmap [^>]*onOpenProject=\{openProject\}/)
     expect(read('../components/Roadmap.tsx')).toMatch(/className=\{row\.inferred \? 'rm-bar inferred' : 'rm-bar'\}[\s\S]{0,200}onClick=\{\(\) => onOpenProject\(row\.project\)\}/)
     expect(read('../components/planner/Overlays.tsx')).toContain('onOpenProject={openProject}')
+  })
+
+  it('the landing page’s palette creates a task or a bill, and no card promises a project', () => {
+    const html = renderToStaticMarkup(<Landing configured={false} />)
+    expect(html).toContain('creates a task or bill')
+    const cards = html.match(/<article[\s\S]*?<\/article>/g) ?? []
+    expect(cards.length).toBeGreaterThan(5)
+    for (const card of cards) expect(card).not.toMatch(/project/i)
+  })
+})
+
+describe('no progress for the project', () => {
+  it('the Timeline draws LIFE’s span with no progress bar, count or fill', () => {
+    const tasks = [task('1', { status: 'done', dueAt: '2026-09-02T09:00:00.000Z' }), task('2', { dueAt: '2026-09-03T09:00:00.000Z' })]
+    const html = renderToStaticMarkup(<Roadmap projects={[LIFE]} tasks={tasks} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
+    expect(html).toContain('class="rm-bar inferred"')
+    expect(html).toContain('LIFE')
+    expect(html).not.toMatch(/rm-progress|rm-bar-fill|progress|1\/2/)
+  })
+
+  it('nothing on the Timeline works it out, and its rules are gone from the sheet', () => {
+    const src = read('../components/Roadmap.tsx')
+    for (const gone of ['ProgressBar', 'projectProgress', 'rm-progress', 'rm-bar-fill']) expect(src, gone).not.toContain(gone)
+    expect(sheetSource()).not.toMatch(/\.rm-progress|\.rm-bar-fill/)
+  })
+})
+
+describe('a capture is never filed under the project', () => {
+  it('the palette’s Shift+Enter sends no project names and never says “Filed under”', () => {
+    const src = read('../components/planner/useTaskActions.ts')
+    const capture = src.slice(src.indexOf('const captureTask'), src.indexOf('const deleteTask'))
+    expect(capture).not.toMatch(/projectNames|projectId|store\.projects|Filed under/)
+    // the toast asks the Inbox's own question
+    expect(capture).toContain("inInbox(first) ? 'Captured to Inbox'")
+  })
+
+  it('the model is not asked for one, and the editor’s suggestion has no Project row', () => {
+    const ai = read('../ai.ts')
+    const parse = ai.slice(ai.indexOf('export async function parseCapture'), ai.indexOf('export function quickCaptureFields'))
+    expect(parse).not.toMatch(/project/i)
+    const html = renderToStaticMarkup(
+      <CaptureProposal
+        proposal={{ title: 'Dentist', dueAt: '2026-09-20T09:00:00.000Z', priority: 'high', peopleNames: ['Sam'], tags: ['health'], recurrence: 'monthly' }}
+        parsing={false}
+        onApply={noop}
+        onDismiss={noop}
+      />,
+    )
+    for (const row of ['Title', 'Due', 'Priority', 'People', 'Tags', 'Repeat']) expect(html, row).toContain(`<strong>${row}</strong>`)
+    expect(html).not.toMatch(/Project/)
+    expect(read('../components/taskeditor/CaptureProposal.tsx')).not.toMatch(/project/i)
+  })
+})
+
+describe('the Inbox goes by the date, not the project', () => {
+  it('an undated to-do is in it whether or not it is filed under LIFE; a date or another status takes it out', () => {
+    expect(inInbox(task('1'))).toBe(true)
+    expect(inInbox(task('2', { projectId: undefined }))).toBe(true)
+    expect(inInbox(task('3', { dueAt: '2026-09-20T09:00:00.000Z' }))).toBe(false)
+    for (const status of ['wishlist', 'doing', 'blocked', 'done', 'canceled'] as const) expect(inInbox(task('4', { status })), status).toBe(false)
+  })
+
+  it('Today draws its Inbox by that rule and asks only for a date', () => {
+    const today = read('../components/Today.tsx')
+    expect(today).toContain('open.filter(inInbox)')
+    expect(today).toContain("sub: 'Captured, not yet triaged — give each a date'")
+    expect(today).not.toMatch(/give each a project|!t\.projectId/)
   })
 })

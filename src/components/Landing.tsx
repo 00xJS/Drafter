@@ -6,11 +6,11 @@ interface Props {
 
 const FEATURES: { icon: string; title: string; text: string }[] = [
   { icon: '☀️', title: 'Home', text: 'A briefing for the day — greeting, weather if you want it, work hours, what is due — then habits to tick, routines to run and tonight’s dinner. The week’s review and your journal are a segment away.' },
-  { icon: '🗂', title: 'Tasks', text: 'Wishlist → to do → doing → done, as a list, a board, the month’s bills or a project’s notes. Due dates, priorities, checklists and a comment trail on everything.' },
+  { icon: '🗂', title: 'Tasks', text: 'Wishlist → to do → doing → done, as a list, a board, the month’s bills or your notes. Due dates, priorities, checklists and a comment trail on everything.' },
   { icon: '📅', title: 'Calendar', text: 'Month, week and timeline: tasks, events, meals, home or office days and your Google, Outlook or iCloud calendars in one grid.' },
   { icon: '👥', title: 'People & places', text: 'Who you saw and where you went — a rhythm for each, so Home says when it has been a while.' },
   { icon: '🍳', title: 'Kitchen', text: 'Recipes, a week of meals cooked or eaten out, and a grocery list built from what is planned.' },
-  { icon: '⌘', title: 'Command palette', text: 'Cmd/Ctrl+K jumps to any view, creates a task, project or bill, searches everything, and captures a line straight to the Inbox.' },
+  { icon: '⌘', title: 'Command palette', text: 'Cmd/Ctrl+K jumps to any view, creates a task or bill, searches everything, captures a line straight to the Inbox and answers questions from your own planner.' },
   { icon: '✨', title: 'AI assist', text: 'Draft a plan from a goal, break a task into steps, suggest tags, and write the week’s review from what actually happened.' },
   { icon: '🤖', title: 'Agent-ready', text: 'An MCP server lets your AI agents create tasks, log visits, plan meals and add to the journal through the same rules the app runs.' },
 ]

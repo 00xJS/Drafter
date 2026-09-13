@@ -173,6 +173,19 @@ describe('pull to refresh: wired the way the shell needs', () => {
     expect(planner).toContain('Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])')
   })
 
+  it('asks the briefing’s weather to refresh too, as coming to the foreground does', () => {
+    // the ask goes out as the sync starts, and the spinner does not wait on it
+    const sync = read('../components/planner/useCalendarSync.ts')
+    const manual = sync.slice(sync.indexOf('const manualSync = async () => {'), sync.indexOf('const mirrorsOn'))
+    expect(manual).toMatch(/setSyncing\(true\)\s+requestWeatherRefresh\(\)\s+try \{/)
+    // the strip hears it beside visibilitychange, and lets go of both together
+    const card = read('../components/BriefingCard.tsx')
+    const effect = card.slice(card.indexOf('useEffect(() => {\n    if (!cache.enabled) return'), card.indexOf('}, [cache.enabled, cache.lat, cache.lon])'))
+    expect(effect).toContain("document.addEventListener('visibilitychange', onVisible)")
+    expect(effect).toContain('const offPull = onWeatherRefresh(refresh)')
+    expect(effect).toMatch(/return \(\) => \{[\s\S]*removeEventListener\('visibilitychange', onVisible\)[\s\S]*offPull\(\)/)
+  })
+
   it('has a refresh icon, and its chrome lives in the native shell block', () => {
     expect(read('../components/Icon.tsx')).toMatch(/\n {2}refresh: \(/)
     expect(css.indexOf('.native .ptr {')).toBeGreaterThan(css.indexOf('NATIVE SHELL'))

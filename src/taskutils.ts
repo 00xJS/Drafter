@@ -17,6 +17,16 @@ export function isOpen(t: Task): boolean {
   return OPEN_STATUSES.includes(t.status)
 }
 
+/**
+ * Today's Inbox: a to-do with no date, whichever project it is filed under.
+ * There is one ongoing project and nothing on screen shows or sets it, so the
+ * Inbox goes by what you can see and change — a date, or another status, is
+ * what takes a task out. The palette's capture toast asks the same question.
+ */
+export function inInbox(t: Task): boolean {
+  return t.status === 'todo' && !t.dueAt
+}
+
 export type DueTone = 'overdue' | 'late' | 'today' | 'soon' | 'later' | 'none'
 
 /** A due date stored at local midnight is a day with no time (the editor, reminders and calendar all read it so). */

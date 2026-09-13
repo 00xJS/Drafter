@@ -87,8 +87,8 @@ export type StepOp =
 
 export type FormAction =
   | { type: 'set'; patch: FormPatch }
-  /** Fields parsed from a captured sentence; project and people names are matched against these. */
-  | { type: 'applyCapture'; capture: CapturedFields; projects: Named[]; people: Named[] }
+  /** Fields parsed from a captured sentence; people names are matched against these. It never sets the project. */
+  | { type: 'applyCapture'; capture: CapturedFields; people: Named[] }
   | { type: 'step'; op: StepOp }
 
 export function formReducer(form: TaskForm, action: FormAction): TaskForm {
@@ -98,15 +98,11 @@ export function formReducer(form: TaskForm, action: FormAction): TaskForm {
     case 'step':
       return { ...form, checklist: applyStep(form.checklist, action.op) }
     case 'applyCapture': {
-      const { capture: c, projects, people } = action
+      const { capture: c, people } = action
       const next = { ...form }
       if (c.title) next.title = c.title
       if (c.dueAt) next.dueAt = toLocalInput(c.dueAt)
       if (c.priority) next.priority = c.priority
-      if (c.projectName) {
-        const p = projects.find(x => x.name.toLowerCase() === c.projectName!.toLowerCase())
-        if (p) next.projectId = p.id
-      }
       if (c.peopleNames?.length) {
         const ids = c.peopleNames.map(n => people.find(p => p.name.toLowerCase() === n.toLowerCase())?.id).filter((id): id is string => !!id)
         if (ids.length) next.peopleIds = [...new Set([...next.peopleIds, ...ids])]

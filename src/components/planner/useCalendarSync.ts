@@ -4,6 +4,7 @@ import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
 import { newerStamp, localMidnightIso } from '../../itemops'
 import { entryToEvent, isMirroredTask, pushEventToGoogle, pushEventToMicrosoft, GOOGLE_PUSH_ID, googlePushId, useCalendarEvents, useGooglePush, useMicrosoftSync, entryPullWrites, type EntryChange } from '../../calendars'
+import { requestWeatherRefresh } from '../../weather'
 import type { useToast } from './useToast'
 
 interface Deps {
@@ -179,13 +180,17 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
   /**
    * One refresh for both the header pill and the pull-down: the set that runs
    * when the app comes back to the foreground — the items sync, the calendar
-   * feeds, and what moved in Google or Outlook. allSettled so one failing feed
-   * cannot stop the items sync; each piece reports its own error in its own
-   * place. The GitHub board pull and the weather card refresh themselves on
-   * foreground and are left to their own timers here.
+   * feeds, what moved in Google or Outlook, and the briefing's weather.
+   * allSettled so one failing feed cannot stop the items sync; each piece
+   * reports its own error in its own place. The weather is only asked (the
+   * strip refreshes itself when it is on screen, and its half-hour cache
+   * decides whether that means a fetch), so the spinner never waits on it.
+   * The GitHub board pull refreshes itself on foreground and is left to its
+   * own timer here.
    */
   const manualSync = async () => {
     setSyncing(true)
+    requestWeatherRefresh()
     try {
       await Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])
     } finally {
