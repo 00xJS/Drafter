@@ -16,7 +16,7 @@ export function Sync({ store, supabaseOn, syncing, setSyncing }: SettingsCtx) {
       </p>
       <p className="field-hint">
         {supabaseOn
-          ? 'Projects, tasks, people, places, recipes, meals and grocery lists live in Supabase Postgres and sync to every signed-in device (phone and web). Images sync through Supabase Storage.'
+          ? 'Projects, tasks, notes, people, places, recipes, meals and grocery lists live in Supabase Postgres and sync to every signed-in device (phone and web). Images sync through Supabase Storage.'
           : 'No backend configured — data stays in this browser. Use Export in the Tasks tab for backups.'}
       </p>
       {!!store.syncInfo.pending && (

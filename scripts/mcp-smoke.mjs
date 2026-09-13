@@ -627,12 +627,13 @@ async function main() {
 
     const list = await rpc('tools/list')
     const names = (list.result?.tools ?? []).map(t => t.name)
-    eq(names.length, 23, 'tools/list offers 23 tools')
+    eq(names.length, 28, 'tools/list offers 28 tools')
     const expected = [
       'list_projects', 'create_project', 'update_project', 'list_tasks', 'get_task', 'create_task', 'update_task',
-      'complete_task', 'add_comment', 'delete_task', 'list_people', 'list_places', 'create_place', 'log_visit',
+      'complete_task', 'add_comment', 'delete_task', 'list_notes', 'get_note', 'create_note', 'update_note',
+      'list_people', 'list_places', 'create_place', 'log_visit',
       'list_recipes', 'get_week_meals', 'plan_meal', 'get_grocery_list', 'add_grocery_item', 'set_grocery_state',
-      'list_journal', 'add_journal_entry', 'get_overview',
+      'list_journal', 'add_journal_entry', 'get_overview', 'get_week_plan_proposal',
     ]
     ok(expected.every(n => names.includes(n)), 'every expected tool is present')
     ok((list.result?.tools ?? []).every(t => t.description && t.inputSchema?.type === 'object'), 'every tool has a description and an object schema')
@@ -810,6 +811,35 @@ async function main() {
     ok(week.meals.some(m => m.id === `meal~${today}~dinner`), 'get_week_meals sees the meal it planned')
     ok(week.grocery?.items?.length >= 3, 'get_week_meals returns the week grocery list')
 
+    // ----------------------------------------------------------------- notes
+    const note = (await call('create_note', { title: 'Paint colours', text: 'Sage for the hall\n\n- [ ] Buy samples\n- [x] Measure', projectId: project.id })).created
+    const noteRow = row(note.id)
+    eq(noteRow?.kind, 'note', 'create_note stored a note row: the v3.13 allowlist takes the kind')
+    eq(noteRow.user_id, OWNER, 'the note belongs to the owner')
+    eq(noteRow.data.projectId, project.id, 'the note is about the project')
+    eq(
+      noteRow.data.body,
+      '<p>Sage for the hall</p><ul class="checklist"><li><input type="checkbox"> Buy samples</li><li><input type="checkbox" checked> Measure</li></ul>',
+      "the text is stored as the app's note HTML, the checklist its own",
+    )
+    await call('update_note', { id: note.id, appendText: 'Ask about the ceiling' })
+    eq((await call('get_note', { id: note.id })).text, 'Sage for the hall\n\n- [ ] Buy samples\n- [x] Measure\n\nAsk about the ceiling', 'get_note reads it back as the same text, the appended paragraph last')
+    eq((await call('list_notes', { search: 'ceiling sage' })).count, 1, 'list_notes finds it by words from its text')
+
+    // ----------------------------------------------------------------- focus
+    await call('update_task', { id: task.id, focus: true })
+    eq(row(task.id).data.focusOn, today, "update_task focus: true puts the task in today's focus")
+    ok((await call('get_overview', {})).focus.some(t => t.id === task.id), "get_overview lists today's focus")
+    await call('update_task', { id: task.id, focus: false })
+    eq(row(task.id).data.focusOn, undefined, "focus: false takes it out of today's")
+
+    // ------------------------------------------------------------- week plan
+    const postsBefore = psqlJson(`select to_json(count(*)) from public.posts`)
+    const weekPlan = await call('get_week_plan_proposal', {})
+    eq(weekPlan.days?.length, 7, 'get_week_plan_proposal plans a whole week')
+    ok(typeof weekPlan.summary === 'string' && Array.isArray(weekPlan.dinners), 'the proposal has a summary and dinners')
+    eq(psqlJson(`select to_json(count(*)) from public.posts`), postsBefore, 'get_week_plan_proposal wrote nothing')
+
     // --------------------------------------------------------------- journal
     const first = await call('add_journal_entry', { text: 'Fixed the tap.', mood: 4, peopleNames: ['Mum'] })
     eq(first.created, true, 'add_journal_entry created today’s entry')
@@ -871,6 +901,7 @@ async function main() {
       ['list_projects', { includeArchived: true }], ['list_tasks', { limit: 200 }], ['list_people', {}], ['list_places', {}],
       ['list_recipes', {}], ['get_week_meals', { date: today }], ['get_grocery_list', { date: today }],
       ['list_journal', { days: 366 }], ['list_journal', { search: 'peer' }], ['get_overview', {}],
+      ['list_notes', {}], ['get_week_plan_proposal', {}],
     ]
     const failedReads = []
     for (const [name, args] of reads) if ((await probe(name, args)).isError) failedReads.push(name)
@@ -978,7 +1009,7 @@ async function main() {
     ok(pinit.result?.instructions?.includes(MACHINE_TZ), "initialize's instructions name the user's zone from user_settings")
     proxy.notify('notifications/initialized')
     const plist = await proxy.rpc('tools/list')
-    eq(plist.result?.tools?.length, 23, 'a read, write and journal token sees all 23 tools')
+    eq(plist.result?.tools?.length, 28, 'a read, write and journal token sees all 28 tools')
     ok(plist.result.tools.every(t => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'), 'every tool carries annotations')
     ok(!/DEPRECATED/.test(proxy.stderr.join('')), 'the proxy mode prints no deprecation warning')
     const viaProxy = (await callOver(proxy, 'create_task', { title: 'Written through the proxy' })).created
@@ -1084,7 +1115,7 @@ async function main() {
     const pair = await exchange.json()
     ok(pair.access_token?.startsWith('drft_at_') && pair.refresh_token?.startsWith('drft_rt_') && pair.expires_in === 3600, 'a Bearer pair with an hour-long access token')
     const oauthTools = await listHttp(pair.access_token)
-    eq(oauthTools.length, 21, 'the OAuth connection (read and write) sees 21 tools')
+    eq(oauthTools.length, 26, 'the OAuth connection (read and write) sees 26 tools: all but the two journal ones')
     const viaOauth = JSON.parse((await callHttp(pair.access_token, 'create_task', { title: 'Via OAuth' })).text).created
     eq(row(viaOauth.id)?.user_id, OWNER, 'a task written with the OAuth token belongs to the user who consented')
     eq(psqlJson(`select to_json(kind || ' ' || name || ' ' || redirect_host) from public.agent_tokens where access_hash = ${lit(sha256(pair.access_token))}`), 'oauth Smoke assistant 127.0.0.1', 'the connection is listed as the client, returning to this computer')

@@ -32,6 +32,9 @@ export interface ToolDef {
 }
 
 export declare const SCOPES: readonly Scope[]
+export declare const MAX_FOCUS: number
+export declare function textToNoteHtml(text: unknown): string
+export declare function noteText(html: unknown): string
 export declare const TOOLS: ToolDef[]
 export declare function toolsFor(scopes: readonly string[] | null | undefined, tools?: ToolDef[]): ToolDef[]
 export declare function defaultNewId(): string

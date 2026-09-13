@@ -1,5 +1,5 @@
-// Drafter's MCP tools: projects and tasks, people and places, the kitchen, the
-// journal and the Today overview. Zero dependencies.
+// Drafter's MCP tools: projects and tasks, notes, people and places, the
+// kitchen, the journal, the Today overview and the week plan. Zero dependencies.
 //
 // Each tool is `run(args, ctx)` with ctx = { db, clock, scopes, userId, newId, rand }:
 //   db      mcp/data.mjs — the user's own view on the hosted endpoint, the
@@ -21,7 +21,8 @@ import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, str
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
-import { bucketByDue } from '../shared/today.mjs'
+import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
+import { proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
 
 const PLACE_CATEGORIES = ['restaurant', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner']
@@ -29,6 +30,8 @@ const GROCERY_STATES = ['need', 'have', 'done']
 
 const DAY = 86_400_000
 const OPEN = ['todo', 'doing', 'blocked']
+/** Today's focus holds this many open tasks at most, as Plan my day does (src/focus.ts). */
+export const MAX_FOCUS = 3
 
 export const SCOPES = ['read', 'write', 'journal']
 
@@ -83,6 +86,7 @@ export function summarizeTask(t) {
     projectId: t.projectId ?? null,
     dueAt: t.dueAt ?? null,
     completedAt: t.completedAt ?? null,
+    focusOn: t.focusOn ?? null,
     tags: t.tags ?? [],
     checklist: t.checklist ? `${t.checklist.filter(c => c.done).length}/${t.checklist.length}` : null,
     comments: t.comments?.length ?? 0,
@@ -181,6 +185,105 @@ function assertStored(stored, writes) {
     if (!check || check.updatedAt !== w.updatedAt) {
       throw new Error(`Write of ${w.kind} ${w.id} was rejected by the last-write-wins merge (a newer copy exists). Re-read and retry.`)
     }
+  }
+}
+
+/**
+ * Put a task in, or take it out of, the user's focus for today, as Plan my day
+ * does. An earlier day's focus is history and is left alone, and so is a
+ * household member's pick.
+ */
+async function setFocus(task, on, { db, clock, userId }) {
+  const today = clock.todayKey()
+  if (!on) {
+    if (isFocusFor(task, today, userId)) {
+      delete task.focusOn
+      delete task.focusBy
+    }
+    return
+  }
+  if (isFocusFor(task, today, userId)) return
+  const others = /** @type {import('../src/types.js').Task[]} */ ((await db.fetchAll({ kinds: ['task'] })).filter(t => t.kind === 'task' && t.id !== task.id))
+  const open = focusTasks(others, today, userId).filter(t => OPEN.includes(t.status))
+  if (open.length >= MAX_FOCUS) {
+    throw new Error(`Today's focus already has ${MAX_FOCUS} open tasks (${open.map(t => `"${t.title || 'Untitled task'}"`).join(', ')}). Take one out first with focus: false.`)
+  }
+  task.focusOn = today
+  if (userId) task.focusBy = userId
+  else delete task.focusBy
+}
+
+// ---------------------------------------------------------------------------
+// Notes: the app stores a sanitized HTML subset (src/richtext.ts); agents read
+// and write plain text
+// ---------------------------------------------------------------------------
+
+/** What a note with text but no title is called, as the app calls it. */
+const UNTITLED = 'Untitled note'
+
+const escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const hasPhoto = html => /<img\b/i.test(String(html ?? ''))
+
+/**
+ * Plain text as note HTML: blank lines separate paragraphs, a run of "- " lines
+ * is a list, and a run of "- [ ] " / "- [x] " lines a checklist the app ticks
+ * like its own.
+ */
+export function textToNoteHtml(text) {
+  return String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[ \t]*\n/)
+    .map(block => block.replace(/^\n+|\s+$/g, ''))
+    .filter(block => block.trim())
+    .map(block => {
+      const lines = block.split('\n')
+      const boxes = lines.map(l => /^\s*[-*] \[([ xX])\]\s?(.*)$/.exec(l))
+      if (boxes.every(Boolean)) return `<ul class="checklist">${boxes.map(m => `<li><input type="checkbox"${m?.[1] === ' ' ? '' : ' checked'}> ${escapeHtml(m?.[2] ?? '')}</li>`).join('')}</ul>`
+      const items = lines.map(l => /^\s*[-*] (.*)$/.exec(l))
+      if (items.every(Boolean)) return `<ul>${items.map(m => `<li>${escapeHtml(m?.[1] ?? '')}</li>`).join('')}</ul>`
+      return `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`
+    })
+    .join('')
+}
+
+const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+
+function decodeEntity(entity) {
+  if (entity[0] !== '#') return NAMED_ENTITIES[entity.toLowerCase()] ?? ''
+  const code = /^#x/i.test(entity) ? parseInt(entity.slice(2), 16) : Number(entity.slice(1))
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : ''
+}
+
+/**
+ * A note's body as the plain text create_note takes: paragraphs apart by a
+ * blank line, list items as "- ", checklist items as "- [ ]" / "- [x]", and a
+ * photo as [photo]. Bold, links and headings keep only their words.
+ */
+export function noteText(html) {
+  return String(html ?? '')
+    .replace(/<img\b[^>]*>/gi, '[photo]')
+    .replace(/<(?:ul|ol)\b[^>]*>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '- ')
+    .replace(/<input\b[^>]*\bchecked\b[^>]*>\s*/gi, '[x] ')
+    .replace(/<input\b[^>]*>\s*/gi, '[ ] ')
+    .replace(/<br\s*\/?>|<\/(?:li|div)>/gi, '\n')
+    .replace(/<\/(?:p|h[1-6]|pre|blockquote|ul|ol)>|<hr\b[^>]*>/gi, '\n\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (_, entity) => decodeEntity(entity))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function summarizeNote(n) {
+  const text = noteText(n.body).replace(/\s+/g, ' ')
+  return {
+    id: n.id,
+    title: n.title || UNTITLED,
+    projectId: n.projectId ?? null,
+    pinned: !!n.pinned,
+    excerpt: text.length > 160 ? `${text.slice(0, 160).trimEnd()}…` : text,
+    updatedAt: n.updatedAt,
   }
 }
 
@@ -287,15 +390,13 @@ export const TOOLS = [
       if (startAt !== undefined) project.startAt = startAt ? isoOrThrow(startAt, 'startAt') : undefined
       if (targetAt !== undefined) project.targetAt = targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined
       if (githubUrl !== undefined) project.githubUrl = String(githubUrl) || undefined
-      const escapeHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const toHtml = text => String(text).split(/\n{2,}/).map(par => `<p>${escapeHtml(par).replace(/\n/g, '<br>')}</p>`).join('')
       if (notes !== undefined) {
         project.notes = String(notes) || undefined
-        project.notesHtml = notes ? toHtml(notes) : ''
+        project.notesHtml = notes ? textToNoteHtml(notes) : ''
       }
       if (appendNotes) {
         project.notes = [project.notes, String(appendNotes)].filter(Boolean).join('\n\n')
-        project.notesHtml = (project.notesHtml ?? '') + toHtml(appendNotes)
+        project.notesHtml = (project.notesHtml ?? '') + textToNoteHtml(appendNotes)
       }
       if (addMilestone?.name) {
         project.milestones = [...(project.milestones ?? []), { id: newId(), name: String(addMilestone.name), dueAt: addMilestone.dueAt ? isoOrThrow(addMilestone.dueAt, 'dueAt') : undefined }]
@@ -446,12 +547,17 @@ export const TOOLS = [
         peopleIds: { type: 'array', items: { type: 'string' }, description: 'Replace the people attached (empty array clears)' },
         placeId: { type: 'string', description: 'Where this happens; empty string clears it' },
         placeName: { type: 'string', description: 'Alternative to placeId: the name of a saved place' },
+        focus: {
+          type: 'boolean',
+          description: `true puts it in today's focus, the short list Plan my day fills on the Today page (${MAX_FOCUS} open at most); false takes it out of today's`,
+        },
       },
       required: ['id'],
     },
-    async run({ id, title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, addChecklist, tickChecklist, peopleIds, placeId, placeName } = {}, { db, clock, newId }) {
+    async run({ id, title, description, projectId, status, priority, dueAt, tags, notes, link, githubUrl, addChecklist, tickChecklist, peopleIds, placeId, placeName, focus } = {}, { db, clock, newId, userId }) {
       const task = await db.fetchItem(id, 'task')
       const wasDone = task.status === 'done'
+      if (focus !== undefined) await setFocus(task, focus === true, { db, clock, userId })
       if (peopleIds !== undefined || placeId !== undefined || placeName !== undefined) {
         const ctx = resolveContext(await db.fetchAll({ kinds: ['person', 'place'] }), { peopleIds, placeId, placeName })
         if (peopleIds !== undefined) task.peopleIds = ctx.peopleIds
@@ -557,6 +663,133 @@ export const TOOLS = [
       task.updatedAt = newerStamp(task.updatedAt)
       await db.writeItem(task)
       return { deleted: id }
+    },
+  },
+  {
+    name: 'list_notes',
+    scope: 'read',
+    annotations: READS,
+    description:
+      'Notes from Tasks → Notes, each a separate piece of text: pinned first, then the most recently edited. Filters: projectId (what a note is about) and search (every word must be in the title or the text). Each comes with a short excerpt; get_note reads one in full. A project’s own notes pad is on list_projects.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        search: { type: 'string' },
+        limit: { type: 'number', description: 'Max results (default 25, max 200)' },
+      },
+    },
+    async run({ projectId, search, limit } = {}, { db }) {
+      let notes = (await db.fetchAll({ kinds: ['note'] })).filter(i => i.kind === 'note')
+      if (projectId) notes = notes.filter(n => n.projectId === projectId)
+      const words = String(search ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+      if (words.length) {
+        notes = notes.filter(n => {
+          const hay = `${n.title ?? ''}\n${noteText(n.body)}`.toLowerCase()
+          return words.every(w => hay.includes(w))
+        })
+      }
+      // the app's order (sortNotes): pinned, then newest edit, then id
+      notes.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || String(b.updatedAt).localeCompare(String(a.updatedAt)) || a.id.localeCompare(b.id))
+      const cap = Math.min(Math.max(Number(limit) || 25, 1), 200)
+      return { count: notes.length, showing: Math.min(cap, notes.length), notes: notes.slice(0, cap).map(summarizeNote) }
+    },
+  },
+  {
+    name: 'get_note',
+    scope: 'read',
+    annotations: READS,
+    description:
+      'Read one note in full, as plain text: paragraphs apart by a blank line, list items start "- ", checklist items "- [ ]" or "- [x]", and a photo shows as [photo]. It is the same text create_note and update_note take.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    async run({ id } = {}, { db }) {
+      const n = await db.fetchItem(id, 'note')
+      return {
+        id: n.id,
+        title: n.title || UNTITLED,
+        projectId: n.projectId ?? null,
+        pinned: !!n.pinned,
+        text: noteText(n.body),
+        photos: (String(n.body ?? '').match(/<img\b/gi) ?? []).length,
+        createdAt: n.createdAt,
+        updatedAt: n.updatedAt,
+      }
+    },
+  },
+  {
+    name: 'create_note',
+    scope: 'write',
+    annotations: ADDS,
+    description:
+      'Write a new note in Tasks → Notes, to keep a piece of text apart from the rest. text is plain: blank lines separate paragraphs, "- " lines make a list and "- [ ] " lines a checklist. It needs a title or some text; text with no title is an "Untitled note". projectId (from list_projects) says what it is about.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        text: { type: 'string' },
+        projectId: { type: 'string' },
+        pinned: { type: 'boolean', description: 'Keep it at the top of the list' },
+      },
+    },
+    async run({ title, text, projectId, pinned } = {}, { db, clock, newId }) {
+      const name = String(title ?? '').trim()
+      const body = textToNoteHtml(text)
+      if (!name && !body) throw new Error('Give a title or some text: a blank note is never saved.')
+      if (projectId) await db.fetchItem(String(projectId), 'project')
+      const stamp = clock.iso()
+      /** @type {import('../src/types.js').Note} */
+      const note = {
+        kind: 'note',
+        id: newId(),
+        title: name || UNTITLED,
+        body,
+        projectId: projectId ? String(projectId) : undefined,
+        pinned: pinned === true || undefined,
+        createdAt: stamp,
+        updatedAt: stamp,
+      }
+      await db.writeItem(note)
+      return { created: summarizeNote(note) }
+    },
+  },
+  {
+    name: 'update_note',
+    scope: 'write',
+    annotations: EDITS,
+    description:
+      'Edit a note. appendText adds to the end and keeps everything already there: prefer it. text replaces the whole body with plain text, which drops bold, links and headings, and is refused on a note with photos. Also title, projectId (an empty string: about nothing in particular) and pinned. Reads the latest copy first, so edits are merge-safe.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        title: { type: 'string' },
+        text: { type: 'string', description: 'Replace the body: plain text, as create_note takes it' },
+        appendText: { type: 'string', description: 'Add to the end of the body' },
+        projectId: { type: 'string', description: 'An empty string: about nothing in particular' },
+        pinned: { type: 'boolean' },
+      },
+      required: ['id'],
+    },
+    async run({ id, title, text, appendText, projectId, pinned } = {}, { db }) {
+      if (text !== undefined && appendText !== undefined) throw new Error('Give text or appendText, not both.')
+      const note = await db.fetchItem(id, 'note')
+      if (text !== undefined) {
+        if (hasPhoto(note.body)) throw new Error('This note has photos, and replacing its text would drop them. Use appendText, or edit it in the app.')
+        note.body = textToNoteHtml(text)
+      }
+      if (appendText !== undefined) note.body = `${note.body ?? ''}${textToNoteHtml(appendText)}`
+      if (title !== undefined) note.title = String(title).trim()
+      if (projectId !== undefined) {
+        if (projectId) await db.fetchItem(String(projectId), 'project')
+        note.projectId = String(projectId) || undefined
+      }
+      if (pinned !== undefined) note.pinned = pinned === true || undefined
+      // the app never keeps a blank note: removing one is the app's Delete, with its Undo
+      if (!note.title && !noteText(note.body) && !hasPhoto(note.body)) throw new Error('That would leave the note blank. Delete it in the app instead.')
+      note.title = note.title || UNTITLED
+      note.updatedAt = newerStamp(note.updatedAt)
+      await db.writeItem(note)
+      return { updated: summarizeNote(note) }
     },
   },
   {
@@ -1000,9 +1233,9 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'The Today page as data, in the user\'s time zone: counts by status, overdue / due today / due this week, blocked items, per-project progress, what was completed in the last 7 days, and — on a connection with journal access — whether today has a journal entry.',
+      'The Today page as data, in the user\'s time zone: counts by status, today\'s focus (the few tasks Plan my day picked), overdue / due today / due this week, blocked items, per-project progress, what was completed in the last 7 days, and — on a connection with journal access — whether today has a journal entry.',
     inputSchema: { type: 'object', properties: {} },
-    async run(_args, { db, clock, scopes }) {
+    async run(_args, { db, clock, scopes, userId }) {
       const withJournal = Array.isArray(scopes) && scopes.includes('journal')
       const [all, journal] = await Promise.all([db.fetchAll({ kinds: ['task', 'project'] }), withJournal ? db.fetchJournal() : null])
       const tasks = all.filter(i => i.kind === 'task')
@@ -1017,12 +1250,46 @@ export const TOOLS = [
         timeZone: clock.tz,
         counts: Object.fromEntries(TASK_STATUSES.map(s => [s, tasks.filter(t => t.status === s).length])),
         journal: journal ? { writtenToday: !!entryOn(journal, today), streak: streak(journal, today) } : null,
+        focus: focusTasks(tasks, today, userId).map(summarizeTask),
         overdue: overdue.map(summarizeTask),
         dueToday: dueToday.map(summarizeTask),
         dueThisWeek: dueSoon.filter(t => (clock.dayKeyOf(t.dueAt) ?? '') <= weekEnd).map(summarizeTask),
         blocked: open.filter(t => t.status === 'blocked').map(summarizeTask),
         projects: projects.map(p => summarizeProject(p, tasks.filter(t => t.projectId === p.id))),
         completedLast7Days: tasks.filter(t => t.status === 'done' && t.completedAt && nowMs - at(t.completedAt) < 7 * DAY).length,
+      }
+    },
+  },
+  {
+    name: 'get_week_plan_proposal',
+    scope: 'read',
+    annotations: READS,
+    description:
+      'The app\'s "Plan next week" proposal for the Sunday-start week ahead (from next Sunday, or from today on a Sunday): dinners for the empty nights (favourites not had lately, one recipe never cooked, busy evenings flagged, alternatives to swap in), catch-ups with anyone due one, overdue work spread so no day has more than three due, bills falling due, and a Top 3 while last week\'s review has none. A proposal only: nothing is written. To act on it, ask the user first, then use plan_meal, create_task and update_task.',
+    inputSchema: { type: 'object', properties: {} },
+    async run(_args, { db, clock, userId }) {
+      // reviews are personal: the owner's view already leaves out anyone else's
+      const items = await db.fetchAll({ kinds: ['task', 'project', 'meal', 'recipe', 'person', 'review', 'event'] })
+      const plan = proposeWeek(items, { todayKey: clock.todayKey(), tz: clock.tz, userId, now: clock.now() })
+      if (!plan) throw new Error('Could not work out which week to plan.')
+      const recipeName = new Map(items.filter(i => i.kind === 'recipe').map(r => [r.id, r.name ?? null]))
+      return {
+        weekKey: plan.week.weekKey,
+        days: plan.week.dayKeys,
+        summary: weekPlanSummary(plan) ?? 'Nothing to plan: the week ahead is already covered.',
+        dinners: plan.dinners.map(d => ({
+          date: d.date,
+          recipeId: d.recipeId,
+          title: d.title,
+          why: d.why,
+          isNew: d.isNew,
+          busyEvening: d.busy,
+          alternatives: d.alternatives.map(id => ({ recipeId: id, title: recipeName.get(id) ?? null })),
+        })),
+        catchUps: plan.people.map(p => ({ personId: p.personId, title: p.title, day: p.dueDay, why: p.why })),
+        overdueToMove: plan.overdue.map(o => ({ taskId: o.taskId, title: o.title, dueAt: o.fromDue, moveTo: o.toDay, why: o.why })),
+        billsDue: plan.bills.map(b => ({ taskId: b.taskId, title: b.title, day: b.dueDay, amount: b.amount, autopay: b.autopay })),
+        top3: plan.top3.map(t => ({ taskId: t.taskId, title: t.title })),
       }
     },
   },

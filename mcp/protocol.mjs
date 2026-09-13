@@ -30,7 +30,7 @@ export function negotiate(requested) {
  */
 export function instructionsFor({ tz, scopes = [] } = {}) {
   const lines = [
-    `Drafter is the user's home planner and journal: projects and tasks, people and places, meals and groceries${scopes.includes('journal') ? ', and their journal' : ''}.`,
+    `Drafter is the user's home planner and journal: projects and tasks, notes, people and places, meals and groceries${scopes.includes('journal') ? ', and their journal' : ''}.`,
     `The user's time zone is ${tz || 'UTC'}: "today", and every date given without a time, is a day in that zone.`,
     'Journal is personal writing — quote it only when asked.',
     'Ask before bulk changes (more than a handful of writes) and before deleting anything.',

@@ -8,8 +8,9 @@ import { weekKeyOf } from '../../shared/weeks.mjs'
 import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS } from '../../shared/kinds.mjs'
 import { makeClock } from '../../shared/clock.mjs'
 import { PAGE_SIZE, PERSONAL_KINDS, SINCE_WINDOW_MS, createRestData, ownerMaySee } from '../../mcp/data.mjs'
-import { TOOLS, assertDayKey, createContext, resolveContext, summarizePlace, summarizeTask } from '../../mcp/tools.mjs'
+import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext, summarizePlace, summarizeTask, textToNoteHtml } from '../../mcp/tools.mjs'
 import type { Scope } from '../../mcp/tools.mjs'
+import { MAX_FOCUS as APP_MAX_FOCUS } from '../focus'
 import { KNOWN_KINDS } from '../schema'
 
 // The MCP tools reach Supabase through mcp/data.mjs over fetch; here fetch is
@@ -229,7 +230,7 @@ describe('tool catalogue', () => {
       expect.arrayContaining([
         'list_projects', 'create_task', 'update_task', 'complete_task', 'list_people', 'list_places', 'create_place', 'log_visit',
         'list_recipes', 'get_week_meals', 'plan_meal', 'get_grocery_list', 'add_grocery_item', 'set_grocery_state',
-        'list_journal', 'add_journal_entry', 'get_overview',
+        'list_journal', 'add_journal_entry', 'get_overview', 'list_notes', 'get_note', 'create_note', 'update_note', 'get_week_plan_proposal',
       ]),
     )
     for (const t of TOOLS) {
@@ -281,9 +282,18 @@ function household(): Row[] {
     at(OWNER, { kind: 'grocery', id: groceryId(week), weekKey: week, items: [{ id: 'g1', name: 'Milk', state: 'need', recipeIds: [] }] }),
     at(OWNER, { kind: 'journal', id: `journal~${today}~own`, date: today, body: 'Mine to read' }),
     at(OWNER, { kind: 'habit', id: 'own-habit', name: 'Stretch', done: [today] }),
+    at(OWNER, {
+      kind: 'note',
+      id: 'n1',
+      title: 'Garden ideas',
+      body: '<p>Raised beds &amp; a <strong>pond</strong></p><ul class="checklist"><li><input type="checkbox" checked> Measure</li></ul>',
+      projectId: 'p1',
+    }),
     at(null, { id: 'legacy-post', title: 'An old social post', body: 'hello', status: 'draft', platforms: ['x'] }),
     // shared with the household: the owner's agent may see a peer's chore
     at(PEER, { kind: 'task', id: 'peer-task', title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] }),
+    // notes are shared too, like tasks
+    at(PEER, { kind: 'note', id: 'peer-note', title: 'Holiday list', body: '<p>Shared with the household</p>', pinned: true }),
     // personal: never the owner's agent's to read, not even by id
     at(PEER, { kind: 'habit', id: 'peer-a', name: `${SECRET} habit`, done: [today] }),
     at(PEER, { kind: 'routine', id: 'peer-b', name: `${SECRET} routine`, when: 'morning', steps: [{ id: 's1', text: SECRET }], ticks: [] }),
@@ -365,6 +375,11 @@ const SWEEP: Record<string, Record<string, unknown>> = {
   list_journal: { days: 366 },
   add_journal_entry: { text: 'A walk' },
   get_overview: {},
+  list_notes: { search: 'garden' },
+  get_note: { id: 'n1' },
+  create_note: { title: 'Paint colours', text: 'Sage\n\n- [ ] Buy samples', projectId: 'p1' },
+  update_note: { id: 'n1', appendText: 'Ask about liners' },
+  get_week_plan_proposal: {},
 }
 
 describe('personal kinds stay with their owner', () => {
@@ -539,5 +554,106 @@ describe('"today" is the user\'s today', () => {
     respond(url => (url.includes('owner_user_id') ? OWNER : []))
     const out = (await tool('get_week_meals').run({}, createContext({ db: serviceData(), clock: makeClock('America/Los_Angeles', () => at) }))) as { days: string[] }
     expect(out.days).toContain('2026-09-11')
+  })
+})
+
+describe('notes as plain text', () => {
+  it('writes the app\'s note HTML and reads it back as the same text', () => {
+    const text = 'Sage for the hall\nand the landing\n\n- rollers\n- tape\n\n- [ ] Buy samples\n- [x] Measure'
+    const html = textToNoteHtml(text)
+    expect(html).toBe(
+      '<p>Sage for the hall<br>and the landing</p><ul><li>rollers</li><li>tape</li></ul>' +
+        '<ul class="checklist"><li><input type="checkbox"> Buy samples</li><li><input type="checkbox" checked> Measure</li></ul>',
+    )
+    expect(noteText(html)).toBe(text)
+  })
+
+  it('escapes what it writes, decodes what it reads, and reads a photo as [photo]', () => {
+    expect(textToNoteHtml('<script>&')).toBe('<p>&lt;script&gt;&amp;</p>')
+    expect(textToNoteHtml('  \n\n ')).toBe('')
+    expect(noteText('<p>Fish &amp; chips&nbsp;<img data-media="m1" alt=""> <a href="https://x.test">menu</a></p>')).toBe('Fish & chips [photo] menu')
+  })
+})
+
+describe('notes, focus and the week plan over MCP', () => {
+  it('create_note stores the app\'s shape, and never a blank note', async () => {
+    const sent = serveHousehold(household())
+    const out = (await tool('create_note').run({ text: 'Just a thought' }, ctxFor())) as { created: Record<string, unknown> }
+    expect(out.created).toMatchObject({ title: 'Untitled note', excerpt: 'Just a thought', pinned: false, projectId: null })
+    expect(sent[0]).toMatchObject({ kind: 'note', title: 'Untitled note', body: '<p>Just a thought</p>' })
+    expect('pinned' in sent[0]).toBe(false)
+    await expect(tool('create_note').run({ title: '  ', text: '\n' }, ctxFor())).rejects.toThrow(/blank note/)
+    await expect(tool('create_note').run({ title: 'Plans', projectId: 'nope' }, ctxFor())).rejects.toThrow(/No project with id "nope"/)
+  })
+
+  it('update_note appends and keeps what is there, and will not replace a note with photos', async () => {
+    let sent = serveHousehold(household())
+    await tool('update_note').run({ id: 'n1', appendText: 'Ask about liners' }, ctxFor())
+    expect(sent[0].body).toBe('<p>Raised beds &amp; a <strong>pond</strong></p><ul class="checklist"><li><input type="checkbox" checked> Measure</li></ul><p>Ask about liners</p>')
+    const withPhoto = household().map(r => (r.data.id === 'n1' ? { ...r, data: { ...r.data, body: `${r.data.body}<p><img data-media="m1"></p>` } } : r))
+    sent = serveHousehold(withPhoto)
+    await expect(tool('update_note').run({ id: 'n1', text: 'Start again' }, ctxFor())).rejects.toThrow(/has photos/)
+    await expect(tool('update_note').run({ id: 'n1', title: '', text: '' }, ctxFor())).rejects.toThrow(/has photos/)
+    sent = serveHousehold(household())
+    await expect(tool('update_note').run({ id: 'n1', title: '', text: '' }, ctxFor())).rejects.toThrow(/blank/)
+    await expect(tool('update_note').run({ id: 't1', title: 'Not a note' }, ctxFor())).rejects.toThrow(/is a task, not a note/)
+    expect(sent).toEqual([])
+  })
+
+  it('get_note and list_notes read plain text, pinned first, and the household\'s notes are shared', async () => {
+    serveHousehold(household())
+    expect(await tool('get_note').run({ id: 'n1' }, ctxFor())).toMatchObject({ title: 'Garden ideas', text: 'Raised beds & a pond\n\n- [x] Measure', photos: 0, projectId: 'p1' })
+    serveHousehold(household())
+    const found = (await tool('list_notes').run({ search: 'POND measure' }, ctxFor())) as { notes: { id: string }[] }
+    expect(found.notes.map(n => n.id)).toEqual(['n1'])
+    serveHousehold(household())
+    expect(await tool('list_notes').run({ search: 'pond salmon' }, ctxFor())).toMatchObject({ count: 0 })
+    serveHousehold(household())
+    const all = (await tool('list_notes').run({}, ctxFor())) as { notes: { id: string }[] }
+    expect(all.notes.map(n => n.id)).toEqual(['peer-note', 'n1'])
+  })
+
+  it('update_task focus puts a task in today\'s focus, three open at most, and takes only today\'s out', async () => {
+    expect(MAX_FOCUS).toBe(APP_MAX_FOCUS)
+    const today = makeClock().todayKey()
+    const task = (id: string, extra: Record<string, unknown>): Row => ({
+      user_id: OWNER,
+      data: { kind: 'task', id, title: id.toUpperCase(), description: '', status: 'todo', priority: 'normal', tags: [], createdAt: STAMP, updatedAt: STAMP, ...extra },
+    })
+    let sent = serveHousehold(household())
+    await tool('update_task').run({ id: 't1', focus: true }, ctxFor())
+    expect(sent[0]).toMatchObject({ id: 't1', focusOn: today })
+    // the local service-key mode has no user to name
+    expect('focusBy' in sent[0]).toBe(false)
+
+    const full = [...household(), task('f1', { focusOn: today }), task('f2', { focusOn: today }), task('f3', { focusOn: today }), task('old', { focusOn: '2026-09-01' })]
+    sent = serveHousehold(full)
+    await expect(tool('update_task').run({ id: 't1', focus: true }, ctxFor())).rejects.toThrow(/already has 3 open tasks \("F1", "F2", "F3"\)/)
+    expect(sent).toEqual([])
+    serveHousehold(full)
+    const overview = (await tool('get_overview').run({}, ctxFor())) as { focus: { id: string; focusOn: string }[] }
+    expect(overview.focus.map(t => [t.id, t.focusOn])).toEqual([
+      ['f1', today],
+      ['f2', today],
+      ['f3', today],
+    ])
+
+    sent = serveHousehold(full)
+    await tool('update_task').run({ id: 'f1', focus: false }, ctxFor())
+    expect(sent[0].focusOn).toBeUndefined()
+    sent = serveHousehold(full)
+    await tool('update_task').run({ id: 'old', focus: false }, ctxFor())
+    expect(sent[0].focusOn).toBe('2026-09-01')
+  })
+
+  it('get_week_plan_proposal is the app\'s proposal for the week ahead, and writes nothing', async () => {
+    // a Thursday: the week to plan starts on Sunday 4 October
+    const at = Date.parse('2026-10-01T12:00:00Z')
+    serveHousehold(household())
+    const plan = (await tool('get_week_plan_proposal').run({}, createContext({ db: serviceData(), clock: makeClock('UTC', () => at) }))) as Record<string, any>
+    expect(plan.days[0]).toBe('2026-10-04')
+    expect(plan.dinners).toEqual([expect.objectContaining({ date: '2026-10-04', recipeId: 'pasta', title: 'Pasta', isNew: false, why: expect.stringMatching(/^Cooked 1× in six months/) })])
+    expect(plan.summary).toBe('1 dinner to fill')
+    expect(calls.some(c => c.url.includes('sync_posts'))).toBe(false)
   })
 })
