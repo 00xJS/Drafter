@@ -7,7 +7,27 @@ import { isSupabaseConfigured } from '../../supabase'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
-/** Reminders: server push and the morning digest, then this iPhone's own reminders or the browser's. */
+/**
+ * Sunday's review draft is written on the server for every account, push or
+ * not, so its one switch sits apart from push and says nothing about it.
+ */
+export function SundayDraft({ journal, onChange }: { journal: boolean; onChange(on: boolean): void }) {
+  return (
+    <>
+      <h4>Sunday’s review</h4>
+      <p className="field-hint">Each Sunday, last week’s review is drafted for you, ready on Home → Week. It never writes over your own summary or reflections.</p>
+      <p className="sync-line">
+        <label className="cal-source mirror-row">
+          <input type="checkbox" checked={journal} onChange={e => onChange(e.target.checked)} />
+          <span className="cal-source-name">Let Sunday’s draft read my journal</span>
+        </label>
+        <small className="field-hint">The week’s entries go to the AI provider with the draft. Off by default; the ✨ summary you press for on Home → Week always may.</small>
+      </p>
+    </>
+  )
+}
+
+/** Reminders: server push and the morning digest, Sunday's review draft, then this iPhone's own reminders or the browser's. */
 export function Reminders({ store }: SettingsCtx) {
   const [notif, setNotif] = useState(notificationPermission())
   const [push, setPush] = useState<PushInfo | null>(null)
@@ -90,17 +110,6 @@ export function Reminders({ store }: SettingsCtx) {
               <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
             </label>
           </p>
-          <p className="sync-line">
-            <label className="cal-source mirror-row">
-              <input
-                type="checkbox"
-                checked={!!push.digestJournal}
-                onChange={e => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: e.target.checked }))}
-              />
-              <span className="cal-source-name">Let Sunday’s draft read my journal</span>
-            </label>
-            <small className="field-hint">The week’s entries go to the AI provider with the draft. Off by default; the ✨ summary you press for on the Review tab always may.</small>
-          </p>
         </>
       ) : push ? (
         <p className="field-hint">Push reminders aren’t available yet.</p>
@@ -110,6 +119,9 @@ export function Reminders({ store }: SettingsCtx) {
         <p className="field-hint">{pushError ? `Push status unavailable: ${pushError}` : 'Checking push…'}</p>
       )}
       {pushError && push && <p className="warn">{pushError}</p>}
+      {push?.sundayDraft && (
+        <SundayDraft journal={!!push.digestJournal} onChange={on => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: on }))} />
+      )}
       {isNative() ? (
         <>
           <h4>On this iPhone</h4>

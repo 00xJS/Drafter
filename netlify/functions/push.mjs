@@ -1,13 +1,16 @@
 // Web push subscriptions and digest preferences, per user.
-//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, timezone }
+//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, digestJournal, timezone, sundayDraft }
 //   POST /api/push { action } subscribe | unsubscribe | test | prefs
 // VAPID keys come from the host: `npx web-push generate-vapid-keys` →
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (+ VAPID_SUBJECT, a mailto: or https:).
+// Sunday's review draft runs for every account, push or not, so its journal
+// switch reads and saves wherever the settings store does.
 
 import { withCors } from './lib/cors.mjs'
 import webpush from 'web-push'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApnsWithRetry } from './lib/apns.mjs'
+import { adoptTimeZone } from './lib/timezone.mjs'
 
 // Two channels, one list: browser subscriptions carry an endpoint + keys and go
 // through web-push; the iOS app's entries are { type: 'apns', token } and go
@@ -98,26 +101,36 @@ const handler = async req => {
 
   try {
     if (req.method === 'GET') {
-      const s = configured ? await settingsGet(user.id) : null
+      const s = settingsStoreConfigured() ? await settingsGet(user.id) : null
       return Response.json({
         configured,
         missing,
         webPush: webPushConfigured(),
         apns: apnsConfigured(),
         publicKey: process.env.VAPID_PUBLIC_KEY ?? null,
-        subscriptions: (s?.push_subscriptions ?? []).map(x => x.endpoint),
+        // none while the host cannot send: the phone then keeps its own due reminders
+        subscriptions: configured ? (s?.push_subscriptions ?? []).map(x => x.endpoint) : [],
         digestEmail: !!s?.digest_email,
         digestJournal: !!s?.digest_journal,
         // the client must render the SAVED hour, else an unrelated toggle
         // writes its default back over the user's choice
         digestHour: Number.isInteger(s?.digest_hour) ? s.digest_hour : 8,
         timezone: s?.timezone ?? null,
+        // Sunday's review draft needs only somewhere to keep its switch, never push
+        sundayDraft: settingsStoreConfigured(),
         email: user.email,
       })
     }
     if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
-    if (!configured) return Response.json({ error: `Push is not configured on the host: set ${missing.join(', ')}` }, { status: 501 })
     const body = await req.json().catch(() => ({}))
+    if (!configured) {
+      // without push only Sunday's journal switch saves; the email digest and its hour stay push's
+      if (body.action !== 'prefs' || !settingsStoreConfigured()) return Response.json({ error: `Push is not configured on the host: set ${missing.join(', ')}` }, { status: 501 })
+      if (typeof body.digestJournal === 'boolean') await settingsSet(user.id, { digest_journal: body.digestJournal })
+      // the zone Sunday is counted in, for an account that has none yet
+      await adoptTimeZone(user.id, body.timezone)
+      return Response.json({ ok: true })
+    }
     const s = (await settingsGet(user.id)) ?? {}
     const subs = Array.isArray(s.push_subscriptions) ? s.push_subscriptions : []
 

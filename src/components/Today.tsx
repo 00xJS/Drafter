@@ -804,7 +804,7 @@ export function Today({
           <header className="chart-head">
             <div>
               <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
-              <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'From Sunday’s digest'}</p>
+              <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'Written from what actually happened'}</p>
             </div>
             <div className="event-actions">
               {isSunday && onPlanWeek && (

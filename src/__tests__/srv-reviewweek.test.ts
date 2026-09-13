@@ -104,10 +104,13 @@ describe('upsertSundayReview files the draft under the reader’s week', () => {
       // the Saturday before: the week the old arithmetic reviewed instead
       { kind: 'task', id: 'gutter', title: 'Cleared the gutter', status: 'done', completedAt: '2026-09-05T11:00:00.000Z' },
     ]
-    const id = await upsertSundayReview('user-one', items, new Date('2026-09-12T23:00:00.000Z'), { timezone: 'Asia/Tokyo' })
-    expect(id).toBe('review-2026-W36-user-one')
-    expect(written).toHaveLength(1)
-    expect(written[0]).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36', summary: 'A steady week.' })
+    const review = await upsertSundayReview('user-one', items, new Date('2026-09-12T23:00:00.000Z'), { timezone: 'Asia/Tokyo' })
+    expect(review).toEqual({ id: 'review-2026-W36-user-one', summary: 'A steady week.', drafted: true })
+    // the week's one try is stamped before the model is asked, then the draft lands on the same record
+    expect(written).toHaveLength(2)
+    expect(written[0]).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36', draftedAt: '2026-09-12T23:00:00.000Z' })
+    expect(written[0].summary).toBeUndefined()
+    expect(written[1]).toMatchObject({ id: 'review-2026-W36-user-one', key: '2026-W36', draftedAt: '2026-09-12T23:00:00.000Z', summary: 'A steady week.' })
     expect(prompt).toMatch(/Period: last week \(6 Sept? – 12 Sept?\)/)
     expect(prompt).toContain('Fixed the fence')
     expect(prompt).not.toContain('Cleared the gutter')

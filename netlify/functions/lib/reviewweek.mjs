@@ -1,4 +1,5 @@
-// Which week Sunday's automatic review is about, counted in the reader's zone.
+// Sunday's automatic review: which week it is about, counted in the reader's
+// zone; when it is due for an account; and the line it leaves in the digest.
 //
 // The digest used to work this out on the server's own clock — setHours(0) and
 // getDay() on "now", which is UTC on Netlify. The morning digest goes out at
@@ -65,4 +66,42 @@ export function previousWeekIn(now, tz) {
     start: new Date(zonedMidnight(startKey, tz)),
     end: new Date(zonedMidnight(thisWeek, tz)),
   }
+}
+
+/**
+ * Whether Sunday's review draft is due for an account now: its own Sunday, at
+ * or after its digest hour (8 when it has none), push and email or not.
+ * `settings` is its user_settings row, or {} for an account without one,
+ * which reads as UTC. Due for the rest of that day: the draft's own stamp
+ * (upsertSundayReview in digest.mjs) is what makes it once a week.
+ */
+export function sundayDraftDue(settings, now) {
+  const { hour, weekday } = localParts(now, validTimeZone(settings?.timezone) ?? 'UTC')
+  const wantHour = Number.isInteger(settings?.digest_hour) ? settings.digest_hour : 8
+  return weekday === 'Sun' && hour !== null && hour >= wantHour
+}
+
+/**
+ * A review's first sentence, fit for a notification: the first line with its
+ * "-" bullet dropped, up to the first full stop, ! or ? that ends a word.
+ * Eight characters at least before it counts, so "Mr." is not a sentence.
+ * Longer than `max`, it ends at a word with "…". '' when there is no text.
+ */
+export function firstSentence(text, max = 200) {
+  const line = String(text ?? '')
+    .split('\n')
+    .map(l => l.replace(/^\s*[-•*]\s+/, '').trim())
+    .find(Boolean)
+  if (!line) return ''
+  const sentence = /^.{8,}?[.!?…]["'”’)]*(?=\s|$)/.exec(line)?.[0] ?? line
+  if (sentence.length <= max) return sentence
+  const cut = sentence.slice(0, max - 1)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
+}
+
+/** Sunday's line in the digest: the week's review in its first sentence, or the fixed line while it has none. */
+export function sundayLine(summary) {
+  const first = firstSentence(summary)
+  return first ? `Last week: ${first}` : 'Sunday: your weekly review is ready.'
 }
