@@ -809,3 +809,153 @@
   }
 }
 
+
+/* ===================== Notes: the list and one note ========================
+   Tasks → Notes once the shell passes `notes`: one list of note records and
+   every non-empty project pad (notes/NotesIndex.tsx), and a note's own screen
+   (notes/NotePane.tsx: title, About, pin, delete, then the pad's editor). The
+   pad index and the pad keep the rules above; everything in this block hangs
+   off .notes-records, .note-list, .note-row and .note-page. Other streams
+   append their own blocks after this one — keep this one whole.
+   ========================================================================== */
+.notes-search {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 0 12px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 860px;
+}
+.note-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 11px 14px;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.note-row:hover {
+  border-color: var(--muted);
+}
+.note-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.note-row-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-row-pin {
+  flex: none;
+  font-size: 0.8125rem;
+}
+.note-row-when {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.note-row-excerpt {
+  display: block;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.note-row-tag {
+  font-size: 0.6875rem;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.notes-no-match {
+  margin: 4px 0;
+  color: var(--muted);
+}
+/* a row dims under a finger, as a .btn does */
+@media (pointer: coarse) {
+  .note-row:active {
+    background: var(--surface-2);
+  }
+}
+
+/* one note */
+.note-head {
+  gap: 4px;
+}
+.note-pin.on {
+  color: var(--accent-text);
+}
+/* a heading-sized field: two classes and the element outrank the phone's
+   anti-zoom floor (16-zoom-guard.css), which would otherwise pin it at 16px;
+   at every type scale it stays above that floor on its own */
+.notes-page.note-page input.note-title-input {
+  width: 100%;
+  padding: 4px 2px 6px;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.25;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.notes-page.note-page input.note-title-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+.note-about-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.note-about {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.note-about select {
+  max-width: min(320px, 70vw);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+}
+/* the title and About rows sit above the editor, so it starts a little shorter than a pad's */
+.note-page .notes-editable {
+  min-height: max(240px, calc(100vh - 380px));
+}
+/* ===================== end Notes: the list and one note ===================== */
+
