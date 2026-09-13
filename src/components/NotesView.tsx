@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { Project } from '../types'
+import { Note, Project } from '../types'
 import { newerStamp } from '../itemops'
-import { renderMarkdown } from '../markdown'
 import { htmlToText, wordCountHtml } from '../richtext'
-import { excerpt, timeAgo } from '../utils'
+import { excerpt, timeAgo, uid } from '../utils'
 import { RichNotes } from './RichNotes'
+import { NotePane } from './notes/NotePane'
+import { NotesIndex } from './notes/NotesIndex'
+import { blankNote, noteHtml } from './notes/model'
 
 /** The note's HTML, converting legacy Markdown notes on the fly. */
-export function noteHtml(p: Project): string {
-  if (p.notesHtml !== undefined) return p.notesHtml
-  return p.notes ? renderMarkdown(p.notes) : ''
-}
+export { noteHtml }
 
 interface PaneProps {
   project: Project
@@ -98,10 +97,69 @@ interface Props {
   onBack(): void
   onNewProject(): void
   onCreateTask(title: string, projectId: string): void
+  /**
+   * Note records, pinned first then most recently edited (store.notes). Passing
+   * it turns the index into one list of these notes and every non-empty project
+   * pad, with a search and "+ New note"; without it the index is the grid of
+   * project pads it has always been. An open pad (`project`) wins either way.
+   */
+  notes?: Note[]
+  /** Save a note (store.upsert). A new note is first saved once it has a title or some text. */
+  onSaveNote?(n: Note): void
+  /** Delete a note (store.remove: a tombstone Trash can restore), after the two-step confirm. */
+  onDeleteNote?(id: string): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask }: Props) {
+export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask, notes, onSaveNote, onDeleteNote }: Props) {
+  /** The note on screen: a stored one, or a new one not saved yet. Local to Notes, like the pad the shell holds. */
+  const [open, setOpen] = useState<Note | null>(null)
+  /** The list's search, kept while a note is open so All notes comes back to the same list. */
+  const [query, setQuery] = useState('')
+  // a pad opened from elsewhere (the project editor's Notes button) replaces the
+  // note on screen, so the pad's All notes lands on the list rather than on it
+  const [padId, setPadId] = useState(project?.id)
+  if (padId !== project?.id) {
+    setPadId(project?.id)
+    if (project) setOpen(null)
+  }
+
   if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} onCreateTask={onCreateTask} onBack={onBack} />
+
+  if (notes) {
+    if (open) {
+      return (
+        <NotePane
+          key={open.id}
+          note={open}
+          stored={notes.find(n => n.id === open.id)}
+          projects={projects}
+          onSave={n => onSaveNote?.(n)}
+          onDelete={onDeleteNote}
+          onBack={() => setOpen(null)}
+          onCreateTask={onCreateTask}
+        />
+      )
+    }
+    return (
+      <NotesIndex
+        notes={notes}
+        projects={projects}
+        query={query}
+        onQuery={setQuery}
+        onOpenNote={id => setOpen(notes.find(n => n.id === id) ?? null)}
+        onOpenPad={onSelectProject}
+        onNewNote={
+          onSaveNote
+            ? () => {
+                // a new note must be in the list it returns to
+                setQuery('')
+                setOpen(blankNote(uid(), new Date().toISOString()))
+              }
+            : undefined
+        }
+      />
+    )
+  }
 
   const visible = projects.filter(p => p.status !== 'archived')
   if (visible.length === 0) {
