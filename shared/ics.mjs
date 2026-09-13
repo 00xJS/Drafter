@@ -42,7 +42,7 @@ function findValueColon(line) {
 }
 
 function unescape(v) {
-  return v.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\;/g, ';').replace(/\\\\/g, '\\')
+  return v.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\')
 }
 
 /** Offset (ms) of an IANA zone at a UTC instant, via Intl. */
@@ -418,7 +418,7 @@ export function expandEvents(parsed, fromMs, toMs) {
 // ---------------------------------------------------------------------------
 
 function esc(v) {
-  return String(v ?? '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\;')
+  return String(v ?? '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
 }
 
 function fold(line) {

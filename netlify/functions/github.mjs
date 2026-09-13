@@ -324,7 +324,7 @@ async function projectSet(body, token) {
   return Response.json({ ok: true, wrote })
 }
 
-async function write(req, url) {
+async function write(req) {
   const token = process.env.GITHUB_TOKEN
   const body = await req.json().catch(() => ({}))
   if (!token)
@@ -376,7 +376,7 @@ const handler = async req => {
   const { response } = await requireUser(req)
   if (response) return response
 
-  if (req.method === 'POST') return write(req, new URL(req.url))
+  if (req.method === 'POST') return write(req)
   const url = new URL(req.url).searchParams.get('url') ?? ''
   const ref = parseRef(url)
   if (!ref) return Response.json({ error: 'not a GitHub issue, pull request, repository or project URL' }, { status: 400 })

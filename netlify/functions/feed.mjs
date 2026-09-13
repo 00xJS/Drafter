@@ -8,12 +8,8 @@
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
 import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
-import { isMineTask, isUntimed, localDate } from '../../shared/domain.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
-
-const OPEN = ['todo', 'doing', 'blocked']
-const DAY = 86_400_000
 
 /** The owner ids a user may see: themselves plus their household (mirrors household_user_ids()). */
 async function visibleOwnerIds(userId) {
