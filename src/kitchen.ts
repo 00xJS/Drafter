@@ -78,10 +78,12 @@ export function mealWithoutSide(meal: Meal, index: number): Meal {
 
 // ---- when a recipe was last cooked ----------------------------------------------
 
-/** A recipe's cooking as of a day: how many meals cooked it, as the main or a side, and the latest. */
+/** A recipe's cooking as of a day: how many meals cooked it, as the main or a side, the latest, and the next one planned. */
 export interface Cooked {
   timesCooked: number
   lastCooked: string | null
+  /** The first day after this one with a meal on the plan that cooks it, as the main or a side. */
+  nextPlanned: string | null
 }
 
 /** Every recipe's Cooked as of `dayKey`, by id. Worked out once per screen and handed to each row that shows it. */
@@ -93,10 +95,22 @@ export interface CookedIndex {
 /**
  * When each recipe was last cooked, and how often: mealHistory's numbers
  * (shared/weekplan.mjs), the ones the week plan and the assistant read — counted
- * by cookedRecipeIds' rule, sides included.
+ * by cookedRecipeIds' rule, sides included. And when it is next on the plan: the
+ * earliest live meal after `dayKey` that cooks it (mealRecipeIds, so never a
+ * bought one).
  */
 export function cookedIndex(recipes: readonly Recipe[], meals: readonly Meal[], dayKey: string): CookedIndex {
-  const byId = new Map(mealHistory([...recipes, ...meals], { dayKey }).recipes.map(r => [r.id, { timesCooked: r.timesCooked, lastCooked: r.lastCooked }]))
+  const next = new Map<string, string>()
+  for (const m of meals) {
+    if (m.deletedAt || !(m.date > dayKey)) continue
+    for (const id of mealRecipeIds(m)) {
+      const cur = next.get(id)
+      if (!cur || m.date < cur) next.set(id, m.date)
+    }
+  }
+  const byId = new Map(
+    mealHistory([...recipes, ...meals], { dayKey }).recipes.map(r => [r.id, { timesCooked: r.timesCooked, lastCooked: r.lastCooked, nextPlanned: next.get(r.id) ?? null }]),
+  )
   return { dayKey, byId }
 }
 
@@ -150,12 +164,14 @@ export const NOT_LATELY_DAYS = 30
 /**
  * The recipe list's "Not lately": recipes never cooked or not cooked in
  * NOT_LATELY_DAYS, longest ago first — the never-cooked by name, then the rest
- * from the oldest last cook.
+ * from the oldest last cook. It is where to look for what to plan next, so a
+ * recipe already on the plan ahead, as the main or a side, is not in it: the
+ * week plan cools one down the same way.
  */
 export function notLately(recipes: readonly Recipe[], ix: CookedIndex): Recipe[] {
   const last = (r: Recipe) => ix.byId.get(r.id)?.lastCooked ?? ''
   return recipes
-    .filter(r => !last(r) || daysBetween(last(r), ix.dayKey) >= NOT_LATELY_DAYS)
+    .filter(r => !ix.byId.get(r.id)?.nextPlanned && (!last(r) || daysBetween(last(r), ix.dayKey) >= NOT_LATELY_DAYS))
     .sort((a, b) => last(a).localeCompare(last(b)) || a.name.localeCompare(b.name))
 }
 

@@ -121,6 +121,28 @@ describe('when a recipe was last cooked', () => {
     expect(notLately(list, idx).map(r => r.name)).toEqual(['Cassoulet', 'Burgers', 'Dal'])
   })
 
+  it('"Not lately" leaves out a recipe already on the plan ahead, as the main or a side', () => {
+    const list = [recipe('b', 'Burgers'), recipe('c', 'Cassoulet'), recipe('d', 'Dal'), recipe('p', 'Pie'), recipe('s', 'Slaw')]
+    const idx = cookedIndex(
+      list,
+      [
+        meal('2026-08-01', 'dinner', { recipeId: 'b', title: 'Burgers' }),
+        // Cassoulet: six weeks ago, and on for next Tuesday
+        meal('2026-07-31', 'dinner', { recipeId: 'c', title: 'Cassoulet' }),
+        meal('2026-09-15', 'dinner', { recipeId: 'c', title: 'Cassoulet' }),
+        // never cooked: Pie is on for tomorrow, Slaw is a side on Wednesday
+        meal('2026-09-13', 'dinner', { recipeId: 'p', title: 'Pie' }),
+        meal('2026-09-16', 'lunch', { title: 'Hot dogs', sides: [{ recipeId: 's', title: 'Slaw' }] }),
+        // Dal: planned and then cleared, and on a bought meal: neither is on the plan
+        meal('2026-09-14', 'dinner', { recipeId: 'd', title: 'Dal', deletedAt: STAMP }),
+        meal('2026-09-17', 'dinner', { out: true, recipeId: 'd', title: 'Dishoom' }),
+      ],
+      TODAY,
+    )
+    expect(['b', 'c', 'd', 'p', 's'].map(id => idx.byId.get(id)?.nextPlanned)).toEqual([null, '2026-09-15', null, '2026-09-13', '2026-09-16'])
+    expect(notLately(list, idx).map(r => r.name)).toEqual(['Dal', 'Burgers'])
+  })
+
   it('never offers a side as a meal: the week plan, today’s ideas and the assistant leave it out', () => {
     const items = [...recipes, ...meals]
     const history = mealHistory(items, { dayKey: TODAY })
@@ -133,6 +155,44 @@ describe('when a recipe was last cooked', () => {
     expect(ideas).not.toContain('rice')
     const { input } = mealAssistInput({ request: '', weekKey: '2026-W37', dayKey: TODAY, slots: [], planned: [], history })
     expect(input.recipes.map(r => r.name)).toEqual(['Chicken curry', 'Chilli', 'Pho'])
+  })
+})
+
+describe('a side had is had', () => {
+  // Greek salad: a main twice in the spring, then a side with the curry
+  const salad = recipe('salad', 'Greek salad')
+  const asMain = (id: string, title: string, ...dates: string[]) => dates.map(d => meal(d, 'dinner', { recipeId: id, title }))
+  const history = (sideOn: string) => [
+    curry,
+    salad,
+    chilli,
+    ...asMain('salad', 'Greek salad', '2026-05-01', '2026-06-01'),
+    ...asMain('chilli', 'Chilli', '2026-07-01', '2026-07-15', '2026-08-01'),
+    withSides(sideOn, [{ recipeId: 'salad', title: 'Greek salad' }]),
+  ]
+  const noon = new Date(2026, 8, 12, 12)
+
+  it('cools a recipe down: a side two days ago is neither proposed for next week nor one of today’s ideas', () => {
+    const items = history('2026-09-10')
+    const plan = proposeWeek(items, { todayKey: TODAY, now: noon })!
+    expect(plan.dinners.flatMap(d => [d.recipeId, ...d.alternatives])).toEqual(['chilli'])
+    expect(mealIdeasFor(items, { dayKey: TODAY, now: noon }).flatMap(s => s.ideas.map(i => i.id))).toEqual(['chilli'])
+  })
+
+  it('and the reasons count it, in the numbers the Kitchen shows', () => {
+    // three weeks ago: past both cool-downs
+    const items = history('2026-08-22')
+    const idx = cookedIndex([curry, salad, chilli], items.filter((i): i is Meal => i.kind === 'meal'), TODAY)
+    expect(cookedLine(idx, 'salad')).toBe('Last cooked 3 weeks ago · 3 times')
+    const plan = proposeWeek(items, { todayKey: TODAY, now: noon })!
+    expect(plan.dinners.find(d => d.recipeId === 'salad')?.why).toBe('Cooked 3× in six months · last 21 days ago')
+    // still offered and ranked as the meal it has been — twice — but had three weeks ago, not in June
+    const [lunch] = mealIdeasFor(items, { dayKey: TODAY, now: noon })
+    expect(lunch.ideas.map(i => [i.id, i.why])).toEqual([
+      ['chilli', 'Cooked 3× in six months'],
+      ['salad', 'Not cooked in 3 weeks'],
+      ['curry', 'Cooked 1× in six months'],
+    ])
   })
 })
 
@@ -309,15 +369,16 @@ describe('the recipe list', () => {
     expect(html).toContain('<span class="recipe-cooked">Last cooked 6 weeks ago · 1 time</span>')
     expect(html).toContain('<span class="recipe-cooked">Not cooked yet</span>')
     expect(html).toContain('aria-pressed="true">All 5</button>')
-    expect(html).toContain('aria-pressed="false">Not lately 2</button>')
+    // Chilli was last cooked six weeks ago, but it is on for Tuesday
+    expect(html).toContain('aria-pressed="false">Not lately 1</button>')
   })
 
-  it('"Not lately" lists only what has not been cooked in a month, longest ago first', () => {
+  it('"Not lately" lists only what has not been cooked in a month and is not planned, longest ago first', () => {
     vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-recipes': 'lately' }))
     const html = renderToStaticMarkup(<Kitchen {...props} />)
-    expect([...html.matchAll(/<span class="dash-title">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Pho', 'Chilli'])
-    expect(html).toContain('aria-pressed="true">Not lately 2</button>')
-    expect(html).toContain('Not cooked in a month, longest ago first')
+    expect([...html.matchAll(/<span class="dash-title">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Pho'])
+    expect(html).toContain('aria-pressed="true">Not lately 1</button>')
+    expect(html).toContain('Not cooked in a month and not planned, longest ago first')
     expect(html).not.toContain('Recipes you might like')
   })
 })

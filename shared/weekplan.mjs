@@ -89,22 +89,25 @@ function overlapping(events, day, [from, to], tz) {
 // ---- the kitchen's history ----------------------------------------------------
 
 /**
- * The recipe a meal was: its main, never a side. The proposals rank by this —
- * what they propose is a meal, and the rice that went with forty curries is not
- * a dinner.
+ * The recipe a meal was: its main, never a side. The proposals offer and rank
+ * by this — what they propose is a meal, and the rice that went with forty
+ * curries is not a dinner.
  */
 const asMain = m => (m.out || !m.recipeId ? [] : [m.recipeId])
 
 /**
- * Each recipe's history on the meal plan — the one reading the week plan,
- * today's ideas and the meal assistant all rank by. Per recipe: `count`, times
- * cooked in the last FAVOURITE_DAYS up to today; `total`, times cooked up to
- * today; `lastCooked`, the latest of those; `slots`, the meals it has been; and
+ * Each recipe's history on the meal plan. Per recipe: `count`, times cooked in
+ * the last FAVOURITE_DAYS up to today; `total`, times cooked up to today;
+ * `lastCooked`, the latest of those; `slots`, the meals it has been; and
  * `last`, the latest meal with it before `before` — which takes in meals
  * already planned, so a recipe on next Tuesday's menu cools down exactly like
  * one eaten last Tuesday. What counts as cooked is cookedRecipeIds' rule
  * (eaten-out meals are outings, not cooking); `roles` says which of a meal's
- * recipes are read — its main by default, or mealRecipeIds for its sides too.
+ * recipes are read. It is read two ways. With mealRecipeIds, sides included,
+ * it is what was had: mealHistory's numbers, the ones the Kitchen shows, and
+ * what cools a recipe down and what the proposals' reasons say. With asMain,
+ * the default, it is what a recipe has been as a meal, which decides what the
+ * proposals offer and in what order.
  */
 function recipeHistory(meals, todayKey, before, roles = asMain) {
   const from = shiftDayKey(todayKey, -FAVOURITE_DAYS)
@@ -214,11 +217,12 @@ function dinnerWhy(s, isNew, todayKey) {
 }
 
 /**
- * A recipe for each empty night: the ones cooked most in six months first (and,
- * among those, the longest since), never one cooked in the last fortnight or
- * already planned that week, never twice. One never-cooked recipe a week is
- * offered as something new, on a quiet night — the weekend if one is free. The
- * favourites go to quiet nights; a busy night takes what is left and says why.
+ * A recipe for each empty night: the ones cooked most as a meal in six months
+ * first (and, among those, the longest since it was had at all), never one had
+ * in the last fortnight or already planned that week — as the main or a side —
+ * and never twice. One never-cooked recipe a week is offered as something new,
+ * on a quiet night — the weekend if one is free. The favourites go to quiet
+ * nights; a busy night takes what is left and says why.
  */
 function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }) {
   const filled = new Set(meals.filter(m => m.slot === 'dinner').map(m => m.date))
@@ -228,12 +232,16 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
   // a side counts here too: the week already has it, and a recipe that has been a side is not "never cooked"
   const plannedThisWeek = new Set(meals.filter(m => inWeek.has(m.date)).flatMap(mealRecipeIds))
   const everCooked = new Set(meals.flatMap(mealRecipeIds))
-  // the week being planned, and anything after it, is not history
-  const stats = recipeHistory(meals, todayKey, startKey)
+  // the week being planned, and anything after it, is not history. What is
+  // offered, and in what order, goes by the meals a recipe was the main of; a
+  // side is still something had, so it cools a recipe down and the reason
+  // counts it, in the Kitchen's own numbers
+  const mains = recipeHistory(meals, todayKey, startKey)
+  const had = recipeHistory(meals, todayKey, startKey, mealRecipeIds)
   const byName = (a, b) => cmp(a.name ?? '', b.name ?? '') || cmp(a.id, b.id)
   const pool = recipes
-    .filter(r => stats.get(r.id)?.total > 0 && !plannedThisWeek.has(r.id) && cooledDown(stats.get(r.id), todayKey, COOLDOWN_DAYS))
-    .sort((a, b) => stats.get(b.id).count - stats.get(a.id).count || cmp(stats.get(a.id).lastCooked, stats.get(b.id).lastCooked) || byName(a, b))
+    .filter(r => mains.get(r.id)?.total > 0 && !plannedThisWeek.has(r.id) && cooledDown(had.get(r.id), todayKey, COOLDOWN_DAYS))
+    .sort((a, b) => mains.get(b.id).count - mains.get(a.id).count || cmp(had.get(a.id).lastCooked, had.get(b.id).lastCooked) || byName(a, b))
   // the newest saved recipe never cooked: most likely the one you meant to try
   const fresh = recipes.filter(r => !everCooked.has(r.id)).sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || byName(a, b))[0] ?? null
 
@@ -263,7 +271,7 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
     const offset = out.length * ALTERNATIVES
     const alternatives = Array.from({ length: Math.min(ALTERNATIVES, spare.length) }, (_, j) => spare[(offset + j) % spare.length].id)
     const isNew = r === fresh
-    out.push({ key: `dinner:${d}`, date: d, recipeId: r.id, title: r.name, why: dinnerWhy(stats.get(r.id), isNew, todayKey), alternatives, busy: busy.get(d) ?? null, isNew })
+    out.push({ key: `dinner:${d}`, date: d, recipeId: r.id, title: r.name, why: dinnerWhy(had.get(r.id), isNew, todayKey), alternatives, busy: busy.get(d) ?? null, isNew })
   }
   return out
 }
@@ -448,7 +456,7 @@ function dayMonth(key, todayKey) {
 }
 
 function ideaWhy(c, how, dayKey) {
-  if (how === 'popular') return c.kind === 'recipe' ? `Cooked ${c.count}× in six months` : `Been ${c.count}× in six months`
+  if (how === 'popular') return c.kind === 'recipe' ? `Cooked ${c.shownCount}× in six months` : `Been ${c.shownCount}× in six months`
   return c.kind === 'recipe' ? `Not cooked in ${span(daysBetween(c.last, dayKey))}` : `Haven't been since ${dayMonth(c.last, dayKey)}`
 }
 
@@ -458,9 +466,11 @@ function ideaWhy(c, how, dayKey) {
  * with no place, is not missing — about four ideas, alternating between what is
  * popular (cooked or eaten at most in six months) and old favourites (had twice
  * or more) not had for longest. Recipes and places you eat at compete alike.
- * Nothing had in the last week or planned for the week ahead, never the same
- * idea for two slots on one day, and never anything not yet tried — there is
- * nothing to go on. Lunch leans to cafés, fast food and recipes tagged for it,
+ * A recipe is an idea for what it has been as a meal, but a side had is had:
+ * nothing had in the last week or planned for the week ahead, as the main or a
+ * side, and the reasons count sides as the Kitchen does. Never the same idea
+ * for two slots on one day, and never anything not yet tried as a meal — there
+ * is nothing to go on. Lunch leans to cafés, fast food and recipes tagged for it,
  * dinner to restaurants, and whatever has been that meal before suits it; with
  * no such signal the slots are treated alike.
  * @param {readonly any[]} items
@@ -477,20 +487,39 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
   const coolFrom = shiftDayKey(dayKey, -IDEA_COOLDOWN_DAYS)
   const favouriteFrom = shiftDayKey(dayKey, -FAVOURITE_DAYS)
 
+  // Each candidate: `count` and `total`, what "popular" and "old favourite"
+  // rank by; `last`, when it was last had; `shownCount`, the six months' count
+  // its reason says.
   const candidates = []
-  // a meal already on the menu for the week ahead cools a recipe down like one just eaten
-  const cooked = recipeHistory(meals, dayKey, shiftDayKey(ahead, 1))
+  // a recipe is offered, and ranked, for the meals it was the main of; a side
+  // had cools it down and counts in what the reason says. A meal already on
+  // the menu for the week ahead cools a recipe down like one just eaten
+  const mains = recipeHistory(meals, dayKey, shiftDayKey(ahead, 1))
+  const had = recipeHistory(meals, dayKey, shiftDayKey(ahead, 1), mealRecipeIds)
   for (const r of ofKind('recipe')) {
-    const s = cooked.get(r.id)
-    if (!s || s.total === 0 || !cooledDown(s, dayKey, IDEA_COOLDOWN_DAYS)) continue
-    candidates.push({ kind: 'recipe', id: r.id, title: r.name ?? '', count: s.count, total: s.total, last: s.lastCooked, slots: s.slots, tags: (r.tags ?? []).map(t => String(t).toLowerCase()), category: null })
+    const s = mains.get(r.id)
+    const h = had.get(r.id)
+    if (!s || s.total === 0 || !cooledDown(h, dayKey, IDEA_COOLDOWN_DAYS)) continue
+    candidates.push({
+      kind: 'recipe',
+      id: r.id,
+      title: r.name ?? '',
+      count: s.count,
+      total: s.total,
+      last: h.lastCooked,
+      shownCount: h.count,
+      slots: s.slots,
+      tags: (r.tags ?? []).map(t => String(t).toLowerCase()),
+      category: null,
+    })
   }
   for (const p of ofKind('place')) {
     const h = placeHistory(p, tasks, meals, now, tz)
     if (h.days.length === 0 || !isEatingPlace(p, h)) continue
     const plannedSoon = meals.some(m => m.out && m.placeId === p.id && m.date >= dayKey && m.date <= ahead)
     if (plannedSoon || h.days[0] >= coolFrom) continue
-    candidates.push({ kind: 'place', id: p.id, title: p.name ?? '', count: h.days.filter(d => d >= favouriteFrom).length, total: h.days.length, last: h.days[0], slots: h.slots, tags: [], category: p.category })
+    const count = h.days.filter(d => d >= favouriteFrom).length
+    candidates.push({ kind: 'place', id: p.id, title: p.name ?? '', count, total: h.days.length, last: h.days[0], shownCount: count, slots: h.slots, tags: [], category: p.category })
   }
 
   const fits = (c, slot) => c.slots.has(slot) || (c.kind === 'recipe' ? c.tags.some(t => (SLOT_TAGS[slot] ?? []).includes(t)) : (SLOT_PLACES[slot] ?? []).includes(c.category))

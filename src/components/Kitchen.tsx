@@ -49,7 +49,7 @@ import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
 type Seg = 'recipes' | 'week' | 'grocery'
 const SEG_KEY = 'drafter:kitchen-tab'
-/** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month, longest ago first. */
+/** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month and not on the plan, longest ago first. */
 type RecipeView = 'all' | 'lately'
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
 
@@ -97,7 +97,10 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     }
   })
   const [anchor, setAnchor] = useState(() => new Date())
-  const [editing, setEditing] = useState<Recipe | 'new' | null>(null)
+  // the recipe form, and where Save and Cancel go back to: the list, cook mode
+  // on the recipe, or the side open over its main. Cook mode stays set while
+  // its recipe is edited, so it comes back with its meal's sides and its ticks.
+  const [editing, setEditing] = useState<{ recipe: Recipe | 'new'; from: 'list' | 'cook' | 'side' } | null>(null)
   // cook mode: the recipe, and the meal it was opened from, whose sides it offers
   const [cooking, setCooking] = useState<{ recipe: Recipe; mealId?: string } | null>(null)
   // a side opened from cook mode: drawn over the main, which stays open underneath with its ticks
@@ -213,14 +216,15 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           <div className="people-toolbar">
             <h2>Recipes</h2>
             <input className="filter-q" value={q} onChange={e => setQ(e.target.value)} placeholder="Search recipes" />
-            <button className="btn primary" onClick={() => setEditing('new')}>
+            <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
               + Recipe
             </button>
           </div>
           {recipes.length > 0 && (
             <div className="recipe-view-row">
               {/* "Not lately" answers "what haven't we had in a while": never
-                  cooked, or not in a month, longest ago first */}
+                  cooked, or not in a month, and not already planned, longest
+                  ago first */}
               <span className="segmented" role="group" aria-label="Which recipes">
                 <button className={recipeView === 'all' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'all'} onClick={() => changeRecipeView('all')}>
                   All {recipes.length}
@@ -229,7 +233,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                   Not lately {latelyCount}
                 </button>
               </span>
-              {recipeView === 'lately' && <small className="recipe-view-hint">Not cooked in a month, longest ago first</small>}
+              {recipeView === 'lately' && <small className="recipe-view-hint">Not cooked in a month and not planned, longest ago first</small>}
             </div>
           )}
           {!q.trim() && recipeView === 'all' && (
@@ -245,7 +249,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           {filtered.length === 0 ? (
             <p className="empty">
               {recipeView === 'lately' && recipes.length > 0 && !q.trim()
-                ? 'Everything here was cooked in the last month.'
+                ? 'Everything here was cooked in the last month or is on the plan.'
                 : 'Save dishes you cook at home. Plan them onto the week, then build a grocery list from what’s for dinner.'}
             </p>
           ) : (
@@ -278,7 +282,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                     className="btn subtle"
                     onClick={e => {
                       e.stopPropagation()
-                      setEditing(r)
+                      setEditing({ recipe: r, from: 'list' })
                     }}
                   >
                     Edit
@@ -334,7 +338,10 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
         />
       )}
 
-      {cooking && (
+      {/* Unmounted while its recipe is edited (it keeps its stored ticks for
+          that), and back with its meal on Save or Cancel: the step list may
+          have changed, and a fresh mount checks the ticks against it */}
+      {cooking && editing?.from !== 'cook' && (
         <RecipeCook
           key={cooking.recipe.id}
           recipe={cooking.recipe}
@@ -343,10 +350,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           recipes={recipes}
           paused={!!cookingSide}
           onOpenSide={setCookingSide}
-          onEdit={() => {
-            setEditing(cooking.recipe)
-            setCooking(null)
-          }}
+          onEdit={() => setEditing({ recipe: cooking.recipe, from: 'cook' })}
           onClose={() => {
             setCookingSide(null)
             setCooking(null)
@@ -354,37 +358,40 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
         />
       )}
       {/* A side from the meal, over the main rather than instead of it: the main
-          stays mounted, so the steps ticked on it are still ticked on the way back */}
-      {cooking && cookingSide && (
+          stays mounted, so the steps ticked on it are still ticked on the way
+          back. Editing the side keeps it that way: the form goes over the main,
+          which stays paused while the side is set, and Save or Cancel reopens
+          the side — so the main is never unmounted with its ticks unwritten */}
+      {cooking && cookingSide && editing?.from !== 'side' && (
         <RecipeCook
           key={`side:${cookingSide.id}`}
           recipe={cookingSide}
           cooked={cooked}
           backTo={cooking.recipe.name}
-          onEdit={() => {
-            setEditing(cookingSide)
-            setCookingSide(null)
-            setCooking(null)
-          }}
+          onEdit={() => setEditing({ recipe: cookingSide, from: 'side' })}
           onClose={() => setCookingSide(null)}
         />
       )}
 
       {editing && (
         <RecipeForm
-          recipe={editing === 'new' ? undefined : editing}
+          recipe={editing.recipe === 'new' ? undefined : editing.recipe}
           onSave={r => {
             persistRecipe(r)
             setEditing(null)
-            cook(r)
+            // back where Edit was pressed, showing what was saved
+            if (editing.from === 'side') setCookingSide(r)
+            else if (editing.from === 'cook') setCooking(c => (c ? { ...c, recipe: r } : { recipe: r }))
+            else cook(r)
           }}
           onDelete={
-            editing !== 'new'
+            editing.recipe !== 'new'
               ? id => {
                   onDelete(id)
                   setEditing(null)
-                  setCooking(null)
+                  // a deleted side goes back to its main; anything else leaves cook mode
                   setCookingSide(null)
+                  if (editing.from !== 'side') setCooking(null)
                 }
               : undefined
           }
@@ -800,7 +807,7 @@ export function RecipeCook({
   sides?: MealSide[]
   /** Where a side's recipe is found. */
   recipes?: Recipe[]
-  /** A side is open over this recipe, and holds the one ticked-steps record while it is. */
+  /** A side is open over this recipe, or being edited from there, and holds the one ticked-steps record while it is. */
   paused?: boolean
   /** Set on a side: the main it goes back to, which Done says. */
   backTo?: string
