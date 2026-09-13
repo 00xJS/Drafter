@@ -21,6 +21,23 @@ describe('zonedTime', () => {
     expect(iso(zonedTime('2026-10-25T03:00', 'Europe/London'))).toBe('2026-10-25T03:00:00.000Z')
   })
 
+  it('files a bare day on that day when a spring-forward skips its midnight', () => {
+    // Santiago and Havana spring forward at 00:00, so these days begin at 01:00;
+    // the two-pass guess put them at 23:00 the evening before, a timed task on the wrong day
+    expect(iso(zonedTime('2026-09-06', 'America/Santiago'))).toBe('2026-09-06T04:00:00.000Z')
+    expect(iso(zonedTime('2026-03-08', 'America/Havana'))).toBe('2026-03-08T05:00:00.000Z')
+    expect(iso(zonedTime('2026-09-07', 'America/Santiago'))).toBe('2026-09-07T03:00:00.000Z')
+  })
+
+  it('moves a time a spring-forward skips on by the gap, and reads a time a fall-back repeats as its first', () => {
+    // New York skips 02:00–03:00 on 8 March 2026 and repeats 01:00–02:00 on 1 November
+    expect(iso(zonedTime('2026-03-08T02:30', 'America/New_York'))).toBe('2026-03-08T07:30:00.000Z')
+    expect(iso(zonedTime('2026-03-29T01:30', 'Europe/London'))).toBe('2026-03-29T01:30:00.000Z')
+    expect(iso(zonedTime('2026-09-06T00:30', 'America/Santiago'))).toBe('2026-09-06T04:30:00.000Z')
+    expect(iso(zonedTime('2026-11-01T01:30', 'America/New_York'))).toBe('2026-11-01T05:30:00.000Z')
+    expect(iso(zonedTime('2026-10-25T01:30', 'Europe/London'))).toBe('2026-10-25T00:30:00.000Z')
+  })
+
   it('reads an unknown zone as UTC, and refuses anything but a wall-clock time', () => {
     expect(iso(zonedTime('2026-09-17T15:00', 'Mars/Olympus_Mons'))).toBe('2026-09-17T15:00:00.000Z')
     expect(iso(zonedTime('2026-09-17T15:00', undefined))).toBe('2026-09-17T15:00:00.000Z')

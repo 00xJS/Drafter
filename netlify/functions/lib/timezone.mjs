@@ -1,6 +1,9 @@
 // The owner's IANA time zone, for server code that has to decide "is this task
 // untimed" or "which calendar day is this" without a browser to ask.
+import { offsetMs, startOfDayMs } from '../../../shared/clock.mjs'
 import { settingsGet, settingsSet } from './session.mjs'
+
+const DAY_MS = 86_400_000
 
 /** A real IANA zone name, or null. Intl throws on any zone it does not know. */
 export function validTimeZone(tz) {
@@ -33,23 +36,18 @@ export async function adoptTimeZone(userId, tz) {
   }
 }
 
-/** How far `tz` is ahead of UTC at an instant, in ms (Europe/London in summer: +3 600 000). */
-function offsetAt(ms, tz) {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      .formatToParts(new Date(ms))
-      .map(x => [x.type, x.value]),
-  )
-  return Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute), Number(p.second)) - Math.floor(ms / 1000) * 1000
-}
-
 /**
  * The instant a wall-clock time in `tz` names, as epoch ms: 'YYYY-MM-DDTHH:MM'
- * (seconds optional, a space for the T allowed) or a bare day, read as its
- * midnight. NaN for anything else, a time with an offset included, and for a
- * day or hour that does not exist. The server's own zone is UTC, so a time the
- * owner meant in theirs has to be built from it. An unknown zone reads as UTC;
- * the second pass settles a time just after a DST change.
+ * (seconds optional, a space for the T allowed) or a bare day. NaN for
+ * anything else, a time with an offset included, and for a day or hour the
+ * calendar does not have. The server's own zone is UTC, so a time the owner
+ * meant in theirs has to be built from it. An unknown zone reads as UTC.
+ *
+ * A bare day is the day's first instant there, as the clock builds it: its
+ * midnight, or 01:00 where a spring-forward skips midnight (Santiago on
+ * 6 September 2026), never 23:00 the evening before. A time a fall-back
+ * repeats is its first; a time a spring-forward skips moves on by the gap, as
+ * the clocks did, so 02:30 in New York on 8 March 2026 is 03:30.
  */
 export function zonedTime(wall, tz) {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/i.exec(String(wall ?? '').trim())
@@ -60,6 +58,12 @@ export function zonedTime(wall, tz) {
   // Date.UTC rolls 30 February into March and 25:00 into tomorrow
   if (back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d || back.getUTCHours() !== h || back.getUTCMinutes() !== mi) return NaN
   const zone = validTimeZone(tz) ?? 'UTC'
-  const guess = utc - offsetAt(utc, zone)
-  return utc - offsetAt(guess, zone)
+  if (m[4] === undefined) return startOfDayMs(`${m[1]}-${m[2]}-${m[3]}`, zone)
+  // The zone's offsets a day either side cover any one change near this time,
+  // and each offset that reads back as itself names the time; with none, the
+  // time is in a gap and keeps the offset from before it.
+  const before = offsetMs(utc - DAY_MS, zone)
+  const after = offsetMs(utc + DAY_MS, zone)
+  const fits = [before, after].filter(o => offsetMs(utc - o, zone) === o).map(o => utc - o)
+  return fits.length ? Math.min(...fits) : utc - before
 }
