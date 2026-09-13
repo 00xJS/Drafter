@@ -6,6 +6,7 @@ import {
   GroceryState,
   MEAL_SLOTS,
   Meal,
+  MealSide,
   Place,
   PlaceCategory,
   Recipe,
@@ -18,12 +19,18 @@ import {
   addGroceryItem,
   buildGroceryList,
   cookStepsRecipeId,
+  cookedIndex,
+  cookedLine,
+  cookedSummary,
   groceriesForMealDates,
   groceryCounts,
   groceryId,
   heldGroceryLines,
+  mealRecipeIds,
+  mealSides,
   mealsForWeek,
   newIngredient,
+  notLately,
   parseCookSteps,
   removeGroceryLine,
   removedGroceryLines,
@@ -31,6 +38,7 @@ import {
   serialiseCookSteps,
   visibleGroceryLines,
 } from '../kitchen'
+import type { CookedIndex } from '../kitchen'
 import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
@@ -41,6 +49,9 @@ import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
 type Seg = 'recipes' | 'week' | 'grocery'
 const SEG_KEY = 'drafter:kitchen-tab'
+/** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month, longest ago first. */
+type RecipeView = 'all' | 'lately'
+const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
 
 interface Props {
   recipes: Recipe[]
@@ -78,21 +89,35 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
       return 'recipes'
     }
   })
+  const [recipeView, setRecipeView] = useState<RecipeView>(() => {
+    try {
+      return localStorage.getItem(RECIPE_VIEW_KEY) === 'lately' ? 'lately' : 'all'
+    } catch {
+      return 'all'
+    }
+  })
   const [anchor, setAnchor] = useState(() => new Date())
   const [editing, setEditing] = useState<Recipe | 'new' | null>(null)
-  const [cooking, setCooking] = useState<Recipe | null>(null)
+  // cook mode: the recipe, and the meal it was opened from, whose sides it offers
+  const [cooking, setCooking] = useState<{ recipe: Recipe; mealId?: string } | null>(null)
+  // a side opened from cook mode: drawn over the main, which stays open underneath with its ticks
+  const [cookingSide, setCookingSide] = useState<Recipe | null>(null)
   const [q, setQ] = useState('')
   const [planningMeals, setPlanningMeals] = useState(false)
 
   const week = useMemo(() => weekRange(anchor), [anchor])
   const weekMeals = useMemo(() => mealsForWeek(meals, week.start), [meals, week.start])
   const grocery = groceries.find(g => g.weekKey === week.key && !g.deletedAt)
+  // when each recipe was last cooked, as of today: the list, the pickers and cook mode all say it
+  const today = dateKey(new Date())
+  const cooked = useMemo(() => cookedIndex(recipes, meals, today), [recipes, meals, today])
+  const latelyCount = useMemo(() => notLately(recipes, cooked).length, [recipes, cooked])
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    if (!needle) return recipes
-    return recipes.filter(r => r.name.toLowerCase().includes(needle) || r.tags.some(t => t.toLowerCase().includes(needle)))
-  }, [recipes, q])
+    const found = needle ? recipes.filter(r => r.name.toLowerCase().includes(needle) || r.tags.some(t => t.toLowerCase().includes(needle))) : recipes
+    return recipeView === 'lately' ? notLately(found, cooked) : found
+  }, [recipes, q, recipeView, cooked])
 
   const setTab = (s: Seg) => {
     setSeg(s)
@@ -102,6 +127,19 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
       /* ignore */
     }
   }
+  const changeRecipeView = (v: RecipeView) => {
+    setRecipeView(v)
+    try {
+      localStorage.setItem(RECIPE_VIEW_KEY, v)
+    } catch {
+      /* ignore */
+    }
+  }
+  const cook = (recipe: Recipe, meal?: Meal) => {
+    setCookingSide(null)
+    setCooking({ recipe, mealId: meal?.id })
+  }
+  const cookingMeal = cooking?.mealId ? meals.find(m => m.id === cooking.mealId) : undefined
 
   const persistGroceries = (nextMeals: Meal[], dates: string[], nextRecipes = recipes) => {
     for (const g of groceriesForMealDates(nextMeals, nextRecipes, groceries, dates)) onSave(g)
@@ -109,7 +147,8 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
   const persistRecipe = (r: Recipe) => {
     const nextRecipes = [...recipes.filter(x => x.id !== r.id), r]
     onSave(r)
-    const dates = meals.filter(m => m.recipeId === r.id).map(m => m.date)
+    // a side's ingredients are on the list too, so its weeks are rebuilt like a main's
+    const dates = meals.filter(m => mealRecipeIds(m).includes(r.id)).map(m => m.date)
     if (dates.length) persistGroceries(meals, dates, nextRecipes)
   }
 
@@ -139,7 +178,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
         const rest = cur.meals.filter(m => !cleared.has(m.id))
         for (const r of created) {
           const now = cur.recipes.find(x => x.id === r.id)
-          if (now && now.updatedAt === r.updatedAt && !rest.some(m => m.recipeId === r.id)) cur.onSave({ ...now, deletedAt: new Date().toISOString(), updatedAt: newerStamp(now.updatedAt) })
+          if (now && now.updatedAt === r.updatedAt && !rest.some(m => mealRecipeIds(m).includes(r.id))) cur.onSave({ ...now, deletedAt: new Date().toISOString(), updatedAt: newerStamp(now.updatedAt) })
         }
         for (const g of groceriesForMealDates(rest, cur.recipes, cur.groceries, dates)) cur.onSave(g)
       },
@@ -148,7 +187,10 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
 
   useEffect(() => {
     if (!openRecipe) return
-    setCooking(openRecipe)
+    // Today's Cook on tonight's dinner: today's meal with this main, so its sides are in cook mode too
+    const key = dateKey(new Date())
+    const meal = meals.find(m => m.date === key && m.slot === 'dinner' && m.recipeId === openRecipe.id) ?? meals.find(m => m.date === key && m.recipeId === openRecipe.id)
+    cook(openRecipe, meal)
     setTab('recipes')
     onOpenRecipeConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,22 +217,41 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
               + Recipe
             </button>
           </div>
-          {!q.trim() && (
+          {recipes.length > 0 && (
+            <div className="recipe-view-row">
+              {/* "Not lately" answers "what haven't we had in a while": never
+                  cooked, or not in a month, longest ago first */}
+              <span className="segmented" role="group" aria-label="Which recipes">
+                <button className={recipeView === 'all' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'all'} onClick={() => changeRecipeView('all')}>
+                  All {recipes.length}
+                </button>
+                <button className={recipeView === 'lately' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'lately'} onClick={() => changeRecipeView('lately')}>
+                  Not lately {latelyCount}
+                </button>
+              </span>
+              {recipeView === 'lately' && <small className="recipe-view-hint">Not cooked in a month, longest ago first</small>}
+            </div>
+          )}
+          {!q.trim() && recipeView === 'all' && (
             <RecipeSuggestions
               recipes={recipes}
               meals={meals}
               onAccept={r => {
                 persistRecipe(r)
-                setCooking(r)
+                cook(r)
               }}
             />
           )}
           {filtered.length === 0 ? (
-            <p className="empty">Save dishes you cook at home. Plan them onto the week, then build a grocery list from what’s for dinner.</p>
+            <p className="empty">
+              {recipeView === 'lately' && recipes.length > 0 && !q.trim()
+                ? 'Everything here was cooked in the last month.'
+                : 'Save dishes you cook at home. Plan them onto the week, then build a grocery list from what’s for dinner.'}
+            </p>
           ) : (
             <ul className="recipe-list">
               {filtered.map(r => (
-                <li key={r.id} className="recipe-card" onClick={() => setCooking(r)}>
+                <li key={r.id} className="recipe-card" onClick={() => cook(r)}>
                   <span className="recipe-emoji">{r.emoji || '🍽️'}</span>
                   <div className="dash-main">
                     <button type="button" className="row-open">
@@ -202,6 +263,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                       {r.steps?.length ? ` · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'}` : ''}
                       {r.tags.length > 0 && ` · ${r.tags.join(', ')}`}
                     </span>
+                    <span className="recipe-cooked">{cookedLine(cooked, r.id)}</span>
                     {r.ingredients.length > 0 && (
                       <span className="recipe-preview">
                         {r.ingredients
@@ -234,12 +296,13 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           meals={weekMeals}
           recipes={recipes}
           places={places}
+          cooked={cooked}
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
           onCreatePlace={onCreatePlace}
           onCreateRecipe={onCreateRecipe}
-          onOpenRecipe={r => setCooking(r)}
+          onOpenRecipe={cook}
           onPlan={() => setPlanningMeals(true)}
         />
       )}
@@ -273,13 +336,37 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
 
       {cooking && (
         <RecipeCook
-          key={cooking.id}
-          recipe={cooking}
+          key={cooking.recipe.id}
+          recipe={cooking.recipe}
+          cooked={cooked}
+          sides={mealSides(cookingMeal)}
+          recipes={recipes}
+          paused={!!cookingSide}
+          onOpenSide={setCookingSide}
           onEdit={() => {
-            setEditing(cooking)
+            setEditing(cooking.recipe)
             setCooking(null)
           }}
-          onClose={() => setCooking(null)}
+          onClose={() => {
+            setCookingSide(null)
+            setCooking(null)
+          }}
+        />
+      )}
+      {/* A side from the meal, over the main rather than instead of it: the main
+          stays mounted, so the steps ticked on it are still ticked on the way back */}
+      {cooking && cookingSide && (
+        <RecipeCook
+          key={`side:${cookingSide.id}`}
+          recipe={cookingSide}
+          cooked={cooked}
+          backTo={cooking.recipe.name}
+          onEdit={() => {
+            setEditing(cookingSide)
+            setCookingSide(null)
+            setCooking(null)
+          }}
+          onClose={() => setCookingSide(null)}
         />
       )}
 
@@ -289,7 +376,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onSave={r => {
             persistRecipe(r)
             setEditing(null)
-            setCooking(r)
+            cook(r)
           }}
           onDelete={
             editing !== 'new'
@@ -297,6 +384,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
                   onDelete(id)
                   setEditing(null)
                   setCooking(null)
+                  setCookingSide(null)
                 }
               : undefined
           }
@@ -312,6 +400,7 @@ function WeekPlan({
   meals,
   recipes,
   places,
+  cooked,
   onShift,
   onSaveMeal,
   onClearMeal,
@@ -324,12 +413,14 @@ function WeekPlan({
   meals: Meal[]
   recipes: Recipe[]
   places: Place[]
+  /** When each recipe was last cooked, beside it in the pickers. */
+  cooked: CookedIndex
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
-  onOpenRecipe(r: Recipe): void
+  onOpenRecipe(r: Recipe, meal: Meal): void
   /** Open "Plan this week's meals". */
   onPlan?(): void
 }) {
@@ -384,6 +475,7 @@ function WeekPlan({
                   meal={meals.find(m => m.date === key && m.slot === slot)}
                   recipes={recipes}
                   places={places}
+                  cooked={cooked}
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
                   onCreatePlace={onCreatePlace}
@@ -690,7 +782,32 @@ function useScreenAwake(): void {
   }, [])
 }
 
-function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): void; onClose(): void }) {
+export function RecipeCook({
+  recipe,
+  cooked,
+  sides = [],
+  recipes = [],
+  paused = false,
+  backTo,
+  onOpenSide,
+  onEdit,
+  onClose,
+}: {
+  recipe: Recipe
+  /** For "Cooked 5 times · last Thu 20 Aug". */
+  cooked: CookedIndex
+  /** The sides of the meal cook mode was opened from: each saved recipe opens over this one. */
+  sides?: MealSide[]
+  /** Where a side's recipe is found. */
+  recipes?: Recipe[]
+  /** A side is open over this recipe, and holds the one ticked-steps record while it is. */
+  paused?: boolean
+  /** Set on a side: the main it goes back to, which Done says. */
+  backTo?: string
+  onOpenSide?(r: Recipe): void
+  onEdit(): void
+  onClose(): void
+}) {
   // the stored ticks are step INDEXES, so they only mean anything against the
   // step list they were made on: Edit mid-cook, insert a step, come back, and
   // index 2 is a different instruction. The count fingerprints the record.
@@ -707,6 +824,9 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
   // survive a jetsam kill at the hob: sessionStorage would go with the WebView
   // when the shell relaunches, so this is localStorage with a same-day stamp
   useEffect(() => {
+    // a side open over this recipe holds the one record while it is on screen;
+    // closing it runs this again, and this recipe's ticks are written back
+    if (paused) return
     try {
       const raw = serialiseCookSteps(recipe.id, done, Date.now(), stepCount)
       if (raw) localStorage.setItem(COOK_STEPS_KEY, raw)
@@ -716,7 +836,7 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
     } catch {
       /* private mode, or the quota is full: the steps are just not remembered */
     }
-  }, [recipe.id, stepCount, done])
+  }, [recipe.id, stepCount, done, paused])
   // Leaving the Kitchen tab unmounts this without going through close(), and an
   // abandoned cook is no more remembered than a finished one: without this,
   // reopening the recipe later today came back four steps struck through with
@@ -763,6 +883,29 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
           {recipe.steps?.length ? ` · ${recipe.steps.length} step${recipe.steps.length === 1 ? '' : 's'}` : ''}
           {recipe.tags.length > 0 && ` · ${recipe.tags.join(', ')}`}
         </p>
+        <p className="recipe-cook-history">{cookedSummary(cooked, recipe.id)}</p>
+        {sides.length > 0 && (
+          <div className="field">
+            <span>Sides</span>
+            <ul className="cook-sides">
+              {sides.map((s, i) => {
+                const r = s.recipeId ? recipes.find(x => x.id === s.recipeId) : undefined
+                return (
+                  <li key={`${i}:${s.recipeId ?? s.title}`}>
+                    {r && onOpenSide ? (
+                      <button type="button" className="btn" onClick={() => onOpenSide(r)} aria-label={`Open ${s.title}`}>
+                        {r.emoji ? `${r.emoji} ` : ''}
+                        {s.title} <span aria-hidden="true">›</span>
+                      </button>
+                    ) : (
+                      <span className="cook-side-dish">{s.title}</span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
         {recipe.ingredients.length > 0 && (
           <div className="field">
             <span>Ingredients</span>
@@ -814,7 +957,7 @@ function RecipeCook({ recipe, onEdit, onClose }: { recipe: Recipe; onEdit(): voi
         </button>
         <span className="spacer" />
         <button className="btn primary" onClick={close}>
-          Done
+          {backTo ? `Back to ${backTo}` : 'Done'}
         </button>
       </footer>
     </Modal>

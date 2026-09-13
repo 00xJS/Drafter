@@ -1,28 +1,163 @@
-import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSlot, Recipe, RecipeIngredient } from './types'
+import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Recipe, RecipeIngredient } from './types'
 import { weekRange } from './review'
 import { dateKey } from './utils'
+import { newerStamp } from '../shared/domain.mjs'
+import { mealHistory } from '../shared/weekplan.mjs'
 import {
+  MAX_SIDES,
   activeGroceryLines as sharedActiveGroceryLines,
   addGroceryItem as sharedAddGroceryItem,
   buildGroceryList as sharedBuildGroceryList,
+  cookedRecipeIds as sharedCookedRecipeIds,
   groceryId as sharedGroceryId,
   ingredientKey as sharedIngredientKey,
   mealId as sharedMealId,
+  mealLabel as sharedMealLabel,
+  mealRecipeIds as sharedMealRecipeIds,
+  mealSides as sharedMealSides,
+  mealWithMain as sharedMealWithMain,
   mergeIngredients as sharedMergeIngredients,
   recipesUsed as sharedRecipesUsed,
   removeGroceryLine as sharedRemoveGroceryLine,
   restoreGroceryLine as sharedRestoreGroceryLine,
 } from '../shared/kitchen.mjs'
-import type { GroceryAddOutcome } from '../shared/kitchen.mjs'
+import type { GroceryAddOutcome, MealMain } from '../shared/kitchen.mjs'
 
-// Merging, list building and ids live in shared/kitchen.mjs so an agent adding
-// "milk" through the MCP server and the Kitchen tab produce the same list.
+// Merging, list building, ids and what a meal cooks live in shared/kitchen.mjs
+// so an agent adding "milk" through the MCP server and the Kitchen tab produce
+// the same list, and count the same dinners as cooked.
 
 export const groceryId = (weekKey: string): string => sharedGroceryId(weekKey)
 export const mealId = (date: string, slot: MealSlot): string => sharedMealId(date, slot)
 export const ingredientKey = (name: string, unit?: string): string => sharedIngredientKey(name, unit)
 export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
+/** The recipes these meals cook, sides included: what a grocery list is built from. */
 export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
+
+export type { MealMain }
+/** A meal's sides that can be shown. A bought meal has none. */
+export const mealSides = (meal: Meal | null | undefined): MealSide[] => sharedMealSides(meal)
+/** The saved recipes a meal cooks: its main, then its sides, each once. */
+export const mealRecipeIds = (meal: Meal | null | undefined): string[] => sharedMealRecipeIds(meal)
+/** What a meal has cooked by `todayKey`, main and sides: the one rule for "cooked" (shared/kitchen.mjs). */
+export const cookedRecipeIds = (meal: Meal | null | undefined, todayKey: string): string[] => sharedCookedRecipeIds(meal, todayKey)
+/** "Chicken curry with rice and naan"; a meal with no sides is its title alone. */
+export const mealLabel = (meal: Pick<Meal, 'title'> & Partial<Meal>): string => sharedMealLabel(meal)
+/**
+ * A slot's meal with a new main, keeping its notes, and its sides while it is
+ * still cooked (shared/kitchen.mjs has the rule; MCP's plan_meal follows it too).
+ */
+export const mealWithMain = (prev: Meal | null | undefined, at: { date: string; slot: MealSlot }, main: MealMain, now = new Date().toISOString()): Meal =>
+  sharedMealWithMain(prev, at, main, now)
+
+const dishKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * The meal with one more side, or null when it has that dish already — as its
+ * main or as a side (a recipe by id, a typed dish by name) — has no room for
+ * another, or is bought: a takeaway has no sides.
+ */
+export function mealWithSide(meal: Meal, side: MealSide): Meal | null {
+  const title = side.title.trim()
+  const sides = mealSides(meal)
+  if (!title || meal.out || sides.length >= MAX_SIDES) return null
+  if (side.recipeId ? side.recipeId === meal.recipeId : dishKey(title) === dishKey(meal.title)) return null
+  if (sides.some(s => (side.recipeId ? s.recipeId === side.recipeId : !s.recipeId && dishKey(s.title) === dishKey(title)))) return null
+  const next: MealSide = side.recipeId ? { recipeId: side.recipeId, title } : { title }
+  return { ...meal, sides: [...sides, next], updatedAt: newerStamp(meal.updatedAt) }
+}
+
+/** The meal without the side at `index` (of mealSides). With none left it has no sides field, like a meal from before sides. */
+export function mealWithoutSide(meal: Meal, index: number): Meal {
+  const sides = mealSides(meal).filter((_, i) => i !== index)
+  const next: Meal = { ...meal, updatedAt: newerStamp(meal.updatedAt) }
+  if (sides.length) next.sides = sides
+  else delete next.sides
+  return next
+}
+
+// ---- when a recipe was last cooked ----------------------------------------------
+
+/** A recipe's cooking as of a day: how many meals cooked it, as the main or a side, and the latest. */
+export interface Cooked {
+  timesCooked: number
+  lastCooked: string | null
+}
+
+/** Every recipe's Cooked as of `dayKey`, by id. Worked out once per screen and handed to each row that shows it. */
+export interface CookedIndex {
+  dayKey: string
+  byId: ReadonlyMap<string, Cooked>
+}
+
+/**
+ * When each recipe was last cooked, and how often: mealHistory's numbers
+ * (shared/weekplan.mjs), the ones the week plan and the assistant read — counted
+ * by cookedRecipeIds' rule, sides included.
+ */
+export function cookedIndex(recipes: readonly Recipe[], meals: readonly Meal[], dayKey: string): CookedIndex {
+  const byId = new Map(mealHistory([...recipes, ...meals], { dayKey }).recipes.map(r => [r.id, { timesCooked: r.timesCooked, lastCooked: r.lastCooked }]))
+  return { dayKey, byId }
+}
+
+/** Whole days from one day key to another. */
+export const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+
+/** "today", "yesterday", "5 days ago", "3 weeks ago", "4 months ago": how long ago, as the meal plan says it. */
+export function daysAgo(days: number): string {
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 14) return `${days} days ago`
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`
+  return `${Math.round(days / 30)} months ago`
+}
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Thu 20 Aug", with the year when it is not `todayKey`'s. A day key is a day, so no zone can move it. */
+function shortDay(key: string, todayKey: string): string {
+  const [y, m, d] = key.split('-').map(Number)
+  const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+  return `${weekday} ${d} ${MONTH_SHORT[m - 1]}${key.slice(0, 4) === todayKey.slice(0, 4) ? '' : ` ${y}`}`
+}
+
+const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`
+
+/** "3 weeks ago", or "new" for a recipe never cooked: beside each recipe in the meal pickers. */
+export function lastCookedShort(ix: CookedIndex, id: string): string {
+  const c = ix.byId.get(id)
+  return c?.lastCooked ? daysAgo(daysBetween(c.lastCooked, ix.dayKey)) : 'new'
+}
+
+/** "Last cooked 3 weeks ago · 5 times", or "Not cooked yet": the recipe list's line, in the Places tab's words. */
+export function cookedLine(ix: CookedIndex, id: string): string {
+  const c = ix.byId.get(id)
+  if (!c?.lastCooked) return 'Not cooked yet'
+  return `Last cooked ${daysAgo(daysBetween(c.lastCooked, ix.dayKey))} · ${times(c.timesCooked)}`
+}
+
+/** "Cooked 5 times · last Thu 20 Aug", or "Never cooked yet": a recipe's own line in cook mode. */
+export function cookedSummary(ix: CookedIndex, id: string): string {
+  const c = ix.byId.get(id)
+  if (!c?.lastCooked) return 'Never cooked yet'
+  return `Cooked ${times(c.timesCooked)} · last ${shortDay(c.lastCooked, ix.dayKey)}`
+}
+
+/** A recipe not cooked in this many days is not cooked lately. */
+export const NOT_LATELY_DAYS = 30
+
+/**
+ * The recipe list's "Not lately": recipes never cooked or not cooked in
+ * NOT_LATELY_DAYS, longest ago first — the never-cooked by name, then the rest
+ * from the oldest last cook.
+ */
+export function notLately(recipes: readonly Recipe[], ix: CookedIndex): Recipe[] {
+  const last = (r: Recipe) => ix.byId.get(r.id)?.lastCooked ?? ''
+  return recipes
+    .filter(r => !last(r) || daysBetween(last(r), ix.dayKey) >= NOT_LATELY_DAYS)
+    .sort((a, b) => last(a).localeCompare(last(b)) || a.name.localeCompare(b.name))
+}
 
 /**
  * Where Swap moves in a slot's cycle of choices (its pick, then the
@@ -96,11 +231,16 @@ export function dinnerOn(meals: Meal[], day: Date): Meal | undefined {
   return meals.find(m => m.date === key && m.slot === 'dinner') ?? meals.find(m => m.date === key)
 }
 
-/** Tonight's meal and its recipe. Today and the briefing strip read it, so it lives here rather than in the Kitchen view, which can then load on its own. */
-export function tonightDinner(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe } | null {
+/**
+ * Tonight's meal, its recipe and the recipes of its sides. Today and the
+ * briefing strip read it, so it lives here rather than in the Kitchen view,
+ * which can then load on its own.
+ */
+export function tonightDinner(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe; sides: Recipe[] } | null {
   const meal = dinnerOn(meals, day)
   if (!meal) return null
-  return { meal, recipe: recipes.find(r => r.id === meal.recipeId) }
+  const sides = mealSides(meal).flatMap(s => recipes.filter(r => s.recipeId && r.id === s.recipeId).slice(0, 1))
+  return { meal, recipe: recipes.find(r => r.id === meal.recipeId), sides }
 }
 
 /** Unique Sunday-start weeks that contain these YYYY-MM-DD meal dates. */

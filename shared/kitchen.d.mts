@@ -1,7 +1,20 @@
-import { GroceryLine, GroceryList, Meal, MealSlot, Recipe } from '../src/types.js'
+import { GroceryLine, GroceryList, Meal, MealSide, MealSlot, Recipe } from '../src/types.js'
 
 export declare function groceryId(weekKey: string): string
 export declare function mealId(date: string, slot: MealSlot): string
+export declare const MAX_SIDES: number
+export declare function mealSides(meal: Partial<Meal> | null | undefined): MealSide[]
+export declare function mealRecipeIds(meal: Partial<Meal> | null | undefined): string[]
+export declare function cookedRecipeIds(meal: Partial<Meal> | null | undefined, todayKey: string): string[]
+export declare function mealLabel(meal: Partial<Meal> | null | undefined): string
+/** What a slot's new main is: a recipe or titled dish to cook, or a meal bought out. */
+export interface MealMain {
+  recipeId?: string
+  out?: boolean
+  placeId?: string
+  title: string
+}
+export declare function mealWithMain(prev: Meal | null | undefined, at: { date: string; slot: MealSlot }, main: MealMain, now: string): Meal
 export declare function ingredientKey(name: string, unit?: string): string
 export declare function mergeIngredients(recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[]
 export declare function recipesUsed(meals: Meal[], recipes: Recipe[]): Recipe[]

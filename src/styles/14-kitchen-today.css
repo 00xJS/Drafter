@@ -164,8 +164,11 @@
   color: var(--muted);
   font-size: 0.8125rem;
 }
+/* wraps, so a meal's sides and its inline forms take lines of their own under
+   the main rather than squeezing in beside the picker */
 .meal-slot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-height: 40px;
@@ -242,9 +245,6 @@
 }
 
 @media (max-width: 640px) {
-  .meal-slot {
-    flex-wrap: wrap;
-  }
   .meal-slot-label {
     width: 100%;
   }
@@ -378,6 +378,129 @@
     padding: 12px 0;
   }
   .grocery-removed-line .btn {
+    min-height: 44px;
+  }
+}
+
+/* ---------- Kitchen: sides, and when a recipe was last cooked ---------- */
+/* A side belongs to its meal, so it sits on the meal's row: under the main,
+   lined up with the picker (the label column plus the gap), as chips that
+   wrap. .meal-slot wraps, so this takes a line of its own. */
+.meal-sides {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding-left: calc(7.5rem + 8px);
+  font-weight: 400;
+}
+.meal-sides-with {
+  flex: none;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.meal-sides ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.meal-side {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding-left: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+}
+.meal-side-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the chip's ✕: quiet until its first tap arms it (.btn.armed reads "Remove?"),
+   like the grocery line's */
+.meal-side-remove {
+  flex: none;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  line-height: 1;
+}
+.meal-side-add {
+  flex: none;
+  font-weight: 400;
+}
+/* .meal-slot in the selector: `.meal-slot select { flex: 1 }` outranks a bare
+   class, and its 0% basis squeezed this picker to a sliver beside the name */
+.meal-slot .meal-side-pick {
+  flex: 1 1 180px;
+}
+/* All | Not lately above the recipe list */
+.recipe-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.recipe-view-hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* "Last cooked 3 weeks ago · 5 times": the Places tab's line, for a recipe */
+.recipe-cooked {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+.recipe-cook-history {
+  margin: -6px 0 12px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+/* cook mode's sides: a saved recipe opens over the main, a typed dish is only a name */
+.cook-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cook-side-dish {
+  display: inline-block;
+  padding: 7px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+@media (max-width: 640px) {
+  /* the label has the whole first line on a phone: nothing to line up with */
+  .meal-sides {
+    padding-left: 0;
+  }
+  /* the recipe picker on a line of its own, the typed name and its buttons on the next */
+  .meal-slot .meal-side-pick {
+    flex-basis: 100%;
+  }
+}
+@media (pointer: coarse) {
+  /* thumb-sized, as the grocery ✕ is */
+  .meal-side-add,
+  .meal-side-remove,
+  .cook-sides .btn {
+    min-width: 44px;
     min-height: 44px;
   }
 }

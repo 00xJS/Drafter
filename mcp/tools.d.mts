@@ -54,3 +54,16 @@ export declare function resolveContext(
 ): { peopleIds?: string[]; placeId?: string }
 export declare function summarizeTask(t: Item): Record<string, any>
 export declare function summarizePlace(p: Item, tasks?: Item[], people?: Item[], meals?: Item[], nowMs?: number): Record<string, any>
+/** A planned meal as get_week_meals and plan_meal return it: the main, its sides, and a label naming them together. */
+export declare function summarizeMeal(m: Item): {
+  id: string
+  date: string
+  slot: string
+  title: string
+  label: string
+  recipeId: string | null
+  out: boolean
+  placeId: string | null
+  sides: { recipeId: string | null; title: string }[]
+  notes: string | null
+}

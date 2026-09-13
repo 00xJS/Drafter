@@ -8,7 +8,7 @@ import { weekKeyOf } from '../../shared/weeks.mjs'
 import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS } from '../../shared/kinds.mjs'
 import { makeClock } from '../../shared/clock.mjs'
 import { PAGE_SIZE, PERSONAL_KINDS, SINCE_WINDOW_MS, createRestData, ownerMaySee } from '../../mcp/data.mjs'
-import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext, summarizePlace, summarizeTask, textToNoteHtml } from '../../mcp/tools.mjs'
+import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext, summarizeMeal, summarizePlace, summarizeTask, textToNoteHtml } from '../../mcp/tools.mjs'
 import type { Scope } from '../../mcp/tools.mjs'
 import { MAX_FOCUS as APP_MAX_FOCUS } from '../focus'
 import { KNOWN_KINDS } from '../schema'
@@ -655,5 +655,93 @@ describe('notes, focus and the week plan over MCP', () => {
     expect(plan.dinners).toEqual([expect.objectContaining({ date: '2026-10-04', recipeId: 'pasta', title: 'Pasta', isNew: false, why: expect.stringMatching(/^Cooked 1× in six months/) })])
     expect(plan.summary).toBe('1 dinner to fill')
     expect(calls.some(c => c.url.includes('sync_posts'))).toBe(false)
+  })
+})
+
+describe('the kitchen over MCP: last cooked and sides', () => {
+  /** household(), with rice and naan saved, and the day's pasta served with naan and a salad. */
+  const kitchen = (): Row[] => {
+    const rows = household()
+    const at = (data: Record<string, any>): Row => ({ user_id: OWNER, data: { createdAt: STAMP, updatedAt: STAMP, ...data } })
+    rows.push(
+      at({ kind: 'recipe', id: 'rice', name: 'Rice', ingredients: [{ name: 'Basmati', qty: 300, unit: 'g' }], tags: [] }),
+      at({ kind: 'recipe', id: 'naan', name: 'Naan', ingredients: [{ name: 'Flour', qty: 250, unit: 'g' }], tags: [] }),
+    )
+    rows.find(r => r.data.kind === 'meal')!.data.sides = [{ recipeId: 'naan', title: 'Naan' }, { title: 'Salad' }]
+    return rows
+  }
+  const on = (iso: string) => createContext({ db: serviceData(), clock: makeClock('UTC', () => Date.parse(iso)) })
+  const meal = (sent: Record<string, any>[]) => sent.find(i => i.kind === 'meal')!
+
+  it('summarizeMeal names a meal with its sides, and one without reads as before', () => {
+    expect(summarizeMeal({ id: 'm', date: DAY, slot: 'dinner', title: 'Pasta', recipeId: 'pasta', updatedAt: STAMP })).toEqual({
+      id: 'm',
+      date: DAY,
+      slot: 'dinner',
+      title: 'Pasta',
+      label: 'Pasta',
+      recipeId: 'pasta',
+      out: false,
+      placeId: null,
+      sides: [],
+      notes: null,
+    })
+  })
+
+  it('list_recipes says when each recipe was last cooked and how often, a side counting like a main', async () => {
+    serveHousehold(kitchen())
+    const out = (await tool('list_recipes').run({}, on('2026-09-10T12:00:00Z'))) as { recipes: { id: string; timesCooked: number; lastCooked: string | null }[] }
+    expect(Object.fromEntries(out.recipes.map(r => [r.id, [r.timesCooked, r.lastCooked]]))).toEqual({ pasta: [1, DAY], naan: [1, DAY], rice: [0, null] })
+    // the day before, that dinner is still only a plan
+    serveHousehold(kitchen())
+    const before = (await tool('list_recipes').run({}, on('2026-09-07T12:00:00Z'))) as { recipes: { timesCooked: number; lastCooked: string | null }[] }
+    expect(before.recipes.map(r => [r.timesCooked, r.lastCooked])).toEqual([
+      [0, null],
+      [0, null],
+      [0, null],
+    ])
+  })
+
+  it('get_week_meals gives each meal its sides and a label naming them together', async () => {
+    serveHousehold(kitchen())
+    const week = (await tool('get_week_meals').run({ date: DAY }, ctxFor())) as { meals: Record<string, any>[] }
+    expect(week.meals[0]).toMatchObject({ title: 'Pasta', label: 'Pasta with Naan and Salad', sides: [{ recipeId: 'naan', title: 'Naan' }, { recipeId: null, title: 'Salad' }] })
+  })
+
+  it('plan_meal takes sides — saved recipes by name or id, dishes by title — and puts their ingredients on the list', async () => {
+    const sent = serveHousehold(kitchen())
+    const out = (await tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: [{ recipeName: 'rice' }, { title: 'garlic bread' }, { title: 'Pasta' }, { recipeId: 'rice' }] }, ctxFor())) as {
+      planned: Record<string, any>
+    }
+    expect(out.planned).toMatchObject({ label: 'Pasta with Rice and garlic bread', sides: [{ recipeId: 'rice', title: 'Rice' }, { recipeId: null, title: 'garlic bread' }] })
+    // the main is not its own side, and a side named twice is there once
+    expect(meal(sent).sides).toEqual([{ recipeId: 'rice', title: 'Rice' }, { title: 'garlic bread' }])
+    const lines = sent.find(i => i.kind === 'grocery')!.items as { name: string; recipeIds: string[] }[]
+    expect(lines.find(l => l.name === 'Basmati')?.recipeIds).toEqual(['rice'])
+    expect(lines.find(l => l.name === 'Spaghetti')?.recipeIds).toEqual(['pasta'])
+    // the naan it was served with before is not on the list any more
+    expect(lines.some(l => l.name === 'Flour')).toBe(false)
+  })
+
+  it('plan_meal keeps a meal’s sides while it is still cooked, and a bought meal has none', async () => {
+    let sent = serveHousehold(kitchen())
+    await tool('plan_meal').run({ date: DAY, title: 'Leftovers' }, ctxFor())
+    expect(meal(sent)).toMatchObject({ title: 'Leftovers', sides: [{ recipeId: 'naan', title: 'Naan' }, { title: 'Salad' }] })
+    expect(meal(sent)).not.toHaveProperty('recipeId')
+    sent = serveHousehold(kitchen())
+    await tool('plan_meal').run({ date: DAY, out: true, placeName: 'Nopi' }, ctxFor())
+    expect(meal(sent)).not.toHaveProperty('sides')
+    sent = serveHousehold(kitchen())
+    await tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: [] }, ctxFor())
+    expect(meal(sent)).not.toHaveProperty('sides')
+  })
+
+  it('plan_meal refuses sides on a bought meal or a breakfast, a side it cannot find, and sides that are not a list', async () => {
+    const sent = serveHousehold(kitchen())
+    await expect(tool('plan_meal').run({ date: DAY, out: true, sides: [{ title: 'Chips' }] }, ctxFor())).rejects.toThrow(/bought meal has no sides/)
+    await expect(tool('plan_meal').run({ date: DAY, slot: 'breakfast', recipeName: 'Pasta', sides: [{ title: 'Toast' }] }, ctxFor())).rejects.toThrow(/lunch or dinner/)
+    await expect(tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: [{ recipeName: 'Paella' }] }, ctxFor())).rejects.toThrow(/No recipe named "Paella"/)
+    await expect(tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: 'rice' }, ctxFor())).rejects.toThrow(/sides must be a list/)
+    expect(sent).toEqual([])
   })
 })

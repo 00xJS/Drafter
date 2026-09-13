@@ -9,6 +9,7 @@
 
 import { isMineTask, localDate, localMidnightIso } from './domain.mjs'
 import { shiftDayKey } from './journal.mjs'
+import { cookedRecipeIds, mealRecipeIds } from './kitchen.mjs'
 import { plannedVisit, seenStatus } from './people.mjs'
 import { outingsAt } from './places.mjs'
 import { OPEN, nextUp } from './today.mjs'
@@ -88,28 +89,40 @@ function overlapping(events, day, [from, to], tz) {
 // ---- the kitchen's history ----------------------------------------------------
 
 /**
+ * The recipe a meal was: its main, never a side. The proposals rank by this —
+ * what they propose is a meal, and the rice that went with forty curries is not
+ * a dinner.
+ */
+const asMain = m => (m.out || !m.recipeId ? [] : [m.recipeId])
+
+/**
  * Each recipe's history on the meal plan — the one reading the week plan,
  * today's ideas and the meal assistant all rank by. Per recipe: `count`, times
  * cooked in the last FAVOURITE_DAYS up to today; `total`, times cooked up to
  * today; `lastCooked`, the latest of those; `slots`, the meals it has been; and
  * `last`, the latest meal with it before `before` — which takes in meals
  * already planned, so a recipe on next Tuesday's menu cools down exactly like
- * one eaten last Tuesday. Eaten-out meals are outings, not cooking.
+ * one eaten last Tuesday. What counts as cooked is cookedRecipeIds' rule
+ * (eaten-out meals are outings, not cooking); `roles` says which of a meal's
+ * recipes are read — its main by default, or mealRecipeIds for its sides too.
  */
-function recipeHistory(meals, todayKey, before) {
+function recipeHistory(meals, todayKey, before, roles = asMain) {
   const from = shiftDayKey(todayKey, -FAVOURITE_DAYS)
   const out = new Map()
   for (const m of meals) {
-    if (m.out || !m.recipeId || !(m.date < before)) continue
-    const s = out.get(m.recipeId) ?? { count: 0, total: 0, last: '', lastCooked: '', slots: new Set() }
-    if (m.date <= todayKey) {
-      s.total++
-      if (m.date >= from) s.count++
-      if (m.date > s.lastCooked) s.lastCooked = m.date
-      s.slots.add(m.slot)
+    if (!(m.date < before)) continue
+    const cooked = new Set(cookedRecipeIds(m, todayKey))
+    for (const id of roles(m)) {
+      const s = out.get(id) ?? { count: 0, total: 0, last: '', lastCooked: '', slots: new Set() }
+      if (cooked.has(id)) {
+        s.total++
+        if (m.date >= from) s.count++
+        if (m.date > s.lastCooked) s.lastCooked = m.date
+        s.slots.add(m.slot)
+      }
+      if (m.date > s.last) s.last = m.date
+      out.set(id, s)
     }
-    if (m.date > s.last) s.last = m.date
-    out.set(m.recipeId, s)
   }
   return out
 }
@@ -134,11 +147,13 @@ function placeHistory(p, tasks, meals, now, tz) {
 const isEatingPlace = (p, h) => EATING_PLACES.includes(p.category) || h.eatenOut > 0
 
 /**
- * What the kitchen knows as of `dayKey`, for anything that shows or sends the
- * numbers the proposals rank by — the meal assistant's options, say: every
- * recipe with how often it was cooked (in six months and in all) and when last,
- * and every place you eat at with its outings (in six months and in all) and
- * when last. Names and tags only: never notes. Sorted by name.
+ * What the kitchen knows as of `dayKey`, for anything that shows or sends how
+ * often something was cooked or eaten — the Kitchen's last cooked, list_recipes,
+ * the meal assistant's options: every recipe with how often it was cooked (in
+ * six months and in all, as a main or a side) and when last, whether it has
+ * only ever been a side, and every place you eat at with its outings (in six
+ * months and in all) and when last. Names and tags only: never notes. Sorted by
+ * name.
  * @param {readonly any[]} items
  * @param {{ dayKey?: string, now?: Date, tz?: string }} [o]
  */
@@ -149,12 +164,23 @@ export function mealHistory(items, { dayKey, now = new Date(), tz } = {}) {
   const meals = ofKind('meal')
   const tasks = ofKind('task')
   const favouriteFrom = shiftDayKey(dayKey, -FAVOURITE_DAYS)
-  const cooked = recipeHistory(meals, dayKey, shiftDayKey(dayKey, 1))
+  const cooked = recipeHistory(meals, dayKey, shiftDayKey(dayKey, 1), mealRecipeIds)
+  // on the plan, but never as the main: a side dish, not something to offer as a meal
+  const onPlan = new Set(meals.flatMap(mealRecipeIds))
+  const asMainEver = new Set(meals.flatMap(asMain))
   const byName = (a, b) => cmp(a.name, b.name) || cmp(a.id, b.id)
   const recipes = ofKind('recipe')
     .map(r => {
       const s = cooked.get(r.id)
-      return { id: r.id, name: r.name ?? '', tags: [...(r.tags ?? [])], cookCount: s?.count ?? 0, timesCooked: s?.total ?? 0, lastCooked: s?.lastCooked || null }
+      return {
+        id: r.id,
+        name: r.name ?? '',
+        tags: [...(r.tags ?? [])],
+        cookCount: s?.count ?? 0,
+        timesCooked: s?.total ?? 0,
+        lastCooked: s?.lastCooked || null,
+        sideOnly: onPlan.has(r.id) && !asMainEver.has(r.id),
+      }
     })
     .sort(byName)
   const places = ofKind('place')
@@ -199,8 +225,9 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
   const nights = days.filter(d => !filled.has(d) && !skip.has(`dinner:${d}`))
   if (nights.length === 0 || recipes.length === 0) return []
   const inWeek = new Set(days)
-  const plannedThisWeek = new Set(meals.filter(m => !m.out && m.recipeId && inWeek.has(m.date)).map(m => m.recipeId))
-  const everCooked = new Set(meals.filter(m => !m.out && m.recipeId).map(m => m.recipeId))
+  // a side counts here too: the week already has it, and a recipe that has been a side is not "never cooked"
+  const plannedThisWeek = new Set(meals.filter(m => inWeek.has(m.date)).flatMap(mealRecipeIds))
+  const everCooked = new Set(meals.flatMap(mealRecipeIds))
   // the week being planned, and anything after it, is not history
   const stats = recipeHistory(meals, todayKey, startKey)
   const byName = (a, b) => cmp(a.name ?? '', b.name ?? '') || cmp(a.id, b.id)

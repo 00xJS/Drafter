@@ -1,10 +1,85 @@
 // Kitchen rules shared by the Kitchen tab, the MCP server and the digest:
-// grocery merging, list building and ids. Dependency-free ESM.
+// grocery merging, list building, ids, and what a meal cooks. Dependency-free ESM.
 
+import { newerStamp } from './domain.mjs'
 import { weekDayKeys, weekKeyOf } from './weeks.mjs'
 
 export const groceryId = weekKey => `grocery~${weekKey}`
 export const mealId = (date, slot) => `meal~${date}~${slot}`
+
+/** Enough sides for any plate; a longer list is somebody's mistake, not a dinner. */
+export const MAX_SIDES = 8
+
+/**
+ * A meal's sides that can be shown: each with a title, and a saved recipe's id
+ * where it is one. A bought meal has none, whatever its row carries.
+ */
+export function mealSides(meal) {
+  if (!meal || meal.out || !Array.isArray(meal.sides)) return []
+  return meal.sides.filter(s => s && typeof s.title === 'string' && s.title.trim())
+}
+
+/** The saved recipes a meal cooks — its main, then its sides — each once. A bought meal cooks none. */
+export function mealRecipeIds(meal) {
+  if (!meal || meal.out) return []
+  const ids = [meal.recipeId, ...mealSides(meal).map(s => s.recipeId)].filter(id => typeof id === 'string' && id)
+  return [...new Set(ids)]
+}
+
+/**
+ * The recipes a meal has cooked by `todayKey`, main and sides alike. This is
+ * the one rule for "cooked" that every count of it goes by — the recipe list's
+ * last cooked, the week plan's favourites, list_recipes: a live meal, cooked
+ * rather than bought, dated `todayKey` or before. Next Friday's dinner is a
+ * plan, not a cook, as next Friday's booking is not yet an outing.
+ */
+export function cookedRecipeIds(meal, todayKey) {
+  if (!meal || meal.deletedAt || typeof meal.date !== 'string' || !(meal.date <= todayKey)) return []
+  return mealRecipeIds(meal)
+}
+
+/**
+ * "Chicken curry with rice and naan": the main's title, then its sides by name.
+ * A meal with no sides reads as its title alone, exactly as before sides.
+ */
+export function mealLabel(meal) {
+  const title = String(meal?.title ?? '')
+  const sides = mealSides(meal).map(s => s.title.trim())
+  if (sides.length === 0) return title
+  const list = sides.length === 1 ? sides[0] : `${sides.slice(0, -1).join(', ')} and ${sides[sides.length - 1]}`
+  return title ? `${title} with ${list}` : list
+}
+
+/**
+ * A slot's meal with a new main: a recipe (or a titled dish) to cook, or a meal
+ * bought out, maybe at a place. It starts from the meal already there, so what
+ * the new main does not touch — its notes — stays. The sides stay with a meal
+ * that is still cooked (the rice still goes with whatever the curry became),
+ * less the new main itself, and go when it becomes a bought one: a takeaway has
+ * no sides. A tombstone is never built on — a cleared slot's sides went with
+ * it — though its stamps are, so the new meal wins the merge.
+ * @param {any} prev the slot's record, live or a tombstone, or nothing
+ * @param {{ date: string, slot: string }} at
+ * @param {{ recipeId?: string, out?: boolean, placeId?: string, title: string }} main
+ * @param {string} now
+ */
+export function mealWithMain(prev, { date, slot }, main, now) {
+  const live = prev && !prev.deletedAt ? prev : null
+  const next = { ...(live ?? {}), kind: 'meal', id: mealId(date, slot), date, slot, title: main.title }
+  delete next.recipeId
+  delete next.out
+  delete next.placeId
+  delete next.sides
+  if (main.out) {
+    next.out = true
+    if (main.placeId) next.placeId = main.placeId
+  } else if (main.recipeId) next.recipeId = main.recipeId
+  const sides = main.out ? [] : mealSides(live).filter(s => !main.recipeId || s.recipeId !== main.recipeId)
+  if (sides.length) next.sides = sides
+  next.createdAt = prev?.createdAt ?? now
+  next.updatedAt = prev ? newerStamp(prev.updatedAt) : now
+  return next
+}
 
 export function ingredientKey(name, unit) {
   return `${String(name ?? '').trim().toLowerCase().replace(/\s+/g, ' ')}|${String(unit ?? '').trim().toLowerCase()}`
@@ -32,9 +107,9 @@ export function mergeIngredients(recipes) {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** Recipes referenced by these meals. */
+/** Recipes these meals cook, sides included: what the grocery list is built from. */
 export function recipesUsed(meals, recipes) {
-  const ids = new Set((meals ?? []).map(m => m.recipeId).filter(Boolean))
+  const ids = new Set((meals ?? []).flatMap(m => mealRecipeIds(m)))
   return (recipes ?? []).filter(r => ids.has(r.id))
 }
 
@@ -176,7 +251,7 @@ export function dinnerOn(meals, dateKey) {
   return live.find(m => m.slot === 'dinner') ?? live[0] ?? null
 }
 
-/** "Tonight: Pasta (7 ingredients)" for the digest, or null. */
+/** "Tonight: Pasta with garlic bread (7 ingredients)" for the digest, or null. */
 export function tonightLine(meals, recipes, dateKey) {
   // dinner only: a day with just lunch planned must not read "Tonight: soup"
   const meal = (meals ?? []).find(m => m && !m.deletedAt && m.date === dateKey && m.slot === 'dinner')
@@ -184,7 +259,8 @@ export function tonightLine(meals, recipes, dateKey) {
   // a bought meal has nothing to shop for and nothing to cook, so it reads as
   // where it is coming from rather than as a recipe with an ingredient count
   if (meal.out) return `Tonight: out${meal.title && meal.title !== 'Eating out' ? ` — ${meal.title}` : ''}`
-  const recipe = meal.recipeId ? (recipes ?? []).find(r => r.id === meal.recipeId) : null
-  const n = recipe?.ingredients?.length ?? 0
-  return `Tonight: ${meal.title}${n ? ` (${n} ingredient${n === 1 ? '' : 's'})` : ''}`
+  // the main's ingredients, and each side recipe's
+  const byId = new Map((recipes ?? []).map(r => [r.id, r]))
+  const n = mealRecipeIds(meal).reduce((sum, id) => sum + (byId.get(id)?.ingredients?.length ?? 0), 0)
+  return `Tonight: ${mealLabel(meal)}${n ? ` (${n} ingredient${n === 1 ? '' : 's'})` : ''}`
 }

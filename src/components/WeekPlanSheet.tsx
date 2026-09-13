@@ -1,9 +1,10 @@
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { weekPlanSummary } from '../../shared/weekplan.mjs'
 import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.mjs'
 import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '../ai'
 import { formatMoney } from '../bills'
-import { mealId, nextSwap } from '../kitchen'
+import { cookedIndex, mealId, nextSwap } from '../kitchen'
+import { dateKey } from '../utils'
 import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
 import { Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureKind } from './AskSheet'
@@ -131,6 +132,9 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
   const [pol, setPol] = useState<Polish>({ status: 'idle' })
   const ids = useId()
   const recipeById = new Map(recipes.map(r => [r.id, r]))
+  // Pick…'s picker says when each recipe was last cooked, as the Kitchen's does
+  const todayKey = dateKey(now ?? new Date())
+  const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
   const accepted = acceptedPlan(plan, c)
   const n = acceptedCount(accepted)
   const summary = weekPlanSummary(plan)
@@ -273,6 +277,8 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
                               meal={asMeal(d.date, x.pick)}
                               recipes={recipes}
                               places={places}
+                              cooked={cooked}
+                              mainOnly
                               onSave={m => {
                                 setDinner(d.key, { on: true, pick: { recipeId: m.recipeId, out: m.out, placeId: m.placeId, title: m.title } })
                                 setPicking(null)

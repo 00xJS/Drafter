@@ -19,7 +19,7 @@ import {
   TaskStatus,
   projectProgress,
 } from '../types'
-import { tonightDinner } from '../kitchen'
+import { mealLabel, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
@@ -795,7 +795,11 @@ export function Today({
             <div>
               <h3>{dinner.meal.slot === 'dinner' ? 'Tonight’s dinner' : `Today’s ${MEAL_SLOT_META[dinner.meal.slot].label.toLowerCase()}`}</h3>
               <p className="chart-sub">
-                {dinner.meal.out ? 'Eating out — nothing to cook' : dinner.recipe ? `${dinner.recipe.ingredients.length} ingredients` : 'Planned on the Kitchen tab'}
+                {dinner.meal.out
+                  ? 'Eating out — nothing to cook'
+                  : dinner.recipe
+                    ? `${[dinner.recipe, ...dinner.sides].reduce((n, r) => n + r.ingredients.length, 0)} ingredients`
+                    : 'Planned on the Kitchen tab'}
               </p>
             </div>
             <button className="btn subtle" onClick={onOpenKitchen}>
@@ -803,7 +807,7 @@ export function Today({
             </button>
           </header>
           <p className="kitchen-tonight-title">
-            {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'} {dinner.meal.title}
+            {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'} {mealLabel(dinner.meal)}
           </p>
           {dinner.recipe && (
             <p className="chart-sub kitchen-tonight-ings">

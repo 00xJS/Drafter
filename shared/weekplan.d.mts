@@ -93,8 +93,11 @@ export interface SlotIdeas {
 }
 
 export interface MealHistory {
-  /** Every recipe, by name. `cookCount` is the last six months; `timesCooked` all of them. */
-  recipes: { id: string; name: string; tags: string[]; cookCount: number; timesCooked: number; lastCooked: string | null }[]
+  /**
+   * Every recipe, by name. `cookCount` is the last six months; `timesCooked` all of them; both count a meal it
+   * was a side of. `sideOnly`: on the plan only ever as a side, so never offered as a meal.
+   */
+  recipes: { id: string; name: string; tags: string[]; cookCount: number; timesCooked: number; lastCooked: string | null; sideOnly: boolean }[]
   /** Every place you eat at, by name. `outings` is the last six months; `visits` all of them; eaten-out meals count. */
   places: { id: string; name: string; category: string; outings: number; visits: number; lastVisit: string | null }[]
 }

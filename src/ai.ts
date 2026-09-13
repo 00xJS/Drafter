@@ -2,6 +2,8 @@ import { apiFetch } from './api'
 import { AskDoc, buildAskPrompt, parseAskAnswer } from './ask'
 import { personStats } from './people'
 import type { Meal, MealSlot, Person, Recipe, Task } from './types'
+import { dateKey } from './utils'
+import { mealHistory } from '../shared/weekplan.mjs'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -598,8 +600,8 @@ export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: 
     if (!refs.has(id)) refs.set(id, `R${refs.size + 1}`)
     return refs.get(id)!
   }
-  const cooked = new Map<string, number>()
-  for (const m of d.meals) if (!m.deletedAt && !m.out && m.recipeId && m.date < plan.week.startKey) cooked.set(m.recipeId, (cooked.get(m.recipeId) ?? 0) + 1)
+  // times cooked by the Kitchen's own count (mealHistory: up to today, sides included)
+  const cooked = new Map(mealHistory([...d.recipes, ...d.meals], { dayKey: dateKey(d.now), now: d.now }).recipes.map(r => [r.id, r.timesCooked]))
   const nights = plan.dinners.map(n => ({
     date: n.date,
     weekday: new Date(`${n.date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }),
@@ -712,6 +714,8 @@ export function mealAssistInput(o: {
   const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
   const ids: Record<string, { kind: 'recipe' | 'place'; id: string }> = {}
   const recipes = [...o.history.recipes]
+    // a side dish is not a meal to suggest, however often it went with one
+    .filter(r => !r.sideOnly)
     .sort((a, b) => b.cookCount - a.cookCount || b.timesCooked - a.timesCooked || byText(a.name, b.name) || byText(a.id, b.id))
     .slice(0, ASSIST_RECIPES)
     .map((r, i) => {
