@@ -9,6 +9,7 @@ export interface Visit {
 }
 
 export declare function visitsFor(personId: string, tasks: Task[]): Visit[]
+export declare function visitDays(visits: readonly { at: string }[], dayKeyOf: (at: string) => string | null | undefined): string[]
 export declare function plannedVisit(personId: string, tasks: Task[]): Task | null
 export declare function plannedGift(
   personId: string,

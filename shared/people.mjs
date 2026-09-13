@@ -14,6 +14,24 @@ export function visitsFor(personId, tasks) {
     .sort((a, b) => b.at.localeCompare(a.at))
 }
 
+/**
+ * The distinct days among these visits, in their order (newest first for
+ * visitsFor's list): three events on one Saturday are one day seen. `dayKeyOf`
+ * turns an instant into YYYY-MM-DD in the viewer's zone, so the app passes its
+ * local calendar and the MCP server its clock's.
+ */
+export function visitDays(visits, dayKeyOf) {
+  const seen = new Set()
+  const out = []
+  for (const v of visits ?? []) {
+    const key = dayKeyOf(v.at)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(key)
+  }
+  return out
+}
+
 /** Soonest open catch-up / visit plan for this person, if any. */
 export function plannedVisit(personId, tasks) {
   return (

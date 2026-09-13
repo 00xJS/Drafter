@@ -163,16 +163,39 @@
 .attendees {
   gap: 6px;
 }
+/* a person's 30/90-day windows in the open detail: the row already shows them
+   above a phone's width, so they appear here only once the row hides them.
+   Two classes, to outrank `.person-nums span`'s display: flex. */
+.person-nums .seen-window {
+  display: none;
+}
 
 @media (max-width: 640px) {
+  /* the row keeps its name and badge; the windows move into the open detail */
   .person-inline-stats {
     display: none;
+  }
+  .person-nums .seen-window {
+    display: flex;
+  }
+  /* five figures don't fit one line in ~347px, so they wrap */
+  .seen-stats .person-nums {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
   .person-detail {
     padding-left: 14px;
   }
   .person-actions .btn {
     flex: 1 1 45%;
+  }
+  /* a person's "all time" is days and events: the bars take their own line so
+     the numbers never squeeze them to a sliver (places keep one line) */
+  .seen-stats {
+    flex-wrap: wrap;
+  }
+  .seen-stats .person-bars {
+    flex-basis: 100%;
   }
 }
 

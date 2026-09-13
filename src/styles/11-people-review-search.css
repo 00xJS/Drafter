@@ -428,6 +428,24 @@
 .year-cell {
   border-radius: 4px;
 }
+/* the cells and the total are days; the year's events sit beside them, quieter */
+.year-table .year-events {
+  color: var(--muted);
+}
+
+/* Week review: days seen per person, the events under them when some shared a day */
+.seen-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.seen-count small {
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
 
 .digest-hour {
   display: inline-flex;

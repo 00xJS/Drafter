@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
+import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
 import { habitsConsistency } from '../habits'
 import { JournalPeople } from './Journal'
@@ -240,7 +241,7 @@ export function Review({ tasks, projects, people, reviews, journal, places, habi
         <StatTile label="Done" value={String(data.done.length)} sub={`${data.created.length} created`} />
         <StatTile label="Slipped" value={String(data.slipped.length)} sub="due in this period, still open" warn={data.slipped.length > 0} />
         <StatTile label={`Next ${period}`} value={String(data.upcoming.length)} sub="already on the calendar" />
-        <StatTile label="People seen" value={String(data.people.length)} sub={`${data.people.reduce((s, p) => s + p.visits.length, 0)} visits`} />
+        <StatTile label="People seen" value={String(data.people.length)} sub={seenLabel(data.seen.days, data.seen.events)} />
         {wrote.length > 0 && <StatTile label="Journal" value={String(wrote.length)} sub={mood ? `days written · mood ${mood}/5` : 'days written'} />}
       </div>
 
@@ -343,7 +344,10 @@ export function Review({ tasks, projects, people, reviews, journal, places, habi
                     <span className="dash-title">{p.person.name}</span>
                     <span className="dash-reason">{p.visits.map(v => v.title).join(' · ')}</span>
                   </div>
-                  <strong>×{p.visits.length}</strong>
+                  <span className="seen-count">
+                    <strong>{countOf(p.days, 'day')}</strong>
+                    {p.visits.length !== p.days && <small>{countOf(p.visits.length, 'event')}</small>}
+                  </span>
                 </li>
               ))}
             </ul>
