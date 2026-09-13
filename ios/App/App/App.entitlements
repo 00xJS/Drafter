@@ -10,6 +10,16 @@
 
 	     With an Apple Developer Program membership, add back:
 	         <key>aps-environment</key><string>development</string>
-	     (or `production` for TestFlight/App Store) and set the APNS_* vars. -->
+	     (or `production` for TestFlight/App Store) and set the APNS_* vars.
+	     For Universal Links and Password AutoFill, also add:
+	         <key>com.apple.developer.associated-domains</key>
+	         <array>
+	             <string>applinks:drafterz.netlify.app</string>
+	             <string>webcredentials:drafterz.netlify.app</string>
+	         </array>
+	     and publish ios/apple-app-site-association.example.json as
+	     public/.well-known/apple-app-site-association. The whole list is in the
+	     README under "When you join the Apple Developer Program", and in the app
+	     under Admin, Apple. -->
 </dict>
 </plist>

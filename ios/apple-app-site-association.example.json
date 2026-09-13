@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.app.drafter.ios"],
+        "components": [{ "/": "/", "comment": "Drafter's links all sit on the root with a query: ?view=, ?task=, ?saw=, ?plan=" }]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["TEAMID.app.drafter.ios"]
+  }
+}

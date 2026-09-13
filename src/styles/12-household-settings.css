@@ -271,8 +271,31 @@
 .settings-body.showing-users .g-users,
 .settings-body.showing-backups .g-backups,
 .settings-body.showing-integrations .g-integrations,
-.settings-body.showing-domains .g-domains {
+.settings-body.showing-apple .g-apple {
   display: block;
+}
+
+/* Admin → Apple: the steps for when the paid Apple team exists */
+.apple-steps {
+  margin: 0.6rem 0 1.1rem;
+  padding-left: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.apple-steps strong {
+  color: var(--text);
+}
+
+/* an optional integration that is off: its setup folds away */
+.admin-optional summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  margin: 0.35rem 0 0.2rem;
 }
 
 .admin-health {

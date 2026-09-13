@@ -124,7 +124,9 @@ pick up a web deploy by itself — run `npm run ios` (or `build:ios` then
 Xcode) after native or plugin changes. A free Apple ID installs on your own
 iPhone for a week at a time; a paid developer account is needed for
 TestFlight, the App Store, push through Apple, widgets, a share extension
-and associated domains. This project currently ships the unpaid path.
+and associated domains. This project currently ships the unpaid path; the
+steps for the paid one are under *When you join the Apple Developer Program*
+below.
 
 What the shell adds over the installed web app:
 
@@ -189,9 +191,38 @@ What the shell adds over the installed web app:
   without watching; dark system UI, and the status bar tucked into the app's
   own header.
 
-Not there yet: a Home Screen widget and a native share extension (both need
-their own Swift targets), universal links, and APNs — all waiting on a paid
-Apple Developer account.
+### When you join the Apple Developer Program
+
+Everything that needs the paid program ($99 a year) is gathered here, and in
+the app under Admin → Apple; none of it is needed today.
+
+1. **Sign with the paid team.** In Xcode, open `ios/App`, choose the App
+   target → *Signing & Capabilities* and pick the team. Note its 10-character
+   Team ID; the bundle ID stays `app.drafter.ios`.
+2. **Push through Apple (APNs).** In the developer site, *Certificates, IDs &
+   Profiles → Keys*, create a key with Apple Push Notifications service and
+   download the `.p8`. On Netlify set `APNS_KEY_ID`, `APNS_TEAM_ID`,
+   `APNS_PRIVATE_KEY` (the `.p8` contents) and `APNS_BUNDLE_ID=app.drafter.ios`,
+   plus `APNS_ENV=sandbox` for builds run from Xcode. Add `aps-environment` to
+   `ios/App/App/App.entitlements` (`development`, or `production` for
+   TestFlight and the App Store), run `npm run ios`, then on the iPhone
+   Settings → Reminders → *Enable on this device*. The morning digest and
+   due-task nudges then arrive with the app closed.
+3. **Universal Links.** Copy `ios/apple-app-site-association.example.json` to
+   `public/.well-known/apple-app-site-association` (no extension) with the
+   Team ID in place of `TEAMID`, serve it as JSON with a `netlify.toml` rule —
+   `[[headers]]`, `for = "/.well-known/apple-app-site-association"`,
+   `Content-Type = "application/json"` — and add the *Associated Domains*
+   capability with `applinks:drafterz.netlify.app`. Links in digests, invites
+   and emails then open the app instead of Safari.
+4. **Password AutoFill.** The same file's `webcredentials` entry, plus
+   `webcredentials:drafterz.netlify.app` under Associated Domains, lets iCloud
+   Keychain offer your saved password on the sign-in screen.
+5. **TestFlight and the App Store.** No more reinstalling every week:
+   `npm run build:ios`, then in Xcode *Product → Archive → Distribute App →
+   App Store Connect*, and add yourself as a TestFlight tester.
+6. **Later builds.** A Home Screen widget and a share extension each need their
+   own Swift target and the paid team; neither is built yet.
 
 ## Data & sync model
 

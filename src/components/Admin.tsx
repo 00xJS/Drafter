@@ -8,7 +8,7 @@ const GROUPS = [
   { key: 'data', label: 'Data' },
   { key: 'backups', label: 'Backups' },
   { key: 'integrations', label: 'Integrations' },
-  { key: 'domains', label: 'Domains' },
+  { key: 'apple', label: 'Apple' },
 ] as const
 type Group = (typeof GROUPS)[number]['key']
 
@@ -46,27 +46,46 @@ interface Props {
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(1)} kB` : `${(n / 1_048_576).toFixed(1)} MB`)
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never')
 
+/**
+ * One integration's status. An optional one that is not set up reads "Optional
+ * — off", not as a fault, with its setup folded away under "How to turn it on".
+ */
 function HealthCard({
   title,
   piece,
+  optional,
   children,
 }: {
   title: string
   piece: { configured: boolean; missing: string[] }
+  optional?: boolean
   children?: React.ReactNode
 }) {
-  return (
-    <div className="admin-health">
-      <p className="sync-line">
-        <strong>{title}</strong>
-        <span className={piece.configured ? 'sync-ok' : 'warn'}>{piece.configured ? 'Configured' : 'Not configured'}</span>
-      </p>
+  const off = !!optional && !piece.configured
+  const body = (
+    <>
       {!piece.configured && piece.missing.length > 0 && (
         <p className="field-hint">
           Missing on the host: <code>{piece.missing.join(', ')}</code>.
         </p>
       )}
       {children}
+    </>
+  )
+  return (
+    <div className="admin-health">
+      <p className="sync-line">
+        <strong>{title}</strong>
+        <span className={piece.configured ? 'sync-ok' : off ? 'muted' : 'warn'}>{piece.configured ? 'Configured' : off ? 'Optional — off' : 'Not configured'}</span>
+      </p>
+      {off ? (
+        <details className="admin-optional">
+          <summary>How to turn it on</summary>
+          {body}
+        </details>
+      ) : (
+        body
+      )}
     </div>
   )
 }
@@ -533,7 +552,7 @@ export function Admin({ onClose }: Props) {
 
           {status ? (
             <>
-              <HealthCard title="Web push (VAPID)" piece={status.vapid}>
+              <HealthCard title="Web push (VAPID)" piece={status.vapid} optional>
                 {!status.vapid.configured && (
                   <p className="field-hint">
                     Set <code>VAPID_PUBLIC_KEY</code> and <code>VAPID_PRIVATE_KEY</code> on Netlify (run <code>npx web-push generate-vapid-keys</code> for the pair). Optional{' '}
@@ -559,17 +578,7 @@ export function Admin({ onClose }: Props) {
                 )}
               </HealthCard>
 
-              <HealthCard title="iOS push (APNs)" piece={status.apns}>
-                {!status.apns.configured && (
-                  <p className="field-hint">
-                    Set <code>APNS_KEY_ID</code>, <code>APNS_TEAM_ID</code>, <code>APNS_PRIVATE_KEY</code> (the .p8 contents), and <code>APNS_BUNDLE_ID</code>. Use{' '}
-                    <code>APNS_ENV=sandbox</code> for Xcode / Simulator builds. Needs an Apple Developer Program membership.
-                  </p>
-                )}
-                <p className="field-hint">Test it with “Send test push” above — one send covers both channels.</p>
-              </HealthCard>
-
-              <HealthCard title="Google Calendar" piece={status.google}>
+              <HealthCard title="Google Calendar" piece={status.google} optional>
                 {!status.google.configured && (
                   <p className="field-hint">
                     Set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> on Netlify. The OAuth client's redirect URI must be{' '}
@@ -578,7 +587,7 @@ export function Admin({ onClose }: Props) {
                 )}
               </HealthCard>
 
-              <HealthCard title="Outlook / Microsoft 365" piece={status.microsoft}>
+              <HealthCard title="Outlook / Microsoft 365" piece={status.microsoft} optional>
                 {!status.microsoft.configured && (
                   <p className="field-hint">
                     Set <code>MICROSOFT_CLIENT_ID</code> and <code>MICROSOFT_CLIENT_SECRET</code> on Netlify. In the Azure portal register an app that allows{' '}
@@ -615,13 +624,13 @@ export function Admin({ onClose }: Props) {
                 )}
               </HealthCard>
 
-              <HealthCard title="GitHub" piece={status.github}>
+              <HealthCard title="GitHub" piece={status.github} optional>
                 <p className="field-hint">
                   GitHub link cards use <code>GITHUB_TOKEN</code> the same way. Scope <code>read:project</code> for Projects; repo/issues write for status write-back.
                 </p>
               </HealthCard>
 
-              <HealthCard title="Digest email (Resend)" piece={status.resend}>
+              <HealthCard title="Digest email (Resend)" piece={status.resend} optional>
                 {!status.resend.configured && (
                   <p className="field-hint">
                     Morning digest email needs <code>RESEND_API_KEY</code> on the host.
@@ -674,33 +683,48 @@ export function Admin({ onClose }: Props) {
           )}
         </section>
 
-        <section className="settings-section g-domains">
-          <h3>Associated domains (Universal Links)</h3>
+        {/* Everything that needs the paid Apple Developer Program, in one place
+            with the steps to build it; the README's "When you join the Apple
+            Developer Program" has the same list. */}
+        <section className="settings-section g-apple">
+          <h3>Apple Developer Program — when you join</h3>
           <p className="field-hint">
-            Blocked on an Apple Developer Program team ID. Until then, digests and invites open in Safari; the app still receives{' '}
-            <code>drafter://</code> deep links and OAuth returns.
+            Everything here needs the paid Apple Developer Program ($99 a year), and none of it is needed today. The iPhone app is signed with a free personal team,
+            installs for a week at a time, reminds you on the device instead of through push, and opens links from digests and invites in Safari. Face ID lock needs
+            none of this. When you join, work down the list.
           </p>
-          <div className="admin-health">
-            <p className="sync-line">
-              <strong>apple-app-site-association</strong>
-              <span className="warn">Not shipped</span>
-            </p>
-            <p className="field-hint">
-              When the team ID exists, publish <code>public/.well-known/apple-app-site-association</code> for the site host and add the Associated Domains entitlement{' '}
-              <code>applinks:drafterz.netlify.app</code> (plus the custom domain if any) in{' '}
-              <code>ios/App/App/App.entitlements</code>. Path patterns should cover <code>/</code>, <code>/?view=*</code>, <code>/?task=*</code>, and{' '}
-              <code>/?saw=*</code>.
-            </p>
-          </div>
-          <div className="admin-health">
-            <p className="sync-line">
-              <strong>Password Autofill / Keychain</strong>
-              <span className="warn">Needs webcredentials</span>
-            </p>
-            <p className="field-hint">
-              Same AASA file can list <code>webcredentials:drafterz.netlify.app</code> so iCloud Keychain offers the saved password on the sign-in screen. Face ID lock is Settings → Reminders → Lock this iPhone (no paid Apple team required).
-            </p>
-          </div>
+          <ol className="apple-steps">
+            <li>
+              <strong>Sign with the paid team.</strong> In Xcode, open <code>ios/App</code>, choose the App target → <em>Signing &amp; Capabilities</em> and pick the team.
+              Note its 10-character Team ID; the bundle ID stays <code>app.drafter.ios</code>.
+            </li>
+            <li>
+              <strong>iOS push (APNs).</strong> In the developer site, <em>Certificates, IDs &amp; Profiles → Keys</em>, create a key with Apple Push Notifications
+              service and download the .p8. On Netlify set <code>APNS_KEY_ID</code>, <code>APNS_TEAM_ID</code>, <code>APNS_PRIVATE_KEY</code> (the .p8 contents) and{' '}
+              <code>APNS_BUNDLE_ID</code> = <code>app.drafter.ios</code>, plus <code>APNS_ENV=sandbox</code> for builds run from Xcode. Add <code>aps-environment</code>{' '}
+              to <code>ios/App/App/App.entitlements</code> (<code>development</code>, or <code>production</code> for TestFlight and the App Store), run{' '}
+              <code>npm run ios</code>, then on the iPhone: Settings → Reminders → <em>Enable on this device</em>. The morning digest and due-task nudges then arrive
+              with the app closed.
+            </li>
+            <li>
+              <strong>Universal Links.</strong> Copy <code>ios/apple-app-site-association.example.json</code> to{' '}
+              <code>public/.well-known/apple-app-site-association</code> (no extension) with the Team ID in place of <code>TEAMID</code>, add a{' '}
+              <code>netlify.toml</code> header rule serving that path as <code>application/json</code>, and add the Associated Domains capability with{' '}
+              <code>applinks:drafterz.netlify.app</code>. Links in digests, invites and emails then open the app instead of Safari.
+            </li>
+            <li>
+              <strong>Password AutoFill.</strong> The same file's <code>webcredentials</code> entry, plus <code>webcredentials:drafterz.netlify.app</code> under Associated
+              Domains, lets iCloud Keychain offer your saved password on the sign-in screen.
+            </li>
+            <li>
+              <strong>TestFlight and the App Store.</strong> No more reinstalling every week: <code>npm run build:ios</code>, then in Xcode <em>Product → Archive →
+              Distribute App → App Store Connect</em>, and add yourself as a TestFlight tester.
+            </li>
+            <li>
+              <strong>Later builds.</strong> A Home Screen widget and a share extension each need their own Swift target and the paid team; neither is built yet.
+            </li>
+          </ol>
+          {status && <HealthCard title="iOS push (APNs)" piece={status.apns} optional />}
         </section>
 
         {error && <p className="warn">{error}</p>}
