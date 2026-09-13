@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, personStats, yearReport } from '../people'
+import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, visitDays, yearReport } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -274,10 +274,10 @@ function LogVisit({
   )
 }
 
-function Bars({ weekly, color }: { weekly: number[]; color: string }) {
+function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
   const max = Math.max(1, ...weekly)
   return (
-    <span className="person-bars" title="Visits per week, last 12 weeks">
+    <span className="person-bars" title={title}>
       {weekly.map((n, i) => (
         <span key={i} className="person-bar" style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : color, opacity: n === 0 ? 0.35 : 1 }} />
       ))}
@@ -286,6 +286,19 @@ function Bars({ weekly, color }: { weekly: number[]; color: string }) {
 }
 
 export { Bars }
+
+/** Days seen in the last `span` days, and the events under them when some shared a day. */
+function SeenCount({ days, events, span }: { days: number; events: number; span: number }) {
+  return (
+    <span title={`Last ${span} days: ${seenLabel(days, events)}`}>
+      <strong>{days}</strong>
+      <small>
+        {days === 1 ? 'day' : 'days'} · {span}d
+      </small>
+      {events !== days && <small className="person-events">{countOf(events, 'event')}</small>}
+    </span>
+  )
+}
 
 /**
  * One person as a compact row. Details and the action buttons live behind the
@@ -363,14 +376,8 @@ function PersonRow({
           <small className="muted">{stats.reason}</small>
         </span>
         <span className="person-inline-stats">
-          <span title="Visits in the last 30 days">
-            <strong>{stats.count30}</strong>
-            <small>30d</small>
-          </span>
-          <span title="Visits in the last 90 days">
-            <strong>{stats.count90}</strong>
-            <small>90d</small>
-          </span>
+          <SeenCount days={stats.days30} events={stats.count30} span={30} />
+          <SeenCount days={stats.days90} events={stats.count90} span={90} />
         </span>
         <span className="badge" style={{ background: meta.bg, color: meta.color }}>
           {meta.label}
@@ -382,10 +389,10 @@ function PersonRow({
 
       {open && (
         <div className="person-detail">
-          <div className="person-stats">
-            <Bars weekly={stats.weekly} color={person.color} />
+          <div className="person-stats seen-stats">
+            <Bars weekly={stats.weekly} color={person.color} title="Days seen per week, last 12 weeks" />
             <span className="person-nums">
-              <span>
+              <span title="Average days between the days you saw them, over the last year">
                 <strong>{stats.avgGapDays ? Math.round(stats.avgGapDays) : '—'}</strong>
                 <small>avg gap</small>
               </span>
@@ -394,7 +401,9 @@ function PersonRow({
                 <small>target</small>
               </span>
               <span>
-                <strong>{stats.visits.length}</strong>
+                <strong>
+                  {countOf(stats.daysAll, 'day')} · {countOf(stats.eventsAll, 'event')}
+                </strong>
                 <small>all time</small>
               </span>
             </span>
@@ -509,24 +518,26 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
   }, [allStats, group, sort, q])
 
   /**
-   * Two numbers that are easy to conflate: one dinner with three relatives is
-   * ONE occasion but THREE person-visits. Showing both explains the gap you
-   * notice when the same event involves several people.
+   * Three numbers that are easy to conflate: one dinner with three relatives
+   * is ONE occasion but THREE person-visits, and three get-togethers on one
+   * Saturday are THREE occasions but ONE day. Showing all three explains the
+   * gap you notice when an event involves several people, or a day several
+   * events.
    */
   const counts = useMemo(() => {
     const scoped = new Set(shown.map(s => s.person.id))
-    const occasions = new Set<string>()
+    const occasions = new Map<string, { at: string }>()
     let personVisits = 0
     for (const t of tasks) {
       if (t.status !== 'done' || !t.completedAt) continue
       const involved = (t.peopleIds ?? []).filter(id => scoped.has(id))
       if (involved.length === 0) continue
-      occasions.add(t.id)
+      occasions.set(t.id, { at: t.completedAt })
       personVisits += involved.length
     }
     const attention = { overdue: 0, due: 0 }
     for (const s of shown) if (s.status === 'overdue' || s.status === 'due') attention[s.status]++
-    return { occasions: occasions.size, personVisits, attention }
+    return { days: visitDays([...occasions.values()]).length, occasions: occasions.size, personVisits, attention }
   }, [shown, tasks])
 
   const report = useMemo(() => yearReport(shown.map(s => s.person), tasks, year), [shown, tasks, year])
@@ -582,6 +593,12 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
           </div>
 
           <div className="kpi-row people-kpis">
+            {/* on a phone's two columns this one spans its row, so the four below pair up */}
+            <div className="stat-tile kpi-wide">
+              <div className="stat-label">Days together</div>
+              <div className="stat-value">{counts.days}</div>
+              <div className="stat-sub">days you saw any of them, however many get-togethers</div>
+            </div>
             <div className="stat-tile">
               <div className="stat-label">Occasions</div>
               <div className="stat-value">{counts.occasions}</div>
@@ -630,7 +647,7 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
             <header className="chart-head">
               <div>
                 <h3>The year with {group === 'all' ? 'people' : PERSON_GROUP_META[group].toLowerCase()}</h3>
-                <p className="chart-sub">Visits per month · trend compares the last 90 days with the 90 before</p>
+                <p className="chart-sub">Days seen per month, however many events a day held · trend compares days seen in the last 90 days with the 90 before</p>
               </div>
               <span className="segmented">
                 <button className="seg" onClick={() => setYear(y => y - 1)} aria-label="Previous year">
@@ -652,7 +669,8 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
                         {m}
                       </th>
                     ))}
-                    <th className="num">Total</th>
+                    <th className="num">Days</th>
+                    <th className="num">Events</th>
                     <th>Trend</th>
                   </tr>
                 </thead>
@@ -663,13 +681,19 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
                         <span className="pdot" style={{ background: r.person.color }} /> {r.person.name}
                       </td>
                       {r.months.map((n, i) => (
-                        <td key={i} className="num year-cell" style={n > 0 ? { background: `color-mix(in srgb, ${r.person.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}>
+                        <td
+                          key={i}
+                          className="num year-cell"
+                          title={n > 0 ? countOf(n, 'day') : undefined}
+                          style={n > 0 ? { background: `color-mix(in srgb, ${r.person.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}
+                        >
                           {n || ''}
                         </td>
                       ))}
                       <td className="num">
                         <strong>{r.total}</strong>
                       </td>
+                      <td className="num year-events">{r.events}</td>
                       <td>
                         {r.trend > 0 ? (
                           <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>

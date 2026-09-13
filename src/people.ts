@@ -1,9 +1,11 @@
 import { Person, Task } from './types'
 import { startOfDay } from './taskutils'
+import { dateKey } from './utils'
 import {
   DEFAULT_CADENCE_DAYS,
   DAY_MS,
   visitsFor as sharedVisitsFor,
+  visitDays as sharedVisitDays,
   plannedVisit as sharedPlannedVisit,
   plannedGift as sharedPlannedGift,
   seenStatus as sharedSeenStatus,
@@ -12,7 +14,9 @@ import {
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
 // a dinner you planned, a task you did together. Everything below derives
-// from those completion dates.
+// from those completion dates. Each one is an event; "how often" is counted
+// in days seen, because three events with the same group on one Saturday are
+// one time you saw them, not three.
 
 export interface Visit {
   task: Task
@@ -26,11 +30,18 @@ export interface PersonStats {
   visits: Visit[]
   lastSeen?: string
   daysSince?: number
+  /** Events (completed tasks with them) in the last 30 / 90 days. */
   count30: number
   count90: number
-  /** Average days between visits over the last year. */
+  /** Days seen in the last 30 / 90 days and all time: several events on one day are one day. */
+  days30: number
+  days90: number
+  daysAll: number
+  /** Events all time, to sit beside daysAll. */
+  eventsAll: number
+  /** Average days between the days you saw them over the last year. */
   avgGapDays?: number
-  /** Visits per week over the last 12 weeks, oldest first — for the mini bars. */
+  /** Days seen per week (0..7) over the last 12 weeks, oldest first — for the mini bars. */
   weekly: number[]
   status: SeenStatus
   /** Human explanation of the status. */
@@ -42,6 +53,22 @@ export interface PersonStats {
 export function visitsFor(personId: string, tasks: Task[]): Visit[] {
   return sharedVisitsFor(personId, tasks) as Visit[]
 }
+
+/** The distinct days among these visits, on the viewer's own calendar unless told otherwise. */
+export function visitDays(visits: { at: string }[], dayKeyOf: (at: string) => string | null = dateKey): string[] {
+  return sharedVisitDays(visits, dayKeyOf)
+}
+
+/** "1 day", "3 events". */
+export const countOf = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/** "2 days · 3 events", or just "2 days" when no two events shared a day. */
+export function seenLabel(days: number, events: number): string {
+  return events === days ? countOf(days, 'day') : `${countOf(days, 'day')} · ${countOf(events, 'event')}`
+}
+
+/** A YYYY-MM-DD key as a whole day number, so a DST hour never shortens a gap. */
+const dayNumber = (key: string) => Math.round(Date.parse(`${key}T00:00:00Z`) / DAY_MS)
 
 /** Shared last/gap/weekly rollup used by people and places. */
 // Widened to anything carrying an instant: a place's outings now include meals
@@ -77,10 +104,35 @@ export function visitSummary(visits: { at: string }[], now: Date = new Date()) {
   return { lastAt, daysSince, count30, count90, count365, avgGapDays, weekly }
 }
 
+/**
+ * The people half of the rollup, counted in days seen rather than events.
+ * Places keep visitSummary: an outing there is what they count.
+ */
+export function daySummary(visits: { at: string }[], now: Date = new Date()) {
+  const nowMs = now.getTime()
+  const daysWithin = (days: number) => visitDays(visits.filter(v => nowMs - Date.parse(v.at) < days * DAY_MS))
+  const all = visitDays(visits)
+
+  // the whole span over one fewer gaps: a same-day repeat is no longer a 0-day gap
+  const year = daysWithin(365).map(dayNumber)
+  const avgGapDays = year.length >= 2 ? (Math.max(...year) - Math.min(...year)) / (year.length - 1) : undefined
+
+  // twelve 7-day buckets, the last one ending today
+  const first = dayNumber(dateKey(now)) - 12 * 7 + 1
+  const weekly = Array.from({ length: 12 }, () => 0)
+  for (const key of all) {
+    const idx = Math.floor((dayNumber(key) - first) / 7)
+    if (idx >= 0 && idx < 12) weekly[idx]++
+  }
+
+  return { days30: daysWithin(30).length, days90: daysWithin(90).length, daysAll: all.length, avgGapDays, weekly }
+}
+
 export function personStats(person: Person, tasks: Task[], now: Date = new Date()): PersonStats {
   const base = sharedSeenStatus(person, tasks, now)
   const visits = base.visits as Visit[]
   const summary = visitSummary(visits, now)
+  const days = daySummary(visits, now)
   const planned = (sharedPlannedVisit(person.id, tasks) as Task | null) ?? undefined
 
   return {
@@ -90,8 +142,12 @@ export function personStats(person: Person, tasks: Task[], now: Date = new Date(
     daysSince: base.daysSince,
     count30: summary.count30,
     count90: summary.count90,
-    avgGapDays: summary.avgGapDays,
-    weekly: summary.weekly,
+    days30: days.days30,
+    days90: days.days90,
+    daysAll: days.daysAll,
+    eventsAll: visits.length,
+    avgGapDays: days.avgGapDays,
+    weekly: days.weekly,
     status: base.status as SeenStatus,
     reason: base.reason,
     planned,
@@ -139,10 +195,13 @@ export function upcomingOccasions(people: Person[], days = 14, now: Date = new D
 
 export interface YearRow {
   person: Person
-  /** Visits per month, Jan..Dec of the given year. */
+  /** Days seen per month, Jan..Dec of the given year. */
   months: number[]
+  /** Days seen in the year. */
   total: number
-  /** Positive = seeing more lately, negative = drifting (last 90 days vs the 90 before). */
+  /** Events in the year, however many shared a day. */
+  events: number
+  /** Positive = seeing more lately, negative = drifting (days seen in the last 90 days vs the 90 before). */
   trend: number
 }
 
@@ -151,17 +210,19 @@ export function yearReport(people: Person[], tasks: Task[], year: number, now: D
   return people
     .map(person => {
       const visits = visitsFor(person.id, tasks)
+      const inYear = visits.filter(v => new Date(v.at).getFullYear() === year)
       const months = Array.from({ length: 12 }, () => 0)
-      for (const v of visits) {
-        const d = new Date(v.at)
-        if (d.getFullYear() === year) months[d.getMonth()]++
-      }
-      const recent = visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS).length
-      const before = visits.filter(v => {
-        const age = nowMs - Date.parse(v.at)
-        return age >= 90 * DAY_MS && age < 180 * DAY_MS
-      }).length
-      return { person, months, total: months.reduce((a, b) => a + b, 0), trend: recent - before }
+      for (const key of visitDays(inYear)) months[Number(key.slice(5, 7)) - 1]++
+      // a day with events either side of the 90-day line lands in both windows,
+      // which adds one to each side and leaves the difference alone
+      const recent = visitDays(visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS)).length
+      const before = visitDays(
+        visits.filter(v => {
+          const age = nowMs - Date.parse(v.at)
+          return age >= 90 * DAY_MS && age < 180 * DAY_MS
+        }),
+      ).length
+      return { person, months, total: months.reduce((a, b) => a + b, 0), events: inYear.length, trend: recent - before }
     })
-    .sort((a, b) => b.total - a.total)
+    .sort((a, b) => b.total - a.total || b.events - a.events)
 }

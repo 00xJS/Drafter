@@ -657,3 +657,42 @@ describe('notes, focus and the week plan over MCP', () => {
     expect(calls.some(c => c.url.includes('sync_posts'))).toBe(false)
   })
 })
+
+describe('list_people counts days seen in the user\'s zone', () => {
+  // noon UTC on Saturday 12 September
+  const at = Date.parse('2026-09-12T12:00:00.000Z')
+  const seen = (id: string, completedAt: string): Row => ({
+    user_id: OWNER,
+    data: { kind: 'task', id, title: id, description: '', status: 'done', priority: 'normal', tags: ['visit'], peopleIds: ['mum'], completedAt, createdAt: STAMP, updatedAt: STAMP },
+  })
+  const rows = (): Row[] => [
+    { user_id: OWNER, data: { kind: 'person', id: 'mum', name: 'Mum', group: 'family', createdAt: STAMP, updatedAt: STAMP } },
+    // three events on one Saturday
+    seen('sat-1', '2026-09-05T09:00:00.000Z'),
+    seen('sat-2', '2026-09-05T12:00:00.000Z'),
+    seen('sat-3', '2026-09-05T15:00:00.000Z'),
+    // 23:30 and 00:30 in London: two days there, one in UTC
+    seen('late', '2026-09-09T22:30:00.000Z'),
+    seen('early', '2026-09-09T23:30:00.000Z'),
+    // inside 90 days, outside 30
+    seen('july', '2026-07-01T12:00:00.000Z'),
+  ]
+  const mumIn = async (tz: string) => {
+    serveHousehold(rows())
+    const out = (await tool('list_people').run({}, createContext({ db: serviceData(), clock: makeClock(tz, () => at) }))) as { people: Record<string, unknown>[] }
+    return out.people.find(p => p.id === 'mum')
+  }
+
+  it('keeps the visit counts as events and adds the days seen beside them', async () => {
+    expect(await mumIn('Europe/London')).toMatchObject({ visitsLast30Days: 5, daysSeenLast30Days: 3, visitsLast90Days: 6, daysSeenLast90Days: 4 })
+  })
+
+  it('draws the day line where the user\'s clock does', async () => {
+    expect(await mumIn('UTC')).toMatchObject({ visitsLast30Days: 5, daysSeenLast30Days: 2, visitsLast90Days: 6, daysSeenLast90Days: 3 })
+  })
+
+  it('says which counts are events and which are days', () => {
+    expect(tool('list_people').description).toMatch(/visitsLast30Days\/visitsLast90Days count events/)
+    expect(tool('list_people').description).toMatch(/daysSeenLast30Days\/daysSeenLast90Days count the days/)
+  })
+})

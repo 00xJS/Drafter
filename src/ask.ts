@@ -681,7 +681,8 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
     const bits = [last ? `last seen ${last} (${ago(daysBetween(last, today))})` : 'no visit logged yet']
     const status = CATCH_UP[s.status]
     if (status) bits.push(person.cadenceDays ? `aims for every ${person.cadenceDays} days, ${status}` : status)
-    bits.push(`${s.count90} visit${s.count90 === 1 ? '' : 's'} in the last 90 days`)
+    // how often is days seen: three events on one Saturday are one time together
+    bits.push(`seen on ${s.days90} day${s.days90 === 1 ? '' : 's'} in the last 90 days${s.count90 !== s.days90 ? ` (${s.count90} events)` : ''}`)
     const next = upcomingOccasions([person], 366, now)[0]
     if (next) bits.push(`${next.kind} ${next.daysUntil === 0 ? 'today' : `in ${next.daysUntil} days`}`)
     facts.push(`${person.name}: ${bits.join('; ')}.`)

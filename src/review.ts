@@ -1,6 +1,6 @@
 import { Person, Place, Project, Task } from './types'
 import { DAY_MS, startOfDay } from './taskutils'
-import { visitsFor } from './people'
+import { visitDays, visitsFor } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
 import { weekKeyOf } from '../shared/weeks.mjs'
@@ -73,8 +73,10 @@ export interface ReviewData {
   /** Open and due inside the following period. */
   upcoming: Task[]
   overdueNow: Task[]
-  /** Visits in the range, per person. */
-  people: { person: Person; visits: Task[] }[]
+  /** Events in the range, per person, and the days they fell on: three on one Saturday are one day. */
+  people: { person: Person; visits: Task[]; days: number }[]
+  /** The days you saw anyone in the range, and the events on them, each counted once however many people were there. */
+  seen: { days: number; events: number }
   /** Outings in the range, per place. */
   places: { place: Place; visits: Task[] }[]
   /** Per-project done/open counts for the range. */
@@ -102,9 +104,15 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const upcoming = open.filter(t => inRange(t.dueAt, next)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   const overdueNow = open.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   const peopleSeen = people
-    .map(p => ({ person: p, visits: visitsFor(p.id, tasks).filter(v => inRange(v.at, range)).map(v => v.task) }))
+    .map(p => {
+      const visits = visitsFor(p.id, tasks).filter(v => inRange(v.at, range))
+      return { person: p, visits: visits.map(v => v.task), days: visitDays(visits).length }
+    })
     .filter(x => x.visits.length > 0)
-    .sort((a, b) => b.visits.length - a.visits.length)
+    .sort((a, b) => b.days - a.days || b.visits.length - a.visits.length)
+  const seenEvents = new Map<string, { at: string }>()
+  for (const p of peopleSeen) for (const t of p.visits) seenEvents.set(t.id, { at: t.completedAt! })
+  const seen = { days: visitDays([...seenEvents.values()]).length, events: seenEvents.size }
   const placesWent = places
     // task outings only: this row lists the visits you logged, and a takeaway
     // has no task to open. Eating out is counted on the place's own card.
@@ -133,7 +141,7 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
     const i = Math.floor((Date.parse(t.completedAt!) - range.start.getTime()) / DAY_MS)
     if (i >= 0 && i < days) doneByDay[i]++
   }
-  return { range, done, visitsDone, slipped, created, upcoming, overdueNow, people: peopleSeen, places: placesWent, projects: projectRows, stalled, costs, doneByDay }
+  return { range, done, visitsDone, slipped, created, upcoming, overdueNow, people: peopleSeen, seen, places: placesWent, projects: projectRows, stalled, costs, doneByDay }
 }
 
 /** Done-per-week for the last n weeks (oldest first), for the Today sparkline. */

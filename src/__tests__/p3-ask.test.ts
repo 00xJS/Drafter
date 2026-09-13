@@ -303,9 +303,16 @@ describe('factsFor', () => {
     const facts = factsFor(pq, src, now, 'Europe/London')
     // ICU versions differ on the comma after the weekday
     expect(facts[0]).toMatch(/^Today is Saturday,? 12 September 2026 \(Europe\/London\)\.$/)
-    expect(facts.find(f => f.startsWith('Mum:'))).toMatch(/last seen 2026-09-05 \(7 days ago\).*2 visits in the last 90 days/)
+    expect(facts.find(f => f.startsWith('Mum:'))).toMatch(/last seen 2026-09-05 \(7 days ago\).*seen on 2 days in the last 90 days\.$/)
     expect(facts.find(f => f.startsWith('Nopi:'))).toBe('Nopi: last went 2026-09-04 (8 days ago); 1 outing logged.')
     expect(facts.some(f => /month/.test(f))).toBe(false)
+  })
+
+  it('counts how often in days seen, naming the events when some shared a day', () => {
+    const busy = sources()
+    busy.tasks.push(task('id-visit-dinner', { title: 'Dinner', status: 'done', completedAt: at(9, 5, 19), peopleIds: ['id-mum'], tags: ['visit'] }))
+    const pq = parseQuestion('When did I last see Mum?', busy, now)
+    expect(factsFor(pq, busy, now, 'Europe/London').find(f => f.startsWith('Mum:'))).toMatch(/seen on 2 days in the last 90 days \(3 events\)/)
   })
 
   it('says a cadence and when it is due', () => {

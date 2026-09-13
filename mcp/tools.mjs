@@ -16,7 +16,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
-import { seenStatus, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
+import { seenStatus, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
@@ -796,7 +796,8 @@ export const TOOLS = [
     name: 'list_people',
     scope: 'read',
     annotations: READS,
-    description: 'People you track visits with: last seen, visits in the last 30/90 days, target rhythm, and whether they are overdue a catch-up or being seen a lot.',
+    description:
+      "People you track visits with: last seen, target rhythm, whether they are due or overdue a catch-up, and how often you saw them. visitsLast30Days/visitsLast90Days count events (completed tasks with them, so three on one day are three); daysSeenLast30Days/daysSeenLast90Days count the days you saw them, in the user's time zone — the app's how-often figure.",
     inputSchema: { type: 'object', properties: {} },
     async run(_args, { db, clock }) {
       const all = await db.fetchAll({ kinds: ['person', 'task'] })
@@ -807,6 +808,7 @@ export const TOOLS = [
           .filter(i => i.kind === 'person')
           .map(p => {
             const s = seenStatus(p, tasks, new Date(nowMs))
+            const within = days => s.visits.filter(v => nowMs - Date.parse(v.at) < days * DAY)
             return {
               id: p.id,
               name: p.name,
@@ -815,8 +817,10 @@ export const TOOLS = [
               effectiveCadenceDays: s.effectiveCadenceDays ?? DEFAULT_CADENCE_DAYS,
               lastSeen: s.lastSeen ?? null,
               daysSince: s.daysSince ?? null,
-              visitsLast30Days: s.visits.filter(v => nowMs - Date.parse(v.at) < 30 * DAY).length,
-              visitsLast90Days: s.visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY).length,
+              visitsLast30Days: within(30).length,
+              visitsLast90Days: within(90).length,
+              daysSeenLast30Days: visitDays(within(30), clock.dayKeyOf).length,
+              daysSeenLast90Days: visitDays(within(90), clock.dayKeyOf).length,
               status: s.status,
               notes: p.notes ?? null,
             }
