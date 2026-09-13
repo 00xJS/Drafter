@@ -1,11 +1,23 @@
 import { FormEvent, useState } from 'react'
-import { getSupabase } from '../supabase'
+import { getSupabase, isSupabaseConfigured } from '../supabase'
 
-export function Login({ onBack }: { onBack?: () => void }) {
+interface Props {
+  onBack?: () => void
+  /**
+   * An assistant is waiting on an /oauth/authorize request (src/oauthRequest.ts):
+   * the card says signing in is what connects it, and Back reads Cancel, since
+   * it drops the request.
+   */
+  connecting?: boolean
+}
+
+export function Login({ onBack, connecting = false }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // a copy with no backend (local mode) has no account to sign in to, so there is nothing to connect
+  const noAccount = connecting && !isSupabaseConfigured()
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -25,31 +37,37 @@ export function Login({ onBack }: { onBack?: () => void }) {
           <span className="brand-mark">✈</span>
           <span>Drafter</span>
         </div>
-        <p className="login-sub">Sign in to your planner</p>
-        <label className="field">
-          <span>Email</span>
-          <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
-        </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
-        </label>
-        {error && <p className="warn">{error}</p>}
-        <button className="btn primary login-btn" type="submit" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-        <p className="field-hint">
-          Accounts are created in the Supabase dashboard (Authentication → Users) — there is no public sign-up.
-        </p>
+        <p className="login-sub">{noAccount ? 'Connect Claude to Drafter' : connecting ? 'Sign in to connect Claude to Drafter' : 'Sign in to your planner'}</p>
+        {noAccount ? (
+          <p className="warn">Connecting Claude needs a Drafter account, and this copy of Drafter has none: it keeps everything on this device.</p>
+        ) : (
+          <>
+            <label className="field">
+              <span>Email</span>
+              <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
+            </label>
+            {error && <p className="warn">{error}</p>}
+            <button className="btn primary login-btn" type="submit" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+            <p className="field-hint">
+              Accounts are created in the Supabase dashboard (Authentication → Users) — there is no public sign-up.
+            </p>
+          </>
+        )}
         {onBack && (
           <button type="button" className="btn subtle" onClick={onBack}>
-            ← Back
+            {connecting ? 'Cancel' : '← Back'}
           </button>
         )}
       </form>
