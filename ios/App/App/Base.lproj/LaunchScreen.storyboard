@@ -16,20 +16,19 @@
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Drafter" textAlignment="center" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="ttl">
-                                <rect key="frame" x="20" y="318" width="335" height="31"/>
-                                <fontDescription key="fontDescription" type="boldSystem" pointSize="26"/>
-                                <color key="textColor" red="0.9764705882" green="0.4509803922" blue="0.0862745098" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                <nil key="highlightedColor"/>
-                            </label>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="mrk">
+                                <rect key="frame" x="127.5" y="273.5" width="120" height="120"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="120" id="c3"/>
+                                    <constraint firstAttribute="height" constant="120" id="c4"/>
+                                </constraints>
+                            </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="safe"/>
                         <color key="backgroundColor" red="0.05882352941" green="0.06666666667" blue="0.08235294118" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="ttl" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="c1"/>
-                            <constraint firstItem="ttl" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="c2"/>
-                            <constraint firstItem="ttl" firstAttribute="leading" secondItem="safe" secondAttribute="leading" constant="20" id="c3"/>
-                            <constraint firstItem="safe" firstAttribute="trailing" secondItem="ttl" secondAttribute="trailing" constant="20" id="c4"/>
+                            <constraint firstItem="mrk" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="c1"/>
+                            <constraint firstItem="mrk" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="c2"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -38,4 +37,7 @@
             <point key="canvasLocation" x="53" y="375"/>
         </scene>
     </scenes>
+    <resources>
+        <image name="LaunchLogo" width="120" height="120"/>
+    </resources>
 </document>

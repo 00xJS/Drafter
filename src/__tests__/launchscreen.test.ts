@@ -1,0 +1,173 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { inflateSync } from 'node:zlib'
+import { describe, expect, it } from 'vitest'
+
+/*
+ * iOS draws the launch screen from its storyboard before any code runs, and
+ * SceneDelegate lays the same storyboard over the App Switcher card. A missing
+ * image there is an empty screen on every cold start and nothing in the build
+ * fails, so the storyboard, the asset catalog and the artwork are checked here
+ * against each other and against public/icon.svg.
+ */
+
+const path = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.url))
+const read = (rel: string) => readFileSync(path(rel), 'utf8')
+const APP = 'ios/App/App'
+const CATALOG = `${APP}/Assets.xcassets`
+
+const storyboard = read(`${APP}/Base.lproj/LaunchScreen.storyboard`)
+const icon = read('public/icon.svg')
+
+/** Every `name="value"` pair of one tag's attributes. */
+const attrs = (tag: string): Record<string, string> =>
+  Object.fromEntries([...tag.matchAll(/([\w.]+)="([^"]*)"/g)].map(m => [m[1], m[2]]))
+
+const hex = (rgb: number[]) => `#${rgb.map(n => n.toString(16).padStart(2, '0')).join('')}`
+/** An Interface Builder `red=".." green=".." blue=".."` colour as #rrggbb. */
+const ibColour = (a: Record<string, string>) => hex([a.red, a.green, a.blue].map(v => Math.round(Number(v) * 255)))
+
+/** The icon's ground (its rounded rect) and the plane's two fills. */
+const ground = /<rect\b[^>]*fill="(#[0-9a-f]{6})"/.exec(icon)![1]
+const planeFills = [...icon.matchAll(/<path\b[^>]*fill="(#[0-9a-f]{6})"/g)].map(m => m[1])
+
+/**
+ * A PNG's size and pixels. Only 8-bit RGBA without interlacing, which is what an
+ * image with a transparent ground is exported as; anything else fails here.
+ */
+function readPng(file: string) {
+  const buf = readFileSync(file)
+  expect(buf.subarray(1, 4).toString('latin1')).toBe('PNG')
+  const width = buf.readUInt32BE(16)
+  const height = buf.readUInt32BE(20)
+  expect({ depth: buf[24], colour: buf[25], interlace: buf[28] }).toEqual({ depth: 8, colour: 6, interlace: 0 })
+  const idat: Buffer[] = []
+  for (let at = 8; at < buf.length; ) {
+    const len = buf.readUInt32BE(at)
+    if (buf.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(buf.subarray(at + 8, at + 8 + len))
+    at += 12 + len
+  }
+  const raw = inflateSync(Buffer.concat(idat))
+  const stride = width * 4
+  const px = new Uint8Array(stride * height)
+  for (let y = 0, at = 0; y < height; y++) {
+    const filter = raw[at++]
+    expect(filter).toBeLessThanOrEqual(4)
+    for (let x = 0; x < stride; x++, at++) {
+      const a = x >= 4 ? px[y * stride + x - 4] : 0
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0
+      const c = x >= 4 && y > 0 ? px[(y - 1) * stride + x - 4] : 0
+      const pa = Math.abs(b - c)
+      const pb = Math.abs(a - c)
+      const pc = Math.abs(a + b - 2 * c)
+      const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+      px[y * stride + x] = (raw[at] + [0, a, b, (a + b) >> 1, paeth][filter]) & 0xff
+    }
+  }
+  const pixel = (x: number, y: number) => [...px.subarray((y * width + x) * 4, (y * width + x) * 4 + 4)]
+  return { width, height, pixel }
+}
+
+describe('Launch screen', () => {
+  const root = attrs(/<view key="view"[^>]*>/.exec(storyboard)![0])
+  const logoTag = /<imageView\b[^>]*>([\s\S]*?)<\/imageView>/.exec(storyboard)
+  const logo = attrs(logoTag?.[0].split('>')[0] ?? '')
+  const constraints = [...storyboard.matchAll(/<constraint\b[^>]*\/>/g)].map(m => attrs(m[0]))
+
+  it('shows the LaunchLogo image, centred on the screen, 120pt square', () => {
+    expect(logo.image).toBe('LaunchLogo')
+    expect(logo.contentMode).toBe('scaleAspectFit')
+    for (const axis of ['centerX', 'centerY']) {
+      const pinned = constraints.filter(
+        c =>
+          c.firstAttribute === axis &&
+          c.secondAttribute === axis &&
+          [c.firstItem, c.secondItem].sort().join() === [logo.id, root.id].sort().join() &&
+          !Number(c.constant ?? 0),
+      )
+      expect(pinned, axis).toHaveLength(1)
+    }
+    const own = [...logoTag![1].matchAll(/<constraint\b[^>]*\/>/g)].map(m => attrs(m[0]))
+    expect(own.find(c => c.firstAttribute === 'width')?.constant).toBe('120')
+    expect(own.find(c => c.firstAttribute === 'height')?.constant).toBe('120')
+    expect(storyboard).toMatch(/<image name="LaunchLogo" width="120" height="120"\/>/)
+  })
+
+  it('holds no text: a launch screen is never localised, and the mark stands for the name', () => {
+    expect(storyboard).not.toMatch(/<label\b|<textView\b|\btext="/)
+  })
+
+  it("paints the icon's ground, the same colour the web view and the privacy cover start from", () => {
+    const background = attrs(/<color key="backgroundColor"[^>]*\/>/.exec(storyboard)![0])
+    expect(ibColour(background)).toBe(ground)
+    expect(/backgroundColor: '(#[0-9a-f]{6})'/.exec(read('capacitor.config.ts'))?.[1]).toBe(ground)
+    // SceneDelegate's cover if the storyboard ever fails to load
+    const fallback = /UIColor\(red: ([\d.]+), green: ([\d.]+), blue: ([\d.]+), alpha: 1\)/.exec(read(`${APP}/SceneDelegate.swift`))
+    expect(fallback && ibColour({ red: fallback[1], green: fallback[2], blue: fallback[3] })).toBe(ground)
+  })
+})
+
+describe('LaunchLogo artwork', () => {
+  const set = JSON.parse(read(`${CATALOG}/LaunchLogo.imageset/Contents.json`)) as {
+    images: { filename?: string; idiom: string; scale: string }[]
+  }
+
+  it('comes at 1x, 2x and 3x, each 120pt square', () => {
+    expect(set.images.map(i => i.scale)).toEqual(['1x', '2x', '3x'])
+    for (const image of set.images) {
+      const png = readPng(path(`${CATALOG}/LaunchLogo.imageset/${image.filename}`))
+      const side = 120 * Number.parseInt(image.scale)
+      expect({ width: png.width, height: png.height }, image.scale).toEqual({ width: side, height: side })
+    }
+  })
+
+  it("is the icon's plane alone, centred, on a transparent ground", () => {
+    expect(planeFills).toHaveLength(2)
+    for (const image of set.images) {
+      const { width, height, pixel } = readPng(path(`${CATALOG}/LaunchLogo.imageset/${image.filename}`))
+      for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
+        expect(pixel(x, y)[3], `${image.scale} corner`).toBe(0)
+      }
+      const fills = new Map(planeFills.map(f => [f, 0]))
+      const dark: string[] = []
+      let [left, right, top, bottom] = [width, -1, height, -1]
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const [r, g, b, a] = pixel(x, y)
+          if (!a) continue
+          left = Math.min(left, x)
+          right = Math.max(right, x)
+          top = Math.min(top, y)
+          bottom = Math.max(bottom, y)
+          if (a < 255) continue
+          // solid pixels are the plane's two oranges, or a blend where they
+          // meet; the icon's dark ground would be solid with almost no red
+          if (r < 0xe0) dark.push(`${hex([r, g, b])} at ${x},${y}`)
+          const fill = planeFills.find(f => [r, g, b].every((v, i) => Math.abs(v - Number.parseInt(f.slice(1 + 2 * i, 3 + 2 * i), 16)) <= 2))
+          if (fill) fills.set(fill, fills.get(fill)! + 1)
+        }
+      }
+      expect(dark.slice(0, 3), image.scale).toEqual([])
+      // both halves of the plane are drawn, not just one of them
+      for (const [fill, count] of fills) expect(count / (width * height), `${image.scale} ${fill}`).toBeGreaterThan(0.05)
+      // the image view centres the canvas, so the plane must sit in its middle
+      expect(Math.abs(left + right + 1 - width) / 2, `${image.scale} x`).toBeLessThanOrEqual(image.scale === '1x' ? 1 : 1.5)
+      expect(Math.abs(top + bottom + 1 - height) / 2, `${image.scale} y`).toBeLessThanOrEqual(image.scale === '1x' ? 1 : 1.5)
+    }
+  })
+})
+
+describe('Asset catalog', () => {
+  it('holds every image a storyboard or Swift names, and none that nothing uses', () => {
+    const sets = readdirSync(path(CATALOG))
+      .filter(f => f.endsWith('.imageset'))
+      .map(f => f.replace(/\.imageset$/, ''))
+    const storyboards = readdirSync(path(`${APP}/Base.lproj`)).filter(f => f.endsWith('.storyboard'))
+    const swift = readdirSync(path(APP)).filter(f => f.endsWith('.swift'))
+    const named = new Set([
+      ...storyboards.flatMap(f => [...read(`${APP}/Base.lproj/${f}`).matchAll(/\bimage="([^"]+)"/g)].map(m => m[1])),
+      ...swift.flatMap(f => [...read(`${APP}/${f}`).matchAll(/UIImage\(named: "([^"]+)"/g)].map(m => m[1])),
+    ])
+    expect(sets.sort()).toEqual([...named].sort())
+  })
+})
