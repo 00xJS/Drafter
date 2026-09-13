@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
+import { looksLikeQuestion } from '../ask'
 import { excerpt } from '../utils'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
@@ -35,6 +36,8 @@ interface Props {
   onSaw?(p: Person): void
   /** openEditor=false files the line straight to the Inbox with no editor. */
   onCreateTask(title: string, openEditor?: boolean): void
+  /** Open Ask Drafter on this question. Without it there is no "Ask Drafter" row. */
+  onAsk?(question: string): void
   onClose(): void
 }
 
@@ -47,6 +50,21 @@ type Hit =
   | { kind: 'create'; score: number; title: string }
   | { kind: 'recent'; score: number; task: Task }
   | { kind: 'command'; score: number; command: Command }
+  | { kind: 'ask'; score: number; question: string }
+
+/**
+ * Where the "Ask Drafter" row goes: first when the query reads as a question
+ * ("when did I last…", "…?"), otherwise straight after "Create task".
+ */
+export function withAskRow<H extends { kind: string }>(hits: H[], ask: H, query: string): H[] {
+  const out = [...hits]
+  if (looksLikeQuestion(query)) out.unshift(ask)
+  else {
+    const create = out.findIndex(h => h.kind === 'create')
+    out.splice(create === -1 ? out.length : create + 1, 0, ask)
+  }
+  return out
+}
 
 function score(haystack: string, needle: string, weight: number): number {
   const h = haystack.toLowerCase()
@@ -62,8 +80,9 @@ const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
 
 /** Cmd/Ctrl+K palette: jump anywhere, run a command, find anything, or create a
  *  task from what you typed. */
-export function Search({ tasks, projects, people, places = [], journal = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onClose }: Props) {
+export function Search({ tasks, projects, people, places = [], journal = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onAsk, onClose }: Props) {
   const [q, setQ] = useState('')
+  const canAsk = !!onAsk
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   // the results are a listbox the field drives: focus stays in the field, and
@@ -132,8 +151,8 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
     const exactTaskTitle = tasks.some(t => t.title.trim().toLowerCase() === needle)
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
-    return top
-  }, [q, tasks, projects, people, places, journal, commands, projectName])
+    return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
+  }, [q, tasks, projects, people, places, journal, commands, projectName, canAsk])
 
   useEffect(() => setCursor(0), [q])
 
@@ -147,6 +166,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
     else if (h.kind === 'journal') onOpenJournal?.(h.entry)
     else if (h.kind === 'command') h.command.run()
     else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
+    else if (h.kind === 'ask') onAsk?.(h.question)
   }
 
   return (
@@ -220,6 +240,17 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
                   >
                     Capture
                   </button>
+                </li>
+              )
+            if (h.kind === 'ask')
+              return (
+                <li key="ask" id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active ask' : 'search-hit ask'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind" aria-hidden>
+                    ✨
+                  </span>
+                  <span className="search-main">
+                    Ask Drafter: “{h.question}”<small>Answers from your own planner</small>
+                  </span>
                 </li>
               )
             if (h.kind === 'task' || h.kind === 'recent')

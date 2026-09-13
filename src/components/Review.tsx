@@ -27,6 +27,14 @@ interface Props {
   onReschedule(ids: string[], dueAtIso: string): void
   onOpenProject(p: Project): void
   onNew(preset?: Partial<Task>): void
+  /** Open the "Plan next week" sheet. Without it there is no button. */
+  onPlanWeek?(): void
+}
+
+/** "Plan next week" is the toolbar's main action from Friday to Sunday, when the week ahead is what there is to plan. */
+export function planWeekIsPrimary(d: Date): boolean {
+  const day = d.getDay()
+  return day === 5 || day === 6 || day === 0
 }
 
 function nextMonday(from = new Date()): string {
@@ -64,7 +72,7 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
   )
 }
 
-export function Review({ tasks, projects, projectMap, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew }: Props) {
+export function Review({ tasks, projects, projectMap, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew, onPlanWeek }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
@@ -165,6 +173,11 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
           This {period}
         </button>
         <span className="spacer" />
+        {onPlanWeek && (
+          <button className={planWeekIsPrimary(new Date()) ? 'btn primary' : 'btn'} onClick={onPlanWeek}>
+            Plan next week
+          </button>
+        )}
         <button className="btn" disabled={busy} onClick={generate}>
           {busy ? 'Writing…' : summary ? '✨ Rewrite summary' : '✨ Write my summary'}
         </button>
