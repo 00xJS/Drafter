@@ -24,7 +24,7 @@ import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
-import { DAY_MS, compareTasks, dayOffset, dueTone, startOfDay } from '../taskutils'
+import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
@@ -601,12 +601,12 @@ export function Today({
     const { open, overdue, today, late, week } = dueSections(tasks, now)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
-    const inbox = open
-      .filter(t => !t.projectId && !t.dueAt && t.status === 'todo')
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const stale = open
       .filter(t => !t.dueAt && t.status === 'todo' && nowMs - new Date(t.updatedAt).getTime() > STALE_DAYS * DAY_MS)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    // every stale to-do also passes inInbox; it moves on from the Inbox to Going stale rather than being listed twice
+    const staleIds = new Set(stale.map(t => t.id))
+    const inbox = open.filter(t => inInbox(t) && !staleIds.has(t.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const doneRecentAll = tasks
       .filter(t => t.status === 'done' && t.completedAt && nowMs - new Date(t.completedAt).getTime() < 7 * DAY_MS)
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
@@ -656,7 +656,7 @@ export function Today({
     { key: 'week', title: 'This week', sub: 'Due in the next 7 days', tasks: s.week },
     { key: 'doing', title: 'In progress, no date', sub: 'Started but not scheduled', tasks: s.doing },
     { key: 'blocked', title: 'Blocked', sub: 'Waiting on something — worth a nudge?', tasks: s.blocked },
-    { key: 'inbox', title: 'Inbox', sub: 'Captured, not yet triaged — give each a project or a date', tasks: s.inbox },
+    { key: 'inbox', title: 'Inbox', sub: 'Captured, not yet triaged — give each a date', tasks: s.inbox },
     { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
   ]
   const sections = leaveOutFocus(everySection, focusIds)

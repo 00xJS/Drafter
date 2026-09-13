@@ -235,9 +235,6 @@
   .rm-label {
     width: 180px;
   }
-  .rm-progress {
-    display: none;
-  }
 }
 
 @media (max-width: 640px) {

@@ -31,11 +31,6 @@ export function CaptureProposal({ proposal: captureProposal, parsing, onApply, o
             <strong>Priority</strong> {captureProposal.priority}
           </li>
         )}
-        {captureProposal.projectName && (
-          <li>
-            <strong>Project</strong> {captureProposal.projectName}
-          </li>
-        )}
         {captureProposal.peopleNames?.length ? (
           <li>
             <strong>People</strong> {captureProposal.peopleNames.join(', ')}

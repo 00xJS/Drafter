@@ -401,14 +401,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rm-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  font-size: 0.6875rem;
-  color: var(--muted);
-}
 .rm-track {
   position: relative;
   flex: none;
@@ -456,11 +448,6 @@
   opacity: 0.35;
   outline: 2px dashed currentColor;
   outline-offset: -2px;
-}
-.rm-bar-fill {
-  display: block;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.35);
 }
 .rm-ms {
   position: absolute;

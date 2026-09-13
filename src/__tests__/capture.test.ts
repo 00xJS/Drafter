@@ -1,14 +1,14 @@
-import { describe, it, expect } from 'vitest'
-import { buildCapturedTask, quickCaptureFields } from '../ai'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+vi.mock('../api', () => ({ apiFetch: vi.fn() }))
+import { apiFetch } from '../api'
+import { CapturedFields, buildCapturedTask, parseCapture, quickCaptureFields } from '../ai'
+import { inInbox } from '../taskutils'
 
 // The palette's Shift+Enter files a task from these two pure steps with no
 // editor in between, so what they produce is exactly what lands in the store.
 const now = new Date(2026, 8, 9, 10, 0, 0)
 const lookup = {
-  projects: [
-    { id: 'p-kitchen', name: 'Kitchen' },
-    { id: 'p-garden', name: 'Garden' },
-  ],
   people: [
     { id: 'u-sam', name: 'Sam' },
     { id: 'u-ana', name: 'Ana Ruiz' },
@@ -46,21 +46,22 @@ describe('buildCapturedTask: fields become a task the way the editor would apply
       updatedAt: now.toISOString(),
       tags: [],
     })
-    // Today's Inbox rule, verbatim
-    expect(!t.projectId && !t.dueAt && t.status === 'todo').toBe(true)
+    // Today's Inbox rule, the same function Today uses
+    expect(inInbox(t)).toBe(true)
     expect('projectId' in t).toBe(false)
     expect('peopleIds' in t).toBe(false)
     expect('dueAt' in t).toBe(false)
   })
 
-  it('matches a project by name regardless of case', () => {
-    const t = buildCapturedTask({ title: 'Descale the kettle', projectName: 'kitchen' }, lookup, { id: 't2', now })
-    expect(t.projectId).toBe('p-kitchen')
+  it('never files the task under a project, even when the fields still name one', () => {
+    // an answer shaped by the old prompt, which asked for a project name
+    const t = buildCapturedTask({ title: 'Descale the kettle', projectName: 'LIFE' } as CapturedFields, lookup, { id: 't2', now })
+    expect('projectId' in t).toBe(false)
+    expect(inInbox(t)).toBe(true)
   })
 
-  it('drops a project or person it does not know rather than guessing', () => {
-    const t = buildCapturedTask({ title: 'Ring the plumber', projectName: 'Bathroom', peopleNames: ['Nobody'] }, lookup, { id: 't3', now })
-    expect(t.projectId).toBeUndefined()
+  it('drops a person it does not know rather than guessing', () => {
+    const t = buildCapturedTask({ title: 'Ring the plumber', peopleNames: ['Nobody'] }, lookup, { id: 't3', now })
     expect(t.peopleIds).toBeUndefined()
   })
 
@@ -82,5 +83,28 @@ describe('buildCapturedTask: fields become a task the way the editor would apply
   it('trims and truncates the title to 140', () => {
     const t = buildCapturedTask({ title: '  ' + 'y'.repeat(200) }, lookup, { id: 't6', now })
     expect(t.title).toHaveLength(140)
+  })
+})
+
+describe('parseCapture: the model is never asked for a project', () => {
+  const reply = (text: string) => ({ ok: true, status: 200, json: async () => ({ text }) }) as unknown as Response
+  beforeEach(() => vi.mocked(apiFetch).mockReset())
+
+  it('sends no project list and asks for no project name', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(reply('{"title":"Paint the fence"}'))
+    await parseCapture('paint the fence', { now, personNames: ['Sam'] })
+    const body = JSON.parse(String(vi.mocked(apiFetch).mock.calls[0][1]!.body)) as { system: string; prompt: string }
+    expect(body.system).not.toMatch(/project/i)
+    expect(body.prompt).not.toMatch(/project/i)
+    // people are still offered by name
+    expect(body.prompt).toContain('People: ["Sam"]')
+  })
+
+  it('drops a project name the model offers anyway', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(reply('{"title":"Paint the fence","projectName":"LIFE","peopleNames":["sam"]}'))
+    const parsed = await parseCapture('paint the fence with Sam', { now, personNames: ['Sam'] })
+    expect(parsed).not.toHaveProperty('projectName')
+    expect(parsed.peopleNames).toEqual(['Sam'])
+    expect('projectId' in buildCapturedTask(parsed, lookup, { id: 't7', now })).toBe(false)
   })
 })

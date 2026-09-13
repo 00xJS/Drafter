@@ -117,21 +117,20 @@ export function TaskEditor({
         // a pasted or shared URL goes into the description, where it shows as a
         // link (a shared link is there already: the form opens with it)
         if (seed.url) set(f => ({ description: appendOnce(f.description, seed.url!) }))
+        // people only: there is one home project, and a sentence never files a new task under one
         const parsed = await parseCapture(seed.text || seed.url || base.title, {
-          // no project names: there is one home project, and a sentence never files a new task under one
           personNames: people.map(p => p.name),
         })
         if (!live) return
         const extra =
           parsed.dueAt ||
           parsed.priority ||
-          parsed.projectName ||
           parsed.peopleNames?.length ||
           parsed.tags?.length ||
           parsed.recurrence ||
           parsed.title !== base.title
         if (!extra) return
-        if (isSimpleDateCapture(parsed, seed.text || base.title) && !parsed.priority && !parsed.projectName && !parsed.peopleNames?.length) {
+        if (isSimpleDateCapture(parsed, seed.text || base.title) && !parsed.priority && !parsed.peopleNames?.length) {
           applyCapture(parsed)
           return
         }
@@ -149,7 +148,7 @@ export function TaskEditor({
   }, [])
 
   function applyCapture(c: CapturedFields) {
-    dispatch({ type: 'applyCapture', capture: c, projects, people })
+    dispatch({ type: 'applyCapture', capture: c, people })
     setCaptureProposal(null)
   }
 

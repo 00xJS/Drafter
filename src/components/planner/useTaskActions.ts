@@ -5,6 +5,7 @@ import { newerStamp, nextOccurrence } from '../../itemops'
 import { parseGithubUrl, setIssueState } from '../../github'
 import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubsync'
 import { fmtDateTime, uid } from '../../utils'
+import { inInbox } from '../../taskutils'
 import { buildCapturedTask, parseCapture, quickCaptureFields } from '../../ai'
 import { haptic } from '../../native'
 import type { useNavigation } from './useNavigation'
@@ -35,25 +36,20 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
    * offline parse lands at once (a keystroke must not wait on /api/ai); the
    * model's fuller reading is merged in afterwards, but only while the task is
    * still there and untouched — never over an Undo or an edit. The first toast
-   * said where it went, so a merge that moves it (a project, a date) says so
-   * again with its own undo, and a date the toast already announced is kept —
-   * the model may add to the task, not contradict what was read out. Bypasses
+   * said where it went, so a merge that dates it says so again with its own
+   * undo, and a date the toast already announced is kept — the model may add
+   * to the task, not contradict what was read out. Like the editor, it never
+   * files the task under a project: there is one ongoing project. Bypasses
    * newTask on purpose: a capture lands exactly as typed, with no preset of its own.
    */
   const captureTask = (line: string) => {
     const now = new Date()
     const id = uid()
-    const lookup = { projects: store.projects, people: store.people }
+    const lookup = { people: store.people }
     const first = buildCapturedTask(quickCaptureFields(line, now), lookup, { id, now })
     store.upsert(first)
-    // Today's Inbox holds only what has neither a project nor a date
-    const inbox = !first.projectId && !first.dueAt
-    showToast(inbox ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
-    void parseCapture(line, {
-      now,
-      projectNames: store.projects.filter(p => p.status === 'active').map(p => p.name),
-      personNames: store.people.map(p => p.name),
-    })
+    showToast(inInbox(first) ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
+    void parseCapture(line, { now, personNames: store.people.map(p => p.name) })
       .then(parsed => {
         const cur = tasksRef.current.find(t => t.id === id)
         if (!cur || cur.updatedAt !== first.updatedAt) return
@@ -62,12 +58,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
         if (JSON.stringify(next) === JSON.stringify(first)) return
         const merged = { ...cur, ...next, createdAt: cur.createdAt, updatedAt: newerStamp(cur.updatedAt) }
         store.upsert(merged)
-        const filed = !first.projectId && merged.projectId ? lookup.projects.find(p => p.id === merged.projectId)?.name : undefined
-        const dated = !first.dueAt && merged.dueAt ? fmtDateTime(merged.dueAt) : undefined
-        if (filed || dated) {
-          const msg = filed && dated ? `Filed under ${filed} — due ${dated}` : filed ? `Filed under ${filed}` : `Due ${dated}`
-          showToast(msg, () => store.upsert({ ...first, updatedAt: newerStamp(merged.updatedAt) }))
-        }
+        if (!first.dueAt && merged.dueAt) showToast(`Due ${fmtDateTime(merged.dueAt)}`, () => store.upsert({ ...first, updatedAt: newerStamp(merged.updatedAt) }))
       })
       .catch(() => {
         /* offline / no key — the offline parse already landed */

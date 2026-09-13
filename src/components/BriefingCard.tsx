@@ -3,7 +3,7 @@ import { CalendarEvent, Habit, MEAL_SLOT_META, WORK_MODE_META } from '../types'
 import { eventDayKeys } from '../calendars'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
-import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, getWeather, readCache, requestLocation, setCity } from '../weather'
+import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, getWeather, onWeatherRefresh, readCache, requestLocation, setCity } from '../weather'
 import { mealLabel, tonightDinner } from '../kitchen'
 
 /** Same 17:00 line Today uses to move the journal card to the evening. */
@@ -106,11 +106,12 @@ export function BriefingCard({
   // clear it.
   const [forecast, setForecast] = useState<Forecast | null>(() => (cache.enabled ? (cache.forecast ?? null) : null))
 
-  // Refresh when the strip mounts, when the place changes, and whenever the
-  // app comes back to the front; getWeather decides for itself whether that
-  // means a network call, so there is no timer and no request while nothing
-  // is looking. The coordinates are in the deps so switching from one city to
-  // another (enabled stays true) still fetches the new sky.
+  // Refresh when the strip mounts, when the place changes, whenever the app
+  // comes back to the front, and on a pull to refresh (or the sync pill);
+  // getWeather decides for itself whether that means a network call, so there
+  // is no timer and no request while nothing is looking. The coordinates are
+  // in the deps so switching from one city to another (enabled stays true)
+  // still fetches the new sky.
   useEffect(() => {
     if (!cache.enabled) return
     let live = true
@@ -125,9 +126,11 @@ export function BriefingCard({
       if (document.visibilityState === 'visible') refresh()
     }
     if (hasDoc) document.addEventListener('visibilitychange', onVisible)
+    const offPull = onWeatherRefresh(refresh)
     return () => {
       live = false
       if (hasDoc) document.removeEventListener('visibilitychange', onVisible)
+      offPull()
     }
   }, [cache.enabled, cache.lat, cache.lon])
 

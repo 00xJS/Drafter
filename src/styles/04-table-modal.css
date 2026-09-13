@@ -112,6 +112,8 @@
   color: var(--muted);
   text-align: center;
   padding: 32px 0;
+  /* an empty state can echo what was typed — a pasted link is one long word */
+  overflow-wrap: anywhere;
 }
 
 /* ---------- composer modal ---------- */

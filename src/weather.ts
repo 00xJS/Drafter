@@ -305,3 +305,26 @@ export function requestLocation(): Promise<{ lat: number; lon: number } | null> 
 export function disableWeather(): void {
   writeCache({ enabled: false })
 }
+
+/**
+ * Pull to refresh and the header's sync pill run the refresh the app runs on
+ * coming back to the front, and the briefing's weather is part of that. The
+ * strip sits deep in Home and is often not mounted at all, so the ask is an
+ * event it listens for beside visibilitychange rather than a prop threaded
+ * down to it; getWeather still decides whether the ask means a network call.
+ */
+export const WEATHER_REFRESH_EVENT = 'drafter:weather-refresh'
+
+const windowTarget = (): EventTarget | undefined => (typeof window !== 'undefined' ? window : undefined)
+
+/** Ask whatever is showing the weather to refresh it. Nothing listening, nothing happens. */
+export function requestWeatherRefresh(target: EventTarget | undefined = windowTarget()): void {
+  target?.dispatchEvent(new Event(WEATHER_REFRESH_EVENT))
+}
+
+/** Run `cb` on every requestWeatherRefresh until the returned function is called. */
+export function onWeatherRefresh(cb: () => void, target: EventTarget | undefined = windowTarget()): () => void {
+  if (!target) return () => {}
+  target.addEventListener(WEATHER_REFRESH_EVENT, cb)
+  return () => target.removeEventListener(WEATHER_REFRESH_EVENT, cb)
+}

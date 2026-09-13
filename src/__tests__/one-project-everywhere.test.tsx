@@ -1,15 +1,20 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Landing } from '../components/Landing'
 import { NotesIndex } from '../components/notes/NotesIndex'
 import { NotesView } from '../components/NotesView'
 import { Roadmap } from '../components/Roadmap'
 import { Search } from '../components/Search'
 import { TaskCard } from '../components/TaskCard'
+import { Today } from '../components/Today'
 import { buildPaletteCommands } from '../components/planner/commands'
+import { CaptureProposal } from '../components/taskeditor/CaptureProposal'
+import { inInbox } from '../taskutils'
 import { Note, Project, Task } from '../types'
-import { plannerSource } from './source'
+import { plannerSource, sheetSource } from './source'
 
 // There is one ongoing project — the owner's LIFE — so no task row names it,
 // nothing starts a second one, and nothing asks which project something
@@ -93,5 +98,151 @@ describe('nothing starts a second project', () => {
     expect(read('../components/planner/CalendarScreen.tsx')).toMatch(/<Roadmap [^>]*onOpenProject=\{openProject\}/)
     expect(read('../components/Roadmap.tsx')).toMatch(/className=\{row\.inferred \? 'rm-bar inferred' : 'rm-bar'\}[\s\S]{0,200}onClick=\{\(\) => onOpenProject\(row\.project\)\}/)
     expect(read('../components/planner/Overlays.tsx')).toContain('onOpenProject={openProject}')
+  })
+
+  it('the landing page’s palette creates a task or a bill, and no card promises a project', () => {
+    const html = renderToStaticMarkup(<Landing configured={false} />)
+    expect(html).toContain('creates a task or bill')
+    const cards = html.match(/<article[\s\S]*?<\/article>/g) ?? []
+    expect(cards.length).toBeGreaterThan(5)
+    for (const card of cards) expect(card).not.toMatch(/project/i)
+  })
+})
+
+describe('no progress for the project', () => {
+  it('the Timeline draws LIFE’s span with no progress bar, count or fill', () => {
+    const tasks = [task('1', { status: 'done', dueAt: '2026-09-02T09:00:00.000Z' }), task('2', { dueAt: '2026-09-03T09:00:00.000Z' })]
+    const html = renderToStaticMarkup(<Roadmap projects={[LIFE]} tasks={tasks} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
+    expect(html).toContain('class="rm-bar inferred"')
+    expect(html).toContain('LIFE')
+    expect(html).not.toMatch(/rm-progress|rm-bar-fill|progress|1\/2/)
+  })
+
+  it('nothing on the Timeline works it out, and its rules are gone from the sheet', () => {
+    const src = read('../components/Roadmap.tsx')
+    for (const gone of ['ProgressBar', 'projectProgress', 'rm-progress', 'rm-bar-fill']) expect(src, gone).not.toContain(gone)
+    expect(sheetSource()).not.toMatch(/\.rm-progress|\.rm-bar-fill/)
+  })
+})
+
+describe('a capture is never filed under the project', () => {
+  it('the palette’s Shift+Enter sends no project names and never says “Filed under”', () => {
+    const src = read('../components/planner/useTaskActions.ts')
+    const capture = src.slice(src.indexOf('const captureTask'), src.indexOf('const deleteTask'))
+    expect(capture).not.toMatch(/projectNames|projectId|store\.projects|Filed under/)
+    // the toast asks the Inbox's own question
+    expect(capture).toContain("inInbox(first) ? 'Captured to Inbox'")
+  })
+
+  it('the model is not asked for one, and the editor’s suggestion has no Project row', () => {
+    const ai = read('../ai.ts')
+    const parse = ai.slice(ai.indexOf('export async function parseCapture'), ai.indexOf('export function quickCaptureFields'))
+    expect(parse).not.toMatch(/project/i)
+    const html = renderToStaticMarkup(
+      <CaptureProposal
+        proposal={{ title: 'Dentist', dueAt: '2026-09-20T09:00:00.000Z', priority: 'high', peopleNames: ['Sam'], tags: ['health'], recurrence: 'monthly' }}
+        parsing={false}
+        onApply={noop}
+        onDismiss={noop}
+      />,
+    )
+    for (const row of ['Title', 'Due', 'Priority', 'People', 'Tags', 'Repeat']) expect(html, row).toContain(`<strong>${row}</strong>`)
+    expect(html).not.toMatch(/Project/)
+    expect(read('../components/taskeditor/CaptureProposal.tsx')).not.toMatch(/project/i)
+  })
+})
+
+describe('the Inbox goes by the date, not the project', () => {
+  it('an undated to-do is in it whether or not it is filed under LIFE; a date or another status takes it out', () => {
+    expect(inInbox(task('1'))).toBe(true)
+    expect(inInbox(task('2', { projectId: undefined }))).toBe(true)
+    expect(inInbox(task('3', { dueAt: '2026-09-20T09:00:00.000Z' }))).toBe(false)
+    for (const status of ['wishlist', 'doing', 'blocked', 'done', 'canceled'] as const) expect(inInbox(task('4', { status })), status).toBe(false)
+  })
+
+  describe('on Today', () => {
+    // a static render on a fixed morning, with one undated LIFE to-do from this
+    // week and one untouched since early August — the owner's older tasks carry LIFE's id
+    const NOW = new Date(2026, 8, 14, 9)
+    const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString()
+    const fresh = task('fresh', { title: 'Fresh LIFE to-do', createdAt: daysAgo(2), updatedAt: daysAgo(2) })
+    const old = task('old', { title: 'Old LIFE to-do', createdAt: daysAgo(40), updatedAt: daysAgo(40) })
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(NOW)
+      // the journal card asks the viewport how wide it is; a static render has none
+      if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    function renderToday(tasks: Task[]): string {
+      const props: ComponentProps<typeof Today> = {
+        tasks,
+        allTasks: tasks,
+        projects: [LIFE],
+        people: [],
+        places: [],
+        reviews: [],
+        events: [],
+        sourceMap: new Map(),
+        meals: [],
+        recipes: [],
+        journal: [],
+        habits: [],
+        routines: [],
+        onPlanWith: noop,
+        onWentTo: noop,
+        onPlanAt: noop,
+        onPlanOccasion: noop,
+        onSaw: noop,
+        onSaveReview: noop,
+        onPlan: noop,
+        onOpen: noop,
+        onStatus: noop,
+        onDefer: noop,
+        onDeferAll: noop,
+        onNew: noop,
+        onOpenKitchen: noop,
+        onOpenReview: noop,
+        onCookRecipe: noop,
+        onSaveJournal: noop,
+        onDeleteJournal: noop,
+        onOpenJournal: noop,
+        onSaveHabit: noop,
+        onDeleteHabit: noop,
+        onSaveRoutine: noop,
+        onDeleteRoutine: noop,
+      }
+      return renderToStaticMarkup(<Today {...props} />)
+    }
+
+    /** The key of every Today list (`id="today-…"`) with a row for this title. */
+    const listsHolding = (html: string, title: string) =>
+      [...html.matchAll(/<section[^>]*\bid="today-(\w+)"[\s\S]*?<\/section>/g)].filter(m => m[0].includes(title)).map(m => m[1])
+
+    it('lists a fresh undated LIFE to-do in the Inbox, asking only for a date', () => {
+      const html = renderToday([fresh])
+      expect(listsHolding(html, 'Fresh LIFE to-do')).toEqual(['inbox'])
+      expect(html).toContain('Captured, not yet triaged — give each a date')
+      expect(read('../components/Today.tsx')).not.toMatch(/give each a project|!t\.projectId/)
+    })
+
+    it('moves an old one on to Going stale: each is listed in exactly one section, and each count says so', () => {
+      const html = renderToday([fresh, old])
+      expect(listsHolding(html, 'Fresh LIFE to-do')).toEqual(['inbox'])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(html).toContain('Inbox <span class="board-count">1</span>')
+      expect(html).toContain('Going stale <span class="board-count">1</span>')
+    })
+
+    it('with only stale to-dos there is no Inbox at all', () => {
+      const html = renderToday([old])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(html).not.toContain('id="today-inbox"')
+    })
   })
 })

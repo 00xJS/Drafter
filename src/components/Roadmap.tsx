@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEvent, CalendarSource, PROJECT_STATUS_META, Project, Task, projectProgress } from '../types'
+import { CalendarEvent, CalendarSource, PROJECT_STATUS_META, Project, Task } from '../types'
 import { DAY_MS, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { getSupabase } from '../supabase'
 import { fmtDate } from '../utils'
-import { ProgressBar } from './bits'
 
 interface Props {
   projects: Project[]
@@ -27,7 +26,6 @@ interface Row {
   end: Date
   /** Dates were inferred (no explicit start/target) — drawn dashed. */
   inferred: boolean
-  progress: ReturnType<typeof projectProgress>
   dueTasks: Task[]
 }
 
@@ -113,7 +111,6 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
         start: startOfDay(new Date(Math.max(start.getTime(), from.getTime()))),
         end: new Date(Math.min(startOfDay(end).getTime(), to.getTime())),
         inferred: !explicitStart && !explicitEnd,
-        progress: projectProgress(mine),
         dueTasks: dated.filter(t => inRange(new Date(t.dueAt!).getTime())),
       })
     }
@@ -207,26 +204,21 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
                   <span className="badge" style={{ background: meta.bg, color: meta.color }}>
                     {meta.label}
                   </span>
-                  <span className="rm-progress">
-                    <ProgressBar pct={row.progress.pct} color={row.project.color} />
-                    <small>
-                      {row.progress.done}/{row.progress.total}
-                    </small>
-                  </span>
                 </button>
                 <div className="rm-track" style={{ width: model.width }}>
                   {model.months.map(m => (
                     <span key={m.left} className="rm-gridline" style={{ left: m.left }} />
                   ))}
                   <span className="rm-today" style={{ left: model.todayX }} />
+                  {/* the span and nothing else: the one project never ends, so a
+                      progress fill (or a done/total count) could never complete
+                      and would say nothing — Today dropped its cards for the same reason */}
                   <button
                     className={row.inferred ? 'rm-bar inferred' : 'rm-bar'}
                     style={{ left, width: w, background: row.project.color }}
                     onClick={() => onOpenProject(row.project)}
                     title={`${fmtDate(row.start.toISOString())} → ${fmtDate(row.end.toISOString())}${row.inferred ? ' (inferred — set start/target dates)' : ''}`}
-                  >
-                    <span className="rm-bar-fill" style={{ width: `${row.progress.pct}%` }} />
-                  </button>
+                  />
                   {(row.project.milestones ?? [])
                     .filter(m => m.dueAt && model.inRange(new Date(m.dueAt).getTime()))
                     .map(m => (
