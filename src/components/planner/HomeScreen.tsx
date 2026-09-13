@@ -12,6 +12,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal } = p
   const { openTask, newTask, openProject, newProject, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
+  const { openSheet, deferFromFocus, planMealIdea } = p
   return (
     <>
       {/* one Home across three time horizons: the day, the week’s
@@ -89,6 +90,15 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             store.remove(id)
             showToast('Routine removed', () => store.restore([id]))
           }}
+          // the daily routines: whose focus is whose, each focus task's time
+          // block, the strip's Plan my day / Shut down, and the focus card's
+          // and the meal ideas' own moves. Plan next week joins with its sheet.
+          myId={household.myId}
+          entries={store.events}
+          onPlanDay={step => openSheet({ kind: 'day', step })}
+          onShutDown={() => openSheet({ kind: 'shutdown' })}
+          onDeferFromFocus={deferFromFocus}
+          onPlanMeal={planMealIdea}
         />
       )}
       {homeTab === 'week' && (

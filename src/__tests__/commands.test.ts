@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
 import { VIEWS, type HomeTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
+import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
 
 interface ShellState {
@@ -15,17 +16,22 @@ interface ShellState {
   settingsOpen: boolean
   newTasks: unknown[][]
   newProjects: number
+  /** the planning sheets opened, in order */
+  sheets: Sheet[]
 }
 
 /** Two starting points that disagree on every field, so no landing is true by accident. */
 const STARTS: ShellState[] = [
-  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0 },
-  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0 },
+  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0, sheets: [] },
+  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0, sheets: [] },
 ]
 
+/** 2pm: between the morning's quick action and the evening's, so the palette's other rows are pinned on their own. */
+const AFTERNOON = new Date(2026, 8, 14, 14, 0)
+
 /** A stand-in shell: the moves useNavigation and useOverlays make, on plain state. */
-function shell(start: ShellState) {
-  const s: ShellState = { ...start, newTasks: [] }
+function shell(start: ShellState, now: Date = AFTERNOON) {
+  const s: ShellState = { ...start, newTasks: [], sheets: [] }
   const nav: PaletteNav = {
     goView: v => {
       if (v === 'home') s.homeTab = 'today'
@@ -62,13 +68,16 @@ function shell(start: ShellState) {
     setSettingsOpen: open => {
       s.settingsOpen = open
     },
+    openSheet: sheet => {
+      s.sheets.push(sheet)
+    },
   }
-  return { s, commands: buildPaletteCommands(nav, overlays) }
+  return { s, nav, overlays, commands: buildPaletteCommands(nav, overlays, now) }
 }
 
 /** Run one command from a starting point and return where the shell ended up. */
-function run(id: string, start = STARTS[0]): ShellState {
-  const { s, commands } = shell(start)
+function run(id: string, start = STARTS[0], now: Date = AFTERNOON): ShellState {
+  const { s, commands } = shell(start, now)
   const cmd = commands.find(c => c.id === id)
   if (!cmd) throw new Error(`no command ${id}`)
   cmd.run()
@@ -137,5 +146,61 @@ describe('the palette’s own commands', () => {
       expect(run('go-places', start).rememberedPeople).toBe('places')
       expect(run('go-people', start).rememberedPeople).toBe('people')
     }
+  })
+})
+
+describe('the day’s routines in the palette', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const quickAt = (h: number, m = 0) =>
+    shell(STARTS[0], new Date(2026, 8, 14, h, m))
+      .commands.filter(c => c.quick)
+      .map(c => c.id)
+
+  it('offers Plan my day before you type until noon, and Shut down from five', () => {
+    expect(PLAN_DAY_QUICK_UNTIL).toBe(12)
+    expect(SHUT_DOWN_QUICK_FROM).toBe(17)
+    expect(quickAt(6)).toEqual(['new-task', 'plan-day', 'new-bill'])
+    expect(quickAt(11, 59)).toEqual(['new-task', 'plan-day', 'new-bill'])
+    expect(quickAt(12)).toEqual(['new-task', 'new-bill'])
+    expect(quickAt(16, 59)).toEqual(['new-task', 'new-bill'])
+    expect(quickAt(17)).toEqual(['new-task', 'shut-down', 'new-bill'])
+    expect(quickAt(23, 30)).toEqual(['new-task', 'shut-down', 'new-bill'])
+  })
+
+  it('is still found by typing at any hour', () => {
+    const cmds = shell(STARTS[0], AFTERNOON).commands
+    const day = cmds.find(c => c.id === 'plan-day')!
+    const shut = cmds.find(c => c.id === 'shut-down')!
+    expect(day).toMatchObject({ label: 'Plan my day', quick: false })
+    expect(shut).toMatchObject({ label: 'Shut down', quick: false })
+    for (const w of ['morning', 'focus', 'today']) expect(day.keywords).toContain(w)
+    for (const w of ['evening', 'wrap', 'close', 'tomorrow']) expect(shut.keywords).toContain(w)
+  })
+
+  it('opens each sheet over wherever you are, and does nothing else', () => {
+    for (const start of STARTS) {
+      const day = run('plan-day', start)
+      expect(day.sheets).toEqual([{ kind: 'day' }])
+      const shut = run('shut-down', start, new Date(2026, 8, 14, 18))
+      expect(shut.sheets).toEqual([{ kind: 'shutdown' }])
+      for (const s of [day, shut]) {
+        expect(s).toMatchObject({ view: start.view, homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, settingsOpen: false, newProjects: 0 })
+        expect(s.newTasks).toEqual([])
+      }
+    }
+  })
+
+  it('reads the clock when none is handed in', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { nav, overlays } = shell(STARTS[0])
+    vi.setSystemTime(new Date(2026, 8, 14, 8, 15))
+    expect(buildPaletteCommands(nav, overlays).find(c => c.id === 'plan-day')?.quick).toBe(true)
+    vi.setSystemTime(new Date(2026, 8, 14, 18, 45))
+    const evening = buildPaletteCommands(nav, overlays)
+    expect(evening.find(c => c.id === 'plan-day')?.quick).toBe(false)
+    expect(evening.find(c => c.id === 'shut-down')?.quick).toBe(true)
   })
 })
