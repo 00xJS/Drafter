@@ -26,9 +26,8 @@ const files = tsxUnder(SRC).map(path => ({ path: relative(SRC, path).split(sep).
  * Dialogs still drawn by hand because another stream is splitting them; each
  * adopts Modal when its split lands, and its entry goes with it.
  */
-const NOT_YET_ON_MODAL = [
-  'components/TaskEditor.tsx', // TODO(level-up): remove after Modal adoption
-  'components/taskeditor/', // TODO(level-up): remove after Modal adoption
+const NOT_YET_ON_MODAL: string[] = [
+  // empty: every dialog is on Modal now, and a new hand-drawn one does not go here
 ]
 const notYetOnModal = (path: string) => NOT_YET_ON_MODAL.some(p => (p.endsWith('/') ? path.startsWith(p) : path === p))
 

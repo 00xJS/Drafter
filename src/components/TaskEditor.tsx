@@ -5,6 +5,7 @@ import { uid } from '../utils'
 import { RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
 import { AiBusy, FormPatch, StepOp, appendOnce, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
+import { Modal, ModalHead } from './Modal'
 import { CaptureProposal } from './taskeditor/CaptureProposal'
 import { DescriptionField, RefineProposal } from './taskeditor/DescriptionField'
 import { DescriptionLinks } from './taskeditor/DescriptionLinks'
@@ -249,43 +250,27 @@ export function TaskEditor({
   const project = projects.find(p => p.id === form.projectId)
 
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={e => {
-        if (e.target === e.currentTarget) requestClose()
+    // Modal owns Escape, the backdrop and focus; both close through
+    // requestClose, which asks before throwing away unsaved changes
+    <Modal
+      onClose={requestClose}
+      className="modal wide"
+      panelRef={modalRef}
+      onKeyDown={e => {
+        const target = e.target as HTMLElement
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          // the comment box keeps Cmd+Enter for adding a comment
+          if (target.tagName === 'TEXTAREA' && target.closest('.activity')) return
+          e.preventDefault()
+          save()
+        }
       }}
     >
-      <div
-        className="modal wide"
-        role="dialog"
-        aria-modal="true"
-        ref={modalRef}
-        tabIndex={-1}
-        onKeyDown={e => {
-          const target = e.target as HTMLElement
-          const tag = target.tagName
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            requestClose()
-            return
-          }
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            // the comment box keeps Cmd+Enter for adding a comment
-            if (tag === 'TEXTAREA' && target.closest('.activity')) return
-            e.preventDefault()
-            save()
-          }
-        }}
-      >
-        <header className="modal-head">
-          <h2>{task ? 'Edit task' : 'New task'}</h2>
+        <ModalHead title={task ? 'Edit task' : 'New task'}>
           <button className="btn primary modal-head-save" onClick={save}>
             Save
           </button>
-          <button className="btn subtle" onClick={requestClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
+        </ModalHead>
 
         <div className="modal-body">
           <div className="editor-grid">
@@ -374,7 +359,6 @@ export function TaskEditor({
             Save
           </button>
         </footer>
-      </div>
-    </div>
+    </Modal>
   )
 }
