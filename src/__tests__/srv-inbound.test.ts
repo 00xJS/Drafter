@@ -15,6 +15,12 @@ type Route = 'settings' | 'store' | 'claim' | 'ai'
 let slow: Set<Route>
 let calls: Route[]
 let aiReply = ''
+/** The user_settings row the token finds. */
+let settingsRow: Record<string, unknown>
+/** Each task sent to sync_posts, in order: the raw one, then the triaged one. */
+let stored: Record<string, unknown>[]
+/** The user message of each model call. */
+let prompts: string[]
 
 /** A request that only ever ends by being aborted, like a provider that stopped answering. */
 const hang = (init?: RequestInit) =>
@@ -28,6 +34,9 @@ beforeEach(() => {
   slow = new Set()
   calls = []
   aiReply = '{"title":"Pay the plumber","priority":"high"}'
+  settingsRow = { user_id: 'user-one', inbound_token: KEY }
+  stored = []
+  prompts = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -44,8 +53,10 @@ beforeEach(() => {
                   throw new Error(`unexpected fetch ${url}`)
                 })()
       calls.push(route)
+      if (route === 'store') stored.push(JSON.parse(String(init?.body)).incoming[0])
+      if (route === 'ai') prompts.push(JSON.parse(String(init?.body)).messages.at(-1).content)
       if (slow.has(route)) return hang(init)
-      if (route === 'settings') return Response.json([{ user_id: 'user-one', inbound_token: KEY }])
+      if (route === 'settings') return Response.json([settingsRow])
       if (route === 'store') return Response.json({ items: [], rejected: [] })
       if (route === 'claim') return new Response(null, { status: 204 })
       return Response.json({ choices: [{ message: { content: aiReply } }] })
@@ -59,11 +70,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const email = () =>
+const email = (mail = { subject: 'Invoice 42', text: 'Please pay by Friday.', from: 'plumber@example.test' }) =>
   new Request(`https://site.test/api/inbound?key=${KEY}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ subject: 'Invoice 42', text: 'Please pay by Friday.', from: 'plumber@example.test' }),
+    body: JSON.stringify(mail),
   })
 
 /** Advance fake time in small steps until the webhook answers; how long it took, in fake time. */
@@ -111,5 +122,78 @@ describe('inbound email on a deadline', () => {
     slow.delete('ai')
     await vi.advanceTimersByTimeAsync(BUDGET_MS)
     expect(calls.filter(c => c === 'store')).toHaveLength(1)
+  })
+})
+
+// Triage never told the model the date or the owner's zone, and read a dueAt
+// with no offset in the server's own zone, UTC on Netlify: "Thursday 3pm" got
+// whatever week the model guessed, an hour late through a British summer. The
+// clock here is fixed at Sunday 13 September 2026, 10:00 UTC, and the model's
+// reply is stubbed.
+describe('inbound email triage dates', () => {
+  const appointment = () => email({ subject: 'Dentist', text: 'Your appointment is confirmed for Thursday 3pm.', from: 'reception@dentist.example.test' })
+  /** The task as the triage pass wrote it back. */
+  const triaged = () => stored[1]
+  const nowLine = () => prompts[0].split('\n')[0]
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-09-13T10:00:00.000Z'))
+    settingsRow.timezone = 'Europe/London'
+  })
+
+  // two zones, so a machine that happens to sit in one cannot pass by reading the time in its own
+  it.each([
+    ['Europe/London', 'Sunday 2026-09-13 11:00', '2026-09-17T14:00:00.000Z'],
+    ['Asia/Tokyo', 'Sunday 2026-09-13 19:00', '2026-09-17T06:00:00.000Z'],
+  ])('"Thursday 3pm", answered with no zone, lands on the coming Thursday at 15:00 in %s', async (timezone, now, due) => {
+    settingsRow.timezone = timezone
+    aiReply = '{"title":"Dentist appointment","dueAt":"2026-09-17T15:00:00"}'
+    const { res } = await answer(appointment())
+    expect(await res.json()).toMatchObject({ ok: true, title: 'Dentist appointment', triaged: true })
+    expect(nowLine()).toBe(`Now: ${now} (${timezone})`)
+    expect(triaged().dueAt).toBe(due)
+    // still one model call
+    expect(calls).toEqual(['settings', 'store', 'claim', 'ai', 'store', 'claim'])
+  })
+
+  it.each(['2026-09-17T15:00:00+02:00', '2026-09-17T15:00+0200', '2026-09-17T13:00:00Z'])('keeps a dueAt with an explicit offset as it is: %s', async dueAt => {
+    aiReply = JSON.stringify({ title: 'Dentist appointment', dueAt })
+    await answer(appointment())
+    expect(triaged().dueAt).toBe('2026-09-17T13:00:00.000Z')
+  })
+
+  it('drops a dueAt more than a day in the past, and keeps the rest of the triage', async () => {
+    aiReply = '{"title":"Dentist appointment","priority":"high","dueAt":"2025-09-18T15:00:00"}'
+    const { res } = await answer(appointment())
+    expect(await res.json()).toMatchObject({ title: 'Dentist appointment', triaged: true })
+    expect(triaged()).toMatchObject({ title: 'Dentist appointment', priority: 'high' })
+    expect(triaged()).not.toHaveProperty('dueAt')
+  })
+
+  it('keeps one less than a day gone', async () => {
+    // 15:00 yesterday in London, twenty hours before the clock
+    aiReply = '{"title":"Dentist appointment","dueAt":"2026-09-12T15:00:00"}'
+    await answer(appointment())
+    expect(triaged().dueAt).toBe('2026-09-12T14:00:00.000Z')
+  })
+
+  it('reads a bare day as that day in the owner’s zone, an untimed task there', async () => {
+    aiReply = '{"title":"Dentist appointment","dueAt":"2026-09-17"}'
+    await answer(appointment())
+    expect(triaged().dueAt).toBe('2026-09-16T23:00:00.000Z')
+  })
+
+  it.each([undefined, 'Mars/Olympus_Mons'])('counts in UTC when the account’s zone is %s', async timezone => {
+    settingsRow.timezone = timezone
+    aiReply = '{"title":"Dentist appointment","dueAt":"2026-09-17T15:00:00"}'
+    await answer(appointment())
+    expect(nowLine()).toBe('Now: Sunday 2026-09-13 10:00 (UTC)')
+    expect(triaged().dueAt).toBe('2026-09-17T15:00:00.000Z')
+  })
+
+  it.each(['Thursday 3pm', 'September 17, 2026 3:00 PM', '2026-11-31T15:00:00', '2026-09-17T15:00:00+01'])('drops a dueAt that is not an ISO date-time: %s', async dueAt => {
+    aiReply = JSON.stringify({ title: 'Dentist appointment', dueAt })
+    await answer(appointment())
+    expect(triaged()).not.toHaveProperty('dueAt')
   })
 })

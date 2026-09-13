@@ -31,7 +31,8 @@ export interface CalendarFeedInfo {
 }
 
 export function inboundAction(action: 'inbound-enable' | 'inbound-rotate' | 'inbound-disable'): Promise<{ inboundUrl: string | null }> {
-  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) }).then(json<{ inboundUrl: string | null }>)
+  // the zone rides along so an emailed "Thursday 3pm" is read where you are
+  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, timezone: deviceTimeZone() }) }).then(json<{ inboundUrl: string | null }>)
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -212,7 +213,8 @@ export function expandWorkDays(
 export const LOCAL_SOURCE_ID = 'drafter:local'
 
 /**
- * The device's IANA zone, sent with every mirror push. The server decides
+ * The device's IANA zone, sent with every mirror push and with each email-in
+ * address action (triage reads an emailed "Thursday 3pm" in it). The server decides
  * whether a task is untimed in the owner's zone, and an account that never
  * saved push prefs had none, so it judged in UTC and every untimed task reached
  * both calendars as a 00:00 event all summer. It is only ever adopted, never

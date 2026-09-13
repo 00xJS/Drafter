@@ -95,3 +95,54 @@ describe('GET /api/feed.ics', () => {
     expect(requests.some(r => r.url.includes('/rest/v1/posts?'))).toBe(false)
   })
 })
+
+// Email-in reads an emailed "Thursday 3pm" in the owner's zone, and an account
+// that never saved push prefs had none, so it counted in UTC. Making the
+// address adopts the device's zone, and never overwrites one already there.
+describe('POST /api/feed.ics — the email-in address', () => {
+  let settings: Record<string, unknown>
+
+  beforeEach(() => {
+    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-key')
+    settings = { user_id: ME }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === `${SUPABASE}/auth/v1/user`) return Response.json({ id: ME, email: 'me@example.test' })
+        if (url === `${REST}user_settings?user_id=eq.${ME}&select=*`) return Response.json([settings])
+        if (url === `${REST}user_settings?on_conflict=user_id` && init?.method === 'POST') {
+          settings = { ...settings, ...JSON.parse(String(init.body)) }
+          return new Response(null, { status: 201 })
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      }),
+    )
+  })
+
+  const post = (body: Record<string, unknown>) =>
+    feed(
+      new Request('https://drafterz.example/api/feed.ics', {
+        method: 'POST',
+        headers: { authorization: 'Bearer app-session', 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    )
+
+  it('adopts the device’s zone when the account has none', async () => {
+    const res = await post({ action: 'inbound-enable', timezone: 'Europe/London' })
+    expect((await res.json()).inboundUrl).toMatch(/^https:\/\/drafterz\.example\/api\/inbound\?key=.{16,}/)
+    expect(settings).toMatchObject({ inbound_token: expect.any(String), timezone: 'Europe/London' })
+  })
+
+  it('never overwrites a zone already there, nor stores one nobody knows', async () => {
+    settings.timezone = 'America/New_York'
+    await post({ action: 'inbound-rotate', timezone: 'Europe/London' })
+    expect(settings.timezone).toBe('America/New_York')
+
+    settings = { user_id: ME }
+    await post({ action: 'inbound-enable', timezone: 'Mars/Olympus_Mons' })
+    expect(settings.inbound_token).toEqual(expect.any(String))
+    expect(settings).not.toHaveProperty('timezone')
+  })
+})
