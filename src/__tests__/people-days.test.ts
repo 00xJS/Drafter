@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeClock } from '../../shared/clock.mjs'
-import { visitDays as sharedVisitDays } from '../../shared/people.mjs'
+import { seenStatus as sharedSeenStatus, visitDays as sharedVisitDays } from '../../shared/people.mjs'
 import { personStats, seenLabel, visitDays, visitSummary, yearReport } from '../people'
 import { buildReview, weekRange } from '../review'
 import { CalendarEntry, Person, Task } from '../types'
@@ -88,6 +88,38 @@ describe('personStats counts days seen', () => {
     expect(s.weekly[11]).toBe(7)
     expect(s.weekly.slice(0, 11).every(n => n === 0)).toBe(true)
     expect(s).toMatchObject({ days30: 7, count30: 14 })
+  })
+})
+
+// Due and overdue are one rule (shared/people.mjs seenStatus) behind People's
+// badges, Today's catch-up nudges and the morning digest: past the cadence is
+// due, past one and a half times it overdue, and someone with no cadence is
+// held to 90 days rather than never drifting at all.
+describe('personStats: due and overdue against their cadence, or 90 days without one', () => {
+  const seenDaysAgo = (days: number, id = 'mum') => [event(new Date(now.getTime() - days * 86_400_000).toISOString(), [id])]
+
+  it('holds someone with no cadence to 90 days: 100 is due, 140 overdue', () => {
+    const mum = person('mum')
+    expect(personStats(mum, seenDaysAgo(90), now).status).toBe('ok')
+    expect(personStats(mum, seenDaysAgo(100), now)).toMatchObject({ status: 'due', daysSince: 100, reason: "It's been 100 days" })
+    expect(personStats(mum, seenDaysAgo(135), now).status).toBe('due')
+    expect(personStats(mum, seenDaysAgo(140), now)).toMatchObject({ status: 'overdue', daysSince: 140, reason: 'Last seen 140 days ago (target 90 days)' })
+    // the digest and MCP read the same default through the shared rule
+    expect(sharedSeenStatus(mum, seenDaysAgo(140), now).effectiveCadenceDays).toBe(90)
+  })
+
+  it('holds someone with a cadence of 14 to it: 20 days is due, 25 overdue', () => {
+    const dad: Person = { ...person('dad'), cadenceDays: 14 }
+    expect(personStats(dad, seenDaysAgo(14, 'dad'), now).status).toBe('ok')
+    expect(personStats(dad, seenDaysAgo(20, 'dad'), now)).toMatchObject({ status: 'due', reason: "It's been 20 days; you aimed for every 14 days" })
+    expect(personStats(dad, seenDaysAgo(25, 'dad'), now)).toMatchObject({ status: 'overdue', reason: 'Last seen 25 days ago — you aimed for every 14 days' })
+    expect(sharedSeenStatus(dad, seenDaysAgo(25, 'dad'), now).effectiveCadenceDays).toBe(14)
+  })
+
+  it('calls someone with no visits never, whatever their cadence', () => {
+    expect(personStats(person('mum'), [], now)).toMatchObject({ status: 'never', reason: 'No visits logged yet', daysSince: undefined })
+    // a visit with someone else is not one with them
+    expect(personStats({ ...person('dad'), cadenceDays: 14 }, seenDaysAgo(3), now).status).toBe('never')
   })
 })
 

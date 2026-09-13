@@ -24,12 +24,12 @@ import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
-import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
+import { DAY_MS, compareTasks, dayOffset, dueTone, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
-import { focusTasks } from '../../shared/today.mjs'
+import { bucketByDue, focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
 import { DueBadge, PriorityMark, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
@@ -141,6 +141,28 @@ export function leaveOutFocus<T extends { tasks: Task[] }>(sections: T[], focusI
     const rows = sec.tasks.filter(t => !focusIds.has(t.id))
     return rows.length > 0 ? [{ ...sec, tasks: rows, inFocus: sec.tasks.length - rows.length }] : []
   })
+}
+
+/** This device's calendar day for a due date, or null for one that is not a date. */
+const localDayKey = (iso: string): string | null => (Number.isFinite(Date.parse(iso)) ? dateKey(iso) : null)
+
+/**
+ * The dated sections, split by the rule the morning digest and an assistant's
+ * get_overview use (bucketByDue), read on this device's calendar: Home never
+ * calls a task overdue that the digest says is due today. "Already past" is
+ * the timed ones among today's, and "This week" the next seven days of what
+ * bucketByDue calls due soon, which has no end of its own.
+ */
+export function dueSections(tasks: Task[], now: Date = new Date()) {
+  const { open, overdue, dueToday, dueSoon } = bucketByDue(tasks, { today: dateKey(now), dayKey: localDayKey })
+  const today = dueToday.sort(compareTasks)
+  return {
+    open,
+    overdue: overdue.sort(compareTasks),
+    today,
+    late: today.filter(t => dueTone(t, now) === 'late'),
+    week: dueSoon.filter(t => dayOffset(t.dueAt!, now) <= 7).sort(compareTasks),
+  }
 }
 
 /** From 17:00 the strip offers Shut down once a focus is set, and from 20:00 whether or not. */
@@ -576,17 +598,7 @@ export function Today({
   const s = useMemo(() => {
     const now = new Date()
     const nowMs = now.getTime()
-    const open = tasks.filter(isOpen)
-    const withDue = open.filter(t => t.dueAt)
-    const overdue = withDue.filter(t => dayOffset(t.dueAt!, now) < 0).sort(compareTasks)
-    const today = withDue.filter(t => dayOffset(t.dueAt!, now) === 0).sort(compareTasks)
-    const late = today.filter(t => dueTone(t, now) === 'late')
-    const week = withDue
-      .filter(t => {
-        const off = dayOffset(t.dueAt!, now)
-        return off > 0 && off <= 7
-      })
-      .sort(compareTasks)
+    const { open, overdue, today, late, week } = dueSections(tasks, now)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
     const inbox = open

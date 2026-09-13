@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isMineTask } from '../shared/domain.mjs'
-import { CalendarEntry, CalendarEvent, CalendarSource, Item, OPEN_STATUSES, Project, Task } from './types'
+import { CalendarEntry, CalendarEvent, CalendarSource, Item, OPEN_STATUSES, Project, Task, TaskStatus } from './types'
 import { apiFetch } from './api'
 import { idbGet, idbSet } from './idb'
-import { hashId, newerStamp } from './itemops'
+import { hashId, localMidnightIso, newerStamp } from './itemops'
 import { oauthReasonLabel } from './links'
 import { isNative, onOAuthReturn, startOAuth } from './native'
 import { dateKey } from './utils'
@@ -915,6 +915,55 @@ export function entryPullWrites(entries: CalendarEntry[], changes: EntryChange[]
     out.push({ ...e, title, start: c.start, end: c.end, allDay: c.allDay, updatedAt: newerStamp(e.updatedAt) })
   }
   return out
+}
+
+/** A mirrored task Google or Outlook deleted, to mark done; Undo puts `prevStatus` back. */
+export interface MirrorDone {
+  id: string
+  prevStatus: TaskStatus
+}
+
+/**
+ * What a pull's task changes do: the tasks whose due date moved in Google or
+ * Outlook, as they should be saved, and the ones deleted there, to mark done.
+ * Only a change newer than the task's own last edit counts. An all-day event
+ * is an untimed task, so it comes back as local midnight, and one still on the
+ * task's own local day is no move at all — Google echoing the push back, or
+ * the old pull's made-up 09:00 on a date-only start, must not rewrite the task
+ * or say it moved.
+ *
+ * Planner applies these against the tasks as they are at that moment, with a
+ * toast for each kind and an Undo on the ones marked done.
+ */
+export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[]): { writes: Task[]; done: MirrorDone[] } {
+  const writes: Task[] = []
+  const done: MirrorDone[] = []
+  for (const c of changes) {
+    const t = tasks.find(x => x.id === c.taskId)
+    if (!t || c.updated <= t.updatedAt) continue
+    if (c.deleted) {
+      // A cancelled event for a task that is no longer mirrored is our OWN
+      // delete echoing back, not the owner deleting it in the provider: the
+      // mirror removes the event the moment a task leaves the open, dated set
+      // (wishlist, due date cleared, done, canceled), and the pull then sees
+      // that cancellation. Reading it as "deleted in Google, so done" marked a
+      // task done seconds after it was moved to Wishlist. Same rule the server
+      // uses to decide what to mirror (lib/google.mjs pushTask `wanted`).
+      if (isMirroredTask(t)) done.push({ id: t.id, prevStatus: t.status })
+      continue
+    }
+    if (!c.start) continue
+    const day = /^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10)
+    const next = c.allDay ? localMidnightIso(day) : new Date(c.start).toISOString()
+    if (!next || next === t.dueAt) continue
+    // An all-day change is compared by the task's local day against the
+    // event's own date, so a 09:00 rewrite is ignored. Never against the UTC
+    // date of the new local midnight: east of UTC that is the day before, the
+    // task's old day, and a move one day forward was dropped.
+    if (c.allDay && t.dueAt && dateKey(t.dueAt) === day) continue
+    writes.push({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
+  }
+  return { writes, done }
 }
 
 /**
