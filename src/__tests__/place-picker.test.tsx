@@ -32,7 +32,7 @@ describe('a typed place name means the saved place however it is spelled', () =>
     expect(placeSearch('Cafe Kafka', places).exact).toBe(kafka)
     expect(placeSearch("Franco's", places).exact).toBe(francos)
     expect(placeSearch('  taco   CARTEL ', places).exact).toBe(taco)
-    // a name in a script normalising cannot read is still found by its letters
+    // a name wholly in another script is found by its letters too
     expect(placeSearch('東京', places).exact).toBe(tokyo)
   })
 
@@ -47,6 +47,34 @@ describe('a typed place name means the saved place however it is spelled', () =>
     expect(placeSearch('  Nopi   Soho ', places).name).toBe('Nopi Soho')
     expect(placeSearch('Cafe Kafka', [{ ...kafka, deletedAt: STAMP }]).exact).toBeUndefined()
     expect(placeSearch('   ', places)).toEqual({ name: '', exact: undefined, matches: [] })
+  })
+})
+
+describe('a name is never taken for a different place', () => {
+  // normalisePlaceText keeps only a–z and 0–9, so each pair below came out as
+  // one name ("restaurant", "gr n", "sushi", "c bar"): no Create was offered and
+  // Enter attached the saved place, logging an outing somewhere never visited
+  const silver = place('silver', '银龙 Restaurant')
+  const graen = place('graen', 'Græn')
+  const kanji = place('kanji', 'Sushi 寿司')
+  const cBar = place('cbar', 'C Bar')
+
+  it('offers 金龙 Restaurant as new beside a saved 银龙 Restaurant, and Enter makes it', () => {
+    expect(placeSearch('金龙 Restaurant', [silver])).toEqual({ name: '金龙 Restaurant', exact: undefined, matches: [] })
+    expect(enterPlace('金龙 Restaurant', [silver], true)).toEqual({ create: '金龙 Restaurant' })
+  })
+
+  it('keeps Grøn from Græn, Sushi 鮨 from Sushi 寿司 and C++ Bar from C Bar', () => {
+    expect(placeSearch('Grøn', [graen]).exact).toBeUndefined()
+    expect(enterPlace('Grøn', [graen], true)).toEqual({ create: 'Grøn' })
+    expect(enterPlace('Sushi 鮨', [kanji], true)).toEqual({ create: 'Sushi 鮨' })
+    expect(enterPlace('C++ Bar', [cBar], true)).toEqual({ create: 'C++ Bar' })
+  })
+
+  it('still reuses each of them however its own name is cased or spaced', () => {
+    expect(enterPlace('银龙  restaurant', [silver], true)).toEqual({ pick: silver })
+    expect(enterPlace('GRÆN', [graen], true)).toEqual({ pick: graen })
+    expect(placeSearch('寿司', [kanji, silver]).matches).toEqual([kanji])
   })
 })
 

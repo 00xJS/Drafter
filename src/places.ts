@@ -11,34 +11,56 @@ export function matchPlace(text: string | null | undefined, places: Place[]): Pl
 }
 
 /**
+ * A place's name as the key for "is this the same place": its letters, digits
+ * and symbols in any script, in order, with case, accents, punctuation and
+ * spacing set aside. So "Cafe Kafka" is "Café Kafka" and "Franco's" is
+ * "Franco’s", but 金龙 is not 银龙, Grøn is not Græn and C++ Bar is not C Bar.
+ *
+ * normalisePlaceText is the wrong key for this: it keeps only a–z and 0–9, to
+ * find a place's name inside a calendar location, so each of those pairs would
+ * come out as one name and a visit would be logged at the wrong place. Only the
+ * Latin accents it strips are stripped here; other scripts' marks (a Hindi
+ * vowel sign, a Japanese dakuten) spell different words, so they stay. Spacing
+ * accents (´ `), often typed for an apostrophe, count as punctuation.
+ */
+export function placeNameKey(name: string | null | undefined): string {
+  return String(name ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Sm}\p{Sc}\p{So}]+/gu, ' ')
+    .trim()
+}
+
+/**
  * The saved place a typed name means, or undefined when it is genuinely new.
  *
- * Used when somewhere new is named while planning a meal. Matching on the
- * normalised name is what stops a fortnight of takeaways leaving three
- * spellings of the same restaurant, which would split its counts and make
- * "how often do we eat there" meaningless.
+ * Used when somewhere new is named, planning a meal or in a Where picker.
+ * Matching on placeNameKey is what stops a fortnight of takeaways leaving
+ * three spellings of the same restaurant, which would split its counts and
+ * make "how often do we eat there" meaningless, without ever taking one
+ * place's name for another's.
  */
-export function placeByName(name: string | null | undefined, places: Place[]): Place | undefined {
-  const key = normalisePlaceText(name ?? '')
+export function placeByName(name: string | null | undefined, places: readonly Place[]): Place | undefined {
+  const key = placeNameKey(name)
   if (!key) return undefined
-  return places.find(p => !p.deletedAt && normalisePlaceText(p.name) === key)
+  return places.find(p => !p.deletedAt && placeNameKey(p.name) === key)
 }
 
 /**
  * A place name being typed into a Where picker: the name tidied, the saved
  * place it already means, and up to eight places whose names hold it, that one
  * first. The saved place is placeByName's, so "Cafe Kafka" is "Café Kafka" and
- * the picker reuses it instead of offering to make a second copy; the plain
- * case-insensitive test backs it up for a name in a script normalising drops.
+ * the picker reuses it instead of offering to make a second copy, while
+ * "金龙 Restaurant" is offered as new beside a saved "银龙 Restaurant".
  */
 export function placeSearch(query: string, places: readonly Place[]): { name: string; exact?: Place; matches: Place[] } {
   const name = query.trim().replace(/\s+/g, ' ')
   if (!name) return { name, exact: undefined, matches: [] }
-  const lower = name.toLowerCase()
-  const key = normalisePlaceText(name)
+  const key = placeNameKey(name)
   const live = places.filter(p => !p.deletedAt)
-  const exact = placeByName(name, live) ?? live.find(p => p.name.trim().replace(/\s+/g, ' ').toLowerCase() === lower)
-  const hits = live.filter(p => p.id !== exact?.id && ((key && normalisePlaceText(p.name).includes(key)) || p.name.toLowerCase().includes(lower)))
+  const exact = placeByName(name, live)
+  const hits = key ? live.filter(p => p.id !== exact?.id && placeNameKey(p.name).includes(key)) : []
   return { name, exact, matches: (exact ? [exact, ...hits] : hits).slice(0, 8) }
 }
 

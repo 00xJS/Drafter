@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
-import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeStats, placesWith } from '../places'
+import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeNameKey, placeStats, placesWith } from '../places'
 import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
@@ -304,5 +304,38 @@ describe('placeByName: naming somewhere new must not duplicate somewhere old', (
     expect(placeByName('', all)).toBeUndefined()
     expect(placeByName('   ', all)).toBeUndefined()
     expect(placeByName(null, all)).toBeUndefined()
+  })
+
+  // the meal picker's Somewhere new: normalisePlaceText kept only a–z and 0–9,
+  // so a new 金龙 Restaurant was quietly saved as the 银龙 Restaurant you had
+  it('reads every script, so it never takes one place for another', () => {
+    const silver = { ...place(), id: 'pl4', name: '银龙 Restaurant' }
+    const graen = { ...place(), id: 'pl5', name: 'Græn' }
+    expect(placeByName('金龙 Restaurant', [silver])).toBeUndefined()
+    expect(placeByName('Grøn', [graen])).toBeUndefined()
+    expect(placeByName('C++ Bar', [{ ...place(), id: 'pl6', name: 'C Bar' }])).toBeUndefined()
+    expect(placeByName('银龙 restaurant', [silver])?.id).toBe('pl4')
+    expect(placeByName('Cafe Kafka', [{ ...place(), id: 'pl7', name: 'Café Kafka' }])?.id).toBe('pl7')
+  })
+})
+
+describe('placeNameKey: what makes two names the same place', () => {
+  it('sets aside case, Latin accents, punctuation and spacing', () => {
+    expect(placeNameKey('  Café  Kafka, 12 ')).toBe('cafe kafka 12')
+    expect(placeNameKey('Franco’s')).toBe('franco s')
+    // a spacing accent typed for an apostrophe is punctuation too
+    expect(placeNameKey('Franco´s')).toBe('franco s')
+    expect(placeNameKey('Phở')).toBe('pho')
+    expect(placeNameKey('')).toBe('')
+    expect(placeNameKey(null)).toBe('')
+  })
+
+  it('keeps every other letter, mark, digit and symbol, in any script', () => {
+    expect(placeNameKey('金龙 Restaurant')).toBe('金龙 restaurant')
+    expect(placeNameKey('Grøn')).toBe('grøn')
+    expect(placeNameKey('C++ Bar')).toBe('c++ bar')
+    // a dakuten and a Hindi vowel sign spell different words, unlike an accent
+    expect(placeNameKey('ガスト')).not.toBe(placeNameKey('カスト'))
+    expect(placeNameKey('कमला')).not.toBe(placeNameKey('कमल'))
   })
 })
