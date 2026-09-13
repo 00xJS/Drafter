@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
+import { JournalEntry, MOOD_META, Note, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
 import { looksLikeQuestion } from '../ask'
@@ -27,12 +27,15 @@ interface Props {
   people: Person[]
   places?: Place[]
   journal?: JournalEntry[]
+  notes?: Note[]
   commands?: Command[]
   onOpenTask(t: Task): void
   onOpenProject(p: Project): void
   onOpenPerson(p: Person): void
   onOpenPlace?(p: Place): void
   onOpenJournal?(e: JournalEntry): void
+  /** Open a note in Tasks → Notes. Without it notes are not searched. */
+  onOpenNote?(n: Note): void
   onSaw?(p: Person): void
   /** openEditor=false files the line straight to the Inbox with no editor. */
   onCreateTask(title: string, openEditor?: boolean): void
@@ -47,6 +50,7 @@ type Hit =
   | { kind: 'person'; score: number; person: Person; where: string }
   | { kind: 'place'; score: number; place: Place; where: string }
   | { kind: 'journal'; score: number; entry: JournalEntry; where: string }
+  | { kind: 'note'; score: number; note: Note; where: string }
   | { kind: 'create'; score: number; title: string }
   | { kind: 'recent'; score: number; task: Task }
   | { kind: 'command'; score: number; command: Command }
@@ -78,11 +82,31 @@ function score(haystack: string, needle: string, weight: number): number {
 
 const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
 
+/**
+ * The notes matching `needle` (lowercased): a title match ranks like a place's
+ * name, a match in the text like one in a project's notes, and a text match
+ * says where it was.
+ */
+export function noteHits(notes: Note[], needle: string): { score: number; note: Note; where: string }[] {
+  const out: { score: number; note: Note; where: string }[] = []
+  for (const n of notes) {
+    if (n.deletedAt) continue
+    const title = n.title || 'Untitled note'
+    const text = htmlToText(n.body).replace(/\s+/g, ' ').trim()
+    const s = score(title, needle, 11) + score(text, needle, 3)
+    if (s <= 0) continue
+    const i = text.toLowerCase().indexOf(needle)
+    out.push({ score: s, note: n, where: score(title, needle, 1) ? '' : excerpt(text.slice(Math.max(0, i - 30)), 90) })
+  }
+  return out
+}
+
 /** Cmd/Ctrl+K palette: jump anywhere, run a command, find anything, or create a
  *  task from what you typed. */
-export function Search({ tasks, projects, people, places = [], journal = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onSaw, onCreateTask, onAsk, onClose }: Props) {
+export function Search({ tasks, projects, people, places = [], journal = [], notes = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onOpenNote, onSaw, onCreateTask, onAsk, onClose }: Props) {
   const [q, setQ] = useState('')
   const canAsk = !!onAsk
+  const canOpenNote = !!onOpenNote
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   // the results are a listbox the field drives: focus stays in the field, and
@@ -145,6 +169,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
         out.push({ kind: 'journal', score: s, entry: e, where: excerpt(e.body.slice(Math.max(0, i - 30)), 90) })
       }
     }
+    if (canOpenNote) for (const h of noteHits(notes, needle)) out.push({ kind: 'note', ...h })
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
     const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }
@@ -152,7 +177,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
     return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
-  }, [q, tasks, projects, people, places, journal, commands, projectName, canAsk])
+  }, [q, tasks, projects, people, places, journal, notes, commands, projectName, canAsk, canOpenNote])
 
   useEffect(() => setCursor(0), [q])
 
@@ -164,6 +189,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
     else if (h.kind === 'person') onOpenPerson(h.person)
     else if (h.kind === 'place') onOpenPlace?.(h.place)
     else if (h.kind === 'journal') onOpenJournal?.(h.entry)
+    else if (h.kind === 'note') onOpenNote?.(h.note)
     else if (h.kind === 'command') h.command.run()
     else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
     else if (h.kind === 'ask') onAsk?.(h.question)
@@ -299,6 +325,23 @@ export function Search({ tasks, projects, people, places = [], journal = [], com
                   </span>
                 </li>
               )
+            if (h.kind === 'note') {
+              const about = h.note.projectId ? projectName.get(h.note.projectId) : undefined
+              return (
+                <li key={h.note.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind" aria-hidden>
+                    📝
+                  </span>
+                  <span className="search-main">
+                    {h.note.title || 'Untitled note'}
+                    <small>
+                      Note{about ? ` · ${about}` : ''}
+                      {h.where ? ` · ${h.where}` : ''}
+                    </small>
+                  </span>
+                </li>
+              )
+            }
             if (h.kind === 'journal')
               return (
                 <li key={h.entry.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>

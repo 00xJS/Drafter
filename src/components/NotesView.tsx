@@ -108,9 +108,12 @@ interface Props {
   onSaveNote?(n: Note): void
   /** Delete a note (store.remove: a tombstone Trash can restore), after the two-step confirm. */
   onDeleteNote?(id: string): void
+  /** A note to open, asked for from elsewhere (the palette's search). It opens once; then onOpenNoteDone lets the shell forget it. */
+  openNoteId?: string
+  onOpenNoteDone?(): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask, notes, onSaveNote, onDeleteNote }: Props) {
+export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask, notes, onSaveNote, onDeleteNote, openNoteId, onOpenNoteDone }: Props) {
   /** The note on screen: a stored one, or a new one not saved yet. Local to Notes, like the pad the shell holds. */
   const [open, setOpen] = useState<Note | null>(null)
   /** The list's search, kept while a note is open so All notes comes back to the same list. */
@@ -122,6 +125,17 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
     setPadId(project?.id)
     if (project) setOpen(null)
   }
+  // a note asked for from elsewhere opens once, and the shell then forgets it,
+  // so asking for the same note again opens it again
+  const [askedId, setAskedId] = useState<string | undefined>(undefined)
+  if (openNoteId !== askedId) {
+    setAskedId(openNoteId)
+    const asked = openNoteId ? notes?.find(n => n.id === openNoteId) : undefined
+    if (asked) setOpen(asked)
+  }
+  useEffect(() => {
+    if (openNoteId) onOpenNoteDone?.()
+  }, [openNoteId, onOpenNoteDone])
 
   if (project) return <NotesPane key={project.id} project={project} getLatest={getLatest} onSave={onSave} onCreateTask={onCreateTask} onBack={onBack} />
 
