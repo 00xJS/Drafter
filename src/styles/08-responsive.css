@@ -26,8 +26,8 @@
    pill ellipsizes before anything else gives, and the icon buttons keep their
    squares. Below 760px (667pt landscape) New task becomes a square too; its
    aria-label names it. The tallest control is still a 36px button, so
-   --topbar-h holds. Nothing here reaches a phone (640px and under) or a window
-   wider than 960px. */
+   --topbar-h holds. Nothing here reaches a phone (640px and under), or a window
+   wider than 960px other than the owner's, below. */
 @media (min-width: 641px) and (max-width: 960px) {
   .topbar {
     gap: 10px;
@@ -79,6 +79,35 @@
   }
   .new-post-label {
     display: none;
+  }
+}
+
+/* The owner's header carries Admin too, 82px more, so it overflowed from 961px
+   to about 1075px (1046px plus a classic scrollbar), and search and settings
+   squashed to 21px. There the owner's header sheds what the compact one sheds
+   first, and keeps the tab labels: the wordmark, the wide gaps and the sync
+   pill's width go, and the icon buttons keep their squares. */
+@media (min-width: 961px) and (max-width: 1080px) {
+  .topbar:has(.admin-btn) {
+    gap: 10px;
+  }
+  .topbar:has(.admin-btn) .brand > span:not(.brand-mark) {
+    display: none;
+  }
+  .topbar:has(.admin-btn) .icon-btn {
+    flex: none;
+  }
+  .topbar:has(.admin-btn) .sync-btn {
+    min-width: 0;
+  }
+  .topbar:has(.admin-btn) .sync-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar:has(.admin-btn) .sync-dot {
+    flex: none;
   }
 }
 /* ---------- end compact header ---------- */

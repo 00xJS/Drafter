@@ -78,6 +78,18 @@ describe('landscape phones: the desktop header compacts to fit', () => {
     expect(topBar).toMatch(/className="btn primary new-post-btn"[^\n]*aria-label="New task"/)
   })
 
+  it('gives the owner, whose Admin button is 82px more, the first sheds up to 1080px, tab labels kept', () => {
+    const owner = media('(min-width: 961px) and (max-width: 1080px)')
+    expect(owner).toHaveLength(1)
+    expect(rule(owner[0], '.topbar:has(.admin-btn) .brand > span:not(.brand-mark)')).toMatch(/display:\s*none/)
+    expect(rule(owner[0], '.topbar:has(.admin-btn) .icon-btn')).toMatch(/flex:\s*none/)
+    expect(rule(owner[0], '.topbar:has(.admin-btn) .sync-label')).toMatch(/text-overflow:\s*ellipsis/)
+    // every rule is the owner's alone, and the tabs and New task keep their words
+    for (const m of owner[0].matchAll(/([^{}]+)\{/g)) expect(m[1].trim()).toMatch(/^\.topbar:has\(\.admin-btn\)/)
+    expect(owner[0]).not.toMatch(/tab-label|new-post/)
+    expect(topBar).toMatch(/className="btn subtle admin-btn"/)
+  })
+
   it('keeps the bar one 36px control tall, so --topbar-h still holds', () => {
     for (const body of [...compact, ...tightest]) {
       for (const m of body.matchAll(/(?:^|[;{\s])(height|min-height):\s*(\d+)px/g)) expect(Number(m[2]), m[0].trim()).toBeLessThanOrEqual(36)
