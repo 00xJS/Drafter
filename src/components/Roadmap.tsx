@@ -12,7 +12,6 @@ interface Props {
   events: CalendarEvent[]
   sourceMap: Map<string, CalendarSource>
   onOpenProject(p: Project): void
-  onNewProject(): void
   onOpenTask(t: Task): void
 }
 
@@ -59,7 +58,7 @@ export function pxPerDay(available: number, days: number): number {
   return Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, available / days))
 }
 
-export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onNewProject, onOpenTask }: Props) {
+export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onOpenTask }: Props) {
   // the account's own creation day is the first day of the service
   const [accountSince, setAccountSince] = useState<string | null>(null)
   useEffect(() => {
@@ -145,18 +144,11 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
   }, [model.width])
 
   if (empty) {
+    // said plainly, with nothing that starts one: there is one ongoing project
     return (
       <div className="empty-hero">
-        <h2>No projects yet</h2>
-        <p>
-          A project is anything with an end in mind — the kitchen refresh, a side app, the garden plan. Give it a target
-          date and its milestones and tasks line up here.
-        </p>
-        <p>
-          <button className="btn primary" onClick={onNewProject}>
-            + New project
-          </button>
-        </p>
+        <h2>No projects</h2>
+        <p>The Timeline draws a project as a bar across the months, with its milestones and due tasks. There is no project to draw.</p>
       </div>
     )
   }
@@ -168,10 +160,6 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onN
         <span className="cal-hint">
           Since {fmtDate(model.from.toISOString())} · bars are project spans · ◆ milestones · dots are due tasks · click anything to open it
         </span>
-        <span className="spacer" />
-        <button className="btn" onClick={onNewProject}>
-          + New project
-        </button>
       </div>
       <div className="rm-scroll" ref={scrollRef}>
         <div className="rm-canvas" style={{ width: model.width + LABEL_W }}>

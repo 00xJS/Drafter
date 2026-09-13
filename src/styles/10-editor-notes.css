@@ -458,6 +458,10 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.75rem;
 }
+/* an icon on the bar (the checklist, Task's +) sits on the letters' line */
+.notes-tool svg {
+  vertical-align: -0.2em;
+}
 .notes-emoji-wrap {
   position: relative;
 }
@@ -693,9 +697,6 @@
 }
 .notes-editable a {
   cursor: text;
-}
-.notes-tool input[type='file'] {
-  display: none;
 }
 .notes-card-preview {
   white-space: pre-wrap;
@@ -934,28 +935,32 @@
   outline: none;
   border-bottom-color: var(--accent);
 }
-.note-about-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.note-about {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-2);
-}
-.note-about select {
-  max-width: min(320px, 70vw);
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 0.8125rem;
-}
-/* the title and About rows sit above the editor, so it starts a little shorter than a pad's */
+/* the title sits above the editor, so it starts a little shorter than a pad's */
 .note-page .notes-editable {
   min-height: max(240px, calc(100vh - 380px));
+}
+/* a notes page's tooltips (NoteTips): the words each button carries in
+   data-tip, shown at once on hover or keyboard focus. Fixed and placed by
+   NoteTips inside the window, so no toolbar overflow or page edge clips it;
+   over the top bar (20), under dialogs (50) and toasts (100). It never takes
+   the pointer, so it is never in the way of a click. The inverse pair reads
+   against the ground in either scheme, as the inverted pill does */
+.notes-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+  box-shadow: var(--shadow-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
 }
 /* ===================== end Notes: the list and one note ===================== */
 

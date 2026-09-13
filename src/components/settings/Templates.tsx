@@ -7,7 +7,7 @@ export function Templates({ store }: SettingsCtx) {
   return (
     <section className="settings-section g-data">
       <h3>Project templates</h3>
-      <p className="field-hint">Saved from your projects. Pick one when creating a new project.</p>
+      <p className="field-hint">Saved from the project editor. Pick one there to add its tasks and milestones to the project.</p>
       <ul className="cal-sources">
         {store.templates.map(t => (
           <li key={t.id} className="cal-source">

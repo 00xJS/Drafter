@@ -342,6 +342,7 @@ export function sanitizeProject(raw: unknown): Project | null {
     githubProjectSync: githubProjectSync(r.githubProjectSync),
     notes: str(r.notes) || undefined,
     notesHtml: str(r.notesHtml) || undefined,
+    notesPinned: r.notesPinned === true || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

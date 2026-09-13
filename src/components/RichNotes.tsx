@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { mediaURL, saveMedia } from '../media'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
+import { Icon } from './Icon'
+import { tipAttrs } from './notes/tips'
 
 interface Props {
   /** Sanitized HTML. */
@@ -14,7 +16,14 @@ interface Props {
 
 const EMOJI = ['💡', '✅', '⭐', '🔥', '❤', '🎯', '📌', '📝', '🏡', '🛠', '💻', '💰', '📅', '⏰', '🚀', '🎉', '🤔', '⚠', '❓', '👍', '👀', '🧠', '🌱', '🍕', '☕', '🎁', '✈', '🏃', '🎨', '🔧']
 
-type Cmd = { label: string; title: string; run: () => void; key?: string }
+/**
+ * A button on the bar: what it shows, and what it does in words — its tooltip,
+ * aria-label and title (tipAttrs). Every face is one each system draws clearly
+ * at this size: the checklist and the photo picker are icons in the text's
+ * colour, since the ballot box U+2610 drew as an empty square that read as a
+ * glyph the font was missing, and the camera emoji as a dark block on the bar.
+ */
+type Cmd = { face: ReactNode; tip: string; run: () => void; key?: string }
 
 /**
  * One running notepad: type straight into the page, format with the toolbar
@@ -23,6 +32,7 @@ type Cmd = { label: string; title: string; run: () => void; key?: string }
  */
 export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: Props) {
   const box = useRef<HTMLDivElement>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const lastEmitted = useRef(value)
@@ -116,32 +126,32 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   }
 
   const TOOLS: Cmd[] = [
-    { label: 'B', title: 'Bold (Cmd/Ctrl+B)', run: () => exec('bold'), key: 'b' },
-    { label: 'I', title: 'Italic (Cmd/Ctrl+I)', run: () => exec('italic'), key: 'i' },
-    { label: 'U', title: 'Underline (Cmd/Ctrl+U)', run: () => exec('underline'), key: 'u' },
-    { label: 'S', title: 'Strikethrough', run: () => exec('strikeThrough') },
-    { label: 'H', title: 'Heading', run: () => exec('formatBlock', 'H2') },
-    { label: '¶', title: 'Normal text', run: () => exec('formatBlock', 'P') },
-    { label: '•', title: 'Bullet list', run: () => exec('insertUnorderedList') },
-    { label: '1.', title: 'Numbered list', run: () => exec('insertOrderedList') },
-    { label: '☐', title: 'Checklist', run: () => insertHtml('<ul class="checklist"><li><input type="checkbox"> </li></ul>') },
-    { label: '“', title: 'Quote', run: () => exec('formatBlock', 'BLOCKQUOTE') },
-    { label: '<>', title: 'Inline code', run: () => wrapSelection('<code>', '</code>') },
-    { label: '{ }', title: 'Code block', run: () => exec('formatBlock', 'PRE') },
-    { label: '🔗', title: 'Link (Cmd/Ctrl+K)', run: addLink, key: 'k' },
-    { label: '―', title: 'Divider', run: () => exec('insertHorizontalRule') },
+    { face: <b>B</b>, tip: 'Bold (Cmd/Ctrl+B)', run: () => exec('bold'), key: 'b' },
+    { face: <i>I</i>, tip: 'Italic (Cmd/Ctrl+I)', run: () => exec('italic'), key: 'i' },
+    { face: <u>U</u>, tip: 'Underline (Cmd/Ctrl+U)', run: () => exec('underline'), key: 'u' },
+    { face: <s>S</s>, tip: 'Strikethrough: cross the text out', run: () => exec('strikeThrough') },
+    { face: 'H', tip: 'Heading', run: () => exec('formatBlock', 'H2') },
+    { face: '¶', tip: 'Normal text: undo a heading, quote or code block', run: () => exec('formatBlock', 'P') },
+    { face: '•', tip: 'Bulleted list', run: () => exec('insertUnorderedList') },
+    { face: '1.', tip: 'Numbered list', run: () => exec('insertOrderedList') },
+    { face: <Icon name="checkbox" size={15} strokeWidth={2} />, tip: 'Checklist: a list with tick boxes', run: () => insertHtml('<ul class="checklist"><li><input type="checkbox"> </li></ul>') },
+    { face: '“', tip: 'Quote: set a paragraph apart', run: () => exec('formatBlock', 'BLOCKQUOTE') },
+    { face: '<>', tip: 'Code: monospace text within a line', run: () => wrapSelection('<code>', '</code>') },
+    { face: '{ }', tip: 'Code block: lines of monospace text', run: () => exec('formatBlock', 'PRE') },
+    { face: '🔗', tip: 'Link (Cmd/Ctrl+K)', run: addLink, key: 'k' },
+    { face: '―', tip: 'Divider: a line across the note', run: () => exec('insertHorizontalRule') },
   ]
 
   return (
     <div className={dragging ? 'notes dragging' : 'notes'}>
       <div className="notes-toolbar">
         {TOOLS.map(t => (
-          <button key={t.title} type="button" className="btn subtle notes-tool" title={t.title} onMouseDown={e => e.preventDefault()} onClick={t.run}>
-            {t.label}
+          <button key={t.tip} type="button" className="btn subtle notes-tool" {...tipAttrs(t.tip)} onMouseDown={e => e.preventDefault()} onClick={t.run}>
+            {t.face}
           </button>
         ))}
         <span className="notes-emoji-wrap">
-          <button type="button" className="btn subtle notes-tool" title="Emoji (Ctrl+Cmd+Space / Win+. also works)" onMouseDown={e => e.preventDefault()} onClick={() => setEmojiOpen(o => !o)}>
+          <button type="button" className="btn subtle notes-tool" {...tipAttrs('Emoji')} onMouseDown={e => e.preventDefault()} onClick={() => setEmojiOpen(o => !o)}>
             😀
           </button>
           {emojiOpen && (
@@ -165,7 +175,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
           <button
             type="button"
             className="btn subtle notes-tool notes-to-task"
-            title="Turn the selected text (or the line you're on) into a task"
+            {...tipAttrs('Turn the selected line into a task')}
             onMouseDown={e => e.preventDefault()}
             onClick={() => {
               const sel = window.getSelection()
@@ -180,22 +190,25 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
               if (text.trim()) onCreateTask(text.trim().slice(0, 140))
             }}
           >
-            ☐ Task
+            <Icon name="plus" size={13} strokeWidth={2.25} /> Task
           </button>
         )}
-        <label className="btn subtle notes-tool" title="Add photos (or paste / drop them anywhere in the note)">
-          📷
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={e => {
-              if (e.target.files) addFiles(e.target.files)
-              e.target.value = ''
-            }}
-          />
-        </label>
+        {/* a real button, so the photo picker can be reached and named from the
+            keyboard as the other tools are; it opens the hidden file input */}
+        <button type="button" className="btn subtle notes-tool" {...tipAttrs('Add photos (or paste or drop them in)')} onMouseDown={e => e.preventDefault()} onClick={() => photoInput.current?.click()}>
+          <Icon name="camera" size={15} strokeWidth={2} />
+        </button>
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={e => {
+            if (e.target.files) addFiles(e.target.files)
+            e.target.value = ''
+          }}
+        />
       </div>
       <div
         ref={box}

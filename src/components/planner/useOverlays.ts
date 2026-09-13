@@ -13,7 +13,7 @@ export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
-  const [projectEditor, setProjectEditor] = useState<{ project?: Project } | null>(null)
+  const [projectEditor, setProjectEditor] = useState<{ project: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -46,8 +46,9 @@ export function useOverlays() {
       preset,
       capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
+  // there is one ongoing project, edited from its Timeline bar and from search;
+  // nothing opens the editor on a blank one to start a second
   const openProject = (project: Project) => setProjectEditor({ project })
-  const newProject = () => setProjectEditor({})
 
   /** Pull to refresh stands down while any of these owns the screen. */
   const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || trashOpen || adminOpen
@@ -77,7 +78,6 @@ export function useOverlays() {
     openTask,
     newTask,
     openProject,
-    newProject,
     anyOpen,
   }
 }

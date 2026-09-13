@@ -47,8 +47,8 @@ describe('the task editor', () => {
       expect(html).not.toContain('Issue, PR, repo or project URL')
       expect(html).not.toContain('placeholder="https://…"')
     }
-    // the project a saved task is in is still said, just not offered for change
-    expect(render({ task: task({ projectId: 'pr1' }) })).toContain('in Home')
+    // nor is the project a saved task is in said: there is one ongoing project
+    expect(render({ task: task({ projectId: 'pr1' }) })).not.toContain('in Home')
   })
 
   it('opens a saved task with its notes and link in the description', () => {

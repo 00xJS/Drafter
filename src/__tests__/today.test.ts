@@ -183,8 +183,8 @@ describe('one home project: the bar and its filter are gone', () => {
     expect(planner).not.toMatch(/onOpenNotes=\{p => \{[\s\S]{0,300}setTasksTab\(/)
   })
 
-  it('keeps "New project" reachable by typing but off the quick actions', () => {
-    expect(planner).toMatch(/id: 'new-project'[^\n]*quick: false/)
+  it('has no New project command, and nothing that starts a second project', () => {
+    expect(planner).not.toMatch(/id: 'new-project'|newProject|onNewProject/)
   })
 })
 

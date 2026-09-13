@@ -38,6 +38,7 @@ export interface NoteEntry {
   title: string
   text: string
   updatedAt: string
+  /** A pinned note, or a pad whose project has notesPinned. */
   pinned: boolean
   /** What a note is about, or the pad's own project. */
   projectId?: string
@@ -54,9 +55,10 @@ export function matchesQuery(query: string, ...fields: string[]): boolean {
 /**
  * The Notes list: note records and every project pad with something in it
  * (archived projects stay out, as they did on the pad index), narrowed to
- * `query`. Pinned notes come first in sortNotes order; then the other notes and
- * the pads together, most recently edited first. A pad's edit time is its
- * project's; on a tie a note comes before a pad, and pads go by id.
+ * `query`. Pinned notes and pinned pads come first, then the other notes and
+ * pads; within each, the notes (in sortNotes order) and the pads go together,
+ * most recently edited first. A pad's edit time is its project's; on a tie a
+ * note comes before a pad, and pads go by id.
  */
 export function notesIndex(notes: Note[], projects: Project[], query = ''): NoteEntry[] {
   const sorted = sortNotes(notes.filter(n => !n.deletedAt)).map(
@@ -66,16 +68,27 @@ export function notesIndex(notes: Note[], projects: Project[], query = ''): Note
     .filter(p => p.status !== 'archived' && !p.deletedAt)
     .map(p => ({ p, html: noteHtml(p) }))
     .filter(({ html }) => hasNoteText(html))
-    .map(({ p, html }): NoteEntry => ({ key: `pad:${p.id}`, kind: 'pad', id: p.id, title: p.name, text: plain(html), updatedAt: p.updatedAt, pinned: false, projectId: p.id }))
+    .map(({ p, html }): NoteEntry => ({ key: `pad:${p.id}`, kind: 'pad', id: p.id, title: p.name, text: plain(html), updatedAt: p.updatedAt, pinned: !!p.notesPinned, projectId: p.id }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
-  const rest = sorted.filter(e => !e.pinned)
-  // two lists that are each newest first, merged into one
+  const pinned = newestFirst(
+    sorted.filter(e => e.pinned),
+    pads.filter(e => e.pinned),
+  )
+  const rest = newestFirst(
+    sorted.filter(e => !e.pinned),
+    pads.filter(e => !e.pinned),
+  )
+  return [...pinned, ...rest].filter(e => matchesQuery(query, e.title, e.text))
+}
+
+/** Two lists that are each newest first, merged into one; on a tie the note goes first. */
+function newestFirst(notes: NoteEntry[], pads: NoteEntry[]): NoteEntry[] {
   const merged: NoteEntry[] = []
-  for (let i = 0, j = 0; i < rest.length || j < pads.length; ) {
-    if (j >= pads.length || (i < rest.length && rest[i].updatedAt >= pads[j].updatedAt)) merged.push(rest[i++])
+  for (let i = 0, j = 0; i < notes.length || j < pads.length; ) {
+    if (j >= pads.length || (i < notes.length && notes[i].updatedAt >= pads[j].updatedAt)) merged.push(notes[i++])
     else merged.push(pads[j++])
   }
-  return [...sorted.filter(e => e.pinned), ...merged].filter(e => matchesQuery(query, e.title, e.text))
+  return merged
 }
 
 /** "just now", "5m ago", "3h ago", "2d ago", then the date. */
@@ -137,7 +150,7 @@ export interface NoteSaverOptions {
 export interface NoteSaver {
   /** Take the latest draft; it is saved once `delay` ms pass without another. */
   change(draft: NoteDraft): void
-  /** Save the waiting draft now (a pin, the About chip, leaving, the app going to the background). */
+  /** Save the waiting draft now (a pin, leaving, the app going to the background). */
   flush(): Note | null
   /** The two-step Delete, confirmed: save what was typed (so Trash holds it), then tombstone. Nothing saves after it. */
   remove(): void

@@ -1,19 +1,19 @@
-import { Project, STATUS_META, Task, TaskStatus, pickerStatuses } from '../types'
+import { STATUS_META, Task, TaskStatus, pickerStatuses } from '../types'
 import { excerpt } from '../utils'
 import { checklistProgress } from '../taskutils'
 import { parseGithubUrl } from '../github'
-import { DueBadge, PriorityMark, ProjectChip } from './bits'
+import { DueBadge, PriorityMark } from './bits'
 
 interface Props {
   task: Task
-  project?: Project
   assignee?: string
   onOpen(t: Task): void
   /** When present, the card shows a one-tap status control (works on touch, unlike drag). */
   onStatus?(id: string, status: TaskStatus): void
 }
 
-export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
+// No project chip: there is one ongoing project, so it would say the same on every card.
+export function TaskCard({ task, assignee, onOpen, onStatus }: Props) {
   const check = checklistProgress(task)
   const gh = parseGithubUrl(task.githubUrl)
 
@@ -48,7 +48,6 @@ export function TaskCard({ task, project, assignee, onOpen, onStatus }: Props) {
       </div>
       {task.description && <div className="card-body">{excerpt(task.description)}</div>}
       <div className="card-meta">
-        {project && <ProjectChip project={project} />}
         {assignee && (
           <span className="assignee" title={assignee}>
             {assignee

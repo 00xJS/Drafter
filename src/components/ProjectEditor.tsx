@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template, projectProgress } from '../types'
-import { BUILT_IN_TEMPLATES, instantiateTemplate, templateFromProject } from '../templates'
+import { BUILT_IN_TEMPLATES, extendProject, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
-import { fromLocalInput, uid } from '../utils'
+import { fromLocalInput, toLocalInput, uid } from '../utils'
 import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../github'
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
@@ -12,7 +12,8 @@ import { ProgressBar } from './bits'
 import { Modal, ModalHead } from './Modal'
 
 interface Props {
-  project?: Project
+  /** The project being edited. Nothing opens the editor on a blank one: there is one ongoing project. */
+  project: Project
   tasks: Task[]
   getLatest(id: string): Project | undefined
   onSave(p: Project): void
@@ -21,13 +22,40 @@ interface Props {
   onOpenNotes?(p: Project): void
   /** Saved templates (built-ins are added automatically). */
   templates?: Template[]
-  /** Create a project together with its tasks (from a template or an AI plan). */
+  /** Save the project together with a batch of new tasks in it (from a template or a drafted plan). */
   onCreateMany?(project: Project, tasks: Task[]): void
   onSaveTemplate?(t: Template): void
 }
 
+/** The fields this form edits. Everything else on the project — its notepad, the pin, the owner — it never touches. */
+type FormFields = Pick<Project, 'name' | 'emoji' | 'color' | 'description' | 'status' | 'startAt' | 'targetAt' | 'milestones' | 'githubUrl' | 'githubProjectSync'>
+
+/**
+ * The project as it now stands with the fields this form changed laid over
+ * it, under a newer stamp. `current` is the newest copy: another device, or the
+ * notepad's Pin, may have changed it since the editor opened. A field the form
+ * left alone keeps current's value, and so does everything the form does not
+ * hold.
+ */
+export function withEdits(current: Project, was: FormFields, form: FormFields): Project {
+  const next: Project = { ...current }
+  for (const key of Object.keys(form) as (keyof FormFields)[]) {
+    if (JSON.stringify(form[key]) !== JSON.stringify(was[key])) {
+      ;(next as unknown as Record<string, unknown>)[key] = form[key]
+    }
+  }
+  next.updatedAt = newerStamp(current.updatedAt)
+  return next
+}
+
 const toDateInput = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 10) : '')
 const fromDateInput = (v: string) => (v ? fromLocalInput(`${v}T12:00`) : undefined)
+/** The day `ahead` days from today as a date input holds it: the local date, not UTC's. */
+const dayInput = (ahead = 0) => {
+  const d = new Date()
+  d.setDate(d.getDate() + ahead)
+  return toLocalInput(d.toISOString()).slice(0, 10)
+}
 
 /**
  * Two-way GitHub Projects sync, offered only when the GitHub field holds a
@@ -169,20 +197,8 @@ function ProjectSyncFields({ url, sync, onChange }: { url: string; sync?: Github
 }
 
 export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onClose, onOpenNotes, templates = [], onCreateMany, onSaveTemplate }: Props) {
-  const [base] = useState<Project>(() => {
-    const now = new Date().toISOString()
-    return (
-      project ?? {
-        kind: 'project',
-        id: uid(),
-        name: '',
-        color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      }
-    )
-  })
+  // the project as the editor opened on it: the form's edits are measured against this
+  const [base] = useState(project)
   const [name, setName] = useState(base.name)
   const [emoji, setEmoji] = useState(base.emoji ?? '')
   const [color, setColor] = useState(base.color)
@@ -197,8 +213,12 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   const [syncBoard, setSyncBoard] = useState(() => parseGithubUrl(base.githubUrl))
   const [newMs, setNewMs] = useState('')
   const [templateId, setTemplateId] = useState('')
+  /** The day a chosen template's tasks are dated from: its "start". */
+  const [templateFrom, setTemplateFrom] = useState(() => dayInput())
   const [goal, setGoal] = useState('')
   const [plan, setPlan] = useState<DraftedPlan | null>(null)
+  /** The day a drafted plan's tasks are dated from (its day 0): today unless changed. */
+  const [planFrom, setPlanFrom] = useState(() => dayInput())
   const [planBusy, setPlanBusy] = useState(false)
   const [planError, setPlanError] = useState('')
   const [savedTemplate, setSavedTemplate] = useState(false)
@@ -209,19 +229,13 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
     setTemplateId(id)
     const t = allTemplates.find(x => x.id === id)
     if (!t) return
-    if (!name.trim()) setName(t.name)
-    if (!emoji) setEmoji(t.emoji ?? '')
-    setColor(t.color)
-    if (!description) setDescription(t.description ?? '')
-    if (!startAt) {
-      // event-anchored templates (a trip, a party) schedule backwards from the
-      // start, so default it far enough ahead that the lead-in fits — otherwise
-      // every "book it 6 weeks before" task lands overdue on day one
-      const lead = Math.min(0, ...t.tasks.map(x => x.offsetDays ?? 0), ...(t.milestones ?? []).map(m => m.offsetDays))
-      const d = new Date()
-      d.setDate(d.getDate() - lead)
-      setStartAt(toDateInput(d.toISOString()))
-    }
+    // event-anchored templates (a trip, a party) schedule backwards from the
+    // day itself, so it opens far enough ahead that the lead-in fits —
+    // otherwise every "book it 6 weeks before" task lands overdue on day one.
+    // Only the new tasks' day is set: the project keeps its own name, colour
+    // and dates.
+    const lead = Math.min(0, ...t.tasks.map(x => x.offsetDays ?? 0), ...(t.milestones ?? []).map(m => m.offsetDays))
+    setTemplateFrom(dayInput(-lead))
   }
 
   const runDraft = async () => {
@@ -234,32 +248,6 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
     } finally {
       setPlanBusy(false)
     }
-  }
-
-  /** Create (or extend) the project with a template's or the AI plan's tasks. */
-  const createWith = (tpl: Template) => {
-    if (!onCreateMany) return
-    const start = startAt ? new Date(`${startAt}T12:00`) : new Date()
-    const { project: p, tasks: ts } = instantiateTemplate(tpl, start, {
-      id: base.id,
-      name: name.trim() || tpl.name,
-      emoji: emoji.trim() || tpl.emoji,
-      color,
-      description: description.trim() || tpl.description,
-      status,
-      githubUrl: githubUrl.trim() || undefined,
-      githubProjectSync: projectSync,
-      milestones: [...milestones, ...(tpl.milestones ?? []).map(m => ({ id: uid(), name: m.name, dueAt: fromLocalInput(`${toDateInput(new Date(start.getFullYear(), start.getMonth(), start.getDate() + m.offsetDays, 12).toISOString())}T12:00`) }))],
-      createdAt: base.createdAt,
-    })
-    if (project) {
-      // existing project: keep its dates unless empty
-      p.startAt = base.startAt ?? p.startAt
-      p.targetAt = base.targetAt ?? p.targetAt
-      p.notesHtml = base.notesHtml ?? p.notesHtml
-      p.updatedAt = newerStamp(base.updatedAt)
-    }
-    onCreateMany(p, ts)
   }
 
   const planAsTemplate = (): Template | null =>
@@ -279,7 +267,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
   const progress = projectProgress(tasks)
 
-  function formValues() {
+  function formValues(): FormFields {
     return {
       name: name.trim() || 'Untitled project',
       emoji: emoji.trim() || undefined,
@@ -293,7 +281,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       githubProjectSync: projectSync,
     }
   }
-  function baseValues() {
+  function baseValues(): FormFields {
     return {
       name: base.name,
       emoji: base.emoji,
@@ -308,6 +296,8 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
     }
   }
   const isDirty = () => JSON.stringify(formValues()) !== JSON.stringify(baseValues())
+  /** What Save writes, and what a template's or a plan's tasks are added to: the newest copy of the project with this form's edits. */
+  const edited = () => withEdits(getLatest(base.id) ?? base, baseValues(), formValues())
 
   function requestClose() {
     if (isDirty() && !window.confirm('Discard your changes?')) return
@@ -315,17 +305,14 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   }
 
   function save() {
-    const current = getLatest(base.id) ?? base
-    const form = formValues()
-    const was = baseValues()
-    const next: Project = { ...current }
-    for (const key of Object.keys(form) as (keyof typeof form)[]) {
-      if (JSON.stringify(form[key]) !== JSON.stringify(was[key])) {
-        ;(next as unknown as Record<string, unknown>)[key] = form[key]
-      }
-    }
-    next.updatedAt = newerStamp(current.updatedAt)
-    onSave(next)
+    onSave(edited())
+  }
+
+  /** Add a template's or the drafted plan's tasks and milestones to the project, dated from `from`, with this form's edits. */
+  const createWith = (tpl: Template, from: string) => {
+    if (!onCreateMany) return
+    const { project: next, tasks: made } = extendProject(edited(), tpl, from ? new Date(`${from}T12:00`) : new Date())
+    onCreateMany(next, made)
   }
 
   const addMilestone = () => {
@@ -337,46 +324,13 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
   return (
     <Modal onClose={requestClose}>
-      <ModalHead title={project ? 'Edit project' : 'New project'}>
+      <ModalHead title="Edit project">
         <button className="btn primary modal-head-save" onClick={save}>
           Save
         </button>
       </ModalHead>
 
       <div className="modal-body">
-        {!project && onCreateMany && (
-          <label className="field">
-            <span>
-              Start from a template <small>(optional — tasks and milestones come with it)</small>
-            </span>
-            <select value={templateId} onChange={e => pickTemplate(e.target.value)}>
-              <option value="">Blank project</option>
-              {templates.length > 0 && (
-                <optgroup label="Your templates">
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.emoji ? `${t.emoji} ` : ''}
-                      {t.name} · {t.tasks.length} tasks
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="Built in">
-                {BUILT_IN_TEMPLATES.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.emoji ? `${t.emoji} ` : ''}
-                    {t.name} · {t.tasks.length} tasks
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            {chosen && (
-              <small className="field-hint">
-                {chosen.description} The <strong>Start</strong> date below anchors every task.
-              </small>
-            )}
-          </label>
-        )}
         <div className="field-row">
           <label className="field emoji-field">
             <span>Icon</span>
@@ -384,7 +338,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
           </label>
           <label className="field">
             <span>Name</span>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Kitchen refresh" autoFocus={!project} />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Kitchen refresh" />
           </label>
         </div>
 
@@ -459,55 +413,98 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
         </div>
 
         {onCreateMany && (
-          <div className="field ai-plan">
-            <span>
-              ✨ Draft a plan from a goal <small>(the model proposes dated tasks and milestones; you choose)</small>
-            </span>
-            <div className="check-add">
-              <input value={goal} onChange={e => setGoal(e.target.value)} placeholder="e.g. Turn the spare room into a home office by the end of November" />
-              <button type="button" className="btn" disabled={!goal.trim() || planBusy} onClick={runDraft}>
-                {planBusy ? 'Drafting…' : 'Draft'}
-              </button>
-            </div>
-            {planError && <p className="warn">{planError}</p>}
-            {plan && (
-              <div className="ai-proposal">
-                <div className="ai-proposal-head">
-                  <strong>
-                    {plan.tasks.length} tasks · {plan.milestones.length} milestones · about {plan.durationDays} days
-                  </strong>
-                  <small>Anchored on the Start date {startAt ? `(${startAt})` : '(today)'}</small>
-                </div>
-                <ul className="plan-list">
-                  {plan.milestones.map(m => (
-                    <li key={`m-${m.name}`} className="plan-ms">
-                      ◆ {m.name} <small>day {m.offsetDays}</small>
-                    </li>
+          <>
+            <label className="field">
+              <span>
+                Add tasks from a template <small>(its tasks and milestones join this project)</small>
+              </span>
+              <select value={templateId} onChange={e => pickTemplate(e.target.value)}>
+                <option value="">Choose a template…</option>
+                {templates.length > 0 && (
+                  <optgroup label="Your templates">
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.emoji ? `${t.emoji} ` : ''}
+                        {t.name} · {t.tasks.length} tasks
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Built in">
+                  {BUILT_IN_TEMPLATES.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.emoji ? `${t.emoji} ` : ''}
+                      {t.name} · {t.tasks.length} tasks
+                    </option>
                   ))}
-                  {plan.tasks.map((t, i) => (
-                    <li key={i}>
-                      {t.title} <small>day {t.offsetDays}{t.priority && t.priority !== 'normal' ? ` · ${t.priority}` : ''}{t.checklist?.length ? ` · ${t.checklist.length} steps` : ''}</small>
-                    </li>
-                  ))}
-                </ul>
-                <div className="ai-row">
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => {
-                      const tpl = planAsTemplate()
-                      if (tpl) createWith(tpl)
-                    }}
-                  >
-                    {project ? 'Add these to the project' : 'Create project with this plan'}
-                  </button>
-                  <button type="button" className="btn subtle" onClick={() => setPlan(null)}>
-                    Discard
-                  </button>
-                </div>
-              </div>
+                </optgroup>
+              </select>
+            </label>
+            {chosen && (
+              <label className="field">
+                <span>Dated from</span>
+                <input type="date" value={templateFrom} onChange={e => setTemplateFrom(e.target.value)} />
+                <small className="field-hint">
+                  {chosen.description ? `${chosen.description} ` : ''}Every task and milestone is dated from this day. The project keeps its own name, colour and dates.
+                </small>
+              </label>
             )}
-          </div>
+
+            <div className="field ai-plan">
+              <span>
+                ✨ Draft a plan from a goal <small>(the model proposes dated tasks and milestones; you choose)</small>
+              </span>
+              <div className="check-add">
+                <input value={goal} onChange={e => setGoal(e.target.value)} placeholder="e.g. Turn the spare room into a home office by the end of November" />
+                <button type="button" className="btn" disabled={!goal.trim() || planBusy} onClick={runDraft}>
+                  {planBusy ? 'Drafting…' : 'Draft'}
+                </button>
+              </div>
+              {planError && <p className="warn">{planError}</p>}
+              {plan && (
+                <div className="ai-proposal">
+                  <div className="ai-proposal-head">
+                    <strong>
+                      {plan.tasks.length} tasks · {plan.milestones.length} milestones · about {plan.durationDays} days
+                    </strong>
+                  </div>
+                  <ul className="plan-list">
+                    {plan.milestones.map(m => (
+                      <li key={`m-${m.name}`} className="plan-ms">
+                        ◆ {m.name} <small>day {m.offsetDays}</small>
+                      </li>
+                    ))}
+                    {plan.tasks.map((t, i) => (
+                      <li key={i}>
+                        {t.title} <small>day {t.offsetDays}{t.priority && t.priority !== 'normal' ? ` · ${t.priority}` : ''}{t.checklist?.length ? ` · ${t.checklist.length} steps` : ''}</small>
+                      </li>
+                    ))}
+                  </ul>
+                  <label className="field">
+                    <span>
+                      Dated from <small>(the plan’s day 0)</small>
+                    </span>
+                    <input type="date" value={planFrom} onChange={e => setPlanFrom(e.target.value)} />
+                  </label>
+                  <div className="ai-row">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => {
+                        const tpl = planAsTemplate()
+                        if (tpl) createWith(tpl, planFrom)
+                      }}
+                    >
+                      Add these to the project
+                    </button>
+                    <button type="button" className="btn subtle" onClick={() => setPlan(null)}>
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         <label className="field">
@@ -540,7 +537,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
         */}
         {parseGithubUrl(githubUrl.trim())?.type === 'project' && <ProjectSyncFields url={githubUrl.trim()} sync={projectSync} onChange={setProjectSync} />}
 
-        {project && onOpenNotes && (
+        {onOpenNotes && (
           <div className="field">
             <span>Notes</span>
             <button
@@ -557,26 +554,22 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             <small className="field-hint">A running notepad with formatting, checklists, links, code, emoji and inline photos. Autosaves.</small>
           </div>
         )}
-        {project && (
-          <div className="field">
-            <span>Progress</span>
-            <div className="project-progress-row">
-              <ProgressBar pct={progress.pct} color={color} />
-              <small>
-                {progress.done} of {progress.total} tasks done
-              </small>
-            </div>
+        <div className="field">
+          <span>Progress</span>
+          <div className="project-progress-row">
+            <ProgressBar pct={progress.pct} color={color} />
+            <small>
+              {progress.done} of {progress.total} tasks done
+            </small>
           </div>
-        )}
+        </div>
       </div>
 
       <footer className="modal-foot">
-        {project && (
-          <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
-            Delete
-          </ConfirmButton>
-        )}
-        {project && onSaveTemplate && (
+        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
+          Delete
+        </ConfirmButton>
+        {onSaveTemplate && (
           <button
             className="btn subtle"
             title="Save this project's tasks and milestones as a reusable template"
@@ -592,9 +585,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
         <button className="btn" onClick={requestClose}>
           Cancel
         </button>
-        {!project && chosen && onCreateMany ? (
-          <button className="btn primary" onClick={() => createWith(chosen)}>
-            Create with {chosen.tasks.length} tasks
+        {chosen && onCreateMany ? (
+          <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
+            Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}
           </button>
         ) : (
           <button className="btn primary" onClick={save}>

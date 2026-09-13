@@ -60,6 +60,16 @@ describe('notesIndex: one list of notes and project pads', () => {
   it('carries what a note is about', () => {
     expect(notesIndex([note('n', { projectId: 'p1' })], [])[0].projectId).toBe('p1')
   })
+
+  it('puts a pinned pad on top with the pinned notes, newest first, and marks it pinned', () => {
+    const pinnedPad = [project('pad-mid', { name: 'Hall', notesHtml: '<p>Sage for the hall</p>', notesPinned: true, updatedAt: day(5) }), ...projects.slice(1)]
+    const list = notesIndex(notes, pinnedPad)
+    expect(list.map(e => e.key)).toEqual(['note:pinned-new', 'pad:pad-mid', 'note:pinned-old', 'pad:pad-newest', 'note:new', 'note:old', 'pad:pad-photo'])
+    expect(list.find(e => e.key === 'pad:pad-mid')?.pinned).toBe(true)
+    // pinned above an unpinned note edited later, and still found by a search
+    expect(notesIndex([note('fresh', { updatedAt: day(20) })], pinnedPad.slice(0, 1)).map(e => e.key)).toEqual(['pad:pad-mid', 'note:fresh'])
+    expect(notesIndex(notes, pinnedPad, 'sage').map(e => e.key)).toEqual(['pad:pad-mid'])
+  })
 })
 
 describe('searching the list', () => {

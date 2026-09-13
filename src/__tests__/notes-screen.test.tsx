@@ -36,12 +36,10 @@ const NOTES = [
 ]
 
 const noop = () => {}
-const shell = { getLatest: () => undefined, onSave: noop, onSelectProject: noop, onBack: noop, onNewProject: noop, onCreateTask: noop }
+const shell = { getLatest: () => undefined, onSave: noop, onSelectProject: noop, onBack: noop, onCreateTask: noop }
 
 /** The row titles, in the order the list draws them. */
 const rowTitles = (html: string) => [...html.matchAll(/class="note-row-title">([^<]*)</g)].map(m => m[1])
-/** The About options, in order. */
-const options = (html: string) => [...html.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map(m => m[1])
 
 beforeEach(() => {
   vi.useFakeTimers({ now: new Date(NOW) })
@@ -68,11 +66,21 @@ describe('the Notes list, with notes passed', () => {
     for (const when of ['2d ago', '30m ago', '3h ago', '1d ago']) expect(out).toContain(`<span class="note-row-when">${when}</span>`)
   })
 
-  it('marks the pinned note, the project a note is about, and each pad as a project’s notes', () => {
+  it('marks the pinned note and each pad as a project’s notes, and names no project on a note', () => {
     const out = html()
     expect(out.match(/📌/g)).toHaveLength(1)
-    expect(out).toContain('<span class="pchip static" title="Hall">')
     expect(out.match(/<span class="note-row-tag">Project notes<\/span>/g)).toHaveLength(2)
+    // "Paint colours" was saved about Hall; its row does not say so
+    expect(out).not.toContain('pchip')
+    expect(out).not.toContain('title="Hall"')
+  })
+
+  it('marks a pinned pad as a pinned note is marked, and puts it on top', () => {
+    const pinned = [{ ...PROJECTS[1], notesPinned: true }, ...PROJECTS.filter(p => p.id !== 'p-garden')]
+    const out = renderToStaticMarkup(<NotesView projects={pinned} notes={NOTES} onSaveNote={noop} {...shell} />)
+    // pinned ones newest first: the pad was edited on the 11th, the note on the 10th
+    expect(rowTitles(out)).toEqual(['Garden', 'Paint colours', 'Gift ideas', '🏡 Hall', UNTITLED])
+    expect(out.match(/<span class="note-row-pin" title="Pinned">📌<\/span>/g)).toHaveLength(2)
   })
 
   it('offers + New note and a search box', () => {
@@ -108,8 +116,7 @@ describe('the Notes list, with notes passed', () => {
 })
 
 describe('a note’s screen', () => {
-  const pane = (over: Partial<Parameters<typeof NotePane>[0]> = {}) =>
-    renderToStaticMarkup(<NotePane note={NOTES[1]} stored={NOTES[1]} projects={PROJECTS} onSave={noop} onDelete={noop} onBack={noop} onCreateTask={noop} {...over} />)
+  const pane = (over: Partial<Parameters<typeof NotePane>[0]> = {}) => renderToStaticMarkup(<NotePane note={NOTES[1]} stored={NOTES[1]} onSave={noop} onDelete={noop} onBack={noop} onCreateTask={noop} {...over} />)
 
   it('opens a new note on an empty title, with nothing to delete and a word on when it saves', () => {
     const fresh = blankNote('fresh', NOW)
@@ -123,8 +130,15 @@ describe('a note’s screen', () => {
     expect(out).toContain('>All notes<')
     // the pad's own editor
     expect(out).toContain('class="notes-editable md"')
-    // About: no project, then every project that is not archived
-    expect(options(out)).toEqual(['No project', '🏡 Hall', 'Garden', 'Garage'])
+  })
+
+  it('never asks what a note is about: no About, no project picker', () => {
+    for (const out of [pane(), pane({ note: NOTES[0], stored: NOTES[0] })]) {
+      expect(out).not.toContain('<select')
+      expect(out).not.toContain('About')
+      expect(out).not.toContain('No project')
+      expect(out).not.toContain('Hall')
+    }
   })
 
   it('shows an untitled note as an empty title with "Untitled note" as its placeholder', () => {
@@ -134,8 +148,8 @@ describe('a note’s screen', () => {
     expect(out).toContain('Autosaves as you type')
   })
 
-  it('offers Delete on a saved note as a two-step button, and none without onDelete', () => {
-    expect(pane()).toMatch(/<button type="button" class="btn subtle danger" title="[^"]*">Delete<\/button>/)
+  it('offers Delete on a saved note as a two-step button that says what it does, and none without onDelete', () => {
+    expect(pane()).toMatch(/<button type="button" class="btn subtle danger" title="Delete: [^"]*" aria-label="Delete: [^"]*" data-tip="Delete: [^"]*">Delete<\/button>/)
     expect(pane({ onDelete: undefined })).not.toContain('>Delete<')
   })
 
@@ -146,10 +160,7 @@ describe('a note’s screen', () => {
     expect(src.match(/onDelete\?\.\(/g)).toHaveLength(1)
   })
 
-  it('offers Unpin on a pinned note, and keeps an archived project it is about in the About list', () => {
-    const out = pane({ note: NOTES[0], stored: { ...NOTES[0], projectId: 'p-archived' } })
-    expect(out).toContain('>📌 Unpin<')
-    expect(out).toContain('<option value="p-archived" selected="">Old</option>')
-    expect(pane({ stored: { ...NOTES[1], projectId: 'p-gone' } })).toContain('<option value="p-gone" selected="">A deleted project</option>')
+  it('offers Unpin on a pinned note', () => {
+    expect(pane({ note: NOTES[0], stored: NOTES[0] })).toContain('>📌 Unpin<')
   })
 })

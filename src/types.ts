@@ -160,6 +160,8 @@ export interface Project extends Owned {
   notes?: string
   /** Rich-text notes as a sanitized HTML subset; photos reference the media store by id. */
   notesHtml?: string
+  /** Pinned in Tasks → Notes: the notepad sits at the top of the list with the pinned notes. */
+  notesPinned?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string

@@ -1,17 +1,16 @@
 import { useMemo, useRef, useState } from 'react'
-import { BOARD_STATUSES, PRIORITIES, PRIORITY_META, Priority, Project, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
+import { BOARD_STATUSES, PRIORITIES, PRIORITY_META, Priority, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
 import { Store } from '../store'
 import { migrateStored, STORAGE_VERSION } from '../schema'
 import { compareTasks } from '../taskutils'
 import { excerpt } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
-import { DueBadge, PriorityMark, ProjectChip } from './bits'
+import { DueBadge, PriorityMark } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
   store: Store
   tasks: Task[]
-  projectMap: Map<string, Project>
   onOpen(t: Task): void
   onNew(preset?: Partial<Task>): void
   onDelete(t: Task): void
@@ -21,7 +20,9 @@ interface Props {
 
 type SortKey = 'due' | 'priority' | 'updated'
 
-export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, onOpenTrash, trashCount }: Props) {
+// No project column or chip, and a search that reads no project name: there is
+// one ongoing project, so it would say the same on every row.
+export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash, trashCount }: Props) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<TaskStatus | 'all' | 'open'>('open')
   const [priority, setPriority] = useState<Priority | 'all'>('all')
@@ -39,13 +40,13 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
     return tasks
       .filter(t => status === 'all' || (status === 'open' ? t.status !== 'done' && t.status !== 'canceled' : t.status === status))
       .filter(t => priority === 'all' || t.priority === priority)
-      .filter(t => !needle || (t.title + ' ' + t.description + ' ' + t.tags.join(' ') + ' ' + (t.projectId ? projectMap.get(t.projectId)?.name ?? '' : '')).toLowerCase().includes(needle))
+      .filter(t => !needle || (t.title + ' ' + t.description + ' ' + t.tags.join(' ')).toLowerCase().includes(needle))
       .sort((a, b) => {
         if (sort.key === 'due') return sort.dir * compareTasks(a, b)
         if (sort.key === 'priority') return sort.dir * (PRIORITY_META[a.priority].rank - PRIORITY_META[b.priority].rank)
         return sort.dir * a.updatedAt.localeCompare(b.updatedAt)
       })
-  }, [tasks, q, status, priority, sort, projectMap])
+  }, [tasks, q, status, priority, sort])
 
   const visible = showAll ? filtered : filtered.slice(0, 200)
   const statusChoices = useMemo(() => {
@@ -156,32 +157,28 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
 
       {isNarrow ? (
         <ul className="mpost-list">
-          {visible.map(t => {
-            const project = t.projectId ? projectMap.get(t.projectId) : undefined
-            return (
-              <li key={t.id} className="mpost" onClick={() => onOpen(t)}>
-                <div className="mpost-top">
-                  <button type="button" className="row-open">
-                    <span className="row-title">
-                      <PriorityMark priority={t.priority} /> {t.title || excerpt(t.description, 48) || 'Untitled'}
-                    </span>
-                  </button>
-                  <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
-                    {STATUS_META[t.status].label}
+          {visible.map(t => (
+            <li key={t.id} className="mpost" onClick={() => onOpen(t)}>
+              <div className="mpost-top">
+                <button type="button" className="row-open">
+                  <span className="row-title">
+                    <PriorityMark priority={t.priority} /> {t.title || excerpt(t.description, 48) || 'Untitled'}
                   </span>
-                </div>
-                {t.title && t.description && <div className="row-body">{excerpt(t.description, 90)}</div>}
-                <div className="mpost-meta">
-                  {project && <ProjectChip project={project} />}
-                  <DueBadge task={t} />
-                  <span className="spacer" />
-                  <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
-                    Delete
-                  </ConfirmButton>
-                </div>
-              </li>
-            )
-          })}
+                </button>
+                <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                  {STATUS_META[t.status].label}
+                </span>
+              </div>
+              {t.title && t.description && <div className="row-body">{excerpt(t.description, 90)}</div>}
+              <div className="mpost-meta">
+                <DueBadge task={t} />
+                <span className="spacer" />
+                <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                  Delete
+                </ConfirmButton>
+              </div>
+            </li>
+          ))}
         </ul>
       ) : (
         <div className="table-scroll">
@@ -189,7 +186,6 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
             <thead>
               <tr>
                 <th>Task</th>
-                <th>Project</th>
                 <th>Status</th>
                 <th>
                   <button className="th-sort" onClick={() => toggleSort('priority')}>
@@ -210,35 +206,31 @@ export function TasksTable({ store, tasks, projectMap, onOpen, onNew, onDelete, 
               </tr>
             </thead>
             <tbody>
-              {visible.map(t => {
-                const project = t.projectId ? projectMap.get(t.projectId) : undefined
-                return (
-                  <tr key={t.id} onClick={() => onOpen(t)}>
-                    <td>
-                      <button type="button" className="row-open row-title">
-                        {t.title || excerpt(t.description, 48) || 'Untitled'}
-                      </button>
-                      {t.title && t.description && <div className="row-body">{excerpt(t.description, 70)}</div>}
-                    </td>
-                    <td>{project ? <ProjectChip project={project} /> : <span className="muted">—</span>}</td>
-                    <td>
-                      <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
-                        {STATUS_META[t.status].label}
-                      </span>
-                    </td>
-                    <td>
-                      <PriorityMark priority={t.priority} withLabel />
-                    </td>
-                    <td className="cell-date">{t.dueAt ? <DueBadge task={t} /> : '—'}</td>
-                    <td className="cell-date">{new Date(t.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
-                        Delete
-                      </ConfirmButton>
-                    </td>
-                  </tr>
-                )
-              })}
+              {visible.map(t => (
+                <tr key={t.id} onClick={() => onOpen(t)}>
+                  <td>
+                    <button type="button" className="row-open row-title">
+                      {t.title || excerpt(t.description, 48) || 'Untitled'}
+                    </button>
+                    {t.title && t.description && <div className="row-body">{excerpt(t.description, 70)}</div>}
+                  </td>
+                  <td>
+                    <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                      {STATUS_META[t.status].label}
+                    </span>
+                  </td>
+                  <td>
+                    <PriorityMark priority={t.priority} withLabel />
+                  </td>
+                  <td className="cell-date">{t.dueAt ? <DueBadge task={t} /> : '—'}</td>
+                  <td className="cell-date">{new Date(t.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
+                  <td onClick={e => e.stopPropagation()}>
+                    <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                      Delete
+                    </ConfirmButton>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

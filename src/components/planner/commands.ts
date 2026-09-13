@@ -17,7 +17,6 @@ export interface PaletteNav {
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
 export interface PaletteOverlays {
   newTask(preset?: Partial<Task>, opts?: { capture?: boolean }): void
-  newProject(): void
   setSettingsOpen(open: boolean): void
   openSheet(sheet: Sheet): void
 }
@@ -30,10 +29,11 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // The command palette's own rows: the things you can do and the places you can
 // go, beside the search results. Navigation lands on the same segment a tab
 // tap would; the actions open the same editors the toolbar buttons do. `now`
-// decides which of the day's routines is a quick action.
+// decides which of the day's routines is a quick action. There is no New
+// project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
   const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab } = nav
-  const { newTask, newProject, setSettingsOpen, openSheet } = overlays
+  const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   return [
     { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
@@ -43,9 +43,6 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // the week ahead, and a question about your own planner: typed for, not offered empty
     { id: 'plan-week', label: 'Plan next week', icon: 'review', quick: false, keywords: 'week ahead meals dinners catch up sunday', run: () => openSheet({ kind: 'week' }) },
     { id: 'ask', label: 'Ask Drafter', icon: 'search', quick: false, keywords: 'question answer ai assistant', run: () => openSheet({ kind: 'ask' }) },
-    // reachable by typing, not a quick action: templates and "draft a plan" still
-    // need projects to exist, but adding one has come off the front door
-    { id: 'new-project', label: 'New project', icon: 'plus', quick: false, keywords: 'add create', run: newProject },
     { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
     { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },

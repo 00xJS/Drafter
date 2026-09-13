@@ -19,7 +19,6 @@ import { mealsByDay } from '../kitchen'
 import { plannedGift } from '../people'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
-import { ProjectChip } from './bits'
 import { Modal } from './Modal'
 
 export type CalendarView = 'month' | 'week'
@@ -178,9 +177,9 @@ export function Calendar({
       // the whole point of the merge: "Dinner · Out" answers the glance
       return item.meal.out ? `${slot} · Out` : slot
     }
-    const project = taskProject(item.task)
+    // no project name: there is one ongoing project, so it would repeat on every task
     const when = item.at && hasClock(item.at) ? fmtTime(item.at) : 'No time set'
-    return [when, STATUS_META[item.task.status].label, project?.name].filter(Boolean).join(' · ')
+    return `${when} · ${STATUS_META[item.task.status].label}`
   }
 
   const itemTitle = (item: DayItem): string => {
@@ -237,7 +236,7 @@ export function Calendar({
             e.stopPropagation()
             onOpen(t)
           }}
-          title={`${time ? time + ' · ' : ''}${itemTitle(item)}${project ? ' · ' + project.name : ''}`}
+          title={`${time ? time + ' · ' : ''}${itemTitle(item)}`}
         >
           {time && <span className="cal-pill-time">{time}</span>}
           <span className="cal-pill-title">{itemTitle(item)}</span>
@@ -609,7 +608,6 @@ export function Calendar({
                           <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
                             {STATUS_META[t.status].label}
                           </span>
-                          {project && <ProjectChip project={project} />}
                           {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
                         </span>
                       </span>

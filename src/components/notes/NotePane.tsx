@@ -1,31 +1,34 @@
 import { useEffect, useRef, useState } from 'react'
-import { Note, Project } from '../../types'
+import { Note } from '../../types'
 import { timeAgo } from '../../utils'
 import { ConfirmButton } from '../ConfirmButton'
 import { RichNotes } from '../RichNotes'
 import { createNoteSaver, draftOf, hasNoteText, NoteDraft, UNTITLED } from './model'
+import { NoteTips } from './NoteTips'
+import { tipAttrs } from './tips'
 
 interface Props {
   /** The note as opened: a stored note, or a new one the store has not seen yet. */
   note: Note
   /** The store's copy now: undefined until a new note's first save, and again once it is deleted. */
   stored?: Note
-  projects: Project[]
   onSave(n: Note): void
   /** Tombstone it; Trash can restore it. Without it there is no Delete. */
   onDelete?(id: string): void
   /** Back to the list. */
   onBack(): void
-  /** ☐ Task: the selected line becomes a task, in the note's project when it has one. */
+  /** Task: the selected line becomes a task, in the note's project when it has one. */
   onCreateTask(title: string, projectId: string): void
 }
 
 /**
- * One note: a title, what it is about, and the project pad's own editor. It
- * autosaves as you type, as a pad does, but a new note is not saved until it
- * has a title or some text, and one with text and no title is an "Untitled note".
+ * One note: a title and the project pad's own editor. It autosaves as you
+ * type, as a pad does, but a new note is not saved until it has a title or some
+ * text, and one with text and no title is an "Untitled note". There is one
+ * ongoing project, so nothing here asks what a note is about; a project an
+ * older note was saved with stays on it, carried through every save.
  */
-export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onCreateTask }: Props) {
+export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask }: Props) {
   const [draft, setDraft] = useState<NoteDraft>(() => draftOf(stored ?? note))
   const [dirty, setDirty] = useState(false)
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
@@ -108,9 +111,6 @@ export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onC
       : savedAt
         ? `Saved ${timeAgo(savedAt)}`
         : 'Autosaves as you type'
-  // an archived project stays in the list while a note is about it, so the chip never reads wrong
-  const about = projects.filter(p => p.status !== 'archived' || p.id === draft.projectId)
-  const gone = !!draft.projectId && !projects.some(p => p.id === draft.projectId)
 
   return (
     <div className="notes-page note-page" ref={page}>
@@ -118,6 +118,7 @@ export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onC
         <button
           type="button"
           className="btn subtle notes-back"
+          {...tipAttrs('Back to all notes')}
           onClick={() => {
             saver.flush()
             onBack()
@@ -129,7 +130,7 @@ export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onC
         <button
           type="button"
           className={draft.pinned ? 'btn subtle note-pin on' : 'btn subtle note-pin'}
-          title={draft.pinned ? 'Stop keeping it at the top of Notes' : 'Keep it at the top of Notes'}
+          {...tipAttrs(draft.pinned ? 'Unpin: stop keeping it at the top of Notes' : 'Pin: keep it at the top of Notes')}
           onClick={() => edit({ pinned: !draft.pinned }, true)}
         >
           {draft.pinned ? '📌 Unpin' : '📌 Pin'}
@@ -137,7 +138,7 @@ export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onC
         {onDelete && inStore && (
           <ConfirmButton
             className="btn subtle danger"
-            title="Move this note to Trash, where it can be restored"
+            tip="Delete: move this note to Trash, where it can be restored"
             onConfirm={() => {
               saver.remove()
               onBack()
@@ -163,21 +164,8 @@ export function NotePane({ note, stored, projects, onSave, onDelete, onBack, onC
           }
         }}
       />
-      <div className="note-about-row">
-        <label className="note-about">
-          <span>About</span>
-          <select value={draft.projectId ?? ''} onChange={e => edit({ projectId: e.target.value || undefined }, true)}>
-            <option value="">No project</option>
-            {about.map(p => (
-              <option key={p.id} value={p.id}>
-                {`${p.emoji ? `${p.emoji} ` : ''}${p.name}`}
-              </option>
-            ))}
-            {gone && <option value={draft.projectId}>A deleted project</option>}
-          </select>
-        </label>
-      </div>
       <RichNotes value={draft.body} onChange={body => edit({ body })} status={status} onCreateTask={title => onCreateTask(title, draft.projectId ?? '')} />
+      <NoteTips root={page} />
     </div>
   )
 }
