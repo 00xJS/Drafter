@@ -23,4 +23,22 @@ if (missing.length) {
   console.error(`check-precache: ${missing.length} of ${assets.length} files in dist/assets are not precached by dist/sw.js:\n  ${missing.join('\n  ')}`)
   process.exit(1)
 }
+
+// The build stamp the app compares itself with (src/appupdate.ts) must ship,
+// and must never be precached: a cached copy would always agree with the app.
+const versionPath = join(dist, 'version.json')
+if (!existsSync(versionPath)) {
+  console.error('check-precache: dist/version.json is missing — the app could not tell it is out of date')
+  process.exit(1)
+}
+if (sw.includes('version.json')) {
+  console.error('check-precache: dist/sw.js precaches version.json — the app would never see a newer build')
+  process.exit(1)
+}
+const stamped = readFileSync(join(dist, 'index.html'), 'utf8').match(/<meta name="drafter-build" content="([^"]+)"/)?.[1]
+const served = JSON.parse(readFileSync(versionPath, 'utf8')).build
+if (!stamped || stamped !== served) {
+  console.error(`check-precache: index.html's build stamp (${stamped ?? 'none'}) does not match dist/version.json (${served})`)
+  process.exit(1)
+}
 console.log(`check-precache: all ${assets.length} files in dist/assets are precached by dist/sw.js`)

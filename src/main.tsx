@@ -1,8 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { registerSW } from 'virtual:pwa-register'
 import { Capacitor } from '@capacitor/core'
 import App from './App'
+import { startAppUpdates } from './appupdate'
 import { applyPlatformClasses } from './native'
 import { captureAuthorizeRequest } from './oauthRequest'
 import './styles/index.css'
@@ -16,8 +16,10 @@ captureAuthorizeRequest()
 // stamp html.native / html.ios before first paint so the native look never flashes web-first
 applyPlatformClasses()
 
-// inside the iOS shell there is no service worker: the bundle IS the app
-if (!Capacitor.isNativePlatform()) registerSW({ immediate: true })
+// inside the iOS shell there is no service worker: the bundle IS the app.
+// On the web the worker is registered here, and every load and return to the
+// app checks for a newer deploy (src/appupdate.ts); Vite's dev server has none.
+if (!Capacitor.isNativePlatform() && import.meta.env.PROD) startAppUpdates()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
