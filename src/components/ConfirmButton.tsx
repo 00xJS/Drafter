@@ -8,6 +8,8 @@ interface Props {
   confirmLabel?: string
   className?: string
   title?: string
+  /** The button's accessible name, for when its text alone does not say what it acts on (a bare ✕). The same while armed. */
+  ariaLabel?: string
   stopPropagation?: boolean
 }
 
@@ -15,7 +17,7 @@ interface Props {
  * Two-step destructive button: the first click arms it, a second click within
  * 4 seconds confirms. Clicking elsewhere, pressing a key or waiting disarms it.
  */
-export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to delete', className = 'btn danger', title, stopPropagation }: Props) {
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to delete', className = 'btn danger', title, ariaLabel, stopPropagation }: Props) {
   const [armed, setArmed] = useState(false)
   const timer = useRef<number | undefined>(undefined)
 
@@ -35,6 +37,7 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again
       type="button"
       className={armed ? `${className} armed` : className}
       title={title}
+      aria-label={ariaLabel}
       onBlur={() => setArmed(false)}
       onClick={e => {
         if (stopPropagation) e.stopPropagation()
