@@ -288,9 +288,9 @@ function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { wee
 export { Bars }
 
 /** Days seen in the last `span` days, and the events under them when some shared a day. */
-function SeenCount({ days, events, span }: { days: number; events: number; span: number }) {
+function SeenCount({ days, events, span, className }: { days: number; events: number; span: number; className?: string }) {
   return (
-    <span title={`Last ${span} days: ${seenLabel(days, events)}`}>
+    <span className={className} title={`Last ${span} days: ${seenLabel(days, events)}`}>
       <strong>{days}</strong>
       <small>
         {days === 1 ? 'day' : 'days'} · {span}d
@@ -400,6 +400,9 @@ function PersonRow({
                 <strong>{person.cadenceDays ?? '90 (default)'}</strong>
                 <small>target</small>
               </span>
+              {/* a phone's row hides its 30/90-day figures, so they show here instead */}
+              <SeenCount className="seen-window" days={stats.days30} events={stats.count30} span={30} />
+              <SeenCount className="seen-window" days={stats.days90} events={stats.count90} span={90} />
               <span>
                 <strong>
                   {countOf(stats.daysAll, 'day')} · {countOf(stats.eventsAll, 'event')}
