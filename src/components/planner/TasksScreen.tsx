@@ -6,7 +6,7 @@ import { TASKS_TABS } from './routes'
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, filteredTasks, inHousehold, mineOnly, setMineOnly } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen } = p
-  const { openTask, newTask, newProject, deleteTask, changeStatus } = p
+  const { openTask, newTask, newProject, deleteTask, changeStatus, showToast } = p
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -79,6 +79,15 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onBack={() => setNotesProjectId(null)}
           onNewProject={newProject}
           onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
+          // notes of their own beside the project pads: the list, a page each,
+          // and a delete that goes to Trash with the same Undo tasks have
+          notes={store.notes}
+          onSaveNote={note => store.upsert(note)}
+          onDeleteNote={id => {
+            const note = store.notes.find(x => x.id === id)
+            store.remove(id)
+            showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => store.restore([id]))
+          }}
         />
       )}
     </>
