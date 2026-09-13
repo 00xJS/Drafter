@@ -34,8 +34,9 @@ describe('mergeDraft: the entry changing under an editor', () => {
     const typed = { ...seen, body: 'Slow morning. Then the park.' }
     // a face picked on another device lands mid-sentence: the words stay
     expect(mergeDraft(typed, seen, savedElsewhere(was, { mood: 4 }))).toEqual({ draft: { ...typed, mood: 4 }, carried: false })
-    // and a rewrite made elsewhere does not replace them; the next save here wins
-    expect(mergeDraft(typed, seen, savedElsewhere(was, { body: 'A slow start.' }))).toEqual({ draft: typed, carried: false })
+    // and a rewrite made elsewhere does not replace them; the next save here wins.
+    // It is longer than the words seen, and what runs past them is not a line to carry
+    expect(mergeDraft(typed, seen, savedElsewhere(was, { body: 'A slow start to the day.' }))).toEqual({ draft: typed, carried: false })
   })
 
   it('carries a line appended elsewhere onto its own line after the text typed here', () => {
@@ -47,6 +48,12 @@ describe('mergeDraft: the entry changing under an editor', () => {
     // a newline left at the end here does not become a blank line between the two
     const trailing = mergeDraft({ ...seen, body: 'Slow morning.\nThen the park.\n' }, seen, appendEntry(was, DAY, 'Walked the dog'))
     expect(trailing.draft.body).toBe('Slow morning.\nThen the park.\nWalked the dog')
+  })
+
+  it('carries it when the words last seen ended in a space, which appendEntry trims before its line', () => {
+    const s = draftOf(entry({ body: 'Slow morning. ' }))
+    const r = mergeDraft({ ...s, body: 'Slow morning. Then the park.' }, s, appendEntry(entry({ body: 'Slow morning. ' }), DAY, 'Walked the dog'))
+    expect(r).toEqual({ draft: { body: 'Slow morning. Then the park.\nWalked the dog', mood: undefined, peopleIds: [] }, carried: true })
   })
 
   it('still puts it on a line of its own when the day was blank, where appendEntry writes it bare', () => {
@@ -98,12 +105,12 @@ describe('mergeDraft: the entry changing under an editor', () => {
   it('never overwrites a field edited here', () => {
     const start = entry({ body: 'Slow morning.', mood: 3, peopleIds: ['mum'] })
     const before = draftOf(start)
-    const there = savedElsewhere(start, { body: 'A slow start.', mood: 5, peopleIds: ['dad'] })
+    const there = savedElsewhere(start, { body: 'A slow start, then rain.', mood: 5, peopleIds: ['dad'] })
     // all three changed in both places: this editor keeps all three of its own
     const here: JournalDraft = { body: 'Slow morning, long lunch.', mood: 2, peopleIds: ['mum', 'sam'] }
     expect(mergeDraft(here, before, there)).toEqual({ draft: here, carried: false })
     // a face taken off here stays off, while the fields left alone follow the entry
-    expect(mergeDraft({ ...before, mood: undefined }, before, there).draft).toEqual({ body: 'A slow start.', mood: undefined, peopleIds: ['dad'] })
+    expect(mergeDraft({ ...before, mood: undefined }, before, there).draft).toEqual({ body: 'A slow start, then rain.', mood: undefined, peopleIds: ['dad'] })
   })
 
   it('is a no-op when the entry holds what the editor holds', () => {
