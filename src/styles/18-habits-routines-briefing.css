@@ -356,3 +356,403 @@
   }
 }
 
+/* ==========================================================================
+   PHASE 3 — today's focus, Plan my day, Shut down, meal ideas (B2–B5)
+   Everything the daily-routine screens add lives in this one block, so a
+   later move into a partial of its own is a cut and paste. Phone rules sit
+   behind (max-width: 640px); touch floors behind (pointer: coarse).
+   ========================================================================== */
+
+/* --- the strip's action tile (B5): a tile that is a button --- */
+.briefing-cta {
+  padding: 0;
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+.briefing-cta.closed {
+  border-color: var(--hairline);
+  background: var(--surface-2);
+}
+.briefing-cta-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+button.briefing-cta-btn {
+  cursor: pointer;
+}
+.briefing-cta:not(.closed) .briefing-main {
+  color: var(--accent-text);
+}
+button.briefing-cta-btn:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+/* --- today's focus (B4) --- */
+.focus-card {
+  border-color: var(--accent-ring);
+  /* the tiles jump here when every row of their section is in focus */
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.focus-card.all-done {
+  border-color: var(--border);
+}
+.focus-card .why {
+  font-size: 0.75rem;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+.focus-badge {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.6875rem;
+  padding: 1px 7px;
+}
+.week-top3 .focus-badge {
+  margin-top: 3px;
+}
+
+/* --- lunch & dinner ideas (B4) --- */
+.meal-ideas-slot + .meal-ideas-slot {
+  margin-top: 10px;
+}
+.meal-ideas-label {
+  margin: 0 0 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.meal-ideas-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(12.5rem, 100%), 1fr));
+  gap: 8px;
+}
+.meal-idea {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.meal-idea:hover {
+  border-color: var(--accent-ring);
+}
+.meal-idea-title {
+  max-width: 100%;
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meal-idea-why {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* --- Plan my day and Shut down (B2, B3): one look for both sheets --- */
+.plan-steps {
+  padding: 10px 20px 0;
+}
+.plan-steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plan-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.plan-step.on {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.plan-step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.plan-step.on .plan-step-n {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.plan-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.shutdown-sheet .plan-section + .plan-section {
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+}
+.plan-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-h {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9375rem;
+}
+.plan-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.plan-lead {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+.plan-empty,
+.plan-hint,
+.plan-done-line {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.plan-limit {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+/* an empty live region: kept in the page so the refusal is announced, but no gap */
+.plan-limit:empty {
+  display: none;
+}
+.plan-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-list,
+.plan-picks,
+.plan-cands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plan-list {
+  gap: 12px;
+}
+.plan-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.plan-row + .plan-row {
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+.plan-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.plan-task-title {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-row-main .plan-task-title,
+.plan-pick .plan-task-title {
+  flex: 1;
+}
+.plan-row-main > .due,
+.plan-row-main > .badge {
+  flex: none;
+}
+.plan-picks {
+  gap: 6px;
+}
+.plan-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.plan-new-badge {
+  flex: none;
+  background: var(--surface);
+  color: var(--accent-text);
+  font-size: 0.6875rem;
+  padding: 1px 7px;
+}
+.plan-remove {
+  flex: none;
+}
+.plan-new {
+  display: flex;
+  gap: 8px;
+}
+.plan-new input {
+  flex: 1;
+  min-width: 0;
+}
+.plan-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-group-label {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.plan-cands {
+  gap: 2px;
+}
+.plan-cand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-cand:hover {
+  background: var(--surface-2);
+}
+.plan-cand.on {
+  background: var(--accent-soft);
+}
+.plan-cand-plus {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+.plan-cand.on .plan-cand-plus {
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
+}
+.plan-cand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.plan-cand-why {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.plan-keep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+/* Shut down's routine rows are labels, not edit buttons: no hover promise */
+span.routine-name:hover {
+  color: var(--text);
+}
+
+/* every one of these is a tap that changes the plan: the 44pt floor */
+@media (pointer: coarse) {
+  .briefing-cta-btn,
+  .meal-idea,
+  .plan-step,
+  .plan-cand,
+  .plan-keep {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .plan-steps {
+    padding: 10px 12px 0;
+  }
+  /* a row of pills fills its line, so a wrapped second line is not a stub */
+  .plan-moves .seg,
+  .plan-durations .seg,
+  .plan-options .seg {
+    flex: 1 1 auto;
+  }
+  /* two ideas a row at 375pt: the why wraps under a title that ellipsises */
+  .meal-ideas-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+/* ===== end PHASE 3 ===== */
+
