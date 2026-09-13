@@ -440,3 +440,269 @@
   padding: 3px 6px;
 }
 
+/* ============================================================
+   Ask Drafter (A5) and Plan next week (A6)
+   ------------------------------------------------------------
+   Both sheets are Modals, so the phone already draws them as
+   card sheets (19-native-shell.css). The .week-plan-* rows are
+   shared with the Kitchen's "Plan this week's meals" sheet,
+   whose own pieces live at the end of 14-kitchen-today.css.
+   ============================================================ */
+
+/* the palette's ask row is something to do, so its glyph reads like a command's */
+.search-hit.ask .search-kind {
+  color: var(--accent-text);
+}
+
+.ask-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+}
+.ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ask-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.ask-failed {
+  color: var(--text-2);
+}
+.ask-answer {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+.ask-also {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+}
+.ask-also small {
+  color: var(--muted);
+}
+/* a citation sits inside a sentence: a pill of the record's name that opens it */
+.ask-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 16rem;
+  margin: 0 2px;
+  padding: 1px 8px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  vertical-align: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ask-sources-head {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ask-sources-head small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.ask-sources {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ask-source {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+.ask-source:hover {
+  background: var(--surface-2);
+}
+.ask-source.cited {
+  border-color: var(--accent-ring);
+}
+.ask-kind {
+  width: 1.5rem;
+  flex: none;
+  text-align: center;
+}
+.ask-source-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.ask-source-main small {
+  color: var(--muted);
+}
+.ask-privacy {
+  font-size: 0.75rem;
+}
+
+/* Plan next week: grouped rows, a checkbox each */
+.week-plan-sub {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.week-plan-polish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.week-plan-note {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.week-plan-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.week-plan-group h3 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.week-plan-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.week-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.week-plan-row > .tcheck {
+  margin-top: 2px;
+}
+.week-plan-row.off .week-plan-title {
+  color: var(--muted);
+}
+.week-plan-row.readonly {
+  background: var(--surface-2);
+}
+.week-plan-glyph {
+  width: 18px;
+  flex: none;
+  text-align: center;
+}
+.week-plan-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.week-plan-day {
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.week-plan-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.week-plan-title .week-plan-day {
+  margin-right: 4px;
+}
+.week-plan-why {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.week-plan-busy {
+  color: var(--warn-text);
+}
+.week-plan-ai {
+  color: var(--accent-text);
+  font-size: 0.8125rem;
+}
+.week-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.week-plan-actions select {
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: inherit;
+}
+.week-plan-main .meal-slot {
+  margin-top: 4px;
+}
+/* on a phone the footer is Cancel and Add on one line; the reminder would wrap Add onto its own */
+@media (max-width: 640px) {
+  .week-plan-foot-note {
+    display: none;
+  }
+}
+
+/* touch: the rows' small buttons get the 44pt floor every other target has */
+@media (pointer: coarse) {
+  .week-plan-actions .btn,
+  .week-plan-ai .btn,
+  .week-plan-polish .btn,
+  .ask-hint .btn,
+  .ask-failed .btn {
+    min-height: 44px;
+  }
+  .ask-cite {
+    padding: 4px 10px;
+  }
+  .week-plan-row > .tcheck {
+    width: 22px;
+    height: 22px;
+  }
+}
+
