@@ -76,8 +76,11 @@ interface EntryFields {
 
 /**
  * A full entry from the editor's fields. Editing keeps the id and creation
- * time. People are an event's: a work day keeps whatever it had, and an event
- * with nobody on it stores no list, just as entries did before they had people.
+ * time, and a Plan my day block keeps the task it is time for. People are an
+ * event's: a work day keeps whatever it had, and so does a block, whose people
+ * are its task's (marking the task done counts as seeing them, so the block
+ * must not count again). An event with nobody on it stores no list, just as
+ * entries did before they had people.
  */
 export function buildEntry(
   entry: CalendarEntry | undefined,
@@ -97,8 +100,10 @@ export function buildEntry(
     location: rest.location.trim() || undefined,
     notes: rest.notes.trim() || undefined,
     projectId: entry?.projectId,
-    peopleIds: rest.work ? entry?.peopleIds : rest.peopleIds.length > 0 ? rest.peopleIds : undefined,
+    peopleIds: rest.work || entry?.taskId ? entry?.peopleIds : rest.peopleIds.length > 0 ? rest.peopleIds : undefined,
     work: rest.work,
+    // without it an edited block is unlinked from its task, and Plan my day stops finding it
+    taskId: entry?.taskId,
     createdAt: editing ? editing.createdAt : now,
     updatedAt: editing ? newerStamp(editing.updatedAt) : now,
   }
@@ -345,15 +350,18 @@ export function EventEditor({
             )}
 
             {/* who it is with: once it has happened it counts as seeing them,
-                as Who was there? does for another calendar's event */}
-            <PeoplePicker
-              peopleIds={peopleIds}
-              onChange={setPeopleIds}
-              people={people}
-              onSavePerson={onSavePerson}
-              hint="once it has happened, it counts as seeing them"
-              noun="event"
-            />
+                as Who was there? does for another calendar's event. A Plan my
+                day block has none: its people are its task's, which counts. */}
+            {!entry?.taskId && (
+              <PeoplePicker
+                peopleIds={peopleIds}
+                onChange={setPeopleIds}
+                people={people}
+                onSavePerson={onSavePerson}
+                hint="once it has happened, it counts as seeing them"
+                noun="event"
+              />
+            )}
           </>
         )}
 

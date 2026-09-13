@@ -112,4 +112,15 @@ describe('upsertSundayReview files the draft under the reader’s week', () => {
     expect(prompt).toContain('Fixed the fence')
     expect(prompt).not.toContain('Cleared the gutter')
   })
+
+  it('names someone seen at an event of the reader’s own that week, as Review does', async () => {
+    const sunday = new Date('2026-09-12T23:00:00.000Z')
+    const mum = { kind: 'person', id: 'mum', name: 'Mum' }
+    // Saturday lunch in Tokyo with Mum on it: no task was ever marked done
+    const lunch = { kind: 'event', id: 'lunch', title: 'Lunch', start: '2026-09-12T03:00:00.000Z', end: '2026-09-12T04:00:00.000Z', allDay: false, peopleIds: ['mum'] }
+    await upsertSundayReview('user-one', [mum], sunday, { timezone: 'Asia/Tokyo' })
+    expect(prompt).toContain('People seen:\n- none')
+    await upsertSundayReview('user-one', [mum, lunch], sunday, { timezone: 'Asia/Tokyo' })
+    expect(prompt).toContain('People seen:\n- Mum')
+  })
 })

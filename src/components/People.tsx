@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, eventVisits, personStats, yearReport } from '../people'
+import { PersonStats, SEEN_META, compareStats, personStats, seenTasks, yearReport } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -493,7 +493,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   // happened, the way a subscribed calendar's does once Who was there? logs
   // them: read as the visit task that would have been logged, it reaches
   // every number below. Places still come from tasks: an event names none.
-  const seen = useMemo(() => [...tasks, ...eventVisits(entries)], [tasks, entries])
+  const seen = useMemo(() => seenTasks(tasks, entries), [tasks, entries])
   const allStats = useMemo(() => people.map(p => personStats(p, seen)), [people, seen])
   const favouriteNames = useMemo(() => favourites(places, tasks, people).map(s => s.place.name), [places, tasks, people])
 

@@ -53,6 +53,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
       people={store.people}
       meals={store.meals}
       tasks={store.tasks}
+      entries={store.events}
       onCreatePlace={createPlaceInline}
       onCreateRecipe={createRecipeInline}
       onApply={a => {

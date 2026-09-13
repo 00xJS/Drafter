@@ -1,6 +1,6 @@
-import { Person, Place, Project, Task } from './types'
+import { CalendarEntry, Person, Place, Project, Task } from './types'
 import { DAY_MS, startOfDay } from './taskutils'
-import { visitsFor } from './people'
+import { seenTasks, visitsFor } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
 import { weekKeyOf } from '../shared/weeks.mjs'
@@ -90,7 +90,8 @@ export const isVisit = (t: Task): boolean => t.tags.includes('visit')
 
 const inRange = (iso: string | undefined, r: Range) => !!iso && Date.parse(iso) >= r.start.getTime() && Date.parse(iso) < r.end.getTime()
 
-export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = []): ReviewData {
+/** `entries` are your own calendar entries: one that has happened with people on it counts as seeing them. */
+export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = [], entries: CalendarEntry[] = []): ReviewData {
   const nowMs = now.getTime()
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
@@ -101,8 +102,11 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const created = tasks.filter(t => inRange(t.createdAt, range) && !t.tags.includes('visit'))
   const upcoming = open.filter(t => inRange(t.dueAt, next)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   const overdueNow = open.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
+  // as on the People page: your own past events count, read as the visits they
+  // amount to. Only names and titles are shown here, so none is ever opened as a task.
+  const seen = seenTasks(tasks, entries, now)
   const peopleSeen = people
-    .map(p => ({ person: p, visits: visitsFor(p.id, tasks).filter(v => inRange(v.at, range)).map(v => v.task) }))
+    .map(p => ({ person: p, visits: visitsFor(p.id, seen).filter(v => inRange(v.at, range)).map(v => v.task) }))
     .filter(x => x.visits.length > 0)
     .sort((a, b) => b.visits.length - a.visits.length)
   const placesWent = places

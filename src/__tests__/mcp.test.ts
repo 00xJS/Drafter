@@ -657,3 +657,22 @@ describe('notes, focus and the week plan over MCP', () => {
     expect(calls.some(c => c.url.includes('sync_posts'))).toBe(false)
   })
 })
+
+describe('list_people counts your own past events, as the app does', () => {
+  const at = Date.parse('2026-10-01T12:00:00Z')
+  const row = (data: Record<string, any>): Row => ({ user_id: OWNER, data: { createdAt: STAMP, updatedAt: STAMP, ...data } })
+  const gran = row({ kind: 'person', id: 'gran', name: 'Gran', group: 'family', cadenceDays: 14 })
+  const august = row({ kind: 'task', id: 'aug', title: 'Tea', description: '', status: 'done', priority: 'normal', completedAt: '2026-08-01T12:00:00.000Z', peopleIds: ['gran'], tags: ['visit'] })
+  // an event of the owner's own, two days ago, with Gran on it
+  const tea = row({ kind: 'event', id: 'tea', title: 'Tea with Gran', start: '2026-09-29T15:00:00.000Z', end: '2026-09-29T16:00:00.000Z', allDay: false, peopleIds: ['gran'] })
+  const granIn = async (rows: Row[]) => {
+    serveHousehold([...household(), ...rows])
+    const out = (await tool('list_people').run({}, createContext({ db: serviceData(), clock: makeClock('UTC', () => at) }))) as { people: Record<string, any>[] }
+    return out.people.find(p => p.id === 'gran')
+  }
+
+  it('has Gran on track after tea with her, where the tasks alone said overdue', async () => {
+    expect(await granIn([gran, august])).toMatchObject({ status: 'overdue', lastSeen: '2026-08-01T12:00:00.000Z' })
+    expect(await granIn([gran, august, tea])).toMatchObject({ status: 'ok', lastSeen: '2026-09-29T15:00:00.000Z', daysSince: 1, visitsLast30Days: 1 })
+  })
+})

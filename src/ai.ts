@@ -1,7 +1,7 @@
 import { apiFetch } from './api'
 import { AskDoc, buildAskPrompt, parseAskAnswer } from './ask'
-import { personStats } from './people'
-import type { Meal, MealSlot, Person, Recipe, Task } from './types'
+import { personStats, seenTasks } from './people'
+import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './types'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -589,9 +589,10 @@ export interface WeekPolish {
  * The polish input for a proposal: each night's candidate recipes (the pick and
  * its alternatives) with their tags and how often they were cooked, the busy
  * nights, the people due a catch-up with the days since they were last seen,
- * and the overdue titles. Never the journal, and never anyone's notes.
+ * and the overdue titles. Never the journal, and never anyone's notes. Last
+ * seen counts your own past events (`entries`), as the People page does.
  */
-export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: Person[]; meals: Meal[]; tasks: Task[]; now: Date }): WeekPolishInput {
+export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: Person[]; meals: Meal[]; tasks: Task[]; entries?: CalendarEntry[]; now: Date }): WeekPolishInput {
   const recipes = new Map(d.recipes.map(r => [r.id, r]))
   const refs = new Map<string, string>()
   const refFor = (id: string) => {
@@ -610,9 +611,10 @@ export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: 
     }),
   }))
   const byId = new Map(d.people.map(p => [p.id, p]))
+  const seen = seenTasks(d.tasks, d.entries, d.now)
   const people = plan.people.flatMap((row, i) => {
     const p = byId.get(row.personId)
-    return p ? [{ ref: `P${i + 1}`, id: p.id, name: p.name, daysSince: personStats(p, d.tasks, d.now).daysSince ?? null }] : []
+    return p ? [{ ref: `P${i + 1}`, id: p.id, name: p.name, daysSince: personStats(p, seen, d.now).daysSince ?? null }] : []
   })
   return { nights, people, overdue: plan.overdue.map(o => o.title) }
 }

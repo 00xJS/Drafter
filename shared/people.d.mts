@@ -10,6 +10,7 @@ export interface Visit {
 
 export declare function visitsFor(personId: string, tasks: Task[]): Visit[]
 export declare function eventVisits(entries: CalendarEntry[], now?: Date | string | number): Task[]
+export declare function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now?: Date | string | number): Task[]
 export declare function plannedVisit(personId: string, tasks: Task[]): Task | null
 export declare function plannedGift(
   personId: string,

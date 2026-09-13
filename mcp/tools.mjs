@@ -16,7 +16,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
-import { seenStatus, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
+import { seenStatus, seenTasks, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
@@ -799,14 +799,19 @@ export const TOOLS = [
     description: 'People you track visits with: last seen, visits in the last 30/90 days, target rhythm, and whether they are overdue a catch-up or being seen a lot.',
     inputSchema: { type: 'object', properties: {} },
     async run(_args, { db, clock }) {
-      const all = await db.fetchAll({ kinds: ['person', 'task'] })
-      const tasks = all.filter(i => i.kind === 'task')
+      const all = await db.fetchAll({ kinds: ['person', 'task', 'event'] })
       const nowMs = clock.now().getTime()
+      // your own past events with people on them count as seeing them, as in the app
+      const seen = seenTasks(
+        all.filter(i => i.kind === 'task'),
+        all.filter(i => i.kind === 'event'),
+        new Date(nowMs),
+      )
       return {
         people: all
           .filter(i => i.kind === 'person')
           .map(p => {
-            const s = seenStatus(p, tasks, new Date(nowMs))
+            const s = seenStatus(p, seen, new Date(nowMs))
             return {
               id: p.id,
               name: p.name,

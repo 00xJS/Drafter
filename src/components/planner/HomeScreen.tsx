@@ -112,6 +112,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           journal={store.journal}
           places={store.places}
           habits={store.habits}
+          entries={store.events}
           onSaveReview={r => store.upsert(r)}
           onOpen={openTask}
           onStatus={changeStatus}

@@ -18,7 +18,7 @@ import {
 } from './types'
 import { formatMoney, monthlyCost } from './bills'
 import { localDayKey, shiftDayKey } from './journal'
-import { personStats, upcomingOccasions } from './people'
+import { personStats, seenTasks, upcomingOccasions } from './people'
 import { matchPlace, normalisePlaceText, outingsAt } from './places'
 import { htmlToText } from './richtext'
 import { hasDueTime } from './taskutils'
@@ -673,10 +673,12 @@ const CATCH_UP: Record<string, string> = { ok: 'on track', due: 'due a catch-up'
 export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: string): string[] {
   const today = localDayKey(now)
   const facts = [`Today is ${longDate(now, tz)} (${tz || 'local time'}).`]
+  // your own past events count as seeing whoever was on them, as on the People card
+  const seen = seenTasks(src.tasks, src.entries, now)
   for (const id of pq.personIds.slice(0, 3)) {
     const person = src.people.find(p => p.id === id && !p.deletedAt)
     if (!person) continue
-    const s = personStats(person, src.tasks, now)
+    const s = personStats(person, seen, now)
     const last = dayOf(s.lastSeen)
     const bits = [last ? `last seen ${last} (${ago(daysBetween(last, today))})` : 'no visit logged yet']
     const status = CATCH_UP[s.status]

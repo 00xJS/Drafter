@@ -22,7 +22,7 @@ import {
 import { tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
-import { SEEN_META, compareStats, eventVisits, personStats, plannedGift, upcomingOccasions } from '../people'
+import { SEEN_META, compareStats, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
@@ -568,7 +568,7 @@ export function Today({
   const peopleNudges = useMemo(
     () => {
       // your own events that have happened count as seeing the people on them, as on People
-      const seen = [...allTasks, ...eventVisits(entries)]
+      const seen = seenTasks(allTasks, entries)
       return people
         .map(p => personStats(p, seen))
         .filter(s => s.status === 'overdue' || s.status === 'due')

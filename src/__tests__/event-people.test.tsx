@@ -1,12 +1,19 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildDigest } from '../../shared/digest.mjs'
+import { proposeWeek } from '../../shared/weekplan.mjs'
+import { weekPolishInput } from '../ai'
+import { factsFor, parseQuestion } from '../ask'
+import type { AskSources } from '../ask'
 import { EventEditor, buildEntry } from '../components/EventEditor'
 import { enterPick } from '../components/PeoplePicker'
 import { People } from '../components/People'
 import { Today } from '../components/Today'
 import { PeoplePlace } from '../components/taskeditor/PeoplePlace'
-import { eventVisits, personStats, yearReport } from '../people'
+import { blocksOn } from '../focus'
+import { eventVisits, personStats, seenTasks, yearReport } from '../people'
+import { buildReview, weekRange } from '../review'
 import { newPerson } from '../taskform'
 import type { CalendarEntry, Person, Task } from '../types'
 
@@ -249,6 +256,80 @@ describe('a past event of your own counts toward the People figures', () => {
     expect(nudges([])).toContain('Mum')
     expect(nudges([])).toContain('Overdue')
     expect(nudges([lunch])).toBe('')
+  })
+})
+
+describe('every other place that says whether you have seen someone counts it too', () => {
+  // the last visit logged was in early August: overdue on a fortnightly
+  // rhythm, until Saturday's lunch of your own with Mum on it
+  const august: Task = { ...logged(lunch, ['mum']), id: 'august', completedAt: new Date(2026, 7, 1, 12).toISOString() }
+
+  it('reads the tasks and the visits your own past events amount to (seenTasks)', () => {
+    expect(seenTasks([august], [lunch], NOW)).toEqual([august, ...eventVisits([lunch], NOW)])
+    expect(personStats(mum, seenTasks([august], [], NOW), NOW).status).toBe('overdue')
+    expect(personStats(mum, seenTasks([august], [lunch], NOW), NOW).status).toBe('ok')
+  })
+
+  it('Plan next week, and the Sunday digest’s week plan, no longer propose catching up with her', () => {
+    const catchUps = (extra: CalendarEntry[]) => proposeWeek([mum, august, ...extra], { todayKey: '2026-09-14', now: NOW })!.people.map(r => r.title)
+    expect(catchUps([])).toEqual(['Catch up with Mum'])
+    expect(catchUps([lunch])).toEqual([])
+  })
+
+  it('the morning digest stops listing her under Catch up with', () => {
+    const due = (extra: CalendarEntry[]) => buildDigest([mum, august, ...extra], 'Europe/London', NOW).peopleDue
+    expect(due([])).toEqual(['Mum (43d)'])
+    expect(due([lunch])).toEqual([])
+  })
+
+  it('Review lists her under People for the week of the lunch', () => {
+    const week = weekRange(new Date(2026, 8, 12)) // Sunday 6 – Saturday 12 September
+    const seenThatWeek = (entries: CalendarEntry[]) => buildReview(week, [august], [], [mum], NOW, [], entries).people.map(r => [r.person.name, r.visits.map(v => v.title)])
+    expect(seenThatWeek([])).toEqual([])
+    expect(seenThatWeek([lunch])).toEqual([['Mum', ['Lunch with Mum']]])
+  })
+
+  it('Ask answers "when did I last see Mum?" with the lunch', () => {
+    const src = (entries: CalendarEntry[]): AskSources => ({ tasks: [august], projects: [], people: [mum], places: [], recipes: [], meals: [], entries, feedEvents: [], journal: [] })
+    const mumLine = (entries: CalendarEntry[]) => factsFor(parseQuestion('When did I last see Mum?', src(entries), NOW), src(entries), NOW, 'Europe/London').find(f => f.startsWith('Mum:'))
+    expect(mumLine([])).toMatch(/^Mum: last seen 2026-08-01 .*overdue a catch-up/)
+    expect(mumLine([lunch])).toMatch(/^Mum: last seen 2026-09-12 \(2 days ago\); aims for every 14 days, on track; 2 visits in the last 90 days/)
+  })
+
+  it('the ✨ polish of a week plan is told she was seen at the lunch, not in August', () => {
+    const plan = proposeWeek([mum, august], { todayKey: '2026-09-14', now: NOW })!
+    const daysSince = (entries?: CalendarEntry[]) => weekPolishInput(plan, { recipes: [], people: [mum], meals: [], tasks: [august], entries, now: NOW }).people.map(p => p.daysSince)
+    expect(daysSince()).toEqual([43])
+    expect(daysSince([lunch])).toEqual([1])
+  })
+})
+
+describe('a Plan my day block stays its task’s', () => {
+  // Plan my day's time for a task: an entry of your own, so the day sheet offers Edit on it
+  const block = entry('block', { title: 'Lunch with Mum', start: at(15, 12), end: at(15, 13), taskId: 'lunch-task' })
+  const when = { title: 'Lunch with Mum', start: at(15, 12, 30), end: at(15, 13, 30), allDay: false }
+  const rest = { location: '', notes: '', peopleIds: [] as string[] }
+
+  it('keeps the task it is time for when edited, so Plan my day still finds it', () => {
+    const e = buildEntry(block, when, rest, true)
+    expect(e).toMatchObject({ id: 'block', taskId: 'lunch-task', start: when.start, end: when.end })
+    expect(blocksOn([e], '2026-09-15').get('lunch-task')?.id).toBe('block')
+    // an event made in the editor is still nobody's block
+    expect(buildEntry(undefined, when, rest, true).taskId).toBeUndefined()
+  })
+
+  it('has no People field and takes none: the task carries them, and counts once done', () => {
+    const html = renderToStaticMarkup(<EventEditor entry={block} defaultStartIso={block.start} people={people} onSavePerson={noop} onSave={noop} onClose={noop} />)
+    expect(html).toContain('Edit event')
+    expect(html).not.toContain('people-picker-search')
+    expect(buildEntry(block, when, { ...rest, peopleIds: ['mum'] }, true).peopleIds).toBeUndefined()
+  })
+
+  it('never counts as a visit, even with people on it, so its done task is not counted twice', () => {
+    const done: Task = { ...logged(block, ['mum']), id: 'lunch-task', tags: [] }
+    const withPeople = { ...block, start: at(12, 13), end: at(12, 14), peopleIds: ['mum'] }
+    expect(eventVisits([withPeople], NOW)).toEqual([])
+    expect(personStats(mum, seenTasks([done], [withPeople], NOW), NOW).count30).toBe(1)
   })
 })
 

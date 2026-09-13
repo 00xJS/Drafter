@@ -5,6 +5,7 @@ import {
   DAY_MS,
   visitsFor as sharedVisitsFor,
   eventVisits as sharedEventVisits,
+  seenTasks as sharedSeenTasks,
   plannedVisit as sharedPlannedVisit,
   plannedGift as sharedPlannedGift,
   seenStatus as sharedSeenStatus,
@@ -53,6 +54,14 @@ export function visitsFor(personId: string, tasks: Task[]): Visit[] {
  */
 export function eventVisits(entries: CalendarEntry[], now: Date = new Date()): Task[] {
   return sharedEventVisits(entries, now)
+}
+
+/**
+ * What every "have you seen them" figure reads: the tasks plus those event
+ * visits. People, Today, Review, Ask and the week plan all count through it.
+ */
+export function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date()): Task[] {
+  return sharedSeenTasks(tasks, entries, now)
 }
 
 /** Shared last/gap/weekly rollup used by people and places. */
