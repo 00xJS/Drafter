@@ -15,7 +15,7 @@ import {
   weekDays,
   weekLabel,
 } from '../calgrid'
-import { cookedIndex, mealLabel, mealsByDay } from '../kitchen'
+import { cookedIndex, visitIndex, mealLabel, mealsByDay } from '../kitchen'
 import { plannedGift } from '../people'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
@@ -123,6 +123,7 @@ export function Calendar({
   )
   // the day sheet's meal pickers say when each recipe was last cooked, as the Kitchen's do
   const cooked = useMemo(() => cookedIndex(recipes, meals, dateKey(new Date())), [recipes, meals])
+  const visited = useMemo(() => visitIndex(places, tasks, meals), [places, tasks, meals])
   // A work day is drawn as a badge on the day, not as an item competing with
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
@@ -632,6 +633,7 @@ export function Calendar({
                 meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
                 recipes={recipes}
                 cooked={cooked}
+                visited={visited}
                 places={places}
                 onSave={onSaveMeal}
                 onClear={onClearMeal}

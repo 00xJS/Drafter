@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
-import { CookedIndex, MealMain, lastCookedShort, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
+import { CookedIndex, MealMain, VisitIndex, lastCookedShort, lastWentShort, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
 import { placeByName } from '../places'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -34,6 +34,7 @@ export function MealSlotRow({
   recipes,
   places,
   cooked,
+  visited,
   mainOnly,
   onSave,
   onClear,
@@ -49,6 +50,8 @@ export function MealSlotRow({
   places: Place[]
   /** When each recipe was last cooked, said beside it in the pickers. Without it they read names only. */
   cooked?: CookedIndex
+  /** When each place was last gone to, said beside it under Eat out as a recipe's last cooked is. */
+  visited?: VisitIndex
   /**
    * The planning sheets' Pick…: choose the main and nothing else. Their meal is
    * a stand-in for a pick, so a side added to it would have nowhere to go.
@@ -205,6 +208,7 @@ export function MealSlotRow({
               <option key={p.id} value={`p:${p.id}`}>
                 {p.emoji ? `${p.emoji} ` : '🥡 '}
                 {p.name}
+                {visited && `p:${p.id}` !== current ? ` · ${lastWentShort(visited, p.id)}` : ''}
               </option>
             ))}
           </optgroup>

@@ -3,8 +3,8 @@ import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared
 import type { MealHistory } from '../../shared/weekplan.mjs'
 import { weekDayKeys } from '../../shared/weeks.mjs'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
-import { cookedIndex, daysAgo, daysBetween, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
-import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
+import { cookedIndex, visitIndex, daysAgo, daysBetween, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
+import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
 import { dateKey } from '../utils'
 import { aiFailureKind } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
@@ -258,6 +258,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
   const ids = useId()
   // Pick…'s picker says when each recipe was last cooked, as the Kitchen's does
   const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
+  const visited = useMemo(() => visitIndex(places, items.filter((i): i is Task => (i as Task | null)?.kind === 'task'), meals, now ?? new Date()), [places, items, meals, now])
 
   const setRow = (key: string, patch: Partial<RowState>) => setRows(cur => cur.map(r => (r.key === key ? { ...r, ...patch } : r)))
 
@@ -445,6 +446,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
                         recipes={recipes}
                         places={places}
                         cooked={cooked}
+                        visited={visited}
                         mainOnly
                         onSave={m => {
                           const choice: SlotChoice = m.recipeId

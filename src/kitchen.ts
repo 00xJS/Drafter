@@ -1,4 +1,5 @@
-import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Recipe, RecipeIngredient } from './types'
+import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
+import { outingsAt } from './places'
 import { weekRange } from './review'
 import { dateKey } from './utils'
 import { newerStamp } from '../shared/domain.mjs'
@@ -142,6 +143,32 @@ const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`
 export function lastCookedShort(ix: CookedIndex, id: string): string {
   const c = ix.byId.get(id)
   return c?.lastCooked ? daysAgo(daysBetween(c.lastCooked, ix.dayKey)) : 'new'
+}
+
+/** Every place's last outing as of `dayKey`, as a day key by id: the pickers' counterpart to CookedIndex. */
+export interface VisitIndex {
+  dayKey: string
+  lastAt: ReadonlyMap<string, string>
+}
+
+/**
+ * When each place was last gone to: its newest outing (outingsAt), a done task
+ * there or a meal eaten out there, never one still to come — the Places tab's
+ * "Last went" in the meal pickers' words.
+ */
+export function visitIndex(places: readonly Place[], tasks: readonly Task[], meals: readonly Meal[], now: Date = new Date()): VisitIndex {
+  const lastAt = new Map<string, string>()
+  for (const p of places) {
+    const last = outingsAt(p.id, tasks as Task[], meals as Meal[], now)[0]
+    if (last) lastAt.set(p.id, dateKey(new Date(last.at)))
+  }
+  return { dayKey: dateKey(now), lastAt }
+}
+
+/** "3 days ago", or "new" for somewhere never been: beside each place in the meal pickers, as lastCookedShort is beside a recipe. */
+export function lastWentShort(ix: VisitIndex, placeId: string): string {
+  const last = ix.lastAt.get(placeId)
+  return last ? daysAgo(daysBetween(last, ix.dayKey)) : 'new'
 }
 
 /** "Last cooked 3 weeks ago · 5 times", or "Not cooked yet": the recipe list's line, in the Places tab's words. */

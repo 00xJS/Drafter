@@ -19,7 +19,7 @@ import {
   addGroceryItem,
   buildGroceryList,
   cookStepsRecipeId,
-  cookedIndex,
+  cookedIndex, visitIndex,
   cookedLine,
   cookedSummary,
   groceriesForMealDates,
@@ -38,7 +38,7 @@ import {
   serialiseCookSteps,
   visibleGroceryLines,
 } from '../kitchen'
-import type { CookedIndex } from '../kitchen'
+import type { CookedIndex, VisitIndex } from '../kitchen'
 import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
@@ -114,6 +114,8 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
   // when each recipe was last cooked, as of today: the list, the pickers and cook mode all say it
   const today = dateKey(new Date())
   const cooked = useMemo(() => cookedIndex(recipes, meals, today), [recipes, meals, today])
+  // and when each place was last gone to, beside it under Eat out
+  const visited = useMemo(() => visitIndex(places, tasks ?? [], meals), [places, tasks, meals])
   const latelyCount = useMemo(() => notLately(recipes, cooked).length, [recipes, cooked])
 
   const filtered = useMemo(() => {
@@ -301,6 +303,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           recipes={recipes}
           places={places}
           cooked={cooked}
+          visited={visited}
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
@@ -408,6 +411,7 @@ function WeekPlan({
   recipes,
   places,
   cooked,
+  visited,
   onShift,
   onSaveMeal,
   onClearMeal,
@@ -422,6 +426,8 @@ function WeekPlan({
   places: Place[]
   /** When each recipe was last cooked, beside it in the pickers. */
   cooked: CookedIndex
+  /** When each place was last gone to, beside it under Eat out. */
+  visited: VisitIndex
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
@@ -483,6 +489,7 @@ function WeekPlan({
                   recipes={recipes}
                   places={places}
                   cooked={cooked}
+                  visited={visited}
                   onSave={onSaveMeal}
                   onClear={onClearMeal}
                   onCreatePlace={onCreatePlace}

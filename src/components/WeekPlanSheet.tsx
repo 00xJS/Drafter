@@ -3,7 +3,7 @@ import { weekPlanSummary } from '../../shared/weekplan.mjs'
 import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.mjs'
 import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '../ai'
 import { formatMoney } from '../bills'
-import { cookedIndex, mealId, nextSwap } from '../kitchen'
+import { cookedIndex, visitIndex, mealId, nextSwap } from '../kitchen'
 import { dateKey } from '../utils'
 import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
 import { CalendarEntry, Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
@@ -137,6 +137,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
   // Pick…'s picker says when each recipe was last cooked, as the Kitchen's does
   const todayKey = dateKey(now ?? new Date())
   const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
+  const visited = useMemo(() => visitIndex(places, tasks, meals, now ?? new Date()), [places, tasks, meals, now])
   const accepted = acceptedPlan(plan, c)
   const n = acceptedCount(accepted)
   const summary = weekPlanSummary(plan)
@@ -280,6 +281,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
                               recipes={recipes}
                               places={places}
                               cooked={cooked}
+                              visited={visited}
                               mainOnly
                               onSave={m => {
                                 setDinner(d.key, { on: true, pick: { recipeId: m.recipeId, out: m.out, placeId: m.placeId, title: m.title } })
