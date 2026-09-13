@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Landing } from '../components/Landing'
 import { NotesIndex } from '../components/notes/NotesIndex'
 import { NotesView } from '../components/NotesView'
+import { ProjectEditor } from '../components/ProjectEditor'
 import { Roadmap } from '../components/Roadmap'
 import { Search } from '../components/Search'
 import { TaskCard } from '../components/TaskCard'
@@ -122,6 +123,18 @@ describe('no progress for the project', () => {
     const src = read('../components/Roadmap.tsx')
     for (const gone of ['ProgressBar', 'projectProgress', 'rm-progress', 'rm-bar-fill']) expect(src, gone).not.toContain(gone)
     expect(sheetSource()).not.toMatch(/\.rm-progress|\.rm-bar-fill/)
+  })
+
+  it('the project’s own editor has no progress bar or count of tasks done, and keeps the rest', () => {
+    const tasks = [task('1', { status: 'done' }), task('2'), task('3', { status: 'canceled' })]
+    const html = renderToStaticMarkup(<ProjectEditor project={LIFE} tasks={tasks} getLatest={() => LIFE} onSave={noop} onDelete={noop} onClose={noop} onOpenNotes={noop} />)
+    for (const kept of ['Edit project', 'Name', 'Description', 'Milestones', 'GitHub', 'Open the notepad', 'Delete']) expect(html, kept).toContain(kept)
+    expect(html).not.toMatch(/[Pp]rogress|tasks done|1 of 2/)
+    expect(read('../components/ProjectEditor.tsx')).not.toMatch(/ProgressBar|projectProgress|project-progress|tasks done/)
+    // the bar, its sum and its styles went with it: nothing else drew one
+    expect(read('../components/bits.tsx')).not.toContain('ProgressBar')
+    expect(read('../types.ts')).not.toContain('projectProgress')
+    expect(sheetSource()).not.toMatch(/\.project-progress-row|\.progress-fill|\.progress \{/)
   })
 })
 

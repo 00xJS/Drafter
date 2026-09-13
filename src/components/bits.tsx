@@ -33,14 +33,6 @@ export function DueBadge({ task }: { task: Task }) {
   )
 }
 
-export function ProgressBar({ pct, color }: { pct: number; color?: string }) {
-  return (
-    <span className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <span className="progress-fill" style={{ width: `${pct}%`, background: color }} />
-    </span>
-  )
-}
-
 /**
  * A counter. Pass `onJump` and it becomes a real button that takes you to
  * whatever it is counting. Omit the prop entirely and it is an inert div,

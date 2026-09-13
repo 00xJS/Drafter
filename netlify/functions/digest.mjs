@@ -5,7 +5,10 @@
 //
 // Sunday's review draft is for every account, push and email or not: on its
 // own Sunday, from its digest hour, last week's review is written for it once
-// (upsertSundayReview), and a digest that day ends with what it says. Netlify
+// (upsertSundayReview), and a digest that day ends with what it says. An
+// account the site owner has disabled in Admin (an auth ban) is not drafted:
+// a run with a draft due reads every account's sign-in status once, and when
+// that read fails nobody is skipped, as before. Netlify
 // stops a scheduled function at 30 seconds, so the accounts whose digest may
 // be due go first, and a draft starts only while the run has time to finish
 // it (RUN_BUDGET_MS). One that can't start waits for the next hourly run: it
@@ -49,6 +52,10 @@ const TOMBSTONE_TTL_MS = 90 * DAY
 const RUN_BUDGET_MS = 22_000
 /** Left of the budget, at least, before a draft starts: a model call, and a write either side of it. */
 const DRAFT_MIN_MS = 12_000
+/** Accounts a page when the run reads which are disabled, as Admin → Users pages them. */
+const AUTH_PAGE = 200
+/** Pages read at most (4,000 accounts); an account past them is drafted as though enabled. */
+const AUTH_MAX_PAGES = 20
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -253,6 +260,31 @@ async function userEmail(userId) {
   return (await res.json())?.email ?? null
 }
 
+/**
+ * The accounts disabled in Admin → Users, for Sunday's draft to skip. Disable
+ * is a Supabase Auth ban (banned_until far ahead, admin.mjs), so this reads
+ * every account through the same service-key admin API, a page at a time,
+ * and counts a ban only until it runs out. Throws when a page can't be read:
+ * a list cut short can't say who is disabled on the pages it missed.
+ */
+async function disabledAccounts(now) {
+  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_KEY
+  const out = new Set()
+  for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
+    const res = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=${AUTH_PAGE}`, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+    if (!res.ok) throw new Error(`auth admin users: ${res.status}`)
+    const list = (await res.json())?.users
+    if (!Array.isArray(list)) throw new Error('auth admin users: no list')
+    for (const u of list) {
+      const until = Date.parse(u?.banned_until ?? '')
+      if (u?.id && Number.isFinite(until) && until > now.getTime()) out.add(u.id)
+    }
+    if (list.length < AUTH_PAGE) break
+  }
+  return out
+}
+
 export async function sendEmail(to, subject, text) {
   if (!process.env.RESEND_API_KEY) return false
   const res = await fetch('https://api.resend.com/emails', {
@@ -360,17 +392,27 @@ export default async () => {
   // draft ran for everyone: a draft for an account with neither push nor email
   // never holds up anyone's digest or nudges
   const accounts = accountsOf(users, rows, ownerId)
+  // an account disabled in Admin gets no draft; which ones are is read once,
+  // and only on a run with a draft due. A read that fails skips nobody, as
+  // before, and says so in the log.
+  const draftDue = drafting && accounts.some(a => sundayDraftDue(a, now))
+  const disabled = draftDue
+    ? await disabledAccounts(now).catch(e => {
+        console.error(`digest: could not read which accounts are disabled, so none is skipped: ${e?.message ?? e}`)
+        return new Set()
+      })
+    : new Set()
   for (const u of [...accounts.filter(a => active.includes(a)), ...accounts.filter(a => !active.includes(a))]) {
     const subscribed = active.includes(u)
-    const sundayDue = sundayDraftDue(u, now)
+    const sundayDue = sundayDraftDue(u, now) && !disabled.has(u.user_id)
     if (!subscribed && !sundayDue) continue
     try {
       const items = visibleItemsFor(rows, u.user_id, peers.get(u.user_id), ownerId)
 
       const tz = u.timezone || 'UTC'
-      // 0. Sunday's review draft — every account, once a week (its record keeps
-      //    the stamp), when the run has time for it, and before the digest so
-      //    Sunday's line can carry it
+      // 0. Sunday's review draft — every account not disabled in Admin, once a
+      //    week (its record keeps the stamp), when the run has time for it, and
+      //    before the digest so Sunday's line can carry it
       const review = sundayDue
         ? await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz, ownerId, deadline }).catch(() => null)
         : null

@@ -65,6 +65,12 @@ let syncDown: boolean
 let bulkMisses: Set<string>
 /** Accounts a row cannot be handed over to: the PATCH fails. */
 let handOverFails: Set<string>
+/** Every account as Supabase Auth lists them; Admin's Disable sets banned_until. */
+let authUsers: { id: string; email: string; banned_until: string | null }[]
+/** The first page of that list that fails to answer; Infinity when none does. */
+let authFailsFrom: number
+/** Each page of that list a run asked for. */
+let authPages: string[]
 /** PostgREST's max_rows (supabase/config.toml): no request answers more. */
 const MAX_ROWS = 1000
 const ALL_LIVE = 'posts?select=data,user_id&deleted=is.false&order=id.asc'
@@ -90,6 +96,9 @@ beforeEach(() => {
   syncDown = false
   bulkMisses = new Set()
   handOverFails = new Set()
+  authUsers = []
+  authFailsFrom = Infinity
+  authPages = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -99,6 +108,15 @@ beforeEach(() => {
       if (url === 'https://api.resend.com/emails') {
         emails.push(body)
         return Response.json({ id: 'email-1' })
+      }
+      if (url.startsWith(`${SUPABASE}/auth/v1/admin/users?`)) {
+        // Admin's list of every account, a page at a time, as GoTrue answers it
+        const q = new URL(url).searchParams
+        const page = Number(q.get('page'))
+        const perPage = Number(q.get('per_page'))
+        authPages.push(`page=${page}&per_page=${perPage}`)
+        if (page >= authFailsFrom) return new Response('unavailable', { status: 503 })
+        return Response.json({ users: structuredClone(authUsers.slice((page - 1) * perPage, page * perPage)), aud: 'authenticated' })
       }
       if (url.startsWith(`${SUPABASE}/auth/v1/admin/users/`)) return Response.json({ email: 'me@example.test' })
       if (!url.startsWith(REST)) throw new Error(`unexpected fetch ${url}`)
@@ -480,6 +498,79 @@ describe('Sunday’s drafts fit the run: Netlify stops the function at 30 second
     expect(await hourly('2026-09-13T09:00:00Z', '2026-09-13T12:00:00Z')).toEqual(['2026-09-13T09:00:00.000Z'])
     expect(ai.prompts[1]).toContain('Cleared the gutter')
     expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+  })
+})
+
+describe('Sunday’s draft leaves an account disabled in Admin alone', () => {
+  // Admin's Disable is a ban of 876,000 hours (admin.mjs); Enable clears it
+  const DISABLED = '2126-08-20T08:00:00.000Z'
+  const account = (id: string, banned_until: string | null = null) => ({ id, email: `${id.slice(0, 8)}@example.test`, banned_until })
+  /** Accounts that fill Admin's list, none of them with records or settings. */
+  const others = (n: number) => Array.from({ length: n }, (_, i) => account(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`))
+  const bothDue = () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' }), quiet(PEER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+  }
+
+  it('skips a disabled account and drafts an enabled one, reading the accounts once a run', async () => {
+    bothDue()
+    authUsers = [account(OWNER), account(PEER, DISABLED)]
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; drafted 1; sync check ok')
+    expect(authPages).toEqual(['page=1&per_page=200'])
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Fixed the fence')
+    expect(ai.prompts[0]).not.toContain('Cleared the gutter')
+    // nothing is claimed for the disabled account, all Sunday
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-14T00:00:00Z')).toEqual([])
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+    // one read in each of the 16 runs from 8am to 11pm
+    expect(authPages).toHaveLength(16)
+  })
+
+  it('drafts an account whose ban has run out', async () => {
+    bothDue()
+    authUsers = [account(OWNER), account(PEER, '2026-09-13T07:59:59.000Z')]
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; drafted 2; sync check ok')
+    expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+  })
+
+  it('finds a disabled account on a later page of the list', async () => {
+    bothDue()
+    // the owner and 199 others fill the first page; the disabled account is on the second
+    authUsers = [account(OWNER), ...others(199), account(PEER, DISABLED)]
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; drafted 1; sync check ok')
+    expect(authPages).toEqual(['page=1&per_page=200', 'page=2&per_page=200'])
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+  })
+
+  it('drafts as before when the accounts cannot be read, and says so in the log', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      bothDue()
+      authUsers = [account(OWNER), account(PEER, DISABLED)]
+      authFailsFrom = 1
+      expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; drafted 2; sync check ok')
+      expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/could not read which accounts are disabled.*503/))
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  it('reads nothing in a run with no draft due', async () => {
+    settings = [withPush(OWNER), quiet(PEER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    authUsers = [account(OWNER), account(PEER, DISABLED)]
+    // Saturday's digest, a Sunday before anyone's hour, and a Sunday on a site with no AI provider
+    await runAt('2026-09-12T08:00:00Z')
+    await runAt('2026-09-13T07:00:00Z')
+    ai.provider = null
+    await runAt('2026-09-13T09:00:00Z')
+    expect(authPages).toEqual([])
+    expect(ai.prompts).toEqual([])
+    // those runs went through the accounts all the same: the digest went on both days
+    expect(settings[0].last_digest_day).toBe('2026-09-13')
   })
 })
 
