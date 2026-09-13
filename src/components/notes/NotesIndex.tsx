@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { Note, Project } from '../../types'
 import { excerpt } from '../../utils'
-import { ProjectChip } from '../bits'
 import { editedLabel, matchesQuery, notesIndex } from './model'
 
 interface Props {
@@ -17,7 +16,11 @@ interface Props {
   onNewNote?(): void
 }
 
-/** Tasks → Notes: every note and every project pad with something in it, pinned notes on top, then newest first. */
+/**
+ * Tasks → Notes: every note and every project pad with something in it, pinned
+ * ones on top (a pad has a Pin of its own), then newest first. A note's row
+ * names no project: there is one ongoing project.
+ */
 export function NotesIndex({ notes, projects, query, onQuery, onOpenNote, onOpenPad, onNewNote }: Props) {
   const all = useMemo(() => notesIndex(notes, projects), [notes, projects])
   const shown = query.trim() ? all.filter(e => matchesQuery(query, e.title, e.text)) : all
@@ -48,8 +51,8 @@ export function NotesIndex({ notes, projects, query, onQuery, onOpenNote, onOpen
           ) : (
             <ul className="note-list">
               {shown.map(e => {
-                const project = e.projectId ? byId.get(e.projectId) : undefined
                 const pad = e.kind === 'pad'
+                const project = pad ? byId.get(e.id) : undefined
                 return (
                   <li key={e.key}>
                     {/* the {' '} between the parts are for a screen reader, which reads the
@@ -61,27 +64,18 @@ export function NotesIndex({ notes, projects, query, onQuery, onOpenNote, onOpen
                             📌
                           </span>
                         )}
-                        {pad && project && <span className="pdot" style={{ background: project.color }} />}
-                        <span className="note-row-title">{`${pad && project?.emoji ? `${project.emoji} ` : ''}${e.title}`}</span>{' '}
+                        {project && <span className="pdot" style={{ background: project.color }} />}
+                        <span className="note-row-title">{`${project?.emoji ? `${project.emoji} ` : ''}${e.title}`}</span>{' '}
                         <span className="note-row-when">{editedLabel(e.updatedAt, now)}</span>
                       </span>{' '}
                       <span className="note-row-excerpt">{excerpt(e.text, 160) || 'No text yet'}</span>
-                      {pad ? (
+                      {pad && (
                         <>
                           {' '}
                           <span className="note-row-meta">
                             <span className="note-row-tag">Project notes</span>
                           </span>
                         </>
-                      ) : (
-                        project && (
-                          <>
-                            {' '}
-                            <span className="note-row-meta">
-                              <ProjectChip project={project} />
-                            </span>
-                          </>
-                        )
                       )}
                     </button>
                   </li>

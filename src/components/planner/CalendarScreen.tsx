@@ -4,7 +4,7 @@ import { Calendar, Roadmap } from './lazy'
 /** Calendar: the month and week grids, or the projects' timeline. */
 export function CalendarScreen({ p }: { p: PlannerCtx }) {
   const { store, projectMap, filteredTasks, allEvents, sourceMap, calMode, setCalMode } = p
-  const { openTask, newTask, openProject, newProject, setEventEditor, setAttendance, reschedule } = p
+  const { openTask, newTask, openProject, setEventEditor, setAttendance, reschedule } = p
   const { saveMeal, clearMeal, createPlaceInline, createRecipeInline, planForEvent, planOccasion } = p
   return (
     <>
@@ -52,15 +52,7 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
           onPlanOccasion={planOccasion}
         />
       ) : (
-        <Roadmap
-          projects={store.projects}
-          tasks={store.tasks}
-          events={allEvents}
-          sourceMap={sourceMap}
-          onOpenProject={openProject}
-          onNewProject={newProject}
-          onOpenTask={openTask}
-        />
+        <Roadmap projects={store.projects} tasks={store.tasks} events={allEvents} sourceMap={sourceMap} onOpenProject={openProject} onOpenTask={openTask} />
       )}
     </>
   )

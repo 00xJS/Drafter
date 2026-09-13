@@ -36,7 +36,7 @@ describe('the palette finds notes', () => {
 
 describe('Notes opens a note asked for from the palette', () => {
   const noop = () => {}
-  const shell = { projects: [], getLatest: () => undefined, onSave: noop, onSelectProject: noop, onBack: noop, onNewProject: noop, onCreateTask: noop, onSaveNote: noop }
+  const shell = { projects: [], getLatest: () => undefined, onSave: noop, onSelectProject: noop, onBack: noop, onCreateTask: noop, onSaveNote: noop }
   const NOTES = [note('n1', 'Paint colours', '<p>Sage for the hall</p>'), note('n2', 'Garden', '<p>Beds</p>')]
 
   it('shows that note instead of the list', () => {

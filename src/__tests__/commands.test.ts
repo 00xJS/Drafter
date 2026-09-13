@@ -15,15 +15,14 @@ interface ShellState {
   journalDate: string | null
   settingsOpen: boolean
   newTasks: unknown[][]
-  newProjects: number
   /** the planning sheets opened, in order */
   sheets: Sheet[]
 }
 
 /** Two starting points that disagree on every field, so no landing is true by accident. */
 const STARTS: ShellState[] = [
-  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0, sheets: [] },
-  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, settingsOpen: false, newTasks: [], newProjects: 0, sheets: [] },
+  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, settingsOpen: false, newTasks: [], sheets: [] },
+  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, settingsOpen: false, newTasks: [], sheets: [] },
 ]
 
 /** 2pm: between the morning's quick action and the evening's, so the palette's other rows are pinned on their own. */
@@ -62,9 +61,6 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     newTask: (...args) => {
       s.newTasks.push(args)
     },
-    newProject: () => {
-      s.newProjects++
-    },
     setSettingsOpen: open => {
       s.settingsOpen = open
     },
@@ -94,14 +90,16 @@ describe('the palette’s own commands', () => {
 
   it('offers New task and New bill before you type, and nothing else', () => {
     expect(commands.filter(c => c.quick).map(c => c.id)).toEqual(['new-task', 'new-bill'])
-    // New project is typed for, not offered
-    expect(commands.find(c => c.id === 'new-project')?.quick).toBe(false)
+  })
+
+  it('has no New project, offered or typed for: there is one ongoing project', () => {
+    expect(commands.find(c => c.id === 'new-project')).toBeUndefined()
+    expect(commands.filter(c => /project/i.test(`${c.label} ${c.keywords ?? ''}`)).map(c => c.id)).toEqual([])
   })
 
   it('opens the editors the toolbar does', () => {
     expect(run('new-task').newTasks).toEqual([[]])
     expect(run('new-bill').newTasks).toEqual([[{ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }]])
-    expect(run('new-project').newProjects).toBe(1)
   })
 
   it('opens Plan next week and Ask Drafter over wherever you are, typed for rather than offered', () => {
@@ -198,7 +196,7 @@ describe('the day’s routines in the palette', () => {
       const shut = run('shut-down', start, new Date(2026, 8, 14, 18))
       expect(shut.sheets).toEqual([{ kind: 'shutdown' }])
       for (const s of [day, shut]) {
-        expect(s).toMatchObject({ view: start.view, homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, settingsOpen: false, newProjects: 0 })
+        expect(s).toMatchObject({ view: start.view, homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, settingsOpen: false })
         expect(s.newTasks).toEqual([])
       }
     }

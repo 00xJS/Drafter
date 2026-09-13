@@ -6,7 +6,9 @@ import { excerpt, timeAgo, uid } from '../utils'
 import { RichNotes } from './RichNotes'
 import { NotePane } from './notes/NotePane'
 import { NotesIndex } from './notes/NotesIndex'
+import { NoteTips } from './notes/NoteTips'
 import { blankNote, noteHtml } from './notes/model'
+import { tipAttrs } from './notes/tips'
 
 /** The note's HTML, converting legacy Markdown notes on the fly. */
 export { noteHtml }
@@ -20,7 +22,11 @@ interface PaneProps {
   onBack(): void
 }
 
-/** One project's notes pad, autosaving as you type (debounced). */
+/**
+ * One project's notes pad, autosaving as you type (debounced). Its Pin keeps
+ * the pad at the top of Notes with the pinned notes, stored on the project as
+ * notesPinned.
+ */
 function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PaneProps) {
   const [text, setText] = useState(() => noteHtml(project))
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
@@ -29,16 +35,25 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
   const timer = useRef<number | undefined>(undefined)
   const textRef = useRef(text)
   textRef.current = text
+  const page = useRef<HTMLDivElement>(null)
 
-  const persist = () => {
-    if (!dirtyRef.current) return
+  /**
+   * Save over the newest copy: what was typed, when something is waiting, and
+   * `also` (the pin) in the same save under one newer stamp, so a pin never
+   * drops the last words typed, nor a save of the words the pin.
+   */
+  const persist = (also?: (current: Project) => Partial<Project>) => {
+    window.clearTimeout(timer.current)
+    if (!dirtyRef.current && !also) return
     const current = getLatest(project.id) ?? project
+    const typed = dirtyRef.current && noteHtml(current) !== textRef.current
     dirtyRef.current = false
     setDirty(false)
-    if (noteHtml(current) === textRef.current) return
+    if (!typed && !also) return
     // the markdown field is retired once rich notes exist; keep a plain-text copy for agents/search
-    onSave({ ...current, notesHtml: textRef.current, notes: htmlToText(textRef.current) || undefined, updatedAt: newerStamp(current.updatedAt) })
-    setSavedAt(new Date().toISOString())
+    const words = typed ? { notesHtml: textRef.current, notes: htmlToText(textRef.current) || undefined } : {}
+    onSave({ ...current, ...words, ...also?.(current), updatedAt: newerStamp(current.updatedAt) })
+    if (typed) setSavedAt(new Date().toISOString())
   }
 
   const change = (next: string) => {
@@ -46,7 +61,7 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
     dirtyRef.current = true
     setDirty(true)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(persist, 800)
+    timer.current = window.setTimeout(() => persist(), 800)
   }
 
   // save when the tab goes to the background and when this pane unmounts
@@ -69,18 +84,29 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
     if (!dirtyRef.current && incoming !== textRef.current) setText(incoming)
   }, [project.notesHtml, project.notes]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pinned = !!project.notesPinned
   return (
-    <div className="notes-page">
+    <div className="notes-page" ref={page}>
       <header className="notes-page-head">
-        <button type="button" className="btn subtle notes-back" onClick={onBack}>
+        <button type="button" className="btn subtle notes-back" {...tipAttrs('Back to all notes')} onClick={onBack}>
           All notes
         </button>
         <h2 className="view-title">
           <span className="pdot" style={{ background: project.color }} /> {project.emoji ? `${project.emoji} ` : ''}
           {project.name} · Notes
         </h2>
+        <span className="spacer" />
+        <button
+          type="button"
+          className={pinned ? 'btn subtle note-pin on' : 'btn subtle note-pin'}
+          {...tipAttrs(pinned ? 'Unpin: stop keeping it at the top of Notes' : 'Pin: keep it at the top of Notes')}
+          onClick={() => persist(current => ({ notesPinned: current.notesPinned ? undefined : true }))}
+        >
+          {pinned ? '📌 Unpin' : '📌 Pin'}
+        </button>
       </header>
       <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} onCreateTask={title => onCreateTask(title, project.id)} />
+      <NoteTips root={page} />
     </div>
   )
 }
@@ -95,7 +121,6 @@ interface Props {
   onSelectProject(id: string): void
   /** Close the pad and show the index again. */
   onBack(): void
-  onNewProject(): void
   onCreateTask(title: string, projectId: string): void
   /**
    * Note records, pinned first then most recently edited (store.notes). Passing
@@ -113,7 +138,7 @@ interface Props {
   onOpenNoteDone?(): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onNewProject, onCreateTask, notes, onSaveNote, onDeleteNote, openNoteId, onOpenNoteDone }: Props) {
+export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onCreateTask, notes, onSaveNote, onDeleteNote, openNoteId, onOpenNoteDone }: Props) {
   /** The note on screen: a stored one, or a new one not saved yet. Local to Notes, like the pad the shell holds. */
   const [open, setOpen] = useState<Note | null>(null)
   /** The list's search, kept while a note is open so All notes comes back to the same list. */
@@ -141,18 +166,7 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
 
   if (notes) {
     if (open) {
-      return (
-        <NotePane
-          key={open.id}
-          note={open}
-          stored={notes.find(n => n.id === open.id)}
-          projects={projects}
-          onSave={n => onSaveNote?.(n)}
-          onDelete={onDeleteNote}
-          onBack={() => setOpen(null)}
-          onCreateTask={onCreateTask}
-        />
-      )
+      return <NotePane key={open.id} note={open} stored={notes.find(n => n.id === open.id)} onSave={n => onSaveNote?.(n)} onDelete={onDeleteNote} onBack={() => setOpen(null)} onCreateTask={onCreateTask} />
     }
     return (
       <NotesIndex
@@ -177,15 +191,10 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
 
   const visible = projects.filter(p => p.status !== 'archived')
   if (visible.length === 0) {
+    // said plainly, with nothing that starts a project: there is one ongoing project
     return (
       <div className="empty-hero">
-        <h2>Notes live inside projects</h2>
-        <p>Create a project and its notepad appears here: brainstorm with headings, lists, checklists, links, code, emoji and photos dropped straight in.</p>
-        <p>
-          <button className="btn primary" onClick={onNewProject}>
-            + New project
-          </button>
-        </p>
+        <h2>No notes yet</h2>
       </div>
     )
   }

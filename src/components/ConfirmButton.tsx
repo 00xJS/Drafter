@@ -14,6 +14,11 @@ interface Props {
    * Click again to delete"), or a screen reader would never hear that step.
    */
   ariaLabel?: string
+  /**
+   * What it does, in words: the quick tooltip on a notes page (data-tip, see
+   * NoteTips), and the title and accessible name when those are not given.
+   */
+  tip?: string
   stopPropagation?: boolean
 }
 
@@ -21,9 +26,10 @@ interface Props {
  * Two-step destructive button: the first click arms it, a second click within
  * 4 seconds confirms. Clicking elsewhere, pressing a key or waiting disarms it.
  */
-export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to delete', className = 'btn danger', title, ariaLabel, stopPropagation }: Props) {
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to delete', className = 'btn danger', title, ariaLabel, tip, stopPropagation }: Props) {
   const [armed, setArmed] = useState(false)
   const timer = useRef<number | undefined>(undefined)
+  const name = ariaLabel ?? tip
 
   useEffect(() => {
     if (!armed) return
@@ -40,8 +46,9 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again
     <button
       type="button"
       className={armed ? `${className} armed` : className}
-      title={title}
-      aria-label={ariaLabel && armed ? `${ariaLabel}: ${confirmLabel}` : ariaLabel}
+      title={title ?? tip}
+      aria-label={name && armed ? `${name}: ${confirmLabel}` : name}
+      data-tip={tip}
       onBlur={() => setArmed(false)}
       onClick={e => {
         if (stopPropagation) e.stopPropagation()

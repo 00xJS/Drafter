@@ -46,8 +46,9 @@ export function useOverlays() {
       preset,
       capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
+  // there is one ongoing project, edited from its Timeline bar and from search;
+  // nothing opens the editor on a blank one to start a second
   const openProject = (project: Project) => setProjectEditor({ project })
-  const newProject = () => setProjectEditor({})
 
   /** Pull to refresh stands down while any of these owns the screen. */
   const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || trashOpen || adminOpen
@@ -77,7 +78,6 @@ export function useOverlays() {
     openTask,
     newTask,
     openProject,
-    newProject,
     anyOpen,
   }
 }

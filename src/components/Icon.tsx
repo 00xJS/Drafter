@@ -24,6 +24,8 @@ export type IconName =
   | 'search'
   | 'settings'
   | 'plus'
+  | 'checkbox'
+  | 'camera'
   | 'refresh'
   | 'brand'
 
@@ -118,6 +120,20 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  // a ticked box: the notes bar's checklist, and a task in the palette's results
+  checkbox: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="4" />
+      <path d="M8.4 12.3l2.5 2.5 4.8-5.3" />
+    </>
+  ),
+  // a camera: the notes bar's photo picker (the emoji drew as a dark block there)
+  camera: (
+    <>
+      <path d="M4 8h3l1.7-2.5h6.6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8z" />
+      <circle cx="12" cy="13.5" r="3.3" />
+    </>
+  ),
   // a circular arrow: the pull-to-refresh disc, spun by CSS while a sync runs
   refresh: (
     <>

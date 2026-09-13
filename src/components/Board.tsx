@@ -1,10 +1,9 @@
-import { BOARD_STATUSES, PRIORITY_META, Project, STATUS_META, Task, TaskStatus } from '../types'
+import { BOARD_STATUSES, PRIORITY_META, STATUS_META, Task, TaskStatus } from '../types'
 import { compareTasks } from '../taskutils'
 import { TaskCard } from './TaskCard'
 
 interface Props {
   tasks: Task[]
-  projects: Map<string, Project>
   members: { id: string; displayName: string }[]
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -22,7 +21,7 @@ function sortForColumn(list: Task[], s: TaskStatus): Task[] {
 
 const DONE_CAP = 30
 
-export function Board({ tasks, projects, members, onOpen, onStatus, onNew }: Props) {
+export function Board({ tasks, members, onOpen, onStatus, onNew }: Props) {
   return (
     <>
       {tasks.length === 0 && (
@@ -62,8 +61,6 @@ export function Board({ tasks, projects, members, onOpen, onStatus, onNew }: Pro
                   <TaskCard
                     key={t.id}
                     task={t}
-                    // the board always shows every project, so a card names its own
-                    project={t.projectId ? projects.get(t.projectId) : undefined}
                     assignee={t.assigneeId ? members.find(m => m.id === t.assigneeId)?.displayName : undefined}
                     onOpen={onOpen}
                     onStatus={onStatus}

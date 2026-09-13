@@ -3,6 +3,7 @@ import { JournalEntry, MOOD_META, Note, PLACE_CATEGORY_META, Person, Place, Proj
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
 import { looksLikeQuestion } from '../ask'
+import { dueLabel } from '../taskutils'
 import { excerpt } from '../utils'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
@@ -113,7 +114,6 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
   // aria-activedescendant names the row that Enter would open
   const listId = useId()
   const optionId = (i: number) => `${listId}-${i}`
-  const projectName = useMemo(() => new Map(projects.map(p => [p.id, p.name])), [projects])
 
   useEffect(() => {
     input.current?.focus()
@@ -142,8 +142,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
         score(t.description, needle, 4) +
         score(t.tags.join(' '), needle, 6) +
         score((t.comments ?? []).map(c => c.body).join(' '), needle, 3) +
-        score((t.checklist ?? []).map(c => c.text).join(' '), needle, 3) +
-        score(t.projectId ? projectName.get(t.projectId) ?? '' : '', needle, 2)
+        score((t.checklist ?? []).map(c => c.text).join(' '), needle, 3)
       if (s > 0) {
         const where = score(t.title, needle, 1) ? '' : score(t.description, needle, 1) ? excerpt(t.description, 70) : score((t.comments ?? []).map(c => c.body).join(' '), needle, 1) ? 'in comments' : score((t.checklist ?? []).map(c => c.text).join(' '), needle, 1) ? 'in checklist' : ''
         out.push({ kind: 'task', score: s + (t.status === 'done' || t.status === 'canceled' ? -3 : 0), task: t, where })
@@ -177,7 +176,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
     return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
-  }, [q, tasks, projects, people, places, journal, notes, commands, projectName, canAsk, canOpenNote])
+  }, [q, tasks, projects, people, places, journal, notes, commands, canAsk, canOpenNote])
 
   useEffect(() => setCursor(0), [q])
 
@@ -279,22 +278,25 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
                   </span>
                 </li>
               )
-            if (h.kind === 'task' || h.kind === 'recent')
+            if (h.kind === 'task' || h.kind === 'recent') {
+              // what tells two tasks apart: when each is due, and where the words
+              // matched — never the project, as there is one ongoing project
+              const sub = [dueLabel(h.task), h.kind === 'task' ? h.where : ''].filter(Boolean).join(' · ')
               return (
                 <li key={h.task.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
-                  <span className="search-kind">☐</span>
+                  <span className="search-kind">
+                    <Icon name="checkbox" size={17} />
+                  </span>
                   <span className="search-main">
                     {h.task.title || 'Untitled'}
-                    <small>
-                      {h.task.projectId ? projectName.get(h.task.projectId) : 'No project'}
-                      {h.kind === 'task' && h.where ? ` · ${h.where}` : ''}
-                    </small>
+                    {sub && <small>{sub}</small>}
                   </span>
                   <span className="badge" style={{ background: STATUS_META[h.task.status].bg, color: STATUS_META[h.task.status].color }}>
                     {STATUS_META[h.task.status].label}
                   </span>
                 </li>
               )
+            }
             if (h.kind === 'project')
               return (
                 <li key={h.project.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
@@ -326,7 +328,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
                 </li>
               )
             if (h.kind === 'note') {
-              const about = h.note.projectId ? projectName.get(h.note.projectId) : undefined
+              // a note names no project here either: there is one ongoing project
               return (
                 <li key={h.note.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
                   <span className="search-kind" aria-hidden>
@@ -335,8 +337,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
                   <span className="search-main">
                     {h.note.title || 'Untitled note'}
                     <small>
-                      Note{about ? ` · ${about}` : ''}
-                      {h.where ? ` · ${h.where}` : ''}
+                      Note{h.where ? ` · ${h.where}` : ''}
                     </small>
                   </span>
                 </li>
