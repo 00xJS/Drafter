@@ -21,6 +21,7 @@ import { Toast } from './planner/Toast'
 import { TopBar } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
 import { useDeepLinks } from './planner/useDeepLinks'
+import { useFocusActions } from './planner/useFocusActions'
 import { useLifeActions } from './planner/useLifeActions'
 import { useMineOnly } from './planner/useMineOnly'
 import { useNativeShell } from './planner/useNativeShell'
@@ -67,6 +68,9 @@ export default function Planner() {
     setProjectEditor: overlays.setProjectEditor,
     setNotesProjectId: nav.setNotesProjectId,
   })
+  // Plan my day, Shut down, and Today's focus defer and meal ideas: written
+  // through the task, calendar and meal paths above, one toast and Undo each
+  const focusActions = useFocusActions({ store, household, showToast, ...taskActions, ...cal, ...lifeActions })
   // a moment after launch, fetch the lazy views and editors, so no tab or
   // editor waits on the network later
   useWarmChunks(owner.isOwner)
@@ -86,6 +90,7 @@ export default function Planner() {
     ...owner,
     ...lifeActions,
     ...taskActions,
+    ...focusActions,
   }
   // what the shell itself reads: the screen switch, the Mine note, pull to refresh, the toast
   const { view, mineOnly, setMineOnly, inHousehold, manualSync, anyOpen, toast, setToast } = p

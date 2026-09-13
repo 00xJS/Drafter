@@ -1,8 +1,9 @@
 import { Suspense, type ReactNode } from 'react'
 import { newerStamp } from '../../itemops'
+import { localDayKey, shiftDayKey } from '../../journal'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
-import { Admin, AttendancePicker, EventEditor, ProjectEditor, Search, Settings, TaskEditor, Trash } from './lazy'
+import { Admin, AttendancePicker, EventEditor, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash } from './lazy'
 
 /**
  * One overlay's own boundaries. Until its chunk lands nothing is shown (after
@@ -18,14 +19,16 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
   )
 }
 
-/** Whatever sits over the screen: the task, project and event editors, the attendance picker, search, trash, settings and Admin. */
+/** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, paletteCommands, inHousehold, showToast } = p
+  const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
   const { setView, goTasksTab, setNotesProjectId, openPlace, openJournal } = p
-  const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor } = p
+  const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
-  const { calendars, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent } = p
+  const { calendars, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
+  const { applyDayPlan, applyShutdown } = p
+  const today = localDayKey()
   return (
     <>
       {editor && (
@@ -166,6 +169,61 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSave={saveEvents}
             onDelete={deleteEvent}
             onClose={() => setEventEditor(null)}
+          />
+        </Layer>
+      )}
+
+      {/* The daily routines. Each sheet writes nothing itself: Done hands the
+          whole plan to useFocusActions, which applies it with one toast and one
+          Undo. Routine ticks and the journal line save as they always do. */}
+      {sheet?.kind === 'day' && (
+        <Layer name="Plan my day">
+          <PlanDaySheet
+            tasks={filteredTasks}
+            projects={store.projects}
+            reviews={store.reviews}
+            events={allEvents}
+            entries={store.events}
+            today={today}
+            now={new Date()}
+            myId={household.myId}
+            initialStep={sheet.step}
+            mirroring={mirrorsOn}
+            meals={store.meals}
+            recipes={store.recipes}
+            places={store.places}
+            onApply={r => {
+              closeSheet()
+              applyDayPlan(r)
+            }}
+            onClose={closeSheet}
+          />
+        </Layer>
+      )}
+
+      {sheet?.kind === 'shutdown' && (
+        <Layer name="Shut down">
+          <ShutdownSheet
+            tasks={filteredTasks}
+            projects={store.projects}
+            reviews={store.reviews}
+            routines={store.routines}
+            journal={store.journal}
+            people={store.people}
+            today={today}
+            tomorrow={shiftDayKey(today, 1)}
+            myId={household.myId}
+            onSaveRoutine={r => store.upsert(r)}
+            onSaveJournal={e => store.upsert(e)}
+            onDeleteJournal={id => {
+              store.remove(id)
+              showToast('Journal entry removed', () => store.restore([id]))
+            }}
+            onApply={r => {
+              closeSheet()
+              applyShutdown(r)
+            }}
+            onClose={closeSheet}
           />
         </Layer>
       )}

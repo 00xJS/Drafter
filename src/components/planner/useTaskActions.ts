@@ -151,15 +151,27 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
   // drop the pending ones when the planner goes away (sign-out, unmount)
   useEffect(() => cancelQueuedPushes, [])
 
-  const changeStatus = (id: string, status: TaskStatus) => {
+  /**
+   * A status move with its GitHub write-back and no toast: the linked issue
+   * closes on Done and the board gets the stored task. changeStatus adds its
+   * toast; a plan that moves several tasks at once says one thing for them all.
+   * Returns the change (with any repeat it spawned) for an Undo.
+   */
+  const applyStatus = (id: string, status: TaskStatus) => {
     const change = store.setStatus(id, status)
-    if (!change) return
+    if (!change) return null
     if (status === 'done' && change.prev.status !== 'done') closeLinkedIssue(change.prev)
     // the stored task, not `prev` with a status on it: the board's freshness
     // guard drops a push whose stamp the row already sits after, so pushing the
     // pre-edit stamp would let the first push through and silently swallow
     // every one after it
     pushToProjectBoard(change.next)
+    return change
+  }
+
+  const changeStatus = (id: string, status: TaskStatus) => {
+    const change = applyStatus(id, status)
+    if (!change) return
     showToast(`Moved to ${STATUS_META[status].label}`, () => {
       // the undo goes to the board too: it supersedes the queued push (same
       // task id, so the timer is replaced), and without it GitHub would keep
@@ -171,7 +183,12 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     })
   }
 
-  const reschedule = (id: string, day: Date) => {
+  /**
+   * Move a task to `day`, keeping its time of day (09:00 if it had none).
+   * `patch` rides on the same write: a defer from today's focus card also
+   * clears focusOn, so one Undo puts back both.
+   */
+  const reschedule = (id: string, day: Date, patch: Partial<Task> = {}) => {
     const t = store.tasks.find(x => x.id === id)
     if (!t || t.status === 'done') return null
     const prev = { ...t }
@@ -179,6 +196,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), old?.getHours() ?? 9, old?.getMinutes() ?? 0)
     const next: Task = {
       ...t,
+      ...patch,
       status: t.status === 'wishlist' || t.status === 'canceled' ? 'todo' : t.status,
       dueAt: at.toISOString(),
       updatedAt: newerStamp(t.updatedAt),
@@ -188,8 +206,8 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     return prev
   }
 
-  const defer = (id: string, day: Date) => {
-    const prev = reschedule(id, day)
+  const defer = (id: string, day: Date, patch?: Partial<Task>) => {
+    const prev = reschedule(id, day, patch)
     if (!prev) return
     const label = day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
     // deferring is the one daily gesture with no other confirmation you can feel
@@ -219,5 +237,5 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     })
   }
 
-  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, changeStatus, reschedule, defer, deferAll }
+  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, applyStatus, changeStatus, reschedule, defer, deferAll }
 }

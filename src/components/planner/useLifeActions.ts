@@ -1,4 +1,4 @@
-import { PROJECT_COLORS, type CalendarEvent, type Meal, type Person, type Place, type PlaceCategory, type Recipe } from '../../types'
+import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type Person, type Place, type PlaceCategory, type Recipe } from '../../types'
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendars'
 import { mealWrites } from '../../kitchen'
@@ -12,17 +12,18 @@ interface Deps {
   newTask: ReturnType<typeof useOverlays>['newTask']
 }
 
+/** The grocery lists once `rows` are written: each rebuilt list replaces its week's. */
+function afterWrites(lists: GroceryList[], rows: (Meal | GroceryList)[]): GroceryList[] {
+  const rebuilt = rows.filter((r): r is GroceryList => r.kind === 'grocery')
+  return [...lists.filter(g => !rebuilt.some(r => r.weekKey === g.weekKey)), ...rebuilt]
+}
+
 /**
  * The home side of the day: meals and the grocery lists they write, places and
  * dishes named on the fly, visits and outings logged with an undo, and the
  * tasks that plan them.
  */
 export function useLifeActions({ store, showToast, newTask }: Deps) {
-  /**
-   * Planning a meal always writes its week's grocery list in the same round —
-   * see mealWrites. Both the Kitchen tab and the calendar's day sheet go
-   * through here so neither can forget it.
-   */
   /**
    * A place created while planning a meal: somewhere you ate for the first time
    * gets tracked from the meal picker, instead of a detour to the Places tab.
@@ -61,13 +62,38 @@ export function useLifeActions({ store, showToast, newTask }: Deps) {
     return recipe
   }
 
-  const saveMeal = (m: Meal) => {
-    for (const row of mealWrites(m, null, store.meals, store.recipes, store.groceries)) store.upsert(row)
+  /**
+   * Planning a meal always writes its week's grocery list in the same round —
+   * see mealWrites. The Kitchen tab, the calendar's day sheet and Today's meal
+   * ideas all go through here so none can forget it. Several meals at once
+   * (Plan my day's lunch and dinner, and their Undo) fold: the store's lists do
+   * not change until the next render, so each list is rebuilt on top of the one
+   * before it — rebuilt from the store's instead, the second would drop the
+   * first meal's ingredients.
+   */
+  const saveMeals = (next: Meal[]) => {
+    let meals = store.meals
+    let lists = store.groceries
+    for (const m of next) {
+      const rows = mealWrites(m, null, meals, store.recipes, lists)
+      for (const row of rows) store.upsert(row)
+      meals = [...meals.filter(x => x.id !== m.id), m]
+      lists = afterWrites(lists, rows)
+    }
   }
-  const clearMeal = (id: string) => {
-    for (const row of mealWrites(null, id, store.meals, store.recipes, store.groceries)) store.upsert(row)
-    store.remove(id)
+  const clearMeals = (ids: string[]) => {
+    let meals = store.meals
+    let lists = store.groceries
+    for (const id of ids) {
+      const rows = mealWrites(null, id, meals, store.recipes, lists)
+      for (const row of rows) store.upsert(row)
+      store.remove(id)
+      meals = meals.filter(x => x.id !== id)
+      lists = afterWrites(lists, rows)
+    }
   }
+  const saveMeal = (m: Meal) => saveMeals([m])
+  const clearMeal = (id: string) => clearMeals([id])
 
   /** One-tap "Saw them" with undo — used from Today, Search, and ?saw=. */
   const sawThem = (person: Person) => {
@@ -160,5 +186,5 @@ export function useLifeActions({ store, showToast, newTask }: Deps) {
     })
   }
 
-  return { createPlaceInline, createRecipeInline, saveMeal, clearMeal, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent }
+  return { createPlaceInline, createRecipeInline, saveMeal, clearMeal, saveMeals, clearMeals, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent }
 }

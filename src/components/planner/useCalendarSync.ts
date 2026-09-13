@@ -156,10 +156,19 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     })()
     showToast(`${entries.length} work days added`)
   }
-  const deleteEvent = (id: string) => {
+  /**
+   * Take an entry off the calendar and off every mirror, quietly: the caller
+   * says what happened — deleteEvent's toast, or the Undo of a plan that added
+   * time blocks. Returns the entry as it was, for an Undo that puts it back.
+   */
+  const removeEvent = (id: string): CalendarEntry | undefined => {
     const gone = store.events.find(e => e.id === id)
     store.remove(id)
     if (gone) mirrorEvent({ ...gone, deletedAt: new Date().toISOString() })
+    return gone
+  }
+  const deleteEvent = (id: string) => {
+    const gone = removeEvent(id)
     showToast('Event deleted', () => {
       store.restore([id])
       // Undo has to put it back on the mirrors too, or it lives only in Drafter
@@ -184,5 +193,8 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     }
   }
 
-  return { calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, saveEvents, deleteEvent, syncing, manualSync }
+  /** Our own entries go out to at least one calendar — Google, or any Outlook account — so a time block shows there as busy. */
+  const mirrorsOn = mirroring || msMirrorIds.length > 0
+
+  return { calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, removeEvent, deleteEvent, syncing, manualSync }
 }

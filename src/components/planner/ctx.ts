@@ -3,6 +3,7 @@ import type { Store } from '../../store'
 import type { projectById } from '../../taskutils'
 import type { Command } from '../Search'
 import type { useCalendarSync } from './useCalendarSync'
+import type { useFocusActions } from './useFocusActions'
 import type { useLifeActions } from './useLifeActions'
 import type { useMineOnly } from './useMineOnly'
 import type { useNavigation } from './useNavigation'
@@ -30,4 +31,5 @@ export type PlannerCtx = {
   ReturnType<typeof useOverlays> &
   ReturnType<typeof useOwner> &
   ReturnType<typeof useLifeActions> &
-  ReturnType<typeof useTaskActions>
+  ReturnType<typeof useTaskActions> &
+  ReturnType<typeof useFocusActions>
