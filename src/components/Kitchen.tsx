@@ -30,6 +30,9 @@ import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
+import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
+import { RecipeSuggestions } from './RecipeSuggestions'
+import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
 type Seg = 'recipes' | 'week' | 'grocery'
 const SEG_KEY = 'drafter:kitchen-tab'
@@ -52,9 +55,16 @@ interface Props {
   /** Open this recipe in cook mode (Today → tonight’s dinner). */
   openRecipe?: Recipe | null
   onOpenRecipeConsumed?(): void
+  /** Optional, for "Plan this week's meals": tasks let places you eat at count their outings. */
+  tasks?: Task[]
+  /** Optional, for "Plan this week's meals": your own events and subscribed ones flag a busy evening. */
+  entries?: CalendarEntry[]
+  feedEvents?: CalendarEvent[]
+  /** Optional: the planner's toast. With it the meal plan's confirmation and Undo go there; without it they stay in the sheet. */
+  onToast?(msg: string, undo?: () => void): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed }: Props) {
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast }: Props) {
   const [seg, setSeg] = useState<Seg>(() => {
     try {
       const saved = localStorage.getItem(SEG_KEY) as Seg | null
@@ -67,6 +77,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
   const [editing, setEditing] = useState<Recipe | 'new' | null>(null)
   const [cooking, setCooking] = useState<Recipe | null>(null)
   const [q, setQ] = useState('')
+  const [planningMeals, setPlanningMeals] = useState(false)
 
   const week = useMemo(() => weekRange(anchor), [anchor])
   const weekMeals = useMemo(() => mealsForWeek(meals, week.start), [meals, week.start])
@@ -95,6 +106,39 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     onSave(r)
     const dates = meals.filter(m => m.recipeId === r.id).map(m => m.date)
     if (dates.length) persistGroceries(meals, dates, nextRecipes)
+  }
+
+  // the latest props, for an Undo pressed after this render's closures went stale
+  const latest = useRef({ meals, recipes, groceries, onClearMeal, onSave })
+  latest.current = { meals, recipes, groceries, onClearMeal, onSave }
+
+  /**
+   * "Plan this week's meals", accepted: each meal through onSaveMeal (the
+   * planner's own path), then the week's grocery list rebuilt once from all of
+   * them — one save at a time rebuilds it from a snapshot missing the others.
+   * Undo clears what is still as it was planned, drops a new dish's stub that
+   * nothing uses and nobody edited, and rebuilds the list again.
+   */
+  const applyMealPlan = (picks: MealPick[]): { count: number; undo(): void } | null => {
+    const { meals: planned, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date() })
+    if (planned.length === 0) return null
+    for (const m of planned) onSaveMeal(m)
+    const dates = planned.map(m => m.date)
+    persistGroceries([...meals.filter(m => !planned.some(p => p.id === m.id)), ...planned], dates, [...recipes, ...created])
+    return {
+      count: planned.length,
+      undo: () => {
+        const cur = latest.current
+        const cleared = new Set(planned.filter(p => cur.meals.some(m => m.id === p.id && m.updatedAt === p.updatedAt)).map(p => p.id))
+        for (const id of cleared) cur.onClearMeal(id)
+        const rest = cur.meals.filter(m => !cleared.has(m.id))
+        for (const r of created) {
+          const now = cur.recipes.find(x => x.id === r.id)
+          if (now && now.updatedAt === r.updatedAt && !rest.some(m => m.recipeId === r.id)) cur.onSave({ ...now, deletedAt: new Date().toISOString(), updatedAt: newerStamp(now.updatedAt) })
+        }
+        for (const g of groceriesForMealDates(rest, cur.recipes, cur.groceries, dates)) cur.onSave(g)
+      },
+    }
   }
 
   useEffect(() => {
@@ -126,6 +170,16 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
               + Recipe
             </button>
           </div>
+          {!q.trim() && (
+            <RecipeSuggestions
+              recipes={recipes}
+              meals={meals}
+              onAccept={r => {
+                persistRecipe(r)
+                setCooking(r)
+              }}
+            />
+          )}
           {filtered.length === 0 ? (
             <p className="empty">Save dishes you cook at home. Plan them onto the week, then build a grocery list from what’s for dinner.</p>
           ) : (
@@ -181,6 +235,23 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onCreatePlace={onCreatePlace}
           onCreateRecipe={onCreateRecipe}
           onOpenRecipe={r => setCooking(r)}
+          onPlan={() => setPlanningMeals(true)}
+        />
+      )}
+
+      {seg === 'week' && planningMeals && (
+        <MealPlanSheet
+          week={week}
+          items={[...recipes, ...meals, ...places, ...(tasks ?? []), ...(entries ?? [])]}
+          events={feedEvents}
+          recipes={recipes}
+          places={places}
+          meals={meals}
+          onCreatePlace={onCreatePlace}
+          onCreateRecipe={onCreateRecipe}
+          onApply={applyMealPlan}
+          onToast={onToast}
+          onClose={() => setPlanningMeals(false)}
         />
       )}
 
@@ -242,6 +313,7 @@ function WeekPlan({
   onCreatePlace,
   onCreateRecipe,
   onOpenRecipe,
+  onPlan,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
   meals: Meal[]
@@ -253,6 +325,8 @@ function WeekPlan({
   onSaveMeal(m: Meal): void
   onClearMeal(id: string): void
   onOpenRecipe(r: Recipe): void
+  /** Open "Plan this week's meals". */
+  onPlan?(): void
 }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(week.start)
@@ -260,6 +334,8 @@ function WeekPlan({
     return d
   })
   const today = dateKey(new Date())
+  // dinners still to plan from today on: a past night is not worth proposing
+  const emptyDinners = days.map(dateKey).filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
   return (
     <>
       <div className="people-toolbar">
@@ -273,6 +349,19 @@ function WeekPlan({
         </button>
       </div>
       <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. These also show on the calendar.</p>
+      {onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0) && (
+        <div className="meal-plan-cta">
+          <p>
+            <strong>
+              {emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}
+            </strong>
+            <small>Build the week together: picks from what you cook most, or ask the assistant when you can’t decide.</small>
+          </p>
+          <button className="btn primary" onClick={onPlan}>
+            Plan this week’s meals
+          </button>
+        </div>
+      )}
       <ul className="meal-week">
         {days.map(d => {
           const key = dateKey(d)

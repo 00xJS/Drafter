@@ -287,3 +287,147 @@
   }
 }
 
+/* ============================================================
+   Kitchen: plan the week's meals, recipes you might like (P3)
+   ------------------------------------------------------------
+   The meal plan sheet's rows are the week plan's (.week-plan-*
+   in 11-people-review-search.css); these are the Kitchen's own
+   pieces. The grocery list's rules are not in this block.
+   ============================================================ */
+.meal-plan-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.meal-plan-cta p {
+  flex: 1;
+  min-width: 12rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.meal-plan-cta small {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.meal-plan-lunch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.meal-plan-new {
+  color: var(--accent-text);
+  font-weight: 400;
+}
+.meal-plan-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.meal-plan-ai h3 {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.meal-plan-done {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.recipe-suggest {
+  margin-bottom: 12px;
+}
+.recipe-suggest .chart-head {
+  flex-wrap: wrap;
+}
+.recipe-suggest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe-suggest-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.recipe-suggest-card .dash-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.recipe-suggest-why {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.recipe-suggest-like {
+  color: var(--accent-text);
+  font-size: 0.75rem;
+}
+.recipe-suggest-more summary {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.recipe-suggest-more .recipe-ings,
+.recipe-suggest-steps {
+  margin: 6px 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.recipe-suggest-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .recipe-suggest-card {
+    flex-direction: column;
+  }
+  .recipe-suggest-actions {
+    width: 100%;
+    flex-direction: row;
+  }
+  .recipe-suggest-actions .btn {
+    flex: 1;
+  }
+  .meal-plan-cta .btn {
+    width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .recipe-suggest-actions .btn,
+  .recipe-suggest .chart-head .btn,
+  .meal-plan-cta .btn,
+  .meal-plan-ai .btn {
+    min-height: 44px;
+  }
+  .recipe-suggest-more summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
