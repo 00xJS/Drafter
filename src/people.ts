@@ -1,9 +1,10 @@
-import { Person, Task } from './types'
+import { CalendarEntry, Person, Task } from './types'
 import { startOfDay } from './taskutils'
 import {
   DEFAULT_CADENCE_DAYS,
   DAY_MS,
   visitsFor as sharedVisitsFor,
+  eventVisits as sharedEventVisits,
   plannedVisit as sharedPlannedVisit,
   plannedGift as sharedPlannedGift,
   seenStatus as sharedSeenStatus,
@@ -11,8 +12,9 @@ import {
 } from '../shared/people.mjs'
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
-// a dinner you planned, a task you did together. Everything below derives
-// from those completion dates.
+// a dinner you planned, a task you did together. An event of your own they
+// are on counts too once it has happened, read as the visit task it amounts
+// to (eventVisits). Everything below derives from those completion dates.
 
 export interface Visit {
   task: Task
@@ -41,6 +43,16 @@ export interface PersonStats {
 
 export function visitsFor(personId: string, tasks: Task[]): Visit[] {
   return sharedVisitsFor(personId, tasks) as Visit[]
+}
+
+/**
+ * Your own past events with people on them, as the done visit tasks they
+ * amount to. Add them to the tasks a count reads and each counts as a
+ * subscribed calendar's event does once Who was there? has logged it. They
+ * are read, never saved.
+ */
+export function eventVisits(entries: CalendarEntry[], now: Date = new Date()): Task[] {
+  return sharedEventVisits(entries, now)
 }
 
 /** Shared last/gap/weekly rollup used by people and places. */

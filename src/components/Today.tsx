@@ -22,7 +22,7 @@ import {
 import { tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
-import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
+import { SEEN_META, compareStats, eventVisits, personStats, plannedGift, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
@@ -566,13 +566,16 @@ export function Today({
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
   const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
-    () =>
-      people
-        .map(p => personStats(p, allTasks))
+    () => {
+      // your own events that have happened count as seeing the people on them, as on People
+      const seen = [...allTasks, ...eventVisits(entries)]
+      return people
+        .map(p => personStats(p, seen))
         .filter(s => s.status === 'overdue' || s.status === 'due')
         .sort(compareStats)
-        .slice(0, 6),
-    [people, allTasks],
+        .slice(0, 6)
+    },
+    [people, allTasks, entries],
   )
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
   const placeNudges = useMemo(() => {

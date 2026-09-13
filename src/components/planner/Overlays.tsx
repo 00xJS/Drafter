@@ -243,6 +243,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             entry={eventEditor.entry}
             defaultStartIso={eventEditor.startIso}
             defaultWork={eventEditor.work}
+            people={store.people}
+            onSavePerson={p => store.upsert(p)}
             onSave={saveEvents}
             onDelete={deleteEvent}
             onClose={() => setEventEditor(null)}

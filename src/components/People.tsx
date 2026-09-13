@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CADENCE_META, Cadence, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
+import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, personStats, yearReport } from '../people'
+import { PersonStats, SEEN_META, compareStats, eventVisits, personStats, yearReport } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -26,6 +26,10 @@ interface Props {
   /** Start planning something with a person (opens a new task with them attached). */
   onPlan(person: Person, title?: string): void
   onOpenTask(t: Task): void
+  /** Your own calendar entries: one that has happened with people on it counts as seeing them. */
+  entries?: CalendarEntry[]
+  /** Open one of those entries, from the visit it counts as. */
+  onOpenEntry?(e: CalendarEntry): void
 }
 
 type GroupFilter = 'all' | PersonGroup
@@ -474,7 +478,9 @@ function PersonRow({
   )
 }
 
-export function People({ people, places = [], tasks, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask }: Props) {
+const NO_ENTRIES: CalendarEntry[] = []
+
+export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask, onOpenEntry }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
   const [group, setGroup] = useState<GroupFilter>('all')
@@ -483,8 +489,21 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
   const [openId, setOpenId] = useState<string | null>(null)
   const [year, setYear] = useState(() => new Date().getFullYear())
 
-  const allStats = useMemo(() => people.map(p => personStats(p, tasks)), [people, tasks])
+  // An event of your own counts as seeing the people on it once it has
+  // happened, the way a subscribed calendar's does once Who was there? logs
+  // them: read as the visit task that would have been logged, it reaches
+  // every number below. Places still come from tasks: an event names none.
+  const seen = useMemo(() => [...tasks, ...eventVisits(entries)], [tasks, entries])
+  const allStats = useMemo(() => people.map(p => personStats(p, seen)), [people, seen])
   const favouriteNames = useMemo(() => favourites(places, tasks, people).map(s => s.place.name), [places, tasks, people])
+
+  // a visit an event made opens that event: it is not a task, and saved as
+  // one it would be written over the event
+  const openVisit = (t: Task) => {
+    const entry = entries.find(e => e.id === t.id)
+    if (!entry) onOpenTask(t)
+    else onOpenEntry?.(entry)
+  }
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -517,7 +536,7 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
     const scoped = new Set(shown.map(s => s.person.id))
     const occasions = new Set<string>()
     let personVisits = 0
-    for (const t of tasks) {
+    for (const t of seen) {
       if (t.status !== 'done' || !t.completedAt) continue
       const involved = (t.peopleIds ?? []).filter(id => scoped.has(id))
       if (involved.length === 0) continue
@@ -527,9 +546,9 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
     const attention = { overdue: 0, due: 0 }
     for (const s of shown) if (s.status === 'overdue' || s.status === 'due') attention[s.status]++
     return { occasions: occasions.size, personVisits, attention }
-  }, [shown, tasks])
+  }, [shown, seen])
 
-  const report = useMemo(() => yearReport(shown.map(s => s.person), tasks, year), [shown, tasks, year])
+  const report = useMemo(() => yearReport(shown.map(s => s.person), seen, year), [shown, seen, year])
   const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
   return (
@@ -616,7 +635,7 @@ export function People({ people, places = [], tasks, journal, onOpenJournal, onS
                   onEdit={() => setEditing({ person: s.person })}
                   onLog={() => setLogging(s.person)}
                   onPlan={title => onPlan(s.person, title)}
-                  onOpenTask={onOpenTask}
+                  onOpenTask={openVisit}
                   placesTogether={places.length ? placesWith(s.person.id, places, tasks) : undefined}
                   favouriteNames={favouriteNames}
                   journal={journal}

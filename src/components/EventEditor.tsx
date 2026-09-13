@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { CalendarEntry, WORK_MODES, WORK_MODE_META, WorkMode } from '../types'
+import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode } from '../types'
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
 import { Modal, ModalHead } from './Modal'
+import { PeoplePicker } from './PeoplePicker'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
 // Everything else on the calendar marks a moment (a due time, a meal, an
@@ -65,10 +66,50 @@ const WEEKDAYS: { n: number; label: string }[] = [
 ]
 const REPEAT_WEEKS = [1, 2, 4, 8, 12]
 
+/** The rest of the form, which a work day and an event share. */
+interface EntryFields {
+  location: string
+  notes: string
+  work?: WorkMode
+  peopleIds: string[]
+}
+
+/**
+ * A full entry from the editor's fields. Editing keeps the id and creation
+ * time. People are an event's: a work day keeps whatever it had, and an event
+ * with nobody on it stores no list, just as entries did before they had people.
+ */
+export function buildEntry(
+  entry: CalendarEntry | undefined,
+  f: { title: string; start: string; end: string; allDay: boolean },
+  rest: EntryFields,
+  keepId: boolean,
+): CalendarEntry {
+  const now = new Date().toISOString()
+  const editing = keepId ? entry : undefined
+  return {
+    kind: 'event',
+    id: editing ? editing.id : uid(),
+    title: f.title,
+    start: f.start,
+    end: f.end,
+    allDay: f.allDay,
+    location: rest.location.trim() || undefined,
+    notes: rest.notes.trim() || undefined,
+    projectId: entry?.projectId,
+    peopleIds: rest.work ? entry?.peopleIds : rest.peopleIds.length > 0 ? rest.peopleIds : undefined,
+    work: rest.work,
+    createdAt: editing ? editing.createdAt : now,
+    updatedAt: editing ? newerStamp(editing.updatedAt) : now,
+  }
+}
+
 export function EventEditor({
   entry,
   defaultStartIso,
   defaultWork,
+  people,
+  onSavePerson,
   onSave,
   onDelete,
   onClose,
@@ -79,6 +120,10 @@ export function EventEditor({
   defaultStartIso: string
   /** Open straight into a work day, from the calendar's "Work day" button. */
   defaultWork?: WorkMode
+  /** Who can be put on an event. */
+  people: Person[]
+  /** Save someone typed into People here who isn't in People yet. */
+  onSavePerson?(p: Person): void
   /** One entry, or every day of a repeated work pattern. */
   onSave(entries: CalendarEntry[]): void
   onDelete?(id: string): void
@@ -105,28 +150,11 @@ export function EventEditor({
   const [repeatWeeks, setRepeatWeeks] = useState(4)
   const [location, setLocation] = useState(entry?.location ?? '')
   const [notes, setNotes] = useState(entry?.notes ?? '')
+  const [peopleIds, setPeopleIds] = useState<string[]>(entry?.peopleIds ?? [])
   const [error, setError] = useState('')
 
-  /** A full entry from the fields both kinds share. Editing keeps the id and creation time. */
-  const build = (f: { title: string; start: string; end: string; allDay: boolean }, keepId: boolean): CalendarEntry => {
-    const now = new Date().toISOString()
-    const editing = keepId ? entry : undefined
-    return {
-      kind: 'event',
-      id: editing ? editing.id : uid(),
-      title: f.title,
-      start: f.start,
-      end: f.end,
-      allDay: f.allDay,
-      location: location.trim() || undefined,
-      notes: notes.trim() || undefined,
-      projectId: entry?.projectId,
-      peopleIds: entry?.peopleIds,
-      work,
-      createdAt: editing ? editing.createdAt : now,
-      updatedAt: editing ? newerStamp(editing.updatedAt) : now,
-    }
-  }
+  const build = (f: { title: string; start: string; end: string; allDay: boolean }, keepId: boolean): CalendarEntry =>
+    buildEntry(entry, f, { location, notes, work, peopleIds }, keepId)
 
   const saveWork = (mode: WorkMode) => {
     const name = title.trim() || WORK_MODE_META[mode].label
@@ -315,6 +343,17 @@ export function EventEditor({
                 </label>
               </>
             )}
+
+            {/* who it is with: once it has happened it counts as seeing them,
+                as Who was there? does for another calendar's event */}
+            <PeoplePicker
+              peopleIds={peopleIds}
+              onChange={setPeopleIds}
+              people={people}
+              onSavePerson={onSavePerson}
+              hint="once it has happened, it counts as seeing them"
+              noun="event"
+            />
           </>
         )}
 

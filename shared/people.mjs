@@ -14,6 +14,38 @@ export function visitsFor(personId, tasks) {
     .sort((a, b) => b.at.localeCompare(a.at))
 }
 
+/**
+ * Your own calendar entries that have happened with people on them, as the done
+ * visit task "Who was there?" logs for a subscribed calendar's event: titled as
+ * the event and dated at its start (midday on an all-day one), so visitsFor and
+ * everything built on it counts them the same way. A work day is never a visit,
+ * and nothing counts before that time has come. Each keeps its entry's id, so a
+ * visit can open the entry it came from.
+ */
+export function eventVisits(entries, now = new Date()) {
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
+  const out = []
+  for (const e of entries ?? []) {
+    if (!e || e.kind !== 'event' || e.deletedAt || e.work || !(e.peopleIds ?? []).length) continue
+    const atMs = e.allDay ? new Date(`${e.start}T12:00`).getTime() : Date.parse(e.start)
+    if (!Number.isFinite(atMs) || atMs > nowMs) continue
+    out.push({
+      kind: 'task',
+      id: e.id,
+      title: e.title,
+      description: e.location ? `At ${e.location}` : '',
+      status: 'done',
+      priority: 'normal',
+      completedAt: new Date(atMs).toISOString(),
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+      tags: ['visit'],
+      peopleIds: [...e.peopleIds],
+    })
+  }
+  return out
+}
+
 /** Soonest open catch-up / visit plan for this person, if any. */
 export function plannedVisit(personId, tasks) {
   return (
