@@ -78,6 +78,19 @@ describe('mirrorChangeWrites: a task moved in Google or Outlook', () => {
     expect(writes[0].updatedAt > t.updatedAt).toBe(true)
   })
 
+  it('moves an untimed task one day forward or back', () => {
+    // the commonest reschedule. Here the new day's local midnight is 23:00 on
+    // the task's old day in UTC, which the guard once read as no move at all
+    const forward = mirrorChangeWrites([task()], [change({ start: '2026-09-21' })]).writes
+    expect(forward).toHaveLength(1)
+    expect(forward[0].dueAt).toBe(day(21))
+    expect(forward[0].dueAt).toBe('2026-09-20T23:00:00.000Z')
+    const back = mirrorChangeWrites([task()], [change({ start: '2026-09-19' })]).writes
+    expect(back).toHaveLength(1)
+    expect(back[0].dueAt).toBe(day(19))
+    expect(back[0].dueAt).toBe('2026-09-18T23:00:00.000Z')
+  })
+
   it('moves a timed task to the instant the provider gives, whatever zone it answers in', () => {
     const [row] = mirrorChangeWrites([task({ dueAt: at(20, 14) })], [change({ allDay: false, start: '2026-09-21T15:30:00+01:00' })]).writes
     expect(row.dueAt).toBe('2026-09-21T14:30:00.000Z')

@@ -951,12 +951,14 @@ export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[]): { wr
       continue
     }
     if (!c.start) continue
-    const next = c.allDay
-      ? localMidnightIso(/^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10))
-      : new Date(c.start).toISOString()
+    const day = /^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10)
+    const next = c.allDay ? localMidnightIso(day) : new Date(c.start).toISOString()
     if (!next || next === t.dueAt) continue
-    // compare all-day by local date key so a 09:00 rewrite is ignored
-    if (c.allDay && t.dueAt && (dateKey(t.dueAt) === next.slice(0, 10) || dateKey(t.dueAt) === c.start.slice(0, 10))) continue
+    // An all-day change is compared by the task's local day against the
+    // event's own date, so a 09:00 rewrite is ignored. Never against the UTC
+    // date of the new local midnight: east of UTC that is the day before, the
+    // task's old day, and a move one day forward was dropped.
+    if (c.allDay && t.dueAt && dateKey(t.dueAt) === day) continue
     writes.push({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
   }
   return { writes, done }
