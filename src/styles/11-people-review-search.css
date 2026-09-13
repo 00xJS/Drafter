@@ -446,6 +446,12 @@
   color: var(--muted);
   font-size: 0.6875rem;
 }
+/* the name and its events take the room between the avatar and the count, so
+   a short line stays at the left rather than being spread to the middle */
+.dash-list li > .person-avatar + .dash-main {
+  flex: 1;
+  min-width: 0;
+}
 
 .digest-hour {
   display: inline-flex;
