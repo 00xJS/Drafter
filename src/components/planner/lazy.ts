@@ -29,10 +29,13 @@ export const Admin = preloadable(() => import('../Admin').then(m => m.Admin), 'A
 // the daily routines' sheets, opened from Today's strip, the palette and ?plan=
 export const PlanDaySheet = preloadable(() => import('../PlanDaySheet').then(m => m.PlanDaySheet), 'PlanDaySheet')
 export const ShutdownSheet = preloadable(() => import('../ShutdownSheet').then(m => m.ShutdownSheet), 'ShutdownSheet')
+// Plan next week (Home → Week, Today on a Sunday, the palette, ?plan=week) and Ask Drafter (the palette)
+export const WeekPlanSheet = preloadable(() => import('../WeekPlanSheet').then(m => m.WeekPlanSheet), 'WeekPlanSheet')
+export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskSheet), 'AskSheet')
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, PlanDaySheet.preload, ShutdownSheet.preload],
+  home: [Review.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
   people: [People.preload, Places.preload],
@@ -41,7 +44,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

@@ -1,9 +1,15 @@
-import { Suspense, type ReactNode } from 'react'
+import { Suspense, useState, type ReactNode } from 'react'
+import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
+import type { AskDoc } from '../../ask'
 import { newerStamp } from '../../itemops'
 import { localDayKey, shiftDayKey } from '../../journal'
+import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
-import { Admin, AttendancePicker, EventEditor, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash } from './lazy'
+import { Admin, AskSheet, AttendancePicker, EventEditor, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+
+/** The zone "today" and every day in the planning sheets are read in. */
+const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
 /**
  * One overlay's own boundaries. Until its chunk lands nothing is shown (after
@@ -19,16 +25,84 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
   )
 }
 
+/**
+ * Plan next week, worked out once as the sheet opens, so the rows it ticks
+ * never shift under it when a sync lands. Rows said no to for that week before
+ * stay out, and a busy evening is read from every calendar.
+ */
+function WeekPlanLayer({ p }: { p: PlannerCtx }) {
+  const { store, household, allEvents, closeSheet, applyWeekPlan, createPlaceInline, createRecipeInline } = p
+  const [plan] = useState(() => {
+    const todayKey = localDayKey()
+    const week = targetWeek(todayKey)
+    return proposeWeek(store.visibleItems, {
+      todayKey,
+      tz: deviceZone(),
+      userId: household.myId,
+      dismissed: week ? readWeekPlanDismissed(week.weekKey) : [],
+      now: new Date(),
+      events: allEvents,
+    })
+  })
+  if (!plan) return null
+  return (
+    <WeekPlanSheet
+      plan={plan}
+      recipes={store.recipes}
+      places={store.places}
+      people={store.people}
+      meals={store.meals}
+      tasks={store.tasks}
+      onCreatePlace={createPlaceInline}
+      onCreateRecipe={createRecipeInline}
+      onApply={a => {
+        closeSheet()
+        applyWeekPlan(plan, a)
+      }}
+      onClose={closeSheet}
+    />
+  )
+}
+
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
-  const { setView, goTasksTab, setNotesProjectId, openPlace, openJournal } = p
-  const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, closeSheet } = p
+  const { setView, goTasksTab, goPeopleTab, setNotesProjectId, openPlace, openJournal, openNote, setKitchenRecipe } = p
+  const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { calendars, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
   const today = localDayKey()
+
+  // A source or a citation tapped in Ask Drafter: the sheet gives way to the
+  // record, opened where it lives. A subscribed calendar's event has no editor,
+  // so it opens the Calendar.
+  const openAskDoc = (doc: AskDoc) => {
+    closeSheet()
+    if (doc.kind === 'task' || doc.kind === 'bill') {
+      const t = store.tasks.find(x => x.id === doc.id)
+      if (t) openTask(t)
+    } else if (doc.kind === 'project') {
+      const found = store.projects.find(x => x.id === doc.id)
+      if (found) openProject(found)
+    } else if (doc.kind === 'place') openPlace(doc.id)
+    else if (doc.kind === 'journal') openJournal(doc.date)
+    else if (doc.kind === 'person') {
+      goPeopleTab('people')
+      setView('people')
+    } else if (doc.kind === 'recipe') {
+      const r = store.recipes.find(x => x.id === doc.id)
+      if (r) setKitchenRecipe(r)
+      setView('kitchen')
+    } else if (doc.kind === 'meal') setView('kitchen')
+    else if (doc.kind === 'event') {
+      const e = doc.feed ? undefined : store.events.find(x => x.id === doc.id)
+      if (e) setEventEditor({ entry: e, startIso: e.start })
+      else setView('calendar')
+    }
+  }
+
   return (
     <>
       {editor && (
@@ -148,6 +222,9 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onOpenPlace={p => openPlace(p.id)}
             journal={store.journal}
             onOpenJournal={e => openJournal(e.date)}
+            notes={store.notes}
+            onOpenNote={n => openNote(n.id)}
+            onAsk={question => openSheet({ kind: 'ask', question })}
             onSaw={sawThem}
             onCreateTask={(title, openEditor) => {
               // Enter opens the editor so parseCapture can propose fields;
@@ -223,6 +300,28 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               closeSheet()
               applyShutdown(r)
             }}
+            onClose={closeSheet}
+          />
+        </Layer>
+      )}
+
+      {/* Plan next week writes nothing itself either: its ticked rows go to
+          useFocusActions as one AcceptedPlan, applied with one toast and Undo */}
+      {sheet?.kind === 'week' && (
+        <Layer name="Plan next week">
+          <WeekPlanLayer p={p} />
+        </Layer>
+      )}
+
+      {sheet?.kind === 'ask' && (
+        <Layer name="Ask Drafter">
+          <AskSheet
+            key={sheet.question ?? ''}
+            initialQuestion={sheet.question}
+            // your own events are items already: ask.ts skips a feed's copy of one (localId)
+            sources={{ tasks: store.tasks, projects: store.projects, people: store.people, places: store.places, recipes: store.recipes, meals: store.meals, entries: store.events, feedEvents: allEvents, journal: store.journal }}
+            tz={deviceZone()}
+            onOpen={openAskDoc}
             onClose={closeSheet}
           />
         </Layer>

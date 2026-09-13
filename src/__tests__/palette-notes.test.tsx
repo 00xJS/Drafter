@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { NotesView } from '../components/NotesView'
@@ -47,5 +49,18 @@ describe('Notes opens a note asked for from the palette', () => {
     const html = renderToStaticMarkup(<NotesView {...shell} notes={NOTES} openNoteId="missing" />)
     expect(html).toContain('Garden')
     expect(html).toContain('Paint colours')
+  })
+})
+
+describe('the shell hands notes to the palette and opens the one picked', () => {
+  const src = (f: string) => readFileSync(fileURLToPath(new URL(`../components/planner/${f}`, import.meta.url)), 'utf8')
+
+  it('passes the notes and the way to open one, and Notes forgets it once shown', () => {
+    expect(src('Overlays.tsx')).toContain('notes={store.notes}')
+    expect(src('Overlays.tsx')).toContain('onOpenNote={n => openNote(n.id)}')
+    expect(src('TasksScreen.tsx')).toContain('openNoteId={noteOpenId ?? undefined}')
+    expect(src('TasksScreen.tsx')).toContain('onOpenNoteDone={() => setNoteOpenId(null)}')
+    // a pad on screen would win over the note, so opening one closes it
+    expect(src('useNavigation.ts')).toMatch(/const openNote = \(id: string\) => \{\s*\/\/[^\n]*\n\s*setNotesProjectId\(null\)/)
   })
 })

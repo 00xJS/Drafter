@@ -5,11 +5,10 @@ import type { PlanStep } from '../PlanDaySheet'
 /**
  * The planning sheet over the screen. There is one slot, so opening a sheet
  * replaces whichever was up. Each kind is a render in Overlays.tsx inside its
- * own Layer and a chunk in lazy.ts. Plan next week and Ask Drafter join the
- * union as `{ kind: 'week' }` and `{ kind: 'ask'; question?: string }`: a
- * member here, a render there, a chunk in lazy.ts, and whatever opens it.
+ * own Layer and a chunk in lazy.ts: Plan my day, Shut down, Plan next week,
+ * and Ask Drafter (on the palette's Ask row's question, or empty).
  */
-export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' }
+export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { kind: 'week' } | { kind: 'ask'; question?: string }
 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
@@ -24,7 +23,7 @@ export function useOverlays() {
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
   const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
-  /** Plan my day or Shut down; null when no planning sheet is up. */
+  /** The planning sheet up, if any. */
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const openSheet = (s: Sheet) => setSheet(s)
   const closeSheet = () => setSheet(null)

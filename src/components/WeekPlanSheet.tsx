@@ -4,6 +4,7 @@ import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.m
 import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '../ai'
 import { formatMoney } from '../bills'
 import { mealId, nextSwap } from '../kitchen'
+import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
 import { Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureKind } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
@@ -89,28 +90,9 @@ export function acceptedPlan(plan: WeekPlan, c: WeekPlanChoices): AcceptedPlan {
 /** How many things "Add N to next week" adds. */
 export const acceptedCount = (a: AcceptedPlan) => a.dinners.length + a.people.length + a.resched.length + a.wishlist.length + a.top3.length
 
-/** Where the rows said no to for a week are remembered, so its next proposal leaves them out. */
-export const weekPlanDismissedKey = (weekKey: string) => `drafter:weekplan-dismissed:${weekKey}`
-
-export function readWeekPlanDismissed(weekKey: string): string[] {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(weekPlanDismissedKey(weekKey)) ?? '[]')
-    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-/** Add to a week's dismissed rows (never replace them). */
-export function rememberWeekPlanDismissed(weekKey: string, keys: readonly string[]): void {
-  if (keys.length === 0) return
-  try {
-    const next = [...new Set([...readWeekPlanDismissed(weekKey), ...keys])].slice(-200)
-    localStorage.setItem(weekPlanDismissedKey(weekKey), JSON.stringify(next))
-  } catch {
-    /* private mode: they come back next time, which is harmless */
-  }
-}
+// Where the rows said no to for a week are remembered, so its next proposal
+// leaves them out: in src/weekplanstore.ts, which the shell reads without this chunk
+export { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey }
 
 /** "Sun 20 Sep", read at local noon so no zone can move it a day. */
 const dayLabel = (key: string) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })

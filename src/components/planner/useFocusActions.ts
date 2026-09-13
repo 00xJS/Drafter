@@ -1,12 +1,14 @@
 import { useRef } from 'react'
-import { MEAL_SLOT_META, type CalendarEntry, type Item, type Meal, type MealSlot, type Task, type TaskStatus } from '../../types'
+import { MEAL_SLOT_META, type CalendarEntry, type Item, type Meal, type MealSlot, type Review, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import { planDayWrites, restoreSnapshots, shutdownWrites, type DayWrites, type ShutdownResult, type ShutdownWrites, type StatusMove } from '../../focus'
 import { closeDay, reopenDay } from '../../dayclose'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { mealId } from '../../kitchen'
 import { uid } from '../../utils'
-import type { MealIdea } from '../../../shared/weekplan.mjs'
+import { newerStamp } from '../../itemops'
+import { rememberWeekPlanDismissed } from '../../weekplanstore'
+import { catchUpTask, type AcceptedPlan, type MealIdea, type WeekPlan } from '../../../shared/weekplan.mjs'
 import { mealFromIdea } from '../MealIdeasCard'
 import type { PlanDayApply } from '../PlanDaySheet'
 import type { useToast } from './useToast'
@@ -98,6 +100,126 @@ export function applyShutdownWrites(ports: () => PlanPorts, w: ShutdownWrites, d
   }
 }
 
+/** What accepting Plan next week writes. */
+export interface WeekWrites {
+  /** The dinners, each on a night nothing was planned into meanwhile. */
+  meals: Meal[]
+  /** The catch-ups, as new visit tasks. */
+  created: Task[]
+  /** Overdue tasks moved to a day of the week. */
+  upserts: Task[]
+  /** Overdue tasks sent back to the wishlist. */
+  statuses: StatusMove[]
+  /** Every task moved, as it was, for Undo. */
+  snapshots: Task[]
+  /** The Top 3 in last week's review, and that review as it was (null when the plan makes it). */
+  review: { next: Review; prev: Review | null } | null
+}
+
+/**
+ * Plan next week, accepted, as writes: the dinners on nights still empty (a
+ * night planned meanwhile — another device, the calendar — is left alone), the
+ * catch-ups as visit tasks, overdue work moved to its day keeping its time of
+ * day (or back to the wishlist), and the Top 3 into last week's review, which
+ * Today reads as this week's 3. Pure: the ids and the clock come in.
+ */
+export function weekPlanWrites(
+  s: { tasks: Task[]; items: readonly Item[]; reviews: Review[] },
+  plan: WeekPlan,
+  a: AcceptedPlan,
+  o: { myId: string | null; now: Date; newId(): string },
+): WeekWrites {
+  const stamp = o.now.toISOString()
+  const meals: Meal[] = []
+  for (const d of a.dinners) {
+    const id = mealId(d.date, 'dinner')
+    const slot = s.items.find((i): i is Meal => i.kind === 'meal' && i.id === id)
+    if (slot && !slot.deletedAt) continue
+    meals.push({
+      kind: 'meal',
+      id,
+      date: d.date,
+      slot: 'dinner',
+      title: d.title,
+      ...(d.recipeId ? { recipeId: d.recipeId } : {}),
+      ...(d.out ? { out: true } : {}),
+      ...(d.placeId ? { placeId: d.placeId } : {}),
+      createdAt: stamp,
+      // a tombstone in the slot must lose to the new plan
+      updatedAt: slot ? newerStamp(slot.updatedAt) : stamp,
+    })
+  }
+  const created = a.people.map(p => catchUpTask(p, { id: o.newId(), now: o.now }))
+  const byId = new Map(s.tasks.map(t => [t.id, t]))
+  const upserts: Task[] = []
+  const statuses: StatusMove[] = []
+  const snapshots: Task[] = []
+  for (const m of a.resched) {
+    const t = byId.get(m.taskId)
+    if (!t || t.status === 'done' || t.status === 'canceled') continue
+    const [y, mo, day] = m.toDay.split('-').map(Number)
+    const old = t.dueAt ? new Date(t.dueAt) : null
+    const at = new Date(y, mo - 1, day, old?.getHours() ?? 9, old?.getMinutes() ?? 0)
+    snapshots.push(t)
+    upserts.push({ ...t, status: t.status === 'wishlist' ? 'todo' : t.status, dueAt: at.toISOString(), updatedAt: newerStamp(t.updatedAt) })
+  }
+  for (const id of a.wishlist) {
+    const t = byId.get(id)
+    if (!t || t.status === 'done' || t.status === 'canceled' || t.status === 'wishlist') continue
+    snapshots.push(t)
+    statuses.push({ id, status: 'wishlist' })
+  }
+  let review: WeekWrites['review'] = null
+  const top = a.top3.map(x => x.trim()).filter(Boolean)
+  if (top.length) {
+    const key = plan.week.prevWeekKey
+    // your own review only: a household member's is theirs
+    const prev = s.reviews.find(r => r.period === 'week' && r.key === key && !r.deletedAt && (!o.myId || r.ownerId == null || r.ownerId === o.myId)) ?? null
+    review = {
+      prev,
+      next: prev ? { ...prev, top, updatedAt: newerStamp(prev.updatedAt) } : { kind: 'review', id: o.newId(), period: 'week', key, top, createdAt: stamp, updatedAt: stamp },
+    }
+  }
+  return { meals, created, upserts, statuses, snapshots, review }
+}
+
+export const weekWritesEmpty = (w: WeekWrites): boolean => !w.meals.length && !w.created.length && !w.upserts.length && !w.statuses.length && !w.review
+
+/**
+ * Write Plan next week. Returns the one Undo: the moved tasks back as they
+ * were, the catch-ups removed, the dinners cleared with their grocery lists
+ * rebuilt, and the review back as it was — or removed, if the plan made it.
+ */
+export function applyWeekPlanWrites(ports: () => PlanPorts, w: WeekWrites): () => void {
+  const p = ports()
+  const spawned = writeTasks(p, w)
+  for (const t of w.created) p.upsert(t)
+  if (w.meals.length) p.saveMeals(w.meals)
+  if (w.review) p.upsert(w.review.next)
+  return () => {
+    const q = ports()
+    unwriteTasks(q, w.snapshots, spawned)
+    for (const t of w.created) q.remove(t.id)
+    if (w.meals.length) q.clearMeals(w.meals.map(m => m.id))
+    if (w.review) {
+      if (w.review.prev) q.upsert({ ...w.review.prev, updatedAt: newerStamp(w.review.next.updatedAt) })
+      else q.remove(w.review.next.id)
+    }
+  }
+}
+
+/** "Next week planned · 4 dinners · 2 catch-ups · 3 moved · Top 3 set" */
+export function weekPlanToast(w: WeekWrites): string {
+  const n = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`
+  const bits = ['Next week planned']
+  if (w.meals.length) bits.push(n(w.meals.length, 'dinner'))
+  if (w.created.length) bits.push(n(w.created.length, 'catch-up'))
+  const moved = w.upserts.length + w.statuses.length
+  if (moved) bits.push(`${moved} moved`)
+  if (w.review) bits.push('Top 3 set')
+  return bits.join(' · ')
+}
+
 const slotName = (slot: MealSlot) => MEAL_SLOT_META[slot].label.toLowerCase()
 
 /** "Today’s focus set · 2 blocks added · lunch & dinner planned" */
@@ -178,6 +300,18 @@ export function useFocusActions(deps: Deps) {
     showToast(shutdownToast(r), undo)
   }
 
+  /** Plan next week, accepted: one toast and one Undo for all of it, and the rows said no to remembered for that week. */
+  const applyWeekPlan = (plan: WeekPlan, a: AcceptedPlan) => {
+    rememberWeekPlanDismissed(plan.week.weekKey, a.dismissed)
+    const w = weekPlanWrites({ tasks: store.tasks, items: store.allItems, reviews: store.reviews }, plan, a, { myId: household.myId, now: new Date(), newId: uid })
+    if (weekWritesEmpty(w)) {
+      showToast('Nothing new to add to next week')
+      return
+    }
+    const undo = applyWeekPlanWrites(ports, w)
+    showToast(weekPlanToast(w), undo)
+  }
+
   /** Defer from the focus card: the same move, toast and Undo as any defer, and the same write takes the task out of today's focus. */
   const deferFromFocus = (id: string, day: Date) => deps.defer(id, day, { focusOn: undefined, focusBy: undefined })
 
@@ -188,5 +322,5 @@ export function useFocusActions(deps: Deps) {
     showToast(mealIdeaToast(m), () => latest.current.clearMeals([m.id]))
   }
 
-  return { applyDayPlan, applyShutdown, deferFromFocus, planMealIdea }
+  return { applyDayPlan, applyShutdown, applyWeekPlan, deferFromFocus, planMealIdea }
 }

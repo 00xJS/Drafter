@@ -84,11 +84,13 @@ describe('plan= links open a sheet and write nothing (B5)', () => {
     expect(calls).toEqual(['view ["calendar"]', 'openSheet [{"kind":"shutdown"}]'])
   })
 
-  it('plan=week lands on the Week segment and opens nothing yet', () => {
-    const { apply, calls } = links()
-    apply('/?view=review&plan=week')
-    expect(calls.filter(c => c.startsWith('openSheet'))).toEqual([])
-    expect(calls.slice(-2)).toEqual(['homeTab ["week"]', 'view ["home"]'])
+  it('plan=week opens Plan next week over the Week segment', () => {
+    const a = links()
+    a.apply('/?plan=week')
+    expect(a.calls).toEqual(['homeTab ["week"]', 'view ["home"]', 'openSheet [{"kind":"week"}]'])
+    const b = links()
+    b.apply('/?view=review&plan=week')
+    expect(b.calls).toEqual(['homeTab ["week"]', 'view ["home"]', 'openSheet [{"kind":"week"}]'])
   })
 
   it('writes nothing, even beside a notification’s action on a task', () => {
@@ -121,6 +123,7 @@ describe('Today is handed the routines (B4)', () => {
       'entries={store.events}',
       "onPlanDay={step => openSheet({ kind: 'day', step })}",
       "onShutDown={() => openSheet({ kind: 'shutdown' })}",
+      "onPlanWeek={() => openSheet({ kind: 'week' })}",
       'onDeferFromFocus={deferFromFocus}',
       'onPlanMeal={planMealIdea}',
     ])

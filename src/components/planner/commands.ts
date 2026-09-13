@@ -40,6 +40,9 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // the day's two routines open over wherever you are, as Settings does
     { id: 'plan-day', label: 'Plan my day', icon: 'today', quick: hour < PLAN_DAY_QUICK_UNTIL, keywords: 'morning focus today', run: () => openSheet({ kind: 'day' }) },
     { id: 'shut-down', label: 'Shut down', icon: 'journal', quick: hour >= SHUT_DOWN_QUICK_FROM, keywords: 'evening wrap close tomorrow', run: () => openSheet({ kind: 'shutdown' }) },
+    // the week ahead, and a question about your own planner: typed for, not offered empty
+    { id: 'plan-week', label: 'Plan next week', icon: 'review', quick: false, keywords: 'week ahead meals dinners catch up sunday', run: () => openSheet({ kind: 'week' }) },
+    { id: 'ask', label: 'Ask Drafter', icon: 'search', quick: false, keywords: 'question answer ai assistant', run: () => openSheet({ kind: 'ask' }) },
     // reachable by typing, not a quick action: templates and "draft a plan" still
     // need projects to exist, but adding one has come off the front door
     { id: 'new-project', label: 'New project', icon: 'plus', quick: false, keywords: 'add create', run: newProject },

@@ -104,6 +104,17 @@ describe('the palette’s own commands', () => {
     expect(run('new-project').newProjects).toBe(1)
   })
 
+  it('opens Plan next week and Ask Drafter over wherever you are, typed for rather than offered', () => {
+    for (const start of STARTS) {
+      const week = run('plan-week', start)
+      expect(week.sheets).toEqual([{ kind: 'week' }])
+      expect(week.view).toBe(start.view)
+      expect(run('ask', start).sheets).toEqual([{ kind: 'ask' }])
+    }
+    expect(commands.find(c => c.id === 'plan-week')?.quick).toBe(false)
+    expect(commands.find(c => c.id === 'ask')?.keywords).toMatch(/question/)
+  })
+
   it('opens Settings where you are', () => {
     for (const start of STARTS) {
       const s = run('go-settings', start)

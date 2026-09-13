@@ -5,7 +5,7 @@ import { TASKS_TABS } from './routes'
 /** Tasks: the list, the board, the bills and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, filteredTasks, inHousehold, mineOnly, setMineOnly } = p
-  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen } = p
+  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
   const { openTask, newTask, newProject, deleteTask, changeStatus, showToast } = p
 
   // a map lookup so an id whose project was deleted degrades to the index
@@ -88,6 +88,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             store.remove(id)
             showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => store.restore([id]))
           }}
+          // a note picked in the palette's search opens once, then is forgotten
+          openNoteId={noteOpenId ?? undefined}
+          onOpenNoteDone={() => setNoteOpenId(null)}
         />
       )}
     </>

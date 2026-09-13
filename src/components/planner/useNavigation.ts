@@ -96,6 +96,15 @@ export function useNavigation() {
   }
   /** A recipe for Kitchen to open (Today's "tonight's dinner"); consumed by the view. */
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
+  /** A note for Tasks → Notes to open (the palette's search); consumed by the view. */
+  const [noteOpenId, setNoteOpenId] = useState<string | null>(null)
+  const openNote = (id: string) => {
+    // a pad on screen wins over a note, so close it first
+    setNotesProjectId(null)
+    setNoteOpenId(id)
+    goTasksTab('notes')
+    setView('tasks')
+  }
 
   useEffect(() => {
     try {
@@ -129,5 +138,8 @@ export function useNavigation() {
     openJournal,
     kitchenRecipe,
     setKitchenRecipe,
+    noteOpenId,
+    setNoteOpenId,
+    openNote,
   }
 }
