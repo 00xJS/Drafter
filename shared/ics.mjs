@@ -132,6 +132,7 @@ export function parseICS(text) {
   const events = []
   let calendarName
   let defaultTz
+  /** @type {Partial<import('./ics.mjs').ParsedEvent> | null} */
   let cur = null
   let depth = 0 // nested VALARM etc.
   for (const [name, params, value] of lines(text)) {

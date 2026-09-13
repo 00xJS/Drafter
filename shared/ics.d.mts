@@ -14,6 +14,8 @@ export interface ParsedEvent {
   exdates: number[]
   recurrenceId?: number
   status?: string
+  /** TRANSP:TRANSPARENT — the time is free rather than busy. */
+  transparent?: boolean
 }
 export interface ParsedCalendar {
   calendarName?: string

@@ -1,7 +1,10 @@
 // Types for mcp/data.mjs. Rows are loose records: the tools read many kinds.
 
 export type Row = { user_id?: string | null; data?: Record<string, unknown> | null }
-export type Item = Record<string, any>
+/** A stored record of any kind. Loose, so a row passes to the shared helpers typed for one kind. */
+export type Item = any
+/** What a write sends: every record carries its kind and id, and whatever else it has. */
+export type Writable = { id: string; kind: string }
 
 export interface RestData {
   mode: 'user' | 'service'
@@ -10,8 +13,8 @@ export interface RestData {
   fetchAll(opts?: { kinds?: string[] }): Promise<Item[]>
   fetchItem(id: string, kind: string): Promise<Item>
   fetchJournal(): Promise<Item[]>
-  syncWrite(items: Record<string, unknown>[]): Promise<Item[]>
-  writeItem(item: Record<string, unknown>): Promise<Item>
+  syncWrite<T extends Writable>(items: T[]): Promise<Item[]>
+  writeItem<T extends Writable>(item: T): Promise<Item>
 }
 
 export declare const PERSONAL_KINDS: ReadonlySet<string>

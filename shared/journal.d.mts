@@ -1,4 +1,4 @@
-import { JournalEntry, Mood, Person } from '../src/types'
+import { JournalEntry, Mood, Person } from '../src/types.js'
 
 export declare const DAY_MS: number
 export declare function localDayKey(d?: Date | string | number): string

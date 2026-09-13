@@ -124,6 +124,9 @@ export function restoreGroceryLine(line) {
  *
  * Returns the new items, the line added or changed, and which of the three
  * happened: added | merged | restored.
+ * @param {any[]} items
+ * @param {{ name?: unknown, qty?: unknown, unit?: unknown }} input
+ * @param {() => string} newId
  */
 export function addGroceryItem(items, { name, qty, unit } = {}, newId) {
   const list = items ?? []

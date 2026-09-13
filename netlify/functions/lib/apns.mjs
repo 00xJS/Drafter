@@ -60,6 +60,9 @@ export const isGoneReason = (status, reason) =>
 /**
  * One notification to one device. Resolves { status, reason, env } for any HTTP
  * outcome; rejects only when Apple could not be reached at all.
+ * @param {string} deviceToken
+ * @param {unknown} payload
+ * @param {{ topic?: string, collapseId?: string, ttlSeconds?: number, env?: string }} [opts]
  */
 export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE_ID, collapseId, ttlSeconds = 6 * 3600, env } = {}) {
   const useEnv = env === 'sandbox' || env === 'production' ? env : defaultEnv()

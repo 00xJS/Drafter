@@ -217,7 +217,7 @@ async function validateAuthorize(input) {
   }
   const resource = p.get('resource')
   if (resource && trimSlash(resource) !== resourceUrl()) return fail('invalid_resource', 'The app asked for access to something other than Drafter.')
-  const requested = (p.get('scope') ?? '').split(/\s+/).filter(s => SCOPES.includes(s))
+  const requested = (p.get('scope') ?? '').split(/\s+/).filter(s => /** @type {readonly string[]} */ (SCOPES).includes(s))
   return {
     ok: true,
     client,
@@ -249,6 +249,9 @@ export async function describeAuthorizeRequest(userId, params) {
  * bound to the client, the exact redirect, the PKCE challenge, the scopes the
  * user ticked (read always among them) and the resource; deny sends
  * access_denied. Both carry `state` and `iss`. -> { ok, redirect } | { ok: false, error, message }
+ * @param {string} userId
+ * @param {unknown} params
+ * @param {{ decision?: unknown, scopes?: unknown, timezone?: unknown }} [answer]
  */
 export async function approve(userId, params, { decision, scopes, timezone } = {}) {
   const v = await validateAuthorize(params)
@@ -399,6 +402,7 @@ export function routeOf(pathname) {
   return null
 }
 
+/** @param {import('./oauthserver.mjs').EndpointResult} result */
 function respond({ status, json, headers = {} }) {
   if (json === undefined) return new Response(null, { status, headers: { ...NO_STORE, ...headers } })
   return new Response(JSON.stringify(json), { status, headers: { 'content-type': 'application/json', ...NO_STORE, ...headers } })

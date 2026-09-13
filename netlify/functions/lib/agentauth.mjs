@@ -64,6 +64,8 @@ function httpError(message, status, code) {
  * PostgREST with the service key — for the three service-only tables and
  * their functions, nothing else. A 404 means the table or function is not
  * there: the migration has not been applied, which callers report as 501.
+ * @param {string} path
+ * @param {{ method?: string, body?: unknown, headers?: Record<string, string> }} [init]
  */
 export async function serviceRest(path, { method = 'GET', body, headers = {} } = {}) {
   const { url, serviceKey } = supabaseEnv()
@@ -240,7 +242,11 @@ export async function listConnections(userId) {
   return (Array.isArray(rows) ? rows : []).filter(r => r.kind !== 'oauth' || !r.refresh_expires_at || Date.parse(r.refresh_expires_at) > now).map(toConnection)
 }
 
-/** A manual token for Claude Code or a local stdio server. The secret leaves this function once. */
+/**
+ * A manual token for Claude Code or a local stdio server. The secret leaves this function once.
+ * @param {string} userId
+ * @param {{ name?: unknown, scopes?: unknown }} [input]
+ */
 export async function createManualToken(userId, { name, scopes } = {}) {
   const clean = cleanName(name)
   if (!clean) throw httpError('Give the token a name.', 400, 'invalid')

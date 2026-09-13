@@ -1,4 +1,4 @@
-import { Meal, Place, Task } from '../src/types'
+import { Meal, Place, Task } from '../src/types.js'
 
 export declare function normalisePlaceText(s: string | null | undefined): string
 export declare function matchPlace(text: string | null | undefined, places: Place[]): Place | null

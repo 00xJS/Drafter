@@ -1,4 +1,4 @@
-import { Metrics, Platform, PostStatus, Priority, ProjectStatus, RecurrenceFreq, Task, TaskStatus } from '../src/types'
+import { Metrics, Platform, PostStatus, Priority, ProjectStatus, RecurrenceFreq, Task, TaskStatus } from '../src/types.js'
 
 export declare const PLATFORMS: Platform[]
 export declare const METRIC_KEYS: (keyof Metrics)[]
@@ -13,7 +13,8 @@ export declare function impressions(post: { metrics?: Partial<Record<Platform, M
 export declare function cleanMetrics(raw: unknown): Metrics
 export declare function newerStamp(prevIso?: string): string
 export declare function isLegacyPost(raw: unknown): boolean
-export declare function legacyPostToTask(raw: unknown): unknown
+/** A pre-v3 post as a task; any other record comes back as it was. Callers pass a stored row's `data`. */
+export declare function legacyPostToTask(raw: unknown): Record<string, any>
 export declare function localDate(iso: string | number, tz?: string | null): string | null
 export declare function isUntimed(iso: string, tz?: string | null): boolean
 export declare function localMidnightIso(dateKey: string): string | null

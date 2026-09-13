@@ -93,7 +93,11 @@ export function summarizeTask(t) {
   }
 }
 
-/** Resolve people ids and a place id/name against live records; throws on anything unknown. */
+/**
+ * Resolve people ids and a place id/name against live records; throws on anything unknown.
+ * @param {any[]} all
+ * @param {{ peopleIds?: any, placeId?: any, placeName?: any }} ctx whatever the client sent
+ */
 export function resolveContext(all, { peopleIds, placeId, placeName }) {
   const out = {}
   if (peopleIds !== undefined) {
@@ -195,6 +199,7 @@ const EDITS = { readOnlyHint: false, openWorldHint: false }
 // Tools
 // ---------------------------------------------------------------------------
 
+/** @type {import('./tools.mjs').ToolDef[]} */
 export const TOOLS = [
   {
     name: 'list_projects',
@@ -789,6 +794,7 @@ export const TOOLS = [
       const id = mealId(day, when)
       const existing = all.find(i => i.kind === 'meal' && i.id === id)
       const stamp = clock.iso()
+      /** @type {import('../src/types.js').Meal} */
       const meal = {
         kind: 'meal',
         id,
@@ -979,7 +985,8 @@ export const TOOLS = [
         ids.push(hit.id)
       }
       const existing = entryOn(journal, day)
-      const next = appendEntry(existing, day, String(text), { mood: m, now: clock.iso(), rand: rand(), peopleIds: ids })
+      // m was checked above: undefined, or a whole number from 1 to 5
+      const next = appendEntry(existing, day, String(text), { mood: /** @type {import('../src/types.js').Mood | undefined} */ (m), now: clock.iso(), rand: rand(), peopleIds: ids })
       await db.writeItem(next)
       const names = peopleNameMap(people)
       return {

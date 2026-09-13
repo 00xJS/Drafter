@@ -1,4 +1,4 @@
-import { Person, Task } from '../src/types'
+import { Person, Task } from '../src/types.js'
 
 export declare const DEFAULT_CADENCE_DAYS: number
 export declare const DAY_MS: number

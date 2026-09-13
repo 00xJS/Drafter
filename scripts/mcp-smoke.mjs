@@ -481,7 +481,7 @@ function startShim() {
     })
   })
   return new Promise(resolve => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` }))
+    server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}` }))
   })
 }
 
@@ -516,8 +516,8 @@ async function startSite(shimUrl) {
       res.end(`site error: ${e?.stack ?? e}`)
     }
   })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  process.env.URL = `http://127.0.0.1:${server.address().port}`
+  await new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(undefined)))
+  process.env.URL = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`
   return { server, url: process.env.URL }
 }
 

@@ -46,9 +46,7 @@ async function gh(path, token, init = {}) {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    const err = new Error(`GitHub ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
-    err.status = res.status
-    throw err
+    throw Object.assign(new Error(`GitHub ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`), { status: res.status })
   }
   return res.json()
 }

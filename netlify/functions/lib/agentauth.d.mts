@@ -29,7 +29,15 @@ export declare function normalizeScopes(scopes: unknown): Scope[]
 export declare function supabaseEnv(): { url: string; anonKey: string; serviceKey: string }
 export declare function agentAuthConfigured(): boolean
 export declare function serviceRest<T = any>(path: string, init?: { method?: string; body?: unknown; headers?: Record<string, string> }): Promise<T>
-export declare function checkBearer(bearer: string | null | undefined, opts?: { limit?: number }): Promise<Grant | { error: 'invalid' | 'rate_limited' }>
+/**
+ * A live grant, or why the bearer was refused. Each side names the other's
+ * fields as absent, so the functions (plain JavaScript) can test `.error` and
+ * then read the grant.
+ */
+export type BearerCheck =
+  | (Grant & { error?: undefined })
+  | { error: 'invalid' | 'rate_limited'; grantId?: undefined; userId?: undefined; scopes?: undefined; kind?: undefined }
+export declare function checkBearer(bearer: string | null | undefined, opts?: { limit?: number }): Promise<BearerCheck>
 export declare function userAccessToken(userId: string): Promise<string>
 export declare function dropSession(userId: string): void
 export declare function forgetAllSessions(): void

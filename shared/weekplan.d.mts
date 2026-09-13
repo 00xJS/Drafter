@@ -1,4 +1,4 @@
-import { CalendarEvent, MealSlot, Task } from '../src/types'
+import { CalendarEvent, MealSlot, Task } from '../src/types.js'
 
 export interface TargetWeek {
   /** The Sunday it starts on. */
