@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { MEAL_SLOT_META, Meal, MealSlot, Place, Recipe, Task } from '../types'
 import { mealIdeasFor } from '../../shared/weekplan.mjs'
 import type { MealIdea, SlotIdeas } from '../../shared/weekplan.mjs'
-import { mealId } from '../kitchen'
-import { newerStamp } from '../itemops'
+import { mealWithMain } from '../kitchen'
 
 /** Lunch ideas stop being useful by mid-afternoon, and dinner ideas by the evening. */
 export const LUNCH_IDEAS_UNTIL = 14
@@ -42,22 +41,14 @@ export function dismissMealIdeas(day: string): void {
 
 /**
  * The meal a tapped idea plans, written the way the Kitchen's own slot picker
- * writes one: the day+slot id, a recipe to cook, or a place you eat out at.
- * Pass the slot's current record (a tombstone, say) so the write is stamped
- * newer than it and wins the merge.
+ * writes one (mealWithMain): the day+slot id, a recipe to cook, or a place you
+ * eat out at. Pass the slot's current record (a tombstone, say) so the write is
+ * stamped newer than it and wins the merge — and so a slot planned meanwhile on
+ * another device keeps its notes, and its sides while it is still cooked.
  */
 export function mealFromIdea(dayKey: string, slot: MealSlot, idea: MealIdea, existing?: Meal, now = new Date()): Meal {
-  const stamp = now.toISOString()
-  const base = {
-    kind: 'meal' as const,
-    id: mealId(dayKey, slot),
-    date: dayKey,
-    slot,
-    createdAt: existing?.createdAt ?? stamp,
-    updatedAt: existing ? newerStamp(existing.updatedAt) : stamp,
-  }
-  if (idea.kind === 'place') return { ...base, out: true, placeId: idea.id, title: idea.title || 'Eating out' }
-  return { ...base, recipeId: idea.id, title: idea.title || MEAL_SLOT_META[slot].label }
+  const main = idea.kind === 'place' ? { out: true, placeId: idea.id, title: idea.title || 'Eating out' } : { recipeId: idea.id, title: idea.title || MEAL_SLOT_META[slot].label }
+  return mealWithMain(existing, { date: dayKey, slot }, main, now.toISOString())
 }
 
 /** Today's empty slots that have something to suggest, at the hour `now` falls in. */

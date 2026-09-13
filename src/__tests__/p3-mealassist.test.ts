@@ -46,9 +46,9 @@ const { input, ids } = mealAssistInput({
 describe('mealHistory', () => {
   it('counts cooking and outings by the week plan’s rules, eaten-out meals included, and no notes', () => {
     expect(history.recipes).toEqual([
-      { id: 'id-new', name: 'Bao buns', tags: [], cookCount: 0, timesCooked: 0, lastCooked: null },
-      { id: 'id-lasagne', name: 'Lasagne', tags: ['pasta'], cookCount: 2, timesCooked: 2, lastCooked: '2026-08-20' },
-      { id: 'id-soup', name: 'Soup <b>', tags: ['quick'], cookCount: 1, timesCooked: 1, lastCooked: '2026-06-01' },
+      { id: 'id-new', name: 'Bao buns', tags: [], cookCount: 0, timesCooked: 0, lastCooked: null, sideOnly: false },
+      { id: 'id-lasagne', name: 'Lasagne', tags: ['pasta'], cookCount: 2, timesCooked: 2, lastCooked: '2026-08-20', sideOnly: false },
+      { id: 'id-soup', name: 'Soup <b>', tags: ['quick'], cookCount: 1, timesCooked: 1, lastCooked: '2026-06-01', sideOnly: false },
     ])
     // somewhere you eat, not a walk in the park
     expect(history.places).toEqual([{ id: 'id-nopi', name: 'Nopi', category: 'restaurant', outings: 2, visits: 2, lastVisit: '2026-09-01' }])

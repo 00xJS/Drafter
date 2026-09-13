@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
-import { newerStamp } from '../itemops'
-import { mealId, recipeByName } from '../kitchen'
+import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
+import { CookedIndex, MealMain, lastCookedShort, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
 import { placeByName } from '../places'
+import { ConfirmButton } from './ConfirmButton'
 
 // One control for "what are we eating on this day", used by the Kitchen tab's
 // week and by the calendar's day sheet. It lives here rather than in either of
@@ -24,12 +24,17 @@ export function foodFirst(places: Place[]): Place[] {
   })
 }
 
+/** The meals sides go with: a cooked lunch or dinner. Breakfast is one plate. */
+const SIDE_SLOTS: ReadonlySet<MealSlot> = new Set<MealSlot>(['lunch', 'dinner'])
+
 export function MealSlotRow({
   date,
   slot,
   meal,
   recipes,
   places,
+  cooked,
+  mainOnly,
   onSave,
   onClear,
   onCreatePlace,
@@ -42,6 +47,13 @@ export function MealSlotRow({
   recipes: Recipe[]
   /** Somewhere a bought meal can come from; also what makes it count as an outing. */
   places: Place[]
+  /** When each recipe was last cooked, said beside it in the pickers. Without it they read names only. */
+  cooked?: CookedIndex
+  /**
+   * The planning sheets' Pick…: choose the main and nothing else. Their meal is
+   * a stand-in for a pick, so a side added to it would have nowhere to go.
+   */
+  mainOnly?: boolean
   onSave(m: Meal): void
   onClear(id: string): void
   /**
@@ -56,31 +68,23 @@ export function MealSlotRow({
    * The mirror of onCreatePlace for the Cook side.
    */
   onCreateRecipe?(name: string): Recipe
-  /** Cook mode. Absent on the calendar, where there is nowhere to cook from. */
-  onOpenRecipe?(r: Recipe): void
+  /** Cook mode, with the meal so its sides are a tap away. Absent on the calendar, where there is nowhere to cook from. */
+  onOpenRecipe?(r: Recipe, meal: Meal): void
 }) {
-  // which inline "new…" form is open, if any: a place to eat out, or a recipe to cook
-  const [add, setAdd] = useState<null | 'place' | 'recipe'>(null)
+  // which inline form is open, if any: a place to eat out, a recipe to cook, or a side
+  const [add, setAdd] = useState<null | 'place' | 'recipe' | 'side'>(null)
   const [newName, setNewName] = useState('')
   const [newCategory, setNewCategory] = useState<PlaceCategory>('restaurant')
   const meta = MEAL_SLOT_META[slot]
+  const slotName = meta.label.toLowerCase()
   /**
    * One control, two ways to answer "what are we eating": a recipe you cook, or
    * a place you get it from. Values are prefixed so the two id spaces cannot
-   * collide, and `out` alone records a bought meal with no place named.
+   * collide, and `out` alone records a bought meal with no place named. The
+   * meal there is built on, not replaced: its notes stay, and its sides stay
+   * while it is still cooked (mealWithMain).
    */
-  const write = (fields: Partial<Meal> & { title: string }) => {
-    const now = new Date().toISOString()
-    onSave({
-      kind: 'meal',
-      id: mealId(date, slot),
-      date,
-      slot,
-      createdAt: meal?.createdAt ?? now,
-      updatedAt: meal ? newerStamp(meal.updatedAt) : now,
-      ...fields,
-    } as Meal)
-  }
+  const write = (main: MealMain) => onSave(mealWithMain(meal, { date, slot }, main))
   const pick = (value: string) => {
     if (value.startsWith('r:')) {
       const r = recipes.find(x => x.id === value.slice(2))
@@ -125,6 +129,30 @@ export function MealSlotRow({
     setAdd(null)
     setNewName('')
   }
+
+  // Sides: what goes with a cooked lunch or dinner. Each is a saved recipe (its
+  // ingredients join the grocery list) or just a name, and belongs to the meal.
+  const sides = mainOnly ? [] : mealSides(meal)
+  const canSide = !!meal && !meal.out && SIDE_SLOTS.has(slot) && !mainOnly
+  const sideChoices = recipes.filter(r => r.id !== meal?.recipeId && !sides.some(s => s.recipeId === r.id))
+  const addSide = (side: MealSide) => {
+    const next = meal ? mealWithSide(meal, side) : null
+    if (next) onSave(next)
+  }
+  /** A typed side. A name you already have is that recipe, as it is for Something new…; anything else stays a name. */
+  const addTypedSide = () => {
+    const name = newName.trim()
+    if (!name) return
+    const r = recipeByName(name, recipes)
+    addSide(r ? { recipeId: r.id, title: r.name } : { title: name })
+    setNewName('')
+  }
+
+  const when = (r: Recipe) => (cooked ? ` · ${lastCookedShort(cooked, r.id)}` : '')
+  const emojiOf = (id?: string) => {
+    const e = id ? recipes.find(r => r.id === id)?.emoji : undefined
+    return e ? `${e} ` : ''
+  }
   const current = meal ? (meal.out ? (meal.placeId ? `p:${meal.placeId}` : 'out') : meal.recipeId ? `r:${meal.recipeId}` : '') : ''
   return (
     <div className={'meal-slot' + (slot === 'dinner' ? ' dinner' : '')}>
@@ -162,6 +190,10 @@ export function MealSlotRow({
                 <option key={r.id} value={`r:${r.id}`}>
                   {r.emoji ? `${r.emoji} ` : ''}
                   {r.name}
+                  {/* when each was last cooked, to choose by — but not on the one
+                      chosen: the closed picker is the day's dinner on the week,
+                      and "Curry · 3 weeks ago" there would read as that night */}
+                  {`r:${r.id}` === current ? '' : when(r)}
                 </option>
               ))}
             </optgroup>
@@ -183,13 +215,56 @@ export function MealSlotRow({
           className="btn subtle"
           onClick={() => {
             const r = recipes.find(x => x.id === meal.recipeId)
-            if (r) onOpenRecipe(r)
+            if (r) onOpenRecipe(r, meal)
           }}
         >
           Cook
         </button>
       )}
       {meal?.out && <span className="meal-out-chip">🥡 Out</span>}
+      {canSide && (
+        <button
+          type="button"
+          className="btn subtle meal-side-add"
+          aria-expanded={add === 'side'}
+          aria-label={`Add a side to ${slotName} on ${date}`}
+          onClick={() => {
+            setNewName('')
+            setAdd(a => (a === 'side' ? null : 'side'))
+          }}
+        >
+          + Side
+        </button>
+      )}
+
+      {sides.length > 0 && (
+        <div className="meal-sides">
+          <span className="meal-sides-with" aria-hidden="true">
+            with
+          </span>
+          <ul aria-label={`Sides with ${slotName} on ${date}`}>
+            {sides.map((s, i) => (
+              <li key={`${i}:${s.recipeId ?? s.title}`} className="meal-side">
+                <span className="meal-side-name">
+                  {emojiOf(s.recipeId)}
+                  {s.title}
+                </span>
+                {/* two steps like every ✕: the first tap arms it */}
+                <ConfirmButton
+                  className="btn subtle meal-side-remove"
+                  confirmLabel="Remove?"
+                  ariaLabel={`Remove ${s.title}`}
+                  onConfirm={() => {
+                    if (meal) onSave(mealWithoutSide(meal, i))
+                  }}
+                >
+                  <span aria-hidden="true">✕</span>
+                </ConfirmButton>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {add === 'place' && (
         <div className="meal-new-place">
@@ -206,7 +281,7 @@ export function MealSlotRow({
               if (e.key === 'Escape') setAdd(null)
             }}
             placeholder="Where from?"
-            aria-label={`Name of the place for ${meta.label.toLowerCase()} on ${date}`}
+            aria-label={`Name of the place for ${slotName} on ${date}`}
           />
           <select
             value={newCategory}
@@ -243,13 +318,61 @@ export function MealSlotRow({
               if (e.key === 'Escape') setAdd(null)
             }}
             placeholder="What are you cooking?"
-            aria-label={`Name of the new recipe for ${meta.label.toLowerCase()} on ${date}`}
+            aria-label={`Name of the new recipe for ${slotName} on ${date}`}
           />
           <button className="btn primary" onClick={addRecipe} disabled={!newName.trim()}>
             Save
           </button>
           <button className="btn subtle" onClick={() => setAdd(null)}>
             Cancel
+          </button>
+        </div>
+      )}
+
+      {/* A side: pick a recipe (added at once) or type a dish. The form stays
+          open for the next one — rice, then naan — until Done. No autofocus:
+          on a phone the keyboard would cover the recipe picker. */}
+      {add === 'side' && canSide && (
+        <div className="meal-new-place meal-side-form">
+          {sideChoices.length > 0 && (
+            <select
+              className="meal-side-pick"
+              value=""
+              onChange={e => {
+                const r = recipes.find(x => x.id === e.target.value)
+                if (r) addSide({ recipeId: r.id, title: r.name })
+              }}
+              aria-label={`A recipe to have with ${slotName} on ${date}`}
+            >
+              <option value="">Pick a recipe…</option>
+              {sideChoices.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.emoji ? `${r.emoji} ` : ''}
+                  {r.name}
+                  {when(r)}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            className="meal-new-place-name"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addTypedSide()
+              }
+              if (e.key === 'Escape') setAdd(null)
+            }}
+            placeholder={sideChoices.length > 0 ? 'or type one' : 'Garlic bread, salad…'}
+            aria-label={`A side to have with ${slotName} on ${date}, by name`}
+          />
+          <button className="btn" onClick={addTypedSide} disabled={!newName.trim()}>
+            Add
+          </button>
+          <button className="btn subtle" onClick={() => setAdd(null)}>
+            Done
           </button>
         </div>
       )}

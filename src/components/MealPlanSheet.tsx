@@ -1,9 +1,9 @@
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared/weekplan.mjs'
 import type { MealHistory } from '../../shared/weekplan.mjs'
 import { weekDayKeys } from '../../shared/weeks.mjs'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
-import { mealId, nextSwap, recipeByName } from '../kitchen'
+import { cookedIndex, daysAgo, daysBetween, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { dateKey } from '../utils'
 import { aiFailureKind } from './AskSheet'
@@ -47,22 +47,12 @@ export interface MealPick {
 
 const NEW_WHY = 'Something new: saved, never cooked'
 const ALTERNATIVES = 3
-const DAY_MS = 86_400_000
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS)
-
-function ago(days: number): string {
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 14) return `${days} days ago`
-  if (days < 60) return `${Math.round(days / 7)} weeks ago`
-  return `${Math.round(days / 30)} months ago`
-}
 
 /** The ranking's reason, told from today whichever week is being planned. */
 function cookedWhy(h: MealHistory['recipes'][number] | undefined, todayKey: string): string {
   if (!h || h.timesCooked === 0 || !h.lastCooked) return NEW_WHY
-  const last = ago(daysBetween(h.lastCooked, todayKey))
+  const last = daysAgo(daysBetween(h.lastCooked, todayKey))
   return h.cookCount > 0 ? `Cooked ${h.cookCount}× in six months · last ${last}` : `Last cooked ${last}`
 }
 
@@ -114,7 +104,8 @@ export function proposeMealWeek(o: {
   }
   // the ranking offers one never-cooked recipe a week and a young kitchen has
   // little else, so a night it could not fill takes the next never-cooked one
-  const cooked = new Set(meals.filter(m => !m.out && m.recipeId).map(m => m.recipeId))
+  // a recipe that has been a side is not "never cooked" either
+  const cooked = new Set(meals.flatMap(mealRecipeIds))
   const fresh = recipes
     .filter(r => !cooked.has(r.id))
     .sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || cmp(a.name, b.name) || cmp(a.id, b.id))
@@ -265,6 +256,8 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
   const [undone, setUndone] = useState(false)
   const [nothingLeft, setNothingLeft] = useState(false)
   const ids = useId()
+  // Pick…'s picker says when each recipe was last cooked, as the Kitchen's does
+  const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
 
   const setRow = (key: string, patch: Partial<RowState>) => setRows(cur => cur.map(r => (r.key === key ? { ...r, ...patch } : r)))
 
@@ -292,7 +285,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
       weekKey: week.key,
       dayKey: todayKey,
       slots: rows.map(r => ({ date: r.date, slot: r.slot })),
-      planned: meals.filter(m => weekDayKeys(weekStart).includes(m.date)).map(m => ({ date: m.date, slot: m.slot, title: m.title })),
+      planned: meals.filter(m => weekDayKeys(weekStart).includes(m.date)).map(m => ({ date: m.date, slot: m.slot, title: mealLabel(m) })),
       history: mealHistory(items, { dayKey: todayKey, now: at(), tz }),
     })
     setAssist({ status: 'busy' })
@@ -451,6 +444,8 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
                         meal={asMeal(r.date, r.slot, r.choice)}
                         recipes={recipes}
                         places={places}
+                        cooked={cooked}
+                        mainOnly
                         onSave={m => {
                           const choice: SlotChoice = m.recipeId
                             ? { kind: 'recipe', id: m.recipeId, title: m.title, why: 'Your pick' }

@@ -19,10 +19,10 @@ import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK
 import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
-import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
+import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
-import { proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
+import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
 
 const PLACE_CATEGORIES = ['restaurant', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner']
@@ -158,6 +158,70 @@ export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = D
       .slice(0, 5)
       .map(([id, count]) => ({ personId: id, name: people.find(x => x.id === id)?.name ?? null, count })),
   }
+}
+
+/** A planned meal as the kitchen tools return it: the main, its sides, and the line that names them together. */
+export function summarizeMeal(m) {
+  return {
+    id: m.id,
+    date: m.date,
+    slot: m.slot,
+    title: m.title,
+    // "Chicken curry with rice and naan": the title alone when there are no sides
+    label: mealLabel(m),
+    recipeId: m.recipeId ?? null,
+    out: !!m.out,
+    placeId: m.placeId ?? null,
+    sides: mealSides(m).map(s => ({ recipeId: s.recipeId ?? null, title: s.title })),
+    notes: m.notes ?? null,
+  }
+}
+
+/**
+ * A saved recipe by id, or by name as list_recipes spells it: an exact name
+ * first (case-insensitive), then the first name containing it. Null when
+ * neither was given; an error when the one given matches nothing.
+ */
+function findRecipe(recipes, { recipeId, recipeName }) {
+  if (recipeId) {
+    const hit = recipes.find(r => r.id === recipeId)
+    if (!hit) throw new Error(`No recipe with id "${recipeId}". Use list_recipes.`)
+    return hit
+  }
+  if (recipeName) {
+    const needle = String(recipeName).trim().toLowerCase()
+    const hit = recipes.find(r => r.name.toLowerCase() === needle) ?? recipes.find(r => r.name.toLowerCase().includes(needle))
+    if (!hit) throw new Error(`No recipe named "${recipeName}". Use list_recipes.`)
+    return hit
+  }
+  return null
+}
+
+/**
+ * A cooked meal's sides from what the client sent: each a saved recipe
+ * (recipeId, or recipeName from list_recipes) or a dish by name (title). A
+ * title that is exactly a recipe's name is that recipe, as it is when typed in
+ * the app. An unknown recipe is an error, as it is for the main; the main
+ * itself and a repeat are dropped.
+ */
+function resolveSides(recipes, sides, mainId) {
+  if (!Array.isArray(sides)) throw new Error('sides must be a list of { recipeId | recipeName | title }.')
+  const out = []
+  const seen = new Set(mainId ? [`r:${mainId}`] : [])
+  for (const raw of sides) {
+    const s = typeof raw === 'string' ? { title: raw } : raw && typeof raw === 'object' ? raw : {}
+    const title = String(s.title ?? '').trim()
+    const named = title ? recipes.find(r => String(r.name ?? '').trim().toLowerCase() === title.toLowerCase()) : null
+    const recipe = findRecipe(recipes, s) ?? named ?? null
+    if (!recipe && !title) throw new Error('Each side needs a recipeId, a recipeName or a title.')
+    const side = recipe ? { recipeId: recipe.id, title: recipe.name } : { title }
+    const key = recipe ? `r:${recipe.id}` : `t:${title.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(side)
+  }
+  if (out.length > MAX_SIDES) throw new Error(`A meal takes at most ${MAX_SIDES} sides.`)
+  return out
 }
 
 function summarizeProject(p, tasks = []) {
@@ -947,19 +1011,34 @@ export const TOOLS = [
     name: 'list_recipes',
     scope: 'read',
     annotations: READS,
-    description: 'Recipes the household cooks: ingredients, steps, tags, servings. Use the id with plan_meal.',
+    description:
+      'Recipes the household cooks: ingredients, steps, tags, servings, and when each was last cooked (lastCooked, YYYY-MM-DD, or null when never) and how many times (timesCooked). A meal counts once its day has come, whether the recipe was its main or a side; a bought meal never does. Use the id with plan_meal.',
     inputSchema: { type: 'object', properties: { search: { type: 'string', description: 'Match on name, tag or ingredient' } } },
-    async run({ search } = {}, { db }) {
-      let recipes = (await db.fetchAll({ kinds: ['recipe'] })).filter(i => i.kind === 'recipe')
+    async run({ search } = {}, { db, clock }) {
+      const all = await db.fetchAll({ kinds: ['recipe', 'meal'] })
+      let recipes = all.filter(i => i.kind === 'recipe')
       if (search) {
         const needle = String(search).toLowerCase()
         recipes = recipes.filter(r => `${r.name} ${(r.tags ?? []).join(' ')} ${(r.ingredients ?? []).map(i => i.name).join(' ')}`.toLowerCase().includes(needle))
       }
+      // the Kitchen's own numbers, as of the user's today
+      const cooked = new Map(mealHistory(all, { dayKey: clock.todayKey(), now: clock.now(), tz: clock.tz }).recipes.map(r => [r.id, r]))
       return {
         count: recipes.length,
         recipes: recipes
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(r => ({ id: r.id, name: r.name, emoji: r.emoji ?? null, servings: r.servings ?? null, tags: r.tags ?? [], ingredients: r.ingredients ?? [], steps: r.steps ?? [], notes: r.notes ?? null })),
+          .map(r => ({
+            id: r.id,
+            name: r.name,
+            emoji: r.emoji ?? null,
+            servings: r.servings ?? null,
+            tags: r.tags ?? [],
+            ingredients: r.ingredients ?? [],
+            steps: r.steps ?? [],
+            notes: r.notes ?? null,
+            timesCooked: cooked.get(r.id)?.timesCooked ?? 0,
+            lastCooked: cooked.get(r.id)?.lastCooked ?? null,
+          })),
       }
     },
   },
@@ -968,7 +1047,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'The meal plan for the Sunday-start week containing a date (default today): every planned breakfast/lunch/dinner and the grocery list for that week (lines taken off the list by hand are left out).',
+      'The meal plan for the Sunday-start week containing a date (default today): every planned breakfast/lunch/dinner — each with its sides and a label that names them together ("Chicken curry with rice and naan") — and the grocery list for that week (lines taken off the list by hand are left out).',
     inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD, default today' } } },
     async run({ date } = {}, { db, clock }) {
       const day = date ? String(date).trim() : clock.todayKey()
@@ -980,7 +1059,7 @@ export const TOOLS = [
       return {
         weekKey,
         days: weekDayKeys(day),
-        meals: meals.map(m => ({ id: m.id, date: m.date, slot: m.slot, title: m.title, recipeId: m.recipeId ?? null, notes: m.notes ?? null })),
+        meals: meals.map(summarizeMeal),
         grocery: grocery ? { id: grocery.id, items: activeGroceryLines(grocery.items) } : null,
       }
     },
@@ -990,7 +1069,7 @@ export const TOOLS = [
     scope: 'write',
     annotations: EDITS,
     description:
-      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes), a free-text title such as "Leftovers", or a meal you are buying rather than cooking (out: true, optionally placeName from list_places). Replaces whatever was in that slot and rebuilds the week\'s grocery list from every planned recipe, keeping Have / Got it ticks, hand-added lines and lines taken off the list (one comes back only when a newly planned recipe needs it). A bought meal adds nothing to the list, and once its day has passed it counts as an outing at that place.',
+      'Plan a meal on a day: a recipe (recipeId or recipeName from list_recipes), a free-text title such as "Leftovers", or a meal you are buying rather than cooking (out: true, optionally placeName from list_places). Replaces the main in that slot and rebuilds the week\'s grocery list from every planned recipe, sides included, keeping Have / Got it ticks, hand-added lines and lines taken off the list (one comes back only when a newly planned recipe needs it). A cooked lunch or dinner can have sides: each { recipeId } or { recipeName } for a saved recipe, or { title } for a dish by name such as "garlic bread"; sides replaces the meal\'s sides and [] clears them. Left out, a meal that is still cooked keeps the sides it had. A bought meal has no sides and adds nothing to the list, and once its day has passed it counts as an outing at that place.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1001,25 +1080,29 @@ export const TOOLS = [
         title: { type: 'string', description: 'Free text when no recipe' },
         out: { type: 'boolean', description: 'Bought rather than cooked: takeaway, delivery, or a meal out' },
         placeName: { type: 'string', description: 'Where a bought meal came from; must match a place from list_places' },
+        sides: {
+          type: 'array',
+          description: 'What goes with a cooked lunch or dinner. Replaces its sides; [] clears them; left out, they stay',
+          items: {
+            type: 'object',
+            properties: {
+              recipeId: { type: 'string' },
+              recipeName: { type: 'string' },
+              title: { type: 'string', description: 'A dish that is not a saved recipe' },
+            },
+          },
+        },
         notes: { type: 'string' },
       },
       required: ['date'],
     },
-    async run({ date, slot, recipeId, recipeName, title, out, placeName, notes } = {}, { db, clock }) {
+    async run({ date, slot, recipeId, recipeName, title, out, placeName, notes, sides } = {}, { db, clock }) {
       const day = String(date ?? '').trim()
       assertDayKey(day)
       const when = slot ? oneOf(slot, MEAL_SLOTS, 'slot') : 'dinner'
       const all = await db.fetchAll({ kinds: ['recipe', 'place', 'meal', 'grocery'] })
       const recipes = all.filter(i => i.kind === 'recipe')
-      let recipe = null
-      if (recipeId) {
-        recipe = recipes.find(r => r.id === recipeId)
-        if (!recipe) throw new Error(`No recipe with id "${recipeId}". Use list_recipes.`)
-      } else if (recipeName) {
-        const needle = String(recipeName).trim().toLowerCase()
-        recipe = recipes.find(r => r.name.toLowerCase() === needle) ?? recipes.find(r => r.name.toLowerCase().includes(needle))
-        if (!recipe) throw new Error(`No recipe named "${recipeName}". Use list_recipes.`)
-      }
+      const recipe = findRecipe(recipes, { recipeId, recipeName })
       // eating out is the other way to answer "what are we eating": no recipe,
       // nothing to shop for, and a place that makes it an outing once it passes
       let place = null
@@ -1033,22 +1116,23 @@ export const TOOLS = [
       if (eatingOut && recipe) throw new Error('A meal is either cooked from a recipe or bought, not both.')
       const label = recipe ? recipe.name : String(title ?? '').trim() || (place ? place.name : eatingOut ? 'Eating out' : '')
       if (!label) throw new Error('Give a recipeId / recipeName, a title, or out: true.')
+      const sideList = sides === undefined || sides === null ? null : resolveSides(recipes, sides, recipe?.id)
+      if (sideList?.length && eatingOut) throw new Error('A bought meal has no sides: sides go with a meal you cook.')
+      if (sideList?.length && when === 'breakfast') throw new Error('Sides go with a cooked lunch or dinner.')
       const id = mealId(day, when)
       const existing = all.find(i => i.kind === 'meal' && i.id === id)
       const stamp = clock.iso()
-      /** @type {import('../src/types.js').Meal} */
-      const meal = {
-        kind: 'meal',
-        id,
-        date: day,
-        slot: when,
-        recipeId: recipe?.id,
-        out: eatingOut || undefined,
-        placeId: eatingOut ? place?.id : undefined,
-        title: label,
-        notes: notes ? String(notes).trim() || undefined : existing?.notes,
-        createdAt: existing?.createdAt ?? stamp,
-        updatedAt: newerStamp(existing?.updatedAt),
+      // built on what is in the slot, by the app's own rule: its notes stay,
+      // and its sides while it is still cooked, less the new main
+      const meal = mealWithMain(existing, { date: day, slot: when }, { recipeId: recipe?.id, out: eatingOut, placeId: eatingOut ? place?.id : undefined, title: label }, stamp)
+      if (notes) {
+        const clean = String(notes).trim()
+        if (clean) meal.notes = clean
+        else delete meal.notes
+      }
+      if (sideList) {
+        if (sideList.length) meal.sides = sideList
+        else delete meal.sides
       }
       // planning a meal writes the grocery list in the same round, or the shop list never leaves this device
       const weekKey = groceryWeekFor(day)
@@ -1057,7 +1141,7 @@ export const TOOLS = [
       const grocery = buildGroceryList(weekKey, weekMeals, recipes, prev, newerStamp(prev?.updatedAt))
       assertStored(await db.syncWrite([meal, grocery]), [meal, grocery])
       return {
-        planned: { id: meal.id, date: meal.date, slot: meal.slot, title: meal.title, recipeId: meal.recipeId ?? null, out: !!meal.out, placeId: meal.placeId ?? null },
+        planned: summarizeMeal(meal),
         groceryItems: activeGroceryLines(grocery.items).length,
         weekKey,
       }

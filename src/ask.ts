@@ -23,6 +23,8 @@ import { matchPlace, normalisePlaceText, outingsAt } from './places'
 import { htmlToText } from './richtext'
 import { hasDueTime } from './taskutils'
 import { dateKey, excerpt } from './utils'
+import { mealLabel, mealSides } from '../shared/kitchen.mjs'
+import { mealHistory } from '../shared/weekplan.mjs'
 import { isDayKey, weekStartKey } from '../shared/weeks.mjs'
 
 // Ask Drafter: a question answered from your own planner.
@@ -318,13 +320,14 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
       kind: 'meal',
       id: m.id,
       date: m.date,
-      title: m.title || recipe || MEAL_SLOT_META[m.slot].label,
+      // "Chicken curry with rice and naan": the sides are part of the meal
+      title: mealLabel({ ...m, title: m.title || recipe || MEAL_SLOT_META[m.slot].label }),
       text: line(
         `${MEAL_SLOT_META[m.slot].label.toLowerCase()} on ${m.date}`,
         m.out ? `eaten out${place ? ` at ${place}` : ''}` : recipe && recipe !== m.title && `recipe: ${recipe}`,
         excerpt(m.notes ?? '', 200),
       ),
-      links: compact([m.id, m.recipeId, m.placeId]),
+      links: compact([m.id, m.recipeId, ...mealSides(m).map(s => s.recipeId), m.placeId]),
     })
   }
 
@@ -699,6 +702,20 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
         ? `${place.name}: last went ${last} (${ago(daysBetween(last, today))}); ${outings.length} outing${outings.length === 1 ? '' : 's'} logged.`
         : `${place.name}: no outings logged yet.`,
     )
+  }
+  if (pq.recipeIds.length) {
+    // the Kitchen's own count: a meal counts once its day has come, as the main or a side
+    const cooked = new Map(mealHistory([...src.recipes, ...src.meals], { dayKey: today, now, tz }).recipes.map(r => [r.id, r]))
+    for (const id of pq.recipeIds.slice(0, 3)) {
+      const recipe = src.recipes.find(r => r.id === id && !r.deletedAt)
+      if (!recipe) continue
+      const h = cooked.get(id)
+      facts.push(
+        h?.lastCooked
+          ? `${recipe.name}: last cooked ${h.lastCooked} (${ago(daysBetween(h.lastCooked, today))}); cooked ${h.timesCooked} time${h.timesCooked === 1 ? '' : 's'}.`
+          : `${recipe.name}: not cooked yet.`,
+      )
+    }
   }
   if (pq.intents.has('money')) {
     const monthly = monthlyCost(src.tasks)

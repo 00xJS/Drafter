@@ -12,6 +12,7 @@ import {
   RecipeIngredient,
   Review,
   Meal,
+  MealSide,
   MealSlot,
   MEAL_SLOTS,
   GroceryList,
@@ -52,6 +53,7 @@ import {
   Note,
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
+import { MAX_SIDES } from '../shared/kitchen.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
 import { isDayKey } from '../shared/weeks.mjs'
 import { sanitizeHtml } from './richtext'
@@ -490,6 +492,25 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
   }
 }
 
+/**
+ * A cooked meal's sides: each a title, with a saved recipe's id where it is one.
+ * Nothing usable reads as no field at all, so a meal without sides — every one
+ * planned before them — comes out exactly as it went in.
+ */
+function sanitizeSides(raw: unknown): MealSide[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: MealSide[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const title = str(r.title)?.trim()
+    if (!title) continue
+    const recipeId = idOrUndefined(r.recipeId)
+    out.push(recipeId ? { recipeId, title } : { title })
+  }
+  return out.length ? out.slice(0, MAX_SIDES) : undefined
+}
+
 export function sanitizeMeal(raw: unknown): Meal | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
@@ -510,6 +531,8 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     out: r.out === true || undefined,
     placeId: r.out === true ? idOrUndefined(r.placeId) : undefined,
     title: title ?? '',
+    // what goes with a cooked main; a bought meal has none
+    sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,

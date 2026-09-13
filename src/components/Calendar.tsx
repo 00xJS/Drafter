@@ -15,7 +15,7 @@ import {
   weekDays,
   weekLabel,
 } from '../calgrid'
-import { mealsByDay } from '../kitchen'
+import { cookedIndex, mealLabel, mealsByDay } from '../kitchen'
 import { plannedGift } from '../people'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
@@ -121,6 +121,8 @@ export function Calendar({
     () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events.filter(e => !e.work)), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
     [tasks, events, projects, people, meals],
   )
+  // the day sheet's meal pickers say when each recipe was last cooked, as the Kitchen's do
+  const cooked = useMemo(() => cookedIndex(recipes, meals, dateKey(new Date())), [recipes, meals])
   // A work day is drawn as a badge on the day, not as an item competing with
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
@@ -186,7 +188,8 @@ export function Calendar({
     if (item.kind === 'occasion') return `${item.occasion.person.name}’s ${item.occasion.kind}`
     if (item.kind === 'event') return item.event.title
     if (item.kind === 'mark') return item.mark.kind === 'target' ? `${item.mark.project.name} target` : item.mark.milestone?.name || 'Milestone'
-    if (item.kind === 'meal') return item.meal.title
+    // "Chicken curry with rice and naan": the sides are part of the meal
+    if (item.kind === 'meal') return mealLabel(item.meal)
     // A bill reads as what it is and what it costs. The amount is shown here only:
     // the mirrors and the feed send the title the owner typed, so a figure never
     // reaches Google or Outlook unless it was written into the title itself.
@@ -583,7 +586,7 @@ export function Calendar({
                       <span className="cal-item-dot" style={{ background: item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR }} />
                       <div className="cal-row-main">
                         <span className="cal-row-title">
-                          {mealGlyph(item.meal)} {item.meal.title}
+                          {mealGlyph(item.meal)} {mealLabel(item.meal)}
                         </span>
                         <span className="cal-row-meta">{itemMeta(item)}</span>
                       </div>
@@ -628,6 +631,7 @@ export function Calendar({
                 slot={slot}
                 meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
                 recipes={recipes}
+                cooked={cooked}
                 places={places}
                 onSave={onSaveMeal}
                 onClear={onClearMeal}

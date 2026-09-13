@@ -399,6 +399,13 @@ export const MEAL_SLOT_META: Record<MealSlot, { label: string; emoji: string }> 
   dinner: { label: 'Dinner', emoji: '🍽️' },
 }
 
+/** A dish served with a meal's main: a saved recipe, or just a name ("garlic bread"). */
+export interface MealSide {
+  /** The saved recipe, when the side is one: its ingredients join the grocery list and cooking it counts. */
+  recipeId?: string
+  title: string
+}
+
 /** A meal planned for a calendar day. One record per day+slot. */
 export interface Meal extends Owned {
   kind: 'meal'
@@ -416,6 +423,12 @@ export interface Meal extends Owned {
   /** Where an `out` meal came from. A place row, so eating there is an outing. */
   placeId?: string
   title: string
+  /**
+   * What goes with the main on a cooked meal: the rice with the curry. Part of
+   * the meal rather than a slot of its own, so a dinner with sides is still one
+   * dinner. Absent on a bought meal and on every meal planned before sides.
+   */
+  sides?: MealSide[]
   notes?: string
   createdAt: string
   updatedAt: string

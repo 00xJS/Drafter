@@ -4,7 +4,7 @@ import { eventDayKeys } from '../calendars'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
 import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, getWeather, readCache, requestLocation, setCity } from '../weather'
-import { tonightDinner } from '../kitchen'
+import { mealLabel, tonightDinner } from '../kitchen'
 
 /** Same 17:00 line Today uses to move the journal card to the evening. */
 export function greeting(hour: number, name?: string): string {
@@ -288,7 +288,7 @@ export function BriefingCard({
                 {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'}
               </span>
               <span className="briefing-text">
-                <span className="briefing-main">{dinner.meal.title}</span>
+                <span className="briefing-main">{mealLabel(dinner.meal)}</span>
                 <span className="briefing-sub">{dinner.meal.slot === 'dinner' ? 'Tonight' : MEAL_SLOT_META[dinner.meal.slot].label}</span>
               </span>
             </li>
