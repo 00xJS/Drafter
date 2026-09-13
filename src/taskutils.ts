@@ -22,6 +22,8 @@ export function isOpen(t: Task): boolean {
  * There is one ongoing project and nothing on screen shows or sets it, so the
  * Inbox goes by what you can see and change — a date, or another status, is
  * what takes a task out. The palette's capture toast asks the same question.
+ * Today also moves one left untouched too long on to Going stale, so no to-do
+ * is listed twice; a fresh capture is never stale, so the toast needs no clock.
  */
 export function inInbox(t: Task): boolean {
   return t.status === 'todo' && !t.dueAt

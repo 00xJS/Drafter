@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Landing } from '../components/Landing'
 import { NotesIndex } from '../components/notes/NotesIndex'
 import { NotesView } from '../components/NotesView'
 import { Roadmap } from '../components/Roadmap'
 import { Search } from '../components/Search'
 import { TaskCard } from '../components/TaskCard'
+import { Today } from '../components/Today'
 import { buildPaletteCommands } from '../components/planner/commands'
 import { CaptureProposal } from '../components/taskeditor/CaptureProposal'
 import { inInbox } from '../taskutils'
@@ -158,10 +160,89 @@ describe('the Inbox goes by the date, not the project', () => {
     for (const status of ['wishlist', 'doing', 'blocked', 'done', 'canceled'] as const) expect(inInbox(task('4', { status })), status).toBe(false)
   })
 
-  it('Today draws its Inbox by that rule and asks only for a date', () => {
-    const today = read('../components/Today.tsx')
-    expect(today).toContain('open.filter(inInbox)')
-    expect(today).toContain("sub: 'Captured, not yet triaged — give each a date'")
-    expect(today).not.toMatch(/give each a project|!t\.projectId/)
+  describe('on Today', () => {
+    // a static render on a fixed morning, with one undated LIFE to-do from this
+    // week and one untouched since early August — the owner's older tasks carry LIFE's id
+    const NOW = new Date(2026, 8, 14, 9)
+    const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString()
+    const fresh = task('fresh', { title: 'Fresh LIFE to-do', createdAt: daysAgo(2), updatedAt: daysAgo(2) })
+    const old = task('old', { title: 'Old LIFE to-do', createdAt: daysAgo(40), updatedAt: daysAgo(40) })
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(NOW)
+      // the journal card asks the viewport how wide it is; a static render has none
+      if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    function renderToday(tasks: Task[]): string {
+      const props: ComponentProps<typeof Today> = {
+        tasks,
+        allTasks: tasks,
+        projects: [LIFE],
+        people: [],
+        places: [],
+        reviews: [],
+        events: [],
+        sourceMap: new Map(),
+        meals: [],
+        recipes: [],
+        journal: [],
+        habits: [],
+        routines: [],
+        onPlanWith: noop,
+        onWentTo: noop,
+        onPlanAt: noop,
+        onPlanOccasion: noop,
+        onSaw: noop,
+        onSaveReview: noop,
+        onPlan: noop,
+        onOpen: noop,
+        onStatus: noop,
+        onDefer: noop,
+        onDeferAll: noop,
+        onNew: noop,
+        onOpenKitchen: noop,
+        onOpenReview: noop,
+        onCookRecipe: noop,
+        onSaveJournal: noop,
+        onDeleteJournal: noop,
+        onOpenJournal: noop,
+        onSaveHabit: noop,
+        onDeleteHabit: noop,
+        onSaveRoutine: noop,
+        onDeleteRoutine: noop,
+      }
+      return renderToStaticMarkup(<Today {...props} />)
+    }
+
+    /** The key of every Today list (`id="today-…"`) with a row for this title. */
+    const listsHolding = (html: string, title: string) =>
+      [...html.matchAll(/<section[^>]*\bid="today-(\w+)"[\s\S]*?<\/section>/g)].filter(m => m[0].includes(title)).map(m => m[1])
+
+    it('lists a fresh undated LIFE to-do in the Inbox, asking only for a date', () => {
+      const html = renderToday([fresh])
+      expect(listsHolding(html, 'Fresh LIFE to-do')).toEqual(['inbox'])
+      expect(html).toContain('Captured, not yet triaged — give each a date')
+      expect(read('../components/Today.tsx')).not.toMatch(/give each a project|!t\.projectId/)
+    })
+
+    it('moves an old one on to Going stale: each is listed in exactly one section, and each count says so', () => {
+      const html = renderToday([fresh, old])
+      expect(listsHolding(html, 'Fresh LIFE to-do')).toEqual(['inbox'])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(html).toContain('Inbox <span class="board-count">1</span>')
+      expect(html).toContain('Going stale <span class="board-count">1</span>')
+    })
+
+    it('with only stale to-dos there is no Inbox at all', () => {
+      const html = renderToday([old])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(html).not.toContain('id="today-inbox"')
+    })
   })
 })

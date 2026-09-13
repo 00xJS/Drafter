@@ -589,10 +589,12 @@ export function Today({
       .sort(compareTasks)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
-    const inbox = open.filter(inInbox).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const stale = open
       .filter(t => !t.dueAt && t.status === 'todo' && nowMs - new Date(t.updatedAt).getTime() > STALE_DAYS * DAY_MS)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    // every stale to-do also passes inInbox; it moves on from the Inbox to Going stale rather than being listed twice
+    const staleIds = new Set(stale.map(t => t.id))
+    const inbox = open.filter(t => inInbox(t) && !staleIds.has(t.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const doneRecentAll = tasks
       .filter(t => t.status === 'done' && t.completedAt && nowMs - new Date(t.completedAt).getTime() < 7 * DAY_MS)
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
