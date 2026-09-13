@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   MEAL_SLOT_META,
+  CalendarEntry,
   CalendarEvent,
   CalendarSource,
   Habit,
   JournalEntry,
   Meal,
+  MealSlot,
   PLACE_CATEGORY_META,
   Person,
   Place,
@@ -27,11 +29,18 @@ import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '..
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
-import { dateKey, excerpt, fmtTime, timeAgo } from '../utils'
+import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
+import { focusTasks } from '../../shared/today.mjs'
+import type { MealIdea } from '../../shared/weekplan.mjs'
 import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
 import { RoutinesCard } from './RoutinesCard'
 import { BriefingCard, briefingFacts } from './BriefingCard'
+import type { BriefingCta } from './BriefingCard'
+import { MealIdeasCard } from './MealIdeasCard'
+import { blocksOn } from './PlanDaySheet'
+import type { PlanStep } from './PlanDaySheet'
+import { dayClosed } from './ShutdownSheet'
 
 /** The line under a project on Today: its count once it has tasks, never "0/0 done" before then. */
 export function projectCardSub(progress: { done: number; total: number }, targetAt?: string): string {
@@ -95,9 +104,26 @@ interface Props {
   routines: Routine[]
   onSaveRoutine(r: Routine): void
   onDeleteRoutine(id: string): void
+  // ---- Phase 3 (B4). Optional until the planner shell passes them: without
+  // them Today reads as it did, with no focus card, strip action or ideas.
+  /** The signed-in user's id: whose focus is whose. Null or absent in local mode, where any focus is yours. */
+  myId?: string | null
+  /** Our own calendar entries: a focus task's time block is the entry whose taskId names it. */
+  entries?: CalendarEntry[]
+  /** Open Plan my day, at a step (the focus card's Edit asks for 'focus'); no step lets the sheet choose. */
+  onPlanDay?(step?: PlanStep): void
+  /** Open Shut down (the strip's tile from 17:00, and "Day closed" to reopen it). */
+  onShutDown?(): void
+  /** Open Plan next week — offered on Sundays. */
+  onPlanWeek?(): void
+  /** Defer from the focus card: the same move as onDefer, and the task also leaves today's focus. */
+  onDeferFromFocus?(id: string, day: Date): void
+  /** Plan one of today's meal ideas; the ideas card only shows when this is given. */
+  onPlanMeal?(dayKey: string, slot: MealSlot, idea: MealIdea): void
 }
 
 const STALE_DAYS = 14
+const NO_ENTRIES: CalendarEntry[] = []
 
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
 
@@ -119,6 +145,34 @@ interface Section {
   sub?: string
   tasks: Task[]
   tone?: 'warn'
+}
+
+/**
+ * Today's focus has a card of its own, so every section leaves those tasks
+ * out and says how many went: each section comes back with only its other
+ * rows and an `inFocus` count, and a section left with no rows is dropped.
+ * The count tiles are worked out before this and still include them.
+ */
+export function leaveOutFocus<T extends { tasks: Task[] }>(sections: T[], focusIds: ReadonlySet<string>): (T & { inFocus: number })[] {
+  return sections.flatMap(sec => {
+    const rows = sec.tasks.filter(t => !focusIds.has(t.id))
+    return rows.length > 0 ? [{ ...sec, tasks: rows, inFocus: sec.tasks.length - rows.length }] : []
+  })
+}
+
+/** From 17:00 the strip offers Shut down once a focus is set, and from 20:00 whether or not. */
+export const SHUTDOWN_HOUR = 17
+export const LATE_HOUR = 20
+
+/**
+ * The strip's one action: "Plan my day" in the morning (and in the early
+ * evening while nothing is in focus), "Shut down" in the evening, and "Day
+ * closed" once this device has shut the day down.
+ */
+export function briefingCtaLabel({ hour, hasFocus, closed }: { hour: number; hasFocus: boolean; closed: boolean }): BriefingCta['label'] {
+  if (closed) return 'Day closed'
+  if (hour >= LATE_HOUR || (hour >= SHUTDOWN_HOUR && hasFocus)) return 'Shut down'
+  return 'Plan my day'
 }
 
 function addDays(from: Date, n: number): Date {
@@ -342,6 +396,69 @@ function TaskRow({
   )
 }
 
+/**
+ * Today's focus, directly under the briefing strip: up to three tasks you
+ * chose this morning (or last night), open ones first, each swipeable like any
+ * Today row and showing its time block when it has one. A defer from here also
+ * takes the task out of today's focus. Nothing in focus, no card.
+ */
+export function FocusCard({
+  tasks,
+  blocks,
+  projectMap,
+  onOpen,
+  onStatus,
+  onDefer,
+  onEdit,
+}: {
+  /** Today's focus as focusTasks lists it: open first, then done. */
+  tasks: Task[]
+  /** Each task's time block today, by task id. */
+  blocks: Map<string, CalendarEntry>
+  projectMap: Map<string, Project>
+  onOpen(t: Task): void
+  onStatus(id: string, s: TaskStatus): void
+  onDefer(id: string, day: Date): void
+  /** Opens Plan my day at the focus step. */
+  onEdit?(): void
+}) {
+  if (tasks.length === 0) return null
+  const done = tasks.filter(t => t.status === 'done').length
+  const allDone = done === tasks.length
+  const sub = allDone ? (tasks.length === 3 ? 'All three done' : 'All done') : `${done} of ${tasks.length} done`
+  return (
+    <section id="today-focus" className={'chart-card focus-card' + (allDone ? ' all-done' : '')}>
+      <header className="chart-head">
+        <div>
+          <h3>Today’s focus</h3>
+          <p className="chart-sub">{sub}</p>
+        </div>
+        {onEdit && (
+          <button type="button" className="btn subtle" onClick={onEdit}>
+            Edit
+          </button>
+        )}
+      </header>
+      <ul className="dash-list tlist">
+        {tasks.map(t => {
+          const block = blocks.get(t.id)
+          return (
+            <TaskRow
+              key={t.id}
+              task={t}
+              project={t.projectId ? projectMap.get(t.projectId) : undefined}
+              reason={block ? `${clock(block.start)}–${clock(block.end)}` : undefined}
+              onOpen={onOpen}
+              onStatus={onStatus}
+              onDefer={onDefer}
+            />
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 const EVENT_HORIZON_DAYS = 14
 
 function eventWhen(ev: CalendarEvent): string {
@@ -399,6 +516,13 @@ export function Today({
   routines,
   onSaveRoutine,
   onDeleteRoutine,
+  myId = null,
+  entries = NO_ENTRIES,
+  onPlanDay,
+  onShutDown,
+  onPlanWeek,
+  onDeferFromFocus,
+  onPlanMeal,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -426,10 +550,17 @@ export function Today({
   }, [reviews])
   const top3 = useMemo(() => (weekReview?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3), [weekReview])
   const topDone = useMemo(() => weekReview?.topDone ?? [], [weekReview])
-  const upNext: NextUp[] = useMemo(
-    () => nextUp(tasks, projects, 6, new Date(), top3.filter((_, i) => !topDone[i])),
-    [tasks, projects, top3, topDone],
-  )
+  const todayKey = dateKey(new Date())
+  // today's focus has its own card: the lists below leave it out and say so
+  const focus = useMemo(() => focusTasks(tasks, todayKey, myId), [tasks, todayKey, myId])
+  const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
+  const blocks = useMemo(() => blocksOn(entries, todayKey), [entries, todayKey])
+  const { upNext, upNextInFocus } = useMemo(() => {
+    const pinned = top3.filter((_, i) => !topDone[i])
+    const all: NextUp[] = nextUp(tasks, projects, 6, new Date(), pinned)
+    if (focusIds.size === 0) return { upNext: all, upNextInFocus: 0 }
+    return { upNext: nextUp(tasks, projects, 6, new Date(), pinned, focusIds), upNextInFocus: all.filter(n => focusIds.has(n.task.id)).length }
+  }, [tasks, projects, top3, topDone, focusIds])
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
   const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
@@ -530,7 +661,7 @@ export function Today({
     )
   }
 
-  const sections: Section[] = [
+  const everySection: Section[] = [
     { key: 'overdue', title: 'Overdue', sub: 'Past due and still open', tasks: s.overdue, tone: 'warn' as const },
     {
       key: 'today',
@@ -543,7 +674,8 @@ export function Today({
     { key: 'blocked', title: 'Blocked', sub: 'Waiting on something — worth a nudge?', tasks: s.blocked },
     { key: 'inbox', title: 'Inbox', sub: 'Captured, not yet triaged — give each a project or a date', tasks: s.inbox },
     { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
-  ].filter(sec => sec.tasks.length > 0)
+  ]
+  const sections = leaveOutFocus(everySection, focusIds)
 
   // A tile only offers the jump when the section it counts is actually on the
   // page; otherwise it is the same button, announced as unavailable. `null`
@@ -551,7 +683,20 @@ export function Today({
   // and lose their target as the day is worked through, and a tile that changed
   // element type under a focused thumb or caret would drop focus to <body>.
   const shown = new Set(sections.map(sec => sec.key))
-  const jump = (key: string) => (shown.has(key) ? () => document.getElementById(`today-${key}`)?.scrollIntoView({ block: 'start' }) : null)
+  // a section whose every row is in today's focus is not drawn: its tile jumps to the focus card instead
+  const inFocusOnly = new Set(everySection.filter(sec => sec.tasks.length > 0 && sec.tasks.every(t => focusIds.has(t.id))).map(sec => sec.key))
+  const jump = (key: string) =>
+    shown.has(key)
+      ? () => document.getElementById(`today-${key}`)?.scrollIntoView({ block: 'start' })
+      : inFocusOnly.has(key)
+        ? () => document.getElementById('today-focus')?.scrollIntoView({ block: 'start' })
+        : null
+
+  // the strip's one action; "Day closed" is this device's own note (ShutdownSheet)
+  const ctaLabel = briefingCtaLabel({ hour, hasFocus: focus.length > 0, closed: dayClosed(todayKey) })
+  const cta: BriefingCta | undefined =
+    ctaLabel === 'Plan my day' ? (onPlanDay ? { label: ctaLabel, onClick: () => onPlanDay() } : undefined) : onShutDown ? { label: ctaLabel, onClick: onShutDown } : undefined
+  const focusTitles = new Set(focus.map(t => (t.title || '').trim().toLowerCase()).filter(Boolean))
 
   const journalCard = (
     <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
@@ -575,7 +720,16 @@ export function Today({
         </div>
       </header>
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
-      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} />
+      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} />
+      <FocusCard
+        tasks={focus}
+        blocks={blocks}
+        projectMap={projectMap}
+        onOpen={onOpen}
+        onStatus={onStatus}
+        onDefer={onDeferFromFocus ?? onDefer}
+        onEdit={onPlanDay ? () => onPlanDay('focus') : undefined}
+      />
       {freeTime.length > 0 && (
         <section className="chart-card wishlist-nudge">
           <header className="chart-head">
@@ -668,6 +822,8 @@ export function Today({
         </section>
       )}
 
+      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={new Date()} meals={meals} recipes={recipes} places={places} tasks={allTasks} onPlan={onPlanMeal} />}
+
       {sundayDraft?.summary && (
         <section className="chart-card week-review-ready">
           <header className="chart-head">
@@ -675,9 +831,16 @@ export function Today({
               <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
               <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'From Sunday’s digest'}</p>
             </div>
-            <button className="btn primary" onClick={onOpenReview}>
-              Open review
-            </button>
+            <div className="event-actions">
+              {isSunday && onPlanWeek && (
+                <button type="button" className="btn" onClick={onPlanWeek}>
+                  Plan next week
+                </button>
+              )}
+              <button className="btn primary" onClick={onOpenReview}>
+                Open review
+              </button>
+            </div>
           </header>
           <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
         </section>
@@ -696,6 +859,11 @@ export function Today({
               <h3>This week's 3</h3>
               <p className="chart-sub">From last Sunday's review</p>
             </div>
+            {isSunday && onPlanWeek && !sundayDraft?.summary && (
+              <button type="button" className="btn subtle" onClick={onPlanWeek}>
+                Plan next week
+              </button>
+            )}
           </header>
           <ul className="dash-list">
             {top3.map((line, i) => (
@@ -703,6 +871,8 @@ export function Today({
                 <input type="checkbox" className="tcheck" checked={!!topDone[i]} aria-label="Mark done" onChange={() => toggleTop(i)} />
                 <div className="dash-main">
                   <span className="dash-title">{line}</span>
+                  {/* the line stays; its task is also on the focus card above */}
+                  {focusTitles.has(line.trim().toLowerCase()) && <span className="badge focus-badge">Today’s focus</span>}
                 </div>
                 <button className="btn subtle" onClick={() => onNew({ title: line, dueAt: endOfNextWeek, status: 'todo' })}>
                   → task
@@ -734,6 +904,7 @@ export function Today({
               />
             ))}
           </ul>
+          {upNextInFocus > 0 && <p className="board-more focus-more">+ {upNextInFocus} in today’s focus</p>}
         </section>
       )}
 
@@ -808,6 +979,7 @@ export function Today({
                 ))}
               </ul>
               {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
+              {sec.inFocus > 0 && <p className="board-more focus-more">+ {sec.inFocus} in today’s focus</p>}
             </section>
           ))}
         </div>

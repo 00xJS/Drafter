@@ -53,6 +53,7 @@ import {
 } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
+import { isDayKey } from '../shared/weeks.mjs'
 import { sanitizeHtml } from './richtext'
 
 // Hand-rolled validation instead of a schema library: JSON backups and pre-v3
@@ -200,6 +201,16 @@ function dateOnly(v: unknown): string | undefined {
   return iso ? iso.slice(0, 10) : undefined
 }
 
+/**
+ * A local day key and nothing else: YYYY-MM-DD that is a real calendar day.
+ * Unlike dateOnly it never turns an instant into a day — an ISO timestamp's
+ * date is its UTC date, which is the wrong day for anyone east or west of it.
+ */
+function dayKeyOnly(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  return s && isDayKey(s) ? s : undefined
+}
+
 function idOrUndefined(v: unknown): string | undefined {
   const s = str(v)?.trim()
   return s ? s : undefined
@@ -273,6 +284,8 @@ export function sanitizeTask(raw: unknown): Task | null {
     actualCost: money(r.actualCost),
     blockedBy: idList(r.blockedBy),
     assigneeId: idOrUndefined(r.assigneeId),
+    focusOn: dayKeyOnly(r.focusOn),
+    focusBy: idOrUndefined(r.focusBy),
     ownerId: idOrUndefined(r.ownerId),
     deletedAt: isoDate(r.deletedAt),
     purged: r.purged === true || undefined,
@@ -588,6 +601,7 @@ export function sanitizeEvent(raw: unknown): CalendarEntry | null {
     location: str(r.location)?.trim() || undefined,
     notes: str(r.notes)?.trim() || undefined,
     work: r.work === 'home' || r.work === 'office' ? r.work : undefined,
+    taskId: idOrUndefined(r.taskId),
     projectId: idOrUndefined(r.projectId),
     peopleIds: idList(r.peopleIds),
     ownerId: idOrUndefined(r.ownerId),

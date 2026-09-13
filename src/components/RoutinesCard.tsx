@@ -93,49 +93,22 @@ export function RoutinesCard({ routines, today, hour, onSave, onDelete }: { rout
         <>
           {visible.length === 0 && editing !== 'new' && <p className="routine-hidden">Nothing for this time of day.</p>}
           <ul className="routine-list">
-            {visible.map(r => {
-              if (editing === r.id) {
-                return (
-                  <li key={r.id}>
-                    <RoutineForm
-                      {...form}
-                      isNew={false}
-                      onDelete={() => {
-                        onDelete(r.id)
-                        close()
-                      }}
-                    />
-                  </li>
-                )
-              }
-              const { done, total } = progressOn(r, today)
-              return (
-                <li key={r.id} className={'routine-row' + (total > 0 && done === total ? ' complete' : '')}>
-                  <div className="routine-head">
-                    <button type="button" className="routine-name" onClick={() => openEdit(r)} title="Edit routine">
-                      <span>{r.name}</span>
-                      <span className="routine-when">{WHEN_LABEL[r.when]}</span>
-                    </button>
-                    <span className="routine-progress">
-                      {done}/{total}
-                    </span>
-                  </div>
-                  <ul className="routine-steps">
-                    {r.steps.map(s => {
-                      const ticked = isStepDone(r, today, s.id)
-                      return (
-                        <li key={s.id}>
-                          <label className="routine-step">
-                            <input type="checkbox" className="tcheck" checked={ticked} onChange={() => onSave(toggleStep(r, today, s.id))} />
-                            <span className={ticked ? 'done' : ''}>{s.text}</span>
-                          </label>
-                        </li>
-                      )
-                    })}
-                  </ul>
+            {visible.map(r =>
+              editing === r.id ? (
+                <li key={r.id}>
+                  <RoutineForm
+                    {...form}
+                    isNew={false}
+                    onDelete={() => {
+                      onDelete(r.id)
+                      close()
+                    }}
+                  />
                 </li>
-              )
-            })}
+              ) : (
+                <RoutineRow key={r.id} routine={r} today={today} onSave={onSave} onEdit={openEdit} />
+              ),
+            )}
           </ul>
           {(hiddenCount > 0 || showAll) && (
             <button type="button" className="btn subtle routine-showall" onClick={() => setShowAll(v => !v)}>
@@ -145,6 +118,66 @@ export function RoutinesCard({ routines, today, hour, onSave, onDelete }: { rout
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * One routine as its day's checklist: the name, when it runs and how far
+ * through it you are, then each step as a checkbox. With `onEdit` the name
+ * opens the routine for editing (Today's card); without it the name is only a
+ * label (Shut down, which ticks but never edits).
+ */
+function RoutineRow({ routine: r, today, onSave, onEdit }: { routine: Routine; today: string; onSave(r: Routine): void; onEdit?(r: Routine): void }) {
+  const { done, total } = progressOn(r, today)
+  const label = (
+    <>
+      <span>{r.name}</span>
+      <span className="routine-when">{WHEN_LABEL[r.when]}</span>
+    </>
+  )
+  return (
+    <li className={'routine-row' + (total > 0 && done === total ? ' complete' : '')}>
+      <div className="routine-head">
+        {onEdit ? (
+          <button type="button" className="routine-name" onClick={() => onEdit(r)} title="Edit routine">
+            {label}
+          </button>
+        ) : (
+          <span className="routine-name">{label}</span>
+        )}
+        <span className="routine-progress">
+          {done}/{total}
+        </span>
+      </div>
+      <ul className="routine-steps">
+        {r.steps.map(s => {
+          const ticked = isStepDone(r, today, s.id)
+          return (
+            <li key={s.id}>
+              <label className="routine-step">
+                <input type="checkbox" className="tcheck" checked={ticked} onChange={() => onSave(toggleStep(r, today, s.id))} />
+                <span className={ticked ? 'done' : ''}>{s.text}</span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+    </li>
+  )
+}
+
+/**
+ * Routines to tick, and nothing else: the rows of Today's card without its
+ * add, edit and time-of-day filtering. Shut down uses it for the evening
+ * routine, so a tick there is the same write as a tick on the card.
+ */
+export function RoutineTicks({ routines, today, onSave }: { routines: Routine[]; today: string; onSave(r: Routine): void }) {
+  return (
+    <ul className="routine-list">
+      {routines.map(r => (
+        <RoutineRow key={r.id} routine={r} today={today} onSave={onSave} />
+      ))}
+    </ul>
   )
 }
 
