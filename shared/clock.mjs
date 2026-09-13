@@ -50,8 +50,8 @@ function wallParts(ms, tz) {
   return { y: Number(p.year), m: Number(p.month), d: Number(p.day), h: Number(p.hour) % 24, min: Number(p.minute), s: Number(p.second) }
 }
 
-/** The zone's offset from UTC at an instant, in ms (Europe/London in summer: +3 600 000). */
-function offsetMs(ms, tz) {
+/** The zone's offset from UTC at an instant, in ms (Europe/London in summer: +3 600 000). `tz` must be a zone Intl knows. */
+export function offsetMs(ms, tz) {
   const w = wallParts(ms, tz)
   return Date.UTC(w.y, w.m - 1, w.d, w.h, w.min, w.s) - Math.floor(ms / 1000) * 1000
 }

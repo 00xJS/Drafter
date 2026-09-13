@@ -15,5 +15,7 @@ export interface Clock {
 
 export declare function validZone(tz: unknown): string | null
 export declare function machineTimeZone(): string
+/** How far a zone Intl knows is ahead of UTC at an instant, in ms. */
+export declare function offsetMs(ms: number, tz: string): number
 export declare function startOfDayMs(key: string, tz: string): number
 export declare function makeClock(tz?: string | null, nowMs?: () => number): Clock

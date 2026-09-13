@@ -16,8 +16,12 @@
 import { newerStamp } from '../../shared/domain.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
+import { validTimeZone, zonedTime } from './lib/timezone.mjs'
 
 const MAX_BODY = 4000
+const DAY_MS = 86_400_000
+/** An ISO date-time that carries its own offset, so already names an instant: Z, ±hh:mm or ±hhmm. */
+const WITH_OFFSET = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i
 /** The whole webhook, from arrival to answer. */
 export const BUDGET_MS = 9_000
 /** The longest any single Supabase call may take. */
@@ -64,12 +68,37 @@ async function parseBody(req) {
   return { subject: '', text, from: '' }
 }
 
-async function triageTask(task, { subject, text, from }) {
+/** 'Sunday 2026-09-13 11:00' on the wall clock in `tz`: the day the model counts "Thursday" from, in the shape it answers in. */
+function wallNow(now, tz) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(now))
+      .map(x => [x.type, x.value]),
+  )
+  return `${p.weekday} ${p.year}-${p.month}-${p.day} ${String(Number(p.hour) % 24).padStart(2, '0')}:${p.minute}`
+}
+
+/**
+ * The instant a triage `dueAt` names, read the way the owner meant it. One
+ * with an offset is kept as it is; one without — '2026-09-17T15:00', or a bare
+ * day — is wall-clock time in their zone. Date.parse read those in the
+ * server's zone, UTC on Netlify, so a 3pm appointment in London landed at 4pm.
+ * Null for anything else, and for a time more than a day gone: a model that
+ * guessed the week or the year wrong filed the task as long overdue.
+ */
+function dueAtFrom(value, tz, now) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  const ms = WITH_OFFSET.test(text) ? Date.parse(text) : zonedTime(text, tz)
+  if (!Number.isFinite(ms) || ms < now - DAY_MS) return null
+  return new Date(ms).toISOString()
+}
+
+async function triageTask(task, { subject, text, from }, { tz, now }) {
   if (!resolveProvider()) return null
   const ai = await complete({
     system:
-      'You triage personal email into a single planner task. Respond with ONLY a JSON object: {"title":"short imperative under 80 chars","dueAt":"ISO datetime or null","priority":"low|normal|high|urgent","projectHint":"short name or null","tags":["optional"]}. Prefer a concrete due when the email mentions a day or time; otherwise null. Never invent facts.',
-    prompt: `From: ${from || '(unknown)'}\nSubject: ${subject || '(none)'}\n\n${text.slice(0, 2500)}\n\nCurrent title: ${task.title}`,
+      'You triage personal email into a single planner task. Respond with ONLY a JSON object: {"title":"short imperative under 80 chars","dueAt":"YYYY-MM-DDTHH:MM in local time with no offset, YYYY-MM-DD for a day with no time, or null","priority":"low|normal|high|urgent","projectHint":"short name or null","tags":["optional"]}. Prefer a concrete due when the email mentions a day or time; otherwise null. Count days such as "Thursday" or "tomorrow" from Now, in its time zone. Never invent facts.',
+    prompt: `Now: ${wallNow(now, tz)} (${tz})\nFrom: ${from || '(unknown)'}\nSubject: ${subject || '(none)'}\n\n${text.slice(0, 2500)}\n\nCurrent title: ${task.title}`,
     maxTokens: 400,
     json: true,
   })
@@ -84,8 +113,8 @@ async function triageTask(task, { subject, text, from }) {
   const patch = {}
   const title = String(raw.title ?? '').trim().slice(0, 140)
   if (title) patch.title = title
-  const due = raw.dueAt ? Date.parse(raw.dueAt) : NaN
-  if (Number.isFinite(due)) patch.dueAt = new Date(due).toISOString()
+  const dueAt = dueAtFrom(raw.dueAt, tz, now)
+  if (dueAt) patch.dueAt = dueAt
   if (['low', 'normal', 'high', 'urgent'].includes(raw.priority)) patch.priority = raw.priority
   const tags = Array.isArray(raw.tags) ? raw.tags.map(String).filter(Boolean).slice(0, 6) : []
   if (tags.length) patch.tags = [...new Set([...(task.tags ?? []), ...tags])]
@@ -155,7 +184,9 @@ export default async req => {
   let triaged = false
   try {
     const room = deadline - Date.now() - WRITE_BACK_MS
-    const patch = room > 0 ? await settleWithin(triageTask(task, { subject, text: body, from }), room) : null
+    // the owner's zone, the one the digest counts their day in; none stored reads as UTC
+    const tz = validTimeZone(row.timezone) ?? 'UTC'
+    const patch = room > 0 ? await settleWithin(triageTask(task, { subject, text: body, from }, { tz, now: Date.now() }), room) : null
     if (patch) {
       const next = { ...task, ...patch, updatedAt: newerStamp(task.updatedAt) }
       const up = await store(next)

@@ -10,6 +10,7 @@ import { buildICS } from '../../shared/ics.mjs'
 import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
+import { adoptTimeZone } from './lib/timezone.mjs'
 
 /** The owner ids a user may see: themselves plus their household (mirrors household_user_ids()). */
 async function visibleOwnerIds(userId) {
@@ -89,6 +90,9 @@ const handler = async req => {
         const current = await settingsGet(user.id)
         const tok = body.action === 'inbound-rotate' || !current?.inbound_token ? randomToken(24) : current.inbound_token
         await settingsSet(user.id, { inbound_token: tok })
+        // email-in reads "Thursday 3pm" in the owner's zone: adopt the device's
+        // when the account has none, never overwriting one that was chosen
+        await adoptTimeZone(user.id, body.timezone)
         return Response.json({ inboundUrl: `${url.origin}/api/inbound?key=${encodeURIComponent(tok)}` })
       }
       if (body.action === 'inbound-disable') {
