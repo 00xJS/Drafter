@@ -166,6 +166,14 @@
   padding: 12px 20px;
   border-top: 1px solid var(--border);
 }
+/* the task editor's footer notes: at 375pt Delete, Duplicate, the ⌘↩ hint,
+   "in <project>", Cancel and Save wrapped Save onto a second row. A phone has
+   no ⌘↩ and the project is secondary, so the notes give way to the buttons. */
+@media (max-width: 640px) {
+  .task-foot-note {
+    display: none;
+  }
+}
 
 .field {
   display: flex;

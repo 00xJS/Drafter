@@ -350,8 +350,8 @@ export function TaskEditor({
             </>
           )}
           <span className="spacer" />
-          <small className="muted">⌘↩ to save</small>
-          {project && <small className="muted">in {project.name}</small>}
+          <small className="muted task-foot-note">⌘↩ to save</small>
+          {project && <small className="muted task-foot-note">in {project.name}</small>}
           <button className="btn" onClick={requestClose}>
             Cancel
           </button>
