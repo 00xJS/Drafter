@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
@@ -72,6 +72,24 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
   )
 }
 
+/** The Top 3, reflections and summary drafts a saved review loads into: three Top 3 lines, always. */
+export function reviewDraft(saved: ReviewRecord | undefined): { top: string[]; reflections: string; summary: string } {
+  return {
+    top: saved?.top?.length ? [...saved.top, '', '', ''].slice(0, 3) : ['', '', ''],
+    reflections: saved?.reflections ?? '',
+    summary: saved?.summary ?? '',
+  }
+}
+
+/**
+ * Whether the drafts reload: another week or month, or the saved review
+ * changed by anything but this page's own save, whose stamp is `ownStamp`.
+ */
+export function reloadDraft(prev: { key: string; stamp?: string }, next: { key: string; stamp?: string }, ownStamp: string | null): boolean {
+  if (prev.key !== next.key) return true
+  return next.stamp !== prev.stamp && next.stamp !== ownStamp
+}
+
 export function Review({ tasks, projects, projectMap, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew, onPlanWeek }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
@@ -83,23 +101,36 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
   const saved = reviews.find(r => r.period === period && r.key === range.key)
   const prevRange = useMemo(() => shiftRange(range, -1), [range])
   const prevSaved = reviews.find(r => r.period === period && r.key === prevRange.key)
-  const [top, setTop] = useState<string[]>(saved?.top ?? ['', '', ''])
-  const [reflections, setReflections] = useState(saved?.reflections ?? '')
-  const [summary, setSummary] = useState(saved?.summary ?? '')
+  const [top, setTop] = useState<string[]>(() => reviewDraft(saved).top)
+  const [reflections, setReflections] = useState(() => reviewDraft(saved).reflections)
+  const [summary, setSummary] = useState(() => reviewDraft(saved).summary)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  // The drafts follow the saved review: to another week or month, and when the
+  // record changes from outside — Plan next week, its Undo, a sync. Kept, a
+  // stale draft would be saved back over it on the next blur. Never after this
+  // page's own save, which would trim what is being typed.
+  const ownStamp = useRef<string | null>(null)
+  const loaded = useRef({ key: range.key, stamp: saved?.updatedAt })
   useEffect(() => {
-    setTop(saved?.top?.length ? [...saved.top, '', '', ''].slice(0, 3) : ['', '', ''])
-    setReflections(saved?.reflections ?? '')
-    setSummary(saved?.summary ?? '')
+    const next = { key: range.key, stamp: saved?.updatedAt }
+    if (reloadDraft(loaded.current, next, ownStamp.current)) {
+      const d = reviewDraft(saved)
+      setTop(d.top)
+      setReflections(d.reflections)
+      setSummary(d.summary)
+    }
+    loaded.current = next
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.key])
+  }, [range.key, saved?.updatedAt])
 
   const persist = (patch: Partial<ReviewRecord>) => {
     const now = new Date().toISOString()
     const base: ReviewRecord = saved ?? { kind: 'review', id: uid(), period, key: range.key, top: [], createdAt: now, updatedAt: now }
-    onSaveReview({ ...base, top: top.map(t => t.trim()).filter(Boolean), reflections: reflections.trim() || undefined, summary: summary || undefined, ...patch, updatedAt: saved ? newerStamp(saved.updatedAt) : now })
+    const updatedAt = saved ? newerStamp(saved.updatedAt) : now
+    ownStamp.current = updatedAt
+    onSaveReview({ ...base, top: top.map(t => t.trim()).filter(Boolean), reflections: reflections.trim() || undefined, summary: summary || undefined, ...patch, updatedAt })
   }
 
   const togglePrevTop = (index: number) => {
