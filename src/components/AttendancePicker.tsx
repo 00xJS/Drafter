@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarEvent, PROJECT_COLORS, Person, Place } from '../types'
 import { matchPlace } from '../places'
+import { newPerson } from '../taskform'
 import { uid } from '../utils'
 import { Modal, ModalHead } from './Modal'
 
@@ -10,8 +11,22 @@ interface Props {
   places?: Place[]
   /** Persist a place created from the event's location. */
   onSavePlace?(p: Place): void
+  /** Persist someone added by name who isn't in People yet. */
+  onSavePerson?(p: Person): void
   onDone(peopleIds: string[], placeId?: string): void
   onClose(): void
+}
+
+/**
+ * The person a typed name means: someone already saved (any case, any
+ * spacing) — so typing "mum" twice never makes two Mums — or a new one.
+ */
+export function attendeeFor(name: string, people: Person[], create: (name: string) => Person): { person: Person; created: boolean } | null {
+  const clean = name.trim().replace(/\s+/g, ' ')
+  if (!clean) return null
+  const key = clean.toLowerCase()
+  const existing = people.find(p => p.name.trim().replace(/\s+/g, ' ').toLowerCase() === key)
+  return existing ? { person: existing, created: false } : { person: create(clean), created: true }
 }
 
 /**
@@ -19,8 +34,18 @@ interface Props {
  * visit logged. If the event's location matches a saved place it is attached
  * too, and an unknown location can be saved as a place in the same tap.
  */
-export function AttendancePicker({ event, people, places = [], onSavePlace, onDone, onClose }: Props) {
+export function AttendancePicker({ event, people, places = [], onSavePlace, onSavePerson, onDone, onClose }: Props) {
   const [ids, setIds] = useState<string[]>([])
+  const [newName, setNewName] = useState('')
+  const addSomeone = () => {
+    const hit = attendeeFor(newName, people, name =>
+      newPerson(name, { id: uid(), color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)], now: new Date() }),
+    )
+    if (!hit) return
+    if (hit.created) onSavePerson?.(hit.person)
+    setIds(cur => (cur.includes(hit.person.id) ? cur : [...cur, hit.person.id]))
+    setNewName('')
+  }
   const matched = useMemo(() => matchPlace(event.location, places), [event.location, places])
   const [placeId, setPlaceId] = useState<string | undefined>(matched?.id)
   const [saveLocation, setSaveLocation] = useState(false)
@@ -51,17 +76,41 @@ export function AttendancePicker({ event, people, places = [], onSavePlace, onDo
     <Modal onClose={onClose} className="modal narrow">
       <ModalHead title={`Who was at “${event.title}”?`} />
       <div className="modal-body">
-        {people.length === 0 ? (
+        {people.length === 0 && !onSavePerson ? (
           <p className="empty">Add people in the People tab first.</p>
         ) : (
-          <div className="platform-toggles">
-            {people.map(p => (
-              <button key={p.id} type="button" className={ids.includes(p.id) ? 'toggle on' : 'toggle'} onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}>
-                {p.emoji ? `${p.emoji} ` : ''}
-                {p.name}
-              </button>
-            ))}
-          </div>
+          <>
+            {people.length > 0 && (
+              <div className="platform-toggles">
+                {people.map(p => (
+                  <button key={p.id} type="button" className={ids.includes(p.id) ? 'toggle on' : 'toggle'} onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}>
+                    {p.emoji ? `${p.emoji} ` : ''}
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {onSavePerson && (
+              // someone who isn't in People yet: typing their name adds them and ticks them
+              <div className="copy-row attendee-add">
+                <input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addSomeone()
+                    }
+                  }}
+                  placeholder="Someone else? Type their name"
+                  aria-label="Add someone who was there"
+                />
+                <button type="button" className="btn" onClick={addSomeone} disabled={!newName.trim()}>
+                  Add
+                </button>
+              </div>
+            )}
+          </>
         )}
         {(place || matched || canSaveLocation) && (
           <div className="field">
