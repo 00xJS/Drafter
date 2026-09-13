@@ -1,5 +1,10 @@
 import { Meal, Place, Task } from '../src/types.js'
 
+export type PlaceCategory = 'restaurant' | 'fastfood' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
+/** In the order the app offers them. The MCP server's category enum is this list. */
+export declare const PLACE_CATEGORIES: PlaceCategory[]
+export declare const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }>
+
 export declare function normalisePlaceText(s: string | null | undefined): string
 export declare function matchPlace(text: string | null | undefined, places: Place[]): Place | null
 
@@ -17,5 +22,9 @@ export interface PlaceCadenceStatus {
   daysSince?: number
   cadenceDays?: number
 }
-/** Opt-in per place: no cadenceDays means 'none', never due or overdue. */
-export declare function placeCadenceStatus(place: Place, tasks: Task[], now?: Date, meals?: Meal[]): PlaceCadenceStatus
+/**
+ * Opt-in per place: no cadenceDays means 'none', never due or overdue. Meals
+ * are required so every caller decides: one that leaves them out says "been a
+ * while" about the place you ate at last night.
+ */
+export declare function placeCadenceStatus(place: Place, tasks: Task[], now: Date, meals: Meal[]): PlaceCadenceStatus

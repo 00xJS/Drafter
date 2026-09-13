@@ -409,6 +409,12 @@
 .year-report {
   margin-top: 14px;
 }
+/* ‹ year › keeps its one line: a two-line subtitle beside it squeezed it until
+   › fell under the year. On a phone the head wraps, so it moves below instead. */
+.year-report .chart-head .segmented {
+  flex: none;
+  flex-wrap: nowrap;
+}
 .year-table {
   width: 100%;
   border-collapse: collapse;

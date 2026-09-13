@@ -61,6 +61,8 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
   const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
   const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
   const places = items.filter(i => i.kind === 'place' && !i.deletedAt)
+  // household-shared: tonight's dinner, and a meal eaten out counts as going there
+  const meals = items.filter(i => i.kind === 'meal' && !i.deletedAt)
   const today = localParts(now, tz).day
   const { overdue, dueToday } = bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) })
   const nowMs = now.getTime()
@@ -97,7 +99,7 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
   const placesDue = []
   const placeIds = []
   for (const p of places) {
-    const { status, daysSince } = placeCadenceStatus(p, tasks, now)
+    const { status, daysSince } = placeCadenceStatus(p, tasks, now, meals)
     if (status !== 'overdue') continue
     const lastNudge = nudgedNext[p.id]
     if (lastNudge && today) {
@@ -119,7 +121,7 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
     o => `${o.person.name}'s ${o.kind}${o.daysUntil === 0 ? ' today' : ` in ${o.daysUntil}d`}`,
   )
   // the week's meals are household-shared, so tonight's dinner is everyone's line
-  const tonight = today ? tonightLine(items.filter(i => i.kind === 'meal'), items.filter(i => i.kind === 'recipe' && !i.deletedAt), today) : null
+  const tonight = today ? tonightLine(meals, items.filter(i => i.kind === 'recipe' && !i.deletedAt), today) : null
   // Today's focus, set at last night's Shut down or this morning — only what is
   // still open: a finished one needs no reminder.
   const focus = today ? focusTasks(tasks, today, userId).filter(t => OPEN.includes(t.status)) : []

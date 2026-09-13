@@ -12,10 +12,10 @@ import {
   Task,
 } from '../types'
 import { newerStamp } from '../itemops'
-import { PlaceStats, favourites, lapsed, placeStats } from '../places'
-import { SEEN_META } from '../people'
+import { PlaceStats, favourites, lapsed, placeStats, placeYearReport } from '../places'
+import { SEEN_META, countOf } from '../people'
 import { OutingIdea, suggestOuting } from '../ai'
-import { Bars } from './People'
+import { Bars, TrendBadge } from './People'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -53,6 +53,8 @@ const SORTS: { key: SortKey; label: string }[] = [
 
 // Needs attention: overdue, due, never (a rhythm but no outing yet), then the rest by most recently been.
 const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3 }
+
+const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
 function PlaceForm({
   place,
@@ -369,6 +371,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
+  const [year, setYear] = useState(() => new Date().getFullYear())
 
   useEffect(() => {
     if (!wantOpen) return
@@ -436,12 +439,18 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
 
   const beenAWhile = useMemo(() => shown.filter(s => s.status === 'due' || s.status === 'overdue').length, [shown])
 
-  const year = new Date().getFullYear()
-  const outingsThisYear = useMemo(() => {
-    const ids = new Set(shown.map(s => s.place.id))
-    return tasks.filter(t => t.status === 'done' && t.completedAt && t.placeId && ids.has(t.placeId) && new Date(t.completedAt).getFullYear() === year)
-      .length
-  }, [shown, tasks, year])
+  const shownPlaces = useMemo(() => shown.map(s => s.place), [shown])
+
+  // The calendar year, summed from the year table's own count (a meal on its
+  // own date), so the tile and this year's table cannot disagree. The rows
+  // above count the last 12 months instead, as their "12mo" says.
+  const thisYear = new Date().getFullYear()
+  const outingsThisYear = useMemo(
+    () => placeYearReport(shownPlaces, tasks, meals, thisYear).reduce((n, r) => n + r.total, 0),
+    [shownPlaces, tasks, meals, thisYear],
+  )
+
+  const report = useMemo(() => placeYearReport(shownPlaces, tasks, meals, year), [shownPlaces, tasks, meals, year])
 
   return (
     <section className="people">
@@ -573,6 +582,67 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
                 />
               ))}
             </ul>
+          )}
+
+          {shown.length > 0 && (
+            <section className="chart-card year-report">
+              <header className="chart-head">
+                <div>
+                  <h3>The year in places</h3>
+                  <p className="chart-sub">Outings per month, a meal eaten out there included, two in one day counted as two · trend compares outings in the last 90 days with the 90 before</p>
+                </div>
+                <span className="segmented">
+                  <button className="seg" onClick={() => setYear(y => y - 1)} aria-label="Previous year">
+                    ‹
+                  </button>
+                  <button className="seg on">{year}</button>
+                  <button className="seg" onClick={() => setYear(y => y + 1)} aria-label="Next year">
+                    ›
+                  </button>
+                </span>
+              </header>
+              <div className="table-scroll">
+                <table className="year-table">
+                  <thead>
+                    <tr>
+                      <th>Place</th>
+                      {MONTHS.map((m, i) => (
+                        <th key={i} className="num">
+                          {m}
+                        </th>
+                      ))}
+                      <th className="num">Outings</th>
+                      <th>Trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.map(r => (
+                      <tr key={r.place.id}>
+                        <td>
+                          <span className="pdot" style={{ background: r.place.color }} /> {r.place.name}
+                        </td>
+                        {r.months.map((n, i) => (
+                          <td
+                            key={i}
+                            className="num year-cell"
+                            title={n > 0 ? countOf(n, 'outing') : undefined}
+                            style={n > 0 ? { background: `color-mix(in srgb, ${r.place.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}
+                          >
+                            {n || ''}
+                          </td>
+                        ))}
+                        <td className="num">
+                          <strong>{r.total}</strong>
+                        </td>
+                        <td>
+                          <TrendBadge trend={r.trend} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
         </>
       )}

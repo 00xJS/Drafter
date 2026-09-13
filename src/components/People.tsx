@@ -289,7 +289,22 @@ function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { wee
   )
 }
 
-export { Bars }
+/** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
+function TrendBadge({ trend }: { trend: number }) {
+  return trend > 0 ? (
+    <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
+      ↑ more lately
+    </span>
+  ) : trend < 0 ? (
+    <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
+      ↓ drifting
+    </span>
+  ) : (
+    <small className="muted">steady</small>
+  )
+}
+
+export { Bars, TrendBadge }
 
 /** Days seen in the last `span` days, and the events under them when some shared a day. */
 function SeenCount({ days, events, span, className }: { days: number; events: number; span: number; className?: string }) {
@@ -717,17 +732,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
                       </td>
                       <td className="num year-events">{r.events}</td>
                       <td>
-                        {r.trend > 0 ? (
-                          <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
-                            ↑ more lately
-                          </span>
-                        ) : r.trend < 0 ? (
-                          <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
-                            ↓ drifting
-                          </span>
-                        ) : (
-                          <small className="muted">steady</small>
-                        )}
+                        <TrendBadge trend={r.trend} />
                       </td>
                     </tr>
                   ))}

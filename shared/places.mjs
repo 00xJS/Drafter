@@ -1,5 +1,25 @@
 // Place rules shared by the web app and the MCP server. Dependency-free ESM.
 
+/**
+ * The kinds of place, in the order the app offers them. One list for the app
+ * and the MCP server: a category added here is one an assistant can save and
+ * filter by too, instead of being refused as invalid.
+ */
+export const PLACE_CATEGORIES = ['restaurant', 'fastfood', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
+
+/** How each category reads: the app's chips and pickers, and the MCP tool descriptions. */
+export const PLACE_CATEGORY_META = {
+  restaurant: { label: 'Restaurant', emoji: '🍽️' },
+  fastfood: { label: 'Fast food', emoji: '🍔' },
+  cafe: { label: 'Café', emoji: '☕' },
+  bar: { label: 'Bar', emoji: '🍸' },
+  outdoors: { label: 'Outdoors', emoji: '🌳' },
+  venue: { label: 'Venue', emoji: '🎭' },
+  shop: { label: 'Shop', emoji: '🛍️' },
+  home: { label: 'Home', emoji: '🏠' },
+  other: { label: 'Other', emoji: '📍' },
+}
+
 /** Lower-case, no diacritics or punctuation, single spaces — so "NOPI, 21 Warwick St" and "Nopi" can meet. */
 export function normalisePlaceText(s) {
   return String(s ?? '')
@@ -39,8 +59,11 @@ const DAY_MS = 86_400_000
 
 /**
  * Midday UTC for a date-only key. A meal records a day, not an instant, and
- * midday lands on that same calendar day in every zone from UTC-11 to UTC+12 —
- * which midnight would not.
+ * midday UTC lands on that same calendar day in every zone from UTC-12 to
+ * UTC+11, which midnight would not. East of UTC+11 (all of New Zealand, Tonga,
+ * Kiribati) it is already the next day, so a count that files outings by month
+ * or year re-dates a meal to local midday on its own date first
+ * (placeYearReport in src/places.ts).
  */
 const middayOf = dateKey => `${dateKey}T12:00:00.000Z`
 

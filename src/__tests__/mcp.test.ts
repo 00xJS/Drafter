@@ -12,6 +12,7 @@ import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext
 import type { Scope } from '../../mcp/tools.mjs'
 import { MAX_FOCUS as APP_MAX_FOCUS } from '../focus'
 import { KNOWN_KINDS } from '../schema'
+import { PLACE_CATEGORIES, PLACE_CATEGORY_META } from '../types'
 
 // The MCP tools reach Supabase through mcp/data.mjs over fetch; here fetch is
 // a stub, so these tests pin the data layer's contract with PostgREST and
@@ -800,6 +801,33 @@ describe('the kitchen over MCP: last cooked and sides', () => {
     await expect(tool('plan_meal').run({ date: DAY, slot: 'breakfast', recipeName: 'Pasta', sides: [{ title: 'Toast' }] }, ctxFor())).rejects.toThrow(/lunch or dinner/)
     await expect(tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: [{ recipeName: 'Paella' }] }, ctxFor())).rejects.toThrow(/No recipe named "Paella"/)
     await expect(tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', sides: 'rice' }, ctxFor())).rejects.toThrow(/sides must be a list/)
+    expect(sent).toEqual([])
+  })
+})
+
+describe('place categories over MCP are the app\'s own list', () => {
+  it('list_places and create_place offer exactly the categories the app does, and name each as the app labels it', () => {
+    for (const name of ['list_places', 'create_place']) {
+      const t = tool(name)
+      expect((t.inputSchema.properties.category as { enum: string[] }).enum, name).toEqual(PLACE_CATEGORIES)
+      for (const c of PLACE_CATEGORIES) expect(t.description, `${name} names ${c}`).toContain(`${c} (${PLACE_CATEGORY_META[c].label})`)
+    }
+    expect(PLACE_CATEGORIES).toContain('fastfood')
+  })
+
+  it('create_place saves a fast food place, and list_places finds it by that category', async () => {
+    const sent = serveHousehold(household())
+    const out = (await tool('create_place').run({ name: 'Five Guys', category: 'fastfood' }, ctxFor())) as { created: { category: string } }
+    expect(out.created.category).toBe('fastfood')
+    expect(sent.find(i => i.kind === 'place')).toMatchObject({ name: 'Five Guys', category: 'fastfood' })
+    serveHousehold([...household(), { user_id: OWNER, data: { kind: 'place', id: 'five', name: 'Five Guys', category: 'fastfood', createdAt: STAMP, updatedAt: STAMP } }])
+    const found = (await tool('list_places').run({ category: 'fastfood' }, ctxFor())) as { places: { id: string }[] }
+    expect(found.places.map(p => p.id)).toEqual(['five'])
+  })
+
+  it('still refuses a category the app does not have', async () => {
+    const sent = serveHousehold(household())
+    await expect(tool('create_place').run({ name: 'Moon base', category: 'spaceship' }, ctxFor())).rejects.toThrow(/Invalid category "spaceship"/)
     expect(sent).toEqual([])
   })
 })

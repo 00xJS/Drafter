@@ -227,24 +227,45 @@ export interface YearRow {
   trend: number
 }
 
-export function yearReport(people: Person[], tasks: Task[], year: number, now: Date = new Date()): YearRow[] {
+/**
+ * One row of a year table: a count for each month of `year` (Jan..Dec, on the
+ * viewer's calendar), the year's total, and a trend — the last 90 days against
+ * the 90 before, positive when more lately. `count` says what one of them is:
+ * People counts the days among the visits, Places every outing (the default).
+ */
+export function monthsAndTrend(
+  visits: { at: string }[],
+  year: number,
+  now: Date = new Date(),
+  count: (visits: { at: string }[]) => number = vs => vs.length,
+): { months: number[]; total: number; trend: number } {
   const nowMs = now.getTime()
+  const byMonth = Array.from({ length: 12 }, (): { at: string }[] => [])
+  for (const v of visits) {
+    const d = new Date(v.at)
+    if (d.getFullYear() === year) byMonth[d.getMonth()].push(v)
+  }
+  const months = byMonth.map(count)
+  // each window is counted on its own: a day with events either side of the
+  // 90-day line lands in both, which adds one to each side and leaves the
+  // difference alone
+  const recent = count(visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS))
+  const before = count(
+    visits.filter(v => {
+      const age = nowMs - Date.parse(v.at)
+      return age >= 90 * DAY_MS && age < 180 * DAY_MS
+    }),
+  )
+  return { months, total: months.reduce((a, b) => a + b, 0), trend: recent - before }
+}
+
+export function yearReport(people: Person[], tasks: Task[], year: number, now: Date = new Date()): YearRow[] {
   return people
     .map(person => {
       const visits = visitsFor(person.id, tasks)
-      const inYear = visits.filter(v => new Date(v.at).getFullYear() === year)
-      const months = Array.from({ length: 12 }, () => 0)
-      for (const key of visitDays(inYear)) months[Number(key.slice(5, 7)) - 1]++
-      // a day with events either side of the 90-day line lands in both windows,
-      // which adds one to each side and leaves the difference alone
-      const recent = visitDays(visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS)).length
-      const before = visitDays(
-        visits.filter(v => {
-          const age = nowMs - Date.parse(v.at)
-          return age >= 90 * DAY_MS && age < 180 * DAY_MS
-        }),
-      ).length
-      return { person, months, total: months.reduce((a, b) => a + b, 0), events: inYear.length, trend: recent - before }
+      const { months, total, trend } = monthsAndTrend(visits, year, now, vs => visitDays(vs).length)
+      const events = visits.filter(v => new Date(v.at).getFullYear() === year).length
+      return { person, months, total, events, trend }
     })
     .sort((a, b) => b.total - a.total || b.events - a.events)
 }
