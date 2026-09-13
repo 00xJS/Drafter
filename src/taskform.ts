@@ -1,6 +1,7 @@
 import type { CapturedFields, RefineMode } from './ai'
+import { parseGithubUrl } from './github'
 import { newerStamp } from './itemops'
-import type { Attachment, Bill, ChecklistItem, Comment, Priority, RecurrenceFreq, Task, TaskStatus } from './types'
+import type { Attachment, Bill, ChecklistItem, Comment, Person, Priority, RecurrenceFreq, Task, TaskStatus } from './types'
 import { fromLocalInput, toLocalInput } from './utils'
 
 /*
@@ -9,7 +10,12 @@ import { fromLocalInput, toLocalInput } from './utils'
  * the form in a useReducer and its sections in components/taskeditor/ render it.
  */
 
-/** Every field the editor edits, as its input holds it: dates as datetime-local text, tags and money as typed. */
+/**
+ * Every field the editor edits, as its input holds it: dates as datetime-local
+ * text, tags and money as typed. A task's old `notes` and `link` are not here:
+ * the editor shows them inside the description (see foldedDescription), and
+ * the Task type and the sanitizer keep both for older clients and legacy rows.
+ */
 export interface TaskForm {
   title: string
   description: string
@@ -19,8 +25,6 @@ export interface TaskForm {
   dueAt: string
   completedAt: string
   tags: string
-  notes: string
-  link: string
   githubUrl: string
   checklist: ChecklistItem[]
   comments: Comment[]
@@ -42,15 +46,13 @@ export type AiBusy = 'tags' | 'checklist' | 'capture' | RefineMode | null
 export function initForm(base: Task): TaskForm {
   return {
     title: base.title,
-    description: base.description,
+    description: foldedDescription(base),
     projectId: base.projectId ?? '',
     status: base.status,
     priority: base.priority,
     dueAt: toLocalInput(base.dueAt),
     completedAt: toLocalInput(base.completedAt),
     tags: base.tags.join(', '),
-    notes: base.notes ?? '',
-    link: base.link ?? '',
     githubUrl: base.githubUrl ?? '',
     checklist: base.checklist ?? [],
     comments: base.comments ?? [],
@@ -76,19 +78,25 @@ interface Named {
   name: string
 }
 
+/** One edit to a checklist. Items for an add are made by the caller (ids included) so the rules stay pure. */
+export type StepOp =
+  | { type: 'add'; items: ChecklistItem[] }
+  | { type: 'tick'; id: string; done: boolean }
+  | { type: 'rename'; id: string; text: string }
+  | { type: 'remove'; id: string }
+
 export type FormAction =
   | { type: 'set'; patch: FormPatch }
   /** Fields parsed from a captured sentence; project and people names are matched against these. */
   | { type: 'applyCapture'; capture: CapturedFields; projects: Named[]; people: Named[] }
-  /** Items are made by the caller (ids included) so the reducer stays pure. */
-  | { type: 'addCheck'; items: ChecklistItem[] }
+  | { type: 'step'; op: StepOp }
 
 export function formReducer(form: TaskForm, action: FormAction): TaskForm {
   switch (action.type) {
     case 'set':
       return { ...form, ...(typeof action.patch === 'function' ? action.patch(form) : action.patch) }
-    case 'addCheck':
-      return { ...form, checklist: [...form.checklist, ...action.items] }
+    case 'step':
+      return { ...form, checklist: applyStep(form.checklist, action.op) }
     case 'applyCapture': {
       const { capture: c, projects, people } = action
       const next = { ...form }
@@ -110,18 +118,152 @@ export function formReducer(form: TaskForm, action: FormAction): TaskForm {
   }
 }
 
+// ---- the checklist -----------------------------------------------------------
+
+/** A checklist after one edit. Steps are trimmed, blank ones never added, and a rename to nothing is no rename. */
+export function applyStep(list: ChecklistItem[], op: StepOp): ChecklistItem[] {
+  switch (op.type) {
+    case 'add': {
+      const fresh = op.items.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text && !list.some(x => x.id === c.id))
+      return fresh.length > 0 ? [...list, ...fresh] : list
+    }
+    case 'tick':
+      return list.map(c => (c.id === op.id ? { ...c, done: op.done } : c))
+    case 'rename': {
+      const text = op.text.trim()
+      return text ? list.map(c => (c.id === op.id ? { ...c, text } : c)) : list
+    }
+    case 'remove':
+      return list.filter(c => c.id !== op.id)
+  }
+}
+
+/**
+ * On a saved task every checklist edit — add, tick, rename, remove — is written
+ * as it happens, onto the freshest copy (so a tick from the phone survives a
+ * rename here), and never by Save. Null when the edits change nothing.
+ */
+export function commitStep(current: Task, ...ops: StepOp[]): Task | null {
+  const before = current.checklist ?? []
+  const after = ops.reduce(applyStep, before)
+  if (JSON.stringify(after) === JSON.stringify(before)) return null
+  return { ...current, checklist: after.length > 0 ? after : undefined, updatedAt: newerStamp(current.updatedAt) }
+}
+
+/**
+ * Steps typed in but not yet written: a rename is written when its field is
+ * left, and Save or Close can come while it still has focus. `typed` holds the
+ * ids typed into since their last write, so a step only passed through never
+ * overwrites a rename made elsewhere.
+ */
+export function pendingRenames(checklist: ChecklistItem[], typed: ReadonlySet<string>): StepOp[] {
+  return checklist.filter(c => typed.has(c.id) && c.text.trim()).map(c => ({ type: 'rename', id: c.id, text: c.text }))
+}
+
+// ---- links in the description --------------------------------------------------
+
+/** Every http(s) URL in a text, in order, once each, without the sentence punctuation after it. */
+export function urlsIn(text: string): string[] {
+  const out: string[] = []
+  for (const m of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+    let url = m[0]
+    // a full stop or a closing bracket after a URL ends the sentence, not the URL —
+    // unless the URL opened that bracket itself (a Wikipedia title, say)
+    while (/[.,;:!?)\]]$/.test(url)) {
+      const last = url[url.length - 1]
+      const open = last === ')' ? '(' : last === ']' ? '[' : ''
+      if (open && url.split(open).length > url.split(last).length - 1) break
+      url = url.slice(0, -1)
+    }
+    try {
+      new URL(url)
+    } catch {
+      continue
+    }
+    if (!out.includes(url)) out.push(url)
+  }
+  return out
+}
+
+const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, '') === b.trim().replace(/\/+$/, '')
+
+/** A github.com issue, pull request, Projects board or repository home: what the live GitHub card shows. */
+export function isGithubCardUrl(url: string): boolean {
+  const ref = parseGithubUrl(url)
+  if (!ref) return false
+  if (ref.type !== 'repo') return true
+  // a repository means its home page — not a file, a wiki page or an /orgs listing
+  const parts = new URL(url).pathname.split('/').filter(Boolean)
+  return parts.length === 2 && parts[0] !== 'orgs' && parts[0] !== 'users'
+}
+
+/** The first GitHub URL the card can show in a description, if there is one. */
+export const firstGithubUrl = (description: string) => urlsIn(description).find(isGithubCardUrl)
+
+/** The URL the editor's GitHub card shows: the task's own, or else the first one in its description. */
+export const cardUrl = (form: Pick<TaskForm, 'githubUrl' | 'description'>) => form.githubUrl.trim() || firstGithubUrl(form.description)
+
+/** The description's other URLs, shown as link chips under it (the one on the GitHub card is left out). */
+export function descriptionLinks(description: string, card?: string): string[] {
+  return urlsIn(description).filter(u => !card || !sameUrl(u, card))
+}
+
+/** A link chip's text: the host and path, without the scheme or www, shortened to fit. */
+export function linkLabel(url: string): string {
+  try {
+    const u = new URL(url)
+    const path = u.pathname.replace(/\/+$/, '')
+    const text = u.hostname.replace(/^www\./, '') + path
+    return text.length > 40 ? `${text.slice(0, 39)}…` : text
+  } catch {
+    return url
+  }
+}
+
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
+
+/** True when `text` already holds `piece`: a URL as one of its links, anything else as written (line breaks and spacing aside). */
+export function holds(text: string, piece: string): boolean {
+  if (/^https?:\/\//i.test(piece.trim())) return urlsIn(text).some(u => sameUrl(u, piece))
+  return squash(text).includes(squash(piece))
+}
+
+/** `text`, with `piece` added below it after a blank line — unless it holds it already. */
+export function appendOnce(text: string, piece: string): string {
+  const p = piece.trim()
+  if (!p || holds(text, p)) return text
+  return text.trim() ? `${text.trimEnd()}\n\n${p}` : p
+}
+
+/**
+ * What the Description field starts with: the description, then the task's old
+ * notes and link (fields the editor no longer has), each after a blank line so
+ * the user sees them. Only a save writes this; see mergeOnto for what it clears.
+ */
+export function foldedDescription(t: Pick<Task, 'description' | 'notes' | 'link'>): string {
+  return [t.notes, t.link].reduce<string>((text, extra) => (extra ? appendOnce(text, extra) : text), t.description)
+}
+
+// ---- what a save writes ------------------------------------------------------------
+
 /** A typed amount, or undefined when it is blank, negative or not a number. */
 export const money = (v: string) => {
   const n = Number(v.replace(/[,\s£$€]/g, ''))
   return v.trim() && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined
 }
 
+/** Estimate and actual cost belong to bills. Any other task shows them only while it has a value, so none is hidden silently. */
+export function costsVisible(form: Pick<TaskForm, 'bill' | 'estimateCost' | 'actualCost'>, base: Pick<Task, 'estimateCost' | 'actualCost'>): boolean {
+  return !!form.bill || base.estimateCost !== undefined || base.actualCost !== undefined || !!form.estimateCost.trim() || !!form.actualCost.trim()
+}
+
 /** The form's current value for every editable field, in Task shape. */
 export function formValues(form: TaskForm, base: Task, persisted: boolean) {
-  const { title, description, projectId, status, priority, dueAt, completedAt, tags, notes, link, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId } = form
+  const { title, description, projectId, status, priority, dueAt, completedAt, tags, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId } = form
   return {
     title: title.trim(),
     description,
+    // there is no project control: this is the task's own project (or a preset's), carried through untouched
     projectId: projectId || undefined,
     status,
     priority,
@@ -131,15 +273,15 @@ export function formValues(form: TaskForm, base: Task, persisted: boolean) {
       .split(',')
       .map(t => t.trim().replace(/^#/, ''))
       .filter(Boolean),
-    notes: notes.trim() || undefined,
-    link: link.trim() || undefined,
-    githubUrl: githubUrl.trim() || undefined,
+    // a GitHub URL pasted into the description links the task, so Close issue,
+    // Create issue and the Projects sync (all of which read githubUrl) keep working
+    githubUrl: githubUrl.trim() || firstGithubUrl(description) || undefined,
     checklist: persisted
       ? base.checklist
       : checklist.length > 0
         ? checklist.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text)
         : undefined,
-    // comments and checklist ticks on a persisted task are committed as they're written
+    // comments and every checklist edit on a persisted task are committed as they're made
     comments: persisted ? base.comments : comments.length > 0 ? comments : undefined,
     mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
     recurrence: freq ? ({ freq } as Task['recurrence']) : undefined,
@@ -167,8 +309,6 @@ export function baseValues(base: Task) {
     dueAt: base.dueAt,
     completedAt: base.completedAt,
     tags: base.tags,
-    notes: base.notes,
-    link: base.link,
     githubUrl: base.githubUrl,
     checklist: base.checklist,
     comments: base.comments,
@@ -186,7 +326,14 @@ export function baseValues(base: Task) {
   }
 }
 
-export const isDirty = (form: TaskForm, base: Task, persisted: boolean) => JSON.stringify(formValues(form, base, persisted)) !== JSON.stringify(baseValues(base))
+/**
+ * Whether closing would lose something the user did. Measured against the
+ * form as it opened, so what the editor did by itself — notes and link shown
+ * in the description, a GitHub URL read from it — is never "unsaved"; a save
+ * still writes those.
+ */
+export const isDirty = (form: TaskForm, base: Task, persisted: boolean) =>
+  JSON.stringify(formValues(form, base, persisted)) !== JSON.stringify(formValues(initForm(base), base, persisted))
 
 /**
  * What a save writes: only the fields the user changed, laid onto `current` —
@@ -201,6 +348,13 @@ export function mergeOnto(current: Task, form: TaskForm, base: Task, persisted: 
     if (JSON.stringify(values[key]) !== JSON.stringify(was[key])) {
       ;(next as unknown as Record<string, unknown>)[key] = values[key]
     }
+  }
+  // notes and link opened inside the description; each is cleared only once the
+  // description being written holds it — a note edited elsewhere meanwhile, or
+  // one the user took out of the text, stays where it is
+  for (const key of ['notes', 'link'] as const) {
+    const held = next[key]?.trim()
+    if (held && holds(next.description, held)) next[key] = undefined
   }
   if (next.status === 'done') next.completedAt = next.completedAt ?? new Date().toISOString()
   else next.completedAt = undefined
@@ -226,6 +380,30 @@ export function isEmpty(t: Task): boolean {
     !t.notes?.trim()
   )
 }
+
+// ---- people typed into the picker -------------------------------------------------
+
+/**
+ * The People picker's results for what was typed: people whose name contains
+ * it (not those already on the task), and the one whose name it is exactly —
+ * trimmed, any case — so an existing name is picked, never added twice.
+ */
+export function peopleSearch(query: string, people: readonly Person[], attached: readonly string[]) {
+  const name = query.trim().replace(/\s+/g, ' ')
+  const q = name.toLowerCase()
+  if (!q) return { name, exact: undefined, matches: [] as Person[] }
+  const exact = people.find(p => p.name.trim().replace(/\s+/g, ' ').toLowerCase() === q)
+  const matches = people.filter(p => !attached.includes(p.id) && p.name.toLowerCase().includes(q)).slice(0, 8)
+  return { name, exact, matches }
+}
+
+/** A person added from the task editor, shaped as the People tab saves one: family, no cadence of their own. */
+export function newPerson(name: string, opts: { id: string; color: string; now: Date }): Person {
+  const stamp = opts.now.toISOString()
+  return { kind: 'person', id: opts.id, name: name.trim(), group: 'family', color: opts.color, createdAt: stamp, updatedAt: stamp }
+}
+
+// ---- versions ---------------------------------------------------------------------
 
 /** One earlier copy of a task, from posts_history. */
 export interface TaskVersion {

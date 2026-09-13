@@ -1,17 +1,15 @@
 import { useState } from 'react'
-import { newerStamp } from '../../itemops'
-import { AiBusy, SetForm } from '../../taskform'
-import { ChecklistItem, Task } from '../../types'
+import { AiBusy, StepOp } from '../../taskform'
+import { ChecklistItem } from '../../types'
 
 interface Props {
   checklist: ChecklistItem[]
-  set: SetForm
+  /** A step's text as it is typed; the rename itself is sent when the field is left. */
+  onType(id: string, text: string): void
+  /** Tick, rename or remove a step. On a saved task each is written at once. */
+  onStep(op: StepOp): void
   /** Append steps (the ✨ breakdown appends through this too). */
   addChecks(texts: string[]): void
-  /** A saved task: a tick is written at once, onto the freshest copy. */
-  persisted: boolean
-  latest(): Task
-  onCommit(t: Task): void
   title: string
   description: string
   aiBusy: AiBusy
@@ -19,7 +17,7 @@ interface Props {
 }
 
 /** The checklist: tick, edit and remove steps, add one, or ✨ break the task down. */
-export function ChecklistField({ checklist, set, addChecks, persisted, latest, onCommit, title, description, aiBusy, onBreakDown }: Props) {
+export function ChecklistField({ checklist, onType, onStep, addChecks, title, description, aiBusy, onBreakDown }: Props) {
   const [newCheck, setNewCheck] = useState('')
 
   const addCheck = () => {
@@ -27,16 +25,6 @@ export function ChecklistField({ checklist, set, addChecks, persisted, latest, o
     if (!text) return
     addChecks([text])
     setNewCheck('')
-  }
-
-  function toggleCheckItem(id: string, done: boolean) {
-    const next = checklist.map(x => (x.id === id ? { ...x, done } : x))
-    set({ checklist: next })
-    if (persisted) {
-      const current = latest()
-      const cleaned = next.length > 0 ? next.map(c => ({ ...c, text: c.text.trim() })).filter(c => c.text) : undefined
-      onCommit({ ...current, checklist: cleaned, updatedAt: newerStamp(current.updatedAt) })
-    }
   }
 
   const checkDone = checklist.filter(c => c.done).length
@@ -49,16 +37,21 @@ export function ChecklistField({ checklist, set, addChecks, persisted, latest, o
       <ul className="checklist">
         {checklist.map(c => (
           <li key={c.id} className={c.done ? 'check-item done' : 'check-item'}>
-            <input type="checkbox" checked={c.done} onChange={e => toggleCheckItem(c.id, e.target.checked)} aria-label="Done" />
+            <input type="checkbox" checked={c.done} onChange={e => onStep({ type: 'tick', id: c.id, done: e.target.checked })} aria-label="Done" />
             <input
               className="check-text"
               value={c.text}
-              onChange={e => {
-                const text = e.target.value
-                set(f => ({ checklist: f.checklist.map(x => (x.id === c.id ? { ...x, text } : x)) }))
+              aria-label="Step"
+              onChange={e => onType(c.id, e.target.value)}
+              onBlur={() => onStep({ type: 'rename', id: c.id, text: c.text })}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }
               }}
             />
-            <button type="button" className="btn subtle" aria-label="Remove" onClick={() => set(f => ({ checklist: f.checklist.filter(x => x.id !== c.id) }))}>
+            <button type="button" className="btn subtle" aria-label="Remove" onClick={() => onStep({ type: 'remove', id: c.id })}>
               ✕
             </button>
           </li>

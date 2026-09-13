@@ -13,7 +13,11 @@ interface Props {
   onCommit(t: Task): void
 }
 
-/** Progress notes, decisions and blockers, newest last. */
+/**
+ * The Activity feed at the foot of the editor, after every field: progress
+ * notes, decisions and blockers, newest last, with the box for the next one at
+ * the end — the way a project tool keeps its comments under the task.
+ */
 export function CommentsField({ comments, set, persisted, latest, onCommit }: Props) {
   const [newComment, setNewComment] = useState('')
 
@@ -39,27 +43,32 @@ export function CommentsField({ comments, set, persisted, latest, onCommit }: Pr
   }
 
   return (
-    <div className="field">
+    <section className="field activity" aria-label="Activity">
       <span>
-        Comments {comments.length > 0 && <small>({comments.length})</small>}
+        Activity {comments.length > 0 && <small>({comments.length} {comments.length === 1 ? 'comment' : 'comments'})</small>}
       </span>
-      <ul className="comments">
-        {comments.map(c => (
-          <li key={c.id} className="comment">
-            <div className="comment-meta">
-              <span>{fmtDateTime(c.createdAt)}</span>
-              <button type="button" className="btn subtle" aria-label="Delete comment" onClick={() => removeComment(c.id)}>
-                ✕
-              </button>
-            </div>
-            <div className="comment-body">{c.body}</div>
-          </li>
-        ))}
-      </ul>
+      {comments.length > 0 ? (
+        <ul className="comments">
+          {comments.map(c => (
+            <li key={c.id} className="comment">
+              <div className="comment-meta">
+                <span>{fmtDateTime(c.createdAt)}</span>
+                <button type="button" className="btn subtle" aria-label="Delete comment" onClick={() => removeComment(c.id)}>
+                  ✕
+                </button>
+              </div>
+              <div className="comment-body">{c.body}</div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="activity-empty">No comments yet.</p>
+      )}
       <div className="comment-form">
         <textarea
           rows={2}
           value={newComment}
+          aria-label="Add a comment"
           onChange={e => setNewComment(e.target.value)}
           placeholder={persisted ? 'Progress note, decision, blocker… (saves immediately)' : 'Progress note, decision, blocker…'}
           onKeyDown={e => {
@@ -73,6 +82,6 @@ export function CommentsField({ comments, set, persisted, latest, onCommit }: Pr
           Comment
         </button>
       </div>
-    </div>
+    </section>
   )
 }
