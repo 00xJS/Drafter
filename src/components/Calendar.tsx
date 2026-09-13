@@ -17,6 +17,7 @@ import {
 } from '../calgrid'
 import { cookedIndex, visitIndex, mealLabel, mealsByDay } from '../kitchen'
 import { plannedGift } from '../people'
+import { matchPlace, placeEmoji } from '../places'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { Modal } from './Modal'
@@ -124,6 +125,14 @@ export function Calendar({
   // the day sheet's meal pickers say when each recipe was last cooked, as the Kitchen's do
   const cooked = useMemo(() => cookedIndex(recipes, meals, dateKey(new Date())), [recipes, meals])
   const visited = useMemo(() => visitIndex(places, tasks, meals), [places, tasks, meals])
+  /** The saved place an event's location names (matchPlace), looked up once per location. */
+  const placeAt = useMemo(() => {
+    const known = new Map<string, Place | undefined>()
+    return (location: string) => {
+      if (!known.has(location)) known.set(location, matchPlace(location, places))
+      return known.get(location)
+    }
+  }, [places])
   // A work day is drawn as a badge on the day, not as an item competing with
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
@@ -169,7 +178,10 @@ export function Calendar({
       const ev = item.event
       const when = ev.allDay ? 'All day' : `${fmtTime(ev.start)} – ${fmtTime(ev.end)}`
       const source = sourceMap.get(ev.sourceId)
-      return [when, ev.location, source?.name].filter(Boolean).join(' · ')
+      // somewhere you know wears its emoji, the one its row on Places shows
+      const place = ev.location ? placeAt(ev.location) : undefined
+      const where = place ? `${placeEmoji(place)} ${ev.location}` : ev.location
+      return [when, where, source?.name].filter(Boolean).join(' · ')
     }
     if (item.kind === 'mark') {
       const what = item.mark.kind === 'target' ? 'Target date' : 'Milestone'

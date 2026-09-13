@@ -169,6 +169,26 @@
 .person-idea:hover {
   background: color-mix(in srgb, var(--accent) 20%, var(--surface));
 }
+/* a place row opened from elsewhere (search, a person's "Where we go") scrolls
+   into view, so it has to clear the sticky .topbar as the journal's days do */
+.people-list > .person-row {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+/* …and on the phone the fixed tab bar covers the bottom of the screen: a row
+   below the fold scrolls up only until its bottom edge shows, so without this
+   it stops with its Edit button under the bar. The inset is .content's own. */
+@media (max-width: 640px) {
+  .people-list > .person-row {
+    scroll-margin-bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px);
+  }
+}
+/* "Where should we go?"'s With row: who is coming, above the ideas */
+.outing-with {
+  margin-bottom: 10px;
+}
+.outing-with .platform-toggles {
+  align-items: center;
+}
 
 /* sparkline + stalled */
 .spark {

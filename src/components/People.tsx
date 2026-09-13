@@ -7,6 +7,7 @@ import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
+import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
 
 interface Props {
@@ -23,6 +24,8 @@ interface Props {
   onLogVisit(person: Person, atIso: string, note: string, placeId?: string): void
   /** Persist a new place (inline create from the Where picker). */
   onSavePlace?(p: Place): void
+  /** Open a place on Places, from a person's "Where we go". */
+  onOpenPlace?(p: Place): void
   /** Start planning something with a person (opens a new task with them attached). */
   onPlan(person: Person, title?: string): void
   onOpenTask(t: Task): void
@@ -174,12 +177,6 @@ function LogVisit({
   const [date, setDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
   const [note, setNote] = useState('')
   const [placeId, setPlaceId] = useState<string | undefined>()
-  const [placeQuery, setPlaceQuery] = useState('')
-  const selected = placeId ? places.find(p => p.id === placeId) : undefined
-  const matches = placeQuery.trim()
-    ? places.filter(p => p.id !== placeId && p.name.toLowerCase().includes(placeQuery.trim().toLowerCase())).slice(0, 8)
-    : []
-  const canCreate = !!placeQuery.trim() && !places.some(p => p.name.toLowerCase() === placeQuery.trim().toLowerCase()) && !!onSavePlace
   return (
     <Modal onClose={onClose} className="modal narrow">
       <ModalHead title={`Saw ${person.name}`} />
@@ -192,71 +189,7 @@ function LogVisit({
           <span>What did you do?</span>
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="Sunday lunch, walk in the park…" autoFocus />
         </label>
-        {(places.length > 0 || onSavePlace) && (
-          <div className="field">
-            <span>Where?</span>
-            {selected && (
-              <div className="platform-toggles attendees">
-                <button type="button" className="toggle on" onClick={() => setPlaceId(undefined)} title="Remove">
-                  {selected.emoji ? `${selected.emoji} ` : ''}
-                  {selected.name} ✕
-                </button>
-              </div>
-            )}
-            {!selected && (
-              <>
-                <input
-                  className="people-picker-search"
-                  value={placeQuery}
-                  onChange={e => setPlaceQuery(e.target.value)}
-                  placeholder="Search places…"
-                />
-                {(placeQuery.trim() || canCreate) && (
-                  <div className="platform-toggles picker-results">
-                    {matches.map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="toggle"
-                        onClick={() => {
-                          setPlaceId(p.id)
-                          setPlaceQuery('')
-                        }}
-                      >
-                        {p.emoji ? `${p.emoji} ` : ''}
-                        {p.name}
-                      </button>
-                    ))}
-                    {canCreate && (
-                      <button
-                        type="button"
-                        className="toggle"
-                        onClick={() => {
-                          const now = new Date().toISOString()
-                          const p: Place = {
-                            kind: 'place',
-                            id: uid(),
-                            name: placeQuery.trim(),
-                            color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-                            category: 'other',
-                            createdAt: now,
-                            updatedAt: now,
-                          }
-                          onSavePlace!(p)
-                          setPlaceId(p.id)
-                          setPlaceQuery('')
-                        }}
-                      >
-                        Create place “{placeQuery.trim()}”
-                      </button>
-                    )}
-                    {!canCreate && matches.length === 0 && placeQuery.trim() && <small className="muted">No match.</small>}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {(places.length > 0 || onSavePlace) && <PlacePicker placeId={placeId} onChange={setPlaceId} places={places} onSavePlace={onSavePlace} label="Where?" />}
       </div>
       <footer className="modal-foot">
         <span className="spacer" />
@@ -324,7 +257,7 @@ function SeenCount({ days, events, span, className }: { days: number; events: nu
  * row's own disclosure, so forty people stay scannable instead of becoming
  * forty identical cards each repeating the same four buttons.
  */
-function PersonRow({
+export function PersonRow({
   stats,
   open,
   onToggle,
@@ -333,6 +266,7 @@ function PersonRow({
   onPlan,
   onOpenTask,
   placesTogether,
+  onOpenPlace,
   favouriteNames,
   journal,
   onOpenJournal,
@@ -346,6 +280,8 @@ function PersonRow({
   onOpenTask(t: Task): void
   /** Where you go with this person, most often first. */
   placesTogether?: PlaceWithPerson[]
+  /** Open one of those places on Places. Without it the chips only say where. */
+  onOpenPlace?(p: Place): void
   /** Your favourite places overall — the ones they haven't been to become suggestions. */
   favouriteNames?: string[]
   journal?: JournalEntry[]
@@ -460,13 +396,25 @@ function PersonRow({
             <div className="field">
               <span className="muted">Where we go</span>
               <div className="platform-toggles attendees">
-                {together.slice(0, 4).map(r => (
-                  <span key={r.place.id} className="toggle on" style={{ cursor: 'default' }} title={`Last ${fmtDate(r.lastAt)}`}>
-                    {r.place.emoji ? `${r.place.emoji} ` : ''}
-                    {r.place.name}
-                    <small className="muted"> ×{r.count}</small>
-                  </span>
-                ))}
+                {together.slice(0, 4).map(r => {
+                  const chip = (
+                    <>
+                      {r.place.emoji ? `${r.place.emoji} ` : ''}
+                      {r.place.name}
+                      <small className="muted"> ×{r.count}</small>
+                    </>
+                  )
+                  // a chip opens its place on Places, with its row open
+                  return onOpenPlace ? (
+                    <button key={r.place.id} type="button" className="toggle on" title={`Last ${fmtDate(r.lastAt)} · open in Places`} onClick={() => onOpenPlace(r.place)}>
+                      {chip}
+                    </button>
+                  ) : (
+                    <span key={r.place.id} className="toggle on" style={{ cursor: 'default' }} title={`Last ${fmtDate(r.lastAt)}`}>
+                      {chip}
+                    </span>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -507,7 +455,7 @@ function PersonRow({
 
 const NO_ENTRIES: CalendarEntry[] = []
 
-export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onPlan, onOpenTask, onOpenEntry }: Props) {
+export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
   const [group, setGroup] = useState<GroupFilter>('all')
@@ -672,6 +620,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
                   onPlan={title => onPlan(s.person, title)}
                   onOpenTask={openVisit}
                   placesTogether={places.length ? placesWith(s.person.id, places, tasks) : undefined}
+                  onOpenPlace={onOpenPlace}
                   favouriteNames={favouriteNames}
                   journal={journal}
                   onOpenJournal={onOpenJournal}
