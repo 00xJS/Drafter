@@ -15,6 +15,74 @@
   }
 }
 
+/* ---------- compact header: landscape phones and narrow windows ----------
+   Every iPhone is wider than 640pt on its side, so landscape gets the desktop
+   header, less the notch's inset on each side (--safe-l / --safe-r, up to
+   59pt). Its controls want 964px, 1046px with Admin, so at 667–932pt
+   "+ New task" ran off the right edge. Up to 960px the header sheds width the
+   way the phone bar does: the wordmark goes (the container keeps the name),
+   the tabs become icons (each label stays in its button, hidden to the eye
+   only, so it is still the tab's accessible name), the gaps tighten, the sync
+   pill ellipsizes before anything else gives, and the icon buttons keep their
+   squares. Below 760px (667pt landscape) New task becomes a square too; its
+   aria-label names it. The tallest control is still a 36px button, so
+   --topbar-h holds. Nothing here reaches a phone (640px and under) or a window
+   wider than 960px. */
+@media (min-width: 641px) and (max-width: 960px) {
+  .topbar {
+    gap: 10px;
+  }
+  .topbar .brand > span:not(.brand-mark) {
+    display: none;
+  }
+  .tabs-full .tab {
+    position: relative;
+    height: 36px;
+    padding: 0 11px;
+    gap: 0;
+  }
+  .tabs-full .tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .topbar .icon-btn {
+    flex: none;
+  }
+  .sync-btn {
+    min-width: 0;
+  }
+  .sync-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-dot {
+    flex: none;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 759px) {
+  .new-post-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .new-post-label {
+    display: none;
+  }
+}
+/* ---------- end compact header ---------- */
+
 @media (max-width: 640px) {
   html,
   body,

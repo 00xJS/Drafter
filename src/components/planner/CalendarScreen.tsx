@@ -23,6 +23,9 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
         <Calendar
           view={calMode}
           tasks={filteredTasks}
+          // every task, for the day sheet's "Gift planned" alone: a gift someone
+          // else in the household is buying still covers the day under Mine
+          allTasks={store.tasks}
           projects={store.projects}
           projectMap={projectMap}
           people={store.people}

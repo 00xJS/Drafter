@@ -28,6 +28,12 @@ interface Props {
   /** Which grid to draw; the Timeline is a separate component. */
   view: CalendarView
   tasks: Task[]
+  /**
+   * Every task, before Mine / Everyone narrowed `tasks`. Read by the day
+   * sheet's gift rule and nothing else: a gift someone else in the household
+   * is buying still covers the occasion. Defaults to `tasks`.
+   */
+  allTasks?: Task[]
   projects: Project[]
   projectMap: Map<string, Project>
   people: Person[]
@@ -82,6 +88,7 @@ const isPast = (ev: CalendarEvent) => new Date(ev.allDay ? ev.start + 'T00:00' :
 export function Calendar({
   view,
   tasks,
+  allTasks,
   projects,
   projectMap,
   people,
@@ -489,8 +496,9 @@ export function Calendar({
                   const { person, kind } = item.occasion
                   // Today's rule, not a copy of it: an open gift task near
                   // this day means the gift is in hand, so open that one
-                  // rather than offering to plan a second
-                  const gift = plannedGift(person.id, kind, sheetDay, tasks)
+                  // rather than offering to plan a second — whoever in the
+                  // household is buying it, so with Mine on too
+                  const gift = plannedGift(person.id, kind, sheetDay, allTasks ?? tasks)
                   return (
                     <li key={item.id} className="cal-row">
                       <span className="cal-item-dot" style={{ background: person.color }} />
