@@ -86,6 +86,8 @@ describe('upsertSundayReview files the draft under the reader’s week', () => {
           written.push(...body.incoming)
           return Response.json({ items: [], rejected: [] })
         }
+        // the week's reviews, read again just before the draft's stamp: none yet
+        if (url.startsWith(`${SUPABASE}/rest/v1/posts?select=data,user_id&kind=eq.review&data->>key=eq.`)) return Response.json([])
         if (url.startsWith(`${SUPABASE}/rest/v1/posts?id=eq.`)) return new Response(null, { status: 204 })
         throw new Error(`unexpected fetch ${url}`)
       }),

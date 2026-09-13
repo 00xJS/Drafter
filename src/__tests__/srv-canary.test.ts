@@ -158,7 +158,7 @@ describe('the hourly digest runs the canary once a run and tells the owner at mo
           stored = JSON.parse(JSON.parse(String(init?.body)).value)
           return new Response(null, { status: 201 })
         }
-        if (path === 'posts?select=data,user_id&deleted=is.false') return Response.json([])
+        if (path === 'posts?select=data,user_id&deleted=is.false&order=id.asc') return Response.json([])
         if (path === 'household_members?select=household_id,user_id') return Response.json([])
         if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })
         throw new Error(`unexpected ${method} ${path}`)

@@ -12,7 +12,16 @@ import type { Person, Task } from '../types'
 
 const { pushes, ai } = vi.hoisted(() => ({
   pushes: [] as { title: string; body: string; url: string }[],
-  ai: { provider: 'nvidia' as string | null, prompts: [] as string[], answer: {} as { text?: string; error?: string }, throws: false },
+  ai: {
+    provider: 'nvidia' as string | null,
+    prompts: [] as string[],
+    answer: {} as { text?: string; error?: string },
+    throws: false,
+    // never answers
+    hangs: false,
+    // what happens elsewhere while the model is asked: the clock moving on, a phone's save
+    during: null as null | ((prompt: string) => void),
+  },
 }))
 vi.mock('../../netlify/functions/push.mjs', () => ({
   pushConfigured: () => true,
@@ -25,6 +34,8 @@ vi.mock('../../netlify/functions/lib/ai.mjs', () => ({
   resolveProvider: () => ai.provider,
   complete: async ({ prompt }: { prompt: string }) => {
     ai.prompts.push(prompt)
+    ai.during?.(prompt)
+    if (ai.hangs) return new Promise(() => {})
     if (ai.throws) throw new Error('the function ran out of time')
     return ai.answer
   },
@@ -50,6 +61,14 @@ let rows: Row[]
 let households: { household_id: string; user_id: string }[]
 let emails: { subject: string; text: string }[]
 let syncDown: boolean
+/** Rows the run's read of every record misses, as a read cut short at max_rows can. */
+let bulkMisses: Set<string>
+/** Accounts a row cannot be handed over to: the PATCH fails. */
+let handOverFails: Set<string>
+/** PostgREST's max_rows (supabase/config.toml): no request answers more. */
+const MAX_ROWS = 1000
+const ALL_LIVE = 'posts?select=data,user_id&deleted=is.false&order=id.asc'
+const WEEK_REVIEWS = 'posts?select=data,user_id&kind=eq.review&data->>key=eq.'
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -62,11 +81,15 @@ beforeEach(() => {
   ai.prompts.length = 0
   ai.answer = { text: SUMMARY }
   ai.throws = false
+  ai.hangs = false
+  ai.during = null
   settings = []
   rows = []
   households = []
   emails = []
   syncDown = false
+  bulkMisses = new Set()
+  handOverFails = new Set()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -85,19 +108,35 @@ beforeEach(() => {
       if (path === 'rpc/sync_canary') return Response.json({ ok: true, checked: 15, failures: [] })
       if (path.startsWith('app_config?key=eq.sync_canary')) return Response.json([])
       if (path === 'app_config?on_conflict=key' && method === 'POST') return new Response(null, { status: 201 })
-      if (path === 'posts?select=data,user_id&deleted=is.false') return Response.json(structuredClone(rows))
+      if (path === ALL_LIVE && method === 'GET') {
+        // as PostgREST does: in id order when asked, one Range at a time, never more than max_rows
+        const live = rows.filter(r => !r.data.deletedAt && !bulkMisses.has(r.data.id)).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
+        const range = /^(\d+)-(\d+)$/.exec(new Headers(init?.headers).get('range') ?? '')
+        const from = range ? Number(range[1]) : 0
+        const to = Math.min(range ? Number(range[2]) : Infinity, from + MAX_ROWS - 1)
+        if (from > 0 && from >= live.length) return new Response('range not satisfiable', { status: 416 })
+        return Response.json(structuredClone(live.slice(from, to + 1)))
+      }
+      if (path.startsWith(WEEK_REVIEWS) && method === 'GET') {
+        const key = decodeURIComponent(path.slice(WEEK_REVIEWS.length))
+        return Response.json(structuredClone(rows.filter(r => r.data.kind === 'review' && r.data.key === key)))
+      }
       if (path === 'household_members?select=household_id,user_id') return Response.json(households)
       if (path === 'rpc/sync_posts' && method === 'POST') {
         if (syncDown) return new Response('down', { status: 500 })
-        // as the database does: a new row is the site owner's until it is handed over, and the newer write wins
+        // as the database does: a new row is the site owner's until it is handed over,
+        // the strictly newer write wins, and a different one that loses is answered stale
+        const stale: string[] = []
         for (const item of body.incoming) {
           const row = rows.find(r => r.data.id === item.id)
           if (!row) rows.push({ user_id: OWNER, data: item })
           else if (item.updatedAt > row.data.updatedAt) row.data = item
+          else if (JSON.stringify(item) !== JSON.stringify(row.data)) stale.push(item.id)
         }
-        return Response.json({ items: [], rejected: [] })
+        return Response.json({ items: [], rejected: [], stale, gone: [] })
       }
       if (path.startsWith('posts?id=eq.') && method === 'PATCH') {
+        if (handOverFails.has(body.user_id)) return new Response('unavailable', { status: 503 })
         const row = rows.find(r => r.data.id === decodeURIComponent(path.slice('posts?id=eq.'.length)))
         if (row) row.user_id = body.user_id
         return new Response(null, { status: 204 })
@@ -278,6 +317,169 @@ describe('Sunday’s digest line carries the review', () => {
     await runAt('2026-09-13T08:00:00Z')
     expect(ai.prompts).toEqual([])
     expect(lastLine()).toBe('Last week: You kept all three.')
+  })
+})
+
+const doneLastWeek = (user_id: string | null, id: string, title: string) => taskRow(user_id, id, title, { status: 'done', completedAt: '2026-09-10T16:00:00.000Z' })
+const withPush = (user_id: string, over: Record<string, unknown> = {}) =>
+  quiet(user_id, { timezone: 'UTC', digest_hour: 8, push_subscriptions: [{ endpoint: `https://push.example/${user_id}`, keys: { p256dh: 'x', auth: 'y' } }], ...over })
+const lastLines = () => pushes.map(p => p.body.split('\n').slice(-1)[0])
+const OWNER_DRAFT = 'review-2026-W36-a1b2c3d4'
+const PEER_DRAFT = 'review-2026-W36-e5f6a7b8'
+
+describe('Sunday’s draft, however the run’s read of every record was cut', () => {
+  it('reads every record a page at a time: a table past PostgREST’s 1000 rows is read whole', async () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' })]
+    // 1,100 open tasks sort ahead of the one done last week, which lands on the second page
+    rows = [...Array.from({ length: 1100 }, (_, i) => taskRow(OWNER, `t${String(i).padStart(4, '0')}`, `Task ${i}`)), doneLastWeek(OWNER, 'zz-fence', 'Fixed the fence')]
+    await runAt('2026-09-13T08:00:00Z')
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Completed:\n- Fixed the fence')
+  })
+
+  it('never twice when that read misses the week’s review: its rows, read again from the table, stop it', async () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' })]
+    const shapes = [
+      // drafted at 8 and the call failed: the stamp alone
+      { id: OWNER_DRAFT, draftedAt: '2026-09-13T08:00:00.000Z' },
+      // drafted, and written in since
+      { id: OWNER_DRAFT, draftedAt: '2026-09-13T08:00:00.000Z', summary: SUMMARY, reflections: 'Tired, but the fence is done.' },
+      // one your phone made under an id of its own, never drafted
+      { id: '0b6c1f9e-7d1a-4c55-9a51-3f0e6f1d2c11', reflections: 'A good week' },
+    ]
+    for (const shape of shapes) {
+      ai.prompts.length = 0
+      rows = [row(OWNER, { kind: 'review', period: 'week', key: '2026-W36', top: ['Book the dentist'], ...shape })]
+      bulkMisses = new Set([shape.id])
+      const before = structuredClone(rows)
+      expect(await hourly('2026-09-13T09:00:00Z', '2026-09-14T00:00:00Z')).toEqual([])
+      expect(rows).toEqual(before)
+    }
+  })
+})
+
+describe('Sunday’s draft asks only once the review is its reader’s own', () => {
+  it('asks nothing while the hand-over fails, tries again the next hour, and the site owner never takes a peer’s week for theirs', async () => {
+    // the peer first, so the owner's draft comes after the peer's claim is left with the site owner
+    settings = [quiet(PEER, { timezone: 'UTC' }), quiet(OWNER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(PEER, 'gutter', 'Cleared the gutter'), doneLastWeek(OWNER, 'fence', 'Fixed the fence')]
+    handOverFails = new Set([PEER])
+    const draft = (id: string) => rows.find(r => r.data.id === id)
+
+    await runAt('2026-09-13T08:00:00Z')
+    // the peer's claim is written, but it is still the site owner's row: nothing is asked for it
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Fixed the fence')
+    expect(draft(PEER_DRAFT)).toMatchObject({ user_id: OWNER, data: { draftedAt: '2026-09-13T08:00:00.000Z' } })
+    expect(draft(PEER_DRAFT)?.data.summary).toBeUndefined()
+    // …and the owner's own week is drafted all the same, not skipped for the peer's stamp
+    expect(draft(OWNER_DRAFT)).toMatchObject({ user_id: OWNER, data: { summary: SUMMARY } })
+
+    handOverFails.clear()
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-14T00:00:00Z')).toEqual(['2026-09-13T09:00:00.000Z'])
+    expect(ai.prompts[1]).toContain('Cleared the gutter')
+    expect(draft(PEER_DRAFT)).toMatchObject({ user_id: PEER, data: { draftedAt: '2026-09-13T09:00:00.000Z', summary: SUMMARY } })
+    expect(drafts()).toHaveLength(2)
+  })
+})
+
+describe('Sunday’s draft never writes over a save made while it runs', () => {
+  it('reflections saved while the model is asked stand, and the draft steps aside', async () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' })]
+    rows = [row(OWNER, { kind: 'review', id: 'mine', period: 'week', key: '2026-W36', top: ['Fix the fence'] })]
+    ai.during = () => {
+      // the call takes ten seconds; five seconds in, the phone saves reflections onto the claim it pulled
+      vi.setSystemTime(Date.now() + 10_000)
+      const mine = rows.find(r => r.data.id === 'mine')!
+      mine.data = { ...mine.data, reflections: 'Tired, but the fence is done.', updatedAt: '2026-09-13T08:00:05.000Z' }
+    }
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; sync check ok')
+    expect(ai.prompts).toHaveLength(1)
+    const mine = rows.find(r => r.data.id === 'mine')!.data
+    expect(mine).toMatchObject({ top: ['Fix the fence'], reflections: 'Tired, but the fence is done.', draftedAt: '2026-09-13T08:00:00.000Z' })
+    expect(mine.summary).toBeUndefined()
+    // with reflections of your own, it is not asked again
+    ai.during = null
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-14T00:00:00Z')).toEqual([])
+  })
+
+  it('nor one saved during an earlier account’s draft in the same run', async () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' }), quiet(PEER, { timezone: 'UTC' })]
+    rows = [row(PEER, { kind: 'review', id: 'theirs', period: 'week', key: '2026-W36', top: ['Call the plumber'] })]
+    ai.during = () => {
+      if (ai.prompts.length > 1) return
+      // the owner's call takes five seconds; three seconds in, the peer's phone saves reflections
+      vi.setSystemTime(Date.now() + 5_000)
+      const theirs = rows.find(r => r.data.id === 'theirs')!
+      theirs.data = { ...theirs.data, reflections: 'A slow week.', updatedAt: '2026-09-13T08:00:03.000Z' }
+    }
+    await runAt('2026-09-13T08:00:00Z')
+    // the owner's draft only: read again before the stamp, the peer's reflections stop theirs
+    expect(ai.prompts).toHaveLength(1)
+    const theirs = rows.find(r => r.data.id === 'theirs')!.data
+    expect(theirs).toMatchObject({ top: ['Call the plumber'], reflections: 'A slow week.' })
+    expect(theirs.draftedAt).toBeUndefined()
+    expect(theirs.summary).toBeUndefined()
+  })
+})
+
+describe('Sunday’s drafts fit the run: Netlify stops the function at 30 seconds', () => {
+  it('a digest due goes first, and a draft with no time to finish waits, unstamped, for the next hour', async () => {
+    // listed first, the account with neither push nor email is drafted after the one with push
+    settings = [quiet(OWNER, { timezone: 'UTC' }), withPush(PEER)]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    // every call takes 15 of the run's 22 seconds
+    ai.during = () => vi.setSystemTime(Date.now() + 15_000)
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('sent 1; drafted 1; sync check ok')
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Cleared the gutter')
+    expect(lastLines()).toEqual(['Last week: A steady week: the fence is fixed.'])
+    // nothing was tried for the owner, so nothing is stamped…
+    expect(drafts().map(r => r.user_id)).toEqual([PEER])
+    // …and it is drafted the next hour
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-14T00:00:00Z')).toEqual(['2026-09-13T09:00:00.000Z'])
+    expect(ai.prompts[1]).toContain('Fixed the fence')
+    expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+    expect(pushes).toHaveLength(1)
+  })
+
+  it('an account whose own draft has to wait still gets its digest, with the fixed line', async () => {
+    settings = [withPush(OWNER), withPush(PEER)]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    ai.during = () => vi.setSystemTime(Date.now() + 15_000)
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('sent 2; drafted 1; sync check ok')
+    expect(lastLines()).toEqual(['Last week: A steady week: the fence is fixed.', 'Sunday: your weekly review is ready.'])
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-13T12:00:00Z')).toEqual(['2026-09-13T09:00:00.000Z'])
+    expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+    expect(pushes).toHaveLength(2)
+  })
+
+  it('a call that outlasts the run is let go at its deadline: the digest goes, and the week’s try is spent', async () => {
+    // the run's own timer is faked too, so the deadline comes without waiting for it
+    vi.useRealTimers()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(new Date('2026-09-13T08:00:00Z'))
+    settings = [withPush(OWNER), quiet(PEER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    ai.hangs = true
+    let report: string | null = null
+    const run = runDigest()
+      .then(r => r.text())
+      .then(text => (report = text))
+    // a quarter of a second at a time, for up to the 30 Netlify allows
+    for (let waited = 0; waited < 30_000 && report === null; waited += 250) await vi.advanceTimersByTimeAsync(250)
+    await run
+    expect(report).toBe('sent 1; sync check ok')
+    expect(Date.now() - Date.parse('2026-09-13T08:00:00Z')).toBeLessThanOrEqual(23_000)
+    expect(ai.prompts).toHaveLength(1)
+    expect(lastLines()).toEqual(['Sunday: your weekly review is ready.'])
+    // the owner's try is spent; with no time left, the peer's week was not stamped
+    expect(drafts().map(r => [r.user_id, r.data.draftedAt, r.data.summary])).toEqual([[OWNER, '2026-09-13T08:00:00.000Z', undefined]])
+    ai.hangs = false
+    expect(await hourly('2026-09-13T09:00:00Z', '2026-09-13T12:00:00Z')).toEqual(['2026-09-13T09:00:00.000Z'])
+    expect(ai.prompts[1]).toContain('Cleared the gutter')
+    expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
   })
 })
 

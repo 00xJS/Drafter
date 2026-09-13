@@ -5,7 +5,11 @@
 //
 // Sunday's review draft is for every account, push and email or not: on its
 // own Sunday, from its digest hour, last week's review is written for it once
-// (upsertSundayReview), and a digest that day opens with what it says.
+// (upsertSundayReview), and a digest that day ends with what it says. Netlify
+// stops a scheduled function at 30 seconds, so the accounts whose digest may
+// be due go first, and a draft starts only while the run has time to finish
+// it (RUN_BUDGET_MS). One that can't start waits for the next hourly run: it
+// stays due for the rest of that Sunday.
 //
 // Records are scoped per recipient exactly as the database policy scopes them:
 // your own rows plus your household's (plus legacy unowned rows, which belong
@@ -18,7 +22,6 @@
 // answer is kept for Admin → Data, and a refusal reaches the owner through the
 // same push and email as the digest, at most every twelve hours.
 
-import { newerStamp } from '../../shared/domain.mjs'
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
 import { seenTasks } from '../../shared/people.mjs'
@@ -38,6 +41,14 @@ const HOUR = 3_600_000
 const MAX_NUDGE_WINDOW = 6 * HOUR
 const OPEN = ['todo', 'doing', 'blocked']
 const TOMBSTONE_TTL_MS = 90 * DAY
+/**
+ * How long a run may go on starting work that can wait. Netlify stops a
+ * scheduled function at 30s; the rest is for the digests, nudges and writes
+ * still to do once the last draft has had its time.
+ */
+const RUN_BUDGET_MS = 22_000
+/** Left of the budget, at least, before a draft starts: a model call, and a write either side of it. */
+const DRAFT_MIN_MS = 12_000
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -48,16 +59,70 @@ async function rest(path, init = {}) {
   return text ? JSON.parse(text) : null
 }
 
-/** This reader's review of a week. Reviews are personal: never a household peer's for the same week. */
-const ownReview = (items, userId, key) =>
-  (items ?? []).find(i => i.kind === 'review' && i.period === 'week' && i.key === key && !i.deletedAt && (i.ownerId == null || i.ownerId === userId))
+/**
+ * Every row a select matches, a page at a time, as admin.mjs reads them.
+ * PostgREST answers at most max_rows (1000) rows a request, and in no fixed
+ * order unless asked, so `path` carries its own `order`.
+ */
+async function fetchAll(path, pageSize = 1000) {
+  const out = []
+  for (let from = 0; from < 200_000; from += pageSize) {
+    // a range that starts past the last row answers 416 rather than an empty
+    // page — on any page but the first that just means we have them all
+    const page = await rest(path, { headers: { 'range-unit': 'items', range: `${from}-${from + pageSize - 1}` } }).catch(e => {
+      if (from === 0) throw e
+      return null
+    })
+    const list = Array.isArray(page) ? page : []
+    out.push(...list)
+    if (list.length < pageSize) break
+  }
+  return out
+}
+
+/** `promise`'s value, or `fallback` once `ms` has passed. Nothing is cancelled; a late answer is not waited for. */
+async function settleWithin(promise, ms, fallback) {
+  if (!Number.isFinite(ms)) return promise
+  let timer
+  try {
+    return await Promise.race([promise, new Promise(resolve => (timer = setTimeout(resolve, Math.max(0, ms), fallback)))])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** The id Sunday's draft gives the review of a week it has to create for an account. */
+const draftIdOf = (key, userId) => `review-${key}-${String(userId).slice(0, 8)}`
 
 /**
- * Write a review as its reader's own: sync_posts writes a new row as the site
- * owner, so it is handed over after. False when the server did not take it —
- * the request failed, or a newer copy stands.
+ * An account's own reviews of a week, deleted ones included. Reviews are
+ * personal: never a household peer's for the same week, and never another
+ * account's draft that the site owner holds while its hand-over is retried.
  */
-async function writeReview(review, userId) {
+const ownReviews = (items, userId, key) =>
+  (items ?? []).filter(
+    i =>
+      i.kind === 'review' &&
+      i.period === 'week' &&
+      i.key === key &&
+      (i.ownerId == null || i.ownerId === userId) &&
+      (i.id === draftIdOf(key, userId) || !String(i.id).startsWith(`review-${key}-`)),
+  )
+
+/** One millisecond after `iso`, or null without a valid one: newer than the copy a write was built on, and older than any save made since. */
+function justAfter(iso) {
+  const t = Date.parse(iso ?? '')
+  return Number.isFinite(t) ? new Date(t + 1).toISOString() : null
+}
+
+/**
+ * Write a review through sync_posts. False when the server did not take it:
+ * the request failed, or a newer copy stands. A new row is the site owner's,
+ * so with `handOver` it is then given to its reader, and the write counts
+ * only once that has worked. A claim left with the site owner is out of its
+ * reader's sight, so the next hourly run writes it and hands it over again.
+ */
+async function writeReview(review, userId, { handOver = false } = {}) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
   const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
@@ -68,12 +133,16 @@ async function writeReview(review, userId) {
   if (!res.ok) return false
   const answer = await res.json().catch(() => null)
   if (['rejected', 'stale', 'gone'].some(k => Array.isArray(answer?.[k]) && answer[k].includes(review.id))) return false
-  await fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
+  if (!handOver) return true
+  // for the site owner this changes nothing and answers 204 all the same
+  return fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
     method: 'PATCH',
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
     body: JSON.stringify({ user_id: userId }),
-  }).catch(() => {})
-  return true
+  }).then(
+    r => r.ok,
+    () => false,
+  )
 }
 
 /**
@@ -83,14 +152,35 @@ async function writeReview(review, userId) {
  *
  * One try a week, however many hourly runs find it due: the record is stamped
  * `draftedAt` before the model is asked, so a call that fails or runs out of
- * time is not paid for again every hour of the day. Answers the week's review
- * as it now stands, { id, summary, drafted }, or null when it has none.
+ * time is not paid for again every hour of the day. `items` is one read of
+ * every record, made at the start of the run: it can be cut short, and a save
+ * made since is not in it. So the week's own rows are read again, straight
+ * from the table, just before the stamp, and they decide. Both writes are
+ * stamped just after the copy they were built on, so a save made meanwhile
+ * wins and the draft steps aside.
+ *
+ * `opts.deadline` (epoch ms) is when the run stops starting work. Without
+ * DRAFT_MIN_MS left, nothing is stamped and the week waits for the next hour.
+ * Past the deadline the model is not waited for, and its try is spent.
+ * `opts.ownerId` is the site owner, whose legacy unowned rows are its own.
+ * Answers the week's review as it now stands, { id, summary, drafted }, or
+ * null when it has none.
  */
 export async function upsertSundayReview(userId, items, now = new Date(), opts = {}) {
   const meta = previousWeekIn(now, opts.timezone)
-  const existing = ownReview(items, userId, meta.key)
   const answer = (r, drafted = false) => (r ? { id: r.id, summary: r.summary?.trim() || undefined, drafted } : null)
-  if (!resolveProvider() || existing?.summary?.trim() || existing?.reflections?.trim() || existing?.draftedAt) return answer(existing)
+  const yours = r => !!(r?.summary?.trim() || r?.reflections?.trim())
+  const left = () => (opts.deadline == null ? Infinity : opts.deadline - Date.now())
+  let existing = ownReviews(items, userId, meta.key).find(r => !r.deletedAt)
+  if (!resolveProvider() || yours(existing) || existing?.draftedAt || left() < DRAFT_MIN_MS) return answer(existing)
+
+  // the week's rows as they stand now, deleted ones too: a stamp on any of
+  // them means the week has had its try, however the read above was cut
+  const week = await rest(`posts?select=data,user_id&kind=eq.review&data->>key=eq.${encodeURIComponent(meta.key)}`).catch(() => null)
+  if (!Array.isArray(week)) return answer(existing)
+  const mine = ownReviews(visibleItemsFor(week, userId, [], opts.ownerId), userId, meta.key)
+  existing = mine.find(r => !r.deletedAt)
+  if (yours(existing) || mine.some(r => r.draftedAt)) return answer(existing)
 
   const tasks = (items ?? []).filter(i => i.kind === 'task' && !i.deletedAt)
   const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
@@ -120,11 +210,12 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   const list = xs => (xs.length ? xs.map(x => `- ${x}`).join('\n') : '- none')
   const journalSection = opts.journal ? `\n\nMy journal this week:\n${list(wrote)}` : ''
 
-  // the week's one try is claimed before the model is asked
-  const stamp = newerStamp(existing?.updatedAt)
+  // the week's one try is claimed before the model is asked, just after the
+  // copy read above: a save made since is newer, and the claim steps aside
+  const stamp = justAfter(existing?.updatedAt) ?? new Date().toISOString()
   const claim = {
     kind: 'review',
-    id: existing?.id ?? `review-${meta.key}-${String(userId).slice(0, 8)}`,
+    id: existing?.id ?? draftIdOf(meta.key, userId),
     period: 'week',
     key: meta.key,
     top: existing?.top ?? [],
@@ -134,17 +225,23 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
     createdAt: existing?.createdAt ?? stamp,
     updatedAt: stamp,
   }
-  if (!(await writeReview(claim, userId))) return answer(existing)
+  if (!(await writeReview(claim, userId, { handOver: true }))) return answer(existing)
 
-  const ai = await complete({
-    system:
-      'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. When the journal explains why the week went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-    prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${journalSection}\n\nWrite the review in 120–220 words.`,
-    maxTokens: 900,
-  })
+  const ai = await settleWithin(
+    complete({
+      system:
+        'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. When the journal explains why the week went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
+      prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${journalSection}\n\nWrite the review in 120–220 words.`,
+      maxTokens: 900,
+    }),
+    left(),
+    { error: 'the run ran out of time' },
+  )
   if (ai.error || !ai.text?.trim()) return answer(claim)
 
-  const review = { ...claim, summary: ai.text.trim(), updatedAt: newerStamp(claim.updatedAt) }
+  // just after the claim, not now: reflections or a Top 3 saved while the
+  // model was asked are newer, so they stand and the summary is not written
+  const review = { ...claim, summary: ai.text.trim(), updatedAt: justAfter(claim.updatedAt) }
   return (await writeReview(review, userId)) ? answer(review, true) : answer(claim)
 }
 
@@ -249,14 +346,21 @@ export default async () => {
   const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftDue(u, now))
   if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
-  // keep row ownership so each recipient only ever sees their own scope
-  const rows = await rest('posts?select=data,user_id&deleted=is.false')
+  // keep row ownership so each recipient only ever sees their own scope; paged,
+  // as one request stops at PostgREST's max_rows
+  const rows = await fetchAll('posts?select=data,user_id&deleted=is.false&order=id.asc')
   const peers = await buildPeerMap()
   let sent = 0
   let drafted = 0
   const failures = []
+  // Sunday's drafts start only while there is time to finish them
+  const deadline = now.getTime() + RUN_BUDGET_MS
 
-  for (const u of accountsOf(users, rows, ownerId)) {
+  // accounts whose digest may be due go first, as they did before Sunday's
+  // draft ran for everyone: a draft for an account with neither push nor email
+  // never holds up anyone's digest or nudges
+  const accounts = accountsOf(users, rows, ownerId)
+  for (const u of [...accounts.filter(a => active.includes(a)), ...accounts.filter(a => !active.includes(a))]) {
     const subscribed = active.includes(u)
     const sundayDue = sundayDraftDue(u, now)
     if (!subscribed && !sundayDue) continue
@@ -265,8 +369,11 @@ export default async () => {
 
       const tz = u.timezone || 'UTC'
       // 0. Sunday's review draft — every account, once a week (its record keeps
-      //    the stamp), and before the digest so Sunday's line can carry it
-      const review = sundayDue ? await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz }).catch(() => null) : null
+      //    the stamp), when the run has time for it, and before the digest so
+      //    Sunday's line can carry it
+      const review = sundayDue
+        ? await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz, ownerId, deadline }).catch(() => null)
+        : null
       if (review?.drafted) drafted++
       if (!subscribed) continue
 
