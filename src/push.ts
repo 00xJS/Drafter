@@ -17,6 +17,8 @@ export interface PushInfo {
   /** Sunday's unattended review draft may read the week's journal (off by default). */
   digestJournal: boolean
   timezone: string | null
+  /** Sunday's review draft runs for this account — push or not — and its journal switch can be saved. */
+  sundayDraft: boolean
   email: string
 }
 

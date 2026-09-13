@@ -331,6 +331,8 @@ export interface Review extends Owned {
   topDone?: boolean[]
   reflections?: string
   summary?: string
+  /** When Sunday's automatic draft took its one try at this week, whether or not the model answered. */
+  draftedAt?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string

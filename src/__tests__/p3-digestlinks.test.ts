@@ -57,7 +57,7 @@ beforeEach(() => {
       if (path === 'rpc/sync_canary') return Response.json({ ok: true, checked: 14, failures: [] })
       if (path.startsWith('app_config?key=eq.sync_canary')) return Response.json([])
       if (path === 'app_config?on_conflict=key' && method === 'POST') return new Response(null, { status: 201 })
-      if (path === 'posts?select=data,user_id&deleted=is.false') return Response.json(rows)
+      if (path === 'posts?select=data,user_id&deleted=is.false&order=id.asc') return Response.json(rows)
       if (path === 'household_members?select=household_id,user_id') return Response.json([])
       if (path.startsWith('user_settings?user_id=eq.') && method === 'PATCH') return new Response(null, { status: 204 })
       if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })

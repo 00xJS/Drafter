@@ -798,6 +798,8 @@ export function sanitizeReview(raw: unknown): Review | null {
     topDone: Array.isArray(r.topDone) ? r.topDone.map(Boolean).slice(0, 5) : undefined,
     reflections: str(r.reflections)?.trim() || undefined,
     summary: str(r.summary)?.trim() || undefined,
+    // kept so a device's save of this review never lets Sunday's draft try the week again
+    draftedAt: isoDate(r.draftedAt),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

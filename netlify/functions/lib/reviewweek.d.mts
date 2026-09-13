@@ -9,3 +9,11 @@ export declare function previousWeekIn(
   now: Date,
   tz: string | null | undefined,
 ): { key: string | null; label: string; startKey: string | null; endKey: string | null; start: Date; end: Date }
+
+/** Whether Sunday's review draft is due for an account (its user_settings row, or {}) at `now`. */
+export declare function sundayDraftDue(settings: { timezone?: string | null; digest_hour?: number | null } | null | undefined, now: Date): boolean
+
+export declare function firstSentence(text: string | null | undefined, max?: number): string
+
+/** Sunday's digest line: the review's first sentence, or the fixed line. */
+export declare function sundayLine(summary: string | null | undefined): string
