@@ -18,13 +18,14 @@ import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
 import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
-import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
+import { PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
 import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
 
-const PLACE_CATEGORIES = ['restaurant', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
+/** The app's own place categories, as it labels them — "fastfood (Fast food)" — for the place tools' descriptions. */
+const PLACE_CATEGORY_CHOICES = PLACE_CATEGORIES.map(c => `${c} (${PLACE_CATEGORY_META[c].label})`).join(', ')
 const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner']
 const GROCERY_STATES = ['need', 'have', 'done']
 
@@ -901,8 +902,7 @@ export const TOOLS = [
     name: 'list_places',
     scope: 'read',
     annotations: READS,
-    description:
-      'Places the user goes (restaurants, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise).',
+    description: `Places the user goes (restaurants, fast food, cafés, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise). category narrows the list to one of: ${PLACE_CATEGORY_CHOICES}.`,
     inputSchema: { type: 'object', properties: { category: { type: 'string', enum: PLACE_CATEGORIES } } },
     async run({ category } = {}, { db, clock }) {
       const all = await db.fetchAll({ kinds: ['place', 'task', 'person', 'meal'] })
@@ -918,8 +918,7 @@ export const TOOLS = [
     name: 'create_place',
     scope: 'write',
     annotations: ADDS,
-    description:
-      'Save a place so outings can be logged there. category: restaurant|cafe|bar|outdoors|venue|shop|home|other. cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due.',
+    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due.`,
     inputSchema: {
       type: 'object',
       properties: {

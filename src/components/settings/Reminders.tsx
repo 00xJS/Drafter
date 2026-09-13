@@ -138,7 +138,7 @@ export function Reminders({ store }: SettingsCtx) {
                     } catch {
                       /* ignore */
                     }
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
                   } else {
                     setLocalRemindersEnabled(false)
                     setLocalOn(false)
@@ -164,7 +164,7 @@ export function Reminders({ store }: SettingsCtx) {
                     setGenericRemindersEnabled(on)
                     setGenericOn(on)
                     const skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: on }))
+                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: on }))
                   }}
                 />
                 <span className="cal-source-name">Hide details on the lock screen</span>

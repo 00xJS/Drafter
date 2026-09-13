@@ -1,3 +1,5 @@
+import type { PlaceCategory } from '../shared/places.mjs'
+
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
 /** Pre-v3 post statuses; kept so legacy rows still sanitize. */
 export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'posted' | 'canceled'
@@ -286,19 +288,10 @@ export interface Person extends Owned {
   deletedAt?: string
 }
 
-export type PlaceCategory = 'restaurant' | 'fastfood' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
-export const PLACE_CATEGORIES: PlaceCategory[] = ['restaurant', 'fastfood', 'cafe', 'bar', 'outdoors', 'venue', 'shop', 'home', 'other']
-export const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }> = {
-  restaurant: { label: 'Restaurant', emoji: '🍽️' },
-  fastfood: { label: 'Fast food', emoji: '🍔' },
-  cafe: { label: 'Café', emoji: '☕' },
-  bar: { label: 'Bar', emoji: '🍸' },
-  outdoors: { label: 'Outdoors', emoji: '🌳' },
-  venue: { label: 'Venue', emoji: '🎭' },
-  shop: { label: 'Shop', emoji: '🛍️' },
-  home: { label: 'Home', emoji: '🏠' },
-  other: { label: 'Other', emoji: '📍' },
-}
+// The categories and their labels live in shared/places.mjs: one list for the
+// app and the MCP server, so an assistant can save every kind the app offers.
+export type { PlaceCategory }
+export { PLACE_CATEGORIES, PLACE_CATEGORY_META } from '../shared/places.mjs'
 
 /** Somewhere you go. Outings are done tasks with the place attached — same rule as people. */
 export interface Place extends Owned {

@@ -1,4 +1,4 @@
-import { OPEN_STATUSES, Person, Place, Task } from './types'
+import { Meal, OPEN_STATUSES, Person, Place, Task } from './types'
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
@@ -97,7 +97,9 @@ export interface BuildReminderOpts {
 export function buildLocalReminders(
   tasks: Task[],
   people: Person[],
-  places: Place[] = [],
+  places: Place[],
+  /** A meal eaten out counts as going there, as on Places: last night's takeaway is not a place to nudge about. */
+  meals: Meal[],
   now = new Date(),
   horizonDays = 30,
   opts: BuildReminderOpts = {},
@@ -144,7 +146,7 @@ export function buildLocalReminders(
   // soonest-60 window.
   const overduePlaces = places
     .filter(p => p && !p.deletedAt)
-    .map(p => ({ place: p, status: placeCadenceStatus(p, tasks, now) }))
+    .map(p => ({ place: p, status: placeCadenceStatus(p, tasks, now, meals) }))
     .filter(x => x.status.status === 'overdue')
     // longest overdue first, so the cap keeps the places you have drifted
     // furthest from rather than whichever happened to load first

@@ -73,12 +73,13 @@ export function useNativeShell({ store, applyLinkRef }: Deps) {
       } catch {
         /* offline / unsigned — keep local due reminders */
       }
-      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
     })()
   }
+  // meals too: a takeaway logged tonight takes that place's nudge off the phone
   useEffect(() => {
     if (!store.loaded) return
     const t = window.setTimeout(() => remindersRef.current(), 1500)
     return () => window.clearTimeout(t)
-  }, [store.loaded, store.tasks, store.people, store.places])
+  }, [store.loaded, store.tasks, store.people, store.places, store.meals])
 }

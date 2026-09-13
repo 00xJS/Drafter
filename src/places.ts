@@ -1,5 +1,5 @@
 import { Meal, Person, Place, Task } from './types'
-import { visitSummary, visitsFor } from './people'
+import { monthsAndTrend, visitSummary, visitsFor } from './people'
 import { Outing, PlaceCadenceState, PlaceCadenceStatus, matchPlace as sharedMatchPlace, normalisePlaceText, placeCadenceStatus, outingsAt as sharedOutingsAt } from '../shared/places.mjs'
 
 export { normalisePlaceText, placeCadenceStatus }
@@ -133,6 +133,30 @@ export function placeStats(place: Place, tasks: Task[], people: Person[], now: D
     reason: nagging ? `${base} — you aimed for every ${cadence.cadenceDays} days` : base,
     status: cadence.status,
   }
+}
+
+export interface PlaceYearRow {
+  place: Place
+  /** Outings per month, Jan..Dec of the given year. */
+  months: number[]
+  /** Outings in the year. */
+  total: number
+  /** Positive = going more lately, negative = drifting (outings in the last 90 days vs the 90 before). */
+  trend: number
+}
+
+/**
+ * The year in places: outings per month for each place, most first. It counts
+ * what every other Places figure counts (outingsAt): a done task there is one
+ * outing and a meal eaten out there is one, while a meal still to come is not
+ * one yet. People counts days instead, because three events with one group on
+ * a Saturday are one time you saw them; lunch and dinner at the same place are
+ * two meals out, so here each outing counts.
+ */
+export function placeYearReport(places: Place[], tasks: Task[], meals: Meal[], year: number, now: Date = new Date()): PlaceYearRow[] {
+  return places
+    .map(place => ({ place, ...monthsAndTrend(outingsAt(place.id, tasks, meals, now), year, now) }))
+    .sort((a, b) => b.total - a.total || a.place.name.localeCompare(b.place.name))
 }
 
 export interface PlaceWithPerson {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
-import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeStats, placesWith } from '../places'
+import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeStats, placeYearReport, placesWith } from '../places'
 import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
@@ -169,14 +169,15 @@ describe('placeCadenceStatus', () => {
   const went = (daysAgo: number, over: Partial<Task> = {}) =>
     task({ id: `d${daysAgo}`, completedAt: new Date(now.getTime() - daysAgo * 86_400_000).toISOString(), ...over })
 
+  // meals are required: these have none, and say so
   it('is none (never due) when no cadence is set, however long ago you went', () => {
-    const s = placeCadenceStatus(place(), [went(400)], now)
+    const s = placeCadenceStatus(place(), [went(400)], now, [])
     expect(s).toEqual({ status: 'none', reason: '' })
     expect(placeStats(place(), [went(400)], [], now).status).toBe('none')
   })
 
   it('is never when a cadence is set but nothing was logged', () => {
-    const s = placeCadenceStatus(place({ cadenceDays: 30 }), [], now)
+    const s = placeCadenceStatus(place({ cadenceDays: 30 }), [], now, [])
     expect(s.status).toBe('never')
     expect(s.reason).toBe('No outings yet — you aimed for every 30 days')
     expect(s.cadenceDays).toBe(30)
@@ -184,10 +185,10 @@ describe('placeCadenceStatus', () => {
 
   it('is ok up to the cadence, due past it, overdue past 1.5x', () => {
     const p = place({ cadenceDays: 30 })
-    expect(placeCadenceStatus(p, [went(30)], now).status).toBe('ok')
-    expect(placeCadenceStatus(p, [went(31)], now)).toMatchObject({ status: 'due', daysSince: 31, reason: "It's been 31 days; you aimed for every 30 days" })
-    expect(placeCadenceStatus(p, [went(45)], now).status).toBe('due')
-    expect(placeCadenceStatus(p, [went(46)], now)).toMatchObject({ status: 'overdue', reason: 'Last went 46 days ago — you aimed for every 30 days' })
+    expect(placeCadenceStatus(p, [went(30)], now, []).status).toBe('ok')
+    expect(placeCadenceStatus(p, [went(31)], now, [])).toMatchObject({ status: 'due', daysSince: 31, reason: "It's been 31 days; you aimed for every 30 days" })
+    expect(placeCadenceStatus(p, [went(45)], now, []).status).toBe('due')
+    expect(placeCadenceStatus(p, [went(46)], now, [])).toMatchObject({ status: 'overdue', reason: 'Last went 46 days ago — you aimed for every 30 days' })
   })
 
   it('ignores open tasks, tombstones and other places when finding the last outing', () => {
@@ -198,7 +199,7 @@ describe('placeCadenceStatus', () => {
       went(3, { deletedAt: '2026-09-07T00:00:00.000Z' }),
       went(4, { placeId: 'elsewhere' }),
     ]
-    expect(placeCadenceStatus(p, tasks, now)).toMatchObject({ status: 'overdue', daysSince: 100 })
+    expect(placeCadenceStatus(p, tasks, now, [])).toMatchObject({ status: 'overdue', daysSince: 100 })
   })
 
   it('appends the rhythm to the list reason only when due or overdue', () => {
@@ -304,5 +305,65 @@ describe('placeByName: naming somewhere new must not duplicate somewhere old', (
     expect(placeByName('', all)).toBeUndefined()
     expect(placeByName('   ', all)).toBeUndefined()
     expect(placeByName(null, all)).toBeUndefined()
+  })
+})
+
+describe('placeYearReport: the year in places counts outings', () => {
+  const now = new Date(2026, 8, 13, 12, 0) // local noon, Sunday 13 September 2026
+  const local = (m: number, d: number, h = 12) => new Date(2026, m - 1, d, h).toISOString()
+  const meal = (date: string, over: Partial<Meal> = {}): Meal => ({
+    kind: 'meal',
+    id: `m-${date}`,
+    date,
+    slot: 'dinner',
+    out: true,
+    placeId: 'pl1',
+    title: "Franco's",
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  })
+  const nopi = place({ id: 'nopi', name: 'Nopi' })
+  const tasks = [
+    // lunch and dinner at Franco's on one March day: two outings, where People would count one day
+    task({ id: 'lunch', completedAt: local(3, 7, 13) }),
+    task({ id: 'dinner', completedAt: local(3, 7, 20) }),
+    task({ id: 'aug', completedAt: local(8, 20) }),
+    task({ id: 'may', placeId: 'nopi', completedAt: local(5, 2) }),
+    task({ id: 'nye', completedAt: new Date(2025, 11, 31, 20).toISOString() }),
+  ]
+  const meals = [
+    meal('2026-09-12'), // last night's takeaway
+    meal('2026-09-25'), // booked for later this month: a plan, not an outing yet
+    meal('2026-09-05', { out: undefined, recipeId: 'r1' }), // cooked at home
+  ]
+  const [first, second] = placeYearReport([nopi, place()], tasks, meals, 2026, now)
+
+  it('puts each outing in its month, a meal eaten out included and one still to come not', () => {
+    expect(first.place.id).toBe('pl1')
+    expect(first.months).toEqual([0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 0, 0])
+    expect(first.total).toBe(4)
+    expect(second.place.id).toBe('nopi')
+    expect(second.months[4]).toBe(1)
+    expect(second.total).toBe(1)
+  })
+
+  it('sorts by outings, then by name', () => {
+    expect([first.place.id, second.place.id]).toEqual(['pl1', 'nopi'])
+    expect(placeYearReport([nopi, place({ id: 'alpha', name: 'Alpha' })], [], [], 2026, now).map(r => r.place.name)).toEqual(['Alpha', 'Nopi'])
+  })
+
+  it('reads the trend in outings, the last 90 days against the 90 before', () => {
+    // August and last night are recent; March is older than both windows
+    expect(first.trend).toBe(2)
+    // May's visit to Nopi is in the 90 days before, with nothing since
+    expect(second.trend).toBe(-1)
+  })
+
+  it('gives another year its own months, while the trend stays about now', () => {
+    const [last] = placeYearReport([place()], tasks, meals, 2025, now)
+    expect(last.months[11]).toBe(1)
+    expect(last.total).toBe(1)
+    expect(last.trend).toBe(2)
   })
 })

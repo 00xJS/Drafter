@@ -549,17 +549,18 @@ export function Today({
     [people, allTasks, entries],
   )
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
+  // A meal eaten out there counts as going, as it does on Places.
   const placeNudges = useMemo(() => {
     const now = new Date()
     const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
     for (const place of places) {
-      const s = placeCadenceStatus(place, allTasks, now)
+      const s = placeCadenceStatus(place, allTasks, now, meals)
       if (s.status === 'due' || s.status === 'overdue') out.push({ place, status: s.status, reason: s.reason, daysSince: s.daysSince ?? 0 })
     }
     return out
       .sort((a, b) => (a.status === b.status ? b.daysSince - a.daysSince : a.status === 'overdue' ? -1 : 1))
       .slice(0, 4)
-  }, [places, allTasks])
+  }, [places, allTasks, meals])
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
