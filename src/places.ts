@@ -90,9 +90,11 @@ function placeReason(lastAt: string | undefined, daysSince: number | undefined, 
           ? 'yesterday'
           : `${daysSince} days ago`
   // "3 of them meals" is the answer to "how often do we eat there" — shown only
-  // when some of the year's outings actually were meals.
+  // when some of those outings actually were meals. Both counts are the last 12
+  // months, as the row's 12mo figure is, so the wording says so: the calendar
+  // year is the tile's and the year table's.
   const eating = eatenOut365 > 0 ? ` · ate here ${eatenOut365} time${eatenOut365 === 1 ? '' : 's'}` : ''
-  return `Last went ${ago} · ${count365} time${count365 === 1 ? '' : 's'} this year${eating}`
+  return `Last went ${ago} · ${count365} time${count365 === 1 ? '' : 's'} in 12 months${eating}`
 }
 
 export function companionsAt(placeId: string, people: Person[], tasks: Task[]): Companion[] {
@@ -151,12 +153,30 @@ export interface PlaceYearRow {
  * outing and a meal eaten out there is one, while a meal still to come is not
  * one yet. People counts days instead, because three events with one group on
  * a Saturday are one time you saw them; lunch and dinner at the same place are
- * two meals out, so here each outing counts.
+ * two meals out, so here each outing counts. A meal is filed under its own
+ * date (filedAt), as Kitchen and the calendar show it.
  */
 export function placeYearReport(places: Place[], tasks: Task[], meals: Meal[], year: number, now: Date = new Date()): PlaceYearRow[] {
   return places
-    .map(place => ({ place, ...monthsAndTrend(outingsAt(place.id, tasks, meals, now), year, now) }))
+    .map(place => {
+      // re-dated after outingsAt, so a meal still to come stays out
+      const outings = outingsAt(place.id, tasks, meals, now).map(v => ({ at: filedAt(v) }))
+      return { place, ...monthsAndTrend(outings, year, now) }
+    })
     .sort((a, b) => b.total - a.total || a.place.name.localeCompare(b.place.name))
+}
+
+/**
+ * The instant an outing is filed under when it is counted by month or year. A
+ * task keeps its own. A meal records a day, not an instant, so it goes at local
+ * midday on its own date: outingsAt dates it midday UTC, which east of UTC+11
+ * (all of New Zealand) is already the next day, and would put the takeaway
+ * eaten on 31 December in the next year's table.
+ */
+function filedAt(v: Outing): string {
+  if (v.kind !== 'meal') return v.at
+  const [y, m, d] = v.meal.date.split('-').map(Number)
+  return new Date(y, m - 1, d, 12).toISOString()
 }
 
 export interface PlaceWithPerson {

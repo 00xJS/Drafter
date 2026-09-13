@@ -136,7 +136,8 @@ describe('the Places tab counts meals eaten out, as its rows do', () => {
 
   it('Outings this year counts the takeaway beside the logged dinner, and not next Friday', () => {
     const html = page({ meals: [takeaway, friday] })
-    expect(html).toContain('2 times this year · ate here 1 time')
+    // the row counts the last 12 months, as its 12mo figure does; the tile counts the calendar year
+    expect(html).toContain('2 times in 12 months · ate here 1 time')
     expect(html).toMatch(/Outings this year<\/div><div class="stat-value">2</)
     expect(page({ meals: [] })).toMatch(/Outings this year<\/div><div class="stat-value">1</)
   })

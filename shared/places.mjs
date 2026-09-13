@@ -59,8 +59,11 @@ const DAY_MS = 86_400_000
 
 /**
  * Midday UTC for a date-only key. A meal records a day, not an instant, and
- * midday lands on that same calendar day in every zone from UTC-11 to UTC+12 —
- * which midnight would not.
+ * midday UTC lands on that same calendar day in every zone from UTC-12 to
+ * UTC+11, which midnight would not. East of UTC+11 (all of New Zealand, Tonga,
+ * Kiribati) it is already the next day, so a count that files outings by month
+ * or year re-dates a meal to local midday on its own date first
+ * (placeYearReport in src/places.ts).
  */
 const middayOf = dateKey => `${dateKey}T12:00:00.000Z`
 

@@ -203,9 +203,17 @@ describe('placeCadenceStatus', () => {
   })
 
   it('appends the rhythm to the list reason only when due or overdue', () => {
-    expect(placeStats(place({ cadenceDays: 30 }), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time this year — you aimed for every 30 days')
-    expect(placeStats(place({ cadenceDays: 30 }), [went(5)], [], now).reason).toBe('Last went 5 days ago · 1 time this year')
-    expect(placeStats(place(), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time this year')
+    expect(placeStats(place({ cadenceDays: 30 }), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time in 12 months — you aimed for every 30 days')
+    expect(placeStats(place({ cadenceDays: 30 }), [went(5)], [], now).reason).toBe('Last went 5 days ago · 1 time in 12 months')
+    expect(placeStats(place(), [went(50)], [], now).reason).toBe('Last went 50 days ago · 1 time in 12 months')
+  })
+
+  it('says the window it counts: last November is one outing in 12 months, and none in this year', () => {
+    // 30 November 2025, seen on 8 September 2026: the row counts it, this year's table does not
+    const november = placeStats(place(), [went(282)], [], now)
+    expect(november.count365).toBe(1)
+    expect(november.reason).toMatch(/ · 1 time in 12 months$/)
+    expect(placeYearReport([place()], [went(282)], [], 2026, now)[0].total).toBe(0)
   })
 })
 
@@ -365,5 +373,25 @@ describe('placeYearReport: the year in places counts outings', () => {
     expect(last.months[11]).toBe(1)
     expect(last.total).toBe(1)
     expect(last.trend).toBe(2)
+  })
+
+  it('files a meal on its own date east of UTC+11, where midday UTC is already the next day', () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'Pacific/Auckland'
+    try {
+      const inAuckland = new Date(2026, 8, 13, 12) // noon on Sunday 13 September, New Zealand time
+      const eaten = [meal('2026-01-31'), meal('2025-12-31')]
+      // the last takeaway of January is January's, not February's
+      const [thisYear] = placeYearReport([place()], [], eaten, 2026, inAuckland)
+      expect(thisYear.months.slice(0, 2)).toEqual([1, 0])
+      expect(thisYear.total).toBe(1)
+      // New Year's Eve's is that year's, not the next one's
+      const [lastYear] = placeYearReport([place()], [], eaten, 2025, inAuckland)
+      expect(lastYear.months[11]).toBe(1)
+      expect(lastYear.total).toBe(1)
+    } finally {
+      if (tz === undefined) delete process.env.TZ
+      else process.env.TZ = tz
+    }
   })
 })

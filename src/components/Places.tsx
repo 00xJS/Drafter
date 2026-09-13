@@ -439,14 +439,18 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
 
   const beenAWhile = useMemo(() => shown.filter(s => s.status === 'due' || s.status === 'overdue').length, [shown])
 
-  // the outings the rows count, meals eaten out included, so the tile and the rows agree
+  const shownPlaces = useMemo(() => shown.map(s => s.place), [shown])
+
+  // The calendar year, summed from the year table's own count (a meal on its
+  // own date), so the tile and this year's table cannot disagree. The rows
+  // above count the last 12 months instead, as their "12mo" says.
   const thisYear = new Date().getFullYear()
   const outingsThisYear = useMemo(
-    () => shown.reduce((n, s) => n + s.visits.filter(v => new Date(v.at).getFullYear() === thisYear).length, 0),
-    [shown, thisYear],
+    () => placeYearReport(shownPlaces, tasks, meals, thisYear).reduce((n, r) => n + r.total, 0),
+    [shownPlaces, tasks, meals, thisYear],
   )
 
-  const report = useMemo(() => placeYearReport(shown.map(s => s.place), tasks, meals, year), [shown, tasks, meals, year])
+  const report = useMemo(() => placeYearReport(shownPlaces, tasks, meals, year), [shownPlaces, tasks, meals, year])
 
   return (
     <section className="people">
