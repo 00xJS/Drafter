@@ -9,7 +9,7 @@
 
 import { isMineTask, localDate, localMidnightIso } from './domain.mjs'
 import { shiftDayKey } from './journal.mjs'
-import { plannedVisit, seenStatus } from './people.mjs'
+import { plannedVisit, seenStatus, seenTasks } from './people.mjs'
 import { outingsAt } from './places.mjs'
 import { OPEN, nextUp } from './today.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf, weekStartKey } from './weeks.mjs'
@@ -245,14 +245,15 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
  * Anyone due or overdue a catch-up with no visit already planned, plus people
  * never seen who have been in the app a month (the digest's rule). Most overdue
  * first. Each goes on the Saturday while it is free, then on the quietest
- * evening, earliest first.
+ * evening, earliest first. `seen` is what the People page counts (seenTasks):
+ * the tasks plus your own past events with people on them; a plan is a task.
  */
-function proposePeople({ days, people, tasks, now, eveningLoad, dueCount, skip }) {
+function proposePeople({ days, people, tasks, seen, now, eveningLoad, dueCount, skip }) {
   const nowMs = now.getTime()
   const due = []
   for (const p of people) {
     if (skip.has(`person:${p.id}`) || plannedVisit(p.id, tasks)) continue
-    const s = seenStatus(p, tasks, now)
+    const s = seenStatus(p, seen, now)
     if (!(s.status in CATCH_UP_RANK)) continue
     if (s.status === 'never') {
       const created = Date.parse(p.createdAt ?? '')
@@ -338,7 +339,9 @@ export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = []
   }
 
   const dinners = proposeDinners({ days, todayKey, startKey: week.startKey, meals, recipes: ofKind('recipe'), busy, skip })
-  const people = proposePeople({ days, people: ofKind('person'), tasks, now, eveningLoad, dueCount, skip })
+  // a lunch of your own with Mum on it has seen her, as the People page says
+  const seen = seenTasks(tasks, ofKind('event'), now)
+  const people = proposePeople({ days, people: ofKind('person'), tasks, seen, now, eveningLoad, dueCount, skip })
   const overdue = proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip })
 
   const bills = tasks

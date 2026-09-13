@@ -3,7 +3,7 @@ import { makeClock } from '../../shared/clock.mjs'
 import { visitDays as sharedVisitDays } from '../../shared/people.mjs'
 import { personStats, seenLabel, visitDays, visitSummary, yearReport } from '../people'
 import { buildReview, weekRange } from '../review'
-import { Person, Task } from '../types'
+import { CalendarEntry, Person, Task } from '../types'
 
 // "How often" on People is days seen: several events with someone on one day
 // are one day. An event is still what visitsFor lists — a completed task they
@@ -141,5 +141,15 @@ describe('buildReview counts days seen per person', () => {
       ['Dad', 1, 1],
     ])
     expect(data.seen).toEqual({ days: 2, events: 4 })
+  })
+
+  it('counts an event of your own that has happened, one day with a task on the same day', () => {
+    const own = (id: string, start: string): CalendarEntry => ({ kind: 'event', id, title: id, start, end: start, allDay: false, peopleIds: ['mum'], createdAt: STAMP, updatedAt: STAMP })
+    const tasks = [event(local(9, 11, 10))]
+    // Friday evening's dinner has happened; Sunday's has not
+    const entries = [own('dinner', local(9, 11, 19)), own('sunday', local(9, 13, 13))]
+    const data = buildReview(weekRange(now), tasks, [], [person('mum', 'Mum')], now, [], entries)
+    expect(data.people.map(p => [p.person.name, p.days, p.visits.length])).toEqual([['Mum', 1, 2]])
+    expect(data.seen).toEqual({ days: 1, events: 2 })
   })
 })

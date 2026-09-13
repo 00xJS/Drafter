@@ -16,7 +16,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
-import { seenStatus, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
+import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
 import { activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealsInWeekOf } from '../shared/kitchen.mjs'
@@ -797,17 +797,22 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      "People you track visits with: last seen, target rhythm, whether they are due or overdue a catch-up, and how often you saw them. visitsLast30Days/visitsLast90Days count events (completed tasks with them, so three on one day are three); daysSeenLast30Days/daysSeenLast90Days count the days you saw them, in the user's time zone — the app's how-often figure.",
+      "People you track visits with: last seen, target rhythm, whether they are due or overdue a catch-up, and how often you saw them. visitsLast30Days/visitsLast90Days count events (completed tasks with them and your own past calendar events they were on, so three on one day are three); daysSeenLast30Days/daysSeenLast90Days count the days you saw them, in the user's time zone — the app's how-often figure.",
     inputSchema: { type: 'object', properties: {} },
     async run(_args, { db, clock }) {
-      const all = await db.fetchAll({ kinds: ['person', 'task'] })
-      const tasks = all.filter(i => i.kind === 'task')
+      const all = await db.fetchAll({ kinds: ['person', 'task', 'event'] })
       const nowMs = clock.now().getTime()
+      // your own past events with people on them count as seeing them, as in the app
+      const seen = seenTasks(
+        all.filter(i => i.kind === 'task'),
+        all.filter(i => i.kind === 'event'),
+        new Date(nowMs),
+      )
       return {
         people: all
           .filter(i => i.kind === 'person')
           .map(p => {
-            const s = seenStatus(p, tasks, new Date(nowMs))
+            const s = seenStatus(p, seen, new Date(nowMs))
             const within = days => s.visits.filter(v => nowMs - Date.parse(v.at) < days * DAY)
             return {
               id: p.id,

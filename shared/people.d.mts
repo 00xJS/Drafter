@@ -1,4 +1,4 @@
-import { Person, Task } from '../src/types.js'
+import { CalendarEntry, Person, Task } from '../src/types.js'
 
 export declare const DEFAULT_CADENCE_DAYS: number
 export declare const DAY_MS: number
@@ -10,6 +10,8 @@ export interface Visit {
 
 export declare function visitsFor(personId: string, tasks: Task[]): Visit[]
 export declare function visitDays(visits: readonly { at: string }[], dayKeyOf: (at: string) => string | null | undefined): string[]
+export declare function eventVisits(entries: CalendarEntry[], now?: Date | string | number): Task[]
+export declare function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now?: Date | string | number): Task[]
 export declare function plannedVisit(personId: string, tasks: Task[]): Task | null
 export declare function plannedGift(
   personId: string,

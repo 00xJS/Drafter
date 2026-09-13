@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
+import { CalendarEntry, Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
@@ -20,6 +20,8 @@ interface Props {
   places: Place[]
   /** Your habits (personal); done/due over the period feeds the block and the summary. */
   habits: Habit[]
+  /** Your own calendar entries: one that has happened with people on it counts under People. */
+  entries?: CalendarEntry[]
   onSaveReview(r: ReviewRecord): void
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -89,11 +91,13 @@ export function reloadDraft(prev: { key: string; stamp?: string }, next: { key: 
   return next.stamp !== prev.stamp && next.stamp !== ownStamp
 }
 
-export function Review({ tasks, projects, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onNew, onPlanWeek }: Props) {
+const NO_ENTRIES: CalendarEntry[] = []
+
+export function Review({ tasks, projects, people, reviews, journal, places, habits, entries = NO_ENTRIES, onSaveReview, onOpen, onStatus, onReschedule, onNew, onPlanWeek }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
-  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places), [range, tasks, projects, people, places])
+  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries), [range, tasks, projects, people, places, entries])
   const wrote = useMemo(() => entriesInRange(journal, range), [journal, range])
   const mood = moodAverage(wrote)
   const habitStats = useMemo(() => habitsConsistency(habits, range.start, range.end, new Date()), [habits, range])

@@ -32,6 +32,50 @@ export function visitDays(visits, dayKeyOf) {
   return out
 }
 
+/**
+ * Your own calendar entries that have happened with people on them, as the done
+ * visit task "Who was there?" logs for a subscribed calendar's event: titled as
+ * the event and dated at its start (midday on an all-day one), so visitsFor and
+ * everything built on it counts them the same way. A work day is never a visit,
+ * nor is a Plan my day block (taskId): its task carries the people, and counts
+ * once it is done. Nothing counts before that time has come. Each keeps its
+ * entry's id, so a visit can open the entry it came from.
+ */
+export function eventVisits(entries, now = new Date()) {
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
+  const out = []
+  for (const e of entries ?? []) {
+    if (!e || e.kind !== 'event' || e.deletedAt || e.work || e.taskId || !(e.peopleIds ?? []).length) continue
+    const atMs = e.allDay ? new Date(`${e.start}T12:00`).getTime() : Date.parse(e.start)
+    if (!Number.isFinite(atMs) || atMs > nowMs) continue
+    out.push({
+      kind: 'task',
+      id: e.id,
+      title: e.title,
+      description: e.location ? `At ${e.location}` : '',
+      status: 'done',
+      priority: 'normal',
+      completedAt: new Date(atMs).toISOString(),
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+      tags: ['visit'],
+      peopleIds: [...e.peopleIds],
+    })
+  }
+  return out
+}
+
+/**
+ * What every "have you seen them" figure reads: the tasks, and your own past
+ * events with people on them as the visits they amount to. People, Today, the
+ * week plan, the digest, Review, Ask and MCP all count through this, so no
+ * surface calls someone overdue whom another shows as seen. Plans (plannedVisit)
+ * and gifts still read the tasks alone: an event is never an open plan.
+ */
+export function seenTasks(tasks, entries, now = new Date()) {
+  return [...(tasks ?? []), ...eventVisits(entries, now)]
+}
+
 /** Soonest open catch-up / visit plan for this person, if any. */
 export function plannedVisit(personId, tasks) {
   return (

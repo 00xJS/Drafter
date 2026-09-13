@@ -5,7 +5,7 @@ import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '..
 import { formatMoney } from '../bills'
 import { mealId, nextSwap } from '../kitchen'
 import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
-import { Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
+import { CalendarEntry, Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureKind } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
@@ -114,6 +114,8 @@ interface Props {
   /** For the optional ✨ polish: how often each recipe was cooked and when people were last seen. */
   meals: Meal[]
   tasks: Task[]
+  /** Your own calendar entries: a past one with someone on it counts as seeing them. */
+  entries?: CalendarEntry[]
   /** "Pick…" is MealSlotRow's picker, with the Kitchen tab's "Somewhere new…" / "Something new…". */
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe?(name: string): Recipe
@@ -125,7 +127,7 @@ interface Props {
   now?: Date
 }
 
-export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onCreatePlace, onCreateRecipe, onApply, onClose, polish = polishWeekPlan, now }: Props) {
+export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, entries, onCreatePlace, onCreateRecipe, onApply, onClose, polish = polishWeekPlan, now }: Props) {
   const [c, setC] = useState(() => initialChoices(plan))
   const [picking, setPicking] = useState<string | null>(null)
   const [pol, setPol] = useState<Polish>({ status: 'idle' })
@@ -154,7 +156,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, onC
   }
 
   const runPolish = async () => {
-    const input = weekPolishInput(plan, { recipes, people, meals, tasks, now: now ?? new Date() })
+    const input = weekPolishInput(plan, { recipes, people, meals, tasks, entries, now: now ?? new Date() })
     setPol({ status: 'busy' })
     try {
       setPol({ status: 'done', input, result: await polish(input) })

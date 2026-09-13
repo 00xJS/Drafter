@@ -17,6 +17,7 @@
 import { newerStamp } from '../../shared/domain.mjs'
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
+import { seenTasks } from '../../shared/people.mjs'
 import { SYNC_KINDS } from '../../shared/kinds.mjs'
 import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
@@ -62,8 +63,10 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   const done = tasks.filter(t => t.status === 'done' && inRange(t.completedAt) && !(t.tags ?? []).includes('visit')).map(t => t.title).slice(0, 40)
   const slipped = tasks.filter(t => OPEN.includes(t.status) && inRange(t.dueAt)).map(t => t.title).slice(0, 40)
   const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
+  // your own past events with people on them count as seeing them, as they do in Review
+  const visits = seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now)
   const seen = people
-    .filter(p => tasks.some(t => t.status === 'done' && inRange(t.completedAt) && (t.peopleIds ?? []).includes(p.id)))
+    .filter(p => visits.some(t => t.status === 'done' && inRange(t.completedAt) && (t.peopleIds ?? []).includes(p.id)))
     .map(p => p.name)
     .slice(0, 20)
   // the journal is personal: only this user's own entries, never a household peer's

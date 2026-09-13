@@ -53,6 +53,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
       people={store.people}
       meals={store.meals}
       tasks={store.tasks}
+      entries={store.events}
       onCreatePlace={createPlaceInline}
       onCreateRecipe={createRecipeInline}
       onApply={a => {
@@ -243,6 +244,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             entry={eventEditor.entry}
             defaultStartIso={eventEditor.startIso}
             defaultWork={eventEditor.work}
+            people={store.people}
+            onSavePerson={p => store.upsert(p)}
             onSave={saveEvents}
             onDelete={deleteEvent}
             onClose={() => setEventEditor(null)}

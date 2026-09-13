@@ -136,7 +136,7 @@ const component = (name: string) => resolve(SRC, 'components', `${name}.tsx`)
 /** The views and overlays planner/lazy.ts loads on demand. */
 const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Bills', 'NotesView', 'People', 'Places', 'Kitchen', 'Review', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet']
 /** …and what only they use, which must travel with them. */
-const LAZY_ONLY = [...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow'].map(component), resolve(SRC, 'markdown.ts')]
+const LAZY_ONLY = [...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component), resolve(SRC, 'markdown.ts')]
 
 /** Static edges only: `import type` and import() are not followed. */
 function staticImports(file: string): string[] {

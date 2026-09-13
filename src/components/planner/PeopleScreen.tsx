@@ -4,7 +4,7 @@ import { People, Places } from './lazy'
 /** People, with Places as its second segment. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, openJournal } = p
-  const { openTask, newTask, logOuting, logVisit, planAt, planWith } = p
+  const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor } = p
   return (
     <>
       <div className="people-tab-seg">
@@ -59,6 +59,7 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
           people={store.people}
           places={store.places}
           tasks={store.tasks}
+          entries={store.events}
           journal={store.journal}
           onOpenJournal={date => openJournal(date)}
           onSave={p => store.upsert(p)}
@@ -70,6 +71,7 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
           onLogVisit={logVisit}
           onPlan={planWith}
           onOpenTask={openTask}
+          onOpenEntry={e => setEventEditor({ entry: e, startIso: e.start })}
         />
       )}
     </>

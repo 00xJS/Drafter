@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { SetForm, TaskForm, newPerson, peopleSearch } from '../../taskform'
+import { SetForm, TaskForm } from '../../taskform'
 import { PROJECT_COLORS, Person, Place } from '../../types'
 import { uid } from '../../utils'
+import { PeoplePicker } from '../PeoplePicker'
 
 interface Props {
   form: Pick<TaskForm, 'peopleIds' | 'placeId'>
@@ -18,85 +19,18 @@ const randomColor = () => PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLO
 /** Who the task involves (anyone new can be added by name), and where it happens. */
 export function PeoplePlace({ form, set, people, places, onSavePlace, onSavePerson }: Props) {
   const { peopleIds, placeId } = form
-  const [peopleQuery, setPeopleQuery] = useState('')
   const [placeQuery, setPlaceQuery] = useState('')
-  // people added here, until the store hands them back in `people`: a chip never
-  // reads "Unknown", and a second Add of the same name finds the first
-  const [added, setAdded] = useState<Person[]>([])
-  const everyone = [...people, ...added.filter(a => !people.some(p => p.id === a.id))]
-
-  const { name, exact, matches } = peopleSearch(peopleQuery, everyone, peopleIds)
-  const canAddPerson = !!onSavePerson && !!name && !exact
-
-  function attach(p: Person) {
-    set(f => ({ peopleIds: f.peopleIds.includes(p.id) ? f.peopleIds : [...f.peopleIds, p.id] }))
-    setPeopleQuery('')
-  }
-
-  function addPerson() {
-    if (!canAddPerson) return
-    const p = newPerson(name, { id: uid(), color: randomColor(), now: new Date() })
-    onSavePerson!(p)
-    setAdded(a => [...a, p])
-    attach(p)
-  }
 
   return (
     <>
-      {(people.length > 0 || onSavePerson) && (
-        <div className="field">
-          <span>
-            People <small>(marking this done counts as seeing them)</small>
-          </span>
-          {/* only who is actually attached is listed; the rest are found by
-              typing, so a long contact list never fills the editor */}
-          {peopleIds.length > 0 && (
-            <div className="platform-toggles attendees">
-              {peopleIds.map(id => {
-                const p = everyone.find(x => x.id === id)
-                return (
-                  <button key={id} type="button" className="toggle on" onClick={() => set(f => ({ peopleIds: f.peopleIds.filter(x => x !== id) }))} title="Remove">
-                    {p?.emoji ? `${p.emoji} ` : ''}
-                    {p?.name ?? 'Unknown'} ✕
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          <input
-            className="people-picker-search"
-            value={peopleQuery}
-            onChange={e => setPeopleQuery(e.target.value)}
-            placeholder={peopleIds.length ? 'Add someone else…' : onSavePerson ? 'Search or add a person…' : 'Search people to add…'}
-            onKeyDown={e => {
-              if (e.key !== 'Enter' || !name) return
-              e.preventDefault()
-              // the exact name first, so Enter never adds someone who is already there
-              if (exact) {
-                if (!peopleIds.includes(exact.id)) attach(exact)
-              } else if (canAddPerson) addPerson()
-              else if (matches[0]) attach(matches[0])
-            }}
-          />
-          {name && (
-            <div className="platform-toggles picker-results">
-              {matches.map(p => (
-                <button key={p.id} type="button" className="toggle" onClick={() => attach(p)}>
-                  {p.emoji ? `${p.emoji} ` : ''}
-                  {p.name}
-                </button>
-              ))}
-              {canAddPerson && (
-                <button type="button" className="toggle add-person" onClick={addPerson}>
-                  + Add ‘{name}’ as a new person
-                </button>
-              )}
-              {exact && peopleIds.includes(exact.id) && matches.length === 0 && <small className="muted">{exact.name} is already on this task.</small>}
-              {!canAddPerson && !exact && matches.length === 0 && <small className="muted">No match.</small>}
-            </div>
-          )}
-        </div>
-      )}
+      <PeoplePicker
+        peopleIds={peopleIds}
+        onChange={update => set(f => ({ peopleIds: update(f.peopleIds) }))}
+        people={people}
+        onSavePerson={onSavePerson}
+        hint="marking this done counts as seeing them"
+        noun="task"
+      />
 
       <div className="field">
         <span>

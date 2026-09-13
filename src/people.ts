@@ -1,4 +1,4 @@
-import { Person, Task } from './types'
+import { CalendarEntry, Person, Task } from './types'
 import { startOfDay } from './taskutils'
 import { dateKey } from './utils'
 import {
@@ -6,6 +6,8 @@ import {
   DAY_MS,
   visitsFor as sharedVisitsFor,
   visitDays as sharedVisitDays,
+  eventVisits as sharedEventVisits,
+  seenTasks as sharedSeenTasks,
   plannedVisit as sharedPlannedVisit,
   plannedGift as sharedPlannedGift,
   seenStatus as sharedSeenStatus,
@@ -13,10 +15,12 @@ import {
 } from '../shared/people.mjs'
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
-// a dinner you planned, a task you did together. Everything below derives
-// from those completion dates. Each one is an event; "how often" is counted
-// in days seen, because three events with the same group on one Saturday are
-// one time you saw them, not three.
+// a dinner you planned, a task you did together. An event of your own they
+// are on counts too once it has happened, read as the visit task it amounts
+// to (eventVisits). Everything below derives from those completion dates.
+// Each one is an event; "how often" is counted in days seen, because three
+// events with the same group on one Saturday are one time you saw them, not
+// three.
 
 export interface Visit {
   task: Task
@@ -69,6 +73,24 @@ export function seenLabel(days: number, events: number): string {
 
 /** A YYYY-MM-DD key as a whole day number, so a DST hour never shortens a gap. */
 const dayNumber = (key: string) => Math.round(Date.parse(`${key}T00:00:00Z`) / DAY_MS)
+
+/**
+ * Your own past events with people on them, as the done visit tasks they
+ * amount to. Add them to the tasks a count reads and each counts as a
+ * subscribed calendar's event does once Who was there? has logged it. They
+ * are read, never saved.
+ */
+export function eventVisits(entries: CalendarEntry[], now: Date = new Date()): Task[] {
+  return sharedEventVisits(entries, now)
+}
+
+/**
+ * What every "have you seen them" figure reads: the tasks plus those event
+ * visits. People, Today, Review, Ask and the week plan all count through it.
+ */
+export function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date()): Task[] {
+  return sharedSeenTasks(tasks, entries, now)
+}
 
 /** Shared last/gap/weekly rollup used by people and places. */
 // Widened to anything carrying an instant: a place's outings now include meals

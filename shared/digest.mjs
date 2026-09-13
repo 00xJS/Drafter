@@ -2,7 +2,7 @@
 // Keep declarations in shared/digest.d.mts (not under netlify/functions/).
 
 import { legacyPostToTask } from './domain.mjs'
-import { seenStatus, upcomingOccasions, plannedVisit } from './people.mjs'
+import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mjs'
 import { OPEN, bucketByDue, focusTasks } from './today.mjs'
 import { tonightLine } from './kitchen.mjs'
 import { placeCadenceStatus } from './places.mjs'
@@ -66,12 +66,14 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
   const nowMs = now.getTime()
   const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 
+  // your own past events count as seeing whoever was on them, as on the People page
+  const seen = seenTasks(tasks, items.filter(i => i.kind === 'event'), now)
   const peopleDue = []
   const peopleIds = []
   for (const p of people) {
     // an open planned visit means the nudge already did its job
     if (plannedVisit(p.id, tasks)) continue
-    const { status, daysSince } = seenStatus(p, tasks, now)
+    const { status, daysSince } = seenStatus(p, seen, now)
     if (status !== 'overdue' && status !== 'never') continue
     if (status === 'never') {
       const created = Date.parse(p.createdAt ?? '')
