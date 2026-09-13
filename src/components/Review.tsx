@@ -7,12 +7,11 @@ import { JournalPeople } from './Journal'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
 import { excerpt, fmtDate, uid } from '../utils'
-import { DueBadge, ProjectChip, StatTile } from './bits'
+import { DueBadge, StatTile } from './bits'
 
 interface Props {
   tasks: Task[]
   projects: Project[]
-  projectMap: Map<string, Project>
   people: Person[]
   reviews: ReviewRecord[]
   /** Your journal (personal); the period's entries feed the summary. */
@@ -25,7 +24,6 @@ interface Props {
   onStatus(id: string, s: TaskStatus): void
   /** Move a set of tasks to a new due date (bulk reschedule). */
   onReschedule(ids: string[], dueAtIso: string): void
-  onOpenProject(p: Project): void
   onNew(preset?: Partial<Task>): void
   /** Open the "Plan next week" sheet. Without it there is no button. */
   onPlanWeek?(): void
@@ -42,7 +40,8 @@ function nextMonday(from = new Date()): string {
   return d.toISOString()
 }
 
-function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Task[]; projectMap: Map<string, Project>; onOpen(t: Task): void; onStatus?(id: string, s: TaskStatus): void; max?: number }) {
+// one ongoing home project: a project chip on every row would say nothing
+function TaskList({ tasks, onOpen, onStatus, max = 12 }: { tasks: Task[]; onOpen(t: Task): void; onStatus?(id: string, s: TaskStatus): void; max?: number }) {
   if (tasks.length === 0) return <p className="empty">Nothing here.</p>
   return (
     <ul className="dash-list tlist">
@@ -62,7 +61,6 @@ function TaskList({ tasks, projectMap, onOpen, onStatus, max = 12 }: { tasks: Ta
             <button type="button" className="row-open">
               <span className="dash-title">{t.title || 'Untitled'}</span>
             </button>
-            <span className="dash-meta">{t.projectId && projectMap.get(t.projectId) && <ProjectChip project={projectMap.get(t.projectId)!} />}</span>
           </div>
           {t.status === 'done' ? <small className="muted">{fmtDate(t.completedAt)}</small> : <DueBadge task={t} />}
         </li>
@@ -90,7 +88,7 @@ export function reloadDraft(prev: { key: string; stamp?: string }, next: { key: 
   return next.stamp !== prev.stamp && next.stamp !== ownStamp
 }
 
-export function Review({ tasks, projects, projectMap, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onOpenProject, onNew, onPlanWeek }: Props) {
+export function Review({ tasks, projects, people, reviews, journal, places, habits, onSaveReview, onOpen, onStatus, onReschedule, onNew, onPlanWeek }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
@@ -149,15 +147,13 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
       const text = await summarizeReview({
         period,
         label: range.label,
-        done: data.done.map(t => `${t.title}${t.projectId && projectMap.get(t.projectId) ? ` (${projectMap.get(t.projectId)!.name})` : ''}`),
+        done: data.done.map(t => t.title),
         slipped: data.slipped.map(t => t.title),
         upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
         people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
         places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
         // one compact line so the model can weigh it without a tally per day
         habits: habitStats.due > 0 ? [`${habitStats.pct}% consistent (${habitStats.done}/${habitStats.due}): ${habitStats.rows.map(r => `${r.habit.name} ${r.done}/${r.due}`).join(' · ')}`] : [],
-        projects: data.projects.map(p => `${p.project.name}: ${p.done} done, ${p.open} open`),
-        stalled: data.stalled.map(p => p.name),
         reflections,
         lastTop,
         kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),
@@ -245,7 +241,6 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
         <StatTile label="Slipped" value={String(data.slipped.length)} sub="due in this period, still open" warn={data.slipped.length > 0} />
         <StatTile label={`Next ${period}`} value={String(data.upcoming.length)} sub="already on the calendar" />
         <StatTile label="People seen" value={String(data.people.length)} sub={`${data.people.reduce((s, p) => s + p.visits.length, 0)} visits`} />
-        <StatTile label="Stalled projects" value={String(data.stalled.length)} sub="no activity this period" warn={data.stalled.length > 0} />
         {wrote.length > 0 && <StatTile label="Journal" value={String(wrote.length)} sub={mood ? `days written · mood ${mood}/5` : 'days written'} />}
       </div>
 
@@ -274,7 +269,7 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
               <span key={i} className="review-day" style={{ height: `${n === 0 ? 6 : 20 + (n / Math.max(...data.doneByDay, 1)) * 80}%` }} title={`${n} done`} />
             ))}
           </div>
-          <TaskList tasks={data.done} projectMap={projectMap} onOpen={onOpen} />
+          <TaskList tasks={data.done} onOpen={onOpen} />
         </section>
 
         <section className={data.overdueNow.length > 0 ? 'chart-card warn-card' : 'chart-card'}>
@@ -294,7 +289,7 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
               </div>
             )}
           </header>
-          <TaskList tasks={isCurrent ? data.overdueNow : data.slipped} projectMap={projectMap} onOpen={onOpen} onStatus={onStatus} />
+          <TaskList tasks={isCurrent ? data.overdueNow : data.slipped} onOpen={onOpen} onStatus={onStatus} />
         </section>
 
         <section className="chart-card">
@@ -325,49 +320,7 @@ export function Review({ tasks, projects, projectMap, people, reviews, journal, 
             <span>Reflections</span>
             <textarea rows={3} value={reflections} onChange={e => setReflections(e.target.value)} onBlur={() => persist({})} placeholder="What worked, what didn't, what to change…" />
           </label>
-          <TaskList tasks={data.upcoming} projectMap={projectMap} onOpen={onOpen} max={6} />
-        </section>
-
-        <section className="chart-card">
-          <header className="chart-head">
-            <div>
-              <h3>Projects</h3>
-              <p className="chart-sub">Movement by project</p>
-            </div>
-          </header>
-          {data.projects.length === 0 && data.stalled.length === 0 ? (
-            <p className="empty">No project activity.</p>
-          ) : (
-            <ul className="dash-list">
-              {data.projects.map(r => (
-                <li key={r.project.id} onClick={() => onOpenProject(r.project)}>
-                  <div className="dash-main">
-                    <button type="button" className="row-open">
-                      <span className="dash-title">
-                        <ProjectChip project={r.project} />
-                      </span>
-                    </button>
-                  </div>
-                  <small className="muted">
-                    {r.done} done · {r.open} open
-                  </small>
-                </li>
-              ))}
-              {data.stalled.map(p => (
-                <li key={p.id} onClick={() => onOpenProject(p)}>
-                  <div className="dash-main">
-                    <button type="button" className="row-open">
-                      <span className="dash-title">
-                        <ProjectChip project={p} />
-                      </span>
-                    </button>
-                    <span className="dash-reason">Nothing moved — still worth doing?</span>
-                  </div>
-                  <span className="badge badge-blocked">stalled</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <TaskList tasks={data.upcoming} onOpen={onOpen} max={6} />
         </section>
 
         <section className="chart-card">

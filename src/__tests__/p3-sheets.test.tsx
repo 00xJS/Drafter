@@ -147,7 +147,7 @@ describe('today’s focus on Today (B4)', () => {
   it('reads "N of M done" with each block’s time, and is not drawn when empty', () => {
     const [garage, bank] = tasks()
     const card = (ts: Task[]) =>
-      renderToStaticMarkup(<FocusCard tasks={ts} blocks={blocksOn([block], TODAY)} projectMap={new Map()} onOpen={noop} onStatus={noop} onDefer={noop} onEdit={noop} />)
+      renderToStaticMarkup(<FocusCard tasks={ts} blocks={blocksOn([block], TODAY)} onOpen={noop} onStatus={noop} onDefer={noop} onEdit={noop} />)
     const html = card([garage, bank])
     expect(html).toContain('1 of 2 done')
     expect(html).toContain('10am–11am')
@@ -184,13 +184,10 @@ describe('today’s focus on Today (B4)', () => {
       onSaw: noop,
       onSaveReview: noop,
       projects: [],
-      projectMap: new Map(),
       events: [],
       sourceMap: new Map(),
       onPlan: noop,
       onOpen: noop,
-      onOpenProject: noop,
-      onNewProject: noop,
       onStatus: noop,
       onDefer: noop,
       onDeferAll: noop,

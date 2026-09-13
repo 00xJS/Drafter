@@ -17,14 +17,13 @@ import {
   Routine,
   Task,
   TaskStatus,
-  projectProgress,
 } from '../types'
 import { tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, compareStats, personStats, plannedGift, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
-import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, stalledProjects, weekRange, shiftRange } from '../review'
+import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, isOpen, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { haptic } from '../native'
@@ -32,7 +31,7 @@ import { lockAxis } from '../pull'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
-import { DueBadge, PriorityMark, ProgressBar, ProjectChip, StatTile } from './bits'
+import { DueBadge, PriorityMark, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
 import { RoutinesCard } from './RoutinesCard'
 import { BriefingCard, briefingFacts } from './BriefingCard'
@@ -44,23 +43,9 @@ import { blocksOn } from '../focus'
 import type { PlanStep } from './PlanDaySheet'
 import { dayClosed } from '../dayclose'
 
-/** The line under a project on Today: its count once it has tasks, never "0/0 done" before then. */
-export function projectCardSub(progress: { done: number; total: number }, targetAt?: string): string {
-  const count = progress.total > 0 ? `${progress.done}/${progress.total} done` : 'No tasks yet'
-  return targetAt ? `${count} · target ${new Date(targetAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : count
-}
-
-/**
- * The projects Today shows as progress cards: active ones with a target date.
- * A project with no end — the ongoing home project the app now centres on —
- * has no meaningful "% done", so it lives on the Timeline, the Week review and
- * search rather than sitting on Today as a bar that never fills.
- */
-export function projectsForToday(projects: Project[], tasks: Task[]) {
-  return projects
-    .filter(p => p.status === 'active' && !!p.targetAt)
-    .map(p => ({ project: p, progress: projectProgress(tasks.filter(t => t.projectId === p.id)) }))
-}
+// One ongoing home project: Today shows no project cards, no "stalled" line
+// and no project chips — a bar that never fills and a chip on every row would
+// say nothing. Projects live on the Timeline and in search.
 
 interface Props {
   tasks: Task[]
@@ -77,14 +62,10 @@ interface Props {
   onSaw(p: Person): void
   onSaveReview(r: ReviewRecord): void
   projects: Project[]
-  projectMap: Map<string, Project>
   events: CalendarEvent[]
   sourceMap: Map<string, CalendarSource>
   onPlan(ev: CalendarEvent): void
   onOpen(t: Task): void
-  onOpenProject(p: Project): void
-  /** The welcome hero's first step: there is no project bar to start one from. */
-  onNewProject(): void
   onStatus(id: string, s: TaskStatus): void
   onDefer(id: string, day: Date): void
   onDeferAll(ids: string[], day: Date): void
@@ -239,14 +220,12 @@ export function bandOf(dx: number, prev: DragBand, canDefer: boolean): DragBand 
  */
 function TaskRow({
   task,
-  project,
   reason,
   onOpen,
   onStatus,
   onDefer,
 }: {
   task: Task
-  project?: Project
   reason?: string
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -371,7 +350,6 @@ function TaskRow({
             </span>
           </button>
           <span className="dash-meta">
-            {project && <ProjectChip project={project} />}
             {reason && <span className="why">{reason}</span>}
             {task.status === 'blocked' && <span className="badge badge-blocked">Blocked</span>}
             {task.status === 'doing' && <span className="badge badge-doing">Doing</span>}
@@ -407,7 +385,6 @@ function TaskRow({
 export function FocusCard({
   tasks,
   blocks,
-  projectMap,
   onOpen,
   onStatus,
   onDefer,
@@ -417,7 +394,6 @@ export function FocusCard({
   tasks: Task[]
   /** Each task's time block today, by task id. */
   blocks: Map<string, CalendarEntry>
-  projectMap: Map<string, Project>
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
   onDefer(id: string, day: Date): void
@@ -448,7 +424,6 @@ export function FocusCard({
             <TaskRow
               key={t.id}
               task={t}
-              project={t.projectId ? projectMap.get(t.projectId) : undefined}
               reason={block ? `${clock(block.start)}–${clock(block.end)}` : undefined}
               onOpen={onOpen}
               onStatus={onStatus}
@@ -491,13 +466,10 @@ export function Today({
   onSaw,
   onSaveReview,
   projects,
-  projectMap,
   events,
   sourceMap,
   onPlan,
   onOpen,
-  onOpenProject,
-  onNewProject,
   onStatus,
   onDefer,
   onDeferAll,
@@ -564,7 +536,6 @@ export function Today({
     return { upNext: nextUp(tasks, projects, 6, new Date(), pinned, focusIds), upNextInFocus: all.filter(n => focusIds.has(n.task.id)).length }
   }, [tasks, projects, top3, topDone, focusIds])
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
-  const stalled = useMemo(() => stalledProjects(projects, allTasks), [projects, allTasks])
   const peopleNudges = useMemo(
     () =>
       people
@@ -626,9 +597,8 @@ export function Today({
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))
     const doneRecent = doneRecentAll.filter(t => !isVisit(t))
     const visitsRecent = doneRecentAll.filter(isVisit)
-    const activeProjects = projectsForToday(projects, tasks)
-    return { open, overdue, today, late, week, doing, blocked, stale, inbox, doneRecent, visitsRecent, activeProjects }
-  }, [tasks, projects])
+    return { open, overdue, today, late, week, doing, blocked, stale, inbox, doneRecent, visitsRecent }
+  }, [tasks])
 
   const toggleTop = (index: number) => {
     if (!weekReview) return
@@ -648,14 +618,11 @@ export function Today({
       <div className="empty-hero">
         <h2>Welcome to your planner</h2>
         <p>
-          Start with a project, then add tasks with due dates. This page becomes your daily driver: what's overdue,
-          what's due today, and what the week looks like.
+          Add tasks with due dates and this page becomes your daily driver: what's overdue, what's due today, and what
+          the week looks like.
         </p>
         <p>
-          <button className="btn primary" onClick={onNewProject}>
-            + New project
-          </button>{' '}
-          <button className="btn" onClick={() => onNew()}>
+          <button className="btn primary" onClick={() => onNew()}>
             + New task
           </button>
         </p>
@@ -726,7 +693,6 @@ export function Today({
       <FocusCard
         tasks={focus}
         blocks={blocks}
-        projectMap={projectMap}
         onOpen={onOpen}
         onStatus={onStatus}
         onDefer={onDeferFromFocus ?? onDefer}
@@ -742,7 +708,7 @@ export function Today({
           </header>
           <ul className="dash-list tlist">
             {freeTime.map(t => (
-              <TaskRow key={t.id} task={t} project={t.projectId ? projectMap.get(t.projectId) : undefined} onOpen={onOpen} onStatus={onStatus} />
+              <TaskRow key={t.id} task={t} onOpen={onOpen} onStatus={onStatus} />
             ))}
           </ul>
         </section>
@@ -899,7 +865,6 @@ export function Today({
                 key={task.id}
                 task={task}
                 reason={reason}
-                project={task.projectId ? projectMap.get(task.projectId) : undefined}
                 onOpen={onOpen}
                 onStatus={onStatus}
                 onDefer={onDefer}
@@ -908,44 +873,6 @@ export function Today({
           </ul>
           {upNextInFocus > 0 && <p className="board-more focus-more">+ {upNextInFocus} in today’s focus</p>}
         </section>
-      )}
-
-      {stalled.length > 0 && (
-        <p className="stalled-line">
-          <span className="badge badge-blocked">Stalled</span>
-          {stalled.map(p => (
-            <button key={p.id} className="pchip static stalled-chip" onClick={() => onOpenProject(p)} title="No activity in 14 days — still worth doing?">
-              <span className="pdot" style={{ background: p.color }} />
-              {p.emoji ? `${p.emoji} ` : ''}
-              {p.name}
-            </button>
-          ))}
-          <small className="muted">nothing moved in 14 days — pick one up or pause it</small>
-        </p>
-      )}
-
-      {s.activeProjects.length > 0 && (
-        <div className="project-cards">
-          {s.activeProjects.map(({ project, progress }) => {
-            // a project with nothing in it has no progress yet: "0%" and an
-            // empty bar read as stalled when it is only new
-            const started = progress.total > 0
-            return (
-              <button key={project.id} className="project-card" onClick={() => onOpenProject(project)}>
-                <span className="project-card-head">
-                  <span className="pdot" style={{ background: project.color }} />
-                  <span className="project-card-name">
-                    {project.emoji && <span>{project.emoji} </span>}
-                    {project.name}
-                  </span>
-                  {started && <span className="project-card-pct">{progress.pct}%</span>}
-                </span>
-                {started && <ProgressBar pct={progress.pct} color={project.color} />}
-                <span className="project-card-sub">{projectCardSub(progress, project.targetAt)}</span>
-              </button>
-            )
-          })}
-        </div>
       )}
 
       {sections.length === 0 ? (
@@ -977,7 +904,7 @@ export function Today({
               </header>
               <ul className="dash-list tlist">
                 {sec.tasks.slice(0, 12).map(t => (
-                  <TaskRow key={t.id} task={t} project={t.projectId ? projectMap.get(t.projectId) : undefined} onOpen={onOpen} onStatus={onStatus} onDefer={onDefer} />
+                  <TaskRow key={t.id} task={t} onOpen={onOpen} onStatus={onStatus} onDefer={onDefer} />
                 ))}
               </ul>
               {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
@@ -1147,7 +1074,6 @@ export function Today({
                   <button type="button" className="row-open">
                     <span className="dash-title">{t.title || excerpt(t.description, 60) || 'Untitled'}</span>
                   </button>
-                  <span className="dash-meta">{t.projectId && projectMap.get(t.projectId) && <ProjectChip project={projectMap.get(t.projectId)!} />}</span>
                 </div>
                 <span className="dash-reason">{timeAgo(t.completedAt!)}</span>
               </li>

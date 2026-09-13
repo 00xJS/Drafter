@@ -268,8 +268,6 @@ export async function summarizeReview(input: {
   places?: string[]
   /** One line: "86% consistent (12/14): Read 6/7 · Gym 3/3" — only sent when something was due. */
   habits?: string[]
-  projects: string[]
-  stalled: string[]
   reflections?: string
   /** Prior period's Top 3 commitments. */
   lastTop?: string[]
@@ -286,8 +284,8 @@ export async function summarizeReview(input: {
           .join('\n')
       : '- none recorded'
   return complete(
-    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks, projects and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. When the journal explains why the period went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nProjects:\n${list(input.projects)}\n\nStalled projects:\n${list(input.stalled)}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. When the journal explains why the period went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
+    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
     900,
   )
 }

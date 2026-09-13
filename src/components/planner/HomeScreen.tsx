@@ -8,9 +8,9 @@ import { HOME_TABS } from './routes'
 
 /** Home: the day, the week's look-back and the journal, three segments of one tab. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, filteredTasks, allEvents, sourceMap, showToast } = p
+  const { store, household, filteredTasks, allEvents, sourceMap, showToast } = p
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal } = p
-  const { openTask, newTask, openProject, newProject, changeStatus, defer, deferAll } = p
+  const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
   return (
@@ -51,13 +51,10 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onSaw={sawThem}
           onSaveReview={r => store.upsert(r)}
           projects={store.projects}
-          projectMap={projectMap}
           events={allEvents}
           sourceMap={sourceMap}
           onPlan={planForEvent}
           onOpen={openTask}
-          onOpenProject={openProject}
-          onNewProject={newProject}
           onStatus={changeStatus}
           onDefer={defer}
           onDeferAll={deferAll}
@@ -106,7 +103,6 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
         <Review
           tasks={store.tasks}
           projects={store.projects}
-          projectMap={projectMap}
           people={store.people}
           reviews={store.reviews}
           journal={store.journal}
@@ -122,7 +118,6 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             }
             showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
           }}
-          onOpenProject={openProject}
           onNew={preset => newTask(preset)}
           onPlanWeek={() => openSheet({ kind: 'week' })}
         />

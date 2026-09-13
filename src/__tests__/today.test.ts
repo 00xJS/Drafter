@@ -167,11 +167,9 @@ describe('one home project: the bar and its filter are gone', () => {
     expect(planner).toMatch(/\{inHousehold && mineOnly && \(view === 'home' \|\| view === 'calendar'\) && \(\s*<button type="button" className="mine-note" onClick=\{\(\) => setMineOnly\(false\)\}>/)
   })
 
-  it('starts a new user with a project, from a button that exists', () => {
-    // the + Project chip went with the project bar; the hero offers its own
-    expect(today).not.toMatch(/\+ Project<\/strong>/)
-    expect(today).toMatch(/<button className="btn primary" onClick=\{onNewProject\}>\s*\+ New project/)
-    expect(planner).toMatch(/<Today\b[\s\S]*?onNewProject=\{newProject\}/)
+  it('starts a new user with a task: there is only the one home project', () => {
+    expect(today).not.toMatch(/\+ Project<\/strong>|\+ New project|onNewProject/)
+    expect(today).toMatch(/<button className="btn primary" onClick=\{\(\) => onNew\(\)\}>\s*\+ New task/)
   })
 
   it("selects a project for Notes locally, never through a global filter", () => {

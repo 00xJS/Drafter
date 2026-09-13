@@ -114,8 +114,10 @@ describe('a row that opens something can be reached from the keyboard', () => {
   const clickable = elements('li|tr|td|p|article|div|span|section').filter(e => /\sonClick=/.test(e.tag))
 
   it('finds the rows it guards', () => {
-    expect(clickable.length).toBeGreaterThan(10)
-    expect(clickable.filter(e => /\brow-open\b/.test(e.element)).length).toBeGreaterThanOrEqual(10)
+    // a floor that proves the scan still sees rows, not a quota: the Week
+    // review's two project rows went with the one-project change
+    expect(clickable.length).toBeGreaterThan(8)
+    expect(clickable.filter(e => /\brow-open\b/.test(e.element)).length).toBeGreaterThanOrEqual(8)
   })
 
   it('gives every clickable element a role, or a row-open title to focus', () => {
@@ -127,7 +129,7 @@ describe('a row that opens something can be reached from the keyboard', () => {
 
   it('keeps row-open a bare button, so the row alone decides what a click does', () => {
     const titles = elements('button').filter(e => /className="row-open\b/.test(e.tag))
-    expect(titles.length).toBeGreaterThanOrEqual(10)
+    expect(titles.length).toBeGreaterThanOrEqual(8)
     for (const t of titles) {
       expect(t.tag, t.where).toMatch(/\stype="button"/)
       expect(t.tag, t.where).not.toMatch(/\son[A-Z]\w*=/)
