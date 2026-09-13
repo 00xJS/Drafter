@@ -179,6 +179,17 @@ export function allocateBlocks(slots: { start: Date; end: Date }[], picks: { tas
   return out
 }
 
+/** Each task's time block on `dayKey`: its earliest timed entry that day whose taskId names it. */
+export function blocksOn(entries: readonly CalendarEntry[], dayKey: string): Map<string, CalendarEntry> {
+  const out = new Map<string, CalendarEntry>()
+  for (const e of entries) {
+    if (!e.taskId || e.deletedAt || e.allDay || dateKey(e.start) !== dayKey) continue
+    const cur = out.get(e.taskId)
+    if (!cur || Date.parse(e.start) < Date.parse(cur.start)) out.set(e.taskId, e)
+  }
+  return out
+}
+
 // ---- dates -------------------------------------------------------------------
 
 /**

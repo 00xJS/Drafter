@@ -21,6 +21,7 @@ interface Deps {
   setAdminOpen: Overlays['setAdminOpen']
   setEditor: Overlays['setEditor']
   newTask: Overlays['newTask']
+  openSheet: Overlays['openSheet']
   goTasksTab: Nav['goTasksTab']
   goPeopleTab: Nav['goPeopleTab']
   setHomeTab: Nav['setHomeTab']
@@ -44,6 +45,7 @@ export function useDeepLinks({
   setAdminOpen,
   setEditor,
   newTask,
+  openSheet,
   goTasksTab,
   goPeopleTab,
   setHomeTab,
@@ -110,6 +112,26 @@ export function useDeepLinks({
     } else if (parsed.tab) {
       goPeopleTab(parsed.tab)
       setView('people')
+    }
+    if (parsed.plan) {
+      // A planning sheet and nothing else — the morning digest, a Shortcut's
+      // drafter://open?plan=day. The link writes nothing, and whatever else it
+      // carries is ignored; the sheet writes only when its own button is
+      // pressed. With no view of its own it opens over the day, where the plan
+      // shows once it is applied.
+      if (parsed.plan === 'week') {
+        // Plan next week's sheet arrives with its own stream; until then the
+        // link lands on the Week segment the sheet will open over
+        setHomeTab('week')
+        setView('home')
+      } else {
+        if (!parsed.view) {
+          setHomeTab('today')
+          setView('home')
+        }
+        openSheet(parsed.plan === 'day' ? { kind: 'day' } : { kind: 'shutdown' })
+      }
+      return
     }
     if (parsed.journal) {
       // a line from a Shortcut / share lands in today's entry; nothing already written is touched
