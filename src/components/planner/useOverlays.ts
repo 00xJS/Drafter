@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { CalendarEntry, CalendarEvent, Project, Task, WorkMode } from '../../types'
+import type { PlanStep } from '../PlanDaySheet'
+
+/**
+ * The planning sheet over the screen. There is one slot, so opening a sheet
+ * replaces whichever was up. Each kind is a render in Overlays.tsx inside its
+ * own Layer and a chunk in lazy.ts. Plan next week and Ask Drafter join the
+ * union as `{ kind: 'week' }` and `{ kind: 'ask'; question?: string }`: a
+ * member here, a render there, a chunk in lazy.ts, and whatever opens it.
+ */
+export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' }
 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
@@ -14,6 +24,10 @@ export function useOverlays() {
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
   const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
+  /** Plan my day or Shut down; null when no planning sheet is up. */
+  const [sheet, setSheet] = useState<Sheet | null>(null)
+  const openSheet = (s: Sheet) => setSheet(s)
+  const closeSheet = () => setSheet(null)
 
   // Cmd/Ctrl+K opens search from anywhere
   useEffect(() => {
@@ -37,9 +51,12 @@ export function useOverlays() {
   const newProject = () => setProjectEditor({})
 
   /** Pull to refresh stands down while any of these owns the screen. */
-  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || searchOpen || settingsOpen || trashOpen || adminOpen
+  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || trashOpen || adminOpen
 
   return {
+    sheet,
+    openSheet,
+    closeSheet,
     editor,
     setEditor,
     projectEditor,

@@ -11,35 +11,9 @@ import { FocusPicker, MoveChips } from './PlanDaySheet'
 import type { MoveTo } from './PlanDaySheet'
 import { RoutineTicks } from './RoutinesCard'
 
-const CLOSED_PREFIX = 'drafter:shutdown:'
-/** "Day closed" is this device's own note, never synced: another device may not have shut down. */
-export const shutdownKey = (day: string): string => `${CLOSED_PREFIX}${day}`
-
-export function dayClosed(day: string): boolean {
-  try {
-    return localStorage.getItem(shutdownKey(day)) === '1'
-  } catch {
-    return false
-  }
-}
-
-/** Mark `day` closed, forgetting any earlier day's mark while we are here. */
-export function closeDay(day: string): void {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i)
-      if (key?.startsWith(CLOSED_PREFIX) && key !== shutdownKey(day)) localStorage.removeItem(key)
-    }
-    localStorage.setItem(shutdownKey(day), '1')
-  } catch {}
-}
-
-/** Undo of a shut-down: the strip offers Shut down again. */
-export function reopenDay(day: string): void {
-  try {
-    localStorage.removeItem(shutdownKey(day))
-  } catch {}
-}
+// The "Day closed" note lives in src/dayclose.ts, so Today and the planner can
+// use it without loading this sheet's chunk; re-exported for existing callers.
+export { closeDay, dayClosed, reopenDay, shutdownKey } from '../dayclose'
 
 const LEFTOVER_MOVES: readonly MoveTo[] = ['tomorrow', 'nextweek', 'wishlist', 'done']
 const TOMORROW_GROUPS: Record<FocusGroup, string> = { carried: 'From your focus', dueToday: 'Due tomorrow', weekTop: 'This week’s 3', nextUp: 'Next up' }

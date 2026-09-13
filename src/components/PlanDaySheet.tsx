@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { CalendarEntry, CalendarEvent, MEAL_SLOT_META, Meal, MealSlot, OPEN_STATUSES, Place, Project, Recipe, Review, Task } from '../types'
-import { MAX_FOCUS, focusCandidates, freeSlots } from '../focus'
+import { MAX_FOCUS, blocksOn, focusCandidates, freeSlots } from '../focus'
 import type { DayMove, DayPlanResult, FocusCandidate, FocusGroup } from '../focus'
 import { focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
 import { compareTasks, dayOffset } from '../taskutils'
-import { clock, dateKey, uid } from '../utils'
+import { clock, uid } from '../utils'
 import { DueBadge } from './bits'
 import { Modal, ModalHead } from './Modal'
 import { openMealIdeas } from './MealIdeasCard'
@@ -98,16 +98,9 @@ export function planBlocks(
   return out
 }
 
-/** Each task's time block on `dayKey`: its earliest timed entry that day whose taskId names it. */
-export function blocksOn(entries: readonly CalendarEntry[], dayKey: string): Map<string, CalendarEntry> {
-  const out = new Map<string, CalendarEntry>()
-  for (const e of entries) {
-    if (!e.taskId || e.deletedAt || e.allDay || dateKey(e.start) !== dayKey) continue
-    const cur = out.get(e.taskId)
-    if (!cur || Date.parse(e.start) < Date.parse(cur.start)) out.set(e.taskId, e)
-  }
-  return out
-}
+// blocksOn lives in focus.ts, so Today can read a task's block without loading
+// this sheet's chunk; re-exported for existing callers.
+export { blocksOn } from '../focus'
 
 /** One row's move: a pill per destination, pressed again to leave the task where it is. */
 export function MoveChips({ title, value, options, onChange }: { title: string; value?: MoveTo; options: readonly MoveTo[]; onChange(to: MoveTo | undefined): void }) {

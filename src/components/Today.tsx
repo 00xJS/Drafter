@@ -38,9 +38,11 @@ import { RoutinesCard } from './RoutinesCard'
 import { BriefingCard, briefingFacts } from './BriefingCard'
 import type { BriefingCta } from './BriefingCard'
 import { MealIdeasCard } from './MealIdeasCard'
-import { blocksOn } from './PlanDaySheet'
+// from focus.ts and dayclose.ts, not the sheets: a static import of either
+// sheet would pull its chunk into the first load
+import { blocksOn } from '../focus'
 import type { PlanStep } from './PlanDaySheet'
-import { dayClosed } from './ShutdownSheet'
+import { dayClosed } from '../dayclose'
 
 /** The line under a project on Today: its count once it has tasks, never "0/0 done" before then. */
 export function projectCardSub(progress: { done: number; total: number }, targetAt?: string): string {
