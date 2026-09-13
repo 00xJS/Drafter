@@ -51,6 +51,19 @@ export function briefingFacts(events: CalendarEvent[], habits: Habit[], now: Dat
   return out
 }
 
+/** The day's one action on the strip: plan it in the morning, close it at night. */
+export interface BriefingCta {
+  label: 'Plan my day' | 'Shut down' | 'Day closed'
+  /** Absent, the tile is a statement rather than a button. */
+  onClick?(): void
+}
+
+const CTA_META: Record<BriefingCta['label'], { glyph: string; sub: string }> = {
+  'Plan my day': { glyph: '☀️', sub: 'Pick today’s three' },
+  'Shut down': { glyph: '🌙', sub: 'Wrap up, set tomorrow' },
+  'Day closed': { glyph: '✓', sub: 'See you tomorrow' },
+}
+
 /** The picker's value for a cache: off, the device, or a city id. */
 export function weatherChoice(cache: WeatherCache): string {
   if (!cache.enabled) return ''
@@ -72,6 +85,7 @@ export function BriefingCard({
   dinner,
   now,
   name,
+  cta,
 }: {
   events: CalendarEvent[]
   habits: Habit[]
@@ -79,6 +93,12 @@ export function BriefingCard({
   now: Date
   /** Who to greet; the first name is used. Absent, the greeting stands alone. */
   name?: string
+  /**
+   * Plan my day / Shut down / Day closed, as the strip's first tile. A tile and
+   * not a header button: at 375pt the header already holds the greeting and
+   * the weather picker, and has no room for a third thing.
+   */
+  cta?: BriefingCta
 }) {
   const [cache, setCache] = useState<WeatherCache>(() => readCache())
   // Only an enabled cache seeds the tile: a forecast left under enabled:false
@@ -154,7 +174,19 @@ export function BriefingCard({
   // not for "San Francisco, CA" as well — a third line there makes the weather
   // tile taller than its neighbour and the strip stops being quiet.
   const place = cityById(cache.city)?.name ?? 'Your location'
-  const hasTiles = !!(forecast || facts.work || facts.events || facts.habits || dinner)
+  const hasTiles = !!(cta || forecast || facts.work || facts.events || facts.habits || dinner)
+  const ctaMeta = cta ? CTA_META[cta.label] : null
+  const ctaBody = cta && ctaMeta && (
+    <>
+      <span className="briefing-glyph" aria-hidden>
+        {ctaMeta.glyph}
+      </span>
+      <span className="briefing-text">
+        <span className="briefing-main">{cta.label}</span>
+        <span className="briefing-sub">{ctaMeta.sub}</span>
+      </span>
+    </>
+  )
 
   return (
     <section className="chart-card briefing" aria-label="Your day">
@@ -192,6 +224,17 @@ export function BriefingCard({
       )}
       {hasTiles && (
         <ul className="briefing-tiles">
+          {cta && (
+            <li className={`briefing-tile briefing-cta${cta.label === 'Day closed' ? ' closed' : ''}`}>
+              {cta.onClick ? (
+                <button type="button" className="briefing-cta-btn" onClick={cta.onClick}>
+                  {ctaBody}
+                </button>
+              ) : (
+                <span className="briefing-cta-btn">{ctaBody}</span>
+              )}
+            </li>
+          )}
           {forecast && weather && (
             <li className="briefing-tile" title={place}>
               <span className="briefing-glyph" aria-hidden>
