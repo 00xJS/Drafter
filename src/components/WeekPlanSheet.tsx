@@ -3,7 +3,7 @@ import { weekPlanSummary } from '../../shared/weekplan.mjs'
 import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.mjs'
 import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '../ai'
 import { formatMoney } from '../bills'
-import { mealId } from '../kitchen'
+import { mealId, nextSwap } from '../kitchen'
 import { Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureKind } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
@@ -84,19 +84,6 @@ export function acceptedPlan(plan: WeekPlan, c: WeekPlanChoices): AcceptedPlan {
     else dismissed.push(t.key)
   }
   return { dinners, people, resched, wishlist, top3, dismissed }
-}
-
-/**
- * Where Swap moves in a night's cycle (its own pick, then its alternatives):
- * the first choice after `current` that no other ticked night has, so a week
- * never gets one dish twice. Null when every other choice is taken.
- */
-export function nextSwap(cycle: readonly string[], current: number, taken: ReadonlySet<string>): number | null {
-  for (let step = 1; step < cycle.length; step++) {
-    const i = (current + step) % cycle.length
-    if (!taken.has(cycle[i])) return i
-  }
-  return null
 }
 
 /** How many things "Add N to next week" adds. */

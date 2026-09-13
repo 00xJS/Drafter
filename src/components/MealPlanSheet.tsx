@@ -3,7 +3,7 @@ import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared
 import type { MealHistory } from '../../shared/weekplan.mjs'
 import { weekDayKeys } from '../../shared/weeks.mjs'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
-import { mealId, recipeByName } from '../kitchen'
+import { mealId, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { dateKey } from '../utils'
 import { aiFailureKind } from './AskSheet'
@@ -276,9 +276,13 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
     setRows(cur => fresh.map(r => cur.find(x => x.key === r.key) ?? toState(r)))
   }
 
+  // the ranking's alternatives and the spare new recipes are offered to every
+  // night alike, so Swap skips whatever another ticked slot already has
+  const optionKey = (c: SlotChoice) => `${c.kind}:${c.id ?? c.title}`
+  const swapTo = (r: RowState) => nextSwap(r.options.map(optionKey), r.alt, new Set(rows.flatMap(x => (x.key !== r.key && x.on && x.choice ? [optionKey(x.choice)] : []))))
   const swap = (r: RowState) => {
-    if (r.options.length < 2) return
-    const alt = (r.alt + 1) % r.options.length
+    const alt = swapTo(r)
+    if (alt === null) return
     setRow(r.key, { alt, choice: r.options[alt], on: true })
   }
 
@@ -433,7 +437,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
                       </span>
                     )}
                     <div className="week-plan-actions">
-                      <button type="button" className="btn subtle" onClick={() => swap(r)} disabled={r.options.length < 2}>
+                      <button type="button" className="btn subtle" onClick={() => swap(r)} disabled={swapTo(r) === null}>
                         Swap
                       </button>
                       <button type="button" className="btn subtle" aria-expanded={picking === r.key} onClick={() => setPicking(p => (p === r.key ? null : r.key))}>

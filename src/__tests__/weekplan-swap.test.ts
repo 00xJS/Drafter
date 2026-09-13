@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { nextSwap } from '../components/WeekPlanSheet'
+import { nextSwap } from '../kitchen'
 
 // Two nights' alternatives can share a dish (proposeWeek hands each night a
-// few of the same spares), so Swap skips whatever another ticked night has.
+// few of the same spares, and the Kitchen's sheet offers its spare new recipes
+// to every night), so both sheets' Swap skips whatever another ticked slot has.
 
 describe('Swap never gives a week one dish twice', () => {
   it('moves to the next choice in the night’s cycle, wrapping round', () => {

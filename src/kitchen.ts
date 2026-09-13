@@ -24,6 +24,20 @@ export const ingredientKey = (name: string, unit?: string): string => sharedIngr
 export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
 export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
 
+/**
+ * Where Swap moves in a slot's cycle of choices (its pick, then the
+ * alternatives): the first after `current` that no other ticked slot has, so a
+ * week never gets one dish twice. Null when every other choice is taken. Both
+ * planning sheets use it: their alternatives can overlap from night to night.
+ */
+export function nextSwap(cycle: readonly string[], current: number, taken: ReadonlySet<string>): number | null {
+  for (let step = 1; step < cycle.length; step++) {
+    const i = (current + step) % cycle.length
+    if (!taken.has(cycle[i])) return i
+  }
+  return null
+}
+
 /** The lines on the list: every line but the ones taken off it by hand. */
 export const activeGroceryLines = (items: GroceryLine[]): GroceryLine[] => sharedActiveGroceryLines(items)
 /** Take a line off the list, remembering the recipes that wanted it (see buildGroceryList). */
