@@ -107,10 +107,14 @@ export function mergeDraft(local: JournalDraft, seen: JournalDraft, entry?: Jour
   if (local.body !== seen.body && remote.body !== seen.body) {
     const known = seen.body.replace(/\s+$/, '')
     const added = remote.body.startsWith(known) ? remote.body.slice(known.length) : ''
-    if (added.trim() && !local.body.includes(added.trim())) {
-      // appendEntry writes a bare line when the day was blank; keep the two texts on separate lines
+    // already here means as whole lines, not as characters: "Gym" appended while
+    // "Gymnastics with Sam" is being typed is still a line to carry
+    const lines = (s: string) => `\n${s.split('\n').map(l => l.trim()).join('\n')}\n`
+    if (added.trim() && !lines(local.body).includes(lines(added.trim()))) {
+      // appendEntry writes a bare line when the day was blank; keep the two texts on
+      // separate lines, and with every word here cleared let the carried text start the entry
       const base = local.body.replace(/\s+$/, '')
-      body = base + (base && !/^\s*\n/.test(added) ? '\n' : '') + added
+      body = base ? base + (/^\s*\n/.test(added) ? '' : '\n') + added : added.replace(/^\s*\n/, '')
       carried = true
     }
   }

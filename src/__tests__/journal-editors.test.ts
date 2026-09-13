@@ -61,6 +61,23 @@ describe('mergeDraft: the entry changing under an editor', () => {
     expect(mergeDraft(typed, seen, appendEntry(was, DAY, 'Walked the dog\nFed the cat'))).toEqual({ draft: typed, carried: false })
   })
 
+  it('carries a short line even when the text here happens to contain it', () => {
+    // a substring check dropped "Gym" here, and the save that followed wrote the entry back without it
+    const typed = { ...seen, body: 'Slow morning. Gymnastics with Sam.' }
+    expect(mergeDraft(typed, seen, appendEntry(was, DAY, 'Gym'))).toEqual({
+      draft: { body: 'Slow morning. Gymnastics with Sam.\nGym', mood: undefined, peopleIds: [] },
+      carried: true,
+    })
+    // standing on a line of its own here it is already there, spaces at its ends or not
+    const own = { ...seen, body: 'Slow morning.\n  Gym \nGymnastics with Sam.' }
+    expect(mergeDraft(own, seen, appendEntry(was, DAY, 'Gym'))).toEqual({ draft: own, carried: false })
+  })
+
+  it('does not open the text with a blank line when every word here was cleared', () => {
+    const r = mergeDraft({ ...seen, body: '' }, seen, appendEntry(was, DAY, 'Walked the dog'))
+    expect(r).toEqual({ draft: { body: 'Walked the dog', mood: undefined, peopleIds: [] }, carried: true })
+  })
+
   it('takes mood, people and the words from the entry when they were not touched here', () => {
     const start = entry({ body: 'Slow morning.', mood: 2 })
     const before = draftOf(start)
