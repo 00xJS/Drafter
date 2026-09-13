@@ -159,7 +159,9 @@ What the shell adds over the installed web app:
 - **Keyboard.** Sheets shrink above the iOS keyboard, the tab bar slides out
   of the way so it never covers what you are typing, fields no longer zoom the
   page when you tap them, and multi-line fields get a Done key.
-- **Dark launch screen.** `#0f1115` with orange “Drafter”, matching the app.
+- **Dark launch screen.** The app icon's orange paper plane, centred on
+  `#0f1115`, matching the app. `LaunchLogo` in the asset catalog is the plane
+  from `public/icon.svg` alone, on a transparent ground.
 - **Reminders you can act on.** A due-task banner offers **Done** and
   **Tomorrow**; a birthday or anniversary offers **Saw them**. Reminders with
   details hidden get no buttons — a banner that will not name the task should
