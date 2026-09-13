@@ -55,6 +55,7 @@ export function visibleItemsFor(rows, userId, peerIds, ownerId) {
  * `userId` is the reader: their focus for today opens the digest, and a
  * household member's picks are left out. `extra.weekPlan` is Sunday's week-plan
  * summary, worked out by the caller, which closes it.
+ * @param {any[]} items
  */
 export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = {}) {
   const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)

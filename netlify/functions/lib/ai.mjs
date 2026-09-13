@@ -124,6 +124,7 @@ const ANTHROPIC_REFUSAL_FALLBACK_MODELS = new Set(['claude-opus-5', 'claude-fabl
  * decline re-runs server-side on Anthropic's recommended fallback model.
  */
 export function anthropicRequest({ system, prompt, maxTokens, json = false, model }) {
+  /** @type {import('./ai.mjs').AnthropicRequest} */
   const request = {
     model,
     max_tokens: Math.max(maxTokens ?? 0, 8000),

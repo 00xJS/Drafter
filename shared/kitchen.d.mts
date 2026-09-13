@@ -1,4 +1,4 @@
-import { GroceryLine, GroceryList, Meal, MealSlot, Recipe } from '../src/types'
+import { GroceryLine, GroceryList, Meal, MealSlot, Recipe } from '../src/types.js'
 
 export declare function groceryId(weekKey: string): string
 export declare function mealId(date: string, slot: MealSlot): string

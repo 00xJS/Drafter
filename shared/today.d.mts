@@ -1,4 +1,4 @@
-import { Project, Task } from '../src/types'
+import { Project, Task } from '../src/types.js'
 
 export declare const OPEN: string[]
 export declare const DAY_MS: number

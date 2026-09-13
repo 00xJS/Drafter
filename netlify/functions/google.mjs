@@ -27,7 +27,7 @@ import {
   validChallenge,
   verifyState,
 } from './lib/oauth.mjs'
-import { SCOPES, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, randomToken, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
+import { SCOPES, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`

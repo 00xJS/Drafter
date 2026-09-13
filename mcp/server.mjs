@@ -50,7 +50,10 @@ function requestIds(parsed) {
   return list.filter(m => m && typeof m === 'object' && typeof m.method === 'string' && m.id !== undefined && m.id !== null).map(m => m.id)
 }
 
-/** A data layer that refuses everything, for a server started with nothing configured. */
+/**
+ * A data layer that refuses everything, for a server started with nothing configured.
+ * @returns {import('./data.mjs').RestData}
+ */
 function unconfiguredData() {
   const refuse = async () => {
     throw new Error(NOT_CONFIGURED)

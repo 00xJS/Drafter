@@ -8,7 +8,7 @@ export function visibleItemsFor(
   userId: string,
   peerIds: Iterable<string> | undefined,
   ownerId: string | null,
-): unknown[]
+): Record<string, any>[]
 
 export function buildDigest(
   items: unknown[],

@@ -1,6 +1,75 @@
-// Types for the pure helpers src/ imports in tests. The runtime is google.mjs;
-// this exists only so tsc (which checks src/) does not see an implicit any.
-// Netlify bundles the .mjs directly and never reads this file.
+// Types for google.mjs: what the functions and src/'s tests import from it.
+// The runtime is google.mjs; tsc (src/, and tsconfig.server.json for the
+// functions) reads this. Netlify bundles the .mjs directly and never reads it.
+
+export declare const SCOPES: string[]
+export declare function googleConfigured(): boolean
+/** The env names still missing, for the admin panel. */
+export declare function missingGoogleEnv(): string[]
+
+/** Google's token endpoint answer. */
+export interface GoogleTokens {
+  access_token: string
+  refresh_token?: string
+  expires_in?: number
+  scope?: string
+  token_type?: string
+  id_token?: string
+}
+/** Trade an authorization code for tokens; throws with Google's reason. */
+export declare function exchangeCode(code: string, redirectUri: string): Promise<GoogleTokens>
+/** A live access token for the user's grant, cached per warm function. */
+export declare function accessToken(userId: string): Promise<string>
+/** Revoke the grant at Google and forget it here. */
+export declare function revoke(userId: string): Promise<void>
+
+/** An event of a ticked calendar, in the app's CalendarEvent shape. */
+export interface OverlayEvent {
+  id: string
+  sourceId: string
+  title: string
+  start: string
+  end: string
+  allDay: boolean
+  location?: string
+}
+/** Google event → OverlayEvent; null for a cancelled event or one of Drafter's own. */
+export declare function toEvent(item: unknown, sourceId: string): OverlayEvent | null
+/** Google's events in a window, recurring series expanded. */
+export declare function listEvents(userId: string, calendarId: string, fromIso: string, toIso: string): Promise<unknown[]>
+export declare function listCalendars(userId: string): Promise<ReturnType<typeof googleCalendarRow>[]>
+/** The Drafter calendar's id (see resolveDrafterCalendar). */
+export declare function drafterCalendarId(userId: string): Promise<string>
+
+/** The parts of a task the mirror reads. Extra fields are allowed. */
+export interface TaskLike {
+  id: string
+  kind?: string
+  title?: string
+  description?: string
+  status?: string
+  priority?: string
+  dueAt?: string
+  deletedAt?: string
+  updatedAt?: string
+  [key: string]: unknown
+}
+export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
+/** Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none). */
+export declare function pushTask(
+  userId: string,
+  calendarId: string,
+  task: TaskLike,
+  projectName: string | undefined,
+  site: string,
+  opts?: { tz?: string | null },
+): Promise<PushOutcome>
+/** Mirror one calendar entry; `opts.revive` brings back a copy Drafter itself cancelled (Undo). */
+export declare function pushEntry(userId: string, calendarId: string, entry: EntryLike, site: string, opts?: { revive?: boolean }): Promise<PushOutcome>
+/** Every Drafter event changed since `sinceIso`, deleted ones included, as Google sends them. */
+export declare function listChangedMirrors(userId: string, calendarId: string, sinceIso: string): Promise<unknown[]>
+/** A random token from a CSPRNG, base64url. */
+export declare function randomToken(bytes?: number): string
 
 /** The parts of a CalendarEntry the mirrors read. Extra fields are allowed. */
 export interface EntryLike {

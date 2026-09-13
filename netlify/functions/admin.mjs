@@ -370,7 +370,7 @@ const handler = async req => {
     // ---- live integration tests: always 200 so the panel can show the result inline
     if (action === 'testAi') {
       const started = Date.now()
-      const r = await complete({ prompt: 'Reply with the single word: ok', maxTokens: 16 }).catch(e => ({ error: e?.message ?? 'AI call threw' }))
+      const r = await complete({ prompt: 'Reply with the single word: ok', maxTokens: 16 }).catch(e => /** @type {import('./lib/ai.mjs').Completion} */ ({ error: e?.message ?? 'AI call threw' }))
       return Response.json({
         ok: !r.error,
         provider: r.provider ?? null,

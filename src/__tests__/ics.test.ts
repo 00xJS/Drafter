@@ -13,6 +13,14 @@ describe('parseICS', () => {
     expect(p.events[0].start).toEqual({ allDay: false, ms: Date.UTC(2026, 8, 10, 18) })
   })
 
+  // RFC 5545 escapes ; in text as \; and Google and Apple feeds do. The unescape
+  // was /\;/ — the same as /;/ — so the backslash stayed in the title.
+  it('unescapes semicolons', () => {
+    const p = parseICS(wrap('BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Lunch\\; Bob\r\nLOCATION:Cafe\\, Main St\\; 2nd floor\r\nDTSTART:20260910T120000Z\r\nEND:VEVENT'))
+    expect(p.events[0].summary).toBe('Lunch; Bob')
+    expect(p.events[0].location).toBe('Cafe, Main St; 2nd floor')
+  })
+
   it('converts TZID wall-clock times to UTC', () => {
     const p = parseICS(wrap('BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Call\r\nDTSTART;TZID=America/New_York:20260710T090000\r\nEND:VEVENT'))
     expect(p.events[0].start.ms).toBe(Date.UTC(2026, 6, 10, 13)) // EDT = UTC-4
@@ -65,7 +73,8 @@ describe('buildICS', () => {
       { uid: 't1', title: 'Fix, the; tap', start: Date.UTC(2026, 8, 10, 9), allDay: false, description: 'line1\nline2' },
       { uid: 'm1', title: 'Cabinets in', start: Date.UTC(2026, 9, 20), allDay: true },
     ])
-    expect(ics).toContain('SUMMARY:Fix\\, the; tap')
+    // ; is escaped too: '\;' in the emitter was a plain ';' and went out bare
+    expect(ics).toContain('SUMMARY:Fix\\, the\\; tap')
     expect(ics).toContain('DTSTART:20260910T090000Z')
     expect(ics).toContain('DTEND:20260910T100000Z')
     expect(ics).toContain('DTSTART;VALUE=DATE:20261020')

@@ -40,6 +40,10 @@ export class DataError extends Error {
   }
 }
 
+/**
+ * @param {import('./data.mjs').Row} row
+ * @returns {import('./data.mjs').Item}
+ */
 const withOwner = row => ({ ...legacyPostToTask(row.data), ownerId: row.user_id ?? undefined })
 
 /**
@@ -107,7 +111,10 @@ export function createRestData({ baseUrl, auth, userId = null, mode = 'user', on
     return ownerCache
   }
 
-  /** All live rows this view may see, normalized to v3 shape, each with its ownerId. */
+  /**
+   * All live rows this view may see, normalized to v3 shape, each with its ownerId.
+   * @param {{ kinds?: string[] }} [opts]
+   */
   async function fetchAll({ kinds } = {}) {
     let path = POSTS
     if (Array.isArray(kinds) && kinds.length) {

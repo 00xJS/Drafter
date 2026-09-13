@@ -27,7 +27,8 @@ export interface ToolDef {
   scope: Scope
   annotations: ToolAnnotations
   inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] }
-  run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>
+  /** `args` is whatever the client sent: each tool checks its own. */
+  run(args: Record<string, any>, ctx: ToolContext): Promise<unknown>
 }
 
 export declare const SCOPES: readonly Scope[]

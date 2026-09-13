@@ -20,9 +20,15 @@ const COOLDOWN_DAYS = 14
 /** How far back "cooked often" counts, for the week plan and today's ideas alike. */
 const FAVOURITE_DAYS = 180
 const ALTERNATIVES = 3
-/** An event across the dinner hour makes a busy night (local time). */
+/**
+ * An event across the dinner hour makes a busy night (local time).
+ * @type {[string, string]}
+ */
 const DINNER_HOURS = ['17:30', '20:00']
-/** Anything on in the evening makes it a worse one for a catch-up. */
+/**
+ * Anything on in the evening makes it a worse one for a catch-up.
+ * @type {[string, string]}
+ */
 const EVENING_HOURS = ['17:30', '22:00']
 /** Overdue work is spread so that no day ends up with more than this due. */
 const MAX_DUE_PER_DAY = 3
@@ -133,6 +139,8 @@ const isEatingPlace = (p, h) => EATING_PLACES.includes(p.category) || h.eatenOut
  * recipe with how often it was cooked (in six months and in all) and when last,
  * and every place you eat at with its outings (in six months and in all) and
  * when last. Names and tags only: never notes. Sorted by name.
+ * @param {readonly any[]} items
+ * @param {{ dayKey?: string, now?: Date, tz?: string }} [o]
  */
 export function mealHistory(items, { dayKey, now = new Date(), tz } = {}) {
   if (!isDayKey(dayKey)) return { recipes: [], places: [] }
@@ -298,6 +306,8 @@ function proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip }
  * kind; `events` adds occurrences from subscribed calendars (the app has them,
  * the digest does not). Rows whose key is in `dismissed` are left out. Null for
  * a bad `todayKey`.
+ * @param {readonly any[]} items
+ * @param {{ todayKey?: string, tz?: string, userId?: string | null, dismissed?: readonly string[], now?: Date, events?: readonly any[] }} [o]
  */
 export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = [], now = new Date(), events = [] } = {}) {
   const week = targetWeek(todayKey)
@@ -426,6 +436,8 @@ function ideaWhy(c, how, dayKey) {
  * nothing to go on. Lunch leans to cafés, fast food and recipes tagged for it,
  * dinner to restaurants, and whatever has been that meal before suits it; with
  * no such signal the slots are treated alike.
+ * @param {readonly any[]} items
+ * @param {{ dayKey?: string, slots?: readonly string[], now?: Date, dismissed?: readonly string[], tz?: string }} [o]
  */
 export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now = new Date(), dismissed = [], tz } = {}) {
   if (!isDayKey(dayKey)) return []

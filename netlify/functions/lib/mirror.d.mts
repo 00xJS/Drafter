@@ -21,7 +21,8 @@ export interface MirrorBatchResult {
   fatal: boolean
 }
 
-export declare function runMirrorBatch<R extends { id: string }>(
+// R falls back to any: the functions pass records straight from a request body.
+export declare function runMirrorBatch<R extends { id: string } = any>(
   records: R[],
   push: (record: R) => Promise<string>,
   opts?: { budgetMs?: number; max?: number; now?: () => number; startedAt?: number },

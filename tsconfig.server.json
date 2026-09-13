@@ -1,0 +1,23 @@
+{
+  // The server code — Netlify functions, the MCP server, the rules shared with
+  // the app, the scripts — checked as plain JavaScript, not strict.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    // so the hand-written .d.mts are checked too
+    "skipLibCheck": false
+  },
+  // Only .mjs are globbed: a .d.mts matched here pushes its .mjs out of the
+  // program, as a declaration outranks its source. The .d.mts come in through
+  // the imports that resolve to them. Two are imported by nothing here, so they
+  // are listed with their modules (a listed file is always kept).
+  "files": ["mcp/server.mjs", "mcp/server.d.mts", "shared/merge.mjs", "shared/merge.d.mts"],
+  "include": ["netlify/functions/*.mjs", "netlify/functions/lib/*.mjs", "mcp/*.mjs", "shared/*.mjs", "scripts/**/*.mjs"]
+}

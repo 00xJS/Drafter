@@ -1,6 +1,103 @@
-// Types for the pure helpers src/ imports in tests. The runtime is
-// microsoft.mjs; this exists only so tsc (which checks src/) does not see an
-// implicit any. Netlify bundles the .mjs directly and never reads this file.
+// Types for microsoft.mjs: what the functions and src/'s tests import from it.
+// The runtime is microsoft.mjs; tsc (src/, and tsconfig.server.json for the
+// functions) reads this. Netlify bundles the .mjs directly and never reads it.
+
+export declare const SCOPES: string[]
+export declare function microsoftConfigured(): boolean
+/** The env names still missing, for the admin panel. */
+export declare function missingMicrosoftEnv(): string[]
+export declare function randomState(): string
+
+/** A connected account as user_settings.microsoft_accounts holds it. Never sent to the browser as is. */
+export interface MicrosoftAccount {
+  id: string
+  email: string
+  name: string
+  refreshToken?: string
+  drafterCalendarId?: string | null
+}
+/** What the browser may see of an account: never a token. */
+export interface PublicAccount {
+  id: string
+  email: string
+  name: string
+  hasMirror: boolean
+}
+export declare function listAccounts(userId: string): Promise<MicrosoftAccount[]>
+export declare function publicAccount(a: MicrosoftAccount): PublicAccount
+
+/** Microsoft's token endpoint answer. */
+export interface MicrosoftTokens {
+  access_token: string
+  refresh_token?: string
+  expires_in?: number
+  scope?: string
+  token_type?: string
+  id_token?: string
+}
+/** Trade an authorization code for tokens. A refusal throws with `code` set to oauthFailureCode's reason. */
+export declare function exchangeCode(code: string, redirectUri: string): Promise<MicrosoftTokens>
+/** A live access token for one account; a rotated refresh token is written back. */
+export declare function accessToken(userId: string, accountId: string): Promise<string>
+/** Store a newly connected account (the last four are kept) and return its public shape. */
+export declare function connectAccount(userId: string, tokens: MicrosoftTokens): Promise<PublicAccount>
+export declare function disconnectAccount(userId: string, accountId: string): Promise<void>
+export declare function listCalendars(userId: string, accountId: string, drafterCalendarId?: string | null): Promise<ReturnType<typeof graphCalendarRow>[]>
+
+/** An event of a ticked calendar, in the app's CalendarEvent shape. */
+export interface OverlayEvent {
+  id: string
+  sourceId: string
+  title: string
+  start: string
+  end: string
+  allDay: boolean
+  location?: string
+}
+/** Graph event → OverlayEvent; null for a cancelled event or one of Drafter's own tasks. */
+export declare function toEvent(item: unknown, sourceId: string): OverlayEvent | null
+/** Graph's events in a window, recurring series expanded. */
+export declare function listEvents(userId: string, accountId: string, calendarId: string, fromIso: string, toIso: string): Promise<unknown[]>
+/** The account's Drafter calendar's id (see resolveDrafterCalendar). */
+export declare function drafterCalendarId(userId: string, accountId: string): Promise<string>
+
+/** The parts of a task the mirror reads. Extra fields are allowed. */
+export interface TaskLike {
+  id: string
+  kind?: string
+  title?: string
+  description?: string
+  status?: string
+  priority?: string
+  dueAt?: string
+  deletedAt?: string
+  [key: string]: unknown
+}
+export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
+/** Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none). */
+export declare function pushTask(
+  userId: string,
+  accountId: string,
+  calendarId: string,
+  task: TaskLike,
+  projectName: string | undefined,
+  site: string,
+  opts?: { tz?: string | null },
+): Promise<PushOutcome>
+/** Mirror one calendar entry into the account's Drafter calendar. */
+export declare function pushEntry(userId: string, accountId: string, calendarId: string, entry: EntryLike, site: string): Promise<PushOutcome>
+
+/** A mirrored task as Outlook now holds it. */
+export interface TaskChangeRow {
+  taskId: string
+  deleted: boolean
+  start: string | null
+  allDay: boolean
+  updated: string
+}
+/** Mirrored tasks changed in Outlook since `sinceIso`. */
+export declare function pullChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<TaskChangeRow[]>
+export declare function authUrl(clientId: string, redirectUri: string, state: string, loginHint?: string | null): string
 
 /** The parts of a CalendarEntry the mirrors read. Extra fields are allowed. */
 export interface EntryLike {

@@ -1,6 +1,22 @@
-// Types for the OAuth binding helpers src/ imports in tests. The runtime is
-// oauth.mjs; this exists only so tsc (which checks src/) does not see an
-// implicit any. Netlify bundles the .mjs directly and never reads this file.
+// Types for the OAuth binding helpers the functions and src/'s tests import.
+// The runtime is oauth.mjs; tsc (src/, and tsconfig.server.json for the
+// functions) reads this. Netlify bundles the .mjs directly and never reads it.
+
+/** Opaque value for the verifier cookie; only its HMAC travels in the URL. */
+export declare function newVerifier(): string
+/** Set-Cookie for the short-lived, HttpOnly verifier cookie. */
+export declare function cookieHeader(name: string, verifier: string): string
+export declare function clearCookieHeader(name: string): string
+export declare function readCookie(req: Request, name: string): string | null
+
+export declare const HANDOFF_TTL_MS: number
+export declare function newHandoff(): string
+/** Marks a browser the app opened, so the callback returns to it. */
+export declare const RETURN_COOKIE: string
+/** Where the callback sends the browser: back into the app, or to the site. */
+export declare function returnTarget(req: Request, origin: string): string
+/** True when a stored handoff is still fresh. */
+export declare function handoffFresh(at: string | null | undefined): boolean
 
 /** The `state` for a verifier cookie: an HMAC, so only its holder can produce it. */
 export declare function stateFor(verifier: string): string
@@ -30,6 +46,6 @@ export declare function checkNativeCompletion(input: {
   code: string
   now?: number
   ttlMs?: number
-}): { ok: true } | { ok: false; reason: CompletionRefusal }
+}): { ok: true; reason?: undefined } | { ok: false; reason: CompletionRefusal }
 
 export declare function completionMessage(reason: string): string

@@ -24,7 +24,10 @@ export function negotiate(requested) {
   return PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0]
 }
 
-/** The `instructions` an initialize result carries: the user's zone, and how to treat their data. */
+/**
+ * The `instructions` an initialize result carries: the user's zone, and how to treat their data.
+ * @param {{ tz?: string, scopes?: readonly string[] }} [opts]
+ */
 export function instructionsFor({ tz, scopes = [] } = {}) {
   const lines = [
     `Drafter is the user's home planner and journal: projects and tasks, people and places, meals and groceries${scopes.includes('journal') ? ', and their journal' : ''}.`,
