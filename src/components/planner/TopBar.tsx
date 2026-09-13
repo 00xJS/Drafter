@@ -19,9 +19,10 @@ export function TopBar({ p }: { p: PlannerCtx }) {
   const warmEditor = () => warm(TaskEditor.preload)
   return (
     <header className="topbar">
-      {/* the phone hides the wordmark span for width (src/styles/08-responsive.css), so the
-          name lives on the container and the glyph is decorative — otherwise
-          VoiceOver announces the header as "airplane". */}
+      {/* the phone and the compact landscape header hide the wordmark span for
+          width (src/styles/08-responsive.css), so the name lives on the
+          container and the glyph is decorative — otherwise VoiceOver announces
+          the header as "airplane". */}
       <div className="brand" aria-label="Drafter">
         <span className="brand-mark" aria-hidden>
           <Icon name="brand" filled strokeWidth={0} />
@@ -42,7 +43,8 @@ export function TopBar({ p }: { p: PlannerCtx }) {
             <span className="tab-icon" aria-hidden>
               <Icon name={VIEW_ICONS[v]} />
             </span>
-            {VIEW_LABELS[v]}
+            {/* hidden to the eye on a compact header (landscape phones, src/styles/08-responsive.css); still the tab's name */}
+            <span className="tab-label">{VIEW_LABELS[v]}</span>
           </button>
         ))}
       </nav>
