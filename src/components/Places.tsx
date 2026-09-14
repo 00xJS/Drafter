@@ -69,13 +69,14 @@ function PlaceForm({
 }) {
   const [name, setName] = useState(place?.name ?? '')
   const [emoji, setEmoji] = useState(place?.emoji ?? '')
-  const [category, setCategory] = useState<PlaceCategory>(place?.category ?? 'restaurant')
+  // a new place starts with no kind: Save waits for one, as it does wherever a place is made
+  const [category, setCategory] = useState<PlaceCategory | undefined>(place?.category)
   const [color, setColor] = useState(place?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
   // No target by default: a place only nags when you ask it to.
   const [cadence, setCadence] = useState<Cadence | ''>((place?.cadenceDays as Cadence | undefined) ?? '')
   const [notes, setNotes] = useState(place?.notes ?? '')
   const save = () => {
-    if (!name.trim()) return
+    if (!name.trim() || !category) return
     const now = new Date().toISOString()
     onSave({
       kind: 'place',
@@ -158,7 +159,7 @@ function PlaceForm({
         <button className="btn" onClick={onClose}>
           Cancel
         </button>
-        <button className="btn primary" disabled={!name.trim()} onClick={save}>
+        <button className="btn primary" disabled={!name.trim() || !category} onClick={save}>
           Save
         </button>
       </footer>
