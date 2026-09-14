@@ -31,6 +31,9 @@ export interface MediaItem {
 
 const urlCache = new Map<string, string>()
 
+/** The images among files picked, pasted or dropped: a note takes these inline, and Add clothing takes them as photos. */
+export const imageFiles = (files: FileList | readonly File[]): File[] => Array.from(files).filter(f => f.type.startsWith('image/'))
+
 /** A personal photo with no account to file it under: nothing is saved, and the sheet says so. */
 export class NotSignedIn extends Error {
   constructor() {

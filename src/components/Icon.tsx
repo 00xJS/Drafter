@@ -29,6 +29,8 @@ export type IconName =
   | 'refresh'
   | 'brand'
   | 'wardrobe'
+  | 'star'
+  | 'shuffle'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -148,6 +150,16 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12 8.2V6.6a1.9 1.9 0 1 0-1.9-1.9" />
       <path d="M12 8.2 3.3 14.4a1.2 1.2 0 0 0 .7 2.2h16a1.2 1.2 0 0 0 .7-2.2z" />
+    </>
+  ),
+  // a favourite: outlined to star one, filled once it is
+  star: <path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.8l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" />,
+  // Surprise me: two crossing paths
+  shuffle: (
+    <>
+      <path d="M3 7h3.2c2 0 3.2 1 4.3 2.8l2.9 4.4c1.1 1.8 2.3 2.8 4.3 2.8H21" />
+      <path d="M3 17h3.2c1.5 0 2.5-.6 3.4-1.6M14.3 8.6c.9-1 1.9-1.6 3.4-1.6H21" />
+      <path d="M18.4 4.4 21 7l-2.6 2.6M18.4 14.4 21 17l-2.6 2.6" />
     </>
   ),
 }

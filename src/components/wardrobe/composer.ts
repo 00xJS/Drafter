@@ -1,5 +1,5 @@
-import { GARMENT_TYPES, type Garment, type GarmentType, type Wear } from '../../types'
-import { coreKey, notInUse } from '../../wardrobe'
+import { GARMENT_TYPES, type Garment, type GarmentType, type Season, type Wear } from '../../types'
+import { coreKey, inSeason, notInUse, pickWeighted, restWeight, seasonOf, type WearIndex } from '../../wardrobe'
 
 // The composer's selection, with no React in it: what each row holds, which
 // card each has chosen, and the pieces a log or a save takes from them.
@@ -131,4 +131,26 @@ export function chosenIn(sel: Selection, rows: Rows, asked: readonly Optional[])
   // every piece chosen is in a row, held ones included, so the rows say what each is
   const inRows = new Map(GARMENT_TYPES.flatMap(t => rows[t].map(g => [g.id, g] as const)))
   return { slots, accessories, both: separates && onepieces, onepieceMode, open, pieces, dressed: coreKey(pieces, inRows) !== null }
+}
+
+/**
+ * Surprise me: every row on screen moves to a piece drawn at random, weighted
+ * toward the least recently worn (restWeight), and never to the one it is on
+ * while it has another. A piece only held for the day (retired, in Trash) is
+ * not in the draw, nor one out of `season` while the row has one in it.
+ * Accessories stay as they are, and nothing is saved: only the rows move.
+ */
+export function surprise(sel: Selection, rows: Rows, asked: readonly Optional[], ix: WearIndex, opts: { season?: Season; random?: () => number } = {}): Selection {
+  const { slots, onepieceMode, open } = chosenIn(sel, rows, asked)
+  const season = opts.season ?? seasonOf(ix.dayKey)
+  const picked: Picked = { ...sel.picked }
+  const shown: Slot[] = [...(onepieceMode ? (['onepiece'] as const) : (['top', 'bottom'] as const)), ...open]
+  for (const slot of shown) {
+    const dealt = rows[slot].filter(g => !heldBadge(g))
+    const fits = dealt.filter(g => inSeason(g, season))
+    const pool = fits.length > 0 ? fits : dealt
+    const g = pickWeighted(pool.length > 1 ? pool.filter(x => x.id !== slots[slot]) : pool, x => restWeight(ix, x.id), opts.random)
+    if (g) picked[slot] = g.id
+  }
+  return { ...sel, picked, note: undefined }
 }

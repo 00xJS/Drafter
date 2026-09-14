@@ -5,12 +5,17 @@ import type { Garment, GarmentType, Outfit, Wear } from '../src/types.js'
 export declare const GARMENT_TYPES: GarmentType[]
 export declare const CORE_TYPES: GarmentType[]
 export declare const MAX_PIECES: number
+export declare const LOOK_NOTE_MAX: number
 
 export declare function wearId(day: string, rand?: () => string): string
 export declare function cleanIds(ids: readonly string[]): string[]
 export declare function newWear(day: string, garmentIds: readonly string[], now?: string, rand?: () => string): Wear
 export declare function withPieces(w: Wear, garmentIds: readonly string[]): Wear
 export declare function looksOn(wears: readonly Wear[], day: string): Wear[]
+/** Planned ahead and not yet confirmed worn: the one test every figure and last-worn date goes through. */
+export declare function isPlanned(w: Wear): boolean
+/** The look filed as a plan or as worn, with its note ('' clears it); unstamped. */
+export declare function marked(w: Wear, as?: { planned?: boolean; note?: string }): Wear
 
 export declare function liveById(garments: readonly Garment[]): Map<string, Garment>
 export declare function orderPieces(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string[]
@@ -25,7 +30,7 @@ export declare function logLook(
   day: string,
   pieces: readonly string[],
   records: readonly Garment[],
-  opts?: { another?: boolean; shown?: ReadonlySet<string>; now?: string; rand?: () => string },
+  opts?: { another?: boolean; shown?: ReadonlySet<string>; now?: string; rand?: () => string; planned?: boolean; note?: string },
 ): LookLog
 
 export declare function pieceKey(ids: readonly string[]): string

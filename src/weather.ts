@@ -173,7 +173,35 @@ export function writeCache(c: WeatherCache): void {
     localStorage.setItem(WEATHER_KEY, JSON.stringify(c))
   } catch {
     // quota or private mode: the strip just refetches next time
+    return
   }
+  windowTarget()?.dispatchEvent(new Event(WEATHER_CACHED_EVENT))
+}
+
+/**
+ * Said on the window each time the cache is written — a new forecast, another
+ * place, weather off — so whatever reads cachedForecast reads it again. It is
+ * how the wardrobe's hints follow the briefing's fetches without one of their own.
+ */
+export const WEATHER_CACHED_EVENT = 'drafter:weather-cached'
+
+/** Run `cb` whenever the cache is written, until the returned function is called. */
+export function onWeatherCached(cb: () => void, target: EventTarget | undefined = windowTarget()): () => void {
+  if (!target) return () => {}
+  target.addEventListener(WEATHER_CACHED_EVENT, cb)
+  return () => target.removeEventListener(WEATHER_CACHED_EVENT, cb)
+}
+
+/**
+ * Today's forecast as the briefing last fetched it, never fetching: null when
+ * weather is off, or when what is cached was fetched on another local day (a
+ * forecast is for its own day). The wardrobe reads this, so its hints cost no
+ * request beyond the briefing's own.
+ */
+export function cachedForecast(now = Date.now()): Forecast | null {
+  const c = readCache()
+  if (!c.enabled || !c.forecast || c.fetchedAt === undefined || !Number.isFinite(c.fetchedAt)) return null
+  return new Date(c.fetchedAt).toDateString() === new Date(now).toDateString() ? c.forecast : null
 }
 
 /**

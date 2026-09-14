@@ -1,17 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { formatMoney } from '../bills'
 import { visitSummary } from '../people'
 import { Garment, GarmentType, Outfit, Wear } from '../types'
 import { dateKey } from '../utils'
 import {
+  COLD_C,
+  COLD_F,
   NEVER_WORN_GRACE_DAYS,
   NOT_WORN_DAYS,
+  PLAN_DAYS,
   byRest,
   canDress,
+  clothesMatch,
   clothesOrder,
   colorName,
+  confirmed,
   coreKey,
+  costLine,
+  costPerWear,
   forgotYesterday,
   garmentStats,
+  hasOuterwear,
+  inSeason,
+  lastPlanDay,
   liveById,
   logLook,
   looksOn,
@@ -22,17 +33,24 @@ import {
   notInUse,
   notWornLately,
   orderPieces,
+  outerwearFor,
   outfitDays,
   outfitLabel,
   outfitLine,
+  pickWeighted,
   pieceKey,
+  planFor,
   renamed,
   repeatedOutfits,
+  restWeight,
   retired,
   saveOutfit,
   savedOrder,
+  seasonOf,
+  starred,
   suggestedNames,
   swappedPhotos,
+  tagsOf,
   todaySuggestions,
   unwearable,
   wardrobeTiles,
@@ -41,10 +59,16 @@ import {
   wearIndex,
   wearable,
   wearsByMonth,
+  weatherLine,
+  weatherNeed,
+  withDetails,
+  withNote,
   withPieces,
   wornLine,
   wornShort,
+  wornWith,
 } from '../wardrobe'
+import type { Forecast } from '../weather'
 
 // The wardrobe's rules and figures (src/wardrobe.ts): the writers' stamps,
 // what makes two looks one outfit, and every number the Clothes, Stats and
@@ -766,5 +790,231 @@ describe('swappedPhotos: what a write did to a piece’s photos', () => {
     const bare = piece('scarf', 'accessory')
     expect(swappedPhotos(bare, { ...bare, photoId: P(3), thumbId: P(4) })).toEqual({ gone: [], now: [P(3), P(4)] })
     expect(swappedPhotos(g, { ...g, photoId: P(5) })).toEqual({ gone: [P(1)], now: [P(5), P(2)] })
+  })
+})
+
+describe('plans: a look for a day still to come', () => {
+  it('plans up to a year ahead', () => {
+    expect(PLAN_DAYS).toBe(365)
+    expect(lastPlanDay(TODAY)).toBe('2027-09-14')
+  })
+
+  it('logLook files a plan, and a log on its day confirms it under its own id, with an Undo that puts the plan back', () => {
+    vi.useFakeTimers({ now: new Date('2026-09-14T08:00:00.000Z') })
+    const { write: plan } = logLook([], ago(-3), ['tee', 'jeans'], everything, { planned: true, note: ' wedding ' })
+    expect(plan).toMatchObject({ date: ago(-3), garmentIds: ['tee', 'jeans'], planned: true, note: 'wedding' })
+    const { write, undo } = logLook([plan], ago(-3), ['tee', 'jeans'], everything, { shown: new Set(['tee', 'jeans']) })
+    expect(write.id).toBe(plan.id)
+    expect('planned' in write).toBe(false)
+    expect(write.note).toBe('wedding')
+    expect(undo).toMatchObject({ id: plan.id, planned: true })
+    // changed ahead of its day, it stays a plan
+    expect(logLook([plan], ago(-3), ['shirt', 'jeans'], everything, { planned: true }).write).toMatchObject({ id: plan.id, garmentIds: ['shirt', 'jeans'], planned: true })
+  })
+
+  it('logLook sets a note, keeps it when none is given, and clears it with an empty one', () => {
+    const day = look(TODAY, ['tee', 'jeans'], { note: 'interview' })
+    expect(logLook([day], TODAY, ['tee', 'jeans'], everything).write.note).toBe('interview')
+    expect('note' in logLook([day], TODAY, ['tee', 'jeans'], everything, { note: '  ' }).write).toBe(false)
+    expect(logLook([day], TODAY, ['tee', 'jeans'], everything, { note: 'x'.repeat(200) }).write.note).toBe('x'.repeat(120))
+  })
+
+  it('confirmed and withNote are stamped newer; a note leaves a plan a plan', () => {
+    vi.useFakeTimers({ now: new Date('2026-09-14T08:00:00.000Z') })
+    const future = '2026-09-14T08:10:00.000Z'
+    const plan = look(TODAY, ['tee', 'jeans'], { planned: true, updatedAt: future })
+    const worn = confirmed(plan)
+    expect('planned' in worn).toBe(false)
+    expect(worn.updatedAt > future).toBe(true)
+    const noted = withNote(plan, ' wedding ')
+    expect(noted).toMatchObject({ planned: true, note: 'wedding' })
+    expect(noted.updatedAt > future).toBe(true)
+    expect('note' in withNote(noted, '')).toBe(false)
+  })
+
+  it('planFor: the day’s latest plan with pieces, until a look is worn that day', () => {
+    const plan = look(TODAY, ['tee', 'jeans'], { planned: true, createdAt: '2026-09-13T20:00:00.000Z' })
+    expect(planFor([plan], TODAY)).toBe(plan)
+    expect(planFor([plan, look(TODAY, ['shirt', 'chinos'])], TODAY)).toBeUndefined()
+    expect(planFor([plan, look(TODAY, [], { planned: true, createdAt: '2026-09-13T21:00:00.000Z' })], TODAY)).toBe(plan)
+    expect(planFor([plan], ago(1))).toBeUndefined()
+    expect(planFor([{ ...plan, deletedAt: T0 }], TODAY)).toBeUndefined()
+  })
+
+  it('counts a plan in no figure until it is worn, and never one whose day passed unconfirmed', () => {
+    const passed = look(ago(2), ['tee', 'jeans'], { planned: true })
+    const ix = wearIndex([passed, look(TODAY, ['shirt', 'chinos'], { planned: true }), look(ago(5), ['tee', 'jeans'])], TODAY)
+    expect(ix.logged).toEqual([ago(5)])
+    expect(ix.days.get('tee')).toEqual([ago(5)])
+    expect(ix.days.has('shirt')).toBe(false)
+    expect(mostWorn(everything, ix, 30).map(r => [r.garment.id, r.count])).toEqual([
+      ['jeans', 1],
+      ['tee', 1],
+    ])
+    // a yesterday only planned is still a day to ask about
+    expect(forgotYesterday(wearIndex([look(ago(1), ['tee', 'jeans'], { planned: true }), look(ago(3), ['tee'])], TODAY), 9)).toBe(ago(1))
+    // said to be worn, it counts
+    expect(wearIndex([confirmed(passed)], TODAY).logged).toEqual([ago(2)])
+  })
+})
+
+describe('favourites, seasons, tags and a price', () => {
+  it('starred puts a star on, or takes it off, stamped', () => {
+    vi.useFakeTimers({ now: new Date('2026-09-14T08:00:00.000Z') })
+    const future = '2026-09-14T08:10:00.000Z'
+    const on = starred(piece('tee', 'top', { updatedAt: future }), true)
+    expect(on.favourite).toBe(true)
+    expect(on.updatedAt > future).toBe(true)
+    expect('favourite' in starred(on, false)).toBe(false)
+    expect(starred(outfit('o1', ['tee', 'jeans']), true).favourite).toBe(true)
+  })
+
+  it('withDetails rounds a price, cleans tags as a sync does, orders seasons, and clears each', () => {
+    const g = withDetails(tee, { price: 39.6, tags: [' Work', 'work', 'GYM ', ''], seasons: ['winter', 'spring', 'winter'] })
+    expect(g).toMatchObject({ price: 40, tags: ['work', 'gym'], seasons: ['spring', 'winter'] })
+    expect(g.updatedAt > tee.updatedAt).toBe(true)
+    const cleared = withDetails(g, { price: null, tags: [], seasons: [] })
+    for (const k of ['price', 'tags', 'seasons']) expect(k in cleared, k).toBe(false)
+    // only what is given changes
+    expect(withDetails(g, { price: 12 })).toMatchObject({ price: 12, tags: ['work', 'gym'], seasons: ['spring', 'winter'] })
+    expect('price' in withDetails(g, { price: -5 })).toBe(false)
+  })
+
+  it('seasonOf reads the month; a piece marked for none is for any season', () => {
+    const days = ['2026-03-01', '2026-05-31', '2026-06-01', '2026-08-31', '2026-09-01', '2026-11-30', '2026-12-01', '2027-02-28']
+    expect(days.map(seasonOf)).toEqual(['spring', 'spring', 'summer', 'summer', 'autumn', 'autumn', 'winter', 'winter'])
+    expect(inSeason(tee, 'winter')).toBe(true)
+    expect(inSeason({ ...tee, seasons: ['summer'] }, 'winter')).toBe(false)
+    expect(inSeason({ ...tee, seasons: ['summer', 'winter'] }, 'winter')).toBe(true)
+  })
+
+  it('clothesMatch: all, the favourites or one type; a season; a tag', () => {
+    const fav = piece('fav', 'top', { favourite: true, tags: ['work'], seasons: ['winter'] })
+    const plain = piece('plain', 'bottom', { tags: ['gym'] })
+    const ids = (f: Parameters<typeof clothesMatch>[1]) => [fav, plain].filter(g => clothesMatch(g, f)).map(g => g.id)
+    expect(ids({ show: 'all' })).toEqual(['fav', 'plain'])
+    expect(ids({ show: 'favourites' })).toEqual(['fav'])
+    expect(ids({ show: 'bottom' })).toEqual(['plain'])
+    // a piece for any season passes every season
+    expect(ids({ show: 'all', season: 'summer' })).toEqual(['plain'])
+    expect(ids({ show: 'all', season: 'winter' })).toEqual(['fav', 'plain'])
+    expect(ids({ show: 'all', tag: 'gym' })).toEqual(['plain'])
+    expect(ids({ show: 'favourites', tag: 'gym' })).toEqual([])
+  })
+
+  it('tagsOf counts the tags in use, the most used first', () => {
+    expect(tagsOf([piece('a', 'top', { tags: ['work', 'smart'] }), piece('b', 'top', { tags: ['work'] }), piece('c', 'top', { tags: ['gym'] }), tee])).toEqual([
+      { tag: 'work', count: 2 },
+      { tag: 'gym', count: 1 },
+      { tag: 'smart', count: 1 },
+    ])
+  })
+
+  it('savedOrder puts the favourites first', () => {
+    const worn = outfit('worn', ['tee', 'jeans'])
+    const fav = outfit('fav', ['shirt', 'chinos'], { favourite: true, createdAt: '2026-07-01T09:00:00.000Z' })
+    const ix = wearIndex([look(ago(1), ['tee', 'jeans'])], TODAY)
+    expect(savedOrder([worn, fav], ix, liveById(everything)).map(o => o.id)).toEqual(['fav', 'worn'])
+  })
+})
+
+describe('Surprise me’s draw', () => {
+  it('weighs a piece by its rest: one, and a day more for each day rested, up to 60; never worn is the longest', () => {
+    const ix = wearIndex([look(TODAY, ['tee']), look(ago(10), ['shirt']), look(ago(200), ['jeans'])], TODAY)
+    expect(restWeight(ix, 'tee')).toBe(1)
+    expect(restWeight(ix, 'shirt')).toBe(11)
+    expect(restWeight(ix, 'jeans')).toBe(61)
+    expect(restWeight(ix, 'dress')).toBe(61)
+  })
+
+  it('pickWeighted draws each as likely as its weight', () => {
+    const weight = (x: string) => (x === 'b' ? 3 : 1)
+    expect(pickWeighted(['a', 'b'], weight, () => 0)).toBe('a')
+    expect(pickWeighted(['a', 'b'], weight, () => 0.24)).toBe('a')
+    expect(pickWeighted(['a', 'b'], weight, () => 0.26)).toBe('b')
+    expect(pickWeighted(['a', 'b'], weight, () => 0.999)).toBe('b')
+    expect(pickWeighted([], weight)).toBeUndefined()
+    // nothing weighs anything: an even draw
+    expect(pickWeighted(['x', 'y'], () => 0, () => 0.6)).toBe('y')
+  })
+})
+
+describe('worn with, and the cost per wear', () => {
+  it('wornWith: the pieces on the most of the same days, in any look that day, then the latest together', () => {
+    const byId = liveById([...everything, piece('old', 'shoes', { archivedAt: T0 })])
+    const ix = wearIndex(
+      [
+        look(ago(1), ['tee', 'jeans', 'trainers']),
+        // an evening change the same day: still that day
+        look(ago(1), ['shirt', 'chinos']),
+        look(ago(3), ['tee', 'jeans', 'old']),
+        look(ago(5), ['tee', 'chinos', 'ghost']),
+        look(ago(9), ['shirt', 'jeans']),
+      ],
+      TODAY,
+    )
+    expect(wornWith('tee', ix, byId).map(r => [r.garment.id, r.days, r.last])).toEqual([
+      ['chinos', 2, ago(1)],
+      ['jeans', 2, ago(1)],
+      ['shirt', 1, ago(1)],
+      ['trainers', 1, ago(1)],
+      ['old', 1, ago(3)],
+    ])
+    expect(wornWith('tee', ix, byId, 2)).toHaveLength(2)
+    expect(wornWith('dress', ix, byId)).toEqual([])
+  })
+
+  it('costs a piece per day worn, and says so in the app’s money', () => {
+    const priced = { ...coat, price: 120 }
+    const ix = wearIndex([look(ago(1), ['coat']), look(ago(2), ['coat']), look(ago(2), ['coat', 'tee']), look(ago(9), ['coat'])], TODAY)
+    expect(costPerWear(priced, ix)).toBe(40)
+    expect(costLine(priced, ix)).toBe(`${formatMoney(120)} · ${formatMoney(40)} a wear over 3 days`)
+    expect(costPerWear(priced, wearIndex([], TODAY))).toBeNull()
+    expect(costLine(priced, wearIndex([], TODAY))).toBe(`${formatMoney(120)} · not worn yet`)
+    expect(costLine(coat, ix)).toBeNull()
+    // a plan is no wear
+    expect(costPerWear(priced, wearIndex([look(ago(1), ['coat'], { planned: true }), look(ago(2), ['coat'])], TODAY))).toBe(120)
+  })
+})
+
+describe('the weather’s hint', () => {
+  const sky = (over: Partial<Forecast> = {}): Forecast => ({ tempC: 14, hiC: 16, loC: 9, rainPct: 10, code: 2, unit: '°C', ...over })
+
+  it('is cold at a high of 13 °C, or 55 °F, and under; wet from a 50% chance or under a wet sky', () => {
+    expect([COLD_C, COLD_F]).toEqual([13, 55])
+    expect(weatherNeed(sky())).toBeNull()
+    expect(weatherNeed(null)).toBeNull()
+    expect(weatherNeed(sky({ hiC: 13 }))).toEqual({ cold: true, wet: false })
+    expect(weatherNeed(sky({ hiC: 14 }))).toBeNull()
+    expect(weatherNeed(sky({ hiC: 56, unit: '°F' }))).toBeNull()
+    expect(weatherNeed(sky({ hiC: 55, unit: '°F' }))).toEqual({ cold: true, wet: false })
+    expect(weatherNeed(sky({ rainPct: 50 }))).toEqual({ cold: false, wet: true })
+    expect(weatherNeed(sky({ code: 63 }))).toEqual({ cold: false, wet: true })
+    expect(weatherNeed(sky({ code: 71, hiC: 1 }))).toEqual({ cold: true, wet: true })
+  })
+
+  it('says what the day is like', () => {
+    expect(weatherLine(sky({ hiC: 9 }), { cold: true, wet: false })).toBe('Cold today · 9° at most')
+    expect(weatherLine(sky({ rainPct: 70 }), { cold: false, wet: true })).toBe('Wet today · rain 70%')
+    expect(weatherLine(sky({ hiC: 6, code: 81, rainPct: 80 }), { cold: true, wet: true })).toBe('Cold and wet today · 6° at most · showers')
+  })
+
+  it('suggests the coat worn most lately, one in season, and on a wet day one tagged for rain', () => {
+    const wool = piece('wool', 'outerwear', { seasons: ['winter'] })
+    const mac = piece('mac', 'outerwear', { tags: ['rain'] })
+    const denim = piece('denim', 'outerwear')
+    const binned = piece('binned', 'outerwear', { deletedAt: T0 })
+    const oldCoat = piece('old-coat', 'outerwear', { archivedAt: T0 })
+    const ix = wearIndex([look(ago(1), ['denim']), look(ago(2), ['denim']), look(ago(3), ['mac']), ...[4, 5, 6].map(n => look(ago(n), ['old-coat']))], TODAY)
+    const all = [wool, mac, denim, binned, oldCoat, tee]
+    expect(outerwearFor(all, ix, { cold: true, wet: false })?.id).toBe('denim')
+    expect(outerwearFor(all, ix, { cold: false, wet: true })?.id).toBe('mac')
+    // mid-September is autumn: the winter coat waits, unless it is the only one
+    expect(outerwearFor([wool, tee], ix, { cold: true, wet: false })?.id).toBe('wool')
+    expect(outerwearFor([wool, piece('never', 'outerwear')], ix, { cold: true, wet: false })?.id).toBe('never')
+    expect(outerwearFor([wool, mac], wearIndex([], TODAY), { cold: true, wet: false }, 'winter')?.id).toBe('mac')
+    expect(outerwearFor([tee, jeans], ix, { cold: true, wet: true })).toBeUndefined()
+    expect(hasOuterwear(['tee', 'coat'], liveById(everything))).toBe(true)
+    expect(hasOuterwear(['tee', 'jeans', 'ghost'], liveById(everything))).toBe(false)
   })
 })

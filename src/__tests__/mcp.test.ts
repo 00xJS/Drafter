@@ -1061,6 +1061,24 @@ describe('the wardrobe over MCP', () => {
     expect(sent[0].id).toMatch(new RegExp(`^wear~${daysAgo(1)}~`))
   })
 
+  it('counts a look planned for today in no figure, and log_outfit on its day confirms it with what was worn', async () => {
+    const plan = { kind: 'wear', id: `wear~${today}~plan000000`, date: today, garmentIds: ['linen', 'jeans'], planned: true, createdAt: STAMP, updatedAt: STAMP }
+    const withPlan = (): Row[] => [...household(), { user_id: OWNER, data: plan }]
+    serveHousehold(withPlan())
+    const { garments } = (await tool('list_garments').run({}, ctxFor())) as { garments: (Piece & Record<string, unknown>)[] }
+    expect(garments.find(g => g.id === 'linen')).toMatchObject({ lastWorn: null, daysWorn: 0 })
+    expect(garments.find(g => g.id === 'jeans')).toMatchObject({ lastWorn: daysAgo(3), daysWorn: 1 })
+    serveHousehold(withPlan())
+    const stats = (await tool('get_wardrobe_stats').run({ window: 'all' }, ctxFor())) as Record<string, any>
+    expect(ids(stats.neverWorn.pieces)).toEqual(['linen'])
+    expect(stats.daysLoggedThisMonth).toBe([daysAgo(3), daysAgo(70)].filter(d => d.startsWith(today.slice(0, 7))).length)
+    // the composer's Wearing this: the day's latest look takes what was worn, and is a plan no longer
+    const sent = serveHousehold(withPlan())
+    await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())
+    expect(sent[0]).toMatchObject({ id: plan.id, garmentIds: ['tee', 'jeans'] })
+    expect('planned' in sent[0]).toBe(false)
+  })
+
   it('refuses what the app would not write, and writes nothing', async () => {
     const refusals: [Record<string, unknown>, RegExp][] = [
       [{ garmentIds: ['tee', 'jeans'], date: shiftDayKey(today, 1) }, /has not happened yet/],

@@ -600,6 +600,17 @@ export const GARMENT_TYPE_META: Record<GarmentType, { label: string; plural: str
 export const CORE_TYPES: GarmentType[] = ['top', 'bottom', 'onepiece']
 /** Most pieces an outfit or a look can hold. */
 export const MAX_PIECES = 12
+/** The longest note a look keeps: a word or a phrase ("wedding"), not a diary. */
+export const LOOK_NOTE_MAX = 120
+/** The seasons a piece can be marked for, in the year's order. A piece marked for none is for any. */
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
+export const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter']
+export const SEASON_META: Record<Season, { label: string }> = {
+  spring: { label: 'Spring' },
+  summer: { label: 'Summer' },
+  autumn: { label: 'Autumn' },
+  winter: { label: 'Winter' },
+}
 
 /** One piece of clothing. Personal, like the journal: never a household peer's to read. */
 export interface Garment extends Owned {
@@ -615,6 +626,14 @@ export interface Garment extends Owned {
   /** #rrggbb sampled from the photo: the placeholder, the tints, the name suggestion. */
   color?: string
   notes?: string
+  /** Starred: marked in the rows and in Clothes, which can show only these. */
+  favourite?: boolean
+  /** Your own words for it, lowercased ("work", "gym"): a Clothes filter. A set field, so two devices' tags both stay. */
+  tags?: string[]
+  /** The seasons it is for; none means any season. */
+  seasons?: Season[]
+  /** What it cost, in whole units of the owner's currency (formatMoney shows it): the sheet's cost per wear. */
+  price?: number
   createdAt: string
   updatedAt: string
   deletedAt?: string
@@ -634,6 +653,8 @@ export interface Outfit extends Owned {
    * union nobody chose.
    */
   garmentIds: string[]
+  /** Starred: first under the composer, and marked there. */
+  favourite?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string
@@ -642,7 +663,9 @@ export interface Outfit extends Owned {
 /**
  * One look worn on a local day: id wear~YYYY-MM-DD~<10 random chars>, like a
  * journal entry's. A day can hold several (an evening change); every figure
- * counts distinct days.
+ * counts distinct days. A look put together for a day still to come is
+ * `planned`, and counts in no figure until it is confirmed worn; one whose day
+ * passes unconfirmed stays out of them.
  */
 export interface Wear extends Owned {
   kind: 'wear'
@@ -651,6 +674,10 @@ export interface Wear extends Owned {
   date: string
   /** 0..MAX_PIECES, merged as one value like an outfit's; an empty look counts as nothing. */
   garmentIds: string[]
+  /** A word on the look: "wedding". */
+  note?: string
+  /** Planned ahead and not yet confirmed worn. */
+  planned?: true
   createdAt: string
   updatedAt: string
   deletedAt?: string

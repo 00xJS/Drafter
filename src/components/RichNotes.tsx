@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { mediaURL, saveMedia } from '../media'
+import { imageFiles, mediaURL, saveMedia } from '../media'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
 import { Icon } from './Icon'
 import { tipAttrs } from './notes/tips'
@@ -115,7 +115,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   }
 
   async function addFiles(files: FileList | File[]) {
-    const list = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const list = imageFiles(files)
     if (list.length === 0) return
     box.current?.focus()
     for (const file of list) {

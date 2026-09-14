@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chosenIn, heldPieces, load, rowsOf, shownIn, start, type Selection } from '../components/wardrobe/composer'
+import { chosenIn, heldPieces, load, rowsOf, shownIn, start, surprise, type Selection } from '../components/wardrobe/composer'
 import type { Garment, GarmentType, Wear } from '../types'
 import { byRest, liveById, logLook, looksOn, wearIndex } from '../wardrobe'
 
@@ -112,5 +112,59 @@ describe('a saved outfit put in the rows', () => {
     expect(chosenIn(loaded, rows, []).slots.bottom).toBe('chinos')
     // one deleted as well: both are said
     expect(load(sel, ['band-tee', 'gone', 'chinos'], rows, byId).note).toBe('Old band tee is retired · A piece was deleted')
+  })
+})
+
+describe('Surprise me', () => {
+  // the draw is Math.random's shape: 0 takes the first card in the draw
+  const first = () => 0
+
+  it('moves each row on screen off the card it is on, and writes nothing', () => {
+    const { rows, sel } = visit([], TODAY)
+    const before = chosenIn(sel, rows, [])
+    const after = chosenIn(surprise({ ...sel, note: 'A piece was deleted' }, rows, [], wearIndex([], TODAY), { random: first }), rows, [])
+    expect(after.slots.top).not.toBe(before.slots.top)
+    expect(after.slots.bottom).not.toBe(before.slots.bottom)
+    // the rows only move: the shoes stay shut, and nothing is logged or saved
+    expect(after.slots.shoes).toBeNull()
+    expect(surprise(sel, rows, [], wearIndex([], TODAY), { random: first }).note).toBeUndefined()
+  })
+
+  it('leans on the ones rested longest: each is drawn as often as its rest weighs', () => {
+    const garments = [piece('t-today', 'top'), piece('t-month', 'top'), piece('t-never', 'top'), piece('b', 'bottom')]
+    const ix = wearIndex([look(TODAY, ['t-today', 'b']), look('2026-08-15', ['t-month', 'b'])], TODAY)
+    const rows = rowsOf(garments, byRest(garments, ix).map(g => g.id))
+    // never worn leads the row, so it is the card the row starts on
+    const sel = start(rows, undefined, liveById(garments))
+    expect(chosenIn(sel, rows, []).slots.top).toBe('t-never')
+    const drawn = (r: number) => chosenIn(surprise(sel, rows, [], ix, { random: () => r }), rows, []).slots.top
+    // a month's rest weighs 31, a day's 1: 31 draws in 32 go to the one worn a month ago
+    expect(drawn(0.95)).toBe('t-month')
+    expect(drawn(0.98)).toBe('t-today')
+  })
+
+  it('never deals a piece only held for the day, nor one out of season while the row has one in it', () => {
+    const { rows, sel } = visit([look(DAY, ['band-tee', 'jeans'])], DAY)
+    // the held tee leads its row and the rows start on it; moved off it first,
+    // only the draw itself can keep it out
+    expect(rows.top[0].id).toBe('band-tee')
+    const moved = picking(sel, { top: 'hoodie' })
+    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(moved, rows, [], wearIndex([], TODAY), { random: () => r }), rows, []).slots.top).not.toBe('band-tee')
+    const tops = [piece('summer-tee', 'top', { seasons: ['summer'] }), piece('wool-top', 'top', { seasons: ['winter'] }), piece('plain-top', 'top')]
+    const garments = [...tops, jeans]
+    const ix = wearIndex([], TODAY)
+    const dealt = rowsOf(garments, byRest(garments, ix).map(g => g.id))
+    const on = start(dealt, undefined, liveById(garments))
+    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(on, dealt, [], ix, { season: 'winter', random: () => r }), dealt, []).slots.top).not.toBe('summer-tee')
+    // with nothing else in its row, the out-of-season one still comes up
+    const lone = rowsOf([tops[0], jeans], ['summer-tee', 'jeans'])
+    expect(chosenIn(surprise(start(lone, undefined, liveById([tops[0], jeans])), lone, [], ix, { season: 'winter', random: first }), lone, []).slots.top).toBe('summer-tee')
+  })
+
+  it('deals an open optional row a piece too, and leaves the accessories as they were', () => {
+    const { rows, sel } = visit([], TODAY)
+    const after = chosenIn(surprise(picking(sel, { accessories: ['scarf'] }), rows, ['shoes'], wearIndex([], TODAY), { random: first }), rows, ['shoes'])
+    expect(after.slots.shoes).not.toBeNull()
+    expect(after.accessories).toEqual(['scarf'])
   })
 })

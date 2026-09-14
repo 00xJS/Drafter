@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { makeClock } from '../../shared/clock.mjs'
 import * as shared from '../../shared/wardrobe.mjs'
 import * as app from '../wardrobe'
-import { CORE_TYPES, GARMENT_TYPES, MAX_PIECES } from '../types'
+import { CORE_TYPES, GARMENT_TYPES, LOOK_NOTE_MAX, MAX_PIECES } from '../types'
 import type { Garment } from '../types'
 
 // The wardrobe's rules live once, in shared/wardrobe.mjs, so an assistant
@@ -16,6 +16,7 @@ const MOVED = [
   'NOT_WORN_DAYS',
   'canDress',
   'coreKey',
+  'isPlanned',
   'liveById',
   'logLook',
   'looksOn',
@@ -57,6 +58,32 @@ const STAYED = [
   'todaySuggestions',
   'colorName',
   'suggestedNames',
+  // a replaced photo's clean-up
+  'swappedPhotos',
+  // favourites, details, plans and notes, Surprise me, seasons and tags, worn with and cost per wear, the weather
+  'starred',
+  'withDetails',
+  'PLAN_DAYS',
+  'lastPlanDay',
+  'confirmed',
+  'withNote',
+  'planFor',
+  'restWeight',
+  'pickWeighted',
+  'seasonOf',
+  'inSeason',
+  'clothesMatch',
+  'tagsOf',
+  'wornWith',
+  'costPerWear',
+  'costLine',
+  'COLD_C',
+  'COLD_F',
+  'WET_PCT',
+  'weatherNeed',
+  'weatherLine',
+  'outerwearFor',
+  'hasOuterwear',
 ]
 
 describe('the wardrobe rules the server shares', () => {
@@ -68,10 +95,24 @@ describe('the wardrobe rules the server shares', () => {
     expect(Object.keys(app).sort()).toEqual([...MOVED, ...STAYED].sort())
   })
 
+  it('count a planned look in no figure, for the app and an assistant alike, until a log confirms it', () => {
+    const look = { kind: 'wear' as const, id: 'wear~2026-09-14~plan000000', date: '2026-09-14', garmentIds: ['tee', 'jeans'], createdAt: '2026-09-13T20:00:00.000Z', updatedAt: '2026-09-13T20:00:00.000Z' }
+    const plan = { ...look, planned: true as const }
+    expect([shared.isPlanned(plan), shared.isPlanned(look)]).toEqual([true, false])
+    const ix = shared.wearIndex([plan], '2026-09-14')
+    expect(ix.logged).toEqual([])
+    expect(ix.days.has('tee')).toBe(false)
+    const { write } = shared.logLook([plan], '2026-09-14', ['tee', 'jeans'], [], { note: ' wedding ' })
+    expect(write).toMatchObject({ id: plan.id, note: 'wedding' })
+    expect('planned' in write).toBe(false)
+    expect(shared.wearIndex([write], '2026-09-14').logged).toEqual(['2026-09-14'])
+  })
+
   it('agree with the app on the types, the core and the most pieces a look holds', () => {
     expect(shared.GARMENT_TYPES).toEqual(GARMENT_TYPES)
     expect(shared.CORE_TYPES).toEqual(CORE_TYPES)
     expect(shared.MAX_PIECES).toBe(MAX_PIECES)
+    expect(shared.LOOK_NOTE_MAX).toBe(LOOK_NOTE_MAX)
   })
 
   it('make a look\'s id from the randomness they are handed, and from ten random characters without', () => {

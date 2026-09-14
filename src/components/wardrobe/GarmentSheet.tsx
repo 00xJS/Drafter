@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
-import { NotSignedIn, saveMedia } from '../../media'
+import { NotSignedIn, imageFiles, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
 import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit } from '../../types'
 import { uid } from '../../utils'
-import { garmentStats, outfitLabel, renamed, suggestedNames, wornLine, type WearIndex } from '../../wardrobe'
+import { costLine, garmentStats, outfitLabel, renamed, starred, suggestedNames, wornLine, type WearIndex } from '../../wardrobe'
 import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
 import { GarmentPhoto } from './GarmentPhoto'
+import { PieceDetails } from './PieceDetails'
 
 /** What the sheet is for: adding a piece (of a type, when the way in named one), or one piece. */
 export type SheetMode = { kind: 'add'; type?: GarmentType } | { kind: 'edit'; id: string }
@@ -33,6 +34,8 @@ interface Props {
   onWearToday(g: Garment): void
   /** A worn day tapped: the composer on that day. */
   onGoDay(day: string): void
+  /** A piece it is worn with tapped: that piece's sheet. */
+  onOpenPiece(id: string): void
   onClose(): void
 }
 
@@ -95,17 +98,57 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const names = suggestedNames(type, ready?.color)
 
-  const choose = (files: FileList | null) => {
+  const choose = (files: FileList | readonly File[] | null) => {
     const picked = Array.from(files ?? [])
-    if (picked.length === 0) return
+    // a photo taken mid-save would move the queue under the save still reading it
+    if (picked.length === 0 || saving) return
     setQueue(picked)
     setAt(0)
     setName('')
     setNotes('')
     setFailed(null)
   }
+  /** Files dropped on the sheet: the photos among them, as if picked; with none, a word why. */
+  const drop = (files: FileList) => {
+    setDragging(false)
+    const photos = imageFiles(files)
+    if (photos.length > 0) choose(photos)
+    else setFailed('That is not a photo — try a JPEG or PNG')
+  }
+  // on a desktop, a photo pasted while the sheet is open, or dropped anywhere
+  // on it, is taken as if it were picked, through the filter a note's photos go
+  // through; pasted text still goes into the fields as ever, and a dropped file
+  // is never opened by the browser in the app's place
+  const take = useRef({ choose, drop })
+  take.current = { choose, drop }
+  useEffect(() => {
+    const carriesFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+    const onPaste = (e: ClipboardEvent) => {
+      const photos = imageFiles(e.clipboardData?.files ?? [])
+      if (photos.length === 0) return
+      e.preventDefault()
+      take.current.choose(photos)
+    }
+    const onDragOver = (e: DragEvent) => {
+      if (carriesFiles(e)) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!e.dataTransfer || !carriesFiles(e)) return
+      e.preventDefault()
+      take.current.drop(e.dataTransfer.files)
+    }
+    window.addEventListener('paste', onPaste)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('paste', onPaste)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
   /** On to the next photo picked (typed as the way in said, else as the last one saved), or done. */
   const next = (saved?: GarmentType) => {
     if (at + 1 >= queue.length) {
@@ -163,13 +206,24 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       </ModalHead>
       <div className="modal-body">
         {/* the label is the target, so the tap itself opens the picker: on an
-            iPhone, Take Photo, Photo Library or Choose File */}
-        <label className={ready ? 'garment-pick has-photo' : 'garment-pick'}>
+            iPhone, Take Photo, Photo Library or Choose File. A file dragged
+            over it lights it until the pointer leaves it — not as it crosses
+            what is inside — and the window takes the drop */}
+        <label
+          className={`${ready ? 'garment-pick has-photo' : 'garment-pick'}${dragging ? ' dragging' : ''}`}
+          onDragOver={e => {
+            if (Array.from(e.dataTransfer.types).includes('Files')) setDragging(true)
+          }}
+          onDragLeave={e => {
+            if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) setDragging(false)
+          }}
+        >
           <input
             type="file"
             accept="image/*"
             multiple
             className="garment-file"
+            disabled={saving}
             onChange={e => {
               choose(e.target.files)
               e.target.value = ''
@@ -187,6 +241,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
               <Icon name="camera" size={28} />
               <span className="garment-pick-title">{file ? 'Choose another photo' : 'Choose photo'}</span>
               <small className="muted">or save the piece without one</small>
+              <small className="muted garment-drop-hint">Drop or paste a photo here too</small>
             </>
           )}
         </label>
@@ -231,7 +286,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   )
 }
 
-function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, onRetire, onDelete, onWearToday, onGoDay, onClose }: Props & { id: string }) {
+function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, onRetire, onDelete, onWearToday, onGoDay, onOpenPiece, onClose }: Props & { id: string }) {
   const g = garments.find(x => x.id === id)
   // edits after an await read the piece as it is by then, so each is stamped newer than the last
   const latest = useRef(g)
@@ -240,6 +295,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const [notes, setNotes] = useState(g?.notes ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
+  /** Keeps what the details still have typed (the price, the tags), as the name and notes are kept. */
+  const keepDetails = useRef(() => {})
   // gone from under the sheet (deleted, here or on another device): nothing left to show
   useEffect(() => {
     if (!g) onClose()
@@ -284,16 +341,29 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const close = () => {
     commitName()
     commitNotes()
+    keepDetails.current()
     onClose()
   }
 
   const stats = garmentStats(g, ix)
+  const cost = costLine(g, ix)
   const wornOn = (ix.days.get(g.id) ?? []).slice(0, 10)
   const inOutfits = outfits.filter(o => !o.deletedAt && o.garmentIds.includes(g.id))
 
   return (
     <Modal onClose={close} className="modal narrow garment-sheet">
-      <ModalHead title={g.name} />
+      <ModalHead title={g.name}>
+        <button
+          type="button"
+          aria-pressed={!!g.favourite}
+          aria-label="Favourite"
+          title={g.favourite ? 'A favourite — tap to unstar it' : 'Star it as a favourite'}
+          className={g.favourite ? 'btn subtle garment-fav on' : 'btn subtle garment-fav'}
+          onClick={() => edit(cur => starred(cur, !cur.favourite))}
+        >
+          <Icon name="star" size={18} filled={!!g.favourite} />
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <div className="garment-hero">
           <GarmentPhoto garment={g} size="photo" alt={g.name} />
@@ -319,6 +389,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
               First worn {shortDay(stats.firstWorn, todayKey)} · 30 days: {stats.in30} · 12 months: {stats.in365}
             </p>
           )}
+          {cost && <p className="garment-sub">{cost}</p>}
           <Bars weekly={stats.weekly} color={g.color ?? 'var(--accent)'} title="Days worn per week, last 12 weeks" />
         </div>
         <label className="field">
@@ -344,6 +415,19 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
           <span>Notes</span>
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} onBlur={commitNotes} />
         </label>
+        <PieceDetails
+          garment={g}
+          ix={ix}
+          byId={byId}
+          onEdit={edit}
+          onOpenPiece={other => {
+            commitName()
+            commitNotes()
+            keepDetails.current()
+            onOpenPiece(other)
+          }}
+          keep={keepDetails}
+        />
         {wornOn.length > 0 && (
           <div className="field">
             <span>Worn on</span>
@@ -356,6 +440,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
                   onClick={() => {
                     commitName()
                     commitNotes()
+                    keepDetails.current()
                     onGoDay(d)
                   }}
                 >

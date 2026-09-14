@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react'
 import type { Garment } from '../../types'
 import { wornShort, type WearIndex } from '../../wardrobe'
 import { heldBadge } from './composer'
-import { GarmentPhoto } from './GarmentPhoto'
+import { FavouriteMark, GarmentPhoto } from './GarmentPhoto'
 
 interface Props {
   /** "Tops": the row's heading and its radiogroup's name. */
@@ -158,6 +158,7 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
                   <div role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className="snap-card" onClick={() => choose(i)}>
                     {g ? (
                       <>
+                        {g.favourite && <FavouriteMark />}
                         <GarmentPhoto garment={g} />
                         <span className="snap-name">{g.name}</span>
                         {heldBadge(g) ? (

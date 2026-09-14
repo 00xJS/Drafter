@@ -18,6 +18,8 @@ export const GARMENT_TYPES = ['top', 'bottom', 'onepiece', 'outerwear', 'shoes',
 export const CORE_TYPES = ['top', 'bottom', 'onepiece']
 /** Most pieces an outfit or a look can hold. */
 export const MAX_PIECES = 12
+/** The longest note a look keeps (LOOK_NOTE_MAX in src/types.ts; wardrobe-shared.test.ts holds them equal). */
+export const LOOK_NOTE_MAX = 120
 
 /** Whole days from one day key to another: UTC maths on the keys, so no zone or clock change moves it (Kitchen's daysBetween). */
 const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
@@ -54,6 +56,31 @@ export function withPieces(w, garmentIds) {
 /** Live looks on a day, oldest first (createdAt, then id); the last is what "Wearing this" edits. */
 export function looksOn(wears, day) {
   return wears.filter(w => !w.deletedAt && w.date === day).sort(byCreated)
+}
+
+/**
+ * A look put together ahead for its day and not yet confirmed worn. The one
+ * test every figure and every last-worn date goes through (wearIndex), in the
+ * app and over MCP: a plan counts once it is confirmed, and one whose day
+ * passed unconfirmed never does.
+ */
+export const isPlanned = w => w.planned === true
+
+/**
+ * A look filed as a plan (`planned` true) or as worn (false), with its note as
+ * given ('' clears it); either left out stays as it was. Unstamped: the
+ * writers stamp.
+ */
+export function marked(w, { planned, note } = {}) {
+  const next = { ...w }
+  if (planned === true) next.planned = true
+  else if (planned === false) delete next.planned
+  if (note !== undefined) {
+    const text = String(note).trim().slice(0, LOOK_NOTE_MAX)
+    if (text) next.note = text
+    else delete next.note
+  }
+  return next
 }
 
 // ---- identity --------------------------------------------------------------------
@@ -96,19 +123,25 @@ function displaces(g, other) {
  * has, Trash included, so one in Trash still has a slot; an id with no record
  * always stays. The piece sheet's Wear today is a log of one piece that shows
  * none of today's look. `now` stamps a new look, and `rand` makes its id.
+ *
+ * A log is a look worn unless `planned` makes it a plan (a day still to
+ * come), so logging a day whose latest look was a plan confirms that plan: a
+ * caller that does not show the plan's pieces logs `another` beside it
+ * instead. `note`, when given, is the look's note; '' clears it.
  */
 export function logLook(wears, day, pieces, records, opts = {}) {
+  const as = { planned: opts.planned ?? false, note: opts.note }
   const looks = opts.another ? [] : looksOn(wears, day)
   const latest = looks[looks.length - 1]
   if (!latest) {
-    const write = newWear(day, pieces, opts.now, opts.rand)
+    const write = marked(newWear(day, pieces, opts.now, opts.rand), as)
     return { write, undo: { remove: write.id } }
   }
   const known = new Map(records.filter(g => !g.purged).map(g => [g.id, g]))
   const shown = opts.shown ?? new Set([...known.values()].filter(g => !g.deletedAt && !g.archivedAt).map(g => g.id))
   const putOn = pieces.map(id => known.get(id)).filter(g => !!g)
   const kept = latest.garmentIds.filter(id => !pieces.includes(id) && !shown.has(id) && !putOn.some(g => displaces(g, known.get(id))))
-  const write = withPieces(latest, [...pieces, ...kept])
+  const write = marked(withPieces(latest, [...pieces, ...kept]), as)
   return { write, undo: { ...latest, updatedAt: newerStamp(write.updatedAt) } }
 }
 
@@ -180,11 +213,15 @@ export function outfitLabel(ids, byId) {
 
 // ---- the index every figure reads ------------------------------------------------
 
-/** Skips deleted looks, empty looks and any date after dayKey (clock skew). Two looks on a day are one day. */
+/**
+ * Skips deleted looks, empty looks, plans (isPlanned: a plan counts once it is
+ * confirmed worn, and one whose day passed unconfirmed never does) and any
+ * date after dayKey (clock skew). Two looks on a day are one day.
+ */
 export function wearIndex(wears, dayKey) {
   const looks = new Map()
   for (const w of wears) {
-    if (w.deletedAt || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
+    if (w.deletedAt || isPlanned(w) || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
     const list = looks.get(w.date)
     if (list) list.push(w)
     else looks.set(w.date, [w])
