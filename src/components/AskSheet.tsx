@@ -23,6 +23,8 @@ export const ASK_KIND_META: Record<AskKind, { emoji: string; label: string }> = 
   meal: { emoji: '🍽️', label: 'Meal' },
   event: { emoji: '📅', label: 'Event' },
   journal: { emoji: '📓', label: 'Journal' },
+  garment: { emoji: '👕', label: 'Clothes' },
+  wear: { emoji: '👗', label: 'Look' },
 }
 
 /** Sources listed before "Show all". */

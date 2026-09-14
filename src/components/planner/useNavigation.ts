@@ -16,12 +16,13 @@ import {
 } from './routes'
 
 /**
- * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette,
- * a piece's worn days: which view, which day, and whether to open the piece
- * sheet to add one (of a type) or on one. Consumed once by the segment, like
- * journalOpenDate, so no entry point pins it.
+ * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette
+ * and its search, a piece's worn days, the Calendar, the Week review and Ask:
+ * which view, which day, whether to open the piece sheet to add one (of a
+ * type) or on one, and a saved outfit to put in the composer's rows. Consumed
+ * once by the segment, like journalOpenDate, so no entry point pins it.
  */
-export type WardrobeOpen = { tab?: WardrobeTab; date?: string; add?: GarmentType | true; garmentId?: string }
+export type WardrobeOpen = { tab?: WardrobeTab; date?: string; add?: GarmentType | true; garmentId?: string; outfitId?: string }
 
 /**
  * Where the shell is: the tab, the segment inside each tab, and the one-shot

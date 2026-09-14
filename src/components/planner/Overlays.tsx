@@ -69,7 +69,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
-  const { setView, goTasksTab, goPeopleTab, setNotesProjectId, openPlace, openJournal, openNote, setKitchenRecipe } = p
+  const { setView, goTasksTab, goPeopleTab, setNotesProjectId, openPlace, openJournal, openNote, setKitchenRecipe, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
@@ -98,6 +98,9 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       if (r) setKitchenRecipe(r)
       setView('kitchen')
     } else if (doc.kind === 'meal') setView('kitchen')
+    // a piece opens its sheet over Clothes; a look, the composer on its day
+    else if (doc.kind === 'garment') openWardrobe({ tab: 'clothes', garmentId: doc.id })
+    else if (doc.kind === 'wear') openWardrobe({ date: doc.date })
     else if (doc.kind === 'event') {
       const e = doc.feed ? undefined : store.events.find(x => x.id === doc.id)
       if (e) setEventEditor({ entry: e, startIso: e.start })
@@ -226,6 +229,12 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onOpenJournal={e => openJournal(e.date)}
             notes={store.notes}
             onOpenNote={n => openNote(n.id)}
+            // your clothes and saved outfits: a piece opens its sheet, an
+            // outfit today's composer with it in the rows
+            garments={store.garments}
+            outfits={store.outfits}
+            onOpenGarment={g => openWardrobe({ tab: 'clothes', garmentId: g.id })}
+            onOpenOutfit={o => openWardrobe({ outfitId: o.id, date: today })}
             onAsk={question => openSheet({ kind: 'ask', question })}
             onSaw={sawThem}
             onCreateTask={(title, openEditor) => {
@@ -322,8 +331,23 @@ export function Overlays({ p }: { p: PlannerCtx }) {
           <AskSheet
             key={sheet.question ?? ''}
             initialQuestion={sheet.question}
-            // your own events are items already: ask.ts skips a feed's copy of one (localId)
-            sources={{ tasks: store.tasks, projects: store.projects, people: store.people, places: store.places, recipes: store.recipes, meals: store.meals, entries: store.events, feedEvents: allEvents, journal: store.journal }}
+            // your own events are items already: ask.ts skips a feed's copy of
+            // one (localId). The wardrobe is yours alone, as the journal is, but
+            // nothing you wrote, so it goes whatever the Journal chip says
+            sources={{
+              tasks: store.tasks,
+              projects: store.projects,
+              people: store.people,
+              places: store.places,
+              recipes: store.recipes,
+              meals: store.meals,
+              entries: store.events,
+              feedEvents: allEvents,
+              journal: store.journal,
+              garments: store.garments,
+              outfits: store.outfits,
+              wears: store.wears,
+            }}
             tz={deviceZone()}
             onOpen={openAskDoc}
             onClose={closeSheet}

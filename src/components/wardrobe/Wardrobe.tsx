@@ -24,7 +24,7 @@ interface Props {
   onRemove(id: string): void
   onRestore(ids: string[]): void
   showToast(msg: string, undo?: () => void): void
-  /** A way in from the Today card, the palette or a link: used once, then forgotten. */
+  /** A way in from the Today card, the palette, a link, the Calendar, the Week review or Ask: used once, then forgotten. */
   open: WardrobeOpen | null
   onOpenConsumed(): void
 }
@@ -32,6 +32,11 @@ interface Props {
 /** A day the composer may show: a day key no later than today, else today. */
 const dayOr = (day: string | undefined, today: string) => (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today ? day : today)
 const sheetFor = (o: WardrobeOpen | null): SheetMode | null => (o?.add ? { kind: 'add', type: o.add === true ? undefined : o.add } : o?.garmentId ? { kind: 'edit', id: o.garmentId } : null)
+/** The pieces of the saved outfit a way in names, for the composer's rows; null when it names none, or that one is gone. */
+const outfitFor = (o: WardrobeOpen | null, outfits: readonly Outfit[]): string[] | null => {
+  const found = o?.outfitId ? outfits.find(x => x.id === o.outfitId && !x.deletedAt) : undefined
+  return found ? [...found.garmentIds] : null
+}
 const lastOf = <T,>(list: readonly T[]): T | undefined => list[list.length - 1]
 const NONE: Garment[] = []
 /** The piece sheet shows none of today's look, so its Wear today keeps all of it but what the piece replaces. */
@@ -48,20 +53,24 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   const [tab, setTab] = useState<WardrobeTab>(() => open?.tab ?? 'outfit')
   const [day, setDay] = useState(() => dayOr(open?.date, todayKey))
   const [sheet, setSheet] = useState<SheetMode | null>(() => sheetFor(open))
+  /** A saved outfit a way in asked for, until the composer has put it in its rows. */
+  const [pending, setPending] = useState<string[] | null>(() => outfitFor(open, outfits))
   const byId = useMemo(() => liveById(garments), [garments])
   /** Every piece this device has, Trash included: a log reads each one's slot here. */
   const records = useMemo(() => [...garments, ...inTrash], [garments, inTrash])
   const ix = useMemo(() => wearIndex(wears, todayKey), [wears, todayKey])
 
-  // a way in is used once — the view, the day, the sheet — and then forgotten,
-  // so the next visit opens on today's composer
+  // a way in is used once — the view, the day, the sheet, an outfit for the
+  // rows — and then forgotten, so the next visit opens on today's composer
   useEffect(() => {
     if (!open) return
     if (open.tab) setTab(open.tab)
-    else if (open.date) setTab('outfit')
+    else if (open.date || open.outfitId) setTab('outfit')
     if (open.date) setDay(dayOr(open.date, localDayKey()))
     const s = sheetFor(open)
     if (s) setSheet(s)
+    const ids = outfitFor(open, outfits)
+    if (ids) setPending(ids)
     onOpenConsumed()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -156,11 +165,22 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
             onRemove(o.id)
             showToast('Outfit deleted', () => onRestore([o.id]))
           }}
+          pending={pending}
+          onPendingUsed={() => setPending(null)}
         />
       )}
       {tab === 'clothes' && <Clothes garments={garments} ix={ix} onAdd={type => setSheet({ kind: 'add', type })} onOpen={id => setSheet({ kind: 'edit', id })} />}
       {tab === 'stats' && (
-        <WardrobeStats garments={garments} outfits={outfits} byId={byId} ix={ix} onOpenPiece={id => setSheet({ kind: 'edit', id })} onRetire={g => retire(g, true)} onSaveOutfit={saveCombo} />
+        <WardrobeStats
+          garments={garments}
+          outfits={outfits}
+          byId={byId}
+          ix={ix}
+          onOpenPiece={id => setSheet({ kind: 'edit', id })}
+          onRetire={g => retire(g, true)}
+          onSaveOutfit={saveCombo}
+          onGoDay={goDay}
+        />
       )}
 
       {sheet && (

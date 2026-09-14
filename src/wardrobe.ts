@@ -77,6 +77,16 @@ export function liveById(garments: readonly Garment[]): Map<string, Garment> {
   return new Map(garments.filter(g => !g.deletedAt && !g.purged).map(g => [g.id, g]))
 }
 
+/**
+ * A piece's tags, trimmed and each once, when it has any. This build's
+ * Garment has no tags field, so a row that carries them is read as it is:
+ * the palette and Ask find a piece by them.
+ */
+export function garmentTags(g: Garment): string[] {
+  const tags = (g as Garment & { tags?: unknown }).tags
+  return Array.isArray(tags) ? [...new Set(tags.filter((t): t is string => typeof t === 'string').map(t => t.trim()).filter(Boolean))] : []
+}
+
 /** Pieces in slot order (GARMENT_TYPES), stable within a slot; unknown ids dropped. */
 export function orderPieces(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string[] {
   return [...new Set(ids)].filter(id => byId.has(id)).sort((a, b) => slot(byId.get(a)!.type) - slot(byId.get(b)!.type))
@@ -217,11 +227,19 @@ export interface WearIndex {
   looks: ReadonlyMap<string, readonly Wear[]>
 }
 
-/** Skips deleted looks, empty looks and any date after dayKey (clock skew). Two looks on a day are one day. */
+/**
+ * A look planned for a day rather than worn on it. This build's Wear has no
+ * planned field, so every look here was worn; a row that does carry one is
+ * read as it says. It is the one check the figures make — through wearIndex,
+ * so a planned look never counts as a day worn anywhere.
+ */
+export const isPlanned = (w: Wear): boolean => (w as Wear & { planned?: unknown }).planned === true
+
+/** Skips deleted looks, planned ones, empty looks and any date after dayKey (clock skew). Two looks on a day are one day. */
 export function wearIndex(wears: readonly Wear[], dayKey: string): WearIndex {
   const looks = new Map<string, Wear[]>()
   for (const w of wears) {
-    if (w.deletedAt || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
+    if (w.deletedAt || isPlanned(w) || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
     const list = looks.get(w.date)
     if (list) list.push(w)
     else looks.set(w.date, [w])
@@ -524,6 +542,153 @@ export function todaySuggestions(
     )
     .slice(0, limit)
     .map(({ key, garmentIds, label, reason }) => ({ key, garmentIds, label, reason }))
+}
+
+// ---- a day's look elsewhere, and the Stats extras --------------------------------
+
+/** A day's look as the Calendar and the Week review show it: its latest, and how many the day holds. None for a day with no look. */
+export function lookOn(ix: WearIndex, day: string): { look: Wear; looks: number } | undefined {
+  const looks = ix.looks.get(day)
+  return looks?.length ? { look: looks[looks.length - 1], looks: looks.length } : undefined
+}
+
+/**
+ * Days logged in a row. The current run ends today, or yesterday while today
+ * has no look yet — like a habit's streak, today waits rather than breaks it
+ * — and the best is the longest run there has been. Two looks on a day are one day.
+ */
+export function wearStreaks(ix: WearIndex): { current: number; best: number } {
+  let best = 0
+  let run = 0
+  let prev = ''
+  // oldest first, so the run left at the end is the one reaching the newest logged day
+  for (const day of [...ix.logged].reverse()) {
+    run = prev && shiftDayKey(prev, 1) === day ? run + 1 : 1
+    best = Math.max(best, run)
+    prev = day
+  }
+  const newest = ix.logged[0]
+  return { current: newest === ix.dayKey || newest === shiftDayKey(ix.dayKey, -1) ? run : 0, best }
+}
+
+/** A cell of the month's photo calendar: a day and its latest look, or the padding around the month (day null). */
+export interface LookCell {
+  day: string | null
+  look?: Wear
+  looks: number
+}
+
+/**
+ * A month as whole Sunday-to-Saturday weeks, the Calendar's grid: each day
+ * with its latest look, when it has one. `month` runs 1–12. A day after
+ * dayKey never has one, as the index does not hold it.
+ */
+export function lookCalendar(ix: WearIndex, year: number, month: number): LookCell[] {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const lead = new Date(Date.UTC(year, month - 1, 1)).getUTCDay()
+  const length = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const cells: LookCell[] = Array.from({ length: lead }, () => ({ day: null, looks: 0 }))
+  for (let d = 1; d <= length; d++) {
+    const day = `${year}-${pad(month)}-${pad(d)}`
+    const on = lookOn(ix, day)
+    cells.push(on ? { day, ...on } : { day, looks: 0 })
+  }
+  while (cells.length % 7 !== 0) cells.push({ day: null, looks: 0 })
+  return cells
+}
+
+/**
+ * Your uniform: the combination you repeat most (repeatedOutfits' first — the
+ * same top and bottom, or one-piece), with the share of your logged days it
+ * was worn on and what usually goes with it: the shoes, outerwear and
+ * accessories worn on at least half of its days, the most often first, three
+ * at most. Null until some combination has been worn on two days.
+ */
+export function yourUniform(
+  ix: WearIndex,
+  byId: ReadonlyMap<string, Garment>,
+  outfits: readonly Outfit[],
+): (ReturnType<typeof repeatedOutfits>[number] & { share: number; usually: Garment[] }) | null {
+  const top = repeatedOutfits(ix, byId, outfits)[0]
+  if (!top) return null
+  const withIt = new Map<string, number>()
+  for (const day of ix.logged) {
+    const looks = (ix.looks.get(day) ?? []).filter(w => coreKey(w.garmentIds, byId) === top.key)
+    const extras = new Set(looks.flatMap(w => w.garmentIds).filter(id => byId.has(id) && !CORE.has(byId.get(id)!.type)))
+    for (const id of extras) withIt.set(id, (withIt.get(id) ?? 0) + 1)
+  }
+  const usually = [...withIt]
+    .filter(([, n]) => n * 2 >= top.days)
+    .map(([id, n]) => ({ g: byId.get(id)!, n }))
+    .sort((a, b) => b.n - a.n || slot(a.g.type) - slot(b.g.type) || a.g.name.localeCompare(b.g.name))
+    .slice(0, 3)
+    .map(r => r.g)
+  return { ...top, share: top.days / ix.logged.length, usually }
+}
+
+/** A price the cost per wear can use: a finite amount above nothing. */
+const priceOf = (g: Garment): number | undefined => (typeof g.price === 'number' && Number.isFinite(g.price) && g.price > 0 ? g.price : undefined)
+
+export interface CostRow {
+  garment: Garment
+  price: number
+  /** Days worn. */
+  wears: number
+  /** The price over those days; absent while it has not been worn. */
+  perWear?: number
+}
+
+/**
+ * Cost per wear, over the pieces with a price: each one's price over the days
+ * it was worn — the best value first, then the never worn, dearest first —
+ * and the whole: everything they cost over every day they were worn. Retired
+ * pieces count, as what they cost was spent; one in Trash does not.
+ */
+export function costPerWear(garments: readonly Garment[], ix: WearIndex): { rows: CostRow[]; spent: number; wears: number; perWear?: number } {
+  const rows = garments
+    .filter(g => !g.deletedAt && priceOf(g) !== undefined)
+    .map((garment): CostRow => {
+      const price = priceOf(garment)!
+      const wears = ix.days.get(garment.id)?.length ?? 0
+      return { garment, price, wears, perWear: wears > 0 ? price / wears : undefined }
+    })
+    .sort((a, b) => {
+      if (a.perWear !== undefined && b.perWear !== undefined) return a.perWear - b.perWear || a.garment.name.localeCompare(b.garment.name)
+      if (a.perWear !== undefined || b.perWear !== undefined) return a.perWear !== undefined ? -1 : 1
+      return b.price - a.price || a.garment.name.localeCompare(b.garment.name)
+    })
+  const spent = rows.reduce((sum, r) => sum + r.price, 0)
+  const wears = rows.reduce((sum, r) => sum + r.wears, 0)
+  return { rows, spent, wears, perWear: wears > 0 ? spent / wears : undefined }
+}
+
+/**
+ * A week or a month of the wardrobe, for the Week review: each day from
+ * `start` up to `end` (day keys, the end left out) that has a look, oldest
+ * first, as lookOn gives it; and the piece worn on the most of those days —
+ * `min` of them at least, or none, as one piece worn once in a week of
+ * different clothes is not the most worn of anything. Ties go to the latest
+ * worn, then the name; a retired piece counts, as this is history.
+ */
+export function wornBetween(
+  garments: readonly Garment[],
+  ix: WearIndex,
+  start: string,
+  end: string,
+  min = 2,
+): { days: { day: string; look: Wear; looks: number }[]; top?: { garment: Garment; days: number } } {
+  const days = ix.logged
+    .filter(d => d >= start && d < end)
+    .reverse()
+    .map(day => ({ day, ...lookOn(ix, day)! }))
+  const top = [...liveById(garments).values()]
+    .map(garment => {
+      const worn = (ix.days.get(garment.id) ?? []).filter(d => d >= start && d < end)
+      return { garment, days: worn.length, last: worn[0] ?? '' }
+    })
+    .filter(r => r.days >= min)
+    .sort((a, b) => b.days - a.days || b.last.localeCompare(a.last) || a.garment.name.localeCompare(b.garment.name))[0]
+  return top ? { days, top: { garment: top.garment, days: top.days } } : { days }
 }
 
 // ---- names from a colour ---------------------------------------------------------

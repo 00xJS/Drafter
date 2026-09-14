@@ -611,6 +611,7 @@ export interface Garment extends Owned {
   /** #rrggbb sampled from the photo: the placeholder, the tints, the name suggestion. */
   color?: string
   notes?: string
+  price?: number
   createdAt: string
   updatedAt: string
   deletedAt?: string

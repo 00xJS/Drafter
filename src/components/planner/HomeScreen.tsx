@@ -133,6 +133,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           }}
           onNew={preset => newTask(preset)}
           onPlanWeek={() => openSheet({ kind: 'week' })}
+          // what you wore that week: a look opens the composer on its day, the
+          // most worn piece its sheet
+          garments={store.garments}
+          wears={store.wears}
+          onOpenWardrobe={openWardrobe}
         />
       )}
       {homeTab === 'journal' && (

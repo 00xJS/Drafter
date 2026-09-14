@@ -49,6 +49,9 @@ interface Props {
   onWearOutfit(o: Outfit): void
   onRenameOutfit(o: Outfit, name: string): void
   onDeleteOutfit(o: Outfit): void
+  /** A saved outfit asked for from outside (the palette's search): put in the rows once, then handed back as used. */
+  pending?: readonly string[] | null
+  onPendingUsed?(): void
 }
 
 /**
@@ -61,14 +64,17 @@ interface Props {
  * visit, badged, so Update look never writes over what you cannot see.
  */
 export function OutfitComposer(props: Props) {
-  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece } = props
+  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece, pending, onPendingUsed } = props
   const [frozen] = useState(() => byRest(garments, ix).map(g => g.id))
   const dayLooks = looksOn(wears, day)
   const latest = dayLooks[dayLooks.length - 1]
   const held = useMemo(() => heldPieces(latest, garments, inTrash), [latest, garments, inTrash])
   const rows = useMemo(() => rowsOf(garments, frozen, held), [garments, frozen, held])
   const shown = useMemo(() => shownIn(rows), [rows])
-  const [sel, setSel] = useState<Selection>(() => start(rows, latest, byId))
+  const [sel, setSel] = useState<Selection>(() => {
+    const first = start(rows, latest, byId)
+    return pending ? load(first, pending, rows, byId) : first
+  })
   const [openRows, setOpenRows] = useState<Optional[]>(storedRows)
 
   // a day with a look brings its pieces into the rows; a day without one keeps
@@ -80,6 +86,16 @@ export function OutfitComposer(props: Props) {
     setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
+
+  // a saved outfit asked for from outside goes in the rows once — after the
+  // day's own look, so it is what shows — and is handed back as used, so
+  // coming back to Outfit later does not put it there again
+  useEffect(() => {
+    if (!pending) return
+    setSel(s => load(s, pending, rows, byId))
+    onPendingUsed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending])
 
   const { slots: chosen, accessories, both, onepieceMode, open, pieces, dressed } = chosenIn(sel, rows, openRows)
   const rowOpen = (s: Optional) => open.includes(s)

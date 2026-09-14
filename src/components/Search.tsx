@@ -1,12 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { JournalEntry, MOOD_META, Note, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
+import { GARMENT_TYPE_META, Garment, JournalEntry, MOOD_META, Note, Outfit, PLACE_CATEGORY_META, Person, Place, Project, STATUS_META, Task } from '../types'
 import { htmlToText } from '../richtext'
 import { relativeDayLabel } from '../journal'
 import { looksLikeQuestion } from '../ask'
 import { dueLabel } from '../taskutils'
 import { excerpt } from '../utils'
+import { garmentTags, liveById, outfitLabel } from '../wardrobe'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
+import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
 
 /** A palette command: jump somewhere, or do something. `run` closes the palette
  *  itself (the caller wires the navigation/action). */
@@ -29,6 +31,9 @@ interface Props {
   places?: Place[]
   journal?: JournalEntry[]
   notes?: Note[]
+  /** Your clothes and saved outfits (personal): a piece is found by its name or a tag, an outfit by its name. */
+  garments?: Garment[]
+  outfits?: Outfit[]
   commands?: Command[]
   onOpenTask(t: Task): void
   onOpenProject(p: Project): void
@@ -37,6 +42,10 @@ interface Props {
   onOpenJournal?(e: JournalEntry): void
   /** Open a note in Tasks → Notes. Without it notes are not searched. */
   onOpenNote?(n: Note): void
+  /** Open a piece's sheet in Home → Wardrobe. Without it no piece is searched. */
+  onOpenGarment?(g: Garment): void
+  /** Put a saved outfit in Home → Wardrobe's rows. Without it no outfit is searched. */
+  onOpenOutfit?(o: Outfit): void
   onSaw?(p: Person): void
   /** openEditor=false files the line straight to the Inbox with no editor. */
   onCreateTask(title: string, openEditor?: boolean): void
@@ -45,6 +54,8 @@ interface Props {
   onClose(): void
 }
 
+type WardrobeHit = { kind: 'garment'; score: number; garment: Garment; where: string } | { kind: 'outfit'; score: number; outfit: Outfit; label: string }
+
 type Hit =
   | { kind: 'task'; score: number; task: Task; where: string }
   | { kind: 'project'; score: number; project: Project; where: string }
@@ -52,10 +63,14 @@ type Hit =
   | { kind: 'place'; score: number; place: Place; where: string }
   | { kind: 'journal'; score: number; entry: JournalEntry; where: string }
   | { kind: 'note'; score: number; note: Note; where: string }
+  | WardrobeHit
   | { kind: 'create'; score: number; title: string }
   | { kind: 'recent'; score: number; task: Task }
   | { kind: 'command'; score: number; command: Command }
   | { kind: 'ask'; score: number; question: string }
+
+const NO_GARMENTS: Garment[] = []
+const NO_OUTFITS: Outfit[] = []
 
 /**
  * Where the "Ask Drafter" row goes: first when the query reads as a question
@@ -102,12 +117,65 @@ export function noteHits(notes: Note[], needle: string): { score: number; note: 
   return out
 }
 
+/**
+ * Your clothes and saved outfits matching `needle` (lowercased). A piece ranks
+ * by its name as a place does and by a tag as a task does, saying which tag
+ * matched; a retired one still shows, below one in use. A saved outfit ranks
+ * by its name or, left unnamed, by the pieces it is named by — a little
+ * lower, so the piece itself comes first. Nothing in Trash shows.
+ */
+export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: string): WardrobeHit[] {
+  const out: WardrobeHit[] = []
+  for (const g of garments) {
+    if (g.deletedAt) continue
+    const tags = garmentTags(g)
+    const s = score(g.name, needle, 12) + score(tags.join(' '), needle, 6)
+    if (s <= 0) continue
+    const tag = score(g.name, needle, 1) ? undefined : tags.find(t => t.toLowerCase().includes(needle))
+    out.push({ kind: 'garment', score: s - (g.archivedAt ? 3 : 0), garment: g, where: tag ? `tagged ${tag}` : '' })
+  }
+  const byId = liveById(garments)
+  for (const o of outfits) {
+    if (o.deletedAt) continue
+    const label = o.name || outfitLabel(o.garmentIds, byId)
+    const s = o.name ? score(o.name, needle, 11) : score(label, needle, 5)
+    if (s > 0) out.push({ kind: 'outfit', score: s, outfit: o, label })
+  }
+  return out
+}
+
 /** Cmd/Ctrl+K palette: jump anywhere, run a command, find anything, or create a
  *  task from what you typed. */
-export function Search({ tasks, projects, people, places = [], journal = [], notes = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onOpenNote, onSaw, onCreateTask, onAsk, onClose }: Props) {
+export function Search({
+  tasks,
+  projects,
+  people,
+  places = [],
+  journal = [],
+  notes = [],
+  garments = NO_GARMENTS,
+  outfits = NO_OUTFITS,
+  commands = [],
+  onOpenTask,
+  onOpenProject,
+  onOpenPerson,
+  onOpenPlace,
+  onOpenJournal,
+  onOpenNote,
+  onOpenGarment,
+  onOpenOutfit,
+  onSaw,
+  onCreateTask,
+  onAsk,
+  onClose,
+}: Props) {
   const [q, setQ] = useState('')
   const canAsk = !!onAsk
   const canOpenNote = !!onOpenNote
+  const canOpenGarment = !!onOpenGarment
+  const canOpenOutfit = !!onOpenOutfit
+  // a saved outfit is drawn from its pieces, as it is everywhere in the wardrobe
+  const byId = useMemo(() => liveById(garments), [garments])
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   // the results are a listbox the field drives: focus stays in the field, and
@@ -169,6 +237,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
       }
     }
     if (canOpenNote) for (const h of noteHits(notes, needle)) out.push({ kind: 'note', ...h })
+    if (canOpenGarment || canOpenOutfit) out.push(...wardrobeHits(canOpenGarment ? garments : NO_GARMENTS, canOpenOutfit ? outfits : NO_OUTFITS, needle))
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
     const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }
@@ -176,7 +245,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
     if (exactTaskTitle) top.push(createHit)
     else top.unshift(createHit)
     return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
-  }, [q, tasks, projects, people, places, journal, notes, commands, canAsk, canOpenNote])
+  }, [q, tasks, projects, people, places, journal, notes, garments, outfits, commands, canAsk, canOpenNote, canOpenGarment, canOpenOutfit])
 
   useEffect(() => setCursor(0), [q])
 
@@ -189,6 +258,8 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
     else if (h.kind === 'place') onOpenPlace?.(h.place)
     else if (h.kind === 'journal') onOpenJournal?.(h.entry)
     else if (h.kind === 'note') onOpenNote?.(h.note)
+    else if (h.kind === 'garment') onOpenGarment?.(h.garment)
+    else if (h.kind === 'outfit') onOpenOutfit?.(h.outfit)
     else if (h.kind === 'command') h.command.run()
     else if (h.kind === 'create' && h.title) onCreateTask(h.title, openEditor)
     else if (h.kind === 'ask') onAsk?.(h.question)
@@ -343,6 +414,35 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
                 </li>
               )
             }
+            // a piece wears its own thumbnail, a saved outfit the collage its tile has
+            if (h.kind === 'garment')
+              return (
+                <li key={h.garment.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">
+                    <GarmentPhoto garment={h.garment} className="thumb-28" />
+                  </span>
+                  <span className="search-main">
+                    {h.garment.name}
+                    <small>
+                      {GARMENT_TYPE_META[h.garment.type].label}
+                      {h.garment.archivedAt ? ' · Retired' : ''}
+                      {h.where ? ` · ${h.where}` : ''}
+                    </small>
+                  </span>
+                </li>
+              )
+            if (h.kind === 'outfit')
+              return (
+                <li key={h.outfit.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
+                  <span className="search-kind">
+                    <Collage ids={h.outfit.garmentIds} byId={byId} className="search-collage" />
+                  </span>
+                  <span className="search-main">
+                    {h.label}
+                    <small>Saved outfit</small>
+                  </span>
+                </li>
+              )
             if (h.kind === 'journal')
               return (
                 <li key={h.entry.id} id={optionId(i)} role="option" aria-selected={active} className={active ? 'search-hit active' : 'search-hit'} onMouseEnter={() => setCursor(i)} onClick={() => pick(h)}>
