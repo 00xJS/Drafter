@@ -254,8 +254,12 @@
   stroke-width: 1;
   opacity: 0.45;
 }
+/* a column's strength steps with its mood (--mood, 1 to 5, set on each one):
+   the theme's --viz-mood-floor at 1 up to full at 5. Height already carries
+   the mood, so light starts the ramp high enough to keep 3:1 on the card. */
 .mood-chart .mood-col {
-  fill: var(--viz-series-1);
+  fill: var(--viz-mood);
+  opacity: calc(var(--viz-mood-floor) + (var(--mood) - 1) * (1 - var(--viz-mood-floor)) / 4);
 }
 .mood-chart .mood-avg-line {
   fill: none;
@@ -413,7 +417,7 @@
   min-height: 2px;
   border-radius: 3px 3px 0 0;
   background: var(--viz-series-1);
-  opacity: 0.85;
+  opacity: var(--viz-bar-opacity);
 }
 /* the lowest average, marked. The caption under the bars names it too — the
    one thing this chart is for must not be carried by colour alone. */

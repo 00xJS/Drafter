@@ -4,6 +4,8 @@ import { DAY_MS, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { getSupabase } from '../supabase'
 import { fmtDate } from '../utils'
+import { graphicInk } from '../contrast'
+import { useTheme } from '../theme'
 
 interface Props {
   projects: Project[]
@@ -57,6 +59,8 @@ export function pxPerDay(available: number, days: number): number {
 }
 
 export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onOpenTask }: Props) {
+  // a span and a milestone's edge keep the project's colour, moved only as far as a mark needs to stand out
+  const theme = useTheme()
   // the account's own creation day is the first day of the service
   const [accountSince, setAccountSince] = useState<string | null>(null)
   useEffect(() => {
@@ -193,6 +197,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
             const left = model.x(row.start)
             const w = Math.max(model.x(row.end) - left, 8)
             const meta = PROJECT_STATUS_META[row.project.status]
+            const ink = graphicInk(row.project.color, theme)
             return (
               <div key={row.project.id} className="rm-row">
                 <button className="rm-label" onClick={() => onOpenProject(row.project)}>
@@ -215,7 +220,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
                       and would say nothing — Today dropped its cards for the same reason */}
                   <button
                     className={row.inferred ? 'rm-bar inferred' : 'rm-bar'}
-                    style={{ left, width: w, background: row.project.color }}
+                    style={{ left, width: w, background: ink }}
                     onClick={() => onOpenProject(row.project)}
                     title={`${fmtDate(row.start.toISOString())} → ${fmtDate(row.end.toISOString())}${row.inferred ? ' (inferred — set start/target dates)' : ''}`}
                   />
@@ -225,7 +230,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
                       <button
                         key={m.id}
                         className={m.done ? 'rm-ms done' : 'rm-ms'}
-                        style={{ left: model.x(new Date(m.dueAt!)), borderColor: row.project.color }}
+                        style={{ left: model.x(new Date(m.dueAt!)), borderColor: ink }}
                         title={`◆ ${m.name} · ${fmtDate(m.dueAt)}`}
                         onClick={() => onOpenProject(row.project)}
                       >

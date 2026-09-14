@@ -16,7 +16,8 @@ export function GithubCard({ url, onUnlink }: Props) {
   const [card, setCard] = useState<Card | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  // a label keeps its GitHub colour, moved only as far as it takes to read here
+  // a label keeps its GitHub colour, moved only as far as it takes to read on
+  // the card's own ground (--surface-2, 'raised')
   const theme = useTheme()
 
   const load = async (force = false) => {
@@ -90,7 +91,7 @@ export function GithubCard({ url, onUnlink }: Props) {
       {card && card.labels.length > 0 && (
         <div className="gh-labels">
           {card.labels.map(l => (
-            <span key={l.name} className="gh-label" style={l.color ? { borderColor: l.color, color: readableInk(l.color, theme) } : undefined}>
+            <span key={l.name} className="gh-label" style={l.color ? { borderColor: l.color, color: readableInk(l.color, theme, { ground: 'raised' }) } : undefined}>
               {l.name}
             </span>
           ))}

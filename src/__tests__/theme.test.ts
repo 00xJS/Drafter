@@ -350,3 +350,23 @@ describe('index.html: the theme before the first paint', () => {
     expect(prePaint('dark', false, false).theme).toBe('dark')
   })
 })
+
+/*
+ * The inline script paints the first frame on its own, and syncNativeAppearance
+ * swallows a missing plugin by design, so a main.tsx that stopped calling
+ * startTheme would pass every other test while Match system stopped following
+ * the device, another tab's choice stopped landing, and the iPhone's status
+ * bar, keyboard and pickers stopped following Settings.
+ */
+describe('main.tsx: the theme is kept for the whole visit', () => {
+  const main = readFileSync(fileURLToPath(new URL('../main.tsx', import.meta.url)), 'utf8')
+  // whole-line comments out, so "directly after" means no code between
+  const code = main.replace(/^\s*\/\/.*$/gm, '')
+
+  it('starts the theme straight after the platform classes and before the first render, and hands every repaint to the shell', () => {
+    expect(main).toMatch(/^import \{ startTheme \} from '\.\/theme'$/m)
+    expect(main).toMatch(/^import \{ applyPlatformClasses, syncNativeAppearance \} from '\.\/native'$/m)
+    expect(code).toMatch(/\bapplyPlatformClasses\(\)\s*startTheme\(\(pref, theme\) => void syncNativeAppearance\(pref, theme\)\)\n/)
+    expect(code.indexOf('startTheme(')).toBeLessThan(code.indexOf('createRoot('))
+  })
+})

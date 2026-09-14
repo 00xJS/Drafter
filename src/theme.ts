@@ -22,11 +22,12 @@ export const THEME_LABELS: Record<ThemePref, string> = { light: 'Light', dark: '
 export const THEME_GROUND: Record<Theme, string> = { light: '#f6f7f9', dark: '#0f1115' }
 
 /** The token values the contrast helpers compute against, mirrored from 01-base.css (theme-tokens.test.ts pins them). */
-export const THEME_HEX: Record<Theme, { surface: string; inkGround: string; text: string }> = {
+export const THEME_HEX: Record<Theme, { surface: string; raised: string; inkGround: string; text: string }> = {
+  // raised = --surface-2: an open person or place row, a GitHub card, a progress track.
   // inkGround = --surface-2, the darkest ground a pill sits on
-  light: { surface: '#ffffff', inkGround: '#eef0f3', text: '#15181f' },
+  light: { surface: '#ffffff', raised: '#eef0f3', inkGround: '#eef0f3', text: '#15181f' },
   // inkGround = --surface, which keeps every palette colour exactly as it was
-  dark: { surface: '#15181f', inkGround: '#15181f', text: '#edeff3' },
+  dark: { surface: '#15181f', raised: '#1e222b', inkGround: '#15181f', text: '#edeff3' },
 }
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'

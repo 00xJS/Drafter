@@ -58,6 +58,17 @@ function cssLiterals(file: string, source: string): string[] {
   return report(file, source, at.sort((a, b) => a - b))
 }
 
+/**
+ * The rules a stylesheet gives a focused element that draw in the plain
+ * accent. The house orange is under 3:1 on white, so a focus cue drawn in it
+ * goes unseen in light; --focus-ring is the accent tuned to read in each theme.
+ */
+function focusInAccent(file: string, source: string): string[] {
+  const css = blank(source, /\/\*[\s\S]*?\*\//g)
+  const at = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => /:focus/.test(m[1]) && /var\(--accent\)/.test(m[2])).map(m => m.index! + m[0].indexOf('{'))
+  return report(file, source, at)
+}
+
 /** Whole modules that hold data colours or the palette's mirrors. */
 const EXEMPT_FILES = ['templates.ts', 'syncengine.ts', 'sync.ts', 'theme.ts', 'contrast.ts']
 /** Declarations inside an otherwise guarded module that hold data colours. */
@@ -95,6 +106,16 @@ describe('colour lives in the theme tokens', () => {
     const sheets = readdirSync(path('styles')).filter(f => f.endsWith('.css'))
     expect(sheets).toContain('01-base.css')
     expect(sheets.flatMap(f => cssLiterals(f, read(`styles/${f}`))), HINT).toEqual([])
+  })
+
+  it('draws every focus cue in --focus-ring, never the plain accent', () => {
+    const sample = '.a:focus {\n  border-color: var(--accent);\n}\n.b:focus-visible { outline-color: var(--accent-ink); }\n.c:hover { color: var(--accent); }\n@media (x) {\n  .d:focus-within { box-shadow: 0 0 0 2px var(--accent); }\n}'
+    expect(focusInAccent('x.css', sample).map(h => h.split(':')[1])).toEqual(['1', '7'])
+    const sheets = readdirSync(path('styles')).filter(f => f.endsWith('.css'))
+    expect(
+      sheets.flatMap(f => focusInAccent(f, read(`styles/${f}`))),
+      'a focus indicator reads var(--focus-ring)',
+    ).toEqual([])
   })
 
   it('writes no colour in a component or module outside the data files', () => {

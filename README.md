@@ -69,7 +69,7 @@ Five tabs, on desktop and phone alike: **Home · Tasks · Calendar · People · 
 
 The task editor's ✨ buttons break a task into checklist steps and suggest tags, and under the description ✨ Clarify, ✨ Add details and ✨ Summarize each propose a rewrite that you can use in place of yours, add below it, or discard. Pasting or sharing a sentence fills the same fields as typing it into the palette, and a URL goes into the description, where every link other than the GitHub card's shows under the text as a chip that opens in a new tab (Safari's sheet on the phone).
 
-**Appearance.** Drafter is light unless you choose otherwise: Settings → Appearance offers Light (the default), Dark and Match system, which follows the device's own setting as it changes. The choice is kept on each device, so a phone and a laptop can differ, and it is applied before the first paint, so neither theme flashes on the way in.
+**Appearance.** Drafter is light unless you choose otherwise: Settings → Appearance offers Light (the default), Dark and Match system, which follows the device's own setting as it changes. The choice is kept on each device, so a phone and a laptop can differ, and it is applied before the first paint, so neither theme flashes on the way in. The colours you give people, places, projects and habits stay yours in both themes: where one is too pale to read on white, or too faint to see as a chart bar or a Timeline span, the text or mark drawn in it is deepened just enough, and a GitHub label or a calendar's own colour is treated the same way.
 
 ## GitHub links and write-back
 

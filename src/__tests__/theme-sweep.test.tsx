@@ -1,8 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ProgressBar } from '../components/bits'
 import { Calendar } from '../components/Calendar'
+import { MoodChart } from '../components/Journal'
+import { Bars } from '../components/People'
 import { Places } from '../components/Places'
-import { heatStyle, readableInk } from '../contrast'
+import { Roadmap } from '../components/Roadmap'
+import { graphicInk, heatStyle, readableInk } from '../contrast'
 import type { CalendarEvent, CalendarSource, Place, Project, Recipe, Task } from '../types'
 
 // The call sites of the theme sweep. A colour the stylesheet cannot know (a
@@ -78,6 +82,41 @@ describe('the month grid writes user colours so they read on the light ground', 
     expect(html).toContain('style="border-color:var(--cal-event-local);color:var(--cal-event-local)"')
     expect(html).toContain('style="border-color:var(--dot-fallback);color:var(--dot-fallback)"')
     expect(html).toContain('style="background:var(--tone-amber-bg);color:var(--tone-amber)"')
+  })
+})
+
+describe('a user colour drawn as a mark is deepened just enough to stand out on white', () => {
+  const amber = '#fbbf24'
+
+  it('the weekly bars: the colour made to stand out on the open row, and a zero week a stub the sheet dims per theme', () => {
+    const fill = graphicInk(amber, 'light', { ground: 'raised' })
+    expect(fill).not.toBe(amber)
+    const html = renderToStaticMarkup(<Bars weekly={[0, 2, 1]} color={amber} />)
+    expect(html).toContain('class="person-bar zero" style="height:8%"')
+    expect(html).toContain(`class="person-bar" style="height:100%;background:${fill}"`)
+    expect(html).not.toContain('opacity')
+  })
+
+  it('a progress fill on its raised track', () => {
+    const html = renderToStaticMarkup(<ProgressBar pct={40} color="#22d3ee" />)
+    expect(html).toContain(`style="width:40%;background:${graphicInk('#22d3ee', 'light', { ground: 'raised' })}"`)
+  })
+
+  it('a Timeline span and a milestone’s edge', () => {
+    const project: Project = { kind: 'project', id: 'p', name: 'LIFE', color: amber, status: 'active', milestones: [{ id: 'm', name: 'Launch', dueAt: sept(10) }], createdAt: STAMP, updatedAt: STAMP }
+    const html = renderToStaticMarkup(<Roadmap projects={[project]} tasks={[]} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
+    const ink = graphicInk(amber, 'light')
+    expect(ink).not.toBe(amber)
+    expect(html).toMatch(new RegExp(`class="rm-bar inferred" style="[^"]*background:${ink}"`))
+    expect(html).toMatch(new RegExp(`class="rm-ms" style="[^"]*border-color:${ink}"`))
+  })
+
+  it('the mood columns carry their mood for the sheet to set their strength, not an opacity of their own', () => {
+    const series = { days: [{ date: '2026-09-10', mood: 1 as const }, { date: '2026-09-11', mood: 5 as const }, { date: '2026-09-12' }], weekly: [] }
+    const html = renderToStaticMarkup(<MoodChart series={series} summary="Moods" />)
+    expect(html).toMatch(/class="mood-col"[^>]*style="--mood:1"/)
+    expect(html).toMatch(/class="mood-col"[^>]*style="--mood:5"/)
+    expect(html).not.toMatch(/class="mood-col"[^>]*opacity/)
   })
 })
 

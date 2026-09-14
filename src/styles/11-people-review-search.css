@@ -99,6 +99,12 @@
   background: var(--viz-empty);
   min-height: 2px;
 }
+/* a week with no visits: a stub along the baseline, solid in light (the open
+   row's --surface-2 would swallow it faded) and at 35% in dark. `zero`, not
+   `empty`: .empty is the sheet's empty-state box, padding and all. */
+.person-bar.zero {
+  opacity: var(--viz-empty-opacity);
+}
 .person-nums {
   display: flex;
   gap: 10px;
@@ -242,7 +248,7 @@
 .review-day {
   flex: 1;
   background: var(--viz-series-1);
-  opacity: 0.8;
+  opacity: var(--review-day-opacity);
   border-radius: 2px 2px 0 0;
   min-height: 2px;
 }

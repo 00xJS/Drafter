@@ -224,6 +224,11 @@ textarea {
   border-color: var(--text);
   color: var(--inverse-text);
 }
+/* a count inside a chosen chip ("Café Kafka ×3"): the pill's own quiet ink,
+   since the page's --muted all but vanishes on the inverse ground */
+.toggle.on .muted {
+  color: var(--inverse-muted);
+}
 
 .segmented,
 .filter-row {

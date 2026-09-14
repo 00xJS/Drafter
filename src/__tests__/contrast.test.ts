@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, heatStyle, inkOn, mixHex, ON_DEEP_USER, ON_USER, parseHex, readableInk } from '../contrast'
+import { contrast, graphicInk, heatStyle, inkOn, mixHex, ON_DEEP_USER, ON_USER, parseHex, readableInk } from '../contrast'
 import { THEME_HEX, type Theme } from '../theme'
 import { PROJECT_COLORS } from '../types'
 
@@ -12,6 +12,8 @@ import { PROJECT_COLORS } from '../types'
 const THEMES: Theme[] = ['light', 'dark']
 /** Colours from outside the palette: GitHub's wontfix and duplicate labels, a Google calendar's yellow, black. */
 const OUTSIDERS = ['#ffffff', '#cfd3d7', '#fad165', '#000000']
+/** GitHub's default labels (bug, documentation, duplicate, enhancement, good first issue, help wanted, invalid, question, wontfix), and black. */
+const GITHUB_LABELS = ['#d73a4a', '#0075ca', '#cfd3d7', '#a2eeef', '#7057ff', '#008672', '#e4e669', '#d876e3', '#ffffff', '#000000']
 const INK: Record<string, string> = { 'var(--on-user-color)': ON_USER, 'var(--on-deep-user-color)': ON_DEEP_USER }
 
 describe('contrast', () => {
@@ -79,6 +81,48 @@ describe('readableInk: a user colour drawn as text', () => {
   it('passes a token through: it is already tuned for both themes', () => {
     expect(readableInk('var(--cal-meal-out)', 'light')).toBe('var(--cal-meal-out)')
     expect(readableInk('var(--accent-ink)', 'dark', { tint: true })).toBe('var(--accent-ink)')
+  })
+
+  it('reads on a GitHub card’s raised ground for every default label, in both themes', () => {
+    for (const theme of THEMES) {
+      for (const c of GITHUB_LABELS) {
+        const ink = readableInk(c, theme, { ground: 'raised' })
+        expect(contrast(ink, THEME_HEX[theme].raised), `${c} ${theme} → ${ink}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('on the raised ground in light is the ground it already measured against', () => {
+    for (const c of [...PROJECT_COLORS, ...GITHUB_LABELS]) expect(readableInk(c, 'light', { ground: 'raised' }), c).toBe(readableInk(c, 'light'))
+  })
+})
+
+describe('graphicInk: a user colour drawn as a mark', () => {
+  const GROUNDS = [undefined, 'raised'] as const
+  const groundOf = (theme: Theme, ground?: 'raised') => (ground ? THEME_HEX[theme].raised : THEME_HEX[theme].surface)
+
+  it('stands every palette colour, and colours from outside it, 3:1 off a card or a raised surface in both themes', () => {
+    for (const theme of THEMES) {
+      for (const ground of GROUNDS) {
+        for (const c of [...PROJECT_COLORS, ...OUTSIDERS]) {
+          const ink = graphicInk(c, theme, { ground })
+          expect(contrast(ink, groundOf(theme, ground)), `${c} ${theme} on ${ground ?? 'surface'} → ${ink}`).toBeGreaterThanOrEqual(3)
+        }
+      }
+    }
+  })
+
+  it('leaves every palette colour exactly as it was in dark, on either ground', () => {
+    for (const ground of GROUNDS) for (const c of PROJECT_COLORS) expect(graphicInk(c, 'dark', { ground }), c).toBe(c)
+  })
+
+  it('moves a pale colour in light only as far as a mark needs, and passes a token through', () => {
+    const amber = graphicInk('#fbbf24', 'light')
+    expect(amber).not.toBe('#fbbf24')
+    // short of what text would need: a bar is not text
+    expect(contrast(amber, THEME_HEX.light.surface)).toBeLessThan(4.5)
+    expect(graphicInk('#15181f', 'light')).toBe('#15181f')
+    expect(graphicInk('var(--accent)', 'light')).toBe('var(--accent)')
   })
 })
 

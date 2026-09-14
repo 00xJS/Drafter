@@ -663,8 +663,9 @@
   overflow: auto;
   caret-color: var(--accent);
 }
+/* the pad's only focus cue (it has no outline), so the focus ring's colour */
 .notes-editable:focus {
-  border-color: var(--accent);
+  border-color: var(--focus-ring);
 }
 .notes.dragging .notes-editable {
   border-style: dashed;
@@ -938,7 +939,7 @@
 }
 .notes-page.note-page input.note-title-input:focus-visible {
   outline: none;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--focus-ring);
 }
 /* the title sits above the editor, so it starts a little shorter than a pad's */
 .note-page .notes-editable {

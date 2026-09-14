@@ -1,5 +1,7 @@
 import { Priority, PRIORITY_META, Project, Task } from '../types'
 import { dueLabel, dueTone } from '../taskutils'
+import { graphicInk } from '../contrast'
+import { useTheme } from '../theme'
 
 export function ProjectChip({ project, compact }: { project: Project; compact?: boolean }) {
   return (
@@ -34,9 +36,11 @@ export function DueBadge({ task }: { task: Task }) {
 }
 
 export function ProgressBar({ pct, color }: { pct: number; color?: string }) {
+  // the track is --surface-2: a project's colour moves only as far as the fill needs to stand out on it
+  const theme = useTheme()
   return (
     <span className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <span className="progress-fill" style={{ width: `${pct}%`, background: color }} />
+      <span className="progress-fill" style={{ width: `${pct}%`, background: color ? graphicInk(color, theme, { ground: 'raised' }) : undefined }} />
     </span>
   )
 }

@@ -9,7 +9,7 @@ import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
-import { heatStyle } from '../contrast'
+import { graphicInk, heatStyle } from '../contrast'
 import { useTheme } from '../theme'
 
 interface Props {
@@ -215,10 +215,13 @@ function LogVisit({
 
 function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
   const max = Math.max(1, ...weekly)
+  const theme = useTheme()
+  // drawn in an open row (--surface-2): the colour moves only as far as a bar needs to stand out there
+  const fill = graphicInk(color, theme, { ground: 'raised' })
   return (
     <span className="person-bars" title={title}>
       {weekly.map((n, i) => (
-        <span key={i} className="person-bar" style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : color, opacity: n === 0 ? 0.35 : 1 }} />
+        <span key={i} className={n === 0 ? 'person-bar zero' : 'person-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : fill }} />
       ))}
     </span>
   )

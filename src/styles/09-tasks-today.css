@@ -110,10 +110,11 @@
   flex: 1;
   min-width: 60px;
 }
+/* the series colour, not the accent: the house orange is under 3:1 on the track in light */
 .progress-fill {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--viz-series-1);
   border-radius: 999px;
   transition: width 0.2s;
 }
@@ -442,7 +443,7 @@
   height: 18px;
   border-radius: 6px;
   border: 0;
-  opacity: 0.85;
+  opacity: var(--viz-bar-opacity);
   overflow: hidden;
   padding: 0;
 }

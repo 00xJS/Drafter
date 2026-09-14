@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { THEME_GROUND } from '../theme'
+import { THEME_GROUND, THEME_PREFS } from '../theme'
 
 /*
  * iOS draws the launch screen from its storyboard before any code runs, and
@@ -126,6 +126,42 @@ describe('Launch screen', () => {
     // saved choice before the bridge (and so the web view) exists
     expect(swift).toMatch(/cover\.backgroundColor = Ground\.of\(window\.traitCollection\)/)
     expect(swift).toMatch(/overrideUserInterfaceStyle = AppearanceChoice\.saved\s+window\?\.rootViewController = DrafterBridgeViewController\(\)/)
+  })
+})
+
+/*
+ * Settings → Appearance reaches the shell through one plugin call:
+ * syncNativeAppearance in src/native.ts calls Appearance.apply({ style }), and
+ * AppearancePlugin in SceneDelegate.swift answers it. A name, method or key that
+ * drifts on either side fails silently — the page still paints its own theme and
+ * the call's error is swallowed by design — while the status bar, keyboard,
+ * pickers and privacy cover stop following the choice. So the two sides are
+ * held to each other here.
+ */
+describe('AppearancePlugin: the shell answers the call native.ts makes', () => {
+  const swift = read(`${APP}/SceneDelegate.swift`)
+  const native = read('src/native.ts')
+
+  it('is registered under the name, method and key syncNativeAppearance calls', () => {
+    const name = /registerPlugin<AppearancePlugin>\('(\w+)'\)/.exec(native)?.[1]
+    const call = /appearancePlugin\.(\w+)\(\{ (\w+): pref \}\)/.exec(native)
+    expect(name).toBe('Appearance')
+    expect(call?.slice(1)).toEqual(['apply', 'style'])
+    expect(native).toMatch(new RegExp(`${call![1]}\\(options: \\{ ${call![2]}: ThemePref \\}\\): Promise<void>`))
+    expect(/public let jsName = "(\w+)"/.exec(swift)?.[1]).toBe(name)
+    expect([...swift.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map(m => m[1])).toEqual([call![1]])
+    expect(swift).toMatch(new RegExp(`@objc func ${call![1]}\\(_ call: CAPPluginCall\\)`))
+    expect(/call\.getString\("(\w+)"\)/.exec(swift)?.[1]).toBe(call![2])
+    // the bridge registers the instance, or the call never arrives
+    expect(swift).toMatch(/bridge\?\.registerPluginInstance\(AppearancePlugin\(\)\)/)
+  })
+
+  it('reads every choice Settings offers: Dark and Match system by name, Light as the default', () => {
+    const style = /static func style\(_ raw: String\?\) -> UIUserInterfaceStyle \{([\s\S]*?)\n {4}\}/.exec(swift)?.[1] ?? ''
+    const cases = Object.fromEntries([...style.matchAll(/case "(\w+)": return \.(\w+)/g)].map(m => [m[1], m[2]]))
+    expect(cases).toEqual({ dark: 'dark', system: 'unspecified' })
+    expect(style).toMatch(/default: return \.light/)
+    expect([...THEME_PREFS].sort()).toEqual(['light', ...Object.keys(cases)].sort())
   })
 })
 

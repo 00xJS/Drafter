@@ -55,23 +55,45 @@ export function inkOn(color: string): string {
   return betterInk(color)
 }
 
+/** A ground other than the helper's own: 'raised' is --surface-2 (an open row, a GitHub card, a progress track). */
+export type InkGround = 'raised'
+
+/** `color` where it reaches `min` against `ground`, else the smallest mix of `text` into it that does, in steps of 5%. */
+function nudge(color: string, ground: string, text: string, min: number): string {
+  for (let p = 0; p <= 100; p += 5) {
+    const ink = p === 0 ? color : mixHex(text, color, p / 100)
+    if (contrast(ink, ground) >= min) return ink
+  }
+  return text
+}
+
 /**
  * A user colour drawn as text, readable (4.5:1) on this theme's ground: the
  * colour itself wherever it already reads, else the smallest mix of the theme's
- * text colour into it that does, in steps of 5%. `tint` is a pill whose ground
- * is the colour itself at 34/255 (`color + '22'`) over that ground. A value that
- * is not a hex, such as a var() token already tuned for both themes, comes back
- * as it is.
+ * text colour into it that does, in steps of 5%. The ground is the darkest one
+ * a calendar pill sits on, or --surface-2 with `ground: 'raised'`. `tint` is a
+ * pill whose ground is the colour itself at 34/255 (`color + '22'`) over that
+ * ground. A value that is not a hex, such as a var() token already tuned for
+ * both themes, comes back as it is.
  */
-export function readableInk(color: string, theme: Theme, opts: { tint?: boolean } = {}): string {
+export function readableInk(color: string, theme: Theme, opts: { tint?: boolean; ground?: InkGround } = {}): string {
   if (!parseHex(color)) return color
-  const { inkGround, text } = THEME_HEX[theme]
-  const ground = opts.tint ? mixHex(color, inkGround, 0x22 / 255) : inkGround
-  for (let p = 0; p <= 100; p += 5) {
-    const ink = p === 0 ? color : mixHex(text, color, p / 100)
-    if (contrast(ink, ground) >= 4.5) return ink
-  }
-  return text
+  const { inkGround, raised, text } = THEME_HEX[theme]
+  const base = opts.ground === 'raised' ? raised : inkGround
+  return nudge(color, opts.tint ? mixHex(color, base, 0x22 / 255) : base, text, 4.5)
+}
+
+/**
+ * A user colour drawn as a mark rather than as text: a chart bar, a timeline
+ * span, a milestone's edge, a progress fill. A graphic needs 3:1 against what
+ * is around it, so this moves the colour the way readableInk does, to 3:1 on
+ * --surface (or --surface-2 with `ground: 'raised'`). Every palette colour
+ * already clears that in dark, where it comes back exactly as it was.
+ */
+export function graphicInk(color: string, theme: Theme, opts: { ground?: InkGround } = {}): string {
+  if (!parseHex(color)) return color
+  const { surface, raised, text } = THEME_HEX[theme]
+  return nudge(color, opts.ground === 'raised' ? raised : surface, text, 3)
 }
 
 /**

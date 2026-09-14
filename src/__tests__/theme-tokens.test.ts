@@ -88,7 +88,7 @@ const DARK: Record<string, string> = {
   '--viz-series-1': '#f97316',
   '--viz-series-1-hot': '#fb923c',
   // new tokens, each at what its readers painted at 81435a1
-  '--placeholder': '#a9a9a9', // WebKit's and Blink's own placeholder grey
+  '--placeholder': '#a9a9a9', // WebKit's darkGray (Safari, the iOS app); Chromium's #757575 and Firefox's text at 54% change to it
   '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLOR
   '--focus-ring': '#f97316', // outline: 2px solid var(--accent)
   '--inverse-muted': '#737b8b', // .toast-close's --muted
@@ -133,6 +133,11 @@ const DARK: Record<string, string> = {
   '--scrim-strong': 'rgba(0, 0, 0, 0.65)', // .auth-overlay
   '--tabbar-edge': 'rgba(255, 255, 255, 0.05)', // .native .tabs-compact
   '--viz-empty': '#2a2f3a', // --border, on the chart fills that read it
+  '--viz-empty-opacity': '0.35', // the weekly bars' zero weeks, drawn at 0.35; not a colour but themed with them
+  '--viz-bar-opacity': '0.85', // .rm-bar's and .weekday-bar's 0.85
+  '--review-day-opacity': '0.8', // .review-day's 0.8
+  '--viz-mood': 'var(--viz-series-1)', // .mood-col's fill
+  '--viz-mood-floor': '0.35', // the mood columns' 0.35 + (mood - 1) × 0.65 / 4
   '--viz-ink': '#a9b0be', // --text-2, the mood chart's currentColor
 }
 
@@ -215,6 +220,9 @@ describe('the light palette reads (WCAG 2.x)', () => {
     '--code-bg': solid('--code-bg'),
   }
 
+  /** What light `ink` paints on a solid `ground` at the light opacity token `opacity`. */
+  const at = (ink: string, opacity: string, ground: string) => mixHex(solid(ink), ground, Number(light[opacity]))
+
   /** Every pair under `min`, as "ink on ground: ratio", so a failure names them all. */
   const under = (min: number, inks: string[], on: Record<string, string>) =>
     inks.flatMap(ink =>
@@ -260,16 +268,38 @@ describe('the light palette reads (WCAG 2.x)', () => {
     expect(light['--pill-time-opacity']).toBe('1')
   })
 
-  it('gives focus rings and chart series 3:1', () => {
+  it('gives focus rings and chart series 3:1, at the strength each mark is drawn', () => {
     expect(under(3, ['--focus-ring'], { ...grounds, '--surface-3': solid('--surface-3') })).toEqual([])
-    expect(under(3, ['--viz-series-1', '--viz-series-1-hot'], grounds)).toEqual([])
+    expect(under(3, ['--viz-series-1', '--viz-series-1-hot', '--viz-mood'], grounds)).toEqual([])
+    // marks drawn at an opacity: the Timeline span and the weekday mood bars,
+    // Review's done-per-day bars, and the faintest (mood 1) mood column
+    const drawn = [
+      ['--viz-series-1', '--viz-bar-opacity'],
+      ['--viz-series-1', '--review-day-opacity'],
+      ['--viz-mood', '--viz-mood-floor'],
+    ]
+    const faint = drawn.flatMap(([ink, opacity]) =>
+      Object.entries(grounds)
+        .map(([name, ground]) => [name, contrast(at(ink, opacity, ground), ground)] as const)
+        .filter(([, ratio]) => ratio < 3)
+        .map(([name, ratio]) => `${ink} at ${opacity} on ${name}: ${ratio.toFixed(2)}`),
+    )
+    expect(faint).toEqual([])
+  })
+
+  it('draws an empty mark quiet but still visible on every ground, the open row’s --surface-2 included', () => {
+    for (const [name, ground] of Object.entries(grounds)) {
+      const ratio = contrast(at('--viz-empty', '--viz-empty-opacity', ground), ground)
+      expect(ratio, name).toBeGreaterThanOrEqual(1.4)
+      expect(ratio, name).toBeLessThan(3)
+    }
   })
 })
 
 describe('the copies other code keeps of the palette', () => {
-  it('THEME_HEX is the sheet’s surface, ink ground and text in each theme', () => {
-    expect(THEME_HEX.light).toEqual({ surface: light['--surface'], inkGround: light['--surface-2'], text: light['--text'] })
-    expect(THEME_HEX.dark).toEqual({ surface: dark['--surface'], inkGround: dark['--surface'], text: dark['--text'] })
+  it('THEME_HEX is the sheet’s surface, raised surface, ink ground and text in each theme', () => {
+    expect(THEME_HEX.light).toEqual({ surface: light['--surface'], raised: light['--surface-2'], inkGround: light['--surface-2'], text: light['--text'] })
+    expect(THEME_HEX.dark).toEqual({ surface: dark['--surface'], raised: dark['--surface-2'], inkGround: dark['--surface'], text: dark['--text'] })
   })
 
   it('THEME_GROUND is the light page ground and each theme’s launch ground', () => {
