@@ -131,7 +131,7 @@ const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "Thu 20 Aug", with the year when it is not `todayKey`'s. A day key is a day, so no zone can move it. */
-function shortDay(key: string, todayKey: string): string {
+export function shortDay(key: string, todayKey: string): string {
   const [y, m, d] = key.split('-').map(Number)
   const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
   return `${weekday} ${d} ${MONTH_SHORT[m - 1]}${key.slice(0, 4) === todayKey.slice(0, 4) ? '' : ` ${y}`}`

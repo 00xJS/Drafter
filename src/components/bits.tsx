@@ -1,5 +1,8 @@
 import { Priority, PRIORITY_META, Project, Task } from '../types'
+import { SEEN_META } from '../people'
 import { dueLabel, dueTone } from '../taskutils'
+import { graphicInk } from '../contrast'
+import { useTheme } from '../theme'
 
 export function ProjectChip({ project, compact }: { project: Project; compact?: boolean }) {
   return (
@@ -81,5 +84,37 @@ export function StatTile({
     >
       {body}
     </button>
+  )
+}
+
+// People's, Places' and the wardrobe's shared figures: they live here, not in
+// People.tsx, so neither the Places chunk nor the wardrobe's has to pull in People.
+
+export function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
+  const max = Math.max(1, ...weekly)
+  const theme = useTheme()
+  // drawn in an open row (--surface-2): the colour moves only as far as a bar needs to stand out there
+  const fill = graphicInk(color, theme, { ground: 'raised' })
+  return (
+    <span className="person-bars" title={title}>
+      {weekly.map((n, i) => (
+        <span key={i} className={n === 0 ? 'person-bar zero' : 'person-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : fill }} />
+      ))}
+    </span>
+  )
+}
+
+/** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
+export function TrendBadge({ trend }: { trend: number }) {
+  return trend > 0 ? (
+    <span className="badge" style={{ background: 'var(--tone-sky-bg)', color: 'var(--tone-sky)' }}>
+      ↑ more lately
+    </span>
+  ) : trend < 0 ? (
+    <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
+      ↓ drifting
+    </span>
+  ) : (
+    <small className="muted">steady</small>
   )
 }

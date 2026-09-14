@@ -5,11 +5,12 @@ import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, 
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
+import { Bars, TrendBadge } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
-import { graphicInk, heatStyle } from '../contrast'
+import { heatStyle } from '../contrast'
 import { useTheme } from '../theme'
 
 interface Props {
@@ -212,37 +213,6 @@ function LogVisit({
     </Modal>
   )
 }
-
-function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
-  const max = Math.max(1, ...weekly)
-  const theme = useTheme()
-  // drawn in an open row (--surface-2): the colour moves only as far as a bar needs to stand out there
-  const fill = graphicInk(color, theme, { ground: 'raised' })
-  return (
-    <span className="person-bars" title={title}>
-      {weekly.map((n, i) => (
-        <span key={i} className={n === 0 ? 'person-bar zero' : 'person-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : fill }} />
-      ))}
-    </span>
-  )
-}
-
-/** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
-function TrendBadge({ trend }: { trend: number }) {
-  return trend > 0 ? (
-    <span className="badge" style={{ background: 'var(--tone-sky-bg)', color: 'var(--tone-sky)' }}>
-      ↑ more lately
-    </span>
-  ) : trend < 0 ? (
-    <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
-      ↓ drifting
-    </span>
-  ) : (
-    <small className="muted">steady</small>
-  )
-}
-
-export { Bars, TrendBadge }
 
 /** Days seen in the last `span` days, and the events under them when some shared a day. */
 function SeenCount({ days, events, span, className }: { days: number; events: number; span: number; className?: string }) {

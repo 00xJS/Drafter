@@ -3,6 +3,7 @@ import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
 import type { HomeTab, PeopleTab, TasksTab, View } from './routes'
 import type { Sheet } from './useOverlays'
+import type { WardrobeOpen } from './useNavigation'
 
 /** The moves the palette makes (useNavigation's, or a stand-in in a test). */
 export interface PaletteNav {
@@ -12,6 +13,7 @@ export interface PaletteNav {
   openJournal(date?: string): void
   goTasksTab(tab: TasksTab): void
   setPeopleTab(tab: PeopleTab): void
+  openWardrobe(o?: WardrobeOpen): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -32,7 +34,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   return [
@@ -43,10 +45,16 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // the week ahead, and a question about your own planner: typed for, not offered empty
     { id: 'plan-week', label: 'Plan next week', icon: 'review', quick: false, keywords: 'week ahead meals dinners catch up sunday', run: () => openSheet({ kind: 'week' }) },
     { id: 'ask', label: 'Ask Drafter', icon: 'search', quick: false, keywords: 'question answer ai assistant', run: () => openSheet({ kind: 'ask' }) },
+    // today's look, and a piece to add: typed for too. A photo picker has to open
+    // inside the tap itself, and the palette runs through a lazy chunk first, so
+    // Add clothing lands on the sheet's big photo target rather than the picker.
+    { id: 'log-wear', label: 'What am I wearing?', icon: 'wardrobe', quick: false, keywords: 'outfit today log clothes', run: () => openWardrobe({ date: localDayKey() }) },
+    { id: 'add-clothing', label: 'Add clothing', icon: 'camera', quick: false, keywords: 'photo garment top bottom shirt', run: () => openWardrobe({ tab: 'clothes', add: true }) },
     { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
     { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },
     { id: 'go-journal', label: 'Journal', icon: 'journal', keywords: 'diary write', run: () => openJournal(localDayKey()) },
+    { id: 'go-wardrobe', label: 'Wardrobe', icon: 'wardrobe', keywords: 'clothes outfit closet wear', run: () => openWardrobe() },
     { id: 'go-tasks', label: 'Tasks', icon: 'tasks', keywords: 'list', run: () => { goTasksTab('list'); setView('tasks') } },
     { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
     { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },

@@ -6,8 +6,8 @@
 // The bot acts as the site owner, but the service role behind it bypasses
 // every policy, so the gateway applies the owner's view itself: the owner's
 // rows (and legacy unowned ones) plus household members' rows of shared
-// kinds — never a member's journal, review, calendar subscription, habit or
-// routine, and nothing belonging to anyone outside the household.
+// kinds — never a member's journal, review, calendar subscription, habit,
+// routine or wardrobe, and nothing belonging to anyone outside the household.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -22,7 +22,7 @@ type Admin = ReturnType<typeof adminClient>
  * src/store.ts, shared/digest.mjs and mcp/server.mjs use. An edge function
  * cannot import shared/, so src/__tests__/mcp.test.ts holds this copy to theirs.
  */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine'])
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear'])
 
 /** The owner the bot acts as, and the other members of the owner's households. */
 type Scope = { owner: string | null; peers: string[] }

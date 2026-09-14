@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { newerStamp, pullSince } from '../itemops'
-import { backoffMs } from '../syncengine'
-import { CURSOR_KEY, DIRTY_KEY, FAILURES_KEY } from '../syncstate'
-import { Task } from '../types'
+import { KINDS_EPOCH, backoffMs, type CacheRecord } from '../syncengine'
+import { CURSOR_KEY, DIRTY_KEY, FAILURES_KEY, KINDS_KEY } from '../syncstate'
+import { Garment, Item, Outfit, Task, Wear } from '../types'
 import { FakeServer, device, edit, idle, last, ready, task } from './sync-fakes'
 
 // The engine, driven the way the app drives it, against an in-memory
@@ -378,5 +378,101 @@ describe('accounts, local mode and full resync', () => {
     const final = last(server.calls)
     expect(final.since).toBeNull()
     expect(final.outgoing.map(o => o.id).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('the kinds epoch: a build that syncs other kinds pulls everything once', () => {
+  // An older build dropped rows of a kind it did not know on pull, and still
+  // moved its cursor past them. This cursor is past every row the server holds.
+  const OLD_CURSOR = '2026-09-10T13:00:00.000Z'
+  const cache = (items: Item[]): CacheRecord => ({ version: 3, userId: 'user-1', items })
+
+  it('with a cursor but no kinds list, sends since: null first and then records the list', async () => {
+    const server = new FakeServer()
+    server.seed(task('a'), task('skipped'))
+    const d = device(server, { kv: new Map([[CURSOR_KEY, OLD_CURSOR]]), snapshot: cache([task('a')]), kinds: null })
+    await ready(d)
+    expect(server.calls[0].since).toBeNull()
+    expect(d.item('skipped')).toBeDefined()
+    expect(d.kv.get(KINDS_KEY)).toBe(KINDS_EPOCH)
+  })
+
+  it('treats an older build’s list the same way', async () => {
+    const server = new FakeServer()
+    server.seed(task('a'), task('skipped'))
+    const d = device(server, { kv: new Map([[CURSOR_KEY, OLD_CURSOR]]), snapshot: cache([task('a')]), kinds: 'project,task' })
+    await ready(d)
+    expect(server.calls[0].since).toBeNull()
+    expect(d.item('skipped')).toBeDefined()
+    expect(d.kv.get(KINDS_KEY)).toBe(KINDS_EPOCH)
+  })
+
+  it('does it once: the next boot of the same build is a delta round again', async () => {
+    const server = new FakeServer()
+    server.seed(task('a'))
+    const first = device(server, { kv: new Map([[CURSOR_KEY, OLD_CURSOR]]), snapshot: cache([task('a')]), kinds: null })
+    await ready(first)
+    const cursor = first.kv.get(CURSOR_KEY)!
+    const calls = server.calls.length
+    const restarted = device(server, { kv: first.kv, snapshot: first.snapshot() })
+    await ready(restarted)
+    expect(server.calls[calls].since).toBe(pullSince(cursor))
+  })
+
+  it('keeps what was waiting to go out, and the full exchange confirms it', async () => {
+    const server = new FakeServer()
+    server.seed(task('a'))
+    const edited = task('a', { title: 'Edited offline', updatedAt: '2026-09-10T09:30:00.000Z' })
+    const d = device(server, {
+      kv: new Map([
+        [CURSOR_KEY, OLD_CURSOR],
+        [DIRTY_KEY, '["a"]'],
+      ]),
+      snapshot: cache([edited]),
+      kinds: null,
+    })
+    let dirtyInRound: string[] = []
+    server.beforeAnswer = () => {
+      dirtyInRound = d.engine.inspect().dirty
+    }
+    await ready(d)
+    expect(server.calls[0].since).toBeNull()
+    expect(dirtyInRound).toEqual(['a'])
+    expect(server.row<Task>('a')!.title).toBe('Edited offline')
+    expect(d.engine.inspect().dirty).toEqual([])
+  })
+
+  it('leaves the list alone in local mode and before anyone signs in', async () => {
+    const local = device(null, { kinds: null })
+    await ready(local, null)
+    expect(local.kv.has(KINDS_KEY)).toBe(false)
+    const signedOut = device(new FakeServer(), { kinds: null })
+    await ready(signedOut, null)
+    expect(signedOut.kv.has(KINDS_KEY)).toBe(false)
+  })
+
+  it('removing a garment and restoring it leaves every look and outfit it is in as it was', async () => {
+    const T = '2026-09-09T08:00:00.000Z'
+    const tee: Garment = { kind: 'garment', id: 'tee', name: 'White tee', type: 'top', createdAt: T, updatedAt: T }
+    const look: Wear = { kind: 'wear', id: 'wear~2026-09-09~a1b2c3d4e5', date: '2026-09-09', garmentIds: ['tee', 'jeans'], createdAt: T, updatedAt: T }
+    const friday: Outfit = { kind: 'outfit', id: 'friday', garmentIds: ['tee', 'jeans'], createdAt: T, updatedAt: T }
+    const server = new FakeServer()
+    server.seed(tee, look, friday)
+    const d = device(server)
+    await ready(d)
+    const from = server.calls.length
+    d.engine.remove('tee')
+    await vi.advanceTimersByTimeAsync(2000)
+    await idle(d)
+    expect(server.row<Garment>('tee')!.deletedAt).toBeTruthy()
+    d.engine.restore(['tee'])
+    await vi.advanceTimersByTimeAsync(2000)
+    await idle(d)
+    expect(server.row<Garment>('tee')!.deletedAt).toBeUndefined()
+    // only the garment went out, twice; nothing else was rewritten
+    expect(sentIds(server, from)).toEqual(['tee', 'tee'])
+    expect(d.item<Wear>(look.id)!.updatedAt).toBe(T)
+    expect(d.item<Outfit>('friday')!.updatedAt).toBe(T)
+    expect(server.row<Wear>(look.id)).toMatchObject({ updatedAt: T, garmentIds: ['tee', 'jeans'] })
   })
 })

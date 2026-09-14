@@ -4,6 +4,8 @@ export const CURSOR_KEY = 'drafter:sync-cursor'
 export const DIRTY_KEY = 'drafter:dirty-ids'
 /** Ids the server refused, with the reason and when to try each again. */
 export const FAILURES_KEY = 'drafter:sync-failures'
+/** The kinds this build syncs, as last booted: a change means one full exchange. */
+export const KINDS_KEY = 'drafter:sync-kinds'
 
 /** The small synchronous store this state lives in: localStorage in the app, a Map in tests. */
 export interface KV {

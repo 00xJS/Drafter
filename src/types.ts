@@ -581,7 +581,78 @@ export interface Note extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note
+/** What a piece of clothing is. The order is the composer's, top to toe, and the slot order everywhere. */
+export type GarmentType = 'top' | 'bottom' | 'onepiece' | 'outerwear' | 'shoes' | 'accessory'
+export const GARMENT_TYPES: GarmentType[] = ['top', 'bottom', 'onepiece', 'outerwear', 'shoes', 'accessory']
+export const GARMENT_TYPE_META: Record<GarmentType, { label: string; plural: string }> = {
+  top: { label: 'Top', plural: 'Tops' },
+  bottom: { label: 'Bottom', plural: 'Bottoms' },
+  onepiece: { label: 'One-piece', plural: 'One-pieces' },
+  outerwear: { label: 'Outerwear', plural: 'Outerwear' },
+  shoes: { label: 'Shoes', plural: 'Shoes' },
+  accessory: { label: 'Accessory', plural: 'Accessories' },
+}
+/** What makes a look a look: top(s) and bottom(s), or a one-piece. */
+export const CORE_TYPES: GarmentType[] = ['top', 'bottom', 'onepiece']
+/** Most pieces an outfit or a look can hold. */
+export const MAX_PIECES = 12
+
+/** One piece of clothing. Personal, like the journal: never a household peer's to read. */
+export interface Garment extends Owned {
+  kind: 'garment'
+  id: string
+  /** '' only on a tombstone. */
+  name: string
+  type: GarmentType
+  /** 1200px JPEG in the media store: personal/<user id>/<uid> (a bare uid in local mode). */
+  photoId?: string
+  /** 360px JPEG, same shape: rows, the grid and Today use it. */
+  thumbId?: string
+  /** #rrggbb sampled from the photo: the placeholder, the tints, the name suggestion. */
+  color?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  /** Retired (given away, worn out): keeps its history, leaves the composer, Today and the not-worn lists. */
+  archivedAt?: string
+}
+
+/** A saved combination: garment ids only, never copied names. */
+export interface Outfit extends Owned {
+  kind: 'outfit'
+  id: string
+  /** Absent: the UI names it by its pieces. */
+  name?: string
+  /**
+   * In composer order, 1..MAX_PIECES. Not a set field (shared/merge.mjs): it
+   * merges as ONE value, so two devices' edits raise a conflict instead of a
+   * union nobody chose.
+   */
+  garmentIds: string[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/**
+ * One look worn on a local day: id wear~YYYY-MM-DD~<10 random chars>, like a
+ * journal entry's. A day can hold several (an evening change); every figure
+ * counts distinct days.
+ */
+export interface Wear extends Owned {
+  kind: 'wear'
+  id: string
+  /** YYYY-MM-DD, a local day key. */
+  date: string
+  /** 0..MAX_PIECES, merged as one value like an outfit's; an empty look counts as nothing. */
+  garmentIds: string[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear
 
 /**
  * The legacy post shape. `toPost` still projects a social task into it so

@@ -1340,3 +1340,289 @@ begin;
 set local role service_role;
 delete from storage.objects where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
 commit;
+-- ===== v3.14 (wardrobe) =====
+-- 20260923000000_v3_14_wardrobe: sync_posts takes kind = 'garment', 'outfit' and
+-- 'wear', and all three are personal like the journal — stored under their
+-- owner, never a household peer's to read, write over or inherit — the canary
+-- covers them, and a garment photo under personal/<user id>/ is its uploader's
+-- alone while note photos stay household-wide.
+
+-- ------------------- v3.14-1. the owner stores a garment, an outfit and a look
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"garment","id":"g-tee","name":"White tee","type":"top","photoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a10","thumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a11","color":"#f5f5f0","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"outfit","id":"o-friday","name":"Friday","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-1: sync_posts rejected the owner''s wardrobe: %', r -> 'rejected';
+  end if;
+  if (select count(*) from public.posts
+       where id in ('g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5') and user_id = '00000000-0000-0000-0000-00000000000a') <> 3 then
+    raise exception 'FAIL v3.14-1: the garment, the outfit and the look should all be stored under the owner';
+  end if;
+  if (select kind from public.posts where id = 'g-tee') is distinct from 'garment'
+     or (select kind from public.posts where id = 'o-friday') is distinct from 'outfit'
+     or (select kind from public.posts where id = 'wear~2026-09-13~a1b2c3d4e5') is distinct from 'wear' then
+    raise exception 'FAIL v3.14-1: a wardrobe row has the wrong kind column';
+  end if;
+  if (select data ->> 'photoId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a10' then
+    raise exception 'FAIL v3.14-1: the garment''s photo reference did not survive the write';
+  end if;
+  -- an edit, so the look has a history row a peer must not read either
+  r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-1: the owner''s edit of the look was rejected: %', r -> 'rejected';
+  end if;
+  if (select count(*) from public.posts_history where id = 'wear~2026-09-13~a1b2c3d4e5') <> 1 then
+    raise exception 'FAIL v3.14-1: the look''s edit should leave exactly one history row';
+  end if;
+  raise notice 'ok v3.14-1: the owner stores a garment, an outfit and a look, each under the owner with its kind';
+end $$;
+commit;
+
+-- ---- v3.14-2. a household peer sees none of it, cannot write over a look, logs its own
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if ids && array['g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5'] then
+    raise exception 'FAIL v3.14-2: a peer''s sync pull returns the owner''s wardrobe: %', ids;
+  end if;
+  if not ('note-paint' = any(ids)) then
+    raise exception 'FAIL v3.14-2: the peer should still see the shared note, saw %', ids;
+  end if;
+  if (select count(*) from public.posts where id in ('g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5')) <> 0 then
+    raise exception 'FAIL v3.14-2: direct select shows the peer the owner''s wardrobe';
+  end if;
+  if (select count(*) from public.posts_history where id in ('g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5')) <> 0 then
+    raise exception 'FAIL v3.14-2: the peer can read the history of the owner''s look';
+  end if;
+  -- the same day logged on both accounts: a write onto the owner's id fails the USING check
+  r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-peer"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["wear~2026-09-13~a1b2c3d4e5"]'::jsonb then
+    raise exception 'FAIL v3.14-2: the peer''s write onto the owner''s look should be rejected, got %', r;
+  end if;
+  -- ...while the peer's own look for that day, under its own random suffix, stores
+  r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~b1b2c3d4e5","date":"2026-09-13","garmentIds":["g-peer"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-2: the peer''s own look was rejected: %', r -> 'rejected';
+  end if;
+  raise notice 'ok v3.14-2: a peer sees none of the owner''s wardrobe or its history, cannot write over a look, and logs its own';
+end $$;
+commit;
+do $$
+begin
+  if (select data -> 'garmentIds' from public.posts where id = 'wear~2026-09-13~a1b2c3d4e5') is distinct from '["g-tee"]'::jsonb then
+    raise exception 'FAIL v3.14-2: the owner''s look was changed by a peer';
+  end if;
+  if (select user_id from public.posts where id = 'wear~2026-09-13~b1b2c3d4e5') is distinct from '00000000-0000-0000-0000-00000000000b' then
+    raise exception 'FAIL v3.14-2: the peer''s look should be stored under the peer';
+  end if;
+end $$;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+begin
+  if (select count(*) from public.posts where id = 'wear~2026-09-13~b1b2c3d4e5') <> 0 then
+    raise exception 'FAIL v3.14-2: the owner can see the peer''s look';
+  end if;
+end $$;
+commit;
+
+-- ---------------------------------- v3.14-3. a stranger sees none of it either
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","role":"authenticated","email":"stranger@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if ids && array['g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5'] then
+    raise exception 'FAIL v3.14-3: a stranger''s sync pull returns the owner''s wardrobe: %', ids;
+  end if;
+  if (select count(*) from public.posts where id in ('g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5')) <> 0
+     or (select count(*) from public.posts_history where id in ('g-tee', 'o-friday', 'wear~2026-09-13~a1b2c3d4e5')) <> 0 then
+    raise exception 'FAIL v3.14-3: direct select shows a stranger the owner''s wardrobe or its history';
+  end if;
+  raise notice 'ok v3.14-3: a stranger sees none of the owner''s wardrobe or its history';
+end $$;
+commit;
+
+-- ------------------------ v3.14-4. the canary passes every kind, the wardrobe too
+begin;
+set local role service_role;
+do $$
+declare r jsonb; posts_before bigint; history_before bigint;
+begin
+  select count(*) into posts_before from public.posts;
+  select count(*) into history_before from public.posts_history;
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear']);
+  if r <> '{"ok": true, "checked": 18, "failures": []}'::jsonb then
+    raise exception 'FAIL v3.14-4: the canary should pass for all 18 kinds, got %', r;
+  end if;
+  if (select count(*) from public.posts) <> posts_before or (select count(*) from public.posts_history) <> history_before then
+    raise exception 'FAIL v3.14-4: the canary left rows behind';
+  end if;
+  raise notice 'ok v3.14-4: the canary passes all 18 kinds, the wardrobe included, and leaves posts and history as they were';
+end $$;
+commit;
+
+-- ------------- v3.14-5. a leaving member's wardrobe is deleted, never inherited
+-- step 14 deleted …0d, so this needs an account of its own
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000e', 'moving@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-00000000000e', 'member');
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","role":"authenticated","email":"moving@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"garment","id":"e-coat","name":"Wool coat","type":"outerwear","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"outfit","id":"e-outfit","garmentIds":["e-coat"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"wear","id":"wear~2026-09-13~e1e2e3e4e5","date":"2026-09-13","garmentIds":["e-coat"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"task","id":"e-task","title":"Return the keys","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-5: the leaving account''s rows were rejected: %', r -> 'rejected';
+  end if;
+  -- an edit, so the look carries history
+  r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~e1e2e3e4e5","date":"2026-09-13","garmentIds":["e-coat","e-boots"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select count(*) from public.posts_history where id = 'wear~2026-09-13~e1e2e3e4e5') <> 1 then
+    raise exception 'FAIL v3.14-5: the look''s edit should leave one history row';
+  end if;
+end $$;
+commit;
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-00000000000a');
+  if r <> '{"reassigned": 1, "deleted": 3, "historyReassigned": 0, "historyDeleted": 1}'::jsonb then
+    raise exception 'FAIL v3.14-5: unexpected counts from admin_prepare_user_deletion: %', r;
+  end if;
+  raise notice 'ok v3.14-5: prepared as the service role: %', r;
+end $$;
+commit;
+
+do $$
+begin
+  delete from auth.users where id = '00000000-0000-0000-0000-00000000000e';
+exception when others then
+  raise exception 'FAIL v3.14-5: the prepared account still cannot be deleted: %', sqlerrm;
+end $$;
+
+do $$
+begin
+  if exists (select 1 from public.posts where id in ('e-coat', 'e-outfit', 'wear~2026-09-13~e1e2e3e4e5'))
+     or exists (select 1 from public.posts_history where id in ('e-coat', 'e-outfit', 'wear~2026-09-13~e1e2e3e4e5')) then
+    raise exception 'FAIL v3.14-5: the leaving member''s wardrobe or its history outlived the account';
+  end if;
+  if (select user_id from public.posts where id = 'e-task') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.14-5: the shared task should now belong to the heir';
+  end if;
+  raise notice 'ok v3.14-5: the account is gone; its wardrobe and that history are deleted, its task belongs to the heir';
+end $$;
+
+-- ----------- v3.14-6. storage: personal/<user id>/ is its uploader's alone
+-- The stub grants authenticated the table, as Supabase does, so the media
+-- policies run as a real signed-in account.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'personal/00000000-0000-0000-0000-00000000000a/p1', '00000000-0000-0000-0000-00000000000a'),
+  ('media', 'n1', '00000000-0000-0000-0000-00000000000a');
+commit;
+-- written with the service key: no owner, like the daily snapshots
+begin;
+set local role service_role;
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'backups/00000000-0000-0000-0000-00000000000a/2026-09-13.json', null),
+  ('media', 'legacy-null', null);
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare names text[]; n integer;
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects where bucket_id = 'media';
+  if names <> array['legacy-null', 'n1'] then
+    raise exception 'FAIL v3.14-6: the peer should see the household photo and the legacy one only, saw %', names;
+  end if;
+  begin
+    insert into storage.objects (bucket_id, name, owner)
+      values ('media', 'personal/00000000-0000-0000-0000-00000000000a/x', '00000000-0000-0000-0000-00000000000b');
+    raise exception 'FAIL v3.14-6: the peer wrote into the owner''s personal folder';
+  exception when insufficient_privilege then
+    null;
+  end;
+  insert into storage.objects (bucket_id, name, owner)
+    values ('media', 'personal/00000000-0000-0000-0000-00000000000b/mine', '00000000-0000-0000-0000-00000000000b');
+  update storage.objects set name = name where name = 'personal/00000000-0000-0000-0000-00000000000a/p1';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'FAIL v3.14-6: the peer replaced the owner''s personal photo';
+  end if;
+  delete from storage.objects where name = 'personal/00000000-0000-0000-0000-00000000000a/p1';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'FAIL v3.14-6: the peer deleted the owner''s personal photo';
+  end if;
+  begin
+    update storage.objects set name = 'personal/00000000-0000-0000-0000-00000000000a/stolen'
+     where name = 'personal/00000000-0000-0000-0000-00000000000b/mine';
+    raise exception 'FAIL v3.14-6: the peer moved its photo into the owner''s folder';
+  exception when insufficient_privilege then
+    null;
+  end;
+  raise notice 'ok v3.14-6: a peer sees household and legacy photos, never another''s personal one or a backup, and writes only into its own folder';
+end $$;
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare names text[]; n integer;
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects where bucket_id = 'media';
+  if not (names @> array['n1', 'personal/00000000-0000-0000-0000-00000000000a/p1']) then
+    raise exception 'FAIL v3.14-6: the owner should see their own photos, saw %', names;
+  end if;
+  if names && array['backups/00000000-0000-0000-0000-00000000000a/2026-09-13.json', 'personal/00000000-0000-0000-0000-00000000000b/mine'] then
+    raise exception 'FAIL v3.14-6: the owner sees a backup or the peer''s personal photo: %', names;
+  end if;
+  update storage.objects set name = 'personal/00000000-0000-0000-0000-00000000000a/p1-replaced'
+   where name = 'personal/00000000-0000-0000-0000-00000000000a/p1';
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'FAIL v3.14-6: the owner could not replace their own personal photo';
+  end if;
+  delete from storage.objects where name = 'personal/00000000-0000-0000-0000-00000000000a/p1-replaced';
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'FAIL v3.14-6: the owner could not delete their own personal photo';
+  end if;
+  raise notice 'ok v3.14-6: the owner sees, replaces and deletes their own personal photo, and no backup';
+end $$;
+commit;

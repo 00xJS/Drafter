@@ -74,6 +74,8 @@ const EXEMPT_FILES = ['templates.ts', 'syncengine.ts', 'sync.ts', 'theme.ts', 'c
 /** Declarations inside an otherwise guarded module that hold data colours. */
 const EXEMPT_DECLARATIONS: Record<string, RegExp[]> = {
   'types.ts': [/^export const PLATFORM_META\b[\s\S]*?^\}$/m, /^export const PROJECT_COLORS\b.*$/m],
+  // a photo's own colour, worked out from its pixels for a name suggestion: image data, not a UI colour
+  'photo.ts': [/^export function averageHex\b[\s\S]*?^\}$/m],
 }
 
 /** The colours a module writes out, outside comments and its exempt declarations. */

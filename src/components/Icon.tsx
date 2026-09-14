@@ -28,6 +28,7 @@ export type IconName =
   | 'camera'
   | 'refresh'
   | 'brand'
+  | 'wardrobe'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -142,6 +143,13 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   brand: <path d="M7 4.6h4.4a7.4 7.4 0 0 1 0 14.8H7z" />,
+  // a coat hanger: Home → Wardrobe, and the palette's way to it
+  wardrobe: (
+    <>
+      <path d="M12 8.2V6.6a1.9 1.9 0 1 0-1.9-1.9" />
+      <path d="M12 8.2 3.3 14.4a1.2 1.2 0 0 0 .7 2.2h16a1.2 1.2 0 0 0 .7-2.2z" />
+    </>
+  ),
 }
 
 interface IconProps {

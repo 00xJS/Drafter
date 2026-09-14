@@ -15,6 +15,8 @@ interface Props {
 
 const RETENTION_DAYS = 90
 
+const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`
+
 function kindLabel(kind: Item['kind']): string {
   switch (kind) {
     case 'task':
@@ -47,6 +49,12 @@ function kindLabel(kind: Item['kind']): string {
       return 'Routine'
     case 'note':
       return 'Note'
+    case 'garment':
+      return 'Clothing'
+    case 'outfit':
+      return 'Outfit'
+    case 'wear':
+      return 'Outfit worn'
   }
 }
 
@@ -69,7 +77,13 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                 ? i.title || 'Untitled event'
                 : i.kind === 'note'
                   ? i.title || excerpt(htmlToText(i.body), 50) || 'Untitled note'
-                  : i.name
+                  : i.kind === 'garment'
+                    ? i.name || 'Untitled piece'
+                    : i.kind === 'outfit'
+                      ? i.name || pieces(i.garmentIds.length)
+                      : i.kind === 'wear'
+                        ? `${i.date} · ${pieces(i.garmentIds.length)}`
+                        : i.name
   return (
     <Modal onClose={onClose}>
       <ModalHead title="Trash" />

@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
+import { watchPendingMedia } from '../media'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -39,6 +40,9 @@ export default function Planner() {
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
   useEffect(() => forgetRetiredKeys(), [])
+  // a photo saved offline, or whose upload failed, goes up at launch, when the
+  // connection comes back and whenever the app is shown again
+  useEffect(() => watchPendingMedia(), [])
   const nav = useNavigation()
   const toaster = useToast({ store })
   const { showToast } = toaster

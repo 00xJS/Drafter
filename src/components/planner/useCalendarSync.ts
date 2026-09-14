@@ -17,6 +17,7 @@ import {
   type GoogleChange,
   type MirrorDone,
 } from '../../calendars'
+import { flushPendingMedia } from '../../media'
 import { requestWeatherRefresh } from '../../weather'
 import type { useToast } from './useToast'
 
@@ -165,11 +166,13 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
    * reports its own error in its own place. The weather is only asked (the
    * strip refreshes itself when it is on screen, and for this ask fetches
    * now rather than trusting its half-hour cache), so the spinner never
-   * waits on it.
+   * waits on it; nor on a photo still waiting for the bucket, which is sent
+   * on its own.
    * The GitHub board pull refreshes itself on foreground and is left to its
    * own timer here.
    */
   const manualSync = async () => {
+    void flushPendingMedia()
     setSyncing(true)
     requestWeatherRefresh()
     try {

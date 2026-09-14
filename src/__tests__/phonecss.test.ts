@@ -44,9 +44,9 @@ function specificity(sel: string): [number, number, number] {
   let ids = 0
   let classes = 0
   let elements = 0
-  // :not()/:is() take the specificity of their most specific argument; ours are
-  // all single simple selectors, so summing the inner counts is exact here.
-  let rest = sel.replace(/:(?:not|is)\(([^)]*)\)/g, (_, inner: string) => {
+  // :not()/:is()/:has() take the specificity of their most specific argument;
+  // ours are all single simple selectors, so summing the inner counts is exact here.
+  let rest = sel.replace(/:(?:not|is|has)\(([^)]*)\)/g, (_, inner: string) => {
     const [a, b, c] = specificity(inner)
     ids += a
     classes += b
@@ -606,5 +606,91 @@ describe('landscape: nothing sits under the notch or the Dynamic Island', () => 
     const block = narrow.find(b => /padding:\s*12px;/.test(rule(b.body, '.content')))
     expect(block, 'no @media (max-width: 640px) .content { padding: 12px }').toBeTruthy()
     expect(block!.at).toBeGreaterThan(bare.indexOf(rule(bare, '.content')))
+  })
+})
+
+describe('phone: the wardrobe is dressed with a thumb', () => {
+  const narrow = narrowBlocks()
+
+  it('snaps each row sideways, keeps the swipe inside it, and lets its ends reach the middle', () => {
+    const row = rule(bare, '.snap-row')
+    expect(row).toMatch(/scroll-snap-type:\s*x mandatory/)
+    // a sideways swipe that runs out of cards must not pull the page or go back a screen
+    expect(row).toMatch(/overscroll-behavior-x:\s*contain/)
+    expect(row).toMatch(/padding-inline:\s*calc\(50% - var\(--card-w\) \/ 2\)/)
+    expect(rule(bare, '.snap-cell')).toMatch(/scroll-snap-align:\s*center/)
+    // the add tile after the last card is never where a swipe comes to rest
+    expect(rule(bare, '.snap-add')).toMatch(/scroll-snap-align:\s*none/)
+  })
+
+  it('caps the Home segment labels on a phone, where four share one row', () => {
+    const capped = narrow.find(b => rule(b.body, '.home-seg .seg'))
+    expect(capped, 'no @media (max-width: 640px) rule for .home-seg .seg').toBeTruthy()
+    expect(rule(capped!.body, '.home-seg .seg')).toMatch(/font-size:\s*calc\(13px \* min\(1\.15, var\(--type-scale\)\)\)/)
+    expect(bare.match(/\.home-seg \.seg\s*\{/g), 'the desktop row keeps its size: the cap is declared only there').toHaveLength(1)
+  })
+
+  it('narrows the native Home track’s thumbs on a phone, outranking the shared padding', () => {
+    const sel = '.native .people-tab-seg.home-seg .segmented .seg'
+    const block = narrow.find(b => rule(b.body, sel))
+    expect(block, 'no phone rule for the native Home segments').toBeTruthy()
+    expect(rule(block!.body, sel)).toMatch(/padding-inline:\s*6px/)
+    expect(compare(specificity(sel), specificity('.native .people-tab-seg .segmented .seg'))).toBeGreaterThan(0)
+  })
+
+  it('sticks the action bar just above the tab bar on a phone, without spending the keyboard', () => {
+    const block = narrow.find(b => rule(b.body, '.wardrobe-actions'))
+    expect(block, 'no @media (max-width: 640px) rule for .wardrobe-actions').toBeTruthy()
+    const bar = rule(block!.body, '.wardrobe-actions')
+    expect(bar).toMatch(/position:\s*sticky/)
+    // the bar really measures up to 4px over its --tabbar-h token, so the offset keeps that clear
+    expect(bar).toMatch(/bottom:\s*calc\(var\(--tabbar-h\) \+ var\(--safe-b\) \+ 4px\)/)
+    expect(bar).not.toMatch(/keyboard-h/)
+    // on a desktop it sits in the flow
+    expect(rule(bare, '.wardrobe-actions')).not.toMatch(/position:\s*sticky/)
+  })
+
+  it('shows the row ends’ ‹ › to a mouse only', () => {
+    expect(rule(bare, '.snap-step')).toMatch(/display:\s*none/)
+    const fine = [...bare.matchAll(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/g)].map(m => blockBody(m.index))
+    expect(fine.some(b => /display:\s*inline-flex/.test(rule(b, '.snap-step')))).toBe(true)
+  })
+
+  it('gives the middle card’s “i” and a saved outfit’s “…” the 44pt floor under a finger', () => {
+    const floor = coarseBlocks().find(b => rule(b.body, '.snap-info, .saved-more'))
+    expect(floor, 'no @media (pointer: coarse) rule for .snap-info, .saved-more').toBeTruthy()
+    expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/width:\s*44px/)
+    expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/height:\s*44px/)
+  })
+
+  it('lifts the app’s toast clear of the bar while the composer is on screen, and leaves it to the keyboard rule when the keyboard is up', () => {
+    const sel = 'html:not(.keyboard-open) body:has(.wardrobe-actions) .toast'
+    const block = narrow.find(b => rule(b.body, sel))
+    expect(block, `no @media (max-width: 640px) rule for ${sel}`).toBeTruthy()
+    const offset = (declarations: string) => Number(/bottom:\s*calc\(var\(--tabbar-h\) \+ var\(--safe-b\) \+ (\d+)px\)/.exec(declarations)?.[1])
+    const bar = narrow.map(b => rule(b.body, '.wardrobe-actions')).find(Boolean) ?? ''
+    // the bar is one row: 8px of padding each side of a button at most 40px tall at the capped size, and its border
+    expect(offset(rule(block!.body, sel))).toBeGreaterThanOrEqual(offset(bar) + 8 + 40 + 8 + 1)
+    // it outranks the phone's own toast rule, and the keyboard's rule stands as it was
+    expect(compare(specificity(sel), specificity('.toast'))).toBeGreaterThan(0)
+    expect(bare).toMatch(/\.keyboard-open \.toast\s*\{[^}]*bottom:\s*calc\(var\(--safe-b\) \+ 12px\)/)
+  })
+
+  it('keeps the bar to one row, with its buttons and the day line capped like the tab bar’s labels', () => {
+    const phone = (sel: string) => narrow.map(b => rule(b.body, sel)).find(Boolean) ?? ''
+    expect(phone('.wardrobe-actions')).toMatch(/flex-wrap:\s*nowrap/)
+    for (const sel of ['.wardrobe-actions .btn', '.wardrobe-day-pick', '.wardrobe-logged', '.wardrobe-remove']) {
+      expect(phone(sel), sel).toMatch(/font-size:\s*calc\(\d+px \* min\(1\.15, var\(--type-scale\)\)\)/)
+    }
+    // "+ Another look" is "+ Look" there
+    expect(phone('.wardrobe-another-long')).toMatch(/display:\s*none/)
+    expect(rule(bare, '.wardrobe-another-short')).toMatch(/display:\s*none/)
+  })
+
+  it('gives the Retired, By piece and More disclosures the 44pt floor under a finger', () => {
+    const sel = '.clothes-retired summary, .wardrobe-by-piece summary, .garment-more summary'
+    const floor = coarseBlocks().find(b => rule(b.body, sel))
+    expect(floor, `no @media (pointer: coarse) rule for ${sel}`).toBeTruthy()
+    expect(rule(floor!.body, sel)).toMatch(/min-height:\s*44px/)
   })
 })
