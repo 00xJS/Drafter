@@ -8,21 +8,29 @@ import Vision
 /// Capacitor, so this same file also builds for macOS 14+, where Vision runs.
 /// The iOS Simulator cannot run this request at all (it has no GPU or Neural
 /// Engine for it), so a Mac is the only place off a phone to prove it.
+///
+/// It only lifts. Which of the subjects is the garment is decided in the web
+/// view (chooseSubjects in src/cutoutmath.ts), where it is tested, and where a
+/// tap on the photo can pick another subject without asking Vision again. So
+/// every subject comes back over the whole frame, with the instance mask that
+/// tells them apart.
 @available(iOS 17.0, macOS 14.0, *)
 enum SubjectLift {
     struct Result {
-        /// The kept subjects on transparency, cropped to them, as an sRGB PNG.
+        /// Every subject on transparency, over the whole upright, downscaled
+        /// frame Vision looked at, as an sRGB PNG.
         let png: Data
         let width: Int
         let height: Int
-        /// The upright, downscaled frame Vision looked at.
-        let frameWidth: Int
-        let frameHeight: Int
-        /// The share of that frame the kept subjects cover, 0...1.
-        let coverage: Double
-        /// How many subjects Vision found, and how many made the cut.
+        /// Vision's instance mask, a byte a pixel with no row padding: 0 for the
+        /// background, 1...n for each subject. It has a low resolution of its
+        /// own, stretched over the whole frame. Empty should Vision ever hand it
+        /// over in another format; the web view then keeps every subject.
+        let mask: Data
+        let maskWidth: Int
+        let maskHeight: Int
+        /// How many subjects Vision found.
         let found: Int
-        let kept: Int
     }
 
     enum Failure: Error {
@@ -31,10 +39,6 @@ enum SubjectLift {
         case vision(Error)
         case encode
     }
-
-    /// A subject smaller than this share of the largest one is left out: both
-    /// shoes of a pair and both halves of a set stay, a stray sock does not.
-    static let keepShareOfLargest = 0.2
 
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
@@ -50,10 +54,10 @@ enum SubjectLift {
         guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
             throw Failure.noSubject
         }
-        let (kept, coverage) = choose(in: observation)
         let masked: CVPixelBuffer
         do {
-            masked = try observation.generateMaskedImage(ofInstances: kept, from: handler, croppedToInstancesExtent: true)
+            // not cropped: the instance mask covers the whole frame, and so must this
+            masked = try observation.generateMaskedImage(ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: false)
         } catch {
             throw Failure.vision(error)
         }
@@ -67,15 +71,15 @@ enum SubjectLift {
         else {
             throw Failure.encode
         }
+        let (mask, maskWidth, maskHeight) = bytes(of: observation.instanceMask)
         return Result(
             png: png,
             width: CVPixelBufferGetWidth(masked),
             height: CVPixelBufferGetHeight(masked),
-            frameWidth: frame.width,
-            frameHeight: frame.height,
-            coverage: coverage,
-            found: observation.allInstances.count,
-            kept: kept.count
+            mask: mask,
+            maskWidth: maskWidth,
+            maskHeight: maskHeight,
+            found: observation.allInstances.count
         )
     }
 
@@ -97,28 +101,23 @@ enum SubjectLift {
         return image
     }
 
-    /// Which subjects make the cut, and how much of the frame they cover. The
-    /// instance mask is low resolution, one byte per pixel, 0 for background and
-    /// 1...n for each subject, so counting it costs next to nothing.
-    static func choose(in observation: VNInstanceMaskObservation) -> (IndexSet, Double) {
-        let mask = observation.instanceMask
-        guard CVPixelBufferGetPixelFormatType(mask) == kCVPixelFormatType_OneComponent8 else {
-            return (observation.allInstances, 0)
-        }
+    /// The instance mask's bytes, row after row, without the buffer's row
+    /// padding. It is small (512 x 512 on every run so far), so this is cheap.
+    static func bytes(of mask: CVPixelBuffer) -> (Data, Int, Int) {
+        guard CVPixelBufferGetPixelFormatType(mask) == kCVPixelFormatType_OneComponent8 else { return (Data(), 0, 0) }
         CVPixelBufferLockBaseAddress(mask, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(mask, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(mask) else { return (observation.allInstances, 0) }
+        guard let base = CVPixelBufferGetBaseAddress(mask) else { return (Data(), 0, 0) }
         let width = CVPixelBufferGetWidth(mask)
         let height = CVPixelBufferGetHeight(mask)
         let rowBytes = CVPixelBufferGetBytesPerRow(mask)
-        var area = [Int](repeating: 0, count: 256)
-        for y in 0..<height {
-            let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: UInt8.self)
-            for x in 0..<width { area[Int(row[x])] += 1 }
+        var out = Data(count: width * height)
+        out.withUnsafeMutableBytes { (rows: UnsafeMutableRawBufferPointer) in
+            guard let into = rows.baseAddress else { return }
+            for y in 0..<height {
+                into.advanced(by: y * width).copyMemory(from: base.advanced(by: y * rowBytes), byteCount: width)
+            }
         }
-        let largest = observation.allInstances.map { area[$0] }.max() ?? 0
-        let kept = IndexSet(observation.allInstances.filter { Double(area[$0]) >= Double(largest) * keepShareOfLargest })
-        let covered = kept.reduce(0) { $0 + area[$1] }
-        return (kept, Double(covered) / Double(max(1, width * height)))
+        return (out, width, height)
     }
 }

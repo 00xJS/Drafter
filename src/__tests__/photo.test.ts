@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PHOTO_EDGE, PhotoUnreadable, THUMB_EDGE, averageHex, fitWithin } from '../photo'
+import { PHOTO_EDGE, PhotoUnreadable, THUMB_EDGE, averageHex, fitWithin, keepsAsIs } from '../photo'
 import { colorName } from '../wardrobe'
 
 // A garment photo's two sizes and its colour: the maths prepareGarmentPhoto
@@ -7,6 +7,25 @@ import { colorName } from '../wardrobe'
 // check); everything it computes is here.
 
 const pixels = (...rgba: [number, number, number, number][]) => new Uint8ClampedArray(rgba.flat())
+
+describe('keepsAsIs: the cut-out step, a cut-out never encoded twice', () => {
+  it('keeps the cut-out sheet’s JPEG as the photo when it is 1200px or less', () => {
+    expect(keepsAsIs('image/jpeg', 1200, 900, true)).toBe(true)
+    expect(keepsAsIs('image/jpeg', 651, 1200, true)).toBe(true)
+    expect(keepsAsIs('image/jpeg', 84, 144, true)).toBe(true)
+  })
+
+  it('draws anything else afresh: a larger cut-out, another type, or the photo as picked', () => {
+    expect(keepsAsIs('image/jpeg', 1201, 900, true)).toBe(false)
+    expect(keepsAsIs('image/png', 800, 600, true)).toBe(false)
+    expect(keepsAsIs('image/jpeg', 800, 600, false)).toBe(false)
+    expect(keepsAsIs('', 800, 600, true)).toBe(false)
+  })
+
+  it('agrees with the cut-out’s own size: its long edge is the piece photo’s', () => {
+    expect(PHOTO_EDGE).toBe(1200)
+  })
+})
 
 describe('fitWithin: inside the longest edge, never upscaled', () => {
   it('fits a landscape photo by its width', () => {

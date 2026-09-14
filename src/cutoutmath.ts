@@ -38,6 +38,11 @@ export const CUTOUT = {
   nearEdgePx: 2,
   nearEdgeShare: 0.01,
   smallCropPx: 300,
+  // Vision's subjects on the iPhone: what stays beside the largest (both shoes of
+  // a pair), and the ring, in the instance mask's own pixels, that goes with one
+  // left out
+  subjectShare: 0.2,
+  subjectFringePx: 2,
   // where the web engine looks without a tap: the middle, then a little above and below it
   seeds: [
     { x: 0.5, y: 0.5 },
@@ -411,6 +416,13 @@ export function refineMask(conf: Plane, seed?: Point): Plane {
 
 // ---- judging a mask ----------------------------------------------------------
 
+/** How many sides of a width × height image `box` comes within max(2 px, 1%) of. */
+function sidesTouched(box: Box, width: number, height: number): number {
+  const nearX = Math.max(CUTOUT.nearEdgePx, Math.round(width * CUTOUT.nearEdgeShare))
+  const nearY = Math.max(CUTOUT.nearEdgePx, Math.round(height * CUTOUT.nearEdgeShare))
+  return [box.x <= nearX, width - box.x - box.width <= nearX, box.y <= nearY, height - box.y - box.height <= nearY].filter(Boolean).length
+}
+
 export function maskStats(alpha: Uint8Array, width: number, height: number): MaskStats {
   let covered = 0
   let left = width
@@ -429,12 +441,7 @@ export function maskStats(alpha: Uint8Array, width: number, height: number): Mas
     }
   }
   const box = right < 0 ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
-  const nearX = Math.max(CUTOUT.nearEdgePx, Math.round(width * CUTOUT.nearEdgeShare))
-  const nearY = Math.max(CUTOUT.nearEdgePx, Math.round(height * CUTOUT.nearEdgeShare))
-  const edgesTouched = box
-    ? [box.x <= nearX, width - box.x - box.width <= nearX, box.y <= nearY, height - box.y - box.height <= nearY].filter(Boolean).length
-    : 0
-  return { coverage: covered / (width * height), box, edgesTouched }
+  return { coverage: covered / (width * height), box, edgesTouched: box ? sidesTouched(box, width, height) : 0 }
 }
 
 /** Whether a mask looks like one garment: not nothing, not a speck, not the whole photo, not pressed into three sides. */
@@ -504,6 +511,151 @@ export function finishOnWhite(src: Rgba, alpha: Uint8Array, outEdge: number): { 
   const crop = paddedBox(stats.box, CUTOUT.padRatio, CUTOUT.padMin)
   const size = fitWithin(crop.width, crop.height, outEdge)
   return { image: resizeArea(compositeOnWhite(src, alpha, crop), size.width, size.height), crop, stats }
+}
+
+// ---- Vision's subjects (the iPhone) --------------------------------------------
+
+/**
+ * Vision's instance mask: a byte a pixel, 0 for the background and 1…n for
+ * each subject it found. Its resolution is its own (512 × 512 on every run so
+ * far) and it is stretched over the whole frame, so a normalised point of the
+ * frame lands on it directly.
+ */
+export interface InstanceMask {
+  width: number
+  height: number
+  data: Uint8Array
+}
+
+/** One of Vision's subjects, measured on the instance mask. */
+export interface Subject {
+  label: number
+  /** The share of the frame it covers. */
+  area: number
+  box: Box
+  /** How many sides of the frame it comes within max(2 px, 1%) of. */
+  edgesTouched: number
+}
+
+/** A mask worth reading: a byte for every pixel it says it has. */
+export const usableMask = (mask: InstanceMask | null | undefined): mask is InstanceMask =>
+  !!mask && mask.width > 0 && mask.height > 0 && mask.data.length === mask.width * mask.height
+
+/** Every subject in the mask, by label. */
+export function subjectsIn(mask: InstanceMask): Subject[] {
+  const { width: w, height: h, data } = mask
+  const count = new Int32Array(256)
+  const left = new Int32Array(256).fill(w)
+  const right = new Int32Array(256).fill(-1)
+  const top = new Int32Array(256).fill(h)
+  const bottom = new Int32Array(256).fill(-1)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const label = data[y * w + x]
+      if (!label) continue
+      count[label]++
+      if (x < left[label]) left[label] = x
+      if (x > right[label]) right[label] = x
+      if (y < top[label]) top[label] = y
+      if (y > bottom[label]) bottom[label] = y
+    }
+  }
+  const subjects: Subject[] = []
+  for (let label = 1; label < 256; label++) {
+    if (!count[label]) continue
+    const box = { x: left[label], y: top[label], width: right[label] - left[label] + 1, height: bottom[label] - top[label] + 1 }
+    subjects.push({ label, area: count[label] / (w * h), box, edgesTouched: sidesTouched(box, w, h) })
+  }
+  return subjects
+}
+
+/** The subject under a normalised point of the frame; 0 on the background. */
+export function subjectAt(mask: InstanceMask, at: Point): number {
+  return mask.data[pixelAt(mask, at)]
+}
+
+/**
+ * Which of Vision's subjects are the garment, with no tap to go by. One
+ * pressed into three or more sides of the frame is the ground the garment
+ * lies on (a rug, the bed, a door), so it gives way to any other subject that
+ * is more than a speck; of those, each at least a fifth the size of the
+ * largest stays, so both shoes of a pair do. When every subject looks like
+ * ground, they all stay, since a garment can fill the frame; that is doubtful
+ * only when there was a choice to make. Null when the mask holds no subject.
+ */
+export function chooseSubjects(mask: InstanceMask): { keep: number[]; doubtful: boolean } | null {
+  const subjects = subjectsIn(mask)
+  if (!subjects.length) return null
+  const garments = subjects.filter(s => s.edgesTouched < CUTOUT.frameEdges && s.area >= CUTOUT.tinyCoverage)
+  const pool = garments.length ? garments : subjects
+  const largest = Math.max(...pool.map(s => s.area))
+  return { keep: pool.filter(s => s.area >= largest * CUTOUT.subjectShare).map(s => s.label), doubtful: !garments.length && subjects.length > 1 }
+}
+
+/**
+ * What a tap picks: the subject under it, alone, even ground Vision was told
+ * to leave out. Null on the background, and on the one subject the cut-out
+ * already shows, where Vision has nothing more to offer (trainers it saw as one
+ * with the rug they stand on): the web engine takes the tap then.
+ */
+export function subjectForTap(mask: InstanceMask, tap: Point, shown: readonly number[]): number[] | null {
+  const label = subjectAt(mask, tap)
+  return label && !(shown.length === 1 && shown[0] === label) ? [label] : null
+}
+
+/**
+ * The frame's alpha (every subject on transparency) with only the kept
+ * subjects left. Where a kept subject meets the background, Vision's own soft
+ * edge stays exactly as it is. A subject left out goes, with a ring of
+ * CUTOUT.subjectFringePx mask pixels round it, so no ghost of its edge is left
+ * to widen the crop. Where a kept subject meets one left out (trainers on a
+ * rug Vision told apart), the instance mask, grown to the frame bilinearly,
+ * draws the line. The same alpha back when nothing is left out.
+ */
+export function keepSubjects(alpha: Uint8Array, width: number, height: number, mask: InstanceMask, keep: readonly number[]): Uint8Array {
+  const kept = new Set(keep)
+  const n = mask.width * mask.height
+  const keptIn = new Float32Array(n)
+  const leftOut = new Float32Array(n)
+  let dropping = false
+  for (let i = 0; i < n; i++) {
+    const label = mask.data[i]
+    if (!label) continue
+    if (kept.has(label)) keptIn[i] = 1
+    else {
+      leftOut[i] = 1
+      dropping = true
+    }
+  }
+  if (!dropping) return alpha
+  const nearKept = dilate({ width: mask.width, height: mask.height, data: keptIn }, CUTOUT.subjectFringePx).data
+  const nearOut = dilate({ width: mask.width, height: mask.height, data: leftOut }, CUTOUT.subjectFringePx).data
+  // 1 where the frame's alpha stays: a kept subject, and the background, unless
+  // it is the ring round a subject left out with no kept one as near
+  const stays = new Float32Array(n)
+  for (let i = 0; i < n; i++) stays[i] = keptIn[i] === 1 || (leftOut[i] === 0 && (nearKept[i] === 1 || nearOut[i] === 0)) ? 1 : 0
+  const grown = resizePlaneBilinear({ width: mask.width, height: mask.height, data: stays }, width, height).data
+  const out = new Uint8Array(alpha.length)
+  for (let i = 0; i < out.length; i++) out[i] = Math.round(alpha[i] * grown[i])
+  return out
+}
+
+/**
+ * Vision's lift as the cut-out uses it: which subjects, and the frame's alpha
+ * with only them left. A tap picks by subjectForTap, else chooseSubjects
+ * decides; with no mask to read, or none that holds a subject, everything
+ * Vision lifted stays (`keep` empty). Null only for a tap Vision has nothing
+ * for, which the web engine then takes.
+ */
+export function liftedAlpha(src: Rgba, mask: InstanceMask | null, tap: Point | undefined, shown: readonly number[]): { alpha: Uint8Array; keep: number[]; doubtful: boolean } | null {
+  const alpha = alphaOf(src)
+  if (tap) {
+    const keep = mask ? subjectForTap(mask, tap, shown) : null
+    return mask && keep ? { alpha: keepSubjects(alpha, src.width, src.height, mask, keep), keep, doubtful: false } : null
+  }
+  const choice = mask ? chooseSubjects(mask) : null
+  if (!mask || !choice) return { alpha, keep: [], doubtful: false }
+  return { alpha: keepSubjects(alpha, src.width, src.height, mask, choice.keep), keep: choice.keep, doubtful: choice.doubtful }
 }
 
 // ---- the preview's tap ---------------------------------------------------------

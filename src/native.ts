@@ -661,28 +661,26 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
 
 /** What ios/App/App/SubjectLiftPlugin.swift resolves `lift` with. */
 interface SubjectLiftPayload {
-  /** The kept subjects on transparency, cropped to them: an sRGB PNG, as base64. */
+  /** Every subject Vision found, on transparency, over the whole upright frame: an sRGB PNG, as base64. */
   image: string
   width: number
   height: number
-  /** The upright, downscaled frame Vision looked at. */
-  frameWidth: number
-  frameHeight: number
-  /** The share of that frame the kept subjects cover, 0..1. */
-  coverage: number
-  /** How many subjects Vision found, and how many made the cut. */
+  /** Vision's instance mask, a byte a pixel (0 the background, 1…n each subject), as base64. Empty if it could not be read. */
+  instanceMask: string
+  maskWidth: number
+  maskHeight: number
+  /** How many subjects Vision found. */
   found: number
-  kept: number
 }
 
-/** The plugin compiled into the app (SubjectLiftPlugin.swift), registered by DrafterBridgeViewController. */
+/** The plugin compiled into the app (SubjectLiftPlugin.swift), registered by DrafterBridgeViewController in SceneDelegate.swift. */
 interface SubjectLiftPlugin {
   isAvailable(): Promise<{ available: boolean; reason?: 'simulator' | 'ios-version' }>
   lift(options: { image: string; maxDimension: number }): Promise<SubjectLiftPayload>
 }
 
 export type SubjectLift =
-  | { ok: true; cutout: Blob; width: number; height: number; frameWidth: number; frameHeight: number; coverage: number; found: number; kept: number }
+  | { ok: true; cutout: Blob; width: number; height: number; mask: { width: number; height: number; data: Uint8Array }; found: number }
   | { ok: false; reason: 'unavailable' | 'too-large' | 'no-subject' | 'failed' }
 
 /** A photo bigger than this is never sent over the bridge (as base64 it would be 21.3M characters); the web engine takes it. */
@@ -757,12 +755,14 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * Lift the garment out of `photo` with Apple's Vision, on this iPhone: the kept
- * subjects on transparency, cropped to them, as a PNG, from a frame at most
- * `maxDimension` on its long side. Never throws. `unavailable` covers the web,
- * the Simulator, iOS 16 and an app without the plugin; after it, `too-large`
- * and `failed` (a Vision error, or no answer in 20 s) the cut-out moves on to
- * the web engine, and after `no-subject` it keeps the photo.
+ * Lift the subjects out of `photo` with Apple's Vision, on this iPhone: every
+ * one it found on transparency, over the whole frame (at most `maxDimension`
+ * on its long side), as a PNG, with the instance mask that tells them apart.
+ * Which of them is the garment is the cut-out's to say (chooseSubjects in
+ * src/cutoutmath.ts). Never throws. `unavailable` covers the web, the
+ * Simulator, iOS 16 and an app without the plugin; after it, `too-large` and
+ * `failed` (a Vision error, or no answer in 20 s) the cut-out moves on to the
+ * web engine, and after `no-subject` it keeps the photo.
  */
 export async function liftSubject(photo: Blob, maxDimension: number): Promise<SubjectLift> {
   try {
@@ -771,8 +771,8 @@ export async function liftSubject(photo: Blob, maxDimension: number): Promise<Su
     if (photo.size > SUBJECT_LIFT_MAX_BYTES) return { ok: false, reason: 'too-large' }
     const image = bytesToBase64(new Uint8Array(await photo.arrayBuffer()))
     const r = await withTimeout(plugin.lift({ image, maxDimension }), SUBJECT_LIFT_TIMEOUT_MS)
-    const { width, height, frameWidth, frameHeight, coverage, found, kept } = r
-    return { ok: true, cutout: new Blob([base64ToBytes(r.image)], { type: 'image/png' }), width, height, frameWidth, frameHeight, coverage, found, kept }
+    const mask = { width: r.maskWidth, height: r.maskHeight, data: base64ToBytes(r.instanceMask ?? '') }
+    return { ok: true, cutout: new Blob([base64ToBytes(r.image)], { type: 'image/png' }), width: r.width, height: r.height, mask, found: r.found }
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code
     if (code === 'NO_SUBJECT') return { ok: false, reason: 'no-subject' }

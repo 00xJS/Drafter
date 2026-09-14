@@ -104,16 +104,27 @@ describe('the size cap', () => {
 })
 
 describe('a lift', () => {
-  it('sends the photo as base64 with the frame size, and hands back exactly the PNG it got', async () => {
+  it('sends the photo as base64 with the frame size, and hands back exactly the PNG and the instance mask it got', async () => {
     const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 8, 9])
-    env.plugin.lift.mockResolvedValue({ image: Buffer.from(png).toString('base64'), width: 438, height: 457, frameWidth: 1600, frameHeight: 1200, coverage: 0.21, found: 2, kept: 1 })
+    // a 4 × 2 instance mask: a subject on the left, another on the right, the background between
+    const labels = Uint8Array.from([1, 0, 0, 2, 1, 0, 2, 2])
+    env.plugin.lift.mockResolvedValue({ image: Buffer.from(png).toString('base64'), width: 1600, height: 1200, instanceMask: Buffer.from(labels).toString('base64'), maskWidth: 4, maskHeight: 2, found: 2 })
     const { liftSubject } = await load()
     const lifted = await liftSubject(photo, 1600)
     expect(env.plugin.lift).toHaveBeenCalledWith({ image: Buffer.from([1, 2, 3, 4, 5]).toString('base64'), maxDimension: 1600 })
-    expect(lifted).toMatchObject({ ok: true, width: 438, height: 457, frameWidth: 1600, frameHeight: 1200, coverage: 0.21, found: 2, kept: 1 })
+    expect(lifted).toMatchObject({ ok: true, width: 1600, height: 1200, found: 2, mask: { width: 4, height: 2 } })
     if (!lifted.ok) throw new Error('expected a lift')
     expect(lifted.cutout.type).toBe('image/png')
     expect(new Uint8Array(await lifted.cutout.arrayBuffer())).toEqual(png)
+    expect(lifted.mask.data).toEqual(labels)
+  })
+
+  it('hands back an empty mask when the shell sent none it could read', async () => {
+    env.plugin.lift.mockResolvedValue({ image: 'iVBORw==', width: 10, height: 10, instanceMask: '', maskWidth: 0, maskHeight: 0, found: 1 })
+    const { liftSubject } = await load()
+    const lifted = await liftSubject(photo, 1600)
+    expect(lifted).toMatchObject({ ok: true, mask: { width: 0, height: 0 } })
+    if (lifted.ok) expect(lifted.mask.data).toHaveLength(0)
   })
 
   it.each([

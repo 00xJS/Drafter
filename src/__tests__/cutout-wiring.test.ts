@@ -222,6 +222,14 @@ describe('the styles and the README', () => {
     expect(block).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
   })
 
+  it('sends a tap on the photo to Vision’s subjects first, and a key press to the web engine', () => {
+    const sheet = read('src/components/CutoutSheet.tsx')
+    // a pointer tap carries a point and runs 'auto'; Enter or Space has none and asks the web engine's seeds
+    expect(sheet).toContain('web: point === null')
+    expect(sheet).toContain("engine: job.web ? 'web' : 'auto'")
+    expect(sheet).toContain('if (e.detail === 0) return onPick(null)')
+  })
+
   it('credits the model and its licence in the README', () => {
     const readme = read('README.md')
     expect(readme).toContain('## Garment cut-out')

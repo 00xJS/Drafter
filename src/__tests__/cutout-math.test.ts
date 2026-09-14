@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  chooseSubjects,
   compositeOnWhite,
   CUTOUT,
   dilate,
@@ -9,6 +10,8 @@ import {
   fitWithin,
   judgeMask,
   keepMainComponents,
+  keepSubjects,
+  liftedAlpha,
   maskStats,
   paddedBox,
   pickBest,
@@ -19,6 +22,11 @@ import {
   resizeArea,
   resizePlaneBilinear,
   smoothstep,
+  subjectAt,
+  subjectForTap,
+  subjectsIn,
+  usableMask,
+  type InstanceMask,
   type MaskStats,
   type Plane,
   type Rgba,
@@ -407,5 +415,120 @@ describe('pointInContainedImage', () => {
 
   it('ignores a tap on the empty bar above it', () => {
     expect(pointInContainedImage({ x: 150, y: 30 }, box, image)).toBeNull()
+  })
+})
+
+describe('Vision’s subjects', () => {
+  /** A 20 × 16 instance mask: each [label, x, y, width, height] painted in turn over the background. */
+  function mask(...rects: [number, number, number, number, number][]): InstanceMask {
+    const data = new Uint8Array(20 * 16)
+    for (const [label, x0, y0, w, h] of rects) for (let y = y0; y < y0 + h; y++) data.fill(label, y * 20 + x0, y * 20 + x0 + w)
+    return { width: 20, height: 16, data }
+  }
+  // a rug over the whole frame, and a pair of trainers standing on it
+  const rugAndShoes = mask([1, 0, 0, 20, 16], [2, 4, 4, 3, 8], [3, 12, 4, 3, 8])
+  const onLeftShoe = { x: 5 / 20, y: 8 / 16 }
+  const onRightShoe = { x: 13 / 20, y: 8 / 16 }
+
+  it('measures each subject: its share of the frame, its box and the sides it touches', () => {
+    expect(subjectsIn(rugAndShoes)).toEqual([
+      { label: 1, area: 272 / 320, box: { x: 0, y: 0, width: 20, height: 16 }, edgesTouched: 4 },
+      { label: 2, area: 24 / 320, box: { x: 4, y: 4, width: 3, height: 8 }, edgesTouched: 0 },
+      { label: 3, area: 24 / 320, box: { x: 12, y: 4, width: 3, height: 8 }, edgesTouched: 0 },
+    ])
+    expect(subjectsIn(mask())).toEqual([])
+  })
+
+  it('reads the subject under a point of the frame, and 0 on the background', () => {
+    const shoe = mask([2, 4, 4, 3, 8])
+    expect(subjectAt(shoe, onLeftShoe)).toBe(2)
+    expect(subjectAt(shoe, { x: 0.9, y: 0.9 })).toBe(0)
+    // the far corner lands on the last pixel, not past it
+    expect(subjectAt(mask([5, 19, 15, 1, 1]), { x: 1, y: 1 })).toBe(5)
+  })
+
+  it('leaves out the ground a garment lies on, and keeps both shoes of a pair', () => {
+    expect(chooseSubjects(rugAndShoes)).toEqual({ keep: [2, 3], doubtful: false })
+  })
+
+  it('drops a subject under a fifth of the largest, and never lets a speck beat the ground', () => {
+    // a shirt, and a tag a tenth its size
+    expect(chooseSubjects(mask([1, 3, 3, 10, 8], [2, 15, 10, 2, 4]))).toEqual({ keep: [1], doubtful: false })
+    // a garment filling the frame, pressed into every side, and one stray pixel: the garment, doubted
+    expect(chooseSubjects(mask([1, 0, 0, 20, 16], [2, 10, 8, 1, 1]))).toEqual({ keep: [1], doubtful: true })
+  })
+
+  it('keeps a lone subject whatever it touches, and finds nothing in an empty mask', () => {
+    expect(chooseSubjects(mask([1, 0, 0, 20, 16]))).toEqual({ keep: [1], doubtful: false })
+    expect(chooseSubjects(mask())).toBeNull()
+  })
+
+  it('gives a tap the subject under it alone, the ground too, but not the background or what is already shown', () => {
+    expect(subjectForTap(rugAndShoes, onRightShoe, [2, 3])).toEqual([3])
+    expect(subjectForTap(rugAndShoes, { x: 0.02, y: 0.02 }, [2, 3])).toEqual([1])
+    expect(subjectForTap(mask([2, 4, 4, 3, 8]), { x: 0.9, y: 0.9 }, [])).toBeNull()
+    // trainers Vision saw as one with their rug: the tap would give back the same, so the web engine takes it
+    expect(subjectForTap(mask([1, 0, 0, 20, 16]), onRightShoe, [1])).toBeNull()
+  })
+
+  it('hands back the same alpha when no subject is left out', () => {
+    const alpha = alphaRect(40, 32, 8, 8, 6, 16)
+    expect(keepSubjects(alpha, 40, 32, mask([2, 4, 4, 3, 8]), [2])).toBe(alpha)
+  })
+
+  it('takes a subject left out away, fringe and all, and keeps the soft edge of the one kept', () => {
+    // a frame twice the mask's size: a shoe at (8, 8), 6 × 16, and a hanger at
+    // (28, 12), 4 × 4, each opaque with a one-pixel rim at 128 either side, as
+    // Vision's soft edge is
+    const alpha = new Uint8Array(40 * 32)
+    for (let y = 8; y < 24; y++) {
+      alpha.fill(255, y * 40 + 8, y * 40 + 14)
+      alpha[y * 40 + 7] = alpha[y * 40 + 14] = 128
+    }
+    for (let y = 12; y < 16; y++) {
+      alpha.fill(255, y * 40 + 28, y * 40 + 32)
+      alpha[y * 40 + 27] = alpha[y * 40 + 32] = 128
+    }
+    const out = keepSubjects(alpha, 40, 32, mask([2, 4, 4, 3, 8], [3, 14, 6, 2, 2]), [2])
+    for (let y = 8; y < 24; y++) expect([...out.subarray(y * 40 + 7, y * 40 + 15)], `row ${y}`).toEqual([128, 255, 255, 255, 255, 255, 255, 128])
+    for (let y = 12; y < 16; y++) expect([...out.subarray(y * 40 + 27, y * 40 + 33)], `row ${y}`).toEqual([0, 0, 0, 0, 0, 0])
+  })
+
+  it('draws the line through a rug with the instance mask, softly', () => {
+    const out = keepSubjects(new Uint8Array(40 * 32).fill(255), 40, 32, rugAndShoes, [2, 3])
+    const a = (x: number, y: number) => out[y * 40 + x]
+    // inside a shoe, deep in the rug, and the edge between, which falls across a pixel or two
+    expect(a(11, 16)).toBe(255)
+    expect(a(0, 0)).toBe(0)
+    expect(a(20, 16)).toBe(0)
+    expect(a(14, 16)).toBeGreaterThan(0)
+    expect(a(14, 16)).toBeLessThan(a(13, 16))
+    expect(a(13, 16)).toBeLessThan(255)
+  })
+
+  it('hands the cut-out the frame’s alpha with the right subjects left', () => {
+    const src = solid(40, 32, [240, 240, 240, 255])
+    // no tap: the rug goes and the trainers stay
+    const auto = liftedAlpha(src, rugAndShoes, undefined, [])!
+    expect(auto).toMatchObject({ keep: [2, 3], doubtful: false })
+    expect(auto.alpha[16 * 40 + 11]).toBe(255)
+    expect(auto.alpha[0]).toBe(0)
+    // a tap on the left shoe: that one alone
+    expect(liftedAlpha(src, rugAndShoes, onLeftShoe, auto.keep)).toMatchObject({ keep: [2], doubtful: false })
+    // no mask: everything stays, and a tap has nothing to go on
+    expect(liftedAlpha(src, null, undefined, [])).toMatchObject({ keep: [], doubtful: false })
+    expect(liftedAlpha(src, null, onLeftShoe, [])).toBeNull()
+  })
+
+  it('reads only a mask with a byte for every pixel', () => {
+    expect(usableMask(rugAndShoes)).toBe(true)
+    expect(usableMask({ width: 20, height: 16, data: new Uint8Array(10) })).toBe(false)
+    expect(usableMask({ width: 0, height: 0, data: new Uint8Array(0) })).toBe(false)
+    expect(usableMask(null)).toBe(false)
+  })
+
+  it('tunes what stays beside the largest to a fifth, as the iPhone did before it chose in the page', () => {
+    expect(CUTOUT.subjectShare).toBe(0.2)
+    expect(CUTOUT.frameEdges).toBe(3)
   })
 })

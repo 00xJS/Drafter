@@ -57,7 +57,8 @@ describe('the plugin and its wrapper agree', () => {
     const resolved = /call\.resolve\(\[([\s\S]*?)\]\)/.exec(swiftFunc(plugin, 'lift'))?.[1] ?? ''
     const keys = [...resolved.matchAll(/"(\w+)":/g)].map(m => m[1])
     expect(keys.sort()).toEqual(tsMembers('SubjectLiftPayload').sort())
-    expect(keys).toHaveLength(8)
+    // the frame with every subject, and the instance mask the web view chooses among them with
+    expect(keys).toEqual(['found', 'height', 'image', 'instanceMask', 'maskHeight', 'maskWidth', 'width'])
   })
 
   it('on the codes a lift rejects with', () => {

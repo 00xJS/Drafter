@@ -260,7 +260,10 @@ function useGarmentCutout(initial: Blob) {
     cutoutUrl,
     canPick,
     point: job.point ?? result?.point,
-    pick: (point: Point | null) => setJob(j => ({ photo: j.photo, point: point ?? undefined, web: true, n: j.n + 1 })),
+    // A tap picks among Vision's subjects first, where it lifted this photo
+    // (the extractor moves on to the web engine when Vision has nothing more);
+    // a key press asks the web engine's own automatic seeds for a second opinion.
+    pick: (point: Point | null) => setJob(j => ({ photo: j.photo, point: point ?? undefined, web: point === null, n: j.n + 1 })),
     retry: () => setJob(j => ({ ...j, n: j.n + 1 })),
     retake: (photo: Blob) => setJob(j => ({ photo, web: false, n: j.n + 1 })),
   }

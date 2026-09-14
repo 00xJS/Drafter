@@ -63,11 +63,10 @@ public class SubjectLiftPlugin: CAPPlugin, CAPBridgedPlugin {
                     "image": lifted.png.base64EncodedString(),
                     "width": lifted.width,
                     "height": lifted.height,
-                    "frameWidth": lifted.frameWidth,
-                    "frameHeight": lifted.frameHeight,
-                    "coverage": lifted.coverage,
-                    "found": lifted.found,
-                    "kept": lifted.kept
+                    "instanceMask": lifted.mask.base64EncodedString(),
+                    "maskWidth": lifted.maskWidth,
+                    "maskHeight": lifted.maskHeight,
+                    "found": lifted.found
                 ])
             } catch SubjectLift.Failure.noSubject {
                 call.reject("No subject was found in the photo", "NO_SUBJECT")

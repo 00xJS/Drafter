@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chooseWebEngine, createGarmentExtractor, CUTOUT_WATCHDOG_MS, garmentFile, type CutoutProgress, type ExtractorDeps, type WebEngineProbe, type WebSegment } from '../cutout'
-import type { Point, Rgba } from '../cutoutmath'
+import type { InstanceMask, Point, Rgba } from '../cutoutmath'
 import type { SubjectLift } from '../native'
 
 // extractGarment is a capture step: whatever the device, the network or the
@@ -30,22 +30,35 @@ function rectAlpha(width: number, height: number, x0: number, y0: number, w: num
 }
 
 const probe = (over: Partial<WebEngineProbe> = {}): WebEngineProbe => ({ wasm: true, simd: true, bundled: false, cached: true, online: true, ...over })
+
+const inRect = (x0: number, y0: number, w: number, h: number) => (x: number, y: number) => x >= x0 && x < x0 + w && y >= y0 && y < y0 + h
+
+/** An instance mask of 200 × 150, a quarter of Vision's 800 × 600 frame: each [label, x, y, width, height] painted in turn over the background. */
+function subjects(...rects: [number, number, number, number, number][]): InstanceMask {
+  const data = new Uint8Array(200 * 150)
+  for (const [label, x0, y0, w, h] of rects) for (let y = y0; y < y0 + h; y++) data.fill(label, y * 200 + x0, y * 200 + x0 + w)
+  return { width: 200, height: 150, data }
+}
+
+/** Vision's lift: an 800 × 600 frame, and one subject, the garment, at (200, 150) and 400 × 300. */
 const lifted = (over: Partial<Extract<SubjectLift, { ok: true }>> = {}): SubjectLift => ({
   ok: true,
   cutout: png,
-  width: 400,
-  height: 300,
-  frameWidth: 1600,
-  frameHeight: 1200,
-  coverage: 0.3,
+  width: 800,
+  height: 600,
+  mask: subjects([1, 50, 37, 100, 76]),
   found: 1,
-  kept: 1,
   ...over,
 })
 
-/** A work photo of 100 × 80 red, and a web engine that finds a 20 × 20 garment off to the right. */
-function fakes(over: { lift?: SubjectLift; probe?: WebEngineProbe; segment?: ExtractorDeps['webEngine']['segment'] } = {}) {
+/**
+ * A work photo of 100 × 80 red, and a web engine that finds a 20 × 20 garment
+ * off to the right. Vision's PNG decodes to `frame`: by default the garment,
+ * opaque where lifted() says it is, on transparency.
+ */
+function fakes(over: { lift?: SubjectLift; probe?: WebEngineProbe; segment?: ExtractorDeps['webEngine']['segment']; frame?: Rgba } = {}) {
   const work = image(100, 80, [200, 30, 40, 255])
+  const frame = over.frame ?? image(800, 600, [20, 90, 160, 255], inRect(200, 150, 400, 300), 0)
   const found: WebSegment = { alpha: rectAlpha(100, 80, 60, 10, 20, 20), doubtful: false, point: { x: 0.5, y: 0.5 } }
   const deps = {
     lift: vi.fn(async (_photo: Blob, _max: number) => over.lift ?? ({ ok: false, reason: 'unavailable' } as SubjectLift)),
@@ -53,10 +66,7 @@ function fakes(over: { lift?: SubjectLift; probe?: WebEngineProbe; segment?: Ext
       probe: vi.fn(async () => over.probe ?? probe()),
       segment: vi.fn(over.segment ?? (async () => found)),
     },
-    decodeRgba: vi.fn(async (blob: Blob, _max: number) =>
-      // Vision's PNG: a tight crop, opaque where the garment is; the photo: the work image
-      blob === png ? image(400, 300, [20, 90, 160, 255], (x, y) => x > 0 && y > 0, 0) : work,
-    ),
+    decodeRgba: vi.fn(async (blob: Blob, _max: number) => (blob === png ? frame : work)),
     encodeJpeg: vi.fn(async (_image: Rgba, _quality: number) => jpeg),
     now: vi.fn(() => 0),
   }
@@ -89,26 +99,114 @@ describe('chooseWebEngine', () => {
   })
 })
 
+/** An 800 × 600 frame of Vision's: transparent (or `ground` everywhere), with each [rgb, x, y, width, height] painted opaque over it. */
+function painted(ground: number[] | null, ...rects: [number[], number, number, number, number][]): Rgba {
+  const img = image(800, 600, ground ?? [0, 0, 0, 0])
+  for (const [rgb, x0, y0, w, h] of rects) for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) img.data.set([...rgb, 255], (y * 800 + x) * 4)
+  return img
+}
+
+const WHITE_SHOE = [240, 240, 240]
+/** Two shoes side by side, 140 × 320 each, at x 160 and x 500 of the frame; subjects 2 and 3 on the mask (a quarter of the size). */
+const SHOES: [number[], number, number, number, number][] = [
+  [WHITE_SHOE, 160, 140, 140, 320],
+  [WHITE_SHOE, 500, 140, 140, 320],
+]
+const shoeSubjects: [number, number, number, number, number][] = [
+  [2, 40, 35, 35, 80],
+  [3, 125, 35, 35, 80],
+]
+
 describe('on an iPhone that can lift subjects', () => {
-  it('uses Vision, finishes the PNG on white, and never loads the web engine', async () => {
+  it('uses Vision, finishes the frame on white around the garment, and never loads the web engine', async () => {
     const deps = fakes({ lift: lifted() })
     const progress: CutoutProgress[] = []
     const r = await createGarmentExtractor(deps)(photo, { onProgress: p => progress.push(p) })
     expect(deps.lift).toHaveBeenCalledWith(photo, 1600)
     expect(deps.decodeRgba).toHaveBeenCalledWith(png, 1600)
-    // the PNG's garment is 399 × 299, padded by round(0.08 × 399) = 32 on each side
-    expect(r).toMatchObject({ method: 'ios-vision', image: jpeg, width: 463, height: 363, doubtful: false })
+    // the garment is 400 × 300 in an 800 × 600 frame, padded by round(0.08 × 400) = 32 on each side
+    expect(r).toMatchObject({ method: 'ios-vision', image: jpeg, width: 464, height: 364, doubtful: false })
     expect(r.reason).toBeUndefined()
-    expect(deps.encodeJpeg.mock.calls[0][0]).toMatchObject({ width: 463, height: 363 })
+    expect(r.point).toBeUndefined()
+    expect(deps.encodeJpeg.mock.calls[0][0]).toMatchObject({ width: 464, height: 364 })
     expect(deps.encodeJpeg.mock.calls[0][1]).toBe(0.88)
     expect(deps.webEngine.probe).not.toHaveBeenCalled()
     expect(deps.webEngine.segment).not.toHaveBeenCalled()
     expect(progress).toEqual([{ phase: 'cutting' }])
   })
 
-  it('calls a lift doubtful when it covers too little or nearly all of the frame', async () => {
-    expect((await createGarmentExtractor(fakes({ lift: lifted({ coverage: 0.01 }) }))(photo)).doubtful).toBe(true)
-    expect((await createGarmentExtractor(fakes({ lift: lifted({ coverage: 0.95 }) }))(photo)).doubtful).toBe(true)
+  it('calls a lift doubtful when it covers too little or nearly all of the frame, or is pressed into three of its sides', async () => {
+    const run = (frame: Rgba) => createGarmentExtractor(fakes({ lift: lifted(), frame }))(photo)
+    expect((await run(painted(null, [WHITE_SHOE, 400, 300, 10, 10]))).doubtful).toBe(true)
+    expect((await run(painted(null, [WHITE_SHOE, 2, 2, 796, 596]))).doubtful).toBe(true)
+    expect((await run(painted(null, [WHITE_SHOE, 0, 0, 600, 600]))).doubtful).toBe(true)
+    expect((await run(painted(null, [WHITE_SHOE, 200, 150, 400, 300]))).doubtful).toBe(false)
+  })
+
+  it('leaves out the rug the trainers stand on, and keeps both of them', async () => {
+    // Vision lifted the rug (subject 1, the whole frame) and each trainer on it
+    const RUG = [200, 180, 150]
+    const deps = fakes({ lift: lifted({ mask: subjects([1, 0, 0, 200, 150], ...shoeSubjects), found: 3 }), frame: painted(RUG, ...SHOES) })
+    const r = await createGarmentExtractor(deps)(photo)
+    expect(r).toMatchObject({ method: 'ios-vision', doubtful: false })
+    const out = deps.encodeJpeg.mock.calls[0][0]
+    // both trainers, 480 × 320 across, and round(0.08 × 480) = 38 px of padding
+    // round them; the instance mask's line through the rug may move the edge a
+    // pixel or two
+    expect(Math.abs(out.width - 556)).toBeLessThanOrEqual(4)
+    expect(Math.abs(out.height - 396)).toBeLessThanOrEqual(4)
+    // no rug left: at full strength it would be r = 200
+    let darkest = 255
+    for (let i = 0; i < out.data.length; i += 4) darkest = Math.min(darkest, out.data[i])
+    expect(darkest).toBeGreaterThanOrEqual(230)
+  })
+
+  it('picks the subject under a tap at once, without lifting the photo again', async () => {
+    const deps = fakes({ lift: lifted({ mask: subjects(...shoeSubjects), found: 2 }), frame: painted(null, ...SHOES) })
+    const extract = createGarmentExtractor(deps)
+    // no tap: both shoes, 480 × 320 plus round(0.08 × 480) = 38 all round
+    expect(await extract(photo)).toMatchObject({ method: 'ios-vision', width: 556, height: 396 })
+    // a tap on the right-hand shoe: that one alone, 140 × 320 plus round(0.08 × 320) = 26
+    const tap: Point = { x: 570 / 800, y: 300 / 600 }
+    expect(await extract(photo, { point: tap })).toMatchObject({ method: 'ios-vision', width: 192, height: 372, doubtful: false, point: tap })
+    expect(deps.lift).toHaveBeenCalledTimes(1)
+    expect(deps.webEngine.probe).not.toHaveBeenCalled()
+  })
+
+  it('takes a tap to the web engine, from that point, where Vision has nothing more to offer', async () => {
+    const deps = fakes({ lift: lifted() })
+    const extract = createGarmentExtractor(deps)
+    await extract(photo)
+    // on the one subject already cut out (Vision saw nothing else there)...
+    const onIt: Point = { x: 0.5, y: 0.5 }
+    expect(await extract(photo, { point: onIt })).toMatchObject({ method: 'web' })
+    expect(deps.webEngine.segment.mock.calls[0][1].point).toEqual(onIt)
+    // ...and on the background
+    const beside: Point = { x: 0.05, y: 0.05 }
+    expect(await extract(photo, { point: beside })).toMatchObject({ method: 'web' })
+    expect(deps.webEngine.segment.mock.calls[1][1].point).toEqual(beside)
+    // with the web engine's cut-out showing, the subject is Vision's to give back
+    expect(await extract(photo, { point: onIt })).toMatchObject({ method: 'ios-vision', width: 464, height: 364 })
+    expect(deps.lift).toHaveBeenCalledTimes(1)
+  })
+
+  it('lifts each new photo afresh, and forgets the last one', async () => {
+    const deps = fakes({ lift: lifted() })
+    const extract = createGarmentExtractor(deps)
+    const other = new Blob([new Uint8Array([7])], { type: 'image/jpeg' })
+    await extract(photo)
+    await extract(other)
+    expect(deps.lift).toHaveBeenCalledTimes(2)
+    // a tap on the first photo now finds no lift to pick from
+    expect((await extract(photo, { point: { x: 0.5, y: 0.5 } })).method).toBe('web')
+    expect(deps.lift).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps everything Vision lifted when the shell sends no mask, and gives taps to the web engine', async () => {
+    const deps = fakes({ lift: lifted({ mask: { width: 0, height: 0, data: new Uint8Array(0) } }) })
+    const extract = createGarmentExtractor(deps)
+    expect(await extract(photo)).toMatchObject({ method: 'ios-vision', width: 464, height: 364 })
+    expect((await extract(photo, { point: { x: 0.5, y: 0.5 } })).method).toBe('web')
   })
 
   it('keeps the photo when Vision finds nothing, and does not run the web engine by itself', async () => {

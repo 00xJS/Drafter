@@ -447,6 +447,24 @@ describe('the guards around the wardrobe', () => {
     expect(index.indexOf("'./18-wardrobe.css'")).toBeLessThan(index.indexOf("'./19-native-shell.css'"))
   })
 
+  it('sends every photo through Check the cut-out, loaded only when it is needed', () => {
+    const sheet = source('GarmentSheet')
+    // the cut-out sheet and its engine come on demand, never in the wardrobe's own chunk
+    expect(sheet).toContain("preloadable(() => import('../CutoutSheet').then(m => m.CutoutSheet), 'CutoutSheet')")
+    expect(sheet).not.toMatch(/from '\.\.\/CutoutSheet'|from '\.\.\/\.\.\/cutout'/)
+    // warmed as Add clothing opens
+    expect(sheet).toContain("warm(CutoutSheet.preload, () => import('../../cutout').then(c => c.prepareGarmentCutout()))")
+    expect(sheet).toContain('useEffect(warmCutout, [])')
+    // what the sheet hands back is what prepareGarmentPhoto makes the piece's photos from, told whether it is the cut-out
+    expect(sheet).toContain('prepareGarmentPhoto(picked.file, { cutout: picked.cutout })')
+    expect(sheet).toContain('onDone={(f, info) => setPicked({ file: f, cutout: info.cutout })}')
+    // Replace photo goes the same way
+    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout)}')
+    expect(sheet).toContain('prepareGarmentPhoto(file, { cutout })')
+    // and no photo reaches prepareGarmentPhoto without the sheet: its only callers are those two
+    expect(sheet.match(/prepareGarmentPhoto\(/g)).toHaveLength(2)
+  })
+
   it('lets the iPhone app open the camera, for the wardrobe and for notes', () => {
     expect(read('../../ios/App/App/Info.plist')).toMatch(/<key>NSCameraUsageDescription<\/key>\s*<string>[^<]*wardrobe[^<]*notes[^<]*<\/string>/)
   })

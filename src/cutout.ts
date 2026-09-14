@@ -1,4 +1,4 @@
-import { alphaOf, CUTOUT, finishOnWhite, fitWithin, type Box, type Point, type Rgba } from './cutoutmath'
+import { CUTOUT, finishOnWhite, fitWithin, judgeMask, liftedAlpha, usableMask, type Box, type Point, type Rgba } from './cutoutmath'
 import { canLiftSubject, liftSubject, type SubjectLift } from './native'
 
 /*
@@ -115,14 +115,22 @@ const smallCrop = (crop: Box) => Math.max(crop.width, crop.height) < CUTOUT.smal
 /**
  * The cut-out with its I/O passed in. The attempts, in order; the first that
  * settles the result ends the call:
- * 1. Vision on this iPhone, unless a tap or `engine: 'web'` asked for the web
- *    engine. "No subject" keeps the photo (a tap can try again); unavailable,
- *    too large or failed moves on.
- * 2. The web engine, where chooseWebEngine allows it.
+ * 1. Vision on this iPhone, unless `engine: 'web'` asked for the web engine.
+ *    Of the subjects it finds, the garment-like ones stay (chooseSubjects), so
+ *    a rug pressed into the frame's sides gives way to the trainers on it. "No
+ *    subject" keeps the photo (a tap can try again); unavailable, too large or
+ *    failed moves on. A tap on a photo Vision has lifted picks the subject
+ *    under it at once, without a second lift; one on the background, or on the
+ *    subject already cut out, has nothing more from Vision and moves on.
+ * 2. The web engine, where chooseWebEngine allows it, from the tap if there
+ *    was one.
  * Never rejects: every failure resolves as method 'none' with a reason, so a
  * capture step cannot break.
  */
 export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?: CutoutOptions) => Promise<CutoutResult> {
+  // The last photo Vision lifted, and which of its subjects that photo's
+  // cut-out shows, so a tap can pick among them. One photo's worth at a time.
+  let seen: { photo: Blob; lifted: Extract<SubjectLift, { ok: true }>; shown: number[] } | null = null
   return async (photo, opts = {}) => {
     const started = deps.now()
     const result = (r: Omit<CutoutResult, 'ms'>): CutoutResult => ({ ...r, ms: deps.now() - started })
@@ -146,21 +154,29 @@ export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?
     const disarm = () => clearTimeout(watchdog)
 
     try {
-      // 1. Vision, on this iPhone
-      if (!opts.point && opts.engine !== 'web') {
+      // 1. Vision, on this iPhone: a tap only on a photo it has lifted already
+      const known = seen?.photo === photo ? seen : null
+      if (opts.engine !== 'web' && (!opts.point || known)) {
         opts.onProgress?.({ phase: 'cutting' })
-        const lifted = await step(deps.lift(photo, CUTOUT.workEdge))
+        const lifted = known?.lifted ?? (await step(deps.lift(photo, CUTOUT.workEdge)))
         if (lifted.ok) {
           const src = await step(deps.decodeRgba(lifted.cutout, CUTOUT.workEdge))
-          const done = finishOnWhite(src, alphaOf(src), CUTOUT.outEdge)
-          if (!done) return none('no-garment')
-          const image = await step(deps.encodeJpeg(done.image, CUTOUT.jpegQuality))
-          const doubtful = lifted.coverage < CUTOUT.tinyCoverage || lifted.coverage > CUTOUT.wholeCoverage || smallCrop(done.crop)
-          return result({ image, method: 'ios-vision', doubtful, width: done.image.width, height: done.image.height })
+          const picked = liftedAlpha(src, usableMask(lifted.mask) ? lifted.mask : null, opts.point, known?.shown ?? [])
+          if (picked) {
+            seen = { photo, lifted, shown: picked.keep }
+            const done = finishOnWhite(src, picked.alpha, CUTOUT.outEdge)
+            if (!done) return none('no-garment')
+            const image = await step(deps.encodeJpeg(done.image, CUTOUT.jpegQuality))
+            // the web engine's judge too: a speck, nearly the whole frame, or pressed into three of its sides
+            const doubtful = picked.doubtful || judgeMask(done.stats) !== 'ok' || smallCrop(done.crop)
+            return result({ image, method: 'ios-vision', doubtful, width: done.image.width, height: done.image.height, point: opts.point })
+          }
+          // a tap Vision has nothing more for goes on to the web engine, from that point
+        } else if (lifted.reason === 'no-subject') {
+          // Vision looked and found nothing: keep the photo rather than run a
+          // second engine on it unasked. The preview offers a tap instead.
+          return none('no-garment')
         }
-        // Vision looked and found nothing: keep the photo rather than run a
-        // second engine on it unasked. The preview offers a tap instead.
-        if (lifted.reason === 'no-subject') return none('no-garment')
       }
 
       // 2. The web engine, where it can run: offline and uncached answers at once
@@ -198,6 +214,8 @@ export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?
       const done = found && finishOnWhite(work, found.alpha, CUTOUT.outEdge)
       if (!found || !done) return none('no-garment')
       const image = await step(deps.encodeJpeg(done.image, CUTOUT.jpegQuality))
+      // the web engine's cut-out is what the photo shows now, none of Vision's subjects
+      if (seen?.photo === photo) seen = { ...seen, shown: [] }
       return result({ image, method: 'web', doubtful: found.doubtful || smallCrop(done.crop), width: done.image.width, height: done.image.height, point: found.point })
     } catch (err) {
       return none(err instanceof Stopped ? err.reason : stop.signal.aborted ? why() : 'failed')
@@ -321,8 +339,13 @@ export async function canPickGarment(): Promise<boolean> {
   }
 }
 
-/** The preview calls this on unmount. The web segmenter closes after 60 s idle, so a burst of captures reuses it. */
+/**
+ * The preview calls this on unmount. The web segmenter closes after 60 s idle,
+ * so a burst of captures reuses it; the last photo's Vision lift, kept for its
+ * taps, goes at once.
+ */
 export function releaseGarmentCutout(): void {
+  extractor = null
   if (webModule) void webModule.then(web => web.release(), () => {})
 }
 

@@ -13,13 +13,6 @@ export class PhotoUnreadable extends Error {
   }
 }
 
-/**
- * The seam for the garment cut-out, a module built on its own: given the
- * decoded photo, a canvas of the garment on white, or null to keep the photo
- * as it is. Nothing passes one yet.
- */
-export type CutoutStep = (img: HTMLImageElement) => Promise<HTMLCanvasElement | null>
-
 /** The piece sheet's photo, longest edge. */
 export const PHOTO_EDGE = 1200
 /** The thumbnail every row, grid and card draws, longest edge. */
@@ -109,23 +102,37 @@ function centreColour(canvas: HTMLCanvasElement): string | undefined {
 }
 
 /**
+ * Whether the photo can be kept byte for byte as the piece's photo: the
+ * cut-out sheet's JPEG (the garment on white, written by a canvas, so with no
+ * EXIF) already at the photo's size or under. Encoding it again would only
+ * lose detail; anything else is drawn afresh.
+ */
+export function keepsAsIs(type: string, width: number, height: number, cutout: boolean): boolean {
+  return cutout && type === 'image/jpeg' && Math.max(width, height) <= PHOTO_EDGE
+}
+
+/**
  * Decode once, then draw the 1200px photo (JPEG 0.82) and the 360px thumbnail
  * (JPEG 0.72), each on white, and sample the thumbnail's centre for the piece's
  * colour. Only the two destination canvases ever hold pixels (1.9MP at most);
  * the decoded source goes when the <img> does. Throws PhotoUnreadable when the
  * browser cannot decode the file.
+ *
+ * The cut-out step (`cutout`): the file is what the cut-out sheet's Looks good
+ * handed over (src/components/CutoutSheet.tsx). A cut-out of 1200px or less is
+ * kept as the photo itself, and only the thumbnail and colour are made.
  */
-export async function prepareGarmentPhoto(file: Blob, opts: { cutout?: CutoutStep } = {}): Promise<{ photo: Blob; thumb: Blob; color?: string }> {
+export async function prepareGarmentPhoto(file: Blob, opts: { cutout?: boolean } = {}): Promise<{ photo: Blob; thumb: Blob; color?: string }> {
   const { img, release } = await decode(file)
   try {
-    const cut = opts.cutout ? await opts.cutout(img) : null
-    const [w, h] = cut ? [cut.width, cut.height] : [img.naturalWidth, img.naturalHeight]
-    const big = drawn(cut ?? img, w, h, PHOTO_EDGE)
-    const small = drawn(cut ?? img, w, h, THUMB_EDGE)
+    const [w, h] = [img.naturalWidth, img.naturalHeight]
+    const big = keepsAsIs(file.type, w, h, opts.cutout === true) ? null : drawn(img, w, h, PHOTO_EDGE)
+    const small = drawn(img, w, h, THUMB_EDGE)
     const color = centreColour(small)
-    const [photo, thumb] = await Promise.all([jpeg(big, 0.82), jpeg(small, 0.72)])
+    const [photo, thumb] = await Promise.all([big ? jpeg(big, 0.82) : file, jpeg(small, 0.72)])
     // let go of the pixels now, not whenever the canvases are collected
-    big.width = big.height = small.width = small.height = 0
+    if (big) big.width = big.height = 0
+    small.width = small.height = 0
     return { photo, thumb, color }
   } finally {
     release()
