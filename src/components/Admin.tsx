@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
-import { AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, adminAction } from '../admin'
+import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 
-const GROUPS = [
+const GROUPS: { key: AdminGroup; label: string }[] = [
   { key: 'users', label: 'Users' },
   { key: 'data', label: 'Data' },
   { key: 'backups', label: 'Backups' },
   { key: 'integrations', label: 'Integrations' },
   { key: 'apple', label: 'Apple' },
-] as const
-type Group = (typeof GROUPS)[number]['key']
+]
+type Group = AdminGroup
 
 /** Kinds in the order the app thinks about them; `unknown` is pre-kind legacy rows. */
 const KIND_LABELS: [string, string][] = [
@@ -24,23 +24,12 @@ const KIND_LABELS: [string, string][] = [
   ['unknown', 'Legacy rows (no kind)'],
 ]
 
-/** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
-interface SyncCheck {
-  sentence: string
-  record: {
-    ok: boolean
-    checked: number
-    failures: { kind: string | null; reason: string }[]
-    error: string | null
-    at: string
-    failingSince: string | null
-    alertedAt: string | null
-  } | null
-}
 type Stats = DataStats & { syncCheck?: SyncCheck }
 
 interface Props {
   onClose(): void
+  /** The section it opens on: Users, unless another is asked for (Today's sync alarm opens Data). */
+  initialGroup?: Group
 }
 
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(1)} kB` : `${(n / 1_048_576).toFixed(1)} MB`)
@@ -140,8 +129,8 @@ function TestLine({ ok, detail, error }: { ok: boolean; detail?: string; error?:
   )
 }
 
-export function Admin({ onClose }: Props) {
-  const [group, setGroup] = useState<Group>('users')
+export function Admin({ onClose, initialGroup = 'users' }: Props) {
+  const [group, setGroup] = useState<Group>(initialGroup)
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
   const [status, setStatus] = useState<AdminStatus | null>(null)

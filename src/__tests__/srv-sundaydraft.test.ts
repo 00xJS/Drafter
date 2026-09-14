@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { firstSentence, previousWeekIn, sundayDraftDue, sundayLine } from '../../netlify/functions/lib/reviewweek.mjs'
-import { buildReview } from '../review'
-import type { Person, Task } from '../types'
+import { habitLines } from '../../shared/review.mjs'
+import { habitsConsistency } from '../habits'
+import { buildReview, weekRange } from '../review'
+import type { Habit, Person, Task } from '../types'
 
 // Sunday's review draft used to run only inside the digest's loop over people
 // with push or the email digest, so an account with neither — the site owner's
@@ -215,6 +219,8 @@ describe('Sunday’s draft runs for every account, push or not', () => {
     expect(drafts()[0].user_id).toBe(OWNER)
     expect(drafts()[0].data).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36', summary: SUMMARY, draftedAt: '2026-09-13T13:00:00.000Z' })
     expect(ai.prompts[0]).toContain('Completed:\n- Fixed the fence')
+    // no habit was due, so there is no habit line
+    expect(ai.prompts[0]).not.toContain('Habits:')
     // nothing was sent, and the settings row was never written
     expect(pushes).toEqual([])
     expect(emails).toEqual([])
@@ -300,6 +306,9 @@ describe('Sunday’s draft reads the journal only when the account allows it', (
       taskRow(OWNER, 'fence', 'Fixed the fence', { status: 'done', completedAt: '2026-09-10T16:00:00.000Z' }),
       row(OWNER, { kind: 'journal', id: 'journal~2026-09-08~a', date: '2026-09-08', body: 'Owner wrote about the garden' }),
       row(PEER, { kind: 'journal', id: 'journal~2026-09-09~b', date: '2026-09-09', body: 'Peer wrote about the move' }),
+      // habits are personal too, and go to the draft whatever the journal switch says
+      row(OWNER, { kind: 'habit', id: 'h-owner', name: 'Owner stretches', done: ['2026-09-07'] }),
+      row(PEER, { kind: 'habit', id: 'h-peer', name: 'Peer swims', done: ['2026-09-07'] }),
     ]
     await runAt('2026-09-13T08:00:00Z')
     expect(ai.prompts).toHaveLength(2)
@@ -309,6 +318,10 @@ describe('Sunday’s draft reads the journal only when the account allows it', (
     expect(opted[0]).toContain('Peer wrote about the move')
     expect(opted[0]).not.toContain('Owner wrote about the garden')
     expect(notOpted[0]).not.toContain('wrote about')
+    expect(opted[0]).toContain('Habits:\n- 14% consistent (1/7 kept, 6 missed): Peer swims 1/7 (6 missed)')
+    expect(opted[0]).not.toContain('Owner stretches')
+    expect(notOpted[0]).toContain('Habits:\n- 14% consistent (1/7 kept, 6 missed): Owner stretches 1/7 (6 missed)')
+    expect(notOpted[0]).not.toContain('Peer swims')
     // the household's shared task reaches both, as it does in the digest
     for (const p of ai.prompts) expect(p).toContain('Fixed the fence')
   })
@@ -768,5 +781,55 @@ describe('Sunday’s draft and Home → Week read one set of lists (shared/revie
     expect(app.slipped.map(t => t.title)).toEqual(['Book the dentist', 'Water bill'])
     expect(app.visitsDone.map(t => t.title)).toEqual(['Lunch with Mum'])
     expect(app.people.map(p => p.person.name)).toEqual(['Mum'])
+  })
+
+  it('and habits: kept, missed and the streak each ended the week on, in the ✨ summary’s own line, your own only', async () => {
+    // counted in this machine's zone on both sides, as the app counts in its own
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    // Sunday noon; the week that ended ran Sunday 6 to Saturday 12 September
+    const now = new Date(2026, 8, 13, 12)
+    const range = weekRange(new Date(2026, 8, 6, 12))
+    const habit = (id: string, name: string, over: Partial<Habit> = {}): Habit => ({
+      kind: 'habit',
+      id,
+      name,
+      done: [],
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      ...over,
+    })
+    const mine = [
+      // every day, the 8th missed
+      habit('read', 'Read', { done: ['2026-09-06', '2026-09-07', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'] }),
+      // Monday, Wednesday and Friday, every one kept since the 2nd: the weekends are skipped, not missed
+      habit('gym', 'Gym', { days: [1, 3, 5], done: ['2026-09-02', '2026-09-04', '2026-09-07', '2026-09-09', '2026-09-11'] }),
+      // begun on Thursday, so nothing is owed before it, and Saturday's miss ends its run
+      habit('floss', 'Floss', { createdAt: new Date(2026, 8, 10, 9).toISOString(), done: ['2026-09-10'] }),
+    ]
+    const notCounted = [
+      habit('piano', 'Piano', { archivedAt: '2026-09-01T00:00:00.000Z', done: ['2026-09-07'] }),
+      habit('run', 'Run', { deletedAt: '2026-09-08T00:00:00.000Z', done: ['2026-09-07'] }),
+      // a household peer's, which the digest's own read would already have left out
+      habit('swim', 'Swim', { ownerId: PEER, done: ['2026-09-07'] }),
+    ]
+
+    // what Home → Week's ✨ summary sends for that week (Review.tsx: habitLines(habitsConsistency(…)))
+    const app = habitLines(habitsConsistency(mine, range.start, range.end, now))
+    await upsertSundayReview(OWNER, [...mine, ...notCounted], now, { timezone: tz })
+    const drafted = ai.prompts[0]
+      .split('Habits:\n')[1]
+      .split('\n\n')[0]
+      .split('\n')
+      .map(l => l.replace(/^- /, ''))
+
+    expect(drafted).toEqual(app)
+    // …and it is the right line
+    expect(app).toEqual(['77% consistent (10/13 kept, 3 missed): Read 6/7 (1 missed, streak 4) · Gym 3/3 (streak 5) · Floss 1/3 (2 missed)'])
+  })
+
+  it('the ✨ summary sends that same line', () => {
+    const source = readFileSync(fileURLToPath(new URL('../components/Review.tsx', import.meta.url)), 'utf8')
+    expect(source).toMatch(/habits: habitLines\(habitStats\),/)
+    expect(source).toMatch(/const habitStats = useMemo\(\(\) => habitsConsistency\(habits, range\.start, range\.end, new Date\(\)\)/)
   })
 })

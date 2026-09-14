@@ -29,6 +29,7 @@ import { useNativeShell } from './planner/useNativeShell'
 import { useNavigation } from './planner/useNavigation'
 import { useOverlays } from './planner/useOverlays'
 import { useOwner } from './planner/useOwner'
+import { useSyncAlarm } from './planner/useSyncAlarm'
 import { useTaskActions } from './planner/useTaskActions'
 import { useToast } from './planner/useToast'
 
@@ -51,6 +52,8 @@ export default function Planner() {
   const cal = useCalendarSync({ store, household, showToast })
   const overlays = useOverlays()
   const owner = useOwner()
+  // the owner's banner on Today when the hourly sync check finds writes refused
+  const syncAlarm = useSyncAlarm(owner.isOwner)
 
   const { applyLinkRef } = useDeepLinks({
     store,
@@ -92,6 +95,7 @@ export default function Planner() {
     ...cal,
     ...overlays,
     ...owner,
+    ...syncAlarm,
     ...lifeActions,
     ...taskActions,
     ...focusActions,

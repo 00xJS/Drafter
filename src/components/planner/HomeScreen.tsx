@@ -13,6 +13,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
+  const { syncAlarm, dismissSyncAlarm, setAdminOpen } = p
   return (
     <>
       {/* one Home across four segments: the day, the week’s look-back, the
@@ -109,6 +110,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             showToast('Logged for today', () => store.remove(w.id))
           }}
           onOpenWardrobe={openWardrobe}
+          // the owner's sync alarm: the hourly check found the server refusing
+          // writes. The banner opens Admin on Data, where the check's card is
+          syncAlarm={syncAlarm}
+          onDismissSyncAlarm={dismissSyncAlarm}
+          onOpenSyncCheck={() => setAdminOpen(true, 'data')}
         />
       )}
       {homeTab === 'week' && (

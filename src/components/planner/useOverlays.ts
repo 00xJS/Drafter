@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { AdminGroup } from '../../admin'
 import type { CalendarEntry, CalendarEvent, Project, Task, WorkMode } from '../../types'
 import type { PlanStep } from '../PlanDaySheet'
 
@@ -19,7 +20,13 @@ export function useOverlays() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
-  const [adminOpen, setAdminOpen] = useState(false)
+  const [adminOpen, setAdminShown] = useState(false)
+  /** The Admin section it opens on: Users, unless the opener asks for another (Today's sync alarm asks for Data). */
+  const [adminGroup, setAdminGroup] = useState<AdminGroup | undefined>(undefined)
+  const setAdminOpen = (open: boolean, group?: AdminGroup) => {
+    setAdminGroup(group)
+    setAdminShown(open)
+  }
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
   const [attendance, setAttendance] = useState<CalendarEvent | null>(null)
@@ -71,6 +78,7 @@ export function useOverlays() {
     setSettingsNonce,
     adminOpen,
     setAdminOpen,
+    adminGroup,
     eventEditor,
     setEventEditor,
     attendance,

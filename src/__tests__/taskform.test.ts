@@ -21,9 +21,12 @@ import {
   newPerson,
   peopleSearch,
   pendingRenames,
+  relinkGithub,
+  unlinkGithub,
   urlsIn,
   versionNote,
   versionRows,
+  withoutUrl,
 } from '../taskform'
 import type { ChecklistItem, Person, Task } from '../types'
 import { toLocalInput } from '../utils'
@@ -193,6 +196,74 @@ describe('GitHub from the description', () => {
     expect(mergeOnto(bare, edit(initForm(bare), { githubUrl: '' }), bare, true).githubUrl).toBeUndefined()
   })
 
+  // B15: Unlink used not to stick while the address was still in the text, as
+  // the rule above linked it again on save. Unlink now takes it out of the
+  // description too, and its Undo puts both back.
+  it('Unlink takes the address out of the description too, so the save leaves the task unlinked', () => {
+    const base = task({ githubUrl: issue, description: `Tracking ${issue}\nParts: https://example.com/hinges` })
+    const form = initForm(base)
+    const { patch } = unlinkGithub(form)
+    expect(patch).toEqual({ githubUrl: '', description: 'Tracking\nParts: https://example.com/hinges' })
+    const unlinked = edit(form, patch)
+    expect(cardUrl(unlinked)).toBeUndefined()
+    expect(descriptionLinks(unlinked.description, cardUrl(unlinked))).toEqual(['https://example.com/hinges'])
+    const saved = mergeOnto(base, unlinked, base, true)
+    expect(saved.githubUrl).toBeUndefined()
+    expect(saved.description).toBe('Tracking\nParts: https://example.com/hinges')
+  })
+
+  it('Unlink’s Undo puts the link and the text back, and then there is nothing to save', () => {
+    const base = task({ githubUrl: issue, description: `Tracking ${issue}` })
+    const form = initForm(base)
+    const { patch, unlinked } = unlinkGithub(form)
+    const undone = edit(edit(form, patch), f => relinkGithub(f, unlinked))
+    expect(undone).toMatchObject({ githubUrl: issue, description: `Tracking ${issue}` })
+    expect(isDirty(undone, base, true)).toBe(false)
+    expect(mergeOnto(base, undone, base, true)).toMatchObject({ githubUrl: issue, description: `Tracking ${issue}` })
+  })
+
+  it('Undo after typing keeps what was typed and adds the address back below it', () => {
+    const base = task({ githubUrl: issue, description: `Tracking ${issue}` })
+    const form = initForm(base)
+    const { patch, unlinked } = unlinkGithub(form)
+    const typed = edit(edit(form, patch), { description: 'Tracking the hinge order' })
+    expect(edit(typed, f => relinkGithub(f, unlinked))).toMatchObject({ githubUrl: issue, description: `Tracking the hinge order\n\n${issue}` })
+  })
+
+  it('Unlink leaves a description that never held the address as it is, and so does its Undo', () => {
+    const base = task({ githubUrl: issue, description: 'Fix the hinge' })
+    const { patch, unlinked } = unlinkGithub(initForm(base))
+    expect(patch).toEqual({ githubUrl: '', description: 'Fix the hinge' })
+    expect(relinkGithub({ description: 'Fix the hinge, and oil it' }, unlinked)).toEqual({ githubUrl: issue, description: 'Fix the hinge, and oil it' })
+  })
+
+  it('Unlink takes the same issue out however the text writes it, so the save cannot link it again, and Undo gives the text back', () => {
+    // a comment's permalink pasted from GitHub, http with www and another case,
+    // and a markdown link carrying a ?query: each one the card would show, and
+    // the save would link, as issue 12
+    const comment = `${issue}#issuecomment-99`
+    const plain = 'http://www.github.com/00xjs/drafter/issues/12'
+    const base = task({ githubUrl: issue, description: `See ${comment} for the fix.\n${plain}\n[the thread](${issue}?notification_referrer_id=7)\nParts: https://example.com/hinges` })
+    const form = initForm(base)
+    const { patch, unlinked } = unlinkGithub(form)
+    expect(patch).toEqual({ githubUrl: '', description: 'See for the fix.\nthe thread\nParts: https://example.com/hinges' })
+    const after = edit(form, patch)
+    expect(cardUrl(after)).toBeUndefined()
+    const saved = mergeOnto(base, after, base, true)
+    expect(saved.githubUrl).toBeUndefined()
+    expect(saved.description).toBe('See for the fix.\nthe thread\nParts: https://example.com/hinges')
+    const undone = edit(after, f => relinkGithub(f, unlinked))
+    expect(undone).toMatchObject({ githubUrl: issue, description: base.description })
+    expect(isDirty(undone, base, true)).toBe(false)
+  })
+
+  it('Unlink takes only its own address: another GitHub address in the text stays, and is the card’s now', () => {
+    const base = task({ githubUrl: issue, description: `Tracking ${issue}, see also ${pull}` })
+    const form = edit(initForm(base), unlinkGithub(initForm(base)).patch)
+    expect(form.description).toBe(`Tracking, see also ${pull}`)
+    expect(cardUrl(form)).toBe(pull)
+  })
+
   it('counts only what the card can show', () => {
     for (const url of [issue, pull, 'https://github.com/orgs/acme/projects/4', 'https://github.com/users/joe/projects/1', 'https://github.com/00xJS/Drafter']) {
       expect(isGithubCardUrl(url), url).toBe(true)
@@ -200,6 +271,48 @@ describe('GitHub from the description', () => {
     for (const url of ['https://github.com/00xJS/Drafter/blob/main/README.md', 'https://github.com/orgs/acme', 'https://github.com/settings', 'https://example.com/00xJS/Drafter/issues/1']) {
       expect(isGithubCardUrl(url), url).toBe(false)
     }
+  })
+})
+
+describe('withoutUrl: an address taken out of a description', () => {
+  const issue = 'https://github.com/00xJS/Drafter/issues/12'
+
+  it('closes up the space it leaves in a sentence, before it or else after it', () => {
+    expect(withoutUrl(`See ${issue} for the plan.`, issue)).toBe('See for the plan.')
+    expect(withoutUrl(`${issue} is the plan`, issue)).toBe('is the plan')
+    // the full stop ends the sentence, not the address
+    expect(withoutUrl(`Tracking ${issue}.`, issue)).toBe('Tracking.')
+  })
+
+  it('takes a line it was alone on, and keeps one blank line between what was either side', () => {
+    expect(withoutUrl(`Fix it\n\n${issue}\n\nMore`, issue)).toBe('Fix it\n\nMore')
+    expect(withoutUrl(`Fix it\n${issue}\nMore`, issue)).toBe('Fix it\nMore')
+    expect(withoutUrl(`${issue}\n\nNotes`, issue)).toBe('Notes')
+    expect(withoutUrl(`Notes\n\n${issue}`, issue)).toBe('Notes')
+    expect(withoutUrl(issue, issue)).toBe('')
+  })
+
+  it('finds it however it is written: more than once, with a trailing slash, as a link’s target', () => {
+    expect(withoutUrl(`${issue}/ and again ${issue}`, issue)).toBe('and again')
+    expect(withoutUrl(`The [issue](${issue}) is open`, issue)).toBe('The issue is open')
+  })
+
+  it('finds a GitHub item however it is written: a comment’s anchor, http, www, any case, or the pull request of that number', () => {
+    expect(withoutUrl(`Fixed, see ${issue}#issuecomment-99`, issue)).toBe('Fixed, see')
+    expect(withoutUrl('See http://www.github.com/00xjs/DRAFTER/issues/12?q=1 now', issue)).toBe('See now')
+    // an issue and a pull request share their repository's numbers
+    expect(withoutUrl('Merged in https://github.com/00xJS/Drafter/pull/12', issue)).toBe('Merged in')
+    expect(withoutUrl('Board: https://github.com/orgs/acme/projects/4/views/2', 'https://github.com/orgs/Acme/projects/4')).toBe('Board:')
+    expect(withoutUrl('Home: https://github.com/00xjs/drafter#readme', 'https://github.com/00xJS/Drafter')).toBe('Home:')
+  })
+
+  it('leaves every other address, word and blank line as it was', () => {
+    const text = 'Parts: https://example.com/hinges\n\n\nSee https://github.com/00xJS/Drafter/issues/120 and [the pull](https://github.com/00xJS/Drafter/pull/3)  too'
+    expect(withoutUrl(text, issue)).toBe(text)
+    // the same number in another repository, and a page of the repository that is not its home
+    const others = 'https://github.com/00xJS/Other/issues/12 and https://github.com/00xJS/Drafter/blob/main/README.md'
+    expect(withoutUrl(others, issue)).toBe(others)
+    expect(withoutUrl(others, 'https://github.com/00xJS/Drafter')).toBe(others)
   })
 })
 

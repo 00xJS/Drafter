@@ -71,7 +71,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
   const { setView, goTasksTab, setNotesProjectId, openPlace, openPerson, openJournal, openNote, setKitchenRecipe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
-  const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, isOwner } = p
+  const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, adminGroup, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { calendars, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
@@ -381,7 +381,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       )}
       {adminOpen && isOwner && (
         <Layer name="Admin">
-          <Admin onClose={() => setAdminOpen(false)} />
+          <Admin onClose={() => setAdminOpen(false)} initialGroup={adminGroup} />
         </Layer>
       )}
     </>

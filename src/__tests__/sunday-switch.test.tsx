@@ -93,6 +93,34 @@ describe('/api/push without push: Sunday’s journal switch still reads and save
   })
 })
 
+describe('/api/push says whether the host can write the draft at all', () => {
+  // the digest drafts only when resolveProvider() finds a key (digest.mjs)
+  beforeEach(() => {
+    for (const key of ['NVIDIA_API_KEY', 'ANTHROPIC_API_KEY', 'AI_PROVIDER']) vi.stubEnv(key, '')
+  })
+
+  it('no when the host has no AI key', async () => {
+    expect(await (await call('GET')).json()).toMatchObject({ sundayDraft: true, aiConfigured: false })
+  })
+
+  it('yes with either key, and never the key itself or whose it is', async () => {
+    vi.stubEnv('NVIDIA_API_KEY', 'nvapi-secret-123')
+    const body = await (await call('GET')).text()
+    expect(JSON.parse(body)).toMatchObject({ aiConfigured: true })
+    expect(body).not.toContain('nvapi-secret-123')
+    expect(body).not.toMatch(/nvidia|anthropic/i)
+    vi.stubEnv('NVIDIA_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret')
+    expect((await (await call('GET')).json()).aiConfigured).toBe(true)
+  })
+
+  it('no when AI_PROVIDER names a provider whose key is missing, as the digest reads it', async () => {
+    vi.stubEnv('AI_PROVIDER', 'anthropic')
+    vi.stubEnv('NVIDIA_API_KEY', 'nvapi-secret-123')
+    expect((await (await call('GET')).json()).aiConfigured).toBe(false)
+  })
+})
+
 describe('/api/push with push: prefs save as before', () => {
   it('the email digest, its hour, the switch and the zone together', async () => {
     vi.stubEnv('VAPID_PUBLIC_KEY', 'public')
@@ -123,5 +151,19 @@ describe('Settings → Reminders: the switch stands apart from push', () => {
     expect(pushBlock).not.toContain('SundayDraft')
     expect(pushBlock).not.toContain('digestJournal')
     expect(body).toMatch(/\{push\?\.sundayDraft && \(\s*<SundayDraft /)
+    // disabled only on the server's own no: an older server that does not say reads as yes
+    expect(body).toMatch(/<SundayDraft[^>]*\bai=\{push\.aiConfigured !== false\}/)
+  })
+
+  it('is disabled, with the reason in one line, where the host has no AI key', () => {
+    const none = renderToStaticMarkup(<SundayDraft journal ai={false} onChange={() => {}} />)
+    expect(none).toContain('Let Sunday’s draft read my journal')
+    expect(none).toMatch(/<input type="checkbox"[^>]*disabled=""/)
+    expect(none).toContain('No Sunday draft is written: the server has no AI provider key.')
+    // no promise of a draft that will never come, and no key name for an account that cannot set one
+    expect(none).not.toContain('drafted for you')
+    expect(none).not.toContain('go to the AI provider')
+    expect(none).not.toMatch(/NVIDIA|ANTHROPIC|API_KEY/)
+    expect(renderToStaticMarkup(<SundayDraft journal onChange={() => {}} />)).not.toContain('disabled')
   })
 })

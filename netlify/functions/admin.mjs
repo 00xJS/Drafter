@@ -215,6 +215,12 @@ const handler = async req => {
       })
     }
 
+    if (action === 'syncCheck') {
+      // Today's banner, for the owner: the latest check read as Admin → Data
+      // reads it (readCanary, and the same sentence), without Data's counts
+      return Response.json(syncCheck(await readCanary(rest)))
+    }
+
     if (action === 'dataStats') {
       const rows = await fetchAll('posts?select=user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged&order=id.asc')
       const users = await listUsers().catch(() => [])

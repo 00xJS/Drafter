@@ -158,19 +158,27 @@ export function pendingRenames(checklist: ChecklistItem[], typed: ReadonlySet<st
 
 // ---- links in the description --------------------------------------------------
 
+const URL_RE = /https?:\/\/[^\s<>"'`]+/gi
+
+/** A URL as matched in running text, without the sentence punctuation after it. */
+function trimUrl(raw: string): string {
+  let url = raw
+  // a full stop or a closing bracket after a URL ends the sentence, not the URL —
+  // unless the URL opened that bracket itself (a Wikipedia title, say)
+  while (/[.,;:!?)\]]$/.test(url)) {
+    const last = url[url.length - 1]
+    const open = last === ')' ? '(' : last === ']' ? '[' : ''
+    if (open && url.split(open).length > url.split(last).length - 1) break
+    url = url.slice(0, -1)
+  }
+  return url
+}
+
 /** Every http(s) URL in a text, in order, once each, without the sentence punctuation after it. */
 export function urlsIn(text: string): string[] {
   const out: string[] = []
-  for (const m of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
-    let url = m[0]
-    // a full stop or a closing bracket after a URL ends the sentence, not the URL —
-    // unless the URL opened that bracket itself (a Wikipedia title, say)
-    while (/[.,;:!?)\]]$/.test(url)) {
-      const last = url[url.length - 1]
-      const open = last === ')' ? '(' : last === ']' ? '[' : ''
-      if (open && url.split(open).length > url.split(last).length - 1) break
-      url = url.slice(0, -1)
-    }
+  for (const m of text.matchAll(URL_RE)) {
+    const url = trimUrl(m[0])
     try {
       new URL(url)
     } catch {
@@ -193,6 +201,29 @@ export function isGithubCardUrl(url: string): boolean {
   return parts.length === 2 && parts[0] !== 'orgs' && parts[0] !== 'users'
 }
 
+/**
+ * Two addresses of one issue, pull request, Projects board or repository home,
+ * however each is written: http or https, with or without www, a comment's
+ * #anchor or a ?query on the end, the owner and repo in any case. An issue and
+ * a pull request share their repository's numbers (GitHub sends /issues/3 on to
+ * /pull/3), so those two match as well. False for anything the card can't show.
+ */
+function sameGithubItem(a: string, b: string): boolean {
+  if (!isGithubCardUrl(a) || !isGithubCardUrl(b)) return false
+  const x = parseGithubUrl(a)!
+  const y = parseGithubUrl(b)!
+  const type = (t: string) => (t === 'pr' ? 'issue' : t)
+  return (
+    type(x.type) === type(y.type) &&
+    x.owner.toLowerCase() === y.owner.toLowerCase() &&
+    (x.repo ?? '').toLowerCase() === (y.repo ?? '').toLowerCase() &&
+    x.number === y.number
+  )
+}
+
+/** Two addresses of one link: the same URL (a trailing slash aside), or the same thing on GitHub. */
+const sameLink = (a: string, b: string) => sameUrl(a, b) || sameGithubItem(a, b)
+
 /** The first GitHub URL the card can show in a description, if there is one. */
 export const firstGithubUrl = (description: string) => urlsIn(description).find(isGithubCardUrl)
 
@@ -202,6 +233,78 @@ export const cardUrl = (form: Pick<TaskForm, 'githubUrl' | 'description'>) => fo
 /** The description's other URLs, shown as link chips under it (the one on the GitHub card is left out). */
 export function descriptionLinks(description: string, card?: string): string[] {
   return urlsIn(description).filter(u => !card || !sameUrl(u, card))
+}
+
+/**
+ * `text` without `url` wherever it links it: as a bare address, and as the
+ * target of a [label](url) link, whose label stays as plain words. A GitHub
+ * address counts however it is written (sameGithubItem): a comment's permalink
+ * to the same issue would still link the task to it on save. The space the
+ * address leaves behind closes up, and a line it was alone on goes, with the
+ * blank lines either side of it closing up to one. Every other word, link and
+ * line stays exactly as it was.
+ */
+export function withoutUrl(text: string, url: string): string {
+  let out = text.replace(/\[([^\]\n]*)\]\(\s*(https?:\/\/[^\s)]+)\s*\)/gi, (link: string, label: string, target: string) => (sameLink(target, url) ? label : link))
+  const cuts = [...out.matchAll(URL_RE)]
+    .map(m => ({ start: m.index!, end: m.index! + trimUrl(m[0]).length, found: trimUrl(m[0]) }))
+    .filter(c => sameLink(c.found, url))
+  // from the end back, so the offsets of the cuts still to make hold
+  for (const { start, end } of cuts.reverse()) {
+    const lineStart = out.lastIndexOf('\n', start - 1) + 1
+    const nl = out.indexOf('\n', end)
+    const lineEnd = nl === -1 ? out.length : nl
+    if (!(out.slice(lineStart, start) + out.slice(end, lineEnd)).trim()) {
+      // the address was the whole line: the line goes, and the line breaks
+      // now meeting where it was keep at most one blank line between
+      const head = out.slice(0, lineStart)
+      const joined = head + (nl === -1 ? '' : out.slice(nl + 1))
+      let a = head.length
+      while (a > 0 && joined[a - 1] === '\n') a--
+      let b = head.length
+      while (b < joined.length && joined[b] === '\n') b++
+      const breaks = a === 0 || b === joined.length ? 0 : Math.min(b - a, 2)
+      out = joined.slice(0, a) + '\n'.repeat(breaks) + joined.slice(b)
+    } else {
+      // one space closes up: the one before the address, else the one after it
+      const before = start > lineStart && out[start - 1] === ' ' ? 1 : 0
+      const after = !before && out[end] === ' ' ? 1 : 0
+      out = out.slice(0, start - before) + out.slice(end + after)
+    }
+  }
+  return out
+}
+
+/** What Unlink took off the task in the open editor, for its Undo. */
+export interface Unlinked {
+  /** The address the card showed: the task's own link. */
+  url: string
+  githubUrl: string
+  /** The description before, and straight after, the address was taken out of it. */
+  before: string
+  after: string
+}
+
+/**
+ * Unlink on the task's GitHub card. The task's own link goes, and so does the
+ * address wherever the description links it: a save links the first GitHub
+ * address in the description (formValues), so one left there linked the task
+ * again. Answers the form's patch, and what Undo needs to put both back.
+ */
+export function unlinkGithub(form: Pick<TaskForm, 'githubUrl' | 'description'>): { patch: Pick<TaskForm, 'githubUrl' | 'description'>; unlinked: Unlinked } {
+  const url = form.githubUrl.trim()
+  const description = url ? withoutUrl(form.description, url) : form.description
+  return { patch: { githubUrl: '', description }, unlinked: { url, githubUrl: form.githubUrl, before: form.description, after: description } }
+}
+
+/**
+ * Unlink's Undo: the link back, and the description as it was — or, when it
+ * has been typed in since, the address added back below what is there now
+ * (unless it holds it already), so nothing typed meanwhile is lost.
+ */
+export function relinkGithub(form: Pick<TaskForm, 'description'>, u: Unlinked): Pick<TaskForm, 'githubUrl' | 'description'> {
+  const description = form.description === u.after ? u.before : u.before === u.after ? form.description : appendOnce(form.description, u.url)
+  return { githubUrl: u.githubUrl, description }
 }
 
 /** A link chip's text: the host and path, without the scheme or www, shortened to fit. */

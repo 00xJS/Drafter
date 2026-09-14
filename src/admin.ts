@@ -115,3 +115,25 @@ export function adminAction<T>(action: string, payload: Record<string, unknown> 
 export function fetchAdminMe(): Promise<{ isOwner: boolean }> {
   return adminAction('me')
 }
+
+/** Admin's sections, in its own order; Users is where it opens unless another is asked for. */
+export type AdminGroup = 'users' | 'data' | 'backups' | 'integrations' | 'apple'
+
+/** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
+export interface SyncCheck {
+  sentence: string
+  record: {
+    ok: boolean
+    checked: number
+    failures: { kind: string | null; reason: string }[]
+    error: string | null
+    at: string
+    failingSince: string | null
+    alertedAt: string | null
+  } | null
+}
+
+/** The latest sync check on its own, as Admin → Data reads it: Today's banner for the owner. */
+export function fetchSyncCheck(): Promise<SyncCheck> {
+  return adminAction('syncCheck')
+}

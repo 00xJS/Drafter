@@ -3,7 +3,7 @@ import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
 import { currentEndpoint } from './push'
-import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE } from './native'
+import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE, type PlanDayPref } from './native'
 
 // Reminders the phone can fire by itself: one at each task's due time, one at
 // the start of each of your own events, one on the morning of a birthday or
@@ -11,8 +11,10 @@ import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE } from './native'
 // clearly missed. No server, no account, works with the app closed. The set is
 // rebuilt from local data whenever it changes, so it is only ever as current
 // as the last time the app ran — which for a phone that opens Drafter daily is
-// current enough. Drafter alone reminds: the copies the mirrors write into
-// Google and Outlook stay silent unless the owner asks for theirs too.
+// current enough. The morning's Plan your day is the one that repeats by
+// itself, so it comes whether or not the app ran. Drafter alone reminds: the
+// copies the mirrors write into Google and Outlook stay silent unless the
+// owner asks for theirs too.
 
 export interface LocalReminder {
   /** Stable integer id — iOS identifies pending notifications by number. */
@@ -29,6 +31,8 @@ export interface LocalReminder {
    * numbers the whole set in time order.
    */
   actionTypeId?: string
+  /** Repeats every day at this hour and minute rather than firing once at `at`: the morning's Plan your day. */
+  daily?: { hour: number; minute: number }
 }
 
 /** Stable 31-bit id from a string (djb2), so rescheduling replaces rather than duplicates. */
@@ -211,6 +215,58 @@ export function buildLocalReminders(
   // stable sort: rows added at the same minute keep the order above, so tasks,
   // events and occasions still lead the 9am group
   return out.sort((a, b) => a.at.getTime() - b.at.getTime())
+}
+
+/** Where a tap on Plan your day lands: Today, with Plan my day open over it (the morning digest's own link). */
+export const PLAN_DAY_URL = '/?plan=day'
+
+/**
+ * The morning's Plan your day, when it is on: one notification that repeats
+ * every day at the time chosen (`daily`), with no push and no server. `at` is
+ * its next time, for ordering only: on the morning the clocks go forward,
+ * setHours moves a time in the skipped hour an hour on, so the hour and
+ * minute it repeats at are carried as chosen.
+ */
+export function planDayReminder(pref: PlanDayPref, now = new Date()): LocalReminder | null {
+  if (!pref.on) return null
+  const [hour, minute] = pref.time.split(':').map(Number)
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null
+  const at = new Date(now)
+  at.setHours(hour, minute, 0, 0)
+  if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
+  return { id: reminderId('plan-day'), title: 'Plan your day', body: 'Pick today’s focus and see what is due.', at, url: PLAN_DAY_URL, daily: { hour, minute } }
+}
+
+/**
+ * Everything this phone holds, as one set: the local reminders while they
+ * are on (Remind me on this iPhone), and the morning's Plan your day while it
+ * is. scheduleLocalReminders replaces what is pending with the whole set, so
+ * a caller that left a part out would cancel it.
+ */
+export function deviceReminders(
+  data: { tasks: Task[]; people: Person[]; places: Place[]; meals: Meal[] },
+  now: Date,
+  opts: BuildReminderOpts & { local: boolean; planDay: PlanDayPref },
+): LocalReminder[] {
+  const plan = planDayReminder(opts.planDay, now)
+  return distinctIds([...(opts.local ? buildLocalReminders(data.tasks, data.people, data.places, data.meals, now, 30, opts) : []), ...(plan ? [plan] : [])])
+}
+
+/**
+ * iOS knows a pending notification by its number alone, so two in one set
+ * with the same number would leave one of them unset. Every key is its own
+ * (task:, event:, occasion:, place:, plan-day), but a 31-bit hash can still
+ * meet another's: the later of the two moves to the next free number. The set
+ * is replaced whole each time, so a moved number is never left pending.
+ */
+export function distinctIds(list: LocalReminder[]): LocalReminder[] {
+  const taken = new Set<number>()
+  return list.map(r => {
+    let id = r.id
+    while (taken.has(id)) id = (id + 1) & 0x7fffffff
+    taken.add(id)
+    return id === r.id ? r : { ...r, id }
+  })
 }
 
 /** True when this device's push endpoint is already registered server-side. */

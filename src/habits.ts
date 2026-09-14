@@ -1,6 +1,7 @@
 import { Habit } from './types'
 import { dateKey } from './utils'
 import { newerStamp } from './itemops'
+import { habitStreak, habitsKept } from '../shared/review.mjs'
 
 // The rules a habit is kept by. Completions are day keys on the record; the
 // streak is derived from them and the schedule, never stored, so it can never
@@ -33,20 +34,11 @@ export function toggleDone(habit: Habit, key: string, now = newerStamp(habit.upd
  * that was missed breaks it; a day the habit isn't due on is skipped, not
  * counted, so a weekday habit's streak survives the weekend. Today counts once
  * it is ticked, but an as-yet-unticked today does not break a run you are still
- * in — it just isn't added yet.
+ * in — it just isn't added yet. Counted in shared/review.mjs, which the
+ * weekly review and Sunday's draft read too, on calendar days, not milliseconds.
  */
 export function streakOf(habit: Habit, today = new Date()): number {
-  const doneSet = new Set(habit.done)
-  let streak = 0
-  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  for (let i = 0; i < 3660; i++) {
-    if (isDueOn(habit, d)) {
-      if (doneSet.has(dateKey(d))) streak++
-      else if (i > 0) break // a missed day in the past ends the streak; today just waits
-    }
-    d.setDate(d.getDate() - 1)
-  }
-  return streak
+  return habitStreak(habit, dateKey(today))
 }
 
 /** Done and due counts over an inclusive day range — for the weekly review. */
@@ -67,7 +59,8 @@ export function rangeStats(habit: Habit, start: Date, end: Date): { done: number
 }
 
 export interface HabitConsistency {
-  rows: { habit: Habit; done: number; due: number }[]
+  /** Each habit with anything due: days kept and missed, and the streak it ended the period on. */
+  rows: { habit: Habit; done: number; due: number; missed: number; streak: number }[]
   done: number
   due: number
   /** 0–100, rounded; 0 when nothing was due. */
@@ -82,22 +75,9 @@ export interface HabitConsistency {
  * rather than "3/7" and the summary isn't told you are slacking. Days before
  * the habit existed are not owed either: one created and ticked on Thursday
  * is 1/1, not 1/5, and a review of last month shows nothing for it at all.
+ * Counted in shared/review.mjs on this device's calendar days — the same
+ * count Sunday's draft makes in the zone saved with your settings.
  */
 export function habitsConsistency(habits: Habit[], start: Date, end: Date, today = new Date()): HabitConsistency {
-  // calendar-date arithmetic, never milliseconds, so a DST day doesn't shift the edge
-  const lastInRange = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1)
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const last = lastInRange.getTime() < todayStart.getTime() ? lastInRange : todayStart
-  const rows = habits
-    .map(habit => {
-      // createdAt is an instant; the habit's first day is that instant's LOCAL day
-      const born = new Date(habit.createdAt)
-      const bornDay = Number.isNaN(born.getTime()) ? start : new Date(born.getFullYear(), born.getMonth(), born.getDate())
-      const from = bornDay.getTime() > start.getTime() ? bornDay : start
-      return { habit, ...rangeStats(habit, from, last) }
-    })
-    .filter(r => r.due > 0)
-  const done = rows.reduce((s, r) => s + r.done, 0)
-  const due = rows.reduce((s, r) => s + r.due, 0)
-  return { rows, done, due, pct: due ? Math.round((done / due) * 100) : 0 }
+  return habitsKept(habits, { start, end }, today, dateKey)
 }

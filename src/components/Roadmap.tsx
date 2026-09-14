@@ -59,7 +59,8 @@ export function pxPerDay(available: number, days: number): number {
 }
 
 export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onOpenTask }: Props) {
-  // a span and a milestone's edge keep the project's colour, moved only as far as a mark needs to stand out
+  // a span, a milestone's edge and a finished milestone's fill keep the
+  // project's colour, moved only as far as a mark needs to stand out
   const theme = useTheme()
   // the account's own creation day is the first day of the service
   const [accountSince, setAccountSince] = useState<string | null>(null)
@@ -230,7 +231,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
                       <button
                         key={m.id}
                         className={m.done ? 'rm-ms done' : 'rm-ms'}
-                        style={{ left: model.x(new Date(m.dueAt!)), borderColor: ink }}
+                        style={{ left: model.x(new Date(m.dueAt!)), borderColor: ink, ...(m.done ? { background: ink } : {}) }}
                         title={`◆ ${m.name} · ${fmtDate(m.dueAt)}`}
                         onClick={() => onOpenProject(row.project)}
                       >

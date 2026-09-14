@@ -9,6 +9,7 @@ import type { useMineOnly } from './useMineOnly'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useOwner } from './useOwner'
+import type { useSyncAlarm } from './useSyncAlarm'
 import type { useTaskActions } from './useTaskActions'
 import type { useToast } from './useToast'
 
@@ -30,6 +31,7 @@ export type PlannerCtx = {
   ReturnType<typeof useCalendarSync> &
   ReturnType<typeof useOverlays> &
   ReturnType<typeof useOwner> &
+  ReturnType<typeof useSyncAlarm> &
   ReturnType<typeof useLifeActions> &
   ReturnType<typeof useTaskActions> &
   ReturnType<typeof useFocusActions>

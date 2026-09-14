@@ -158,6 +158,10 @@ const DARK_CHANGED: Record<string, { was: string; now?: string }> = {
   '--pill-time-opacity': { was: '0.85' },
   // the mood chart's labels, .mood-chart text's 0.6 of --viz-ink: 3.74:1
   '--viz-label-opacity': { was: '0.6', now: '0.8' },
+  // the mood chart's scrub cursor, .mood-cursor's 0.45 of --viz-ink: 2.50:1 on the lit day it is drawn under
+  '--viz-cursor-opacity': { was: '0.45', now: '0.6' },
+  // its weekly-average line, .mood-avg-line's 0.5: 2.99:1 on the card, and all but gone on a column
+  '--viz-avg-opacity': { was: '0.5', now: '0.55' },
 }
 
 describe('the two palettes in 01-base.css', () => {
@@ -361,6 +365,25 @@ describe('the inks changed in dark now read there (WCAG 2.x)', () => {
       const card = solid('--surface', palette)
       const label = mixHex(solid('--viz-ink', palette), card, Number(valueIn(palette, '--viz-label-opacity')))
       expect(contrast(label, card), name).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('gives the mood chart’s scrub cursor and weekly-average line 3:1 on their own grounds, in both themes', () => {
+    const journal = strip(read('15-journal.css'))
+    // the scrubbed day's lit rect is drawn after the cursor, so it lies over the line and its ground alike
+    const lit = Number(/\.mood-day\.on \.mood-hit\s*\{[^}]*fill-opacity:\s*([\d.]+)/.exec(journal)?.[1])
+    expect(lit).toBeGreaterThan(0)
+    expect(journal).toMatch(/\.mood-cursor\s*\{[^}]*opacity:\s*var\(--viz-cursor-opacity\)/)
+    expect(journal).toMatch(/\.mood-avg-line\s*\{[^}]*opacity:\s*var\(--viz-avg-opacity\)/)
+    // the line runs on a casing of the card's own colour, so it never sits straight on a column
+    expect(journal).toMatch(/\.mood-avg-casing\s*\{[^}]*stroke:\s*var\(--surface\)/)
+    for (const [name, palette] of [['light', light], ['dark', dark]] as const) {
+      const card = solid('--surface', palette)
+      const ink = solid('--viz-ink', palette)
+      const cursor = mixHex(ink, mixHex(ink, card, Number(valueIn(palette, '--viz-cursor-opacity'))), lit)
+      expect(contrast(cursor, mixHex(ink, card, lit)), `${name} cursor`).toBeGreaterThanOrEqual(3)
+      const line = mixHex(ink, card, Number(valueIn(palette, '--viz-avg-opacity')))
+      expect(contrast(line, card), `${name} average line`).toBeGreaterThanOrEqual(3)
     }
   })
 })
