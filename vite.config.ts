@@ -1,4 +1,7 @@
 /// <reference types="vitest/config" />
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
@@ -18,6 +21,47 @@ const buildStamp = (): Plugin => ({
   },
 })
 
+// The garment cut-out's web runtime (src/cutoutweb.ts): two files from
+// @mediapipe/tasks-vision, served from our own origin in a versioned folder,
+// dist/cutout/mediapipe-<version>/, and never precached (globIgnores below).
+// The version is the installed package's, so the WASM always matches its JS,
+// and 12 MB of binary stays out of git.
+const CUTOUT_RUNTIME = ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']
+
+const cutoutRuntime = (): Plugin => {
+  const pkg = fileURLToPath(new URL('./node_modules/@mediapipe/tasks-vision/', import.meta.url))
+  // read when first needed, not when this file loads: vitest loads it too
+  const version = (): string => {
+    if (!existsSync(`${pkg}package.json`)) throw new Error('@mediapipe/tasks-vision is not installed; run npm ci')
+    return JSON.parse(readFileSync(`${pkg}package.json`, 'utf8')).version
+  }
+  const file = (name: string) => readFileSync(`${pkg}wasm/${name}`)
+  return {
+    name: 'drafter-cutout-runtime',
+    configureServer(server) {
+      // Dev: the two runtime files straight from node_modules. Any other
+      // /cutout/ path that is not a real file in public/ is a 404, as on
+      // Netlify, never the app's page with a 200.
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? '').split('?')[0]
+        if (!path.startsWith('/cutout/')) return next()
+        const runtime = /^\/cutout\/mediapipe-([^/]+)\/([^/]+)$/.exec(path)
+        if (runtime && CUTOUT_RUNTIME.includes(runtime[2]) && existsSync(`${pkg}package.json`) && runtime[1] === version()) {
+          res.setHeader('Content-Type', runtime[2].endsWith('.wasm') ? 'application/wasm' : 'text/javascript')
+          res.end(file(runtime[2]))
+          return
+        }
+        if (!runtime && existsSync(join(server.config.publicDir, path))) return next()
+        res.statusCode = 404
+        res.end()
+      })
+    },
+    generateBundle() {
+      for (const name of CUTOUT_RUNTIME) this.emitFile({ type: 'asset', fileName: `cutout/mediapipe-${version()}/${name}`, source: file(name) })
+    },
+  }
+}
+
 export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees and carry their own copy of
@@ -26,6 +70,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    cutoutRuntime(),
     buildStamp(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -70,6 +115,11 @@ export default defineConfig({
         // index.html before the network is asked.
         navigateFallback: null,
         directoryIndex: null,
+        // The garment cut-out's model and WASM (dist/cutout/, 17.5 MB) load on
+        // first use into their own cache (src/cutoutassets.ts): precached, every
+        // app update would download them. workbox's only default ignore is the
+        // node_modules one, so it is kept.
+        globIgnores: ['**/node_modules/**/*', 'cutout/**'],
         runtimeCaching: [
           {
             // the OAuth metadata and endpoints are functions, never the app shell;

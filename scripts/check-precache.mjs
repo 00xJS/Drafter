@@ -41,4 +41,27 @@ if (!stamped || stamped !== served) {
   console.error(`check-precache: index.html's build stamp (${stamped ?? 'none'}) does not match dist/version.json (${served})`)
   process.exit(1)
 }
+
+// The garment cut-out's model and WASM load on first use into their own cache
+// (src/cutoutassets.ts). Precached, every app update would download 17.5 MB.
+if (sw.includes('cutout/')) {
+  console.error('check-precache: dist/sw.js precaches the garment cut-out (cutout/) — its files must load on first use only')
+  process.exit(1)
+}
+const heavy = assets.filter(url => /\.(wasm|tflite|onnx|task)$/.test(url))
+if (heavy.length) {
+  console.error(`check-precache: a model or WASM file is in dist/assets, where everything is precached:\n  ${heavy.join('\n  ')}`)
+  process.exit(1)
+}
+const cutoutDir = join(dist, 'cutout')
+if (!existsSync(join(cutoutDir, 'magic-touch-v1', 'magic_touch.tflite'))) {
+  console.error('check-precache: dist/cutout/magic-touch-v1/magic_touch.tflite is missing — the web cut-out would have no model')
+  process.exit(1)
+}
+const runtimes = existsSync(cutoutDir) ? readdirSync(cutoutDir).filter(name => name.startsWith('mediapipe-')) : []
+const whole = runtimes.filter(dir => ['vision_wasm_internal.js', 'vision_wasm_internal.wasm'].every(name => existsSync(join(cutoutDir, dir, name))))
+if (runtimes.length !== 1 || whole.length !== 1) {
+  console.error(`check-precache: dist/cutout/ must hold exactly one mediapipe-<version>/ with vision_wasm_internal.js and .wasm, not ${runtimes.join(', ') || 'none'}`)
+  process.exit(1)
+}
 console.log(`check-precache: all ${assets.length} files in dist/assets are precached by dist/sw.js`)

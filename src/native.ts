@@ -656,3 +656,128 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
     return () => document.removeEventListener('visibilitychange', onVis)
   }
 }
+
+// ---- garment cut-out: Apple's subject lifting, on this iPhone ------------------
+
+/** What ios/App/App/SubjectLiftPlugin.swift resolves `lift` with. */
+interface SubjectLiftPayload {
+  /** The kept subjects on transparency, cropped to them: an sRGB PNG, as base64. */
+  image: string
+  width: number
+  height: number
+  /** The upright, downscaled frame Vision looked at. */
+  frameWidth: number
+  frameHeight: number
+  /** The share of that frame the kept subjects cover, 0..1. */
+  coverage: number
+  /** How many subjects Vision found, and how many made the cut. */
+  found: number
+  kept: number
+}
+
+/** The plugin compiled into the app (SubjectLiftPlugin.swift), registered by DrafterBridgeViewController. */
+interface SubjectLiftPlugin {
+  isAvailable(): Promise<{ available: boolean; reason?: 'simulator' | 'ios-version' }>
+  lift(options: { image: string; maxDimension: number }): Promise<SubjectLiftPayload>
+}
+
+export type SubjectLift =
+  | { ok: true; cutout: Blob; width: number; height: number; frameWidth: number; frameHeight: number; coverage: number; found: number; kept: number }
+  | { ok: false; reason: 'unavailable' | 'too-large' | 'no-subject' | 'failed' }
+
+/** A photo bigger than this is never sent over the bridge (as base64 it would be 21.3M characters); the web engine takes it. */
+export const SUBJECT_LIFT_MAX_BYTES = 16_000_000
+
+/** A lift with no answer by now has failed, and the web engine takes over. */
+export const SUBJECT_LIFT_TIMEOUT_MS = 20_000
+
+let subjectLiftPlugin: SubjectLiftPlugin | null | undefined
+
+/**
+ * The plugin, looked up on first use and never at module load. A browser, or
+ * an app built before the plugin existed, gets null here (so `unavailable`)
+ * rather than an UNIMPLEMENTED from Capacitor; and tests that stand in for
+ * @capacitor/core with `Capacitor` alone never reach registerPlugin.
+ */
+function subjectLiftHandle(): SubjectLiftPlugin | null {
+  if (subjectLiftPlugin === undefined) {
+    subjectLiftPlugin = isNative() && Capacitor.isPluginAvailable('SubjectLift') ? registerPlugin<SubjectLiftPlugin>('SubjectLift') : null
+  }
+  return subjectLiftPlugin
+}
+
+let liftAvailable: Promise<boolean> | null = null
+
+/** Whether this iPhone can lift subjects: iOS 17 or later, on a device (the Simulator cannot). Asked once per launch. */
+export function canLiftSubject(): Promise<boolean> {
+  const plugin = subjectLiftHandle()
+  if (!plugin) return Promise.resolve(false)
+  if (!liftAvailable) {
+    liftAvailable = plugin.isAvailable().then(
+      r => r.available === true,
+      () => {
+        // a question that got no answer is asked again next time
+        liftAvailable = null
+        return false
+      },
+    )
+  }
+  return liftAvailable
+}
+
+/** Bytes as base64, a slice at a time so a 12 MB photo never goes through one huge call. No FileReader, which node has none of. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+  return btoa(binary)
+}
+
+export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+/** `promise`, or a rejection once `ms` have passed without an answer. */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms)
+    promise.then(
+      value => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      err => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
+
+/**
+ * Lift the garment out of `photo` with Apple's Vision, on this iPhone: the kept
+ * subjects on transparency, cropped to them, as a PNG, from a frame at most
+ * `maxDimension` on its long side. Never throws. `unavailable` covers the web,
+ * the Simulator, iOS 16 and an app without the plugin; after it, `too-large`
+ * and `failed` (a Vision error, or no answer in 20 s) the cut-out moves on to
+ * the web engine, and after `no-subject` it keeps the photo.
+ */
+export async function liftSubject(photo: Blob, maxDimension: number): Promise<SubjectLift> {
+  try {
+    const plugin = subjectLiftHandle()
+    if (!plugin || !(await canLiftSubject())) return { ok: false, reason: 'unavailable' }
+    if (photo.size > SUBJECT_LIFT_MAX_BYTES) return { ok: false, reason: 'too-large' }
+    const image = bytesToBase64(new Uint8Array(await photo.arrayBuffer()))
+    const r = await withTimeout(plugin.lift({ image, maxDimension }), SUBJECT_LIFT_TIMEOUT_MS)
+    const { width, height, frameWidth, frameHeight, coverage, found, kept } = r
+    return { ok: true, cutout: new Blob([base64ToBytes(r.image)], { type: 'image/png' }), width, height, frameWidth, frameHeight, coverage, found, kept }
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code
+    if (code === 'NO_SUBJECT') return { ok: false, reason: 'no-subject' }
+    if (code === 'TOO_LARGE') return { ok: false, reason: 'too-large' }
+    if (code === 'UNAVAILABLE') return { ok: false, reason: 'unavailable' }
+    return { ok: false, reason: 'failed' }
+  }
+}

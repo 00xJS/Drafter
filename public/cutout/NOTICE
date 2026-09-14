@@ -1,0 +1,63 @@
+Drafter's garment cut-out ships two third-party parts from this folder. Both
+are licensed under the Apache License, Version 2.0; its full text is in
+LICENSE, beside this file. Neither is modified.
+
+MediaPipe Tasks Vision 1.0.1 (WASM runtime), © Google LLC, Apache-2.0
+  https://github.com/google-ai-edge/mediapipe
+  Files: mediapipe-1.0.1/vision_wasm_internal.js
+         mediapipe-1.0.1/vision_wasm_internal.wasm
+  Copied at build time from the npm package @mediapipe/tasks-vision 1.0.1.
+
+MediaPipe MagicTouch interactive segmentation model v1 (float32), © Google LLC, Apache-2.0
+  Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf
+  Source: https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
+  File: magic-touch-v1/magic_touch.tflite
+
+
+Third-party components in the WASM runtime
+------------------------------------------
+
+vision_wasm_internal.wasm is a static build of MediaPipe and TensorFlow Lite
+(© The TensorFlow Authors, Apache-2.0) together with the libraries they are
+built on, and vision_wasm_internal.js is the Emscripten loader that starts
+it. Besides Google's own code, that build carries the components below, each
+under its own licence. Their copyright notices and licence texts are in
+THIRD_PARTY_LICENSES, beside this file; the Apache-2.0 ones are covered by
+LICENSE.
+
+  XNNPACK               BSD-3-Clause   © Facebook, Inc. and its affiliates; Google LLC
+                                       https://github.com/google/XNNPACK
+  pthreadpool           BSD-2-Clause   © Google LLC; Facebook Inc.; Georgia Institute of Technology
+                                       https://github.com/google/pthreadpool
+  cpuinfo               BSD-2-Clause   © Google LLC; Facebook Inc.; Georgia Institute of Technology; Marat Dukhan
+                                       https://github.com/pytorch/cpuinfo
+  FP16                  MIT            © Facebook Inc.; Georgia Institute of Technology; Google LLC
+                                       https://github.com/Maratyszcza/FP16
+  FXdiv                 MIT            © Facebook Inc.; Marat Dukhan
+                                       https://github.com/Maratyszcza/FXdiv
+  Protocol Buffers      BSD-3-Clause   © Google Inc.
+    (protobuf)                         https://github.com/protocolbuffers/protobuf
+  Eigen                 MPL-2.0        © the Eigen authors
+                                       Source code: https://gitlab.com/libeigen/eigen
+  farmhash              MIT            © Google, Inc.
+                                       https://github.com/google/farmhash
+  fft2d                 Ooura's terms  © Takuya Ooura
+                                       https://www.kurims.kyoto-u.ac.jp/~ooura/fft.html
+  Abseil                Apache-2.0     © The Abseil Authors
+                                       https://github.com/abseil/abseil-cpp
+  FlatBuffers           Apache-2.0     © Google Inc.
+                                       https://github.com/google/flatbuffers
+  ruy                   Apache-2.0     © Google LLC
+                                       https://github.com/google/ruy
+  gemmlowp              Apache-2.0     © The gemmlowp Authors
+                                       https://github.com/google/gemmlowp
+  OpenCV 4.13.0 (core)  Apache-2.0     © the OpenCV authors (Intel Corporation, Willow Garage,
+                                       the OpenCV Foundation and others)
+                                       https://github.com/opencv/opencv
+  Emscripten            MIT            © Emscripten authors (the loader and its runtime)
+                                       https://github.com/emscripten-core/emscripten
+  musl libc             MIT            © Rich Felker, et al.
+                                       https://musl.libc.org
+  LLVM libc++, libc++abi, compiler-rt
+                        Apache-2.0 WITH LLVM-exception   © LLVM Project contributors
+                                       https://github.com/llvm/llvm-project

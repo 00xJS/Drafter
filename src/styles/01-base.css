@@ -108,6 +108,9 @@
   --code-bg: #f3f4f6;
   /* the stat tile's gradient top: flat white here, a lift off the card in dark */
   --tile-top: var(--surface);
+  /* the garment cut-out's ground. It is the product image, not chrome, so it
+     stays pure white in both themes */
+  --photo-white: #ffffff;
   /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
      feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
   --radius-sm: 9px;

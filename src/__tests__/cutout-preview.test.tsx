@@ -1,0 +1,172 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import { CutoutPreview, CutoutSheet, type CutoutPreviewProps, type PreviewState } from '../components/CutoutSheet'
+import { CUTOUT_TOTAL_BYTES } from '../cutoutassets'
+
+// "Check the cut-out", in every state it can be in. The copy is pinned: each
+// line tells the owner what happened and what the buttons will do.
+
+const noop = () => {}
+const base: CutoutPreviewProps = {
+  photoUrl: 'blob:photo',
+  cutoutUrl: 'blob:cutout',
+  state: 'done',
+  canPick: true,
+  view: 'cutout',
+  onView: noop,
+  onPick: noop,
+  onAccept: noop,
+  onUseOriginal: noop,
+  onRetake: noop,
+  onRetry: noop,
+}
+const render = (over: Partial<CutoutPreviewProps> = {}) => renderToStaticMarkup(<CutoutPreview {...base} {...over} />)
+
+/** The visible text, entities undone and whitespace squashed. */
+const text = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+
+/** Each button's opening tag and its label. */
+const buttons = (html: string) => [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map(m => ({ attrs: m[1], label: m[2].replace(/<[^>]+>/g, '').trim() }))
+const button = (html: string, label: string) => buttons(html).find(b => b.label === label)
+const classOf = (html: string, label: string) => /class="([^"]*)"/.exec(button(html, label)?.attrs ?? '')?.[1]
+
+const MB = 1_048_576
+
+describe('while the photo is read', () => {
+  it('dims the photo and says so', () => {
+    const html = render({ state: 'preparing', cutoutUrl: undefined })
+    expect(html).toContain('data-state="preparing"')
+    expect(text(html)).toContain('Getting the photo ready…')
+    expect(button(html, 'Looks good')).toBeUndefined()
+  })
+})
+
+describe('the first download', () => {
+  const html = render({ state: 'downloading', cutoutUrl: undefined, progress: { loaded: Math.round(7.2 * MB), total: CUTOUT_TOTAL_BYTES } })
+
+  it('shows a determinate bar', () => {
+    expect(html).toMatch(/<div class="cutout-bar" role="progressbar"[^>]*aria-valuemin="0" aria-valuemax="100" aria-valuenow="41">/)
+  })
+
+  it('counts it in megabytes, and says it is once and on this device', () => {
+    expect(text(html)).toContain('Getting the cut-out ready · 7.2 of 17.5 MB')
+    expect(text(html)).toContain('Only the first time. The cut-out is made on this device.')
+  })
+
+  it('offers Retake and Use original, and nothing to accept yet', () => {
+    expect(button(html, 'Retake')).toBeTruthy()
+    expect(classOf(html, 'Use original')).toBe('btn')
+    expect(button(html, 'Looks good')).toBeUndefined()
+  })
+})
+
+describe('while cutting out', () => {
+  it('says so where a screen reader hears it, over a spinner', () => {
+    const html = render({ state: 'cutting', cutoutUrl: undefined })
+    expect(html).toMatch(/<p class="cutout-status" aria-live="polite">Cutting out…<\/p>/)
+    expect(html).toContain('<span class="cutout-spinner" aria-hidden="true"></span>')
+  })
+})
+
+describe('the cut-out', () => {
+  const html = render()
+
+  it('offers Retake, Use original and Looks good, in that order of weight', () => {
+    expect(buttons(html).map(b => b.label).filter(l => ['Retake', 'Use original', 'Looks good'].includes(l))).toEqual(['Retake', 'Use original', 'Looks good'])
+    expect(classOf(html, 'Retake')).toBe('btn subtle')
+    expect(classOf(html, 'Use original')).toBe('btn')
+    expect(classOf(html, 'Looks good')).toBe('btn primary')
+  })
+
+  it('names both images', () => {
+    expect(html).toContain('alt="Your photo"')
+    expect(html).toContain('alt="The garment on white"')
+    expect(html).toContain('<div class="cutout-stage cutout-white"><img src="blob:cutout"')
+  })
+
+  it('has the phone’s Cut-out · Photo switch, with the cut-out showing first', () => {
+    expect(html).toMatch(/<div class="segmented cutout-seg" role="group" aria-label="Show">/)
+    expect(button(html, 'Cut-out')?.attrs).toContain('class="seg on" aria-pressed="true"')
+    expect(button(html, 'Photo')?.attrs).toContain('class="seg" aria-pressed="false"')
+    expect(html).toContain('<div class="cutout-panes two" data-view="cutout">')
+    expect(render({ view: 'photo' })).toContain('<div class="cutout-panes two" data-view="photo">')
+  })
+
+  it('makes the photo a button to pick the garment, where the web engine can run', () => {
+    expect(html).toContain('aria-label="Tap the garment to pick it"')
+    expect(text(html)).toContain('Picked the wrong thing? Tap the garment in the photo.')
+    const cannot = render({ canPick: false })
+    expect(cannot).not.toContain('Tap the garment to pick it')
+    expect(text(cannot)).not.toContain('Picked the wrong thing?')
+  })
+
+  it('says when it may have missed the garment', () => {
+    const note = 'This may have missed the garment. Tap it in the photo, or use the original.'
+    expect(text(render({ doubtful: true }))).toContain(note)
+    expect(text(html)).not.toContain(note)
+  })
+})
+
+describe('no cut-out', () => {
+  it('asks for a tap when no garment was found, and makes the original the main button', () => {
+    const html = render({ state: 'unavailable', cutoutUrl: undefined, reason: 'no-garment' })
+    expect(text(html)).toContain('Couldn’t find a garment here. Tap it in the photo, or use the original.')
+    expect(classOf(html, 'Use original')).toBe('btn primary')
+    expect(button(html, 'Retake')).toBeTruthy()
+    expect(html).toContain('aria-label="Tap the garment to pick it"')
+    expect(button(html, 'Looks good')).toBeUndefined()
+  })
+
+  it('explains the one-time download when offline', () => {
+    const html = render({ state: 'unavailable', cutoutUrl: undefined, reason: 'offline' })
+    expect(text(html)).toContain('Cutting out needs a one-time download (17.5 MB), and you’re offline. Use the photo as it is for now.')
+    expect(classOf(html, 'Use original')).toBe('btn primary')
+    expect(html).not.toContain('Tap the garment to pick it')
+  })
+
+  it('says when this browser cannot do it', () => {
+    const html = render({ state: 'unavailable', cutoutUrl: undefined, reason: 'unsupported' })
+    expect(text(html)).toContain('This browser can’t cut out photos. Use the photo as it is.')
+    expect(button(html, 'Try again')).toBeUndefined()
+  })
+
+  it('offers to try again when it failed', () => {
+    const html = render({ state: 'unavailable', cutoutUrl: undefined, reason: 'failed' })
+    expect(text(html)).toContain('The cut-out didn’t work this time.')
+    expect(classOf(html, 'Try again')).toBe('btn')
+    expect(classOf(html, 'Use original')).toBe('btn primary')
+  })
+})
+
+describe('every state', () => {
+  const states: Partial<CutoutPreviewProps>[] = [
+    { state: 'preparing' },
+    { state: 'downloading', progress: { loaded: 1, total: 2 } },
+    { state: 'cutting' },
+    { state: 'done', doubtful: true },
+    ...(['no-garment', 'offline', 'unsupported', 'failed'] as const).map(reason => ({ state: 'unavailable' as PreviewState, reason })),
+  ]
+
+  it('gives every button type="button", so none can submit anything', () => {
+    for (const over of states) {
+      const found = buttons(render(over))
+      expect(found.length, over.state).toBeGreaterThanOrEqual(2)
+      for (const b of found) expect(b.attrs, `${over.state} ${b.label}`).toMatch(/^ type="button"/)
+    }
+  })
+})
+
+describe('the sheet', () => {
+  it('renders without a document, as a named dialog', () => {
+    const html = renderToStaticMarkup(<CutoutSheet photo={new Blob([new Uint8Array(4)], { type: 'image/jpeg' })} onDone={noop} onCancel={noop} />)
+    expect(html).toContain('role="dialog"')
+    expect(html).toContain('Check the cut-out')
+    expect(html).toContain('<input type="file" accept="image/*" hidden=""/>')
+    expect(html).not.toContain('capture=')
+  })
+})
