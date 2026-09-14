@@ -128,23 +128,17 @@ const handler = async req => {
         body: JSON.stringify({ user_id: ownerId }),
       }).catch(() => {})
       await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${body.userId}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
-      const epoch = Date.now()
-      const left = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
-      for (const row of [...(left ?? []), { user_id: body.userId }]) {
-        await settingsSet(row.user_id, { household_epoch: epoch }).catch(() => {})
-      }
-      return Response.json({ ...(await describe(user.id)), householdEpoch: epoch })
+      // Nothing is stamped for the others to notice: user_settings has no
+      // column for it, so that write failed every time. The app that asked
+      // resyncs in full once this answers (Settings → Household); the others'
+      // devices keep what they cached until they resync (Settings → Sync).
+      return Response.json(await describe(user.id))
     }
     if (body.action === 'leave') {
-      const epoch = Date.now()
-      const peers = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
       await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${user.id}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
       const left = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id`)
       if (left.length === 0) await rest(`households?id=eq.${m.household_id}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
-      for (const row of peers ?? []) {
-        await settingsSet(row.user_id, { household_epoch: epoch }).catch(() => {})
-      }
-      return Response.json({ household: null, members: [], householdEpoch: epoch })
+      return Response.json({ household: null, members: [] })
     }
     if (body.action === 'rename') {
       await rest(`households?id=eq.${m.household_id}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ name: String(body.name ?? '').trim().slice(0, 60) || 'Home' }) })
