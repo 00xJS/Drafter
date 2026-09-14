@@ -1,7 +1,23 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { busy, pageBuild, readTried, updateStep } from '../appupdate'
+
+/** netlify.toml's [[redirects]] rules in order, each as its key = value pairs. */
+function redirectRules(toml: string): Record<string, string>[] {
+  return toml
+    .split('[[redirects]]')
+    .slice(1)
+    .map(block => {
+      const rule: Record<string, string> = {}
+      for (const line of block.split('\n').slice(1)) {
+        const m = /^\s+(\w+) = "?([^"]*)"?\s*$/.exec(line)
+        if (!m) break
+        rule[m[1]] = m[2]
+      }
+      return rule
+    })
+}
 
 // A refresh or a return to the app lands on the newest deploy: pages come from
 // the network first, the worker is re-checked, the page's build is compared
@@ -95,5 +111,20 @@ describe('wired into the build and the host', () => {
     }
     expect(netlify).toMatch(/for = "\/version\.json"\s*\[headers\.values\]\s*Cache-Control = "no-store"/)
     expect(netlify).toMatch(/for = "\/assets\/\*"\s*\[headers\.values\]\s*Cache-Control = "public, max-age=31536000, immutable"/)
+  })
+
+  it('answers a file missing from /assets with a 404, and every other path with the app page as before', () => {
+    const rules = redirectRules(netlify)
+    const assets = rules.findIndex(r => r.from === '/assets/*')
+    const pages = rules.findIndex(r => r.from === '/*')
+    // no force: a file that exists is served, and only a miss reaches the rule
+    expect(rules[assets]).toEqual({ from: '/assets/*', to: '/404.html', status: '404' })
+    expect(rules[pages]).toEqual({ from: '/*', to: '/index.html', status: '200' })
+    expect(assets).toBeLessThan(pages)
+    expect(pages, 'the page fallback stays the last rule').toBe(rules.length - 1)
+    // the functions still come first, and nothing else sends /assets anywhere
+    expect(rules.slice(0, assets).every(r => r.to.startsWith('/.netlify/functions/'))).toBe(true)
+    // the comment says Netlify answers with its own page: the build must not ship one
+    expect(existsSync(fileURLToPath(new URL('../../public/404.html', import.meta.url)))).toBe(false)
   })
 })
