@@ -43,10 +43,15 @@ export function resourceMetadataUrl() {
   return `${issuer()}/.well-known/oauth-protected-resource/api/mcp`
 }
 
-function unauthorized(tokenSent) {
+/** What a token made by hand is told once it has lapsed: plain ASCII, as a header must be. */
+export const LAPSED_TEXT = 'This token went unused for 180 days: make a new one in Drafter, Settings, Assistants'
+
+function unauthorized(tokenSent, description = '') {
   const challenge = [`realm="drafter"`, `resource_metadata="${resourceMetadataUrl()}"`]
   if (tokenSent) challenge.push('error="invalid_token"')
-  return json({ error: tokenSent ? 'invalid_token' : 'unauthorized' }, 401, { 'www-authenticate': `Bearer ${challenge.join(', ')}` })
+  if (description) challenge.push(`error_description="${description}"`)
+  const body = { error: tokenSent ? 'invalid_token' : 'unauthorized', ...(description ? { error_description: description } : {}) }
+  return json(body, 401, { 'www-authenticate': `Bearer ${challenge.join(', ')}` })
 }
 
 const zones = new Map()
@@ -103,7 +108,7 @@ export async function mcpHandler(req) {
     return json({ error: 'Drafter could not check the token — try again.' }, 503, { 'retry-after': '5' })
   }
   if (grant.error === 'rate_limited') return json({ error: 'rate_limited' }, 429, { 'retry-after': '60' })
-  if (grant.error) return unauthorized(true)
+  if (grant.error) return unauthorized(true, grant.error === 'expired' ? LAPSED_TEXT : '')
 
   const raw = await readBody(req, MAX_BODY_BYTES)
   if (raw === null) return json({ error: 'body over 1 MB' }, 413)
@@ -124,7 +129,6 @@ export async function mcpHandler(req) {
   const buildContext = async () => ({
     db: createRestData({
       baseUrl: url,
-      mode: 'user',
       userId,
       auth: async () => ({ apikey: anonKey, bearer: await userAccessToken(userId) }),
       onUnauthorized: () => dropSession(userId),

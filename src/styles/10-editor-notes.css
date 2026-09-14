@@ -331,6 +331,11 @@
   border-radius: 8px;
   background: var(--surface-2);
 }
+/* a connection's name being changed in place (Settings → Assistants) */
+.cal-source > .check-add {
+  flex: 1;
+  margin-top: 0;
+}
 .cal-source-name {
   flex: 1;
   min-width: 0;
@@ -343,6 +348,19 @@
 .cal-source-status small {
   color: var(--muted);
   font-weight: 400;
+}
+/* Settings → Assistants: a connection's name and what it may do wrap, and its
+   dates and expiry get a line of their own, so none of it is clipped at 375px */
+.agent-connections .cal-source-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.agent-connections .cal-source-name .tag {
+  white-space: nowrap;
+}
+.agent-connections .cal-source-name small {
+  display: block;
+  margin-top: 2px;
 }
 .cal-source-status {
   font-size: 0.75rem;

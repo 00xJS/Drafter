@@ -8,6 +8,14 @@
 // rows (and legacy unowned ones) plus household members' rows of shared
 // kinds — never a member's journal, review, calendar subscription, habit,
 // routine or wardrobe, and nothing belonging to anyone outside the household.
+//
+// A sync answers { posts: { items, rejected, stale, gone } }: the rows the bot
+// may read; the ids refused; the ids whose write lost to a newer edit (the
+// newer copy is among the items, whatever `since` was); and the ids deleted
+// for good. Drafter keeps one project, so while the account has a live one a
+// write that would make a second is refused too — a new project, another
+// record rewritten as one, or one brought back from Trash — as the app never
+// makes a second.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -61,6 +69,29 @@ function scopeFilter(scope: Scope): string {
   return branches.join(',')
 }
 
+type Post = { id: string; kind?: unknown; deletedAt?: unknown }
+/** The rows already stored under a batch's ids: whose each one is, what kind, and whether it is in Trash. */
+type Stored = Map<string, { user_id: string | null; kind: string; deleted: boolean }>
+
+/** The posts in a write batch that carry an id. */
+function postsOf(incoming: unknown[]): Post[] {
+  return incoming.filter((p): p is Post => !!p && typeof p === 'object' && typeof (p as { id?: unknown }).id === 'string')
+}
+
+async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
+  const ids = [...new Set(postsOf(incoming).map(p => p.id))]
+  const stored: Stored = new Map()
+  // a page of ids per request keeps the query string short
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await admin.from('posts').select('id,user_id,kind,deleted').in('id', ids.slice(i, i + 100))
+    if (error) throw new Error(error.message)
+    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string; deleted: boolean }[]) {
+      stored.set(r.id, { user_id: r.user_id, kind: r.kind, deleted: r.deleted === true })
+    }
+  }
+  return stored
+}
+
 /**
  * Ids in a write batch that already belong to a row the owner could not write
  * in the app: a member's personal row, a member's shared row being turned
@@ -68,23 +99,31 @@ function scopeFilter(scope: Scope): string {
  * would let sync_posts land on those; RLS would not, so they come back in
  * `rejected` like any refused write while the rest of the batch stores.
  */
-async function refusedIds(admin: Admin, scope: Scope, incoming: unknown[]): Promise<string[]> {
-  const kinds = new Map<string, unknown>()
-  for (const p of incoming) {
-    const post = p && typeof p === 'object' ? (p as { id?: unknown; kind?: unknown }) : null
-    if (post && typeof post.id === 'string') kinds.set(post.id, post.kind)
+function refusedIds(scope: Scope, incoming: unknown[], stored: Stored): string[] {
+  const kinds = new Map(postsOf(incoming).map(p => [p.id, p.kind]))
+  return [...stored].filter(([id, r]) => !inScope(scope, r.user_id, r.kind) || !inScope(scope, r.user_id, kinds.get(id))).map(([id]) => id)
+}
+
+/**
+ * Writes in a batch that would make a second live project. Drafter keeps one
+ * ongoing project (LIFE) and nothing in the app starts another, so neither
+ * may a bot. A live project already stored can still be edited; anything else
+ * that would be a live project after the write — a new one, another record
+ * rewritten as one (sync_posts keeps a stored id and takes the new data
+ * whatever its kind) or a project brought back from Trash — stores only while
+ * the owner can see no live project: the first of the batch, and no more.
+ * They come back in `rejected` too.
+ */
+async function extraProjects(admin: Admin, scope: Scope, incoming: unknown[], stored: Stored): Promise<string[]> {
+  const liveProject = (id: string) => {
+    const r = stored.get(id)
+    return !!r && r.kind === 'project' && !r.deleted
   }
-  const ids = [...kinds.keys()]
-  const refused: string[] = []
-  // a page of ids per request keeps the query string short
-  for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await admin.from('posts').select('id,user_id,kind').in('id', ids.slice(i, i + 100))
-    if (error) throw new Error(error.message)
-    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string }[]) {
-      if (!inScope(scope, r.user_id, r.kind) || !inScope(scope, r.user_id, kinds.get(r.id))) refused.push(r.id)
-    }
-  }
-  return refused
+  const fresh = [...new Set(postsOf(incoming).filter(p => p.kind === 'project' && !p.deletedAt && !liveProject(p.id)).map(p => p.id))]
+  if (fresh.length === 0) return []
+  const { data, error } = await admin.from('posts').select('id').eq('kind', 'project').eq('deleted', false).or(scopeFilter(scope)).limit(1)
+  if (error) throw new Error(error.message)
+  return (data ?? []).length > 0 ? fresh : fresh.slice(1)
 }
 
 /**
@@ -133,7 +172,9 @@ Deno.serve(async req => {
     const incoming: unknown[] = Array.isArray(body.posts) ? body.posts : []
     let refused: string[]
     try {
-      refused = await refusedIds(admin, scope, incoming)
+      const stored = await storedRows(admin, incoming)
+      // one id can break both rules (a member's personal row rewritten as a project); it is named once
+      refused = [...new Set([...refusedIds(scope, incoming, stored), ...(await extraProjects(admin, scope, incoming, stored))])]
     } catch (e) {
       return fail(500, (e as Error).message)
     }
@@ -143,11 +184,13 @@ Deno.serve(async req => {
     })
     if (error) return fail(500, error.message)
     // under the service role sync_posts echoes every row in the table, each with its ownerId
-    const res = data as { items?: unknown; rejected?: unknown } | null
+    const res = data as { items?: unknown; rejected?: unknown; stale?: unknown; gone?: unknown } | null
     if (!res || !Array.isArray(res.items)) return fail(502, 'unexpected sync_posts response')
     const items = (res.items as ({ ownerId?: unknown; kind?: unknown } | null)[]).filter(i => i && inScope(scope, i.ownerId, i.kind))
-    const rejected = [...(Array.isArray(res.rejected) ? res.rejected : []), ...refused]
-    return Response.json({ posts: { items, rejected } })
+    const listed = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+    // stale: the write lost to a newer edit, and that copy is among the items;
+    // gone: the record was deleted for good, and the write was dropped
+    return Response.json({ posts: { items, rejected: [...listed(res.rejected), ...refused], stale: listed(res.stale), gone: listed(res.gone) } })
   }
 
   // { action: "list", status?, limit? } — filtered read of live posts

@@ -115,6 +115,13 @@ describe('scopes', () => {
     expect(names(['read', 'write'])).toContain('create_task')
     expect(names(['read', 'write'])).not.toContain('add_journal_entry')
     expect(names(['read', 'journal'])).toEqual(expect.arrayContaining(['list_journal', 'add_journal_entry']))
+    // the wardrobe: seen with read access, logged with write, never behind the journal's
+    expect(names(['read'])).toEqual(expect.arrayContaining(['list_garments', 'list_outfits', 'get_wardrobe_stats']))
+    expect(names(['read', 'journal'])).not.toContain('log_outfit')
+    expect(names(['read', 'write'])).toContain('log_outfit')
+    // there is one project: it can be edited, and no connection may start another
+    expect(names(ALL)).toContain('update_project')
+    expect(names(ALL)).not.toContain('create_project')
     expect(names(ALL)).toHaveLength(TOOLS.length)
     const listed = await handleMessage(rpc(1, 'tools/list'), { scopes: ['read'], ctx: untouchable })
     expect(listed?.result.tools.map((t: { name: string }) => t.name)).toEqual(names(['read']))

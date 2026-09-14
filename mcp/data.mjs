@@ -1,12 +1,11 @@
 // Drafter's rows over PostgREST, for the MCP tools. Zero dependencies.
 //
-// Two modes:
-//   user     the hosted endpoint: every request carries the user's own JWT,
-//            so the posts policies decide what is visible and new rows belong
-//            to that user. Journal reads are filtered to the user's own rows.
-//   service  the deprecated local stdio mode: the service key sees every row
-//            of every account, so this module applies the owner's view itself
-//            (ownerMaySee) and writes land as the site owner.
+// Every request carries the user's own JWT (the hosted /api/mcp mints it), so
+// the posts policies decide what is visible and new rows belong to that user.
+// The rows are filtered once more here by the same rule (ownerMaySee), so a
+// mistake in a policy could only narrow what a tool sees, never widen it, and
+// journal reads are the user's own rows alone. Nothing here holds the service
+// key: the old local mode that read every account with it is gone.
 //
 // Reads page through PostgREST with Range headers. supabase/config.toml caps a
 // response at max_rows = 1000, and the old server read one page and silently
@@ -22,12 +21,14 @@ export const PAGE_SIZE = 1000
 /** sync_posts echoes rows synced since this long before the write, not the whole table. */
 export const SINCE_WINDOW_MS = 10 * 60_000
 
-const POSTS = '/rest/v1/posts?select=data,user_id&deleted=is.false&order=updated_at.desc,id.asc'
+/** Every row, deleted ones too; POSTS is the live ones. */
+const POSTS_ANY = '/rest/v1/posts?select=data,user_id&order=updated_at.desc,id.asc'
+const POSTS = `${POSTS_ANY}&deleted=is.false`
 
 /**
- * The posts policy as `owner` meets it, for reads that bypass it (the service
- * key): the owner's own rows and legacy unowned ones (user_id null) pass,
- * anyone else's only when the kind is shared with the household.
+ * The posts policy as `owner` meets it, applied again to what came back: the
+ * owner's own rows and legacy unowned ones (user_id null) pass, anyone else's
+ * only when the kind is shared with the household.
  */
 export function ownerMaySee(row, owner) {
   return row?.user_id === null || readableKind(kindOf(row?.data), row?.user_id, owner)
@@ -47,13 +48,13 @@ export class DataError extends Error {
 const withOwner = row => ({ ...legacyPostToTask(row.data), ownerId: row.user_id ?? undefined })
 
 /**
- * createRestData({ baseUrl, auth, userId, mode, onUnauthorized })
+ * createRestData({ baseUrl, auth, userId, onUnauthorized })
  *   auth()           -> Promise<{ apikey, bearer }>, called per request (lazily: nothing is minted until a tool reads)
+ *   userId           whose view this is: the rows are read, filtered and written as this user
  *   onUnauthorized() -> called once on a 401 before the request is retried (the hosted endpoint drops the session)
  */
-export function createRestData({ baseUrl, auth, userId = null, mode = 'user', onUnauthorized = null }) {
-  if (mode !== 'user' && mode !== 'service') throw new Error(`unknown data mode "${mode}"`)
-  if (mode === 'user' && !userId) throw new Error('user mode needs the user id')
+export function createRestData({ baseUrl, auth, userId, onUnauthorized = null }) {
+  if (!userId) throw new Error('the data layer reads as a user, and needs their id')
   const base = String(baseUrl ?? '').replace(/\/+$/, '')
 
   async function request(path, init = {}, retried = false) {
@@ -103,45 +104,36 @@ export function createRestData({ baseUrl, auth, userId = null, mode = 'user', on
     })
   }
 
-  let ownerCache
-  /** Whose view the rows are read in: the user, or (service key) the site owner sync_posts writes as. */
-  async function ownerId() {
-    if (mode === 'user') return userId
-    if (ownerCache === undefined) ownerCache = (await api('/rest/v1/rpc/owner_user_id', { method: 'POST', body: '{}' })) ?? null
-    return ownerCache
-  }
-
   /**
-   * All live rows this view may see, normalized to v3 shape, each with its ownerId.
-   * @param {{ kinds?: string[] }} [opts]
+   * All rows this user may see, normalized to v3 shape, each with its ownerId:
+   * the live ones, or with includeDeleted those in Trash and purged too.
+   * @param {{ kinds?: string[], includeDeleted?: boolean }} [opts]
    */
-  async function fetchAll({ kinds } = {}) {
-    let path = POSTS
+  async function fetchAll({ kinds, includeDeleted = false } = {}) {
+    let path = includeDeleted ? POSTS_ANY : POSTS
     if (Array.isArray(kinds) && kinds.length) {
       for (const k of kinds) if (!/^[a-z]+$/.test(k)) throw new Error(`bad kind "${k}"`)
       // the generated kind column reads a legacy row (no kind) as a task
       path += `&kind=in.(${kinds.join(',')})`
     }
-    const [rows, owner] = await Promise.all([getAll(path), ownerId()])
-    return rows.filter(r => ownerMaySee(r, owner)).map(withOwner)
+    return (await getAll(path)).filter(r => ownerMaySee(r, userId)).map(withOwner)
   }
 
   /** One row by id, checked for kind. Another member's personal row reads as missing: even its kind would say too much. */
   async function fetchItem(id, kind) {
-    const [rows, owner] = await Promise.all([api(`/rest/v1/posts?id=eq.${encodeURIComponent(id)}&select=data,user_id`), ownerId()])
+    const rows = await api(`/rest/v1/posts?id=eq.${encodeURIComponent(id)}&select=data,user_id`)
     const row = rows?.[0]
-    const item = row?.data && ownerMaySee(row, owner) ? withOwner(row) : null
+    const item = row?.data && ownerMaySee(row, userId) ? withOwner(row) : null
     if (!item) throw new Error(`No ${kind} with id "${id}".`)
     if (item.deletedAt) throw new Error(`${kind} "${id}" is deleted.`)
     if (item.kind !== kind) throw new Error(`"${id}" is a ${item.kind}, not a ${kind}.`)
     return item
   }
 
-  /** The viewer's own journal — never a household peer's diary. */
+  /** The user's own journal — never a household peer's diary, whatever the database hands back. */
   async function fetchJournal() {
-    if (mode === 'user') return (await getAll(`${POSTS}&kind=eq.journal&user_id=eq.${encodeURIComponent(userId)}`)).map(withOwner)
-    const [rows, owner] = await Promise.all([getAll(`${POSTS}&kind=eq.journal`), ownerId()])
-    return rows.filter(r => ownerMaySee(r, owner)).map(withOwner)
+    const rows = await getAll(`${POSTS}&kind=eq.journal&user_id=eq.${encodeURIComponent(userId)}`)
+    return rows.filter(r => r.user_id === userId).map(withOwner)
   }
 
   /**
@@ -187,5 +179,5 @@ export function createRestData({ baseUrl, auth, userId = null, mode = 'user', on
     return stored
   }
 
-  return { mode, userId, ownerId, fetchAll, fetchItem, fetchJournal, syncWrite, writeItem }
+  return { userId, fetchAll, fetchItem, fetchJournal, syncWrite, writeItem }
 }

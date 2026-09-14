@@ -23,6 +23,8 @@ export interface Grant {
 export declare const PREFIX: { readonly manual: 'drft_'; readonly access: 'drft_at_'; readonly refresh: 'drft_rt_' }
 export declare const SCOPES: readonly Scope[]
 export declare const MAX_LIVE_CONNECTIONS: number
+export declare const TOKEN_IDLE_DAYS: number
+export declare function tokenLapsed(row: { kind?: string; created_at?: string | null; last_used_at?: string | null } | null | undefined, now?: number): boolean
 export declare function newSecret(prefix?: string): string
 export declare function hashToken(token: string): string
 export declare function normalizeScopes(scopes: unknown): Scope[]
@@ -30,13 +32,14 @@ export declare function supabaseEnv(): { url: string; anonKey: string; serviceKe
 export declare function agentAuthConfigured(): boolean
 export declare function serviceRest<T = any>(path: string, init?: { method?: string; body?: unknown; headers?: Record<string, string> }): Promise<T>
 /**
- * A live grant, or why the bearer was refused. Each side names the other's
- * fields as absent, so the functions (plain JavaScript) can test `.error` and
- * then read the grant.
+ * A live grant, or why the bearer was refused: unknown or revoked, over its
+ * rate, or a token made by hand left unused for 180 days. Each side names the
+ * other's fields as absent, so the functions (plain JavaScript) can test
+ * `.error` and then read the grant.
  */
 export type BearerCheck =
   | (Grant & { error?: undefined })
-  | { error: 'invalid' | 'rate_limited'; grantId?: undefined; userId?: undefined; scopes?: undefined; kind?: undefined }
+  | { error: 'invalid' | 'rate_limited' | 'expired'; grantId?: undefined; userId?: undefined; scopes?: undefined; kind?: undefined }
 export declare function checkBearer(bearer: string | null | undefined, opts?: { limit?: number }): Promise<BearerCheck>
 export declare function userAccessToken(userId: string): Promise<string>
 export declare function dropSession(userId: string): void

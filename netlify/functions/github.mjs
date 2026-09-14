@@ -104,7 +104,7 @@ async function resolve(ref, token) {
     }
   }
   if (ref.type === 'project') {
-    if (!token) throw Object.assign(new Error('GitHub Projects need GITHUB_TOKEN (scope: read:project) on the host.'), { status: 501 })
+    if (!token) throw Object.assign(new Error('GitHub Projects need GITHUB_TOKEN with the `project` scope (read and write) on the host.'), { status: 501 })
     const field = ref.ownerType === 'organization' ? 'organization' : 'user'
     const query = `query($login: String!, $number: Int!) { ${field}(login: $login) { projectV2(number: $number) { title shortDescription closed url updatedAt items { totalCount } } } }`
     const data = await gh('/graphql', token, { method: 'POST', body: JSON.stringify({ query, variables: { login: ref.owner, number: ref.number } }) })

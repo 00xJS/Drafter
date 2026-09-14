@@ -1,15 +1,27 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
-import { AssistantsSection } from '../components/AssistantsSection'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AssistantsSection, ConnectionRow } from '../components/AssistantsSection'
 import type { AssistantsApi } from '../components/AssistantsSection'
 import { ConnectAssistantSheet } from '../components/ConnectAssistantSheet'
+import { agentsRename, expiryLine, nameToSave, renameIn, withoutConnection } from '../agents'
 import type { AgentsInfo } from '../agents'
 
 // The two standalone pieces a later stream wires into Settings and App: their
-// first render, before any effect, with no network.
+// first render, before any effect, with no network. The rows are dated, so the
+// clock is fixed: a token lapses 180 days after its last use.
 
 const never = () => new Promise<never>(() => {})
-const offline: AssistantsApi = { list: never, create: never, revoke: never }
+const offline: AssistantsApi = { list: never, create: never, revoke: never, rename: never }
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-09-14T12:00:00.000Z'))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 const INFO: AgentsInfo = {
   configured: true,
@@ -32,8 +44,17 @@ describe('AssistantsSection', () => {
     expect(html).toContain('Claude app</span>')
     expect(html).toContain('Token</span>')
     expect(html).toContain('never used')
+    expect(html).toContain('last used 12d 1h ago')
     expect(html).toContain('drft_AbCd…')
-    expect(html).toContain('Revoke')
+    // a token says how it lapses; the Claude app's connection renews itself
+    expect(html.match(/Expires after 180 days unused/g)).toHaveLength(1)
+    expect(html).toContain('A token stops working after 180 days unused.')
+    expect(html.match(/>Rename<\/button>/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="Rename Laptop"')
+    expect(html.match(/>Revoke<\/button>/g)).toHaveLength(2)
+    // the list's own class lets a row wrap (styles/10-editor-notes.css): the dates and expiry are a line of their own
+    expect(html).toContain('<ul class="cal-sources agent-connections">')
+    expect(html).toMatch(/<small>Connected [^<]* · drft_AbCd… · Expires after 180 days unused<\/small>/)
   })
 
   it('says so when the site is not set up, and loads without a seed', () => {
@@ -41,6 +62,77 @@ describe('AssistantsSection', () => {
     expect(renderToStaticMarkup(notSetUp)).toContain('aren’t set up on this site yet')
     // node has no window, so the connector URL is given rather than read from the location
     expect(renderToStaticMarkup(<AssistantsSection api={offline} className="settings-section" connectorUrl="https://x.test/api/mcp" />)).toContain('Loading connections…')
+  })
+})
+
+describe('renaming a connection', () => {
+  const laptop = INFO.connections[1]
+
+  it('opens a field in place, with Save and Cancel and no Revoke while it is open', () => {
+    const html = renderToStaticMarkup(<ConnectionRow connection={laptop} onRename={never} onRevoke={() => {}} startRenaming />)
+    expect(html).toContain('value="Laptop"')
+    expect(html).toContain('aria-label="New name for Laptop"')
+    expect(html).toContain('maxLength="80"')
+    expect(html).toContain('>Save</button>')
+    expect(html).toContain('>Cancel</button>')
+    expect(html).not.toContain('Revoke')
+  })
+
+  it('saves only a real change, cleaned the way the server keeps names', () => {
+    expect(nameToSave('  Work \n laptop ', 'Laptop')).toBe('Work laptop')
+    expect(nameToSave(' Laptop ', 'Laptop')).toBeNull()
+    expect(nameToSave('   ', 'Laptop')).toBeNull()
+    expect(nameToSave('x'.repeat(100), 'Laptop')).toHaveLength(80)
+  })
+
+  it('puts the new name in the list and leaves the other connections as they were', () => {
+    const next = renameIn(INFO, 'c2', ' Work  laptop ')
+    expect(next.connections.map(c => c.name)).toEqual(['Claude', 'Work laptop'])
+    expect(next.connections[0]).toBe(INFO.connections[0])
+    expect(renameIn(INFO, 'gone', 'x').connections.map(c => c.name)).toEqual(['Claude', 'Laptop'])
+  })
+
+  it('drops a connection the server no longer has, and leaves the others as they were', () => {
+    // a revoke, or a rename the server answers ok: false because the connection was revoked or lapsed meanwhile
+    const next = withoutConnection(INFO, 'c2')
+    expect(next.connections.map(c => c.id)).toEqual(['c1'])
+    expect(next.connections[0]).toBe(INFO.connections[0])
+    expect(next.configured).toBe(true)
+    expect(INFO.connections).toHaveLength(2)
+    expect(withoutConnection(INFO, 'gone').connections).toEqual(INFO.connections)
+  })
+
+  it('asks /api/agents to rename that connection by id', async () => {
+    const sent: { url: string; body: unknown }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        sent.push({ url: String(url), body: JSON.parse(String(init?.body)) })
+        return Response.json({ ok: true })
+      }),
+    )
+    expect(await agentsRename('c2', 'Work laptop')).toBe(true)
+    expect(sent).toEqual([{ url: '/api/agents', body: { action: 'rename', id: 'c2', name: 'Work laptop' } }])
+  })
+})
+
+describe('a token says when it lapses', () => {
+  const token = { kind: 'token' as const, createdAt: '2026-09-01T10:00:00.000Z', lastUsedAt: '2026-09-10T10:00:00.000Z' }
+
+  it('"Expires after 180 days unused" while that is more than a month away', () => {
+    expect(expiryLine(token, new Date('2026-09-14T12:00:00.000Z'))).toBe('Expires after 180 days unused')
+  })
+
+  it('and the day once it is under a month away, counted from its last use, or from when it was made if never used', () => {
+    const feb = new Date('2027-02-01T12:00:00.000Z')
+    // last used 10 September: lapses 9 March, 36 days on
+    expect(expiryLine(token, feb)).toBe('Expires after 180 days unused')
+    // never used, made 1 September: lapses 28 February, 27 days on
+    expect(expiryLine({ ...token, lastUsedAt: null }, feb)).toMatch(/^Expires after 180 days unused: on .+ unless it is used$/)
+  })
+
+  it('says nothing for the Claude app, whose connection renews itself as it is used', () => {
+    expect(expiryLine({ ...token, kind: 'oauth' })).toBe('')
   })
 })
 

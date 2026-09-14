@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import {
   MAX_LIVE_CONNECTIONS,
   PREFIX,
+  TOKEN_IDLE_DAYS,
   agentsHandler,
   cleanName,
   createManualToken,
@@ -12,10 +13,13 @@ import {
   listConnections,
   newSecret,
   normalizeScopes,
+  renameConnection,
   revokeConnection,
   checkBearer,
+  tokenLapsed,
   userAccessToken,
 } from '../../netlify/functions/lib/agentauth.mjs'
+import { TOKEN_IDLE_DAYS as APP_TOKEN_IDLE_DAYS } from '../agents'
 
 // Agent tokens and the user session each assistant request acts under. The
 // auth server and PostgREST are stubbed at fetch; what is pinned is the shape
@@ -35,7 +39,12 @@ interface AuthFake {
   flatLink?: boolean
   rejectVerifyTypes?: string[]
   session?: (userId: string, n: number) => Record<string, unknown>
-  tokens?: Record<string, unknown>[]
+  /**
+   * Stored connections. One with a `hash` is a bearer: `row` is what
+   * agent_token_use answers and `meta` its kind and last use, as the check
+   * reads them first. One without is a row of the Settings list.
+   */
+  tokens?: { hash?: string; row: Record<string, unknown>; meta?: Record<string, unknown> }[]
 }
 let fake: AuthFake = {}
 let minted = 0
@@ -65,6 +74,11 @@ function install() {
     if (url.pathname === '/auth/v1/user') return headers.authorization === 'Bearer app-session' ? json({ id: U1, email: EMAILS[U1] }) : json({ msg: 'bad jwt' }, 401)
     if (url.pathname === '/rest/v1/rpc/agent_token_use') return json(fake.tokens?.find(t => t.hash === body.p_hash)?.row ?? null)
     if (url.pathname === '/rest/v1/agent_tokens') {
+      const hash = /access_hash=eq\.([0-9a-f]+)/.exec(url.search)?.[1]
+      if (method === 'GET' && hash) {
+        const found = (fake.tokens ?? []).filter(t => t.hash === hash)
+        return json(found.map(t => t.meta ?? { kind: t.row.kind ?? 'token', created_at: new Date().toISOString(), last_used_at: null }))
+      }
       if (method === 'GET') return json(fake.tokens?.filter(t => !t.hash).map(t => t.row) ?? [])
       if (method === 'POST') return json([{ id: '11111111-2222-4333-8444-555555555555', created_at: '2026-09-12T10:00:00.000Z', last_used_at: null, redirect_host: null, refresh_expires_at: null, ...body }])
       if (method === 'PATCH') return json([{ id: 'x' }])
@@ -121,12 +135,16 @@ describe('tokens', () => {
 describe('checkBearer', () => {
   const token = `drft_${'q'.repeat(43)}`
 
-  it('checks the hash against the live connections with the service key and returns the grant', async () => {
+  it('reads the token\'s last use, then checks the hash against the live connections, both with the service key', async () => {
     fake.tokens = [{ hash: hashToken(token), row: { grant_id: 'g-1', user_id: U1, scopes: ['read', 'journal', 'bogus'], kind: 'token', over_limit: false } }]
     expect(await checkBearer(token)).toEqual({ grantId: 'g-1', userId: U1, scopes: ['read', 'journal'], kind: 'token' })
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({ path: '/rest/v1/rpc/agent_token_use', method: 'POST', body: { p_hash: hashToken(token), p_limit: 60 } })
-    expect(calls[0].headers).toMatchObject({ apikey: 'service-key', authorization: 'Bearer service-key' })
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens', '/rest/v1/rpc/agent_token_use'])
+    const [lastUse, use] = calls
+    expect(lastUse).toMatchObject({ method: 'GET' })
+    expect(lastUse.search).toContain(`access_hash=eq.${hashToken(token)}`)
+    expect(lastUse.search).toContain('revoked_at=is.null')
+    expect(use).toMatchObject({ method: 'POST', body: { p_hash: hashToken(token), p_limit: 60 } })
+    for (const c of calls) expect(c.headers).toMatchObject({ apikey: 'service-key', authorization: 'Bearer service-key' })
     expect(JSON.stringify(calls)).not.toContain(token)
   })
 
@@ -135,19 +153,76 @@ describe('checkBearer', () => {
     process.env.MCP_RATE_LIMIT_PER_MIN = '5'
     try {
       expect(await checkBearer(token)).toEqual({ error: 'rate_limited' })
-      expect(calls[0].body.p_limit).toBe(5)
+      expect(calls.find(c => c.path === '/rest/v1/rpc/agent_token_use')?.body.p_limit).toBe(5)
     } finally {
       delete process.env.MCP_RATE_LIMIT_PER_MIN
     }
   })
 
-  it('an unknown, revoked or expired token is invalid; a malformed one or a refresh token never reaches the database', async () => {
+  it('an unknown or revoked token is invalid, and is never stamped; a malformed one or a refresh token never reaches the database', async () => {
     expect(await checkBearer(token)).toEqual({ error: 'invalid' })
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens'])
     calls = []
     for (const bad of ['', 'Bearer x', 'sk-ant-something-long-enough-to-pass-a-length-check', `drft_rt_${'r'.repeat(43)}`, 'drft_short', undefined]) {
       expect(await checkBearer(bad as string), String(bad)).toEqual({ error: 'invalid' })
     }
     expect(calls).toEqual([])
+  })
+})
+
+describe('a token made by hand lapses after 180 days unused', () => {
+  const token = `drft_${'l'.repeat(43)}`
+  const grant = { grant_id: 'g-2', user_id: U1, scopes: ['read'], kind: 'token', over_limit: false }
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
+  /** A fresh process, and the token stored with this last use. */
+  const stored = (meta: Record<string, unknown>, row: Record<string, unknown> = grant) => {
+    forgetAllSessions()
+    calls = []
+    fake.tokens = [{ hash: hashToken(token), row, meta }]
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-14T12:00:00.000Z'))
+  })
+
+  it('180 days after its last use, refused before agent_token_use can stamp it back to life', async () => {
+    stored({ kind: 'token', created_at: ago(400), last_used_at: ago(180) })
+    expect(await checkBearer(token)).toEqual({ error: 'expired' })
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens'])
+    stored({ kind: 'token', created_at: ago(400), last_used_at: ago(179) })
+    expect(await checkBearer(token)).toMatchObject({ grantId: 'g-2' })
+  })
+
+  it('180 days after it was made, when it was never used', async () => {
+    stored({ kind: 'token', created_at: ago(181), last_used_at: null })
+    expect(await checkBearer(token)).toEqual({ error: 'expired' })
+    stored({ kind: 'token', created_at: ago(10), last_used_at: null })
+    expect(await checkBearer(token)).toMatchObject({ grantId: 'g-2' })
+  })
+
+  it('never applies to an OAuth grant, which lapses with its refresh token', async () => {
+    stored({ kind: 'oauth', created_at: ago(900), last_used_at: ago(365) }, { ...grant, kind: 'oauth' })
+    expect(await checkBearer(token)).toMatchObject({ grantId: 'g-2', kind: 'oauth' })
+    expect(tokenLapsed({ kind: 'oauth', created_at: ago(900), last_used_at: null })).toBe(false)
+  })
+
+  it('reads a token\'s last use once a process: a use it saw keeps it fresh, and a revoke still stops it at once', async () => {
+    stored({ kind: 'token', created_at: ago(10), last_used_at: ago(1) })
+    await checkBearer(token)
+    calls = []
+    expect(await checkBearer(token)).toMatchObject({ grantId: 'g-2' })
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/rpc/agent_token_use'])
+    // revoked since: agent_token_use no longer finds it
+    fake.tokens = []
+    expect(await checkBearer(token)).toEqual({ error: 'invalid' })
+  })
+
+  it('counts a row that says nothing of when it was made or used as lapsed, and keeps the app\'s number', () => {
+    expect(tokenLapsed({ kind: 'token' })).toBe(true)
+    expect(tokenLapsed({ kind: 'token', created_at: ago(1) })).toBe(false)
+    expect(TOKEN_IDLE_DAYS).toBe(180)
+    expect(APP_TOKEN_IDLE_DAYS).toBe(TOKEN_IDLE_DAYS)
   })
 })
 
@@ -243,8 +318,18 @@ describe('connections', () => {
     row: { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'token', name: 'Laptop', redirect_host: null, scopes: ['read', 'write'], token_prefix: 'drft_AbCd', created_at: '2026-09-01T00:00:00.000Z', last_used_at: null, refresh_expires_at: null, ...over },
   })
 
-  it('lists live connections as the app shows them, dropping an OAuth grant whose refresh has expired', async () => {
-    fake.tokens = [row(), row({ id: 'x2', kind: 'oauth', name: 'Claude', redirect_host: 'claude.ai', token_prefix: null, refresh_expires_at: '2020-01-01T00:00:00.000Z' })]
+  // the rows are dated: a token lapses 180 days after its last use
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-14T12:00:00.000Z'))
+  })
+
+  it('lists live connections as the app shows them, dropping an OAuth grant whose refresh has expired and a token unused for 180 days', async () => {
+    fake.tokens = [
+      row(),
+      row({ id: 'x2', kind: 'oauth', name: 'Claude', redirect_host: 'claude.ai', token_prefix: null, refresh_expires_at: '2020-01-01T00:00:00.000Z' }),
+      row({ id: 'x3', name: 'Old laptop', created_at: '2025-06-01T00:00:00.000Z', last_used_at: '2026-03-01T00:00:00.000Z' }),
+    ]
     expect(await listConnections(U1)).toEqual([
       { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'token', name: 'Laptop', redirectHost: null, scopes: ['read', 'write'], tokenPrefix: 'drft_AbCd', createdAt: '2026-09-01T00:00:00.000Z', lastUsedAt: null },
     ])
@@ -267,6 +352,9 @@ describe('connections', () => {
     await expect(createManualToken(U1, { name: 'x', scopes: ['read', 'admin'] })).rejects.toMatchObject({ status: 400 })
     fake.tokens = Array.from({ length: MAX_LIVE_CONNECTIONS }, (_, i) => row({ id: `t${i}` }))
     await expect(createManualToken(U1, { name: 'x', scopes: ['read'] })).rejects.toMatchObject({ status: 409, code: 'limit' })
+    // twenty lapsed ones count for nothing
+    fake.tokens = Array.from({ length: MAX_LIVE_CONNECTIONS }, (_, i) => row({ id: `t${i}`, created_at: '2025-01-01T00:00:00.000Z' }))
+    await expect(createManualToken(U1, { name: 'x', scopes: ['read'] })).resolves.toMatchObject({ connection: { name: 'x' } })
   })
 
   it('revokes only the user\'s own live rows, and never queries with a malformed id', async () => {
@@ -279,9 +367,36 @@ describe('connections', () => {
     expect(calls[0].search).toContain('revoked_at=is.null')
     expect(Object.keys(calls[0].body)).toEqual(['revoked_at'])
   })
+
+  it('renames only a live connection of the user\'s own: one that lapsed unused, or whose grant expired, answers false and is left as it is', async () => {
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    expect(await renameConnection(U1, 'not-a-uuid', 'Work laptop')).toBe(false)
+    expect(await renameConnection(U1, id, ' \n ')).toBe(false)
+    expect(calls).toEqual([])
+    fake.tokens = [row()]
+    expect(await renameConnection(U1, id, ' Work \n laptop ')).toBe(true)
+    expect(calls.map(c => c.method)).toEqual(['GET', 'PATCH'])
+    for (const { search } of calls) {
+      expect(search).toContain(`id=eq.${id}`)
+      expect(search).toContain(`user_id=eq.${U1}`)
+      expect(search).toContain('revoked_at=is.null')
+    }
+    expect(calls[1].body).toEqual({ name: 'Work laptop' })
+    for (const gone of [row({ created_at: '2025-06-01T00:00:00.000Z', last_used_at: '2026-03-01T00:00:00.000Z' }), row({ kind: 'oauth', refresh_expires_at: '2026-09-01T00:00:00.000Z' })]) {
+      calls = []
+      fake.tokens = [gone]
+      expect(await renameConnection(U1, id, 'Work laptop')).toBe(false)
+      expect(calls.map(c => c.method)).toEqual(['GET'])
+    }
+  })
 })
 
 describe('/api/agents', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-14T12:00:00.000Z'))
+  })
+
   const req = (method: string, body?: unknown, token = 'app-session') =>
     new Request('https://drafter.example/api/agents', {
       method,
@@ -314,6 +429,8 @@ describe('/api/agents', () => {
     expect(body.connection.name).toBe('Laptop')
     expect(calls.find(c => c.path === '/rest/v1/user_settings' && c.method === 'POST')?.body).toMatchObject({ user_id: U1, timezone: 'Europe/London' })
     expect(await (await agentsHandler(req('POST', { action: 'revoke', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }))).json()).toEqual({ ok: true })
+    // a rename reads the connection first: only a live one takes a new name
+    fake.tokens = [{ row: { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'token', name: 'Laptop', created_at: '2026-09-01T00:00:00.000Z', last_used_at: null, refresh_expires_at: null } }]
     expect(await (await agentsHandler(req('POST', { action: 'rename', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Work laptop' }))).json()).toEqual({ ok: true })
     expect((await agentsHandler(req('POST', { action: 'rename', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: ' ' }))).status).toBe(400)
     expect((await agentsHandler(req('POST', { action: 'explode' }))).status).toBe(400)

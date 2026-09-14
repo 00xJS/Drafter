@@ -119,6 +119,18 @@
   to = "/.netlify/functions/oauth/app/:splat"
   status = 200
 
+# A file under /assets that the build does not have is a 404, never the app
+# page. Existing files are still served as always: without `force` a rule
+# only answers what no file matches. The build has no 404.html, so Netlify
+# answers with its own not-found page. An old page asking for a chunk that a
+# later deploy removed then gets a load error (and the app reloads onto the
+# new build), not HTML where it expected a script. A worker precaching the
+# build fails its install instead of storing the page under a script's name.
+[[redirects]]
+  from = "/assets/*"
+  to = "/404.html"
+  status = 404
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

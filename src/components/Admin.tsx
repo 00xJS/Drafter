@@ -626,7 +626,7 @@ export function Admin({ onClose }: Props) {
 
               <HealthCard title="GitHub" piece={status.github} optional>
                 <p className="field-hint">
-                  GitHub link cards use <code>GITHUB_TOKEN</code> the same way. Scope <code>read:project</code> for Projects; repo/issues write for status write-back.
+                  GitHub link cards use <code>GITHUB_TOKEN</code> the same way. Scope <code>project</code> for Projects (the sync reads and writes boards); repo/issues write for status write-back.
                 </p>
               </HealthCard>
 

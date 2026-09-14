@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mcpEndpoint } from '../../netlify/functions/lib/mcphttp.mjs'
+import { LAPSED_TEXT, mcpEndpoint } from '../../netlify/functions/lib/mcphttp.mjs'
 import { forgetAllSessions } from '../../netlify/functions/lib/agentauth.mjs'
 import { SCOPE_REFUSAL } from '../../mcp/protocol.mjs'
 import { TOOLS } from '../../mcp/tools.mjs'
@@ -16,16 +16,25 @@ const TOKEN = `drft_${'a'.repeat(43)}`
 const READ_ONLY = `drft_${'r'.repeat(43)}`
 const BUSY = `drft_${'b'.repeat(43)}`
 const UNKNOWN = `drft_${'x'.repeat(43)}`
+/** A token made by hand and last used 200 days ago: agent_token_use would still take it. */
+const LAPSED = `drft_${'l'.repeat(43)}`
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 
 const GRANTS: Record<string, Record<string, unknown>> = {
   [sha(TOKEN)]: { grant_id: 'c0ffee12-0000-4000-8000-000000000001', user_id: USER, scopes: ['read', 'write', 'journal'], kind: 'token', over_limit: false },
   [sha(READ_ONLY)]: { grant_id: 'feedface-0000-4000-8000-000000000002', user_id: USER, scopes: ['read'], kind: 'oauth', over_limit: false },
   [sha(BUSY)]: { grant_id: 'badc0de0-0000-4000-8000-000000000003', user_id: USER, scopes: ['read'], kind: 'token', over_limit: true },
+  [sha(LAPSED)]: { grant_id: 'dead0000-0000-4000-8000-000000000004', user_id: USER, scopes: ['read'], kind: 'token', over_limit: false },
+}
+const DAY = 86_400_000
+/** What the bearer check reads first: a stored token's kind and last use. */
+function lastUse(hash: string) {
+  if (hash === sha(LAPSED)) return { kind: 'token', created_at: new Date(Date.now() - 400 * DAY).toISOString(), last_used_at: new Date(Date.now() - 200 * DAY).toISOString() }
+  return GRANTS[hash] ? { kind: GRANTS[hash].kind, created_at: new Date().toISOString(), last_used_at: null } : null
 }
 const TASK = { kind: 'task', id: 't1', title: 'Take the bins out', description: '', status: 'todo', priority: 'normal', tags: [], updatedAt: '2026-09-08T10:00:00.000Z' }
 
-type Call = { path: string; method: string; headers: Record<string, string>; body: any }
+type Call = { path: string; search: string; method: string; headers: Record<string, string>; body: any }
 let calls: Call[] = []
 let mints = 0
 /** One-off answers for the next GETs of /rest/v1/posts. */
@@ -37,9 +46,13 @@ function install() {
     const method = init?.method ?? 'GET'
     const headers = Object.fromEntries(new Headers(init?.headers).entries())
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
-    calls.push({ path: url.pathname, method, headers, body })
+    calls.push({ path: url.pathname, search: url.search, method, headers, body })
     const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } })
     switch (url.pathname) {
+      case '/rest/v1/agent_tokens': {
+        const found = lastUse((url.searchParams.get('access_hash') ?? '').replace(/^eq\./, ''))
+        return json(found ? [found] : [])
+      }
       case '/rest/v1/rpc/agent_token_use':
         return json(GRANTS[body.p_hash] ?? null)
       case '/rest/v1/user_settings':
@@ -129,13 +142,24 @@ describe('transport rules', () => {
     const res = await post(rpc(1, 'tools/list'), { token: UNKNOWN })
     expect(res.status).toBe(401)
     expect(res.headers.get('www-authenticate')).toBe(`Bearer realm="drafter", resource_metadata="${RESOURCE_METADATA}", error="invalid_token"`)
-    expect(calls.map(c => c.path)).toEqual(['/rest/v1/rpc/agent_token_use'])
-    expect(calls[0].body).toEqual({ p_hash: sha(UNKNOWN), p_limit: 60 })
+    // looked up by its hash, and found nowhere: never stamped as used
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens'])
+    expect(calls[0].search).toContain(`access_hash=eq.${sha(UNKNOWN)}`)
     expect(calls[0].headers.authorization).toBe('Bearer service-key')
     // a malformed bearer never reaches the database
     calls = []
     expect((await post(rpc(1, 'tools/list'), { token: 'not-a-drafter-token' })).status).toBe(401)
     expect(calls).toEqual([])
+  })
+
+  it('401s a token made by hand that went unused for 180 days, says why, and does not count the refusal as a use', async () => {
+    const res = await post(rpc(1, 'tools/list'), { token: LAPSED })
+    expect(res.status).toBe(401)
+    expect(res.headers.get('www-authenticate')).toBe(`Bearer realm="drafter", resource_metadata="${RESOURCE_METADATA}", error="invalid_token", error_description="${LAPSED_TEXT}"`)
+    expect(await res.json()).toEqual({ error: 'invalid_token', error_description: LAPSED_TEXT })
+    expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens'])
+    // a header carries plain ASCII only
+    expect(LAPSED_TEXT).toMatch(/^[\x20-\x7e]+$/)
   })
 
   it('429s a connection over its per-minute limit, with Retry-After', async () => {
@@ -226,7 +250,7 @@ describe('acting as the user', () => {
     for (const r of reads) expect(r.headers).toMatchObject({ apikey: 'anon-key', authorization: 'Bearer jwt-hash-1' })
     // the service key: the token check, the zone (cached for five minutes, so maybe not this time), and minting
     const serviceKeyPaths = new Set(calls.filter(c => c.headers.authorization === 'Bearer service-key').map(c => c.path))
-    for (const path of serviceKeyPaths) expect(['/auth/v1/admin/generate_link', `/auth/v1/admin/users/${USER}`, '/rest/v1/rpc/agent_token_use', '/rest/v1/user_settings']).toContain(path)
+    for (const path of serviceKeyPaths) expect(['/auth/v1/admin/generate_link', `/auth/v1/admin/users/${USER}`, '/rest/v1/agent_tokens', '/rest/v1/rpc/agent_token_use', '/rest/v1/user_settings']).toContain(path)
     expect(serviceKeyPaths.has('/rest/v1/rpc/agent_token_use')).toBe(true)
 
     calls = []

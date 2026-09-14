@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 // End-to-end smoke test for Drafter's MCP layer, against a real Postgres with
-// every migration applied:
-//
-//   1. the deprecated local mode — the real `node mcp/server.mjs` over stdio
-//      with the service key — every tool, and a household peer's personal
-//      rows kept out of every answer;
-//   2. the hosted endpoint — the real /api/mcp and OAuth handlers from
-//      netlify/functions/lib, served over node:http — reached directly, and
-//      through the same server.mjs in proxy mode (DRAFTER_AGENT_TOKEN), acting
-//      as the token's user through the database's own policies.
+// every migration applied. The real /api/mcp and OAuth handlers from
+// netlify/functions/lib are served over node:http and reached three ways: the
+// real `node mcp/server.mjs` over stdio with a Settings → Assistants token
+// (DRAFTER_AGENT_TOKEN, as Claude Desktop runs it), plain HTTP with a token,
+// and an OAuth connection. Every tool call runs as the token's user through
+// the database's own policies: every tool is exercised, a household peer's
+// personal rows are kept out of every answer, a token unused for 180 days is
+// refused, and a server started with only the old service key reads nothing.
 //
 // Why this exists: `npm run db:smoke` proves the SQL layer and the vitest
 // suites prove the fetch contracts against stubs, but only this drives the
@@ -496,7 +495,8 @@ async function startSite(shimUrl) {
   delete process.env.CONTEXT
   delete process.env.DEPLOY_PRIME_URL
   delete process.env.OAUTH_REDIRECT_ALLOWLIST
-  delete process.env.MCP_RATE_LIMIT_PER_MIN
+  // every tool below runs through one token, far faster than anyone types: lift the per-minute limit
+  process.env.MCP_RATE_LIMIT_PER_MIN = '100000'
   const { mcpEndpoint } = await import(pathToFileURL(join(ROOT, 'netlify/functions/lib/mcphttp.mjs')).href)
   const { oauthHandler, routeOf } = await import(pathToFileURL(join(ROOT, 'netlify/functions/lib/oauthserver.mjs')).href)
   const server = createServer(async (req, res) => {
@@ -605,61 +605,54 @@ async function main() {
   startDatabase()
   seedOwner()
   const { server, url } = await startShim()
-  const legacyServer = startMcp(childEnv({ SUPABASE_URL: url, SUPABASE_SERVICE_KEY: SERVICE_KEY }))
-  const { child, rpc } = legacyServer
-  const call = (name, args) => callOver(legacyServer, name, args)
-  /** The same, for calls that must fail: returns the error text. */
-  async function callFails(name, args = {}) {
-    const res = await rpc('tools/call', { name, arguments: args })
-    const text = res.result?.content?.[0]?.text ?? ''
-    if (!res.result?.isError) throw new Error(`FAIL: ${name} was supposed to fail, returned ${text.slice(0, 200)}`)
-    return text
-  }
   let site = null
   let proxy = null
+  let keyOnly = null
 
   try {
-    console.log('mcp-smoke: the deprecated local mode (service key, owner\'s view)…')
+    // the user's zone decides "today" on the endpoint; the checks below use the machine's
+    psqlValue(`insert into public.user_settings (user_id, timezone) values (${lit(OWNER)}, ${lit(MACHINE_TZ)})
+               on conflict (user_id) do update set timezone = excluded.timezone`)
+    site = await startSite(url)
+    const MCP_URL = `${site.url}/api/mcp`
+    const agentauth = await import(pathToFileURL(join(ROOT, 'netlify/functions/lib/agentauth.mjs')).href)
+    const ownerTok = await agentauth.createManualToken(OWNER, { name: 'Smoke laptop', scopes: ['read', 'write', 'journal'] })
+    // Claude Desktop's way in: the stdio server with a token, proxying every line to /api/mcp
+    proxy = startMcp(childEnv({ DRAFTER_AGENT_TOKEN: ownerTok.token, DRAFTER_MCP_URL: MCP_URL }))
+    const { rpc } = proxy
+    const call = (name, args) => callOver(proxy, name, args)
+    /** The same, for calls that must fail: returns the error text. */
+    async function callFails(name, args = {}) {
+      const res = await rpc('tools/call', { name, arguments: args })
+      const text = res.result?.content?.[0]?.text ?? ''
+      if (!res.result?.isError) throw new Error(`FAIL: ${name} was supposed to fail, returned ${text.slice(0, 200)}`)
+      return text
+    }
+
+    console.log("mcp-smoke: every tool, through the stdio proxy and the hosted /api/mcp, as the token's user…")
     // ------------------------------------------------------------- handshake
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mcp-smoke', version: '1' } })
     eq(init.result?.serverInfo?.name, 'drafter', 'initialize names the drafter server')
     eq(init.result?.protocolVersion, '2025-06-18', 'initialize echoes the requested protocol version')
+    ok(init.result?.instructions?.includes(MACHINE_TZ), "initialize's instructions name the user's zone from user_settings")
+    proxy.notify('notifications/initialized')
 
     const list = await rpc('tools/list')
     const names = (list.result?.tools ?? []).map(t => t.name)
-    eq(names.length, 28, 'tools/list offers 28 tools')
+    eq(names.length, 31, 'a read, write and journal token sees all 31 tools')
     const expected = [
-      'list_projects', 'create_project', 'update_project', 'list_tasks', 'get_task', 'create_task', 'update_task',
+      'list_projects', 'update_project', 'list_tasks', 'get_task', 'create_task', 'update_task',
       'complete_task', 'add_comment', 'delete_task', 'list_notes', 'get_note', 'create_note', 'update_note',
       'list_people', 'list_places', 'create_place', 'log_visit',
       'list_recipes', 'get_week_meals', 'plan_meal', 'get_grocery_list', 'add_grocery_item', 'set_grocery_state',
+      'list_garments', 'list_outfits', 'get_wardrobe_stats', 'log_outfit',
       'list_journal', 'add_journal_entry', 'get_overview', 'get_week_plan_proposal',
     ]
     ok(expected.every(n => names.includes(n)), 'every expected tool is present')
+    ok(!names.includes('create_project'), 'and create_project is not: there is one ongoing project')
     ok((list.result?.tools ?? []).every(t => t.description && t.inputSchema?.type === 'object'), 'every tool has a description and an object schema')
-    ok(/DEPRECATED — service-key mode/.test(legacyServer.stderr.join('')), 'the service-key mode says it is deprecated on stderr')
-
-    // ------------------------------------------------------------- projects
-    const project = (await call('create_project', { name: 'Kitchen refit', description: 'New worktop', targetAt: '2026-12-01T00:00:00.000Z' })).created
-    const projectRow = row(project.id)
-    ok(projectRow, 'create_project stored a row')
-    eq(projectRow.kind, 'project', 'the stored project has kind project')
-    eq(projectRow.data.name, 'Kitchen refit', 'the stored project kept its name')
-    eq(projectRow.data.status, 'active', 'a new project is active')
-    eq(projectRow.user_id, OWNER, 'the project belongs to the owner (service key → owner_user_id)')
-
-    // Rows with no create tool (a person, a recipe), seeded through the real RPC. This runs
-    // after the first tool write on purpose: a broken sync_posts should surface as a failed
-    // create_project — the diagnostic the owner needs — not as a confusing seed error.
-    const seedStamp = new Date(Date.now() - 60_000).toISOString()
-    seedRows([
-      { kind: 'person', id: 'mum', name: 'Mum', color: '#f472b6', group: 'family', createdAt: seedStamp, updatedAt: seedStamp },
-      {
-        kind: 'recipe', id: 'pasta', name: 'Pasta', color: '#eab308', servings: 2, tags: ['quick'],
-        ingredients: [{ name: 'Spaghetti', qty: 500, unit: 'g' }, { name: 'Tomatoes', qty: 4 }],
-        steps: ['Boil', 'Toss'], createdAt: seedStamp, updatedAt: seedStamp,
-      },
-    ])
+    ok((list.result?.tools ?? []).every(t => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'), 'every tool carries annotations')
+    ok(!/DEPRECATED/.test(proxy.stderr.join('')), 'the proxy prints no deprecation warning')
 
     // --------------------------------------------------------------- places
     const place = (await call('create_place', { name: 'Nopi', category: 'restaurant', cadenceDays: 30, notes: 'Book ahead', address: '21-22 Warwick St,  London', aliases: ['Nopi Soho', 'nopi'] })).created
@@ -668,7 +661,32 @@ async function main() {
     eq(placeRow.data.cadenceDays, 30, 'the place kept its cadence')
     eq(placeRow.data.address, '21-22 Warwick St, London', 'the place kept its address, on one line')
     eq(JSON.stringify(placeRow.data.aliases), '["Nopi Soho"]', 'the place kept its other name, and not its own name over again')
-    eq(placeRow.user_id, OWNER, 'the place belongs to the owner')
+    eq(placeRow.user_id, OWNER, "the place belongs to the token's user")
+
+    // Rows no tool creates (the one project, a person, a recipe), seeded through the real RPC.
+    // This runs after the first tool write on purpose: a broken sync_posts should surface as a
+    // failed create_place — the diagnostic the owner needs — not as a confusing seed error.
+    const seedStamp = new Date(Date.now() - 60_000).toISOString()
+    seedRows([
+      { kind: 'project', id: 'life', name: 'LIFE', color: '#4f46e5', status: 'active', createdAt: seedStamp, updatedAt: seedStamp },
+      { kind: 'person', id: 'mum', name: 'Mum', color: '#f472b6', group: 'family', createdAt: seedStamp, updatedAt: seedStamp },
+      {
+        kind: 'recipe', id: 'pasta', name: 'Pasta', color: '#eab308', servings: 2, tags: ['quick'],
+        ingredients: [{ name: 'Spaghetti', qty: 500, unit: 'g' }, { name: 'Tomatoes', qty: 4 }],
+        steps: ['Boil', 'Toss'], createdAt: seedStamp, updatedAt: seedStamp,
+      },
+    ])
+
+    // ------------------------------------------------------------ the project
+    const project = (await call('update_project', { id: 'life', appendNotes: 'New worktop', targetAt: '2026-12-01T00:00:00.000Z' })).updated
+    const projectRow = row(project.id)
+    eq(projectRow.data.notes, 'New worktop', "update_project appended to the one project's notes")
+    eq(projectRow.data.targetAt, '2026-12-01T00:00:00.000Z', 'and set its target')
+    ok(projectRow.data.updatedAt > seedStamp, 'stamped newer than the copy it read')
+    ok((await call('list_projects', {})).projects.some(p => p.id === 'life'), 'list_projects lists it')
+    const secondProject = await rpc('tools/call', { name: 'create_project', arguments: { name: 'A second project' } })
+    eq(secondProject.error?.code, -32602, 'create_project is an unknown tool now')
+    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'project'`), 1, 'so there is still one project')
 
     // ---------------------------------------------------------------- tasks
     const task = (await call('create_task', {
@@ -875,12 +893,71 @@ async function main() {
     ok(overview.counts.doing >= 1, 'get_overview counts the doing task')
     ok(overview.completedLast7Days >= 2, 'get_overview counts the completed task and the visit')
 
+    // -------------------------------------------------------------- wardrobe
+    // No tool adds clothing (a photo never leaves Drafter), so the pieces, a
+    // saved outfit and two past looks are stored as the app stores them: as the
+    // owner, through the real RPC. All three kinds are personal.
+    const dayFromToday = n => {
+      const t = new Date()
+      t.setDate(t.getDate() + n)
+      return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+    }
+    const wardrobeStamp = new Date(Date.now() - 40_000).toISOString()
+    const addedAt = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    const piece = (id, name, type, extra = {}) => ({ kind: 'garment', id, name, type, createdAt: addedAt, updatedAt: wardrobeStamp, ...extra })
+    const look = (day, suffix, garmentIds) => ({ kind: 'wear', id: `wear~${day}~${suffix}`, date: day, garmentIds, createdAt: wardrobeStamp, updatedAt: wardrobeStamp })
+    seedRows([
+      piece('tee', 'Navy tee', 'top', { color: '#1e2848', photoId: 'smoke-photo-of-tee', thumbId: 'smoke-thumb-of-tee' }),
+      piece('jeans', 'Blue jeans', 'bottom'),
+      piece('dress', 'Green dress', 'onepiece'),
+      piece('band', 'Old band tee', 'top', { archivedAt: wardrobeStamp }),
+      piece('linen', 'Linen shirt', 'top'),
+      { kind: 'outfit', id: 'weekday', name: 'Weekday', garmentIds: ['tee', 'jeans'], createdAt: wardrobeStamp, updatedAt: wardrobeStamp },
+      look(dayFromToday(-3), 'smoke00003', ['tee', 'jeans']),
+      look(dayFromToday(-70), 'smoke00070', ['dress']),
+    ])
+    eq(row('tee')?.user_id, OWNER, "the seeded wardrobe is the owner's")
+    const clothes = await call('list_garments', {})
+    eq(clothes.count, 5, 'list_garments lists every piece, the retired one too')
+    const tee = clothes.garments.find(g => g.id === 'tee')
+    eq(tee?.lastWorn, dayFromToday(-3), "list_garments gives a piece's last worn day")
+    eq(tee?.daysWorn, 1, 'and how many days it was worn')
+    eq(clothes.garments.find(g => g.id === 'band')?.retired, true, 'a retired piece says so')
+    ok(!/smoke-(photo|thumb)-of-tee/.test(JSON.stringify(clothes)), 'no photo leaves through list_garments')
+    const stats = await call('get_wardrobe_stats', { window: 'all' })
+    eq(stats.mostWorn.pieces.map(p => p.id).join(','), 'jeans,tee,dress', "get_wardrobe_stats ranks the most worn by the app's rule")
+    eq(stats.notWornLately.pieces.map(p => p.id).join(','), 'dress', 'not worn in 60 days or more: the dress')
+    eq(stats.neverWorn.pieces.map(p => p.id).join(','), 'linen', 'never worn: the linen shirt, the retired tee left out')
+    const weekday = (await call('list_outfits', {})).outfits.find(o => o.id === 'weekday')
+    ok(weekday?.wearable === true && weekday.daysWorn === 1, 'list_outfits finds the saved outfit wearable, its core worn on one day')
+
+    const logged = await call('log_outfit', { garmentIds: ['tee', 'jeans'] })
+    eq(logged.logged, 'new look', 'log_outfit writes a new look for a day with none')
+    const lookRow = row(logged.look.id)
+    eq(lookRow?.kind, 'wear', 'the look is stored as a wear row')
+    eq(lookRow.user_id, OWNER, "the look belongs to the token's user")
+    ok(new RegExp(`^wear~${today}~[0-9a-f]{10}$`).test(logged.look.id), "its id is the journal's pattern, for today")
+    eq(lookRow.data.garmentIds.join(','), 'tee,jeans', 'it holds the pieces worn')
+    const changed = await call('log_outfit', { garmentIds: ['dress'] })
+    eq(changed.look.id, logged.look.id, "a second log changes the day's look under its own id")
+    eq(row(logged.look.id).data.garmentIds.join(','), 'dress', 'the dress takes the place of the tee and the jeans')
+    ok(row(logged.look.id).data.updatedAt > lookRow.data.updatedAt, 'stamped newer than the copy it was made on')
+    const evening = await call('log_outfit', { outfitId: 'weekday', another: true })
+    eq(evening.looksThatDay, 2, 'another: true adds a second look, here from a saved outfit')
+    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear' and data ->> 'date' = ${lit(today)}`), 2, 'two looks stored for today')
+    ok(/Old band tee is retired/.test(await callFails('log_outfit', { garmentIds: ['band', 'jeans'] })), 'a retired piece is refused, as the composer never offers one')
+    ok(/has not happened yet/.test(await callFails('log_outfit', { garmentIds: ['tee', 'jeans'], date: dayFromToday(1) })), 'and so is a day ahead')
+    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear'`), 4, 'nothing was written for either')
+
     // ------------------------------- a household peer's personal rows stay theirs
-    // The service key bypasses every policy, so the server is all that stands
-    // between an agent and a peer's diary. The peer writes one row of every
-    // personal kind (each carrying PEER_SECRET) and one shared chore; then every
-    // read tool runs, and every id-based tool is aimed at the personal ids.
+    // The database's policies keep a peer's personal rows from the owner, and
+    // the data layer's own filter would keep them out even if a policy slipped.
+    // The peer writes one row of every personal kind (each carrying
+    // PEER_SECRET) and one shared chore; then every read tool runs, and every
+    // id-based tool is aimed at the personal ids.
     seedPeer()
+    psqlValue(`insert into public.user_settings (user_id, timezone) values (${lit(PEER)}, ${lit(MACHINE_TZ)})
+               on conflict (user_id) do update set timezone = excluded.timezone`)
     const peerStamp = new Date(Date.now() - 30_000).toISOString()
     const peerRow = (kind, id, fields) => ({ kind, id, createdAt: peerStamp, updatedAt: peerStamp, ...fields })
     const peerPersonal = [
@@ -910,6 +987,7 @@ async function main() {
       ['list_recipes', {}], ['get_week_meals', { date: today }], ['get_grocery_list', { date: today }],
       ['list_journal', { days: 366 }], ['list_journal', { search: 'peer' }], ['get_overview', {}],
       ['list_notes', {}], ['get_week_plan_proposal', {}],
+      ['list_garments', {}], ['list_outfits', {}], ['get_wardrobe_stats', { window: 'all' }],
     ]
     const failedReads = []
     for (const [name, args] of reads) if ((await probe(name, args)).isError) failedReads.push(name)
@@ -930,6 +1008,11 @@ async function main() {
       eq(answered.join(' | '), '', `every id-based tool treats the peer's ${p.kind} as missing`)
       eq(row(p.id).data.updatedAt, peerStamp, `the peer's ${p.kind} is untouched`)
     }
+
+    const peerPiece = await probe('log_outfit', { garmentIds: ['peer-5', 'jeans'] })
+    ok(peerPiece.isError && /No piece of clothing with id "peer-5"/.test(peerPiece.text), "the peer's garment is no piece of the owner's to log")
+    const peerOutfit = await probe('log_outfit', { outfitId: 'peer-6' })
+    ok(peerOutfit.isError && /No saved outfit with id "peer-6"/.test(peerOutfit.text), "nor is the peer's saved outfit")
 
     const bath = JSON.parse((await probe('add_journal_entry', { text: 'And a bath.' })).text)
     eq(bath.entry?.id, journalId, "add_journal_entry appends to the owner's day, never the peer's")
@@ -962,19 +1045,11 @@ async function main() {
     eq(noKey.status, 401, 'a request with neither the service key nor a session is refused')
 
     // =====================================================================
-    // The hosted endpoint: /api/mcp and the OAuth server, as the token's user
+    // The ways in: tokens, plain HTTP, the proxy's own checks, and OAuth
     // =====================================================================
-    console.log('mcp-smoke: the hosted /api/mcp, the stdio proxy and the OAuth server (as the token\'s user)…')
-    // the user's zone decides "today" on the endpoint; the machine's is what the checks above used
-    psqlValue(`insert into public.user_settings (user_id, timezone) values (${lit(OWNER)}, ${lit(MACHINE_TZ)}), (${lit(PEER)}, ${lit(MACHINE_TZ)})
-               on conflict (user_id) do update set timezone = excluded.timezone`)
-    site = await startSite(url)
-    const MCP_URL = `${site.url}/api/mcp`
-    audit.length = 0
-    const agentauth = await import(pathToFileURL(join(ROOT, 'netlify/functions/lib/agentauth.mjs')).href)
+    console.log('mcp-smoke: tokens, /api/mcp over plain HTTP, and the OAuth server…')
 
     // ---------------------------------------------------------- manual tokens
-    const ownerTok = await agentauth.createManualToken(OWNER, { name: 'Smoke laptop', scopes: ['read', 'write', 'journal'] })
     ok(/^drft_[A-Za-z0-9_-]{43}$/.test(ownerTok.token), 'createManualToken returned a drft_ token')
     const storedTok = psqlJson(`select json_build_object('hash', access_hash, 'prefix', token_prefix, 'kind', kind, 'user', user_id) from public.agent_tokens where id = ${lit(ownerTok.connection.id)}`)
     eq(storedTok?.hash, sha256(ownerTok.token), "the database holds the token's SHA-256")
@@ -1011,15 +1086,6 @@ async function main() {
     eq(psqlJson(`select to_json(last_used_at is not null) from public.agent_tokens where id = ${lit(ownerTok.connection.id)}`), true, 'a used token has last_used_at stamped')
 
     // ------------------------------------------------ the stdio proxy, as the owner
-    proxy = startMcp(childEnv({ DRAFTER_AGENT_TOKEN: ownerTok.token, DRAFTER_MCP_URL: MCP_URL }))
-    const pinit = await proxy.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mcp-smoke-proxy', version: '1' } })
-    eq(pinit.result?.protocolVersion, '2025-06-18', 'through the proxy, initialize negotiates 2025-06-18')
-    ok(pinit.result?.instructions?.includes(MACHINE_TZ), "initialize's instructions name the user's zone from user_settings")
-    proxy.notify('notifications/initialized')
-    const plist = await proxy.rpc('tools/list')
-    eq(plist.result?.tools?.length, 28, 'a read, write and journal token sees all 28 tools')
-    ok(plist.result.tools.every(t => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'), 'every tool carries annotations')
-    ok(!/DEPRECATED/.test(proxy.stderr.join('')), 'the proxy mode prints no deprecation warning')
     const viaProxy = (await callOver(proxy, 'create_task', { title: 'Written through the proxy' })).created
     eq(row(viaProxy.id)?.user_id, OWNER, "a task created through the proxy is the token's user's")
     const ownJournal = await callOver(proxy, 'list_journal', { days: 7 })
@@ -1047,7 +1113,7 @@ async function main() {
 
     // writing onto the peer's journal as the owner, below the tools: the database refuses it
     const { createRestData } = await import(pathToFileURL(join(ROOT, 'mcp/data.mjs')).href)
-    const asOwner = createRestData({ baseUrl: url, mode: 'user', userId: OWNER, auth: async () => ({ apikey: ANON_KEY, bearer: `user:${OWNER}` }) })
+    const asOwner = createRestData({ baseUrl: url, userId: OWNER, auth: async () => ({ apikey: ANON_KEY, bearer: `user:${OWNER}` }) })
     let peerWrite = null
     try {
       await asOwner.syncWrite([{ kind: 'journal', id: `journal~${today}~peer`, date: today, body: 'mine now', createdAt: peerStamp, updatedAt: new Date().toISOString() }])
@@ -1079,7 +1145,7 @@ async function main() {
     ok(auth.mints >= 2, 'the endpoint minted sessions through generate_link (one per user)')
     ok(auth.verifyTypes.includes('magiclink') && auth.verifyTypes.includes('email'), "verify was retried with type 'email' when 'magiclink' was refused")
     const serviceOnPosts = audit.filter(a => a.role === 'service_role' && /^\/rest\/v1\/(posts|rpc\/sync_posts)/.test(a.path)).map(a => a.path)
-    eq(serviceOnPosts.join(', '), '', 'the hosted path never read or wrote posts with the service key')
+    eq(serviceOnPosts.join(', '), '', 'no tool call read or wrote posts with the service key: every one ran as its user')
     ok(audit.some(a => a.role === 'authenticated' && a.path === '/rest/v1/rpc/sync_posts'), "it wrote with the user's own session")
     const allowed = /^\/(rest\/v1\/rpc\/(agent_token_use|oauth_[a-z_]+|agent_token_rotate)|rest\/v1\/(agent_tokens|oauth_clients|oauth_codes|user_settings)|auth\/v1\/admin\/.+)$/
     const stray = audit.filter(a => a.role === 'service_role' && !allowed.test(a.path)).map(a => `${a.method} ${a.path}`)
@@ -1123,7 +1189,7 @@ async function main() {
     const pair = await exchange.json()
     ok(pair.access_token?.startsWith('drft_at_') && pair.refresh_token?.startsWith('drft_rt_') && pair.expires_in === 3600, 'a Bearer pair with an hour-long access token')
     const oauthTools = await listHttp(pair.access_token)
-    eq(oauthTools.length, 26, 'the OAuth connection (read and write) sees 26 tools: all but the two journal ones')
+    eq(oauthTools.length, 29, 'the OAuth connection (read and write) sees 29 tools: all but the two journal ones')
     const viaOauth = JSON.parse((await callHttp(pair.access_token, 'create_task', { title: 'Via OAuth' })).text).created
     eq(row(viaOauth.id)?.user_id, OWNER, 'a task written with the OAuth token belongs to the user who consented')
     eq(psqlJson(`select to_json(kind || ' ' || name || ' ' || redirect_host) from public.agent_tokens where access_hash = ${lit(sha256(pair.access_token))}`), 'oauth Smoke assistant 127.0.0.1', 'the connection is listed as the client, returning to this computer')
@@ -1143,6 +1209,33 @@ async function main() {
     eq((await fetch(`${site.url}/oauth/token`, exchange2)).status, 400, 'replaying its code is refused')
     eq((await postMcp(pair2.access_token, ping())).status, 401, 'and revokes the connection the code made')
 
+    // ---------------------------------------- a token unused for 180 days lapses
+    const idleTok = await agentauth.createManualToken(OWNER, { name: 'Old laptop', scopes: ['read'] })
+    eq((await postMcp(idleTok.token, ping())).status, 200, 'a new token works')
+    eq(await agentauth.renameConnection(OWNER, idleTok.connection.id, 'Old work laptop'), true, 'and can be renamed')
+    psqlValue(`update public.agent_tokens set last_used_at = now() - interval '181 days' where id = ${lit(idleTok.connection.id)}`)
+    // a fresh function instance: nothing remembered about that last use
+    agentauth.forgetAllSessions()
+    const lapsed = await postMcp(idleTok.token, ping())
+    eq(lapsed.status, 401, 'a token last used 181 days ago is refused')
+    ok((lapsed.headers.get('www-authenticate') ?? '').includes('error_description="This token went unused for 180 days'), 'and told why')
+    eq(psqlJson(`select to_json(last_used_at < now() - interval '180 days') from public.agent_tokens where id = ${lit(idleTok.connection.id)}`), true, 'the refusal did not stamp it back to life')
+    eq(await agentauth.renameConnection(OWNER, idleTok.connection.id, 'Renamed after it lapsed'), false, 'a lapsed token cannot be renamed: it is gone, as the list says')
+    eq(psqlJson(`select to_json(name) from public.agent_tokens where id = ${lit(idleTok.connection.id)}`), 'Old work laptop', 'and keeps the name it had')
+    const neverTok = await agentauth.createManualToken(OWNER, { name: 'Never used', scopes: ['read'] })
+    psqlValue(`update public.agent_tokens set created_at = now() - interval '181 days' where id = ${lit(neverTok.connection.id)}`)
+    eq((await postMcp(neverTok.token, ping())).status, 401, 'one made 181 days ago and never used is refused too')
+    const listed = (await agentauth.listConnections(OWNER)).map(c => c.id)
+    ok(!listed.includes(idleTok.connection.id) && !listed.includes(neverTok.connection.id), 'Settings → Assistants lists neither')
+
+    // ------------------------------------------- the service key alone runs nothing
+    const reached = audit.length
+    keyOnly = startMcp(childEnv({ SUPABASE_URL: url, SUPABASE_SERVICE_KEY: SERVICE_KEY }))
+    const keyCall = await keyOnly.rpc('tools/call', { name: 'list_tasks', arguments: {} })
+    ok(keyCall.result?.isError && /set DRAFTER_AGENT_TOKEN/.test(keyCall.result.content?.[0]?.text ?? ''), 'a server started with only the service key answers a tool call with how to set a token')
+    eq(audit.length, reached, 'and never reached the database')
+    ok(/SUPABASE_SERVICE_KEY is ignored/.test(keyOnly.stderr.join('')), 'and says on stderr that the key is ignored')
+
     // ---------------------------------------- revoked in Settings → Assistants
     ok(await agentauth.revokeConnection(OWNER, ownerTok.connection.id), 'revokeConnection revokes the owner\'s token')
     const afterRevoke = await proxy.rpc('tools/list')
@@ -1151,11 +1244,9 @@ async function main() {
 
     console.log(`mcp-smoke: PASS (${step} assertions)`)
   } finally {
-    child.stdin.end()
-    child.kill()
-    if (proxy) {
-      proxy.child.stdin.end()
-      proxy.child.kill()
+    for (const m of [proxy, keyOnly].filter(Boolean)) {
+      m.child.stdin.end()
+      m.child.kill()
     }
     for (const s of [server, site?.server].filter(Boolean)) {
       s.closeAllConnections?.()

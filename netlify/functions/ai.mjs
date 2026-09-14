@@ -1,5 +1,8 @@
 // Drafter's hosted AI proxy. The browser posts { system, prompt, maxTokens, json }
 // and gets back { text, provider }. Provider selection and fallback live in lib/ai.mjs.
+// A request that carries the journal says so (`journal: true`) and goes to
+// Claude alone: the journal is never sent to NVIDIA. When Claude cannot take
+// it, the answer is an error with code "claude_only", never another provider.
 //
 // The owner's AI keys sit behind this, so it fails closed: no valid session is
 // a 401, and a host missing its auth settings answers 503. It used to skip the
@@ -41,6 +44,8 @@ const handler = async req => {
   if (!prompt) return Response.json({ error: 'prompt is required' }, { status: 400 })
   const maxTokens = Math.min(Math.max(Number(body?.maxTokens) || 2048, 256), MAX_TOKENS)
   const json = !!body?.json
+  // any truthy flag counts: a request that might carry the journal stays with Claude
+  const journal = !!body?.journal
 
   // counted only for a call that would actually reach the provider
   const slot = perUser.take(user.id)
@@ -54,12 +59,12 @@ const handler = async req => {
 
   let result
   try {
-    result = await complete({ system, prompt, maxTokens, json })
+    result = await complete({ system, prompt, maxTokens, json, claudeOnly: journal })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return Response.json({ error: `AI request failed: ${message}` }, { status: 502 })
   }
-  if (result.error) return Response.json({ error: result.error }, { status: result.status ?? 502 })
+  if (result.error) return Response.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, { status: result.status ?? 502 })
   return Response.json({ text: result.text, provider: result.provider })
 }
 
