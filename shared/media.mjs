@@ -31,8 +31,8 @@ export function isPersonalMediaOf(id, userId) {
  * Every photo a piece of clothing still points at: a live piece's, and one's in
  * Trash, so Restore brings it back whole. A piece deleted forever is a
  * content-free tombstone and points at nothing. With `expiredBefore`, a piece
- * deleted before that instant — gone from every device's Trash — no longer
- * counts either; one whose deletion can't be read still does.
+ * deleted before that instant — long gone from every device's Trash — no
+ * longer counts either; one whose deletion can't be read still does.
  */
 export function garmentMediaIds(records, opts = {}) {
   const cutoff = opts.expiredBefore ? Date.parse(opts.expiredBefore) : NaN

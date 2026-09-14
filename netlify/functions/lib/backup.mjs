@@ -23,6 +23,12 @@ export const TOMBSTONE_TTL_MS = 90 * DAY
  * piece may not have reached the server yet, is never this old.
  */
 export const PHOTO_GRACE_MS = TOMBSTONE_TTL_MS
+/**
+ * How long a piece in Trash still counts as pointing at its photos: a month
+ * past the 90 days a device keeps it in Trash (src/itemops.ts), so a Restore
+ * from a device that was offline near the end still finds them.
+ */
+export const TRASH_KEEPS_PHOTOS_MS = TOMBSTONE_TTL_MS + 30 * DAY
 /** Objects asked for per storage list, and paths per storage delete. */
 const LIST_PAGE = 1000
 const DELETE_BATCH = 100
@@ -317,17 +323,19 @@ async function removeOwnPhotos(userId, paths) {
  * The nightly wardrobe-photo sweep. For each account the server holds a piece
  * of clothing for (live, in Trash or deleted forever), delete the photos in
  * its personal/ folder that no piece points at any more — replaced ones the
- * app could not delete itself, and those of pieces deleted forever or aged out
- * of Trash — once they are PHOTO_GRACE_MS old. An account with no pieces on
- * the server is left alone: they may still be waiting on its devices (a build
- * ahead of `db push`) with their photos already uploaded. Every account's
- * pieces count as pointing, not just the folder's owner's. Reads with the
- * service key, and nothing it reads leaves here but a count.
+ * app could not delete itself, those of pieces deleted forever, and those of
+ * pieces a month past their time in Trash (TRASH_KEEPS_PHOTOS_MS) — once they
+ * are PHOTO_GRACE_MS old. An account with no pieces on the server is left
+ * alone: they may still be waiting on its devices (a build ahead of `db
+ * push`) with their photos already uploaded. Every account's pieces count as
+ * pointing, not just the folder's owner's. Reads with the service key, and
+ * nothing it reads leaves here but a count.
  */
 export async function sweepPersonalPhotos(now = new Date()) {
   const rows = await restAll('posts?select=id,user_id,data&kind=eq.garment')
   const cutoff = new Date(now.getTime() - PHOTO_GRACE_MS).toISOString()
-  const inUse = garmentMediaIds(rows.map(r => r?.data), { expiredBefore: cutoff })
+  const expiredBefore = new Date(now.getTime() - TRASH_KEEPS_PHOTOS_MS).toISOString()
+  const inUse = garmentMediaIds(rows.map(r => r?.data), { expiredBefore })
   const owners = [...new Set(rows.map(r => r?.user_id).filter(u => typeof u === 'string'))]
   let deleted = 0
   const failures = []

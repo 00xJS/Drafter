@@ -94,10 +94,10 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     showToast('Outfit saved', () => onRemove(outfit.id))
   }
 
-  /** Photos a write of a piece swapped out go once the new ones are up, if nothing points at them by then (media.ts retireMedia). */
+  /** Photos a write of a piece swapped out go once the new ones are up and the server has the write, if nothing points at them by then (media.ts retireMedia). */
   const letGo = (from: Garment, to: Garment) => {
     const { gone, now } = swappedPhotos(from, to)
-    if (gone.length) retireMedia(gone, now)
+    if (gone.length) retireMedia(gone, now, to.id)
   }
   /** An edit of a piece; with a message, Undo writes the copy it was made on back, stamped newer again. */
   const editPiece = (before: Garment, after: Garment, msg?: string) => {

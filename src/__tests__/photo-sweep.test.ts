@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../shared/media.mjs'
-import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
+import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, TRASH_KEEPS_PHOTOS_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
 
 // Wardrobe photos are private, under personal/<user id>/ in the media bucket,
 // and nothing used to clear them out: a replaced photo, a piece aged out of
@@ -175,8 +175,9 @@ describe('the shared rule: whose photo, and what still points at it', () => {
     expect(photosToSweep('not-an-account', listed, inUse, null)).toEqual([])
   })
 
-  it('waits as long as a tombstone is kept', () => {
+  it('waits as long as a tombstone is kept, and counts a piece in Trash a month longer than any device keeps it there', () => {
     expect(PHOTO_GRACE_MS).toBe(TOMBSTONE_TTL_MS)
+    expect(TRASH_KEEPS_PHOTOS_MS).toBe(TOMBSTONE_TTL_MS + 30 * 86_400_000)
   })
 })
 
@@ -196,6 +197,17 @@ describe('restAll: every row, or a throw', () => {
 })
 
 describe('sweepPersonalPhotos: the nightly pass', () => {
+  it('keeps a piece’s photos for a month past its 90 days in Trash, for a Restore that arrives late, and lets them go after', async () => {
+    // deleted 100 days ago: a device offline since just before day 90 may have restored it and not sent that yet
+    posts.push(garment('g-late', A, { photoId: photo(A, 6), deletedAt: '2026-06-06T00:00:00.000Z' }))
+    objects.set(photo(A, 6), { updated_at: OLD, created_at: OLD })
+    expect((await sweepPersonalPhotos(NOW)).deleted).toBe(3)
+    expect(objects.has(photo(A, 6))).toBe(true)
+    // 126 days on, the month is over
+    expect(await sweepPersonalPhotos(new Date('2026-10-10T03:00:00.000Z'))).toEqual({ deleted: 1, failures: [] })
+    expect(objects.has(photo(A, 6))).toBe(false)
+  })
+
   it('deletes what nothing points at — replaced, aged out of Trash — once old enough, and keeps everything else', async () => {
     const before = new Set(objects.keys())
     expect(await sweepPersonalPhotos(NOW)).toEqual({ deleted: 3, failures: [] })

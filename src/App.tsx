@@ -121,7 +121,7 @@ export default function App() {
       {/* over the planner; the lock screen and the re-auth overlay both sit above it */}
       {route === 'consent' && pending && session && (
         <Suspense fallback={null}>
-          <ConnectAssistantSheet params={pending} email={session.user.email ?? ''} onDone={dropRequest} onSignOut={() => void signOutForAnotherAccount()} />
+          <ConnectAssistantSheet params={pending} email={session.user.email ?? ''} onDone={dropRequest} onSignOut={signOutForAnotherAccount} />
         </Suspense>
       )}
       {supabaseOn && session && <LockGate />}

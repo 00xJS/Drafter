@@ -104,18 +104,19 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
 }
 
 /** Household → Account: who is signed in here, and signing out (which wipes this device's copy). */
-export function Account({ supabaseOn, onClose }: SettingsCtx) {
+export function Account({ supabaseOn, onClose, store }: SettingsCtx) {
   const [accountEmail, setAccountEmail] = useState('')
   // stop notifications and wipe the local copy BEFORE dropping the session,
   // while the token is still valid to deregister with; the wipe takes any
-  // photo still waiting to upload, so that is asked about first
+  // photo still waiting to upload, so that is asked about first (and with the
+  // session expired, none can upload)
   const signOut = useSignOut(async () => {
     await disablePush().catch(() => {})
     await getSupabase()?.auth.signOut()
     await clearLocalData()
     onClose()
     window.location.reload()
-  })
+  }, store.syncInfo.authError)
   useEffect(() => {
     getSupabase()
       ?.auth.getSession()

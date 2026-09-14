@@ -2,6 +2,7 @@ export const KEEP_BACKUPS: number
 export const HISTORY_TTL_MS: number
 export const TOMBSTONE_TTL_MS: number
 export const PHOTO_GRACE_MS: number
+export const TRASH_KEEPS_PHOTOS_MS: number
 export const BUCKET: string
 export const PREFIX: string
 

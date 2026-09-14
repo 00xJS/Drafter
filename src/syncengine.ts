@@ -922,6 +922,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     keepMine,
     retry,
     discard,
+    /**
+     * What the server has not confirmed yet: the records with an edit still to
+     * push, and its last confirmed copy of each it already had. A photo swapped
+     * out of a piece of clothing waits on both (src/media.ts retireMedia).
+     */
+    unconfirmed: (): { ids: ReadonlySet<string>; shadows: Item[] } => ({ ids: new Set(dirty), shadows: [...shadows.values()] }),
     /** What the engine holds for the next round — for tests and diagnostics. */
     inspect: () => ({ dirty: [...dirty].sort(), shadows: new Map(shadows), failures: failureList(), cursor: readCursor(kv), syncing: inflight !== null }),
   }

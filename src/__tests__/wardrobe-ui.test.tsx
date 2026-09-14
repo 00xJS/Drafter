@@ -461,12 +461,18 @@ describe('the guards around the wardrobe', () => {
   it('lets go of the photos Replace photo swapped out, and of the new ones when Undo swaps back', () => {
     const wardrobe = source('Wardrobe')
     expect(wardrobe).toMatch(/const editPiece = [\s\S]*?onSave\(after\)\s*letGo\(before, after\)[\s\S]*?onSave\(back\)\s*letGo\(after, back\)/)
-    expect(wardrobe).toMatch(/const \{ gone, now \} = swappedPhotos\(from, to\)\s*if \(gone\.length\) retireMedia\(gone, now\)/)
+    // each swap names its piece, so it can wait for the server to have the edit
+    expect(wardrobe).toMatch(/const \{ gone, now \} = swappedPhotos\(from, to\)\s*if \(gone\.length\) retireMedia\(gone, now, to\.id\)/)
     // a piece's thumbnail is saved as its photo's, so the two count as one photo
     expect(source('GarmentSheet').match(/thumbOf: photoId/g)).toHaveLength(2)
-    // the swaps are told what every piece here, live or in Trash, points at — once the records are in
+    // the swaps are told what every piece here, live or in Trash, points at — once the records are in —
+    // and what the server may still hold: the records it has not confirmed, and what its copies point at
     const shell = plannerSource()
-    expect(shell).toContain('store.loaded ? { userId: household.myId, ids: garmentMediaIds(store.allItems) } : null')
+    expect(shell).toMatch(/mediaInUse\.current = \(\) => \{\s*if \(!store\.loaded\) return null/)
+    expect(shell).toContain('const { ids: unsynced, shadows } = store.unconfirmed()')
+    expect(shell).toContain('return { userId: household.myId, ids: garmentMediaIds(store.allItems), unsynced, onServer: garmentMediaIds(shadows) }')
     expect(shell).toContain('useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])')
+    // and they look again whenever a round is answered
+    expect(shell).toContain('useEffect(() => void retireDue(), [store.syncInfo.lastAt])')
   })
 })

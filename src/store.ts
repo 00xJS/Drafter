@@ -107,6 +107,8 @@ export interface Store {
   onConflict(listener: (conflicts: EngineConflict[]) => void): () => void
   /** Put this device's values back for those conflicts, as a new and newer edit. */
   keepMine(conflicts: EngineConflict[]): void
+  /** Records whose latest edit the server has not confirmed yet, and its last confirmed copy of each it had. */
+  unconfirmed(): { ids: ReadonlySet<string>; shadows: Item[] }
 }
 
 /** The Notes list order: pinned first, then the most recently edited (ties by id, so the order is stable). */
@@ -129,6 +131,15 @@ function engine(): SyncEngine {
     },
   })
   return shared
+}
+
+/**
+ * A round now, if this page has started the engine; never starts one. A
+ * sign-out's Try uploading now sends the edits the wipe would take with the
+ * photos, the pieces that point at them among them.
+ */
+export function syncIfStarted(): Promise<boolean> {
+  return shared ? shared.sync() : Promise.resolve(false)
 }
 
 export function useItems(myId: string | null = null): Store {
@@ -337,5 +348,6 @@ export function useItems(myId: string | null = null): Store {
     discardLocal: e.discard,
     onConflict: e.onConflict,
     keepMine: e.keepMine,
+    unconfirmed: e.unconfirmed,
   }
 }
