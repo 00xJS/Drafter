@@ -22,4 +22,8 @@ export declare function spawnId(taskId: string, freq: string, nextDueIso: string
 export declare function nextOccurrence(task: Task, uidFn: () => string): Task | null
 /** Open next occurrences of one repeating chore beyond the one every device keeps: the ids to put in the Trash. */
 export declare function duplicateSpawns(items: readonly { kind?: string; id: string; status?: string; recurrence?: unknown; deletedAt?: string; purged?: boolean }[]): string[]
+/** The same, each with `keptId`: the occurrence every device keeps in its place. */
+export declare function duplicateSpawnPairs(
+  items: readonly { kind?: string; id: string; status?: string; recurrence?: unknown; deletedAt?: string; purged?: boolean }[],
+): { id: string; keptId: string }[]
 export declare function isMineTask(task: { kind?: string; ownerId?: string; assigneeId?: string }, myId?: string | null): boolean

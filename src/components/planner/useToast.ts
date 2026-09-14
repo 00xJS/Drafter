@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { conflictMessage, type Store } from '../../store'
+import { conflictMessage, retiredMessage, type Store } from '../../store'
 import type { Toast } from './routes'
 
 /** The shell's one toast, and the one way to show it: a message, and an Undo or a confirm step. */
@@ -17,6 +17,13 @@ export function useToast({ store }: { store: Store }) {
   useEffect(
     () => store.onConflict(found => showToast(conflictMessage(found), undefined, { label: 'Keep mine', run: () => store.keepMine(found) })),
     // the engine's own functions, stable for the life of the page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  // A repeat ticked off on two devices came round twice, and the extra that went
+  // to the Trash held something the one kept does not: say so, and offer it back.
+  useEffect(
+    () => store.onRetired(found => showToast(retiredMessage(found), undefined, { label: 'Restore', run: () => store.restore(found.map(r => r.id)) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )

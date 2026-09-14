@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { duplicateSpawns, spawnId } from '../../shared/domain.mjs'
+import { duplicateSpawnPairs, duplicateSpawns, spawnId } from '../../shared/domain.mjs'
+import { retiredMessage, type RetiredSpawn } from '../syncengine'
 import { Task } from '../types'
-import { FakeServer, device, idle, ready, task, type Device } from './sync-fakes'
+import { FakeServer, device, edit, idle, ready, task, type Device } from './sync-fakes'
 
 // A repeating chore ticked off on two devices before they synced came back
 // twice when the two ticks fell on different days. The same day was already
@@ -157,5 +158,71 @@ describe('duplicateSpawns: which next occurrences are extra', () => {
     expect(duplicateSpawns([keep, spawn('x~daily~2026-09-15', { recurrence: undefined })])).toEqual([])
     // the chore itself, a duplicate made with Duplicate (a fresh id), another chore
     expect(duplicateSpawns([keep, spawn('x'), spawn('k3j9x2'), spawn('y~daily~2026-09-15')])).toEqual([])
+  })
+
+  it('names the one kept in each extra’s place', () => {
+    const items = [spawn('x~daily~2026-09-15'), spawn('x~daily~2026-09-17'), spawn('y~daily~2026-09-15'), spawn('y~daily~2026-09-14')]
+    expect(duplicateSpawnPairs(items)).toEqual([
+      { id: 'x~daily~2026-09-15', keptId: 'x~daily~2026-09-17' },
+      { id: 'y~daily~2026-09-14', keptId: 'y~daily~2026-09-15' },
+    ])
+  })
+})
+
+// The one kept is picked by its due day alone, so the extra may hold what was
+// done on it before the two met. Then the Trash is not silent: the toast says
+// so, with Restore. A copy that differs only in when it falls due goes quietly.
+describe('an extra that held something the one kept does not', () => {
+  it('is named to the device that put it in the Trash, and Restore brings it back with what was on it', async () => {
+    const { a, b } = await pair()
+    const onA = a.engine.setStatus('water', 'done')!.spawnedId!
+    edit(a, onA, { description: 'Use the green can' })
+    await a.engine.sync()
+    await idle(a)
+    nextDay()
+    const told: RetiredSpawn[][] = []
+    a.engine.onRetired(r => told.push(r))
+    b.engine.onRetired(r => told.push(r))
+    const onB = b.engine.setStatus('water', 'done')!.spawnedId!
+    await b.engine.sync()
+    await idle(b)
+    await a.engine.sync()
+    await idle(a)
+    expect(told).toEqual([[{ id: onA, keptId: onB, label: 'Water the plants' }]])
+    expect(retiredMessage(told[0])).toBe('“Water the plants” came round twice, ticked off on two devices — kept the later one; the other, with what was changed on it, is in the Trash')
+    // the toast's Restore
+    b.engine.restore(told[0].map(r => r.id))
+    await b.engine.sync()
+    await idle(b)
+    await a.engine.sync()
+    await idle(a)
+    for (const d of [a, b]) {
+      expect(open(d)).toEqual([onA, onB].sort())
+      expect(d.item<Task>(onA)!.description).toBe('Use the green can')
+    }
+    expect(told).toHaveLength(1)
+  })
+
+  it('one that differs only in when it falls due goes quietly, on either device', async () => {
+    const { a, b } = await pair()
+    const told: RetiredSpawn[][] = []
+    a.engine.onRetired(r => told.push(r))
+    b.engine.onRetired(r => told.push(r))
+    a.engine.setStatus('water', 'done')
+    await a.engine.sync()
+    nextDay()
+    b.engine.setStatus('water', 'done')
+    await b.engine.sync()
+    await idle(b)
+    await a.engine.sync()
+    await idle(a)
+    expect(open(a)).toHaveLength(1)
+    expect(told).toEqual([])
+  })
+
+  it('says how many when a round finds several', () => {
+    expect(retiredMessage([{ label: 'Water the plants' }, { label: 'Bins out' }])).toBe(
+      '“Water the plants” and 1 more came round twice, ticked off on two devices — kept the later ones; the others, with what was changed on them, are in the Trash',
+    )
   })
 })

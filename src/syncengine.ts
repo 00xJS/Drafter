@@ -1,7 +1,7 @@
 import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, duplicateSpawns, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
-import { applyLocalChoice } from '../shared/merge.mjs'
+import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
+import { applyLocalChoice, sameContent } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { purgeTombstone, type SyncResult } from './sync'
@@ -240,6 +240,34 @@ export function conflictMessage(conflicts: readonly { label: string }[]): string
     : `${first} changed on another device too — kept the newer edit`
 }
 
+/** A next occurrence put in the Trash as another's duplicate, holding something the one kept does not. */
+export interface RetiredSpawn {
+  id: string
+  /** The occurrence kept in its place. */
+  keptId: string
+  /** The chore as a person would call it: “Water the plants”. */
+  label: string
+}
+
+/** “Water the plants” came round twice, ticked off on two devices — kept the later one, the other is in the Trash. */
+export function retiredMessage(retired: readonly { label: string }[]): string {
+  const first = `“${retired[0]?.label ?? 'A repeating task'}”`
+  return retired.length > 1
+    ? `${first} and ${retired.length - 1} more came round twice, ticked off on two devices — kept the later ones; the others, with what was changed on them, are in the Trash`
+    : `${first} came round twice, ticked off on two devices — kept the later one; the other, with what was changed on it, is in the Trash`
+}
+
+/**
+ * Two next occurrences of one chore that differ in nothing but their id and
+ * when they fall due (and the bill day that follows from it): the owner loses
+ * nothing with either, so the extra goes to the Trash without a word.
+ */
+function sameSpawn(a: Item | undefined, b: Item | undefined): boolean {
+  if (a?.kind !== 'task' || b?.kind !== 'task') return false
+  const bare = (t: Task) => ({ ...t, id: '', dueAt: '', createdAt: '', spawnedFrom: undefined, bill: t.bill && { ...t.bill, day: undefined } })
+  return sameContent(bare(a), bare(b))
+}
+
 export type SyncEngine = ReturnType<typeof createSyncEngine>
 
 export function createSyncEngine(deps: SyncEngineDeps) {
@@ -254,6 +282,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   let state: EngineState = { items: [], loaded: false, syncInfo: { online: false, authError: false }, failures: [] }
   const listeners = new Set<() => void>()
   const conflictListeners = new Set<(conflicts: EngineConflict[]) => void>()
+  const retiredListeners = new Set<(retired: RetiredSpawn[]) => void>()
 
   /** The account the cache on disk belongs to (null until known, and in local mode). */
   let account: string | null = null
@@ -561,18 +590,27 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * A repeating chore ticked off on two devices on different days, before
    * they synced, spawned its next occurrence twice under two ids. Once a round
    * brings both here, the extra ones go to the Trash — the same ones on every
-   * device (duplicateSpawns) — as an ordinary edit, dirty and pushed like any
+   * device (duplicateSpawnPairs) — as an ordinary edit, dirty and pushed like any
    * other. They lose their repeat on the way, so one restored from the Trash
    * comes back as a one-off and is never put there again.
+   *
+   * The one kept is picked by its due day alone, so an extra may hold what was
+   * done on it before the two met — a ticked step, a note, a comment. Then the
+   * listeners hear of it (onRetired) and the toast offers Restore, so nothing
+   * vanishes unseen; a copy identical but for its due day goes quietly.
    */
   function retireDuplicateSpawns(): void {
-    const extra = new Set(duplicateSpawns(state.items))
-    if (extra.size === 0) return
+    const pairs = duplicateSpawnPairs(state.items)
+    if (pairs.length === 0) return
+    const byId = new Map(state.items.map(i => [i.id, i]))
+    const extra = new Set(pairs.map(p => p.id))
+    const told: RetiredSpawn[] = pairs.filter(p => !sameSpawn(byId.get(p.id), byId.get(p.keptId))).map(p => ({ ...p, label: recordLabel(byId.get(p.id)) }))
     const deletedAt = new Date(now()).toISOString()
     commit(
       state.items.map(p => (extra.has(p.id) && p.kind === 'task' ? { ...p, recurrence: undefined, deletedAt, updatedAt: newerStamp(p.updatedAt) } : p)),
       extra,
     )
+    if (told.length > 0) for (const l of [...retiredListeners]) l(told)
   }
 
   function setStatus(id: string, status: TaskStatus): StatusChange | null {
@@ -923,6 +961,13 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       conflictListeners.add(listener)
       return () => {
         conflictListeners.delete(listener)
+      }
+    },
+    /** Called when a round put in the Trash an extra next occurrence that held something the one kept does not. */
+    onRetired(listener: (retired: RetiredSpawn[]) => void): () => void {
+      retiredListeners.add(listener)
+      return () => {
+        retiredListeners.delete(listener)
       }
     },
     boot,

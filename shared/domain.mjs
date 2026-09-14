@@ -243,9 +243,10 @@ const SPAWN_TAIL = new RegExp(`(?:~(?:${RECURRENCE_FREQS.join('|')})~\\d{4}-\\d{
  * sync), so an occurrence of an occurrence counts too. Only an open copy that
  * still repeats is a candidate: a finished occurrence reopened by hand has no
  * repeat of its own, and neither has a copy restored from the Trash after this
- * put it there. Returns the ids that should go to the Trash.
+ * put it there. Returns each id that should go to the Trash, with `keptId`, the
+ * occurrence kept in its place.
  */
-export function duplicateSpawns(items) {
+export function duplicateSpawnPairs(items) {
   const series = new Map()
   for (const i of Array.isArray(items) ? items : []) {
     if (!i || i.kind !== 'task' || i.deletedAt || i.purged || !i.recurrence || i.status === 'done' || i.status === 'canceled') continue
@@ -260,9 +261,15 @@ export function duplicateSpawns(items) {
   for (const list of series.values()) {
     if (list.length < 2) continue
     list.sort((a, b) => (a.day === b.day ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.day < b.day ? -1 : 1))
-    for (const s of list.slice(0, -1)) out.push(s.id)
+    const keptId = list[list.length - 1].id
+    for (const s of list.slice(0, -1)) out.push({ id: s.id, keptId })
   }
   return out
+}
+
+/** The ids alone of the next occurrences that repeat one another (duplicateSpawnPairs): the ones that should go to the Trash. */
+export function duplicateSpawns(items) {
+  return duplicateSpawnPairs(items).map(p => p.id)
 }
 
 /**
