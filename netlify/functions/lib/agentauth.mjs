@@ -11,6 +11,10 @@
 //
 // Secrets are never stored or logged: a token is shown once, kept as its
 // SHA-256 hex, and only its first few characters ever appear in the UI.
+//
+// A token made by hand lapses after 180 days unused, or 180 days after it was
+// made if it never was used. An OAuth grant lapses on its own, when its
+// refresh token expires.
 
 import { createHash, randomBytes } from 'node:crypto'
 import { getUser } from './session.mjs'
@@ -21,6 +25,9 @@ export const PREFIX = { manual: 'drft_', access: 'drft_at_', refresh: 'drft_rt_'
 export const SCOPES = ['read', 'write', 'journal']
 /** Live connections (tokens and OAuth grants together) one account may hold. */
 export const MAX_LIVE_CONNECTIONS = 20
+/** A token made by hand stops working after this many days unused. */
+export const TOKEN_IDLE_DAYS = 180
+const TOKEN_IDLE_MS = TOKEN_IDLE_DAYS * 86_400_000
 /** A minted session is replaced this long before it expires. */
 const SESSION_MARGIN_MS = 60_000
 
@@ -86,6 +93,26 @@ export async function serviceRest(path, { method = 'GET', body, headers = {} } =
 // ---------------------------------------------------------------- bearer check
 
 /**
+ * Whether a token made by hand has lapsed: 180 days since its last use, or
+ * since it was made if it never was. An OAuth grant expires on its own (its
+ * refresh token), so this never applies to one. A row that does not say when
+ * it was made or used counts as lapsed.
+ * @param {{ kind?: string, created_at?: string | null, last_used_at?: string | null } | null | undefined} row
+ */
+export function tokenLapsed(row, now = Date.now()) {
+  if (row?.kind !== 'token') return false
+  const from = Date.parse(row.last_used_at ?? row.created_at ?? '')
+  return !Number.isFinite(from) || now - from >= TOKEN_IDLE_MS
+}
+
+/**
+ * token hash -> until when this process knows the token is fresh. A use it
+ * saw stamped last_used_at, so nothing can lapse the token before then.
+ */
+const freshUntil = new Map()
+const FRESH_KEYS = 1000
+
+/**
  * Check a bearer from /api/mcp against the live connections. Every request
  * asks the database, so a revoked connection stops at its very next call.
  */
@@ -93,8 +120,23 @@ export async function checkBearer(bearer, { limit = Number(process.env.MCP_RATE_
   const token = typeof bearer === 'string' ? bearer.trim() : ''
   // a refresh token is never a bearer, and nothing else we issue lacks the prefix
   if (!token.startsWith(PREFIX.manual) || token.startsWith(PREFIX.refresh) || token.length < 40 || token.length > 200) return { error: 'invalid' }
-  const row = await serviceRest('/rest/v1/rpc/agent_token_use', { method: 'POST', body: { p_hash: hashToken(token), p_limit: limit } })
-  if (!row || typeof row !== 'object' || !row.grant_id || !row.user_id) return { error: 'invalid' }
+  const hash = hashToken(token)
+  // agent_token_use stamps last_used_at, so a token's last use is read before
+  // it: one idle for 180 days is refused, and not revived by the refusal. Once
+  // this process has seen a token used, it cannot lapse for 180 days more.
+  if (!((freshUntil.get(hash) ?? 0) > Date.now())) {
+    const rows = await serviceRest(`/rest/v1/agent_tokens?select=kind,created_at,last_used_at&access_hash=eq.${hash}&revoked_at=is.null`)
+    const found = Array.isArray(rows) ? rows[0] : null
+    if (!found) return { error: 'invalid' }
+    if (tokenLapsed(found)) return { error: 'expired' }
+  }
+  const row = await serviceRest('/rest/v1/rpc/agent_token_use', { method: 'POST', body: { p_hash: hash, p_limit: limit } })
+  if (!row || typeof row !== 'object' || !row.grant_id || !row.user_id) {
+    freshUntil.delete(hash)
+    return { error: 'invalid' }
+  }
+  if (freshUntil.size >= FRESH_KEYS) freshUntil.clear()
+  freshUntil.set(hash, Date.now() + TOKEN_IDLE_MS)
   if (row.over_limit) return { error: 'rate_limited' }
   return {
     grantId: String(row.grant_id),
@@ -198,10 +240,11 @@ export function dropSession(userId) {
   sessions.delete(userId)
 }
 
-/** Tests and a cold start only. */
+/** Tests and a cold start only: the sessions, and which tokens this process has seen used. */
 export function forgetAllSessions() {
   sessions.clear()
   minting.clear()
+  freshUntil.clear()
 }
 
 // ----------------------------------------------------------------- connections
@@ -235,11 +278,17 @@ function toConnection(r) {
   }
 }
 
-/** Live connections, newest first. An OAuth grant whose refresh token has expired is gone for good. */
+/**
+ * Live connections, newest first. An OAuth grant whose refresh token has
+ * expired is gone for good, and so is a token made by hand that lapsed after
+ * 180 days unused: neither is listed, nor counts towards the twenty.
+ */
 export async function listConnections(userId) {
   const rows = await serviceRest(`/rest/v1/agent_tokens?select=${CONNECTION_COLUMNS}&user_id=eq.${encodeURIComponent(userId)}&revoked_at=is.null&order=created_at.desc`)
   const now = Date.now()
-  return (Array.isArray(rows) ? rows : []).filter(r => r.kind !== 'oauth' || !r.refresh_expires_at || Date.parse(r.refresh_expires_at) > now).map(toConnection)
+  return (Array.isArray(rows) ? rows : [])
+    .filter(r => (r.kind === 'oauth' ? !r.refresh_expires_at || Date.parse(r.refresh_expires_at) > now : !tokenLapsed(r, now)))
+    .map(toConnection)
 }
 
 /**

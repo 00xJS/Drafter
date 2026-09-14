@@ -4,6 +4,7 @@
 // response once and nowhere else — this module never stores it.
 
 import { ApiError, apiFetch, siteOrigin } from './api'
+import { fmtDate } from './utils'
 
 export type AgentScope = 'read' | 'write' | 'journal'
 
@@ -34,6 +35,41 @@ const ORDER: AgentScope[] = ['read', 'write', 'journal']
 export const DEFAULT_SCOPES: AgentScope[] = ['read', 'write']
 
 export const SCOPE_LABELS: Record<AgentScope, string> = { read: 'Can see', write: 'Can change', journal: 'Journal' }
+
+/** A token made here stops working after this many days unused (TOKEN_IDLE_DAYS in netlify/functions/lib/agentauth.mjs). */
+export const TOKEN_IDLE_DAYS = 180
+const DAY_MS = 86_400_000
+/** How close to lapsing a token is before its row names the day. */
+const EXPIRY_NOTICE_DAYS = 30
+
+/**
+ * A token's row says how it lapses: "Expires after 180 days unused", with the
+ * day once that is under a month away. The Claude app's connections renew
+ * themselves as they are used, so they get nothing.
+ */
+export function expiryLine(c: Pick<AgentConnection, 'kind' | 'createdAt' | 'lastUsedAt'>, now = new Date()): string {
+  if (c.kind !== 'token') return ''
+  const rule = `Expires after ${TOKEN_IDLE_DAYS} days unused`
+  const lapses = Date.parse(c.lastUsedAt ?? c.createdAt) + TOKEN_IDLE_DAYS * DAY_MS
+  if (!Number.isFinite(lapses) || lapses - now.getTime() >= EXPIRY_NOTICE_DAYS * DAY_MS) return rule
+  return `${rule}: on ${fmtDate(new Date(lapses).toISOString())} unless it is used`
+}
+
+/** A name as the server keeps one (cleanName in agentauth.mjs): one line, at most 80 characters. */
+export function connectionName(name: string): string {
+  return name.replace(/\s+/g, ' ').trim().slice(0, 80).trim()
+}
+
+/** What a rename saves: the cleaned name, or null when it is blank or unchanged. */
+export function nameToSave(draft: string, current: string): string | null {
+  const clean = connectionName(draft)
+  return clean && clean !== current ? clean : null
+}
+
+/** The list with one connection renamed, as the server now has it. */
+export function renameIn(info: AgentsInfo, id: string, name: string): AgentsInfo {
+  return { ...info, connections: info.connections.map(c => (c.id === id ? { ...c, name: connectionName(name) } : c)) }
+}
 
 /** The connector URL for Claude's "Add custom connector" and for Claude Code. */
 export function mcpUrl(): string {

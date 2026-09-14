@@ -331,6 +331,11 @@
   border-radius: 8px;
   background: var(--surface-2);
 }
+/* a connection's name being changed in place (Settings → Assistants) */
+.cal-source > .check-add {
+  flex: 1;
+  margin-top: 0;
+}
 .cal-source-name {
   flex: 1;
   min-width: 0;
