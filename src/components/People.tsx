@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
 import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, seenTasks, visitDays, yearReport } from '../people'
@@ -36,6 +36,9 @@ interface Props {
   entries?: CalendarEntry[]
   /** Open one of those entries, from the visit it counts as. */
   onOpenEntry?(e: CalendarEntry): void
+  /** A person whose card opens on arrival (from search); consumed once. */
+  openId?: string | null
+  onOpenConsumed?(): void
 }
 
 type GroupFilter = 'all' | PersonGroup
@@ -296,7 +299,7 @@ export function PersonRow({
   }
 
   return (
-    <li className={open ? 'person-row open' : 'person-row'}>
+    <li id={`person-${person.id}`} className={open ? 'person-row open' : 'person-row'}>
       <button className="person-summary" onClick={onToggle} aria-expanded={open}>
         <span className="person-avatar" style={{ background: person.color }}>
           {person.emoji ?? person.name.slice(0, 1).toUpperCase()}
@@ -430,13 +433,27 @@ export function PersonRow({
 
 const NO_ENTRIES: CalendarEntry[] = []
 
-export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry }: Props) {
+export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry, openId: wantOpen, onOpenConsumed }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
   const [group, setGroup] = useState<GroupFilter>('all')
   const [sort, setSort] = useState<SortKey>('attention')
   const [q, setQ] = useState('')
-  const [openId, setOpenId] = useState<string | null>(null)
+  // a card asked for opens with the first paint when People mounts for it,
+  // and through the effect below when People is already on screen
+  const [openId, setOpenId] = useState<string | null>(() => wantOpen ?? null)
+
+  useEffect(() => {
+    if (!wantOpen) return
+    setOpenId(wantOpen)
+    // the find box or a group filter must not hide the card asked for
+    setQ('')
+    setGroup('all')
+    // a long list can hold the row below the fold; one already in view stays put
+    window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
+    onOpenConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantOpen])
   const [year, setYear] = useState(() => new Date().getFullYear())
   // the year table's cells choose their ink for the theme on screen
   const theme = useTheme()

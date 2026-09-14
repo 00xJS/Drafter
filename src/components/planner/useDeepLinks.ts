@@ -28,6 +28,7 @@ interface Deps {
   setView: Nav['setView']
   openJournal: Nav['openJournal']
   openPlace: Nav['openPlace']
+  openPerson: Nav['openPerson']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -52,6 +53,7 @@ export function useDeepLinks({
   setView,
   openJournal,
   openPlace,
+  openPerson,
   changeStatus,
   defer,
 }: Deps) {
@@ -174,8 +176,8 @@ export function useDeepLinks({
         // any other producer of a ?saw= link — opens People and offers the write.
         if (parsed.act === 'saw') log()
         else showToast(`Log a visit with ${person.name}?`, undefined, { label: 'Saw them', run: log })
-        goPeopleTab('people')
-        setView('people')
+        // on People with their card open, as ?place= opens a place's row
+        openPerson(person.id)
       } else showToast('That person is not on this device yet.')
       return
     }
