@@ -24,8 +24,11 @@ import {
   GarmentType,
   GARMENT_TYPES,
   GARMENT_TYPE_META,
+  LOOK_NOTE_MAX,
   MAX_PIECES,
   Outfit,
+  Season,
+  SEASONS,
   Wear,
   Habit,
   Routine,
@@ -807,6 +810,33 @@ function pieceIds(v: unknown): string[] {
   return [...new Set(ids)].slice(0, MAX_PIECES)
 }
 
+/** Most tags a piece keeps, and the longest one. */
+const MAX_TAGS = 12
+const TAG_LENGTH = 30
+
+/**
+ * A piece's tags: trimmed, lowercased, unique, 30 characters and 12 tags at
+ * most; undefined when none is left. The piece sheet reads its comma-separated
+ * field through this too, so what it saves is what a sync keeps.
+ */
+export function garmentTags(v: unknown): string[] | undefined {
+  const tags = [...new Set(strList(v).map(t => t.toLowerCase().slice(0, TAG_LENGTH).trim()))].filter(Boolean).slice(0, MAX_TAGS)
+  return tags.length > 0 ? tags : undefined
+}
+
+/** The seasons a piece is for: known ones only, once each, in the year's order; undefined for none, which is any season. */
+function seasonList(v: unknown): Season[] | undefined {
+  const given = new Set(strList(v))
+  const seasons = SEASONS.filter(s => given.has(s))
+  return seasons.length > 0 ? seasons : undefined
+}
+
+/** What a piece cost, in whole units of the currency: money() rounded to the unit. */
+function wholePrice(v: unknown): number | undefined {
+  const n = money(v)
+  return n === undefined ? undefined : Math.round(n)
+}
+
 /** Coerce arbitrary data into a Garment. A live piece with no name takes its type's label. */
 export function sanitizeGarment(raw: unknown): Garment | null {
   if (!raw || typeof raw !== 'object') return null
@@ -828,6 +858,10 @@ export function sanitizeGarment(raw: unknown): Garment | null {
     thumbId: mediaId(r.thumbId),
     color: color && HEX_COLOR.test(color) ? color.toLowerCase() : undefined,
     notes: str(r.notes)?.trim().slice(0, 500) || undefined,
+    favourite: r.favourite === true || undefined,
+    tags: garmentTags(r.tags),
+    seasons: seasonList(r.seasons),
+    price: wholePrice(r.price),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -851,6 +885,7 @@ export function sanitizeOutfit(raw: unknown): Outfit | null {
     id,
     name: str(r.name)?.trim().slice(0, 80) || undefined,
     garmentIds,
+    favourite: r.favourite === true || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -863,7 +898,8 @@ export function sanitizeOutfit(raw: unknown): Outfit | null {
  * Coerce arbitrary data into a Wear. The day is a local day key and nothing else
  * (dayKeyOnly: an ISO instant is refused, never turned into its UTC date). A purge
  * tombstone has no date, but the day is in the id, as a journal entry's is. An
- * empty look is kept (coerce, don't reject) and counted as nothing.
+ * empty look is kept (coerce, don't reject) and counted as nothing, and so is a
+ * plan until it is confirmed worn.
  */
 export function sanitizeWear(raw: unknown): Wear | null {
   if (!raw || typeof raw !== 'object') return null
@@ -878,6 +914,8 @@ export function sanitizeWear(raw: unknown): Wear | null {
     id,
     date: date ?? '',
     garmentIds: pieceIds(r.garmentIds),
+    note: str(r.note)?.trim().slice(0, LOOK_NOTE_MAX) || undefined,
+    planned: r.planned === true || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

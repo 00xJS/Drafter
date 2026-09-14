@@ -1,7 +1,10 @@
-import { CORE_TYPES, GARMENT_TYPES, GARMENT_TYPE_META, Garment, GarmentType, MAX_PIECES, Outfit, Wear } from './types'
+import { CORE_TYPES, GARMENT_TYPES, GARMENT_TYPE_META, Garment, GarmentType, LOOK_NOTE_MAX, MAX_PIECES, Outfit, SEASONS, Season, Wear } from './types'
+import { formatMoney } from './bills'
 import { daysAgo, daysBetween } from './kitchen'
-import { monthsAndTrend, visitSummary } from './people'
+import { countOf, monthsAndTrend, visitSummary } from './people'
+import { garmentTags } from './schema'
 import { dateKey, uid } from './utils'
+import { describeCode, type Forecast } from './weather'
 import { newerStamp } from '../shared/domain.mjs'
 import { shiftDayKey } from '../shared/journal.mjs'
 
@@ -51,9 +54,87 @@ export function retired(g: Garment, on: boolean, now = new Date().toISOString())
   return next
 }
 
+/** A piece or a saved outfit starred as a favourite, or not, stamped. */
+export function starred<T extends Garment | Outfit>(x: T, on: boolean): T {
+  const next: Garment | Outfit = { ...x, updatedAt: newerStamp(x.updatedAt) }
+  if (on) next.favourite = true
+  else delete next.favourite
+  return next as T
+}
+
+/**
+ * A piece's details changed, stamped: a price in whole units (null clears it),
+ * tags as a sync keeps them (garmentTags), seasons in the year's order — none
+ * is any season. Only what is given changes.
+ */
+export function withDetails(g: Garment, d: { price?: number | null; tags?: readonly string[]; seasons?: readonly Season[] }): Garment {
+  const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
+  if (d.price !== undefined) {
+    if (d.price === null || !Number.isFinite(d.price) || d.price < 0) delete next.price
+    else next.price = Math.round(d.price)
+  }
+  if (d.tags !== undefined) {
+    const tags = garmentTags(d.tags)
+    if (tags) next.tags = tags
+    else delete next.tags
+  }
+  const given = d.seasons
+  if (given !== undefined) {
+    const seasons = SEASONS.filter(s => given.includes(s))
+    if (seasons.length > 0) next.seasons = seasons
+    else delete next.seasons
+  }
+  return next
+}
+
 /** Live looks on a day, oldest first (createdAt, then id); the last is what "Wearing this" edits. */
 export function looksOn(wears: readonly Wear[], day: string): Wear[] {
   return wears.filter(w => !w.deletedAt && w.date === day).sort(byCreated)
+}
+
+// ---- plans and notes -------------------------------------------------------------
+
+/** How far ahead a look can be planned: a year of days. */
+export const PLAN_DAYS = 365
+
+/** The last day a look can be planned for, from today's day key. */
+export const lastPlanDay = (today: string): string => shiftDayKey(today, PLAN_DAYS)
+
+/**
+ * A look filed as a plan (`planned` true) or as worn (false), with its note as
+ * given ('' clears it); either left out stays as it was. Unstamped: the
+ * writers stamp.
+ */
+function marked(w: Wear, { planned, note }: { planned?: boolean; note?: string }): Wear {
+  const next: Wear = { ...w }
+  if (planned === true) next.planned = true
+  else if (planned === false) delete next.planned
+  if (note !== undefined) {
+    const text = note.trim().slice(0, LOOK_NOTE_MAX)
+    if (text) next.note = text
+    else delete next.note
+  }
+  return next
+}
+
+/** The look confirmed worn — a plan no longer, so it counts from now on — stamped. */
+export function confirmed(w: Wear): Wear {
+  return { ...marked(w, { planned: false }), updatedAt: newerStamp(w.updatedAt) }
+}
+
+/** The look with a note ('' clears it), stamped; a plan stays a plan. */
+export function withNote(w: Wear, note: string): Wear {
+  return { ...marked(w, { note }), updatedAt: newerStamp(w.updatedAt) }
+}
+
+/**
+ * A day's plan: its latest live look with pieces, when that was put together
+ * ahead and the day has no look worn yet. On its day the Today card shows it
+ * as "Planned: …", with one tap to say it was worn.
+ */
+export function planFor(wears: readonly Wear[], day: string): Wear | undefined {
+  const looks = looksOn(wears, day).filter(w => w.garmentIds.length > 0)
+  return looks.some(w => !w.planned) ? undefined : looks[looks.length - 1]
 }
 
 /** Save or reuse: a live outfit with the same pieces, in any order, is returned instead of a copy. */
@@ -111,25 +192,30 @@ export interface LookLog {
  * has, Trash included, so one in Trash still has a slot; an id with no record
  * always stays. The piece sheet's Wear today is a log of one piece that shows
  * none of today's look.
+ *
+ * A log is a look worn unless `planned` makes it a plan (a day still to
+ * come), so logging a day whose latest look was a plan confirms that plan.
+ * `note`, when given, is the look's note; '' clears it.
  */
 export function logLook(
   wears: readonly Wear[],
   day: string,
   pieces: readonly string[],
   records: readonly Garment[],
-  opts: { another?: boolean; shown?: ReadonlySet<string>; now?: string } = {},
+  opts: { another?: boolean; shown?: ReadonlySet<string>; now?: string; planned?: boolean; note?: string } = {},
 ): LookLog {
+  const as = { planned: opts.planned ?? false, note: opts.note }
   const looks = opts.another ? [] : looksOn(wears, day)
   const latest = looks[looks.length - 1]
   if (!latest) {
-    const write = newWear(day, pieces, opts.now)
+    const write = marked(newWear(day, pieces, opts.now), as)
     return { write, undo: { remove: write.id } }
   }
   const known = new Map(records.filter(g => !g.purged).map(g => [g.id, g]))
   const shown = opts.shown ?? new Set([...known.values()].filter(g => !g.deletedAt && !g.archivedAt).map(g => g.id))
   const putOn = pieces.map(id => known.get(id)).filter((g): g is Garment => !!g)
   const kept = latest.garmentIds.filter(id => !pieces.includes(id) && !shown.has(id) && !putOn.some(g => displaces(g, known.get(id))))
-  const write = withPieces(latest, [...pieces, ...kept])
+  const write = marked(withPieces(latest, [...pieces, ...kept]), as)
   return { write, undo: { ...latest, updatedAt: newerStamp(write.updatedAt) } }
 }
 
@@ -217,11 +303,15 @@ export interface WearIndex {
   looks: ReadonlyMap<string, readonly Wear[]>
 }
 
-/** Skips deleted looks, empty looks and any date after dayKey (clock skew). Two looks on a day are one day. */
+/**
+ * Skips deleted looks, empty looks, plans (a plan counts once it is confirmed
+ * worn, and one whose day passed unconfirmed never does) and any date after
+ * dayKey (clock skew). Two looks on a day are one day.
+ */
 export function wearIndex(wears: readonly Wear[], dayKey: string): WearIndex {
   const looks = new Map<string, Wear[]>()
   for (const w of wears) {
-    if (w.deletedAt || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
+    if (w.deletedAt || w.planned || w.garmentIds.length === 0 || !w.date || w.date > dayKey) continue
     const list = looks.get(w.date)
     if (list) list.push(w)
     else looks.set(w.date, [w])
@@ -335,6 +425,60 @@ export function byRest(garments: readonly Garment[], ix: WearIndex): Garment[] {
   return garments.filter(g => !g.deletedAt && !g.archivedAt).sort(restOrder(ix))
 }
 
+// ---- Surprise me -----------------------------------------------------------------
+
+/**
+ * A piece's weight in Surprise me's draw: one, and a day more for every day it
+ * has rested, up to NOT_WORN_DAYS; never worn counts as the longest rest. The
+ * least recently worn come up most, and nothing is ever ruled out.
+ */
+export function restWeight(ix: WearIndex, id: string): number {
+  const last = ix.days.get(id)?.[0]
+  return 1 + (last ? Math.min(NOT_WORN_DAYS, Math.max(0, daysBetween(last, ix.dayKey))) : NOT_WORN_DAYS)
+}
+
+/** One of `items` drawn at random, each as likely as its weight; undefined from none. `random` is Math.random's shape: the tests hand one in. */
+export function pickWeighted<T>(items: readonly T[], weight: (x: T) => number, random: () => number = Math.random): T | undefined {
+  if (items.length === 0) return undefined
+  const weights = items.map(x => Math.max(0, weight(x)))
+  const total = weights.reduce((a, b) => a + b, 0)
+  if (total <= 0) return items[Math.min(items.length - 1, Math.floor(random() * items.length))]
+  let at = random() * total
+  for (let i = 0; i < items.length; i++) {
+    at -= weights[i]
+    if (at < 0) return items[i]
+  }
+  return items[items.length - 1]
+}
+
+// ---- seasons, tags and favourites ------------------------------------------------
+
+/** The season a day falls in, by its month: the meteorological seasons as the north has them, March to May being spring. */
+export function seasonOf(day: string): Season {
+  const m = Number(day.slice(5, 7))
+  return m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'autumn' : 'winter'
+}
+
+/** For this season: marked for it, or marked for none, which is a piece for any season. */
+export const inSeason = (g: Garment, season: Season): boolean => !g.seasons?.length || g.seasons.includes(season)
+
+/** What Clothes shows: every piece, the favourites, or one type. */
+export type ClothesShow = 'all' | 'favourites' | GarmentType
+
+/** Whether a piece passes Clothes' filters: what to show, a season (a piece for any season passes every one) and a tag. */
+export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season | null; tag?: string | null }): boolean {
+  if (f.show === 'favourites' ? !g.favourite : f.show !== 'all' && g.type !== f.show) return false
+  if (f.season && !inSeason(g, f.season)) return false
+  return !f.tag || !!g.tags?.includes(f.tag)
+}
+
+/** The tags these pieces carry, the most used first, then A–Z. */
+export function tagsOf(garments: readonly Garment[]): { tag: string; count: number }[] {
+  const n = new Map<string, number>()
+  for (const g of garments) for (const t of g.tags ?? []) n.set(t, (n.get(t) ?? 0) + 1)
+  return [...n].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+}
+
 /** The Clothes grid's orders. */
 export type ClothesSort = 'rest' | 'most' | 'newest' | 'name'
 export const CLOTHES_SORTS: { key: ClothesSort; label: string }[] = [
@@ -445,12 +589,18 @@ export function outfitDays(o: Outfit, ix: WearIndex, byId: ReadonlyMap<string, G
   return ix.logged.filter(day => (ix.looks.get(day) ?? []).some(w => coreKey(w.garmentIds, byId) === key))
 }
 
-/** The saved outfits under the composer: the most days worn in the last 60 first, then the newest saved. */
+/** The saved outfits under the composer: the favourites first, then the most days worn in the last 60, then the newest saved. */
 export function savedOrder(outfits: readonly Outfit[], ix: WearIndex, byId: ReadonlyMap<string, Garment>): Outfit[] {
   const lately = new Map(outfits.map(o => [o.id, outfitDays(o, ix, byId).filter(d => daysBetween(d, ix.dayKey) < SUGGEST_DAYS).length]))
   return outfits
     .filter(o => !o.deletedAt)
-    .sort((a, b) => (lately.get(b.id) ?? 0) - (lately.get(a.id) ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        Number(!!b.favourite) - Number(!!a.favourite) ||
+        (lately.get(b.id) ?? 0) - (lately.get(a.id) ?? 0) ||
+        b.createdAt.localeCompare(a.createdAt) ||
+        a.id.localeCompare(b.id),
+    )
 }
 
 /**
@@ -525,6 +675,94 @@ export function todaySuggestions(
     .slice(0, limit)
     .map(({ key, garmentIds, label, reason }) => ({ key, garmentIds, label, reason }))
 }
+
+// ---- a piece's company and its cost ---------------------------------------------
+
+/**
+ * "Worn with": the pieces worn on the most of the same days as this one — in
+ * any look that day, since a day is a day — then the latest together, then by
+ * name. Live pieces only (a retired one counts: this is history); `limit` at most.
+ */
+export function wornWith(id: string, ix: WearIndex, byId: ReadonlyMap<string, Garment>, limit = 5): { garment: Garment; days: number; last: string }[] {
+  const found = new Map<string, { days: number; last: string }>()
+  for (const day of ix.days.get(id) ?? []) {
+    for (const other of new Set((ix.looks.get(day) ?? []).flatMap(w => w.garmentIds))) {
+      if (other === id || !byId.has(other)) continue
+      const f = found.get(other)
+      // the days come newest first, so the first seen is the latest together
+      if (f) f.days++
+      else found.set(other, { days: 1, last: day })
+    }
+  }
+  return [...found]
+    .map(([other, f]) => ({ garment: byId.get(other)!, ...f }))
+    .sort((a, b) => b.days - a.days || b.last.localeCompare(a.last) || a.garment.name.localeCompare(b.garment.name))
+    .slice(0, limit)
+}
+
+/** What a piece has cost per day worn: its price over the days, or null with no price or no day worn yet. */
+export function costPerWear(g: Garment, ix: WearIndex): number | null {
+  const days = ix.days.get(g.id)?.length ?? 0
+  return g.price === undefined || days === 0 ? null : g.price / days
+}
+
+/** The sheet's line: "£40.00 · £8.00 a wear over 5 days", "£40.00 · not worn yet", or null with no price. */
+export function costLine(g: Garment, ix: WearIndex): string | null {
+  if (g.price === undefined) return null
+  const each = costPerWear(g, ix)
+  const days = ix.days.get(g.id)?.length ?? 0
+  return each === null ? `${formatMoney(g.price)} · not worn yet` : `${formatMoney(g.price)} · ${formatMoney(each)} a wear over ${countOf(days, 'day')}`
+}
+
+// ---- the weather -------------------------------------------------------------------
+
+/** A day whose high is at most this is cold enough for a coat: 13 °C, or 55 °F where the forecast reads in Fahrenheit. */
+export const COLD_C = 13
+export const COLD_F = 55
+/** The chance of rain from which a day counts as wet. */
+export const WET_PCT = 50
+/** The skies describeCode names that are wet whatever the chance says. */
+const WET_SKIES = new Set(['Drizzle', 'Rain', 'Snow', 'Showers', 'Snow showers', 'Thunder'])
+
+export interface WeatherNeed {
+  cold: boolean
+  wet: boolean
+}
+
+/** What today's forecast asks of a look: cold, wet or both; null for neither, and with no forecast. */
+export function weatherNeed(f: Forecast | null | undefined): WeatherNeed | null {
+  if (!f) return null
+  const cold = f.hiC <= (/f/i.test(f.unit) ? COLD_F : COLD_C)
+  const wet = f.rainPct >= WET_PCT || WET_SKIES.has(describeCode(f.code).label)
+  return cold || wet ? { cold, wet } : null
+}
+
+/** The hint's words: "Cold today · 9° at most", "Wet today · rain 70%", "Cold and wet today · 6° at most · showers". */
+export function weatherLine(f: Forecast, need: WeatherNeed): string {
+  const sky = describeCode(f.code).label
+  const head = need.cold && need.wet ? 'Cold and wet today' : need.cold ? 'Cold today' : 'Wet today'
+  return [head, need.cold ? `${f.hiC}° at most` : '', need.wet ? (WET_SKIES.has(sky) ? sky.toLowerCase() : `rain ${f.rainPct}%`) : ''].filter(Boolean).join(' · ')
+}
+
+/** Tags that mark a coat for the rain. */
+const RAIN_TAG = /rain|waterproof/
+
+/**
+ * The outerwear a cold or wet day suggests: live and unretired, in season when
+ * one is; on a wet day one tagged for rain first; then the one worn on the most
+ * days in the last 60, the latest worn, the name. Undefined with none to offer.
+ */
+export function outerwearFor(garments: readonly Garment[], ix: WearIndex, need: WeatherNeed, season: Season = seasonOf(ix.dayKey)): Garment | undefined {
+  const coats = garments.filter(g => !g.deletedAt && !g.archivedAt && g.type === 'outerwear')
+  const fits = coats.filter(g => inSeason(g, season))
+  const rainy = (g: Garment) => (need.wet && g.tags?.some(t => RAIN_TAG.test(t)) ? 1 : 0)
+  const lately = (g: Garment) => within(ix.days.get(g.id) ?? [], ix.dayKey, SUGGEST_DAYS)
+  const last = (g: Garment) => ix.days.get(g.id)?.[0] ?? ''
+  return [...(fits.length > 0 ? fits : coats)].sort((a, b) => rainy(b) - rainy(a) || lately(b) - lately(a) || last(b).localeCompare(last(a)) || a.name.localeCompare(b.name))[0]
+}
+
+/** Whether these pieces already hold outerwear, so a weather hint has nothing to add. */
+export const hasOuterwear = (ids: readonly string[], byId: ReadonlyMap<string, Garment>): boolean => ids.some(id => byId.get(id)?.type === 'outerwear')
 
 // ---- names from a colour ---------------------------------------------------------
 

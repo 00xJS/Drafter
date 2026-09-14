@@ -222,7 +222,7 @@ export function recordLabel(item: Item | undefined): string {
     case 'note':
       return item.title || 'Untitled note'
     case 'wear':
-      return item.date ? `Outfit worn ${item.date}` : 'Outfit worn'
+      return `Outfit ${item.planned ? 'planned' : 'worn'}${item.date ? ` ${item.date}` : ''}`
     case 'outfit':
       return item.name || 'An outfit'
     case 'garment':

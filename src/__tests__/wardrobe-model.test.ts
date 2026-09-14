@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { Trash } from '../components/Trash'
-import { KNOWN_KINDS, migrateStored, sanitizeGarment, sanitizeItem, sanitizeOutfit, sanitizeWear } from '../schema'
+import { KNOWN_KINDS, garmentTags, migrateStored, sanitizeGarment, sanitizeItem, sanitizeOutfit, sanitizeWear } from '../schema'
 import { recordLabel } from '../syncengine'
 import { Garment, Item, Outfit, Wear } from '../types'
 
@@ -166,5 +166,68 @@ describe('what Trash and the sync toasts call them', () => {
     expect(html).toContain('<small class="muted">Outfit worn</small> 2026-09-13 · 1 piece')
     expect(html).toContain('<small class="muted">Outfit worn</small> 2026-09-12 · 3 pieces')
     expect(html.match(/class="trash-row"/g)).toHaveLength(6)
+  })
+})
+
+describe('the fields the wardrobe grew: a star, tags, seasons, a price, a note, a plan', () => {
+  const base = { kind: 'garment', id: 'g1', name: 'White tee', type: 'top', createdAt: T0, updatedAt: T0 }
+  const look = { kind: 'wear', id: 'wear~2026-09-20~a1b2c3d4e5', date: '2026-09-20', garmentIds: ['g1'], createdAt: T0, updatedAt: T0 }
+
+  it('keeps a star only as true, on a piece and on a saved outfit', () => {
+    expect(sanitizeGarment({ ...base, favourite: true })?.favourite).toBe(true)
+    for (const v of [false, 'yes', 1, undefined]) expect(sanitizeGarment({ ...base, favourite: v })?.favourite, String(v)).toBeUndefined()
+    expect(sanitizeOutfit({ kind: 'outfit', id: 'o1', garmentIds: ['g1'], favourite: true })?.favourite).toBe(true)
+    expect(sanitizeOutfit({ kind: 'outfit', id: 'o1', garmentIds: ['g1'], favourite: 'true' })?.favourite).toBeUndefined()
+  })
+
+  it('keeps tags trimmed, lowercased and once each, 30 characters and 12 tags at most', () => {
+    expect(sanitizeGarment({ ...base, tags: [' Work ', 'work', 'GYM', '', 7, null] })?.tags).toEqual(['work', 'gym'])
+    expect(sanitizeGarment({ ...base, tags: ['x'.repeat(40)] })?.tags).toEqual(['x'.repeat(30)])
+    expect(sanitizeGarment({ ...base, tags: Array.from({ length: 20 }, (_, i) => `t${i}`) })?.tags).toHaveLength(12)
+    expect(sanitizeGarment({ ...base, tags: [] })?.tags).toBeUndefined()
+    expect(sanitizeGarment({ ...base, tags: 'work' })?.tags).toBeUndefined()
+    // the sheet's comma-separated field goes through the same rule
+    expect(garmentTags('Work, gym, work,'.split(','))).toEqual(['work', 'gym'])
+  })
+
+  it('keeps known seasons once each, in the year’s order; none is any season', () => {
+    expect(sanitizeGarment({ ...base, seasons: ['winter', 'spring', 'winter', 'monsoon', 3] })?.seasons).toEqual(['spring', 'winter'])
+    expect(sanitizeGarment({ ...base, seasons: [] })?.seasons).toBeUndefined()
+    expect(sanitizeGarment({ ...base, seasons: 'winter' })?.seasons).toBeUndefined()
+  })
+
+  it('keeps a price in whole units of the currency, and never a negative one', () => {
+    expect(sanitizeGarment({ ...base, price: 40 })?.price).toBe(40)
+    expect(sanitizeGarment({ ...base, price: 39.6 })?.price).toBe(40)
+    expect(sanitizeGarment({ ...base, price: '£1,250' })?.price).toBe(1250)
+    expect(sanitizeGarment({ ...base, price: 0 })?.price).toBe(0)
+    for (const bad of [-5, 'cheap', NaN, Infinity, null]) expect(sanitizeGarment({ ...base, price: bad })?.price, String(bad)).toBeUndefined()
+  })
+
+  it('keeps a look’s note trimmed and 120 characters at most, and a plan only as true', () => {
+    expect(sanitizeWear({ ...look, note: '  wedding ' })?.note).toBe('wedding')
+    expect(sanitizeWear({ ...look, note: 'x'.repeat(200) })?.note).toBe('x'.repeat(120))
+    expect(sanitizeWear({ ...look, note: '   ' })?.note).toBeUndefined()
+    expect(sanitizeWear({ ...look, planned: true })?.planned).toBe(true)
+    for (const v of [false, 'true', 1]) expect(sanitizeWear({ ...look, planned: v })?.planned, String(v)).toBeUndefined()
+  })
+
+  it('round-trips every one of them through a JSON export', () => {
+    const items: Item[] = [
+      { ...garment, favourite: true, tags: ['work'], seasons: ['autumn', 'winter'], price: 40 },
+      { ...outfit, favourite: true },
+      { ...wear, note: 'wedding', planned: true },
+    ]
+    expect(migrateStored(JSON.parse(JSON.stringify({ version: 3, items })))).toEqual(items)
+  })
+
+  it('names a plan in Trash and the sync toasts as planned', () => {
+    const plan: Wear = { ...wear, planned: true }
+    expect(recordLabel(plan)).toBe('Outfit planned 2026-09-13')
+    const html = renderToStaticMarkup(createElement(Trash, { items: [{ ...plan, deletedAt: T0 }], projectMap: new Map(), onRestore: () => {}, onPurge: () => {}, onClose: () => {} })).replace(
+      /<!-- -->/g,
+      '',
+    )
+    expect(html).toContain('<small class="muted">Outfit planned</small> 2026-09-13 · 1 piece')
   })
 })

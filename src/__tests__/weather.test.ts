@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { STALE_MS, WEATHER_KEY, describeCode, disableWeather, fetchForecast, forecastUrl, getWeather, isStale, requestLocation } from '../weather'
+import { STALE_MS, WEATHER_KEY, cachedForecast, describeCode, disableWeather, fetchForecast, forecastUrl, getWeather, isStale, onWeatherCached, requestLocation } from '../weather'
 import { briefingFacts, greeting } from '../components/BriefingCard'
 import { CalendarEvent, Habit } from '../types'
 import { fmtTime } from '../utils'
@@ -193,6 +193,43 @@ describe('getWeather', () => {
     mem.set(WEATHER_KEY, JSON.stringify({ enabled: true, lat: 51.5, lon: -0.12 }))
     expect(await getWeather(now)).toBeNull()
     expect(readMem()).toEqual({ enabled: false })
+  })
+})
+
+describe('the cached forecast the wardrobe reads, never fetching', () => {
+  const forecast = { tempC: 8, hiC: 10, loC: 4, rainPct: 60, code: 61, unit: '°C' }
+  const NOON = new Date(2026, 8, 14, 12).getTime()
+  const cache = (c: object) => mem.set(WEATHER_KEY, JSON.stringify(c))
+
+  it('is the forecast fetched today while weather is on, and nothing otherwise', () => {
+    const fetchFn = stubFetch()
+    cache({ enabled: true, lat: 51.5, lon: -0.1, forecast, fetchedAt: new Date(2026, 8, 14, 7).getTime() })
+    expect(cachedForecast(NOON)).toEqual(forecast)
+    // fetched last night: another day's sky
+    cache({ enabled: true, lat: 51.5, lon: -0.1, forecast, fetchedAt: new Date(2026, 8, 13, 21).getTime() })
+    expect(cachedForecast(NOON)).toBeNull()
+    cache({ enabled: false, forecast, fetchedAt: NOON })
+    expect(cachedForecast(NOON)).toBeNull()
+    cache({ enabled: true, lat: 51.5, lon: -0.1, forecast })
+    expect(cachedForecast(NOON)).toBeNull()
+    mem.clear()
+    expect(cachedForecast(NOON)).toBeNull()
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('says so on the window whenever the cache is written, so a hint reads it again', async () => {
+    vi.stubGlobal('window', new EventTarget())
+    const heard = vi.fn()
+    const stop = onWeatherCached(heard)
+    stubFetch()
+    cache({ enabled: true, lat: 51.5, lon: -0.1 })
+    await getWeather(NOON)
+    expect(heard).toHaveBeenCalledTimes(1)
+    disableWeather()
+    expect(heard).toHaveBeenCalledTimes(2)
+    stop()
+    disableWeather()
+    expect(heard).toHaveBeenCalledTimes(2)
   })
 })
 
