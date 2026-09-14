@@ -7,10 +7,9 @@ export type Item = any
 export type Writable = { id: string; kind: string }
 
 export interface RestData {
-  mode: 'user' | 'service'
+  /** Whose view this is; null only for the stand-in of a server started without a token. */
   userId: string | null
-  ownerId(): Promise<string | null>
-  fetchAll(opts?: { kinds?: string[] }): Promise<Item[]>
+  fetchAll(opts?: { kinds?: string[]; includeDeleted?: boolean }): Promise<Item[]>
   fetchItem(id: string, kind: string): Promise<Item>
   fetchJournal(): Promise<Item[]>
   syncWrite<T extends Writable>(items: T[]): Promise<Item[]>
@@ -28,7 +27,6 @@ export declare class DataError extends Error {
 export declare function createRestData(opts: {
   baseUrl: string
   auth: () => Promise<{ apikey: string; bearer: string }>
-  userId?: string | null
-  mode?: 'user' | 'service'
+  userId: string
   onUnauthorized?: (() => void) | null
 }): RestData

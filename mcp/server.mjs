@@ -1,41 +1,42 @@
 #!/usr/bin/env node
 // Drafter's MCP server over stdio (newline-delimited JSON-RPC 2.0), for Claude
 // Desktop, Claude Code and anything else that launches a local process.
-// Zero dependencies, Node 18+. It chooses a mode when it starts:
+// Zero dependencies, Node 18+. It is a proxy for the hosted endpoint:
 //
-//   DRAFTER_AGENT_TOKEN set               proxy: each line is POSTed to the hosted
-//                                         /api/mcp (DRAFTER_MCP_URL, default
-//                                         https://drafterz.netlify.app/api/mcp) and the
-//                                         tools run there, as the token's user
-//   SUPABASE_URL + SUPABASE_SERVICE_KEY   DEPRECATED: the tools run here with the
-//                                         service key, which reads every account
-//   neither                               a warning; tool calls say what to set
+//   DRAFTER_AGENT_TOKEN set   each line is POSTed to the hosted /api/mcp
+//                             (DRAFTER_MCP_URL, default
+//                             https://drafterz.netlify.app/api/mcp) and the
+//                             tools run there, as the token's user
+//   not set                   initialize and tools/list still answer here;
+//                             every tool call says what to set
+//
+// It never reads the database itself. The old mode that ran the tools here
+// with SUPABASE_SERVICE_KEY, which reads every account, was removed: that key
+// is ignored, and a line on stderr says so.
 //
 // Create a token in Drafter → Settings → Assistants. Claude Desktop:
 //   {"mcpServers":{"drafter":{"command":"node","args":["<repo>/mcp/server.mjs"],"env":{"DRAFTER_AGENT_TOKEN":"drft_…"}}}}
 //
-// The tools live in tools.mjs, the protocol in protocol.mjs and the database
-// access in data.mjs; this file is the transport and the mode.
+// The tools live in tools.mjs (the list shown without a token) and the
+// protocol in protocol.mjs; this file is the transport.
 
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
-import { createRestData } from './data.mjs'
 import { SCOPES, TOOLS, createContext } from './tools.mjs'
 import { SERVER_INFO, handleBody, instructionsFor } from './protocol.mjs'
 import { makeClock } from '../shared/clock.mjs'
 
 export const DEFAULT_MCP_URL = 'https://drafterz.netlify.app/api/mcp'
 const USER_AGENT = 'drafter-mcp-proxy/3'
-const TOKEN_REJECTED = 'Drafter rejected the token (revoked?) — create a new one in Drafter → Settings → Assistants'
+const TOKEN_REJECTED = 'Drafter rejected the token (revoked, or unused for 180 days?) — create a new one in Drafter → Settings → Assistants'
 const NOT_CONFIGURED = 'Drafter is not configured: set DRAFTER_AGENT_TOKEN (create a token in Drafter → Settings → Assistants).'
-const DEPRECATED =
-  "drafter-mcp: DEPRECATED — service-key mode gives this process every account's data. Create a token in Drafter → Settings → Assistants and set DRAFTER_AGENT_TOKEN.\n"
+const NO_TOKEN = 'drafter-mcp: warning — DRAFTER_AGENT_TOKEN is not set; tool calls will fail. Create a token in Drafter → Settings → Assistants.\n'
+const KEY_IGNORED =
+  'drafter-mcp: SUPABASE_SERVICE_KEY is ignored — the service-key mode, which read every account, was removed. Create a token in Drafter → Settings → Assistants and set DRAFTER_AGENT_TOKEN.\n'
 
-/** 'proxy' with a token, 'service' with the legacy service key, else 'unconfigured'. */
+/** 'proxy' with a token, else 'unconfigured'. The service key no longer picks a mode. */
 export function selectMode(env = process.env) {
-  if (env.DRAFTER_AGENT_TOKEN) return 'proxy'
-  if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) return 'service'
-  return 'unconfigured'
+  return env.DRAFTER_AGENT_TOKEN ? 'proxy' : 'unconfigured'
 }
 
 function send(msg) {
@@ -51,27 +52,23 @@ function requestIds(parsed) {
 }
 
 /**
- * A data layer that refuses everything, for a server started with nothing configured.
+ * A data layer that refuses everything: without a token there is nothing to read.
  * @returns {import('./data.mjs').RestData}
  */
 function unconfiguredData() {
   const refuse = async () => {
     throw new Error(NOT_CONFIGURED)
   }
-  return { mode: 'service', userId: null, ownerId: refuse, fetchAll: refuse, fetchItem: refuse, fetchJournal: refuse, syncWrite: refuse, writeItem: refuse }
+  return { userId: null, fetchAll: refuse, fetchItem: refuse, fetchJournal: refuse, syncWrite: refuse, writeItem: refuse }
 }
 
-/** The tools run in this process: service-key mode, or unconfigured. */
-function localHandler(mode, env) {
+/** Without a token: the protocol answers in this process, and every tool call says to set one. */
+function unconfiguredHandler() {
   const clock = makeClock() // the machine's zone
-  const db =
-    mode === 'service'
-      ? createRestData({ baseUrl: env.SUPABASE_URL, mode: 'service', auth: async () => ({ apikey: env.SUPABASE_SERVICE_KEY, bearer: env.SUPABASE_SERVICE_KEY }) })
-      : unconfiguredData()
   const opts = {
     tools: TOOLS,
     scopes: SCOPES,
-    ctx: createContext({ db, clock, scopes: SCOPES }),
+    ctx: createContext({ db: unconfiguredData(), clock, scopes: SCOPES }),
     serverInfo: SERVER_INFO,
     instructions: instructionsFor({ tz: clock.tz, scopes: SCOPES }),
   }
@@ -168,9 +165,12 @@ function maybeExit() {
 /** Serve MCP over stdio. Called only when this file is the entry point. */
 export function startStdio(env = process.env) {
   const mode = selectMode(env)
-  const handle = mode === 'proxy' ? proxyHandler(env) : localHandler(mode, env)
-  if (mode === 'service') process.stderr.write(DEPRECATED)
-  if (mode === 'unconfigured') process.stderr.write(`drafter-mcp: warning — DRAFTER_AGENT_TOKEN is not set; tool calls will fail. Create a token in Drafter → Settings → Assistants.\n`)
+  const handle = mode === 'proxy' ? proxyHandler(env) : unconfiguredHandler()
+  if (mode === 'unconfigured') {
+    // someone's old Claude Desktop entry: say why it stopped working, never with the key
+    if (env.SUPABASE_SERVICE_KEY) process.stderr.write(KEY_IGNORED)
+    process.stderr.write(NO_TOKEN)
+  }
 
   const rl = createInterface({ input: process.stdin, terminal: false })
   rl.on('line', line => {

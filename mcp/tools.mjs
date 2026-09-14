@@ -1,9 +1,10 @@
-// Drafter's MCP tools: projects and tasks, notes, people and places, the
-// kitchen, the journal, the Today overview and the week plan. Zero dependencies.
+// Drafter's MCP tools: the project and its tasks, notes, people and places, the
+// kitchen, the wardrobe, the journal, the Today overview and the week plan.
+// Zero dependencies. There is one ongoing project (LIFE): an assistant can read
+// it and edit it, and no tool starts a second.
 //
 // Each tool is `run(args, ctx)` with ctx = { db, clock, scopes, userId, newId, rand }:
-//   db      mcp/data.mjs — the user's own view on the hosted endpoint, the
-//           owner's view in the deprecated local service-key mode
+//   db      mcp/data.mjs — the user's own view, through the posts policies
 //   clock   shared/clock.mjs in the user's zone, so "today" is their today
 //   newId   ids keep the `mcp-` prefix as provenance
 // `scope` is what a connection needs to see and call the tool (read, write or
@@ -23,6 +24,26 @@ import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, grocer
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
 import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
+import {
+  GARMENT_TYPES,
+  MAX_PIECES,
+  NEVER_WORN_GRACE_DAYS,
+  NOT_WORN_DAYS,
+  cleanIds,
+  coreKey,
+  daysWithin,
+  liveById,
+  logLook,
+  looksOn,
+  mostWorn,
+  neverWorn,
+  notWornLately,
+  orderPieces,
+  outfitDays,
+  outfitLabel,
+  unwearable,
+  wearIndex,
+} from '../shared/wardrobe.mjs'
 
 /** The app's own place categories, as it labels them — "fastfood (Fast food)" — for the place tools' descriptions. */
 const PLACE_CATEGORY_CHOICES = PLACE_CATEGORIES.map(c => `${c} (${PLACE_CATEGORY_META[c].label})`).join(', ')
@@ -353,6 +374,56 @@ function summarizeNote(n) {
 }
 
 // ---------------------------------------------------------------------------
+// The wardrobe: the app's own rules (shared/wardrobe.mjs), and never a photo
+// ---------------------------------------------------------------------------
+
+const WARDROBE_KINDS = ['garment', 'outfit', 'wear']
+/** The most-worn windows Stats offers: 30 days, 365 days or all time. */
+const WEAR_WINDOWS = ['30', '365', 'all']
+
+/** Whole days from one day key to another. */
+const daysApart = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY)
+
+/** A stored piece as the app reads one (sanitizeGarment): an unknown type is an accessory, which is never a look's core. */
+const asGarment = g => ({ ...g, type: GARMENT_TYPES.includes(g.type) ? g.type : 'accessory', name: String(g.name ?? '').trim() || 'Untitled piece', createdAt: String(g.createdAt ?? '') })
+
+/**
+ * The user's wardrobe as of their today: every piece they have, Trash included
+ * (a log finds a piece's slot by it), the live ones by id, the saved outfits
+ * and the looks. These are personal kinds: the posts policies and the data
+ * layer both keep a household peer's away.
+ * @param {import('./data.mjs').RestData} db
+ * @param {import('../shared/clock.mjs').Clock} clock
+ */
+async function wardrobeOf(db, clock) {
+  const all = await db.fetchAll({ kinds: WARDROBE_KINDS, includeDeleted: true })
+  const live = kind => all.filter(i => i.kind === kind && !i.deletedAt && Array.isArray(i.garmentIds)).map(i => ({ ...i, createdAt: String(i.createdAt ?? '') }))
+  const records = all.filter(i => i.kind === 'garment' && !i.purged).map(asGarment)
+  const byId = liveById(records)
+  const wears = live('wear')
+  return { records, byId, garments: [...byId.values()], outfits: live('outfit'), wears, ix: wearIndex(wears, clock.todayKey()) }
+}
+
+/** A piece named in an answer: its id, name and type, and nothing of its photos. */
+const pieceOf = g => ({ id: g.id, name: g.name, type: g.type })
+
+/** A piece as list_garments gives it: how it has been worn, counted in the user's days. */
+function summarizeGarment(g, ix, clock) {
+  const days = ix.days.get(g.id) ?? []
+  return {
+    ...pieceOf(g),
+    color: g.color ?? null,
+    notes: g.notes ?? null,
+    retired: !!g.archivedAt,
+    addedOn: clock.dayKeyOf(g.createdAt),
+    lastWorn: days[0] ?? null,
+    daysWorn: days.length,
+    daysWornLast30Days: daysWithin(days, ix.dayKey, 30),
+    daysWornLast365Days: daysWithin(days, ix.dayKey, 365),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Annotations: hints for the client, never a substitute for the scope check
 // ---------------------------------------------------------------------------
 
@@ -383,53 +454,11 @@ export const TOOLS = [
     },
   },
   {
-    name: 'create_project',
-    scope: 'write',
-    annotations: ADDS,
-    description: 'Create a project (a container for tasks, shown on the roadmap). Dates are ISO; color is a hex string.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
-        emoji: { type: 'string' },
-        color: { type: 'string', description: 'Hex color, e.g. #4f46e5' },
-        startAt: { type: 'string' },
-        targetAt: { type: 'string' },
-        githubUrl: { type: 'string', description: 'Repo or GitHub Projects URL' },
-        milestones: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, dueAt: { type: 'string' } }, required: ['name'] } },
-      },
-      required: ['name'],
-    },
-    async run({ name, description, emoji, color, startAt, targetAt, githubUrl, milestones } = {}, { db, clock, newId }) {
-      if (!name || !String(name).trim()) throw new Error('name must not be empty')
-      const stamp = clock.iso()
-      const project = {
-        kind: 'project',
-        id: newId(),
-        name: String(name).trim(),
-        description: description ? String(description) : undefined,
-        emoji: emoji ? String(emoji) : undefined,
-        color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#4f46e5',
-        status: 'active',
-        startAt: startAt ? isoOrThrow(startAt, 'startAt') : undefined,
-        targetAt: targetAt ? isoOrThrow(targetAt, 'targetAt') : undefined,
-        githubUrl: githubUrl ? String(githubUrl) : undefined,
-        milestones: Array.isArray(milestones)
-          ? milestones.filter(m => m && m.name).map(m => ({ id: newId(), name: String(m.name), dueAt: m.dueAt ? isoOrThrow(m.dueAt, 'milestone.dueAt') : undefined }))
-          : undefined,
-        createdAt: stamp,
-        updatedAt: stamp,
-      }
-      await db.writeItem(project)
-      return { created: summarizeProject(project) }
-    },
-  },
-  {
     name: 'update_project',
     scope: 'write',
     annotations: EDITS,
-    description: 'Edit a project: name, description, status (active|paused|done|archived), dates, GitHub URL, Markdown notes (replace or append), or add a milestone.',
+    description:
+      'Edit the project (the user keeps one ongoing project, and no tool starts another): name, description, status (active|paused|done|archived), dates, GitHub URL, Markdown notes (replace or append), or add a milestone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1235,6 +1264,139 @@ export const TOOLS = [
       list.updatedAt = newerStamp(list.updatedAt)
       await db.writeItem(list)
       return { weekKey, line }
+    },
+  },
+  {
+    name: 'list_garments',
+    scope: 'read',
+    annotations: READS,
+    description:
+      'Every piece of clothing in Home → Wardrobe: its name, type (top, bottom, onepiece, outerwear, shoes or accessory), colour and notes, whether it is retired (given away or worn out: kept for its history, out of the day\'s choices), and how it has been worn — lastWorn (YYYY-MM-DD, or null) and daysWorn, all time and in the last 30 and 365 days — counted as the app counts them: distinct days with a look holding it, up to the user\'s today. Photos never leave Drafter. type narrows the list.',
+    inputSchema: { type: 'object', properties: { type: { type: 'string', enum: GARMENT_TYPES } } },
+    async run({ type } = {}, { db, clock }) {
+      if (type !== undefined) oneOf(type, GARMENT_TYPES, 'type')
+      const { garments, ix } = await wardrobeOf(db, clock)
+      const pieces = garments.filter(g => !type || g.type === type).sort((a, b) => a.name.localeCompare(b.name))
+      return { today: ix.dayKey, count: pieces.length, garments: pieces.map(g => summarizeGarment(g, ix, clock)) }
+    },
+  },
+  {
+    name: 'list_outfits',
+    scope: 'read',
+    annotations: READS,
+    description:
+      'The saved outfits in Home → Wardrobe: each one\'s pieces (ids, names and types, top to toe), its name or the label the app gives it ("Navy tee + Black jeans"), whether it can be worn as it is — every piece in use, and a top and a bottom or a one-piece among them — and if not, why, and on how many days a look with its core (its top and bottom, or its one-piece, whatever went with them) was worn, with the last of them. log_outfit wears one by its id.',
+    inputSchema: { type: 'object', properties: {} },
+    async run(_args, { db, clock }) {
+      const { byId, outfits, ix } = await wardrobeOf(db, clock)
+      const out = outfits.map(o => {
+        const days = outfitDays(o, ix, byId)
+        const why = unwearable(o.garmentIds, byId)
+        return {
+          id: o.id,
+          name: o.name || null,
+          label: o.name || outfitLabel(o.garmentIds, byId),
+          pieces: orderPieces(o.garmentIds, byId).map(id => pieceOf(byId.get(id))),
+          piecesDeleted: o.garmentIds.filter(id => !byId.has(id)).length,
+          wearable: !why,
+          notWearable: why,
+          daysWorn: days.length,
+          lastWorn: days[0] ?? null,
+        }
+      })
+      out.sort((a, b) => b.daysWorn - a.daysWorn || (b.lastWorn ?? '').localeCompare(a.lastWorn ?? '') || a.label.localeCompare(b.label))
+      return { count: out.length, outfits: out }
+    },
+  },
+  {
+    name: 'get_wardrobe_stats',
+    scope: 'read',
+    annotations: READS,
+    description: `The Wardrobe's Stats, by the app's own rules and as of the user's today: the most worn pieces over the last 30 days, 365 days or all time (window, default 30; the most days worn first, then the latest worn); the pieces not worn lately (worn before, but not in ${NOT_WORN_DAYS} days or more; retired ones left out; the longest rested first); and the pieces never worn (one added in the last ${NEVER_WORN_GRACE_DAYS} days is not counted yet). Every figure counts days: two looks on one day are one day.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        window: { type: 'string', enum: WEAR_WINDOWS, description: 'Most worn over the last 30 days, 365 days or all time (default 30)' },
+        limit: { type: 'number', description: 'How many of the most worn to list (default 10, max 50)' },
+      },
+    },
+    async run({ window, limit } = {}, { db, clock }) {
+      const span = window === undefined || window === null || window === '' ? '30' : oneOf(String(window), WEAR_WINDOWS, 'window')
+      const cap = Math.min(Math.max(Number(limit) || 10, 1), 50)
+      const { garments, ix } = await wardrobeOf(db, clock)
+      const month = ix.dayKey.slice(0, 7)
+      return {
+        today: ix.dayKey,
+        piecesInUse: garments.filter(g => !g.archivedAt).length,
+        daysLoggedThisMonth: ix.logged.filter(d => d.startsWith(month)).length,
+        mostWorn: {
+          window: span === 'all' ? 'all time' : `last ${span} days`,
+          pieces: mostWorn(garments, ix, span === 'all' ? 'all' : span === '365' ? 365 : 30, cap).map(r => ({ ...pieceOf(r.garment), daysWorn: r.count, lastWorn: r.lastWorn })),
+        },
+        notWornLately: {
+          days: NOT_WORN_DAYS,
+          pieces: notWornLately(garments, ix).map(g => {
+            const last = ix.days.get(g.id)[0]
+            return { ...pieceOf(g), lastWorn: last, daysSince: daysApart(last, ix.dayKey) }
+          }),
+        },
+        neverWorn: {
+          graceDays: NEVER_WORN_GRACE_DAYS,
+          pieces: neverWorn(garments, ix, NEVER_WORN_GRACE_DAYS, iso => clock.dayKeyOf(iso) ?? '').map(g => ({ ...pieceOf(g), addedOn: clock.dayKeyOf(g.createdAt) })),
+        },
+      }
+    },
+  },
+  {
+    name: 'log_outfit',
+    scope: 'write',
+    annotations: EDITS,
+    description: `Record what the user wore on a day (default today; never a day ahead), as Home → Wardrobe's Wearing this does. Give garmentIds — pieces from list_garments, in use rather than retired, with a top and a bottom or a one-piece among them, at most ${MAX_PIECES} — or outfitId, a saved outfit from list_outfits that can be worn as it is. The day's latest look takes the pieces: a retired piece or one in Trash that it held stays, unless a new piece takes its place. A day with no look gets a new one; another: true adds a second look instead (an evening change). Every figure counts days, so a second look never makes a piece worn twice.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD, default today' },
+        garmentIds: { type: 'array', items: { type: 'string' }, description: 'The pieces worn (ids from list_garments)' },
+        outfitId: { type: 'string', description: 'Instead of garmentIds: a saved outfit (id from list_outfits)' },
+        another: { type: 'boolean', description: "A second look for the day, rather than changing the day's look" },
+      },
+    },
+    async run({ date, garmentIds, outfitId, another } = {}, { db, clock, rand }) {
+      const today = clock.todayKey()
+      const day = date ? String(date).trim() : today
+      assertDayKey(day)
+      if (day > today) throw new Error(`${day} has not happened yet: a look is logged for today or a day gone by.`)
+      const byOutfit = outfitId !== undefined && outfitId !== null && outfitId !== ''
+      if (byOutfit === (garmentIds !== undefined)) throw new Error('Give garmentIds (pieces from list_garments) or an outfitId (from list_outfits): one of the two.')
+      const { records, byId, outfits, wears } = await wardrobeOf(db, clock)
+      let pieces
+      if (byOutfit) {
+        const outfit = outfits.find(o => o.id === String(outfitId))
+        if (!outfit) throw new Error(`No saved outfit with id "${outfitId}". Use list_outfits.`)
+        const why = unwearable(outfit.garmentIds, byId)
+        if (why) throw new Error(`That outfit cannot be worn as it is: ${why}.`)
+        pieces = cleanIds(outfit.garmentIds)
+      } else {
+        if (!Array.isArray(garmentIds) || garmentIds.length === 0) throw new Error('garmentIds must list the pieces worn (ids from list_garments).')
+        const ids = [...new Set(garmentIds.map(id => String(id).trim()).filter(Boolean))]
+        if (ids.length > MAX_PIECES) throw new Error(`A look holds at most ${MAX_PIECES} pieces.`)
+        for (const id of ids) {
+          const g = byId.get(id)
+          if (!g) throw new Error(`No piece of clothing with id "${id}". Use list_garments.`)
+          if (g.archivedAt) throw new Error(`${g.name} is retired: bring it back in the app before wearing it again.`)
+        }
+        if (!coreKey(ids, byId)) throw new Error('A look needs a top and a bottom, or a one-piece.')
+        pieces = ids
+      }
+      // the app's own log: a new look stamped now, or the day's latest look stamped newer than the copy read
+      const { write } = logLook(wears, day, pieces, records, { another: another === true, now: clock.iso(), rand: () => `${rand()}${rand()}`.slice(0, 10) })
+      await db.writeItem(write)
+      const updated = wears.some(w => w.id === write.id)
+      return {
+        logged: updated ? 'look updated' : 'new look',
+        look: { id: write.id, date: write.date, label: outfitLabel(write.garmentIds, byId), pieces: orderPieces(write.garmentIds, byId).map(id => pieceOf(byId.get(id))) },
+        looksThatDay: looksOn([...wears.filter(w => w.id !== write.id), write], day).length,
+      }
     },
   },
   {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { visibleItemsFor } from '../../shared/digest.mjs'
-import { localDayKey } from '../../shared/journal.mjs'
+import { localDayKey, shiftDayKey } from '../../shared/journal.mjs'
 import { groceryId } from '../../shared/kitchen.mjs'
 import { weekKeyOf } from '../../shared/weeks.mjs'
 import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS } from '../../shared/kinds.mjs'
@@ -16,9 +16,9 @@ import { PLACE_CATEGORIES, PLACE_CATEGORY_META } from '../types'
 
 // The MCP tools reach Supabase through mcp/data.mjs over fetch; here fetch is
 // a stub, so these tests pin the data layer's contract with PostgREST and
-// sync_posts ({ items, rejected, stale, gone }), both of its views (the user's
-// own JWT, and the deprecated service key filtered to the owner), and the
-// tools' privacy — with no database and no transport.
+// sync_posts ({ items, rejected, stale, gone }), its one view (the user's own
+// JWT, with a peer's personal rows filtered out again), and the tools'
+// privacy — with no database and no transport.
 
 const BASE = 'https://db.example.test'
 const RPC = `${BASE}/rest/v1/rpc/sync_posts`
@@ -37,10 +37,18 @@ function respond(handler: (url: string, body: any, headers: Record<string, strin
   }) as typeof fetch
 }
 
-/** The deprecated local mode: the service key, read in the owner's view. */
-const serviceData = () => createRestData({ baseUrl: BASE, mode: 'service', auth: async () => ({ apikey: 'service-key', bearer: 'service-key' }) })
+/** Whose rows the stubs below hold: the owner of the home, and a household peer. */
+const OWNER = 'owner-1'
+const PEER = 'peer-2'
+
+/**
+ * The owner's view, as the hosted endpoint builds it: their own JWT. Most
+ * stubs here answer as the database would the service role — every row — so
+ * the data layer's own second filter is what these tests hold to account.
+ */
+const ownerData = () => createRestData({ baseUrl: BASE, userId: OWNER, auth: async () => ({ apikey: 'anon-key', bearer: 'jwt-of-the-owner' }) })
 const ALL_SCOPES: Scope[] = ['read', 'write', 'journal']
-const ctxFor = (scopes: Scope[] = ALL_SCOPES) => createContext({ db: serviceData(), clock: makeClock(), scopes })
+const ctxFor = (scopes: Scope[] = ALL_SCOPES) => createContext({ db: ownerData(), clock: makeClock(), scopes, userId: OWNER })
 
 afterEach(() => {
   calls.length = 0
@@ -50,29 +58,29 @@ afterEach(() => {
 describe('syncWrite against the sync_posts contract', () => {
   it('unwraps { items, rejected } and returns the normalized list', async () => {
     respond(url => (url === RPC ? { items: [{ kind: 'task', id: 'a', title: 'A', updatedAt: '2026-09-08T10:00:00.000Z' }], rejected: [] } : []))
-    const all = await serviceData().syncWrite([{ kind: 'task', id: 'a', title: 'A', updatedAt: '2026-09-08T10:00:00.000Z' }])
+    const all = await ownerData().syncWrite([{ kind: 'task', id: 'a', title: 'A', updatedAt: '2026-09-08T10:00:00.000Z' }])
     expect(all.map(i => i.id)).toEqual(['a'])
   })
 
   it('still accepts the legacy bare-array shape', async () => {
     respond(() => [{ kind: 'task', id: 'a', title: 'A', updatedAt: '2026-09-08T10:00:00.000Z' }])
-    const all = await serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
+    const all = await ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
     expect(all).toHaveLength(1)
   })
 
   it('throws when the server rejected one of the ids it was sent', async () => {
     respond(() => ({ items: [], rejected: ['a'] }))
-    await expect(serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/refused to store a/)
+    await expect(ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/refused to store a/)
   })
 
   it('writeItem throws when the stored copy carries a different stamp (lost the merge)', async () => {
     respond(() => ({ items: [{ kind: 'task', id: 'a', updatedAt: '2026-09-08T12:00:00.000Z' }], rejected: [] }))
-    await expect(serviceData().writeItem({ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' })).rejects.toThrow(/last-write-wins/)
+    await expect(ownerData().writeItem({ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' })).rejects.toThrow(/last-write-wins/)
   })
 
   it('writeItem returns the stored copy when the stamps match', async () => {
     respond(() => ({ items: [{ kind: 'task', id: 'a', title: 'stored', updatedAt: '2026-09-08T10:00:00.000Z' }], rejected: [] }))
-    const stored = await serviceData().writeItem({ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' })
+    const stored = await ownerData().writeItem({ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' })
     expect(stored.title).toBe('stored')
     expect(calls[0].url).toBe(RPC)
     expect((calls[0].body as { incoming: unknown[] }).incoming).toHaveLength(1)
@@ -81,7 +89,7 @@ describe('syncWrite against the sync_posts contract', () => {
   it('sends a since cursor ten minutes back, so the echo is recent rows and never the whole table', async () => {
     respond(() => ({ items: [{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }], rejected: [] }))
     const before = Date.now()
-    await serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
+    await ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
     const since = Date.parse(calls[0].body.since)
     expect(since).toBeGreaterThanOrEqual(before - SINCE_WINDOW_MS - 1000)
     expect(since).toBeLessThanOrEqual(Date.now() - SINCE_WINDOW_MS + 1000)
@@ -89,43 +97,48 @@ describe('syncWrite against the sync_posts contract', () => {
 
   it('confirms an id missing from the echo with one read, and calls it lost only when the read finds nothing', async () => {
     respond(url => (url === RPC ? { items: [], rejected: [], stale: [], gone: [] } : [{ data: { kind: 'task', id: 'a', title: 'kept', updatedAt: '2026-09-08T10:00:00.000Z' } }]))
-    const [kept] = await serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
+    const [kept] = await ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])
     expect(kept.title).toBe('kept')
     expect(calls.map(c => c.url)).toEqual([RPC, `${BASE}/rest/v1/posts?id=eq.a&select=data`])
 
     respond(url => (url === RPC ? { items: [], rejected: [] } : []))
-    await expect(serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/did not keep a/)
+    await expect(ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/did not keep a/)
   })
 
   it('a stale id is a failed write, and a gone id a record deleted for good', async () => {
     respond(() => ({ items: [{ kind: 'task', id: 'a', updatedAt: '2026-09-09T10:00:00.000Z' }], rejected: [], stale: ['a'], gone: [] }))
-    await expect(serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/A newer edit to that record won — re-read it and try again/)
+    await expect(ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/A newer edit to that record won — re-read it and try again/)
     respond(() => ({ items: [], rejected: [], stale: [], gone: ['a'] }))
-    await expect(serviceData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/That record was deleted for good/)
+    await expect(ownerData().syncWrite([{ kind: 'task', id: 'a', updatedAt: '2026-09-08T10:00:00.000Z' }])).rejects.toThrow(/That record was deleted for good/)
   })
 })
 
-describe('fetchJournal reads only the owner', () => {
-  it('drops a household peer\'s journal rows and keeps legacy unowned ones', async () => {
-    respond(url => {
-      if (url.includes('/rpc/owner_user_id')) return 'owner-1'
-      if (url.includes('kind=eq.journal'))
-        return [
-          { user_id: 'owner-1', data: { kind: 'journal', id: 'j1', date: '2026-09-08', body: 'mine' } },
-          { user_id: 'peer-2', data: { kind: 'journal', id: 'j2', date: '2026-09-08', body: 'theirs' } },
-          { user_id: null, data: { kind: 'journal', id: 'j0', date: '2026-09-07', body: 'legacy' } },
-        ]
-      return []
-    })
-    const journal = await serviceData().fetchJournal()
-    expect(journal.map(e => e.id).sort()).toEqual(['j0', 'j1'])
+describe('fetchJournal reads only the user', () => {
+  it('asks for their own entries, and drops a household peer\'s even when the database hands them over', async () => {
+    respond(url =>
+      url.includes('kind=eq.journal')
+        ? [
+            { user_id: OWNER, data: { kind: 'journal', id: 'j1', date: '2026-09-08', body: 'mine' } },
+            { user_id: PEER, data: { kind: 'journal', id: 'j2', date: '2026-09-08', body: 'theirs' } },
+          ]
+        : [],
+    )
+    const journal = await ownerData().fetchJournal()
+    expect(journal.map(e => e.id)).toEqual(['j1'])
+    expect(calls[0].url).toContain(`user_id=eq.${OWNER}`)
+    // the view is the user's own: nothing asks whose the site is
+    expect(calls.some(c => c.url.includes('owner_user_id'))).toBe(false)
+  })
+
+  it('needs the user it reads as', () => {
+    expect(() => createRestData({ baseUrl: BASE, userId: '', auth: async () => ({ apikey: 'anon-key', bearer: 'x' }) })).toThrow(/needs their id/)
   })
 })
 
 describe('user mode: the hosted endpoint reads as the user', () => {
   const USER = '00000000-0000-0000-0000-00000000000b'
   const userData = (onUnauthorized: (() => void) | null = null) =>
-    createRestData({ baseUrl: BASE, mode: 'user', userId: USER, auth: async () => ({ apikey: 'anon-key', bearer: 'jwt-of-the-user' }), onUnauthorized })
+    createRestData({ baseUrl: BASE, userId: USER, auth: async () => ({ apikey: 'anon-key', bearer: 'jwt-of-the-user' }), onUnauthorized })
 
   it('reads the journal filtered to the user\'s own rows, with the anon key and the user\'s JWT', async () => {
     respond(() => [{ user_id: USER, data: { kind: 'journal', id: 'j1', date: '2026-09-08', body: 'mine' } }])
@@ -172,7 +185,7 @@ describe('reads page past max_rows', () => {
 
   it('asks for 1000-row pages with Range headers until a short page, and keeps every row', async () => {
     servePages(rowsOf(PAGE_SIZE + 5))
-    const all = await serviceData().fetchAll({ kinds: ['task'] })
+    const all = await ownerData().fetchAll({ kinds: ['task'] })
     expect(all).toHaveLength(PAGE_SIZE + 5)
     const reads = calls.filter(c => c.url.includes('/rest/v1/posts'))
     expect(reads.map(c => c.headers.range)).toEqual(['0-999', '1000-1999'])
@@ -181,20 +194,20 @@ describe('reads page past max_rows', () => {
 
   it('a table of exactly one page reads the next, empty page rather than assume', async () => {
     servePages(rowsOf(PAGE_SIZE))
-    expect(await serviceData().fetchAll()).toHaveLength(PAGE_SIZE)
+    expect(await ownerData().fetchAll()).toHaveLength(PAGE_SIZE)
     expect(calls.filter(c => c.url.includes('/rest/v1/posts')).map(c => c.headers.range)).toEqual(['0-999', '1000-1999'])
   })
 
   it('orders by a unique key too, so pages never overlap on a tie, and reads a row seen twice once', async () => {
     const rows = rowsOf(3)
     respond(url => (url.includes('owner_user_id') ? OWNER_ID : [...rows, rows[0]]))
-    expect(await serviceData().fetchAll()).toHaveLength(3)
+    expect(await ownerData().fetchAll()).toHaveLength(3)
     expect(calls.find(c => c.url.includes('/rest/v1/posts'))?.url).toContain('order=updated_at.desc,id.asc')
   })
 
   it('filters by kind with in.() — the generated column reads a legacy row as a task', async () => {
     servePages([])
-    await serviceData().fetchAll({ kinds: ['task', 'project'] })
+    await ownerData().fetchAll({ kinds: ['task', 'project'] })
     expect(calls.find(c => c.url.includes('/rest/v1/posts'))?.url).toContain('kind=in.(task,project)')
   })
 })
@@ -232,8 +245,12 @@ describe('tool catalogue', () => {
         'list_projects', 'create_task', 'update_task', 'complete_task', 'list_people', 'list_places', 'create_place', 'log_visit',
         'list_recipes', 'get_week_meals', 'plan_meal', 'get_grocery_list', 'add_grocery_item', 'set_grocery_state',
         'list_journal', 'add_journal_entry', 'get_overview', 'list_notes', 'get_note', 'create_note', 'update_note', 'get_week_plan_proposal',
+        'update_project', 'list_garments', 'list_outfits', 'get_wardrobe_stats', 'log_outfit',
       ]),
     )
+    // one ongoing project: an assistant edits it and never starts another
+    expect(names).not.toContain('create_project')
+    expect(TOOLS).toHaveLength(31)
     for (const t of TOOLS) {
       expect(t.inputSchema.type, t.name).toBe('object')
       for (const req of t.inputSchema.required ?? []) expect(Object.keys(t.inputSchema.properties), `${t.name}.${req}`).toContain(req)
@@ -254,13 +271,14 @@ describe('tool catalogue', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Personal kinds. The service key bypasses every policy, so the local mode
-// must keep a household peer's journal, review, calendar, habit and routine
-// rows away from every tool — their content, and even their kind.
+// Personal kinds. The database's policies keep a household peer's journal,
+// review, calendar, habit, routine and wardrobe rows from the user, and the
+// data layer applies the same rule again, so a mistake in a policy could only
+// narrow an answer. The stub below hands over every row, as the service role
+// would, so that second rule is what keeps them away from every tool — their
+// content, and even their kind.
 // ---------------------------------------------------------------------------
 
-const OWNER = 'owner-1'
-const PEER = 'peer-2'
 /** Written into every personal row of the peer's; no tool output may contain it. */
 const SECRET = 'PEER-PRIVATE'
 const STAMP = '2026-09-08T09:00:00.000Z'
@@ -272,6 +290,8 @@ type Row = { user_id: string | null; data: Record<string, any> }
 function household(): Row[] {
   const today = localDayKey()
   const week = weekKeyOf(DAY)!
+  /** When most of the wardrobe was added: a month ago, at noon, so no zone moves the day. */
+  const added = `${shiftDayKey(today, -30)}T12:00:00.000Z`
   const at = (user_id: string | null, data: Record<string, any>): Row => ({ user_id, data: { createdAt: STAMP, updatedAt: STAMP, ...data } })
   return [
     at(OWNER, { kind: 'project', id: 'p1', name: 'Kitchen', status: 'active', color: '#f97316' }),
@@ -290,6 +310,19 @@ function household(): Row[] {
       body: '<p>Raised beds &amp; a <strong>pond</strong></p><ul class="checklist"><li><input type="checkbox" checked> Measure</li></ul>',
       projectId: 'p1',
     }),
+    // the owner's wardrobe: personal like the journal, and its photos never leave Drafter
+    at(OWNER, { kind: 'garment', id: 'tee', name: 'Navy tee', type: 'top', color: '#1e2848', photoId: 'photo-of-tee', thumbId: 'thumb-of-tee', createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'jeans', name: 'Blue jeans', type: 'bottom', createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'dress', name: 'Green dress', type: 'onepiece', createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'band', name: 'Old band tee', type: 'top', archivedAt: STAMP, createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'scarf', name: 'Wool scarf', type: 'accessory', archivedAt: STAMP, createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'linen', name: 'Linen shirt', type: 'top', createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'trainers', name: 'New trainers', type: 'shoes', createdAt: new Date().toISOString() }),
+    at(OWNER, { kind: 'garment', id: 'torn', name: 'Torn hoodie', type: 'top', deletedAt: STAMP, createdAt: added }),
+    at(OWNER, { kind: 'outfit', id: 'weekday', name: 'Weekday', garmentIds: ['tee', 'jeans'] }),
+    at(OWNER, { kind: 'outfit', id: 'old-fav', garmentIds: ['band', 'jeans'] }),
+    at(OWNER, { kind: 'wear', id: `wear~${shiftDayKey(today, -3)}~look000003`, date: shiftDayKey(today, -3), garmentIds: ['tee', 'jeans'] }),
+    at(OWNER, { kind: 'wear', id: `wear~${shiftDayKey(today, -70)}~look000070`, date: shiftDayKey(today, -70), garmentIds: ['dress'] }),
     at(null, { id: 'legacy-post', title: 'An old social post', body: 'hello', status: 'draft', platforms: ['x'] }),
     // shared with the household: the owner's agent may see a peer's chore
     at(PEER, { kind: 'task', id: 'peer-task', title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] }),
@@ -301,6 +334,10 @@ function household(): Row[] {
     at(PEER, { kind: 'review', id: 'peer-c', period: 'week', key: week, top: [`${SECRET} review`] }),
     at(PEER, { kind: 'calendar', id: 'peer-d', name: `${SECRET} calendar`, url: 'https://example.test/peer.ics', color: '#888', enabled: true }),
     at(PEER, { kind: 'journal', id: `journal~${today}~peer`, date: today, body: `${SECRET} journal`, mood: 2 }),
+    at(PEER, { kind: 'garment', id: 'peer-g', name: `${SECRET} shirt`, type: 'top' }),
+    at(PEER, { kind: 'outfit', id: 'peer-o', name: `${SECRET} outfit`, garmentIds: ['peer-g'] }),
+    // a look has no text of its own, so the marker rides in its piece ids
+    at(PEER, { kind: 'wear', id: `wear~${today}~peer000001`, date: today, garmentIds: ['peer-g', `${SECRET}-scarf`] }),
   ]
 }
 
@@ -354,7 +391,6 @@ const tool = (name: string) => {
 /** One call per tool, each of which must succeed against household(). A new tool fails the sweep until it is added. */
 const SWEEP: Record<string, Record<string, unknown>> = {
   list_projects: { includeArchived: true },
-  create_project: { name: 'Garden' },
   update_project: { id: 'p1', appendNotes: 'Worktop ordered' },
   list_tasks: { limit: 200 },
   get_task: { id: 't1' },
@@ -381,6 +417,10 @@ const SWEEP: Record<string, Record<string, unknown>> = {
   create_note: { title: 'Paint colours', text: 'Sage\n\n- [ ] Buy samples', projectId: 'p1' },
   update_note: { id: 'n1', appendText: 'Ask about liners' },
   get_week_plan_proposal: {},
+  list_garments: {},
+  list_outfits: {},
+  get_wardrobe_stats: { window: 'all' },
+  log_outfit: { garmentIds: ['tee', 'jeans'] },
 }
 
 describe('personal kinds stay with their owner', () => {
@@ -408,9 +448,9 @@ describe('personal kinds stay with their owner', () => {
   it('fetchAll drops a peer\'s personal rows and keeps everything the household shares', async () => {
     serveHousehold(household())
     const today = localDayKey()
-    const ids = (await serviceData().fetchAll()).map(i => i.id)
+    const ids = (await ownerData().fetchAll()).map(i => i.id)
     expect(ids).toEqual(expect.arrayContaining(['t1', 'own-habit', `journal~${today}~own`, 'legacy-post', 'peer-task']))
-    for (const id of ['peer-a', 'peer-b', 'peer-c', 'peer-d', `journal~${today}~peer`]) expect(ids).not.toContain(id)
+    for (const id of ['peer-a', 'peer-b', 'peer-c', 'peer-d', `journal~${today}~peer`, 'peer-g', 'peer-o', `wear~${today}~peer000001`]) expect(ids).not.toContain(id)
   })
 
   it('a peer\'s personal row reads as missing by id, and nothing is written to it', async () => {
@@ -440,7 +480,7 @@ describe('personal kinds stay with their owner', () => {
 
   it('syncWrite hands back only the rows it wrote, though sync_posts echoes the whole table', async () => {
     serveHousehold(household())
-    const stored = await serviceData().syncWrite([{ kind: 'task', id: 'new', title: 'New', updatedAt: STAMP }])
+    const stored = await ownerData().syncWrite([{ kind: 'task', id: 'new', title: 'New', updatedAt: STAMP }])
     expect(stored.map(i => i.id)).toEqual(['new'])
   })
 
@@ -530,7 +570,7 @@ describe('"today" is the user\'s today', () => {
   const at = Date.parse('2026-09-12T06:30:00.000Z')
   const overviewIn = async (tz: string, scopes: Scope[]) => {
     respond(url => (url.includes('owner_user_id') ? OWNER : url.includes('kind=eq.journal') ? [] : [{ user_id: OWNER, data: task }]))
-    return (await tool('get_overview').run({}, createContext({ db: serviceData(), clock: makeClock(tz, () => at), scopes }))) as Record<string, any>
+    return (await tool('get_overview').run({}, createContext({ db: ownerData(), clock: makeClock(tz, () => at), scopes }))) as Record<string, any>
   }
 
   it('get_overview buckets by the user\'s zone, not the process\'s', async () => {
@@ -553,7 +593,7 @@ describe('"today" is the user\'s today', () => {
 
   it('get_week_meals defaults to the user\'s week', async () => {
     respond(url => (url.includes('owner_user_id') ? OWNER : []))
-    const out = (await tool('get_week_meals').run({}, createContext({ db: serviceData(), clock: makeClock('America/Los_Angeles', () => at) }))) as { days: string[] }
+    const out = (await tool('get_week_meals').run({}, createContext({ db: ownerData(), clock: makeClock('America/Los_Angeles', () => at) }))) as { days: string[] }
     expect(out.days).toContain('2026-09-11')
   })
 })
@@ -624,8 +664,8 @@ describe('notes, focus and the week plan over MCP', () => {
     let sent = serveHousehold(household())
     await tool('update_task').run({ id: 't1', focus: true }, ctxFor())
     expect(sent[0]).toMatchObject({ id: 't1', focusOn: today })
-    // the local service-key mode has no user to name
-    expect('focusBy' in sent[0]).toBe(false)
+    // the pick is the user's own, as a household member's is theirs
+    expect(sent[0].focusBy).toBe(OWNER)
 
     const full = [...household(), task('f1', { focusOn: today }), task('f2', { focusOn: today }), task('f3', { focusOn: today }), task('old', { focusOn: '2026-09-01' })]
     sent = serveHousehold(full)
@@ -651,7 +691,7 @@ describe('notes, focus and the week plan over MCP', () => {
     // a Thursday: the week to plan starts on Sunday 4 October
     const at = Date.parse('2026-10-01T12:00:00Z')
     serveHousehold(household())
-    const plan = (await tool('get_week_plan_proposal').run({}, createContext({ db: serviceData(), clock: makeClock('UTC', () => at) }))) as Record<string, any>
+    const plan = (await tool('get_week_plan_proposal').run({}, createContext({ db: ownerData(), clock: makeClock('UTC', () => at) }))) as Record<string, any>
     expect(plan.days[0]).toBe('2026-10-04')
     expect(plan.dinners).toEqual([expect.objectContaining({ date: '2026-10-04', recipeId: 'pasta', title: 'Pasta', isNew: false, why: expect.stringMatching(/^Cooked 1× in six months/) })])
     expect(plan.summary).toBe('1 dinner to fill')
@@ -680,7 +720,7 @@ describe('list_people counts days seen in the user\'s zone', () => {
   ]
   const mumIn = async (tz: string) => {
     serveHousehold(rows())
-    const out = (await tool('list_people').run({}, createContext({ db: serviceData(), clock: makeClock(tz, () => at) }))) as { people: Record<string, unknown>[] }
+    const out = (await tool('list_people').run({}, createContext({ db: ownerData(), clock: makeClock(tz, () => at) }))) as { people: Record<string, unknown>[] }
     return out.people.find(p => p.id === 'mum')
   }
 
@@ -707,7 +747,7 @@ describe('list_people counts your own past events, as the app does', () => {
   const tea = row({ kind: 'event', id: 'tea', title: 'Tea with Gran', start: '2026-09-29T15:00:00.000Z', end: '2026-09-29T16:00:00.000Z', allDay: false, peopleIds: ['gran'] })
   const granIn = async (rows: Row[]) => {
     serveHousehold([...household(), ...rows])
-    const out = (await tool('list_people').run({}, createContext({ db: serviceData(), clock: makeClock('UTC', () => at) }))) as { people: Record<string, any>[] }
+    const out = (await tool('list_people').run({}, createContext({ db: ownerData(), clock: makeClock('UTC', () => at) }))) as { people: Record<string, any>[] }
     return out.people.find(p => p.id === 'gran')
   }
 
@@ -729,7 +769,7 @@ describe('the kitchen over MCP: last cooked and sides', () => {
     rows.find(r => r.data.kind === 'meal')!.data.sides = [{ recipeId: 'naan', title: 'Naan' }, { title: 'Salad' }]
     return rows
   }
-  const on = (iso: string) => createContext({ db: serviceData(), clock: makeClock('UTC', () => Date.parse(iso)) })
+  const on = (iso: string) => createContext({ db: ownerData(), clock: makeClock('UTC', () => Date.parse(iso)) })
   const meal = (sent: Record<string, any>[]) => sent.find(i => i.kind === 'meal')!
 
   it('summarizeMeal names a meal with its sides, and one without reads as before', () => {
@@ -829,5 +869,172 @@ describe('place categories over MCP are the app\'s own list', () => {
     const sent = serveHousehold(household())
     await expect(tool('create_place').run({ name: 'Moon base', category: 'spaceship' }, ctxFor())).rejects.toThrow(/Invalid category "spaceship"/)
     expect(sent).toEqual([])
+  })
+})
+
+describe('the wardrobe over MCP', () => {
+  const today = localDayKey()
+  const daysAgo = (n: number) => shiftDayKey(today, -n)
+  /** household() with a look already logged today, holding these pieces. */
+  const withLookToday = (garmentIds: string[]): Row[] => [
+    ...household(),
+    { user_id: OWNER, data: { kind: 'wear', id: `wear~${today}~look000000`, date: today, garmentIds, createdAt: STAMP, updatedAt: STAMP } },
+  ]
+  type Piece = { id: string; name: string; type: string }
+  const ids = (list: { id: string }[]) => list.map(p => p.id)
+
+  it('needs read access to look and "Add and change things" to log, and never the journal\'s', () => {
+    for (const name of ['list_garments', 'list_outfits', 'get_wardrobe_stats']) expect(tool(name).scope, name).toBe('read')
+    expect(tool('log_outfit').scope).toBe('write')
+  })
+
+  it('list_garments gives each piece its last worn day and days worn, retired ones flagged, Trash left out', async () => {
+    serveHousehold(household())
+    const out = (await tool('list_garments').run({}, ctxFor())) as { today: string; count: number; garments: (Piece & Record<string, unknown>)[] }
+    expect(out.today).toBe(today)
+    expect(out.garments.map(g => g.name)).toEqual(['Blue jeans', 'Green dress', 'Linen shirt', 'Navy tee', 'New trainers', 'Old band tee', 'Wool scarf'])
+    expect(out.garments.find(g => g.id === 'tee')).toEqual({
+      id: 'tee',
+      name: 'Navy tee',
+      type: 'top',
+      color: '#1e2848',
+      notes: null,
+      retired: false,
+      addedOn: daysAgo(30),
+      lastWorn: daysAgo(3),
+      daysWorn: 1,
+      daysWornLast30Days: 1,
+      daysWornLast365Days: 1,
+    })
+    expect(out.garments.find(g => g.id === 'band')).toMatchObject({ retired: true, lastWorn: null, daysWorn: 0 })
+    serveHousehold(household())
+    expect(ids(((await tool('list_garments').run({ type: 'top' }, ctxFor())) as { garments: Piece[] }).garments)).toEqual(['linen', 'tee', 'band'])
+    await expect(tool('list_garments').run({ type: 'hat' }, ctxFor())).rejects.toThrow(/Invalid type "hat"/)
+  })
+
+  it('list_outfits says whether each can be worn, and how often its core was', async () => {
+    serveHousehold(household())
+    const out = (await tool('list_outfits').run({}, ctxFor())) as { outfits: Record<string, any>[] }
+    expect(out.outfits).toEqual([
+      {
+        id: 'weekday',
+        name: 'Weekday',
+        label: 'Weekday',
+        pieces: [
+          { id: 'tee', name: 'Navy tee', type: 'top' },
+          { id: 'jeans', name: 'Blue jeans', type: 'bottom' },
+        ],
+        piecesDeleted: 0,
+        wearable: true,
+        notWearable: null,
+        daysWorn: 1,
+        lastWorn: daysAgo(3),
+      },
+      {
+        id: 'old-fav',
+        name: null,
+        label: 'Old band tee + Blue jeans',
+        pieces: [
+          { id: 'band', name: 'Old band tee', type: 'top' },
+          { id: 'jeans', name: 'Blue jeans', type: 'bottom' },
+        ],
+        piecesDeleted: 0,
+        wearable: false,
+        notWearable: 'Old band tee is retired',
+        daysWorn: 0,
+        lastWorn: null,
+      },
+    ])
+  })
+
+  it('get_wardrobe_stats: most worn, not worn lately and never worn, by the app\'s rules', async () => {
+    serveHousehold(household())
+    const all = (await tool('get_wardrobe_stats').run({ window: 'all' }, ctxFor())) as Record<string, any>
+    expect(all.piecesInUse).toBe(5)
+    // one day each: the latest worn first, then by name
+    expect(all.mostWorn).toEqual({
+      window: 'all time',
+      pieces: [
+        { id: 'jeans', name: 'Blue jeans', type: 'bottom', daysWorn: 1, lastWorn: daysAgo(3) },
+        { id: 'tee', name: 'Navy tee', type: 'top', daysWorn: 1, lastWorn: daysAgo(3) },
+        { id: 'dress', name: 'Green dress', type: 'onepiece', daysWorn: 1, lastWorn: daysAgo(70) },
+      ],
+    })
+    expect(all.notWornLately).toEqual({ days: 60, pieces: [{ id: 'dress', name: 'Green dress', type: 'onepiece', lastWorn: daysAgo(70), daysSince: 70 }] })
+    // the retired band tee is left out, and the trainers added today get a week's grace
+    expect(all.neverWorn).toEqual({ graceDays: 7, pieces: [{ id: 'linen', name: 'Linen shirt', type: 'top', addedOn: daysAgo(30) }] })
+    expect(all.daysLoggedThisMonth).toBe([daysAgo(3), daysAgo(70)].filter(d => d.startsWith(today.slice(0, 7))).length)
+    serveHousehold(household())
+    const month = (await tool('get_wardrobe_stats').run({}, ctxFor())) as Record<string, any>
+    expect(month.mostWorn.window).toBe('last 30 days')
+    expect(ids(month.mostWorn.pieces)).toEqual(['jeans', 'tee'])
+    await expect(tool('get_wardrobe_stats').run({ window: 'week' }, ctxFor())).rejects.toThrow(/Invalid window "week"/)
+  })
+
+  it('never lets a photo out, and never a household peer\'s clothes', async () => {
+    for (const name of ['list_garments', 'list_outfits', 'get_wardrobe_stats', 'log_outfit']) {
+      serveHousehold(household())
+      const out = JSON.stringify(await tool(name).run(SWEEP[name], ctxFor()))
+      expect(out, name).not.toMatch(/photo-of-tee|thumb-of-tee|photoId|thumbId/)
+      expect(out, name).not.toContain(SECRET)
+    }
+  })
+
+  it('log_outfit writes a new look for a day with none, as the app writes one', async () => {
+    const sent = serveHousehold(household())
+    const out = (await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())) as Record<string, any>
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ kind: 'wear', date: today, garmentIds: ['tee', 'jeans'] })
+    expect(sent[0].id).toMatch(new RegExp(`^wear~${today}~[0-9a-f]{10}$`))
+    expect(sent[0].updatedAt).toBe(sent[0].createdAt)
+    expect('projectId' in sent[0]).toBe(false)
+    expect(out).toMatchObject({ logged: 'new look', look: { date: today, label: 'Navy tee + Blue jeans' }, looksThatDay: 1 })
+  })
+
+  it('changes the day\'s latest look under its own id, stamped newer', async () => {
+    const sent = serveHousehold(withLookToday(['tee', 'jeans']))
+    const out = (await tool('log_outfit').run({ garmentIds: ['dress'] }, ctxFor())) as Record<string, any>
+    expect(sent[0]).toMatchObject({ id: `wear~${today}~look000000`, garmentIds: ['dress'], createdAt: STAMP })
+    expect(sent[0].updatedAt > STAMP).toBe(true)
+    expect(out).toMatchObject({ logged: 'look updated', looksThatDay: 1 })
+  })
+
+  it('keeps what the look held that could not be chosen — a retired scarf — while a new top takes the place of one in Trash', async () => {
+    const sent = serveHousehold(withLookToday(['torn', 'jeans', 'scarf']))
+    await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())
+    expect(sent[0].garmentIds).toEqual(['tee', 'jeans', 'scarf'])
+  })
+
+  it('adds a second look with another: true, and wears a saved outfit on a past day', async () => {
+    let sent = serveHousehold(withLookToday(['tee', 'jeans']))
+    const evening = (await tool('log_outfit').run({ garmentIds: ['dress'], another: true }, ctxFor())) as Record<string, any>
+    expect(sent[0].id).not.toBe(`wear~${today}~look000000`)
+    expect(evening).toMatchObject({ logged: 'new look', looksThatDay: 2 })
+    sent = serveHousehold(household())
+    await tool('log_outfit').run({ outfitId: 'weekday', date: daysAgo(1) }, ctxFor())
+    expect(sent[0]).toMatchObject({ date: daysAgo(1), garmentIds: ['tee', 'jeans'] })
+    expect(sent[0].id).toMatch(new RegExp(`^wear~${daysAgo(1)}~`))
+  })
+
+  it('refuses what the app would not write, and writes nothing', async () => {
+    const refusals: [Record<string, unknown>, RegExp][] = [
+      [{ garmentIds: ['tee', 'jeans'], date: shiftDayKey(today, 1) }, /has not happened yet/],
+      [{ garmentIds: ['tee', 'jeans'], date: '2026-02-30' }, /not a real calendar date/],
+      [{ garmentIds: ['band', 'jeans'] }, /Old band tee is retired/],
+      [{ garmentIds: ['nope', 'jeans'] }, /No piece of clothing with id "nope"/],
+      [{ garmentIds: ['peer-g', 'jeans'] }, /No piece of clothing with id "peer-g"/],
+      [{ garmentIds: ['torn', 'jeans'] }, /No piece of clothing with id "torn"/],
+      [{ garmentIds: ['jeans'] }, /needs a top and a bottom, or a one-piece/],
+      [{ garmentIds: Array.from({ length: 13 }, (_, i) => `piece-${i}`) }, /at most 12 pieces/],
+      [{ outfitId: 'old-fav' }, /cannot be worn as it is: Old band tee is retired/],
+      [{ outfitId: 'peer-o' }, /No saved outfit with id "peer-o"/],
+      [{}, /garmentIds .* or an outfitId/],
+      [{ garmentIds: ['tee', 'jeans'], outfitId: 'weekday' }, /one of the two/],
+    ]
+    for (const [args, why] of refusals) {
+      const sent = serveHousehold(household())
+      await expect(tool('log_outfit').run(args, ctxFor()), JSON.stringify(args)).rejects.toThrow(why)
+      expect(sent, JSON.stringify(args)).toEqual([])
+    }
   })
 })

@@ -92,9 +92,9 @@ function start(env: Record<string, string>) {
 const rpc = (id: number, method: string, params?: unknown) => ({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) })
 
 describe('mode selection', () => {
-  it('proxies with a token, falls back to the deprecated service key, and warns with neither', () => {
+  it('proxies with a token and is unconfigured without one: the service key no longer picks a mode', () => {
     expect(selectMode({ DRAFTER_AGENT_TOKEN: TOKEN, SUPABASE_URL: 'x', SUPABASE_SERVICE_KEY: 'y' })).toBe('proxy')
-    expect(selectMode({ SUPABASE_URL: 'x', SUPABASE_SERVICE_KEY: 'y' })).toBe('service')
+    expect(selectMode({ SUPABASE_URL: 'x', SUPABASE_SERVICE_KEY: 'y' })).toBe('unconfigured')
     expect(selectMode({ SUPABASE_URL: 'x' })).toBe('unconfigured')
     expect(selectMode({})).toBe('unconfigured')
     expect(DEFAULT_MCP_URL).toBe('https://drafterz.netlify.app/api/mcp')
@@ -140,7 +140,7 @@ describe('proxy mode', () => {
     expect(revoked).toEqual({
       jsonrpc: '2.0',
       id: 1,
-      error: { code: -32001, message: 'Drafter rejected the token (revoked?) — create a new one in Drafter → Settings → Assistants' },
+      error: { code: -32001, message: 'Drafter rejected the token (revoked, or unused for 180 days?) — create a new one in Drafter → Settings → Assistants' },
     })
     expect(busy.error.code).toBe(-32002)
     expect(busy.error.message).toMatch(/wait a minute/)
@@ -214,15 +214,21 @@ describe('without a token', () => {
     expect(s.stderr()).toMatch(/DRAFTER_AGENT_TOKEN is not set/)
   })
 
-  it('the service-key mode still works but says it is deprecated', async () => {
-    const s = start({ SUPABASE_URL: 'http://127.0.0.1:9', SUPABASE_SERVICE_KEY: 'legacy-key' })
+  it('ignores a service key: reads nothing with it, says so, and still asks for a token', async () => {
+    seen.length = 0
+    // the old mode would have read posts here, from the stub standing in for Supabase
+    const s = start({ SUPABASE_URL: new URL(url).origin, SUPABASE_SERVICE_KEY: 'legacy-key' })
     s.send(rpc(1, 'ping'))
-    expect(await s.next()).toEqual([{ jsonrpc: '2.0', id: 1, result: {} }])
+    s.send(rpc(2, 'tools/call', { name: 'list_tasks', arguments: {} }))
+    const [ping, call] = await s.next(2)
+    expect(ping).toEqual({ jsonrpc: '2.0', id: 1, result: {} })
+    expect(call.result.isError).toBe(true)
+    expect(call.result.content[0].text).toContain('set DRAFTER_AGENT_TOKEN')
     s.child.stdin.end()
     await s.exited
-    expect(s.stderr()).toContain(
-      "drafter-mcp: DEPRECATED — service-key mode gives this process every account's data. Create a token in Drafter → Settings → Assistants and set DRAFTER_AGENT_TOKEN.",
-    )
+    expect(seen).toEqual([])
+    expect(s.stderr()).toContain('drafter-mcp: SUPABASE_SERVICE_KEY is ignored — the service-key mode, which read every account, was removed.')
+    expect(s.stderr()).not.toContain('DEPRECATED')
     expect(s.stderr()).not.toContain('legacy-key')
   })
 })
