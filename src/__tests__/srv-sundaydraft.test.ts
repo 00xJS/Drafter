@@ -71,6 +71,10 @@ let authUsers: { id: string; email: string; banned_until: string | null }[]
 let authFailsFrom: number
 /** Each page of that list a run asked for. */
 let authPages: string[]
+/** The list never answers: a page waits until the run lets it go, as fetch does on an abort. */
+let authHangs: boolean
+/** How long each page of the run's read of every record takes, on the run's clock. */
+let postsPageMs: number
 /** PostgREST's max_rows (supabase/config.toml): no request answers more. */
 const MAX_ROWS = 1000
 const ALL_LIVE = 'posts?select=data,user_id&deleted=is.false&order=id.asc'
@@ -99,6 +103,8 @@ beforeEach(() => {
   authUsers = []
   authFailsFrom = Infinity
   authPages = []
+  authHangs = false
+  postsPageMs = 0
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -115,6 +121,8 @@ beforeEach(() => {
         const page = Number(q.get('page'))
         const perPage = Number(q.get('per_page'))
         authPages.push(`page=${page}&per_page=${perPage}`)
+        const signal = init?.signal
+        if (authHangs) return new Promise<Response>((_, reject) => signal?.addEventListener('abort', () => reject(signal?.reason)))
         if (page >= authFailsFrom) return new Response('unavailable', { status: 503 })
         return Response.json({ users: structuredClone(authUsers.slice((page - 1) * perPage, page * perPage)), aud: 'authenticated' })
       }
@@ -127,6 +135,7 @@ beforeEach(() => {
       if (path.startsWith('app_config?key=eq.sync_canary')) return Response.json([])
       if (path === 'app_config?on_conflict=key' && method === 'POST') return new Response(null, { status: 201 })
       if (path === ALL_LIVE && method === 'GET') {
+        if (postsPageMs) vi.setSystemTime(Date.now() + postsPageMs)
         // as PostgREST does: in id order when asked, one Range at a time, never more than max_rows
         const live = rows.filter(r => !r.data.deletedAt && !bulkMisses.has(r.data.id)).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
         const range = /^(\d+)-(\d+)$/.exec(new Headers(init?.headers).get('range') ?? '')
@@ -573,6 +582,83 @@ describe('Sunday’s draft leaves an account disabled in Admin alone', () => {
     } finally {
       logged.mockRestore()
     }
+  })
+
+  it('lets a list that never answers go after five seconds: everyone is drafted, the digest goes, and the log says so', async () => {
+    // the run's own timers are faked too, so the wait is on the run's clock
+    vi.useRealTimers()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const start = Date.parse('2026-09-13T08:00:00Z')
+    vi.setSystemTime(start)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      settings = [withPush(OWNER), quiet(PEER, { timezone: 'UTC' })]
+      rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+      authUsers = [account(OWNER), account(PEER, DISABLED)]
+      authHangs = true
+      let report: string | null = null
+      const run = runDigest()
+        .then(r => r.text())
+        .then(text => (report = text))
+      // a quarter of a second at a time, for up to the 30 Netlify allows
+      for (let waited = 0; waited < 30_000 && report === null; waited += 250) await vi.advanceTimersByTimeAsync(250)
+      await run
+      expect(report).toBe('sent 1; drafted 2; sync check ok')
+      // let go at five seconds, with the twelve a draft needs still ahead
+      expect(Date.now() - start).toBeGreaterThanOrEqual(5_000)
+      expect(Date.now() - start).toBeLessThanOrEqual(6_000)
+      expect(authPages).toEqual(['page=1&per_page=200'])
+      expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+      expect(lastLines()).toEqual(['Last week: A steady week: the fence is fixed.'])
+      expect(logged).toHaveBeenCalledOnce()
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/could not read which accounts are disabled.*no answer within 5000 ms/))
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  it('reads nothing once the run has no time left to start a draft, and the digest goes all the same', async () => {
+    settings = [withPush(OWNER), quiet(PEER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    authUsers = [account(OWNER), account(PEER, DISABLED)]
+    // the read of every record takes 11 of the run's 22 seconds, and a draft needs 12
+    postsPageMs = 11_000
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('sent 1; sync check ok')
+    expect(authPages).toEqual([])
+    expect(ai.prompts).toEqual([])
+    expect(drafts()).toEqual([])
+    expect(lastLines()).toEqual(['Sunday: your weekly review is ready.'])
+    // the next hour has the time: the list is read, and only the enabled account is drafted
+    postsPageMs = 0
+    expect(await runAt('2026-09-13T09:00:00Z')).toBe('sent 0; drafted 1; sync check ok')
+    expect(authPages).toEqual(['page=1&per_page=200'])
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+  })
+
+  it('still sends a disabled account its digest, ending with the summary it wrote, and drafts nothing for it', async () => {
+    // the peer, disabled, has push and wrote last week's summary itself; the owner is drafted as ever
+    settings = [withPush(PEER), quiet(OWNER, { timezone: 'UTC' })]
+    const theirs = row(PEER, { kind: 'review', id: 'theirs', period: 'week', key: '2026-W36', top: [], summary: 'You kept all three. The boiler is serviced.' })
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), theirs]
+    const before = structuredClone(theirs)
+    authUsers = [account(OWNER), account(PEER, DISABLED)]
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('sent 1; drafted 1; sync check ok')
+    expect(lastLines()).toEqual(['Last week: You kept all three.'])
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Fixed the fence')
+    expect(theirs).toEqual(before)
+    expect(drafts().map(r => r.data.id)).toEqual(['theirs', OWNER_DRAFT])
+  })
+
+  it('and with no review of its own, the fixed line, with nothing claimed for it or read again from the table', async () => {
+    settings = [withPush(PEER), quiet(OWNER, { timezone: 'UTC' })]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    authUsers = [account(OWNER), account(PEER, DISABLED)]
+    expect(await runAt('2026-09-13T08:00:00Z')).toBe('sent 1; drafted 1; sync check ok')
+    expect(lastLines()).toEqual(['Sunday: your weekly review is ready.'])
+    expect(drafts().map(r => r.user_id)).toEqual([OWNER])
+    // the week's reviews are read again from the table once, for the owner's draft
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith(REST + WEEK_REVIEWS))).toHaveLength(1)
   })
 
   it('reads nothing in a run with no draft due', async () => {
