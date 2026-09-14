@@ -62,7 +62,7 @@ export default function Planner() {
     changeStatus: (id, status) => taskActions.changeStatus(id, status),
     defer: (id, day) => taskActions.defer(id, day),
   })
-  useNativeShell({ store, applyLinkRef })
+  useNativeShell({ store, applyLinkRef, myId: household.myId })
 
   const lifeActions = useLifeActions({ store, showToast, newTask: overlays.newTask })
   const taskActions = useTaskActions({

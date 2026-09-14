@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { copyRemindersOn, setCopyReminders } from '../../calendars'
 import { genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setGenericRemindersEnabled, setLocalRemindersEnabled } from '../../native'
 import { enableNotifications, notificationPermission } from '../../notify'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../../push'
@@ -27,8 +28,31 @@ export function SundayDraft({ journal, onChange }: { journal: boolean; onChange(
   )
 }
 
-/** Reminders: server push and the morning digest, Sunday's review draft, then this iPhone's own reminders or the browser's. */
-export function Reminders({ store }: SettingsCtx) {
+/**
+ * Drafter sends every reminder itself, so the tasks and events it writes into
+ * Google and Outlook stay silent there; this one switch brings each calendar's
+ * own reminders back on them. It is the account's, not this device's: every
+ * device and the mirrors read the same answer.
+ */
+export function CopyReminders({ on, busy, error, onChange }: { on: boolean | null; busy: boolean; error?: string; onChange(on: boolean): void }) {
+  return (
+    <>
+      <h4>Calendar copies</h4>
+      <p className="field-hint">Drafter sends your reminders itself — an iPhone’s own reminders, and push — so the tasks and events it writes into Google Calendar and Outlook don’t remind you a second time.</p>
+      <p className="sync-line">
+        <label className="cal-source mirror-row">
+          <input type="checkbox" checked={on === true} disabled={busy || on === null} onChange={e => onChange(e.target.checked)} />
+          <span className="cal-source-name">Calendar copies remind me too</span>
+        </label>
+        <small className="field-hint">Each calendar’s own reminders come back on those copies, as Drafter next writes each one. Off by default.</small>
+      </p>
+      {error && <p className="warn">{error}</p>}
+    </>
+  )
+}
+
+/** Reminders: server push and the morning digest, Sunday's review draft, the calendar copies' own reminders, then this iPhone's own reminders or the browser's. */
+export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
   const [notif, setNotif] = useState(notificationPermission())
   const [push, setPush] = useState<PushInfo | null>(null)
   const { busy: pushBusy, error: pushError, run, setError: setPushError } = useAsyncAction()
@@ -37,6 +61,8 @@ export function Reminders({ store }: SettingsCtx) {
   const [localOn, setLocalOn] = useState(localRemindersEnabled())
   const [genericOn, setGenericOn] = useState(genericRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
+  const [copies, setCopies] = useState<boolean | null>(null)
+  const { busy: copiesBusy, error: copiesError, run: runCopies, setError: setCopiesError } = useAsyncAction()
   useEffect(() => {
     // push is sent by the server, so without an account there is nothing to ask
     if (!isSupabaseConfigured()) return
@@ -49,6 +75,16 @@ export function Reminders({ store }: SettingsCtx) {
       .catch(e => setPushError((e as Error).message))
     currentEndpoint().then(setThisEndpoint)
   }, [setPushError])
+  useEffect(() => {
+    // the copies are written by the mirrors, which need an account
+    if (!supabaseOn) return
+    copyRemindersOn()
+      .then(setCopies)
+      .catch(e => setCopiesError((e as Error).message))
+  }, [supabaseOn, setCopiesError])
+  // this phone's own set, rebuilt now rather than at the next change
+  const reschedule = (skipTaskDue: boolean, generic: boolean) =>
+    scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic, events: store.events, myId: household.myId }))
   const runPush = (fn: () => Promise<unknown>, after?: () => void) =>
     run(async () => {
       await fn()
@@ -122,13 +158,26 @@ export function Reminders({ store }: SettingsCtx) {
       {push?.sundayDraft && (
         <SundayDraft journal={!!push.digestJournal} onChange={on => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: on }))} />
       )}
+      {supabaseOn && (
+        <CopyReminders
+          on={copies}
+          busy={copiesBusy}
+          error={copiesError}
+          onChange={on =>
+            runCopies(async () => {
+              await setCopyReminders(on)
+              setCopies(on)
+            })
+          }
+        />
+      )}
       {isNative() ? (
         <>
           <h4>On this iPhone</h4>
           <p className="field-hint">
             {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
-              ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Occasion reminders (birthdays) and place nudges still fire here.'
-              : 'A notification at each task’s due time, on the morning of a birthday or anniversary, and when a place you set a rhythm for is well overdue. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
+              ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Your events, occasion reminders (birthdays) and place nudges still fire here.'
+              : 'A notification at each task’s due time, at the start of each of your events, on the morning of a birthday or anniversary, and when a place you set a rhythm for is well overdue. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
           </p>
           <p className="sync-line">
             <label className="cal-source mirror-row">
@@ -150,7 +199,7 @@ export function Reminders({ store }: SettingsCtx) {
                     } catch {
                       /* ignore */
                     }
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+                    await reschedule(skipTaskDue, genericRemindersEnabled())
                   } else {
                     setLocalRemindersEnabled(false)
                     setLocalOn(false)
@@ -160,7 +209,7 @@ export function Reminders({ store }: SettingsCtx) {
               />
               <span className="cal-source-name">
                 {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
-                  ? 'Local occasion reminders (due tasks via push)'
+                  ? 'Local event and occasion reminders (due tasks via push)'
                   : 'Remind me on this iPhone'}
               </span>
             </label>
@@ -176,7 +225,7 @@ export function Reminders({ store }: SettingsCtx) {
                     setGenericRemindersEnabled(on)
                     setGenericOn(on)
                     const skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: on }))
+                    await reschedule(skipTaskDue, on)
                   }}
                 />
                 <span className="cal-source-name">Hide details on the lock screen</span>

@@ -41,6 +41,7 @@ import { pushEntry,
   missingMicrosoftEnv,
   oauthFailureCode,
   publicAccount,
+  mirroredEntryIds,
   mirroredTaskIds,
   outlookMissing,
   pullChanges,
@@ -235,8 +236,9 @@ const handler = async req => {
         records,
         r => {
           const project = r.projectId ? projectNames[r.projectId] : undefined
-          if (!sweep || r.kind === 'task') return pushTask(user.id, accountId, calendarId, r, project, url.origin, { tz })
-          if (r.kind === 'event') return pushEntry(user.id, accountId, calendarId, r, url.origin)
+          // silent copies in every account unless the owner asked for Outlook's own reminders too
+          if (!sweep || r.kind === 'task') return pushTask(user.id, accountId, calendarId, r, project, url.origin, { tz, remind: user.copiesRemind })
+          if (r.kind === 'event') return pushEntry(user.id, accountId, calendarId, r, url.origin, { remind: user.copiesRemind })
           // pushTask treats anything that is not a task as "remove its copy"
           throw Object.assign(new Error('not a task or an entry'), { status: 400 })
         },
@@ -255,22 +257,24 @@ const handler = async req => {
       const changes = await pullChanges(user.id, accountId, calendarId, sinceGraph)
       // entry edits need a listing of their own; only builds that apply them ask
       const entries = body.entries === true ? await pullEntryChanges(user.id, accountId, calendarId, sinceGraph) : []
-      // Graph hard-deletes, so a task deleted in Outlook never shows up above.
-      // The app names the tasks it believes are there; the ones the calendar no
-      // longer holds were deleted by the owner, and the app treats them as it
-      // treats Google's cancelled copy. Only when the app's belief is about THIS
-      // calendar (not one since deleted and recreated), from a complete listing.
-      let missing = []
-      let resend = []
-      if (Array.isArray(body.live) && body.live.length && body.calendarId === calendarId) {
-        const present = await mirroredTaskIds(user.id, accountId, calendarId)
-        if (present.complete) {
-          const r = outlookMissing(body.live.slice(0, 2000).map(String), present.ids)
-          missing = r.missing
-          resend = r.suspicious ? r.absent : []
-        }
+      // Graph hard-deletes, so a task or an entry deleted in Outlook never shows
+      // up above. The app names the ones it believes are there; the ones the
+      // calendar no longer holds were deleted by the owner, and the app treats
+      // them as it treats Google's cancelled copy. Only when the app's belief is
+      // about THIS calendar (not one since deleted and recreated), from a
+      // complete listing, and each kind judged on its own.
+      const resend = []
+      const scan = async (live, list) => {
+        if (!Array.isArray(live) || !live.length || body.calendarId !== calendarId) return []
+        const present = await list(user.id, accountId, calendarId)
+        if (!present.complete) return []
+        const r = outlookMissing(live.slice(0, 2000).map(String), present.ids)
+        if (r.suspicious) resend.push(...r.absent)
+        return r.missing
       }
-      return Response.json({ changes, entries, missing, resend, calendarId, replaced: cal.replaced, at })
+      const missing = await scan(body.live, mirroredTaskIds)
+      const missingEntries = await scan(body.liveEntries, mirroredEntryIds)
+      return Response.json({ changes, entries, missing, missingEntries, resend, calendarId, replaced: cal.replaced, at })
     }
     if (action === 'push-event') {
       // one entry, one account: the client fans out across every enabled
@@ -280,7 +284,7 @@ const handler = async req => {
       if (!accountId) return Response.json({ error: 'accountId required' }, { status: 400 })
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
       const cal = await resolveDrafterCalendar(user.id, accountId)
-      const result = await pushEntry(user.id, accountId, cal.id, entry, url.origin)
+      const result = await pushEntry(user.id, accountId, cal.id, entry, url.origin, { remind: user.copiesRemind })
       return Response.json({ calendarId: cal.id, replaced: cal.replaced, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })

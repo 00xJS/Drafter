@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { editedSinceCancelled, googleEntryBody, googleEntryPlan, newestCopy } from '../../netlify/functions/lib/google.mjs'
-import { graphEntryBody, graphEntryPlan } from '../../netlify/functions/lib/microsoft.mjs'
+import { editedSinceCancelled, googleEntryBody, googleEntryPlan, googleTaskBody, newestCopy } from '../../netlify/functions/lib/google.mjs'
+import { graphEntryBody, graphEntryPlan, graphTaskBody } from '../../netlify/functions/lib/microsoft.mjs'
 
 // The provider libraries talk to live Google and Microsoft accounts, which
 // nothing here can reach. What CAN be proven offline is the part that decides
@@ -117,6 +117,53 @@ describe('parity: both providers treat an entry the same way', () => {
     const m = graphEntryBody(timed, '')
     expect(Date.parse(g.start.dateTime!)).toBe(Date.parse(`${m.start.dateTime}Z`))
     expect(Date.parse(g.end.dateTime!)).toBe(Date.parse(`${m.end.dateTime}Z`))
+  })
+})
+
+// The owner decided that Drafter alone sends reminders (1E's recommendation).
+// Google copies of tasks used to pop up 30 minutes ahead, or at 3pm the day
+// before an all-day one; Outlook copies, and events mirrored to Google, rang
+// with each calendar's own default. Now every copy is silent unless the owner
+// turns on "Calendar copies remind me too", which brings each calendar's own back.
+describe('Drafter alone reminds: the copies carry no reminder of their own', () => {
+  const timedTask = { kind: 'task', id: 't1', title: 'Pay rent', description: '', status: 'todo', priority: 'normal', dueAt: '2026-09-10T14:00:00.000Z' }
+  // local midnight in London: an all-day copy
+  const dayTask = { ...timedTask, id: 't2', dueAt: '2026-09-09T23:00:00.000Z' }
+  const silent = { useDefault: false, overrides: [] }
+  const theirs = { useDefault: true, overrides: [] }
+
+  it('Google: a task copy, timed or all-day, rings no popup and takes no default', () => {
+    expect(googleTaskBody(timedTask, undefined, '', 'Europe/London').reminders).toEqual(silent)
+    const day = googleTaskBody(dayTask, undefined, '', 'Europe/London')
+    expect(day.start).toEqual({ date: '2026-09-10' })
+    expect(day.reminders).toEqual(silent)
+  })
+
+  it('Google: an event copy no longer takes the calendar’s defaults, a work day neither', () => {
+    expect(googleEntryBody(timed, '').reminders).toEqual(silent)
+    expect(googleEntryBody(allDay, '').reminders).toEqual(silent)
+    expect(googleEntryBody({ ...timed, work: 'office' }, '').reminders).toEqual(silent)
+  })
+
+  it('Outlook: every copy has its reminder off', () => {
+    expect(graphTaskBody(timedTask, undefined, '', 'Europe/London').isReminderOn).toBe(false)
+    expect(graphTaskBody(dayTask, undefined, '', 'Europe/London').isReminderOn).toBe(false)
+    expect(graphEntryBody(timed, '').isReminderOn).toBe(false)
+    expect(graphEntryBody({ ...allDay, work: 'home' }, '').isReminderOn).toBe(false)
+  })
+
+  it('with “Calendar copies remind me too” on, each calendar’s own reminders come back', () => {
+    expect(googleTaskBody(timedTask, undefined, '', 'Europe/London', true).reminders).toEqual(theirs)
+    expect(googleEntryBody(timed, '', { remind: true }).reminders).toEqual(theirs)
+    expect(graphTaskBody(timedTask, undefined, '', 'Europe/London', true).isReminderOn).toBe(true)
+    expect(graphEntryBody(timed, '', { remind: true }).isReminderOn).toBe(true)
+  })
+
+  it('an old copy’s 30-minute popup is cleared, not left in place by the PATCH that corrects it', () => {
+    // a PATCH replaces a list it names and keeps one it leaves out
+    for (const b of [googleTaskBody(timedTask, undefined, '', null), googleTaskBody(timedTask, undefined, '', null, true), googleEntryBody(timed, '')]) {
+      expect(b.reminders.overrides).toEqual([])
+    }
   })
 })
 

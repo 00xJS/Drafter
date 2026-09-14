@@ -5,6 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
+import { ownNotes, ownTitle } from './mirror.mjs'
 import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
@@ -243,7 +244,19 @@ export function reconnectPatch(row, refreshToken, email) {
 
 const OPEN = ['todo', 'doing', 'blocked']
 
-function eventBodyFor(task, projectName, site, tz) {
+/**
+ * A copy's reminders. Drafter sends every reminder itself (the iPhone's own,
+ * and push), so a copy carries none of its own — not the calendar's defaults
+ * either — unless the owner turned on "Calendar copies remind me too", which
+ * brings the calendar's own back. `overrides` always goes empty: a copy written
+ * before this rang 30 minutes ahead, and a PATCH that left it out would keep it.
+ */
+export function googleReminders(remind) {
+  return { useDefault: remind === true, overrides: [] }
+}
+
+/** The Google Calendar body for one task: free time, keyed on taskId, silent unless `remind`. */
+export function googleTaskBody(task, projectName, site, tz, remind = false) {
   const timed = !isUntimed(task.dueAt, tz)
   const start = new Date(task.dueAt)
   const dateOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
@@ -262,7 +275,7 @@ function eventBodyFor(task, projectName, site, tz) {
           return next.toISOString().slice(0, 10)
         })() },
     transparency: 'transparent',
-    reminders: { useDefault: false, overrides: timed ? [{ method: 'popup', minutes: 30 }] : [{ method: 'popup', minutes: 9 * 60 }] },
+    reminders: googleReminders(remind),
     extendedProperties: { private: { drafter: '1', taskId: task.id } },
   }
 }
@@ -297,7 +310,8 @@ async function findMirrored(userId, calendarId, taskId) {
 
 /**
  * Mirror one task into the Drafter calendar: upsert when open with a due date, otherwise remove.
- * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task.
+ * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task;
+ * `opts.remind` keeps the calendar's own reminders on the copy (off: Drafter sends them).
  */
 export async function pushTask(userId, calendarId, task, projectName, site, opts = {}) {
   const wanted = task.kind === 'task' && !task.deletedAt && OPEN.includes(task.status) && !!task.dueAt
@@ -321,7 +335,7 @@ export async function pushTask(userId, calendarId, task, projectName, site, opts
     return 'skipped'
   }
   const tz = 'tz' in opts ? (opts.tz ?? undefined) : ((await settingsGet(userId).catch(() => null))?.timezone ?? undefined)
-  const body = eventBodyFor(task, projectName, site, tz)
+  const body = googleTaskBody(task, projectName, site, tz, opts.remind === true)
   if (live) {
     await gapi(userId, evPath(live.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
@@ -358,8 +372,8 @@ export function googleEntryPlan(existing, entry, opts = {}) {
   return live ? { op: 'patch', id: live.id } : { op: 'create' }
 }
 
-/** The Google Calendar body for one entry: busy, and keyed on eventId so the pull never reads it as a task. */
-export function googleEntryBody(entry, site) {
+/** The Google Calendar body for one entry: busy, keyed on eventId so the pull never reads it as a task, and silent unless `opts.remind`. */
+export function googleEntryBody(entry, site, opts = {}) {
   return {
     summary: entry.title || 'Untitled event',
     description: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') || undefined,
@@ -368,10 +382,13 @@ export function googleEntryBody(entry, site) {
     end: entry.allDay ? { date: entry.end } : { dateTime: new Date(entry.end).toISOString() },
     // a work day is working hours, not a meeting: you are available, so it is free time
     transparency: entry.work ? 'transparent' : 'opaque',
+    // without this an entry took the calendar's default reminders, besides Drafter's own
+    reminders: googleReminders(opts.remind),
     extendedProperties: { private: { drafter: '1', eventId: entry.id } },
   }
 }
 
+/** Mirror one entry. `opts.revive` is Drafter's own Undo (see googleEntryPlan); `opts.remind` as for pushTask. */
 export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
   const evPath = id => `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
   const page = await gapi(
@@ -387,7 +404,7 @@ export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
     })
     return 'removed'
   }
-  const body = JSON.stringify(googleEntryBody(entry, site))
+  const body = JSON.stringify(googleEntryBody(entry, site, { remind: opts.remind === true }))
   if (plan.op === 'patch') {
     await gapi(userId, evPath(plan.id), { method: 'PATCH', body })
     return 'updated'
@@ -413,14 +430,18 @@ export function googleEntryChange(ev) {
     const ms = Date.parse(v ?? '')
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null
   }
+  const deleted = ev.status === 'cancelled'
   return {
     eventId,
-    deleted: ev.status === 'cancelled',
+    deleted,
     title: typeof ev.summary === 'string' ? ev.summary : '',
     start: allDay ? (ev.start.date ?? null) : instant(ev.start?.dateTime),
     end: allDay ? (ev.end?.date ?? null) : instant(ev.end?.dateTime),
     allDay,
     updated: ev.updated ?? '',
+    // the notes and place as the owner may have rewritten them there. Google
+    // leaves a field out once it is emptied; a cancelled copy says nothing of either
+    ...(deleted ? {} : { notes: ownNotes(ev.description), location: typeof ev.location === 'string' ? ev.location : '' }),
   }
 }
 
@@ -431,13 +452,16 @@ export function googlePullRows(items) {
   for (const ev of Array.isArray(items) ? items : []) {
     const p = ev?.extendedProperties?.private
     if (p?.taskId) {
+      const deleted = ev.status === 'cancelled'
       changes.push({
         taskId: p.taskId,
-        deleted: ev.status === 'cancelled',
+        deleted,
         // date-only for all-day; client writes local midnight
         start: ev.start?.dateTime ?? ev.start?.date ?? null,
         allDay: !!ev.start?.date,
         updated: ev.updated,
+        // a rename or a rewritten description made there, Drafter's own marks taken off
+        ...(deleted ? {} : { title: ownTitle(ev.summary), notes: ownNotes(ev.description, { task: true }) }),
       })
       continue
     }

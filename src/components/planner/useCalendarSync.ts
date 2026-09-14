@@ -3,6 +3,7 @@ import type { CalendarEntry } from '../../types'
 import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
 import {
+  applyMirrorChanges,
   entryToEvent,
   pushEventToGoogle,
   pushEventToMicrosoft,
@@ -11,11 +12,7 @@ import {
   useCalendarEvents,
   useGooglePush,
   useMicrosoftSync,
-  entryPullWrites,
-  mirrorChangeWrites,
-  type EntryChange,
-  type GoogleChange,
-  type MirrorDone,
+  type MirrorPulled,
 } from '../../calendars'
 import { flushPendingMedia } from '../../media'
 import { requestWeatherRefresh } from '../../weather'
@@ -48,44 +45,13 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     () => store.calendars.filter(c => c.enabled && c.url.startsWith('ms-push:')).map(c => c.url.slice('ms-push:'.length)),
     [store.calendars],
   )
-  const googlePush = useGooglePush(
-    store.allItems,
-    store.projects,
-    store.loaded && mirroring,
-    changes => applyMirrorChanges(changes, 'Google Calendar'),
-    household.myId,
-    entries => applyEntryChanges(entries, 'Google Calendar'),
-  )
-
-  /** A mirrored task moved (or was deleted) in an external calendar: mirrorChangeWrites decides, this saves and says so. */
-  const applyMirrorChanges = (changes: GoogleChange[], source: string) => {
-    const { writes, done } = mirrorChangeWrites(store.tasks, changes)
-    for (const t of writes) store.upsert(t)
-    const undone: MirrorDone[] = []
-    for (const d of done) if (store.setStatus(d.id, 'done')) undone.push(d)
-    if (writes.length) showToast(`${writes.length} task${writes.length === 1 ? '' : 's'} moved from ${source}`)
-    if (undone.length)
-      showToast(`${undone.length} task${undone.length === 1 ? '' : 's'} marked done from ${source}`, () => {
-        for (const u of undone) store.setStatus(u.id, u.prevStatus)
-      })
-  }
-
-  // An event moved or retitled in Google or Outlook comes back the way a moved
-  // task does — only when the provider's edit is newer than the entry's own.
-  const applyEntryChanges = (changes: EntryChange[], source: string) => {
-    const rows = entryPullWrites(store.events, changes)
-    for (const r of rows) store.upsert(r)
-    if (rows.length) showToast(`${rows.length} event${rows.length === 1 ? '' : 's'} updated from ${source}`)
-  }
-
-  const microsoftSync = useMicrosoftSync(
-    store.allItems,
-    store.projects,
-    store.loaded ? msMirrorIds : [],
-    changes => applyMirrorChanges(changes, 'Outlook'),
-    household.myId,
-    entries => applyEntryChanges(entries, 'Outlook'),
-  )
+  // What a pull from Google or Outlook changed — a task moved, renamed or
+  // deleted there, an event edited or deleted there — only ever when newer than
+  // Drafter's own edit: applyMirrorChanges decides, saves and says so, with an
+  // Undo for what it marked done or put in the Trash.
+  const applyPulled = (pulled: MirrorPulled, source: string) => applyMirrorChanges(store, pulled, source, showToast)
+  const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, pulled => applyPulled(pulled, 'Google Calendar'), household.myId)
+  const microsoftSync = useMicrosoftSync(store.allItems, store.projects, store.loaded ? msMirrorIds : [], pulled => applyPulled(pulled, 'Outlook'), household.myId)
 
   /**
    * Pushes for one entry to one provider run one after another. Without this a

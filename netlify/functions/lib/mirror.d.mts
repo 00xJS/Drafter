@@ -27,3 +27,10 @@ export declare function runMirrorBatch<R extends { id: string } = any>(
   push: (record: R) => Promise<string>,
   opts?: { budgetMs?: number; max?: number; now?: () => number; startedAt?: number },
 ): Promise<MirrorBatchResult>
+
+/** A copy's description as plain text: Google's own editor saves HTML. */
+export declare function copyText(text: unknown): string
+/** The owner's own notes in a copy's description, Drafter's footer taken off (`task` for a task's longer one). */
+export declare function ownNotes(text: unknown, opts?: { task?: boolean }): string
+/** A task copy's title without Drafter's priority mark. */
+export declare function ownTitle(summary: unknown): string

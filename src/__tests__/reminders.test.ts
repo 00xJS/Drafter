@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Person, Place, Task } from '../types'
-import { buildLocalReminders } from '../reminders'
+import { CalendarEntry, Person, Place, Task } from '../types'
+import { buildLocalReminders, reminderId } from '../reminders'
 
 const NOW = new Date(2026, 8, 7, 12, 0) // Mon 7 Sep 2026, noon local
 
@@ -191,5 +191,82 @@ describe('place cadence reminders', () => {
   it('still nudges when server push owns the due rows', () => {
     const list = buildLocalReminders([outing('v1', 'nopi', 63)], [], [place('nopi', 'Nopi', 30)], [], NOW, 30, { skipTaskDue: true })
     expect(list.map(r => r.url)).toEqual(['/?place=nopi'])
+  })
+})
+
+// Drafter alone reminds: the copies of my events in Google and Outlook carry
+// no reminder of their own any more, so the phone covers my own events, on the
+// same rule as a task's due date. Nothing may lose its only reminder.
+describe('my own events', () => {
+  const ME = 'me-0001'
+  const event = (id: string, extra: Partial<CalendarEntry>): CalendarEntry => ({
+    kind: 'event',
+    id,
+    title: `Event ${id}`,
+    start: new Date(2026, 8, 8, 15, 0).toISOString(),
+    end: new Date(2026, 8, 8, 16, 0).toISOString(),
+    allDay: false,
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    ownerId: ME,
+    ...extra,
+  })
+  const build = (events: CalendarEntry[], opts: { generic?: boolean; skipTaskDue?: boolean } = {}) => buildLocalReminders([], [], [], [], NOW, 30, { events, myId: ME, ...opts })
+
+  it('fires at a timed event’s start, saying where, and opens the calendar', () => {
+    const [r] = build([event('e1', { title: 'Dentist', location: 'High Street' })])
+    expect(r.at.getTime()).toBe(new Date(2026, 8, 8, 15, 0).getTime())
+    expect(r.title).toBe('Starts now: Dentist')
+    expect(r.body).toBe('High Street')
+    expect(r.url).toBe('/?view=calendar')
+    // Done and Tomorrow mean nothing for an event
+    expect(r.actionTypeId).toBeUndefined()
+  })
+
+  it('reminds about an all-day event on the morning of its first day, as a date-only task does', () => {
+    const [r] = build([event('e1', { title: 'Mum visiting', allDay: true, start: '2026-09-10', end: '2026-09-13', notes: 'Spare room ready' })])
+    expect([r.at.getFullYear(), r.at.getMonth(), r.at.getDate(), r.at.getHours(), r.at.getMinutes()]).toEqual([2026, 8, 10, 9, 0])
+    expect(r.title).toBe('Today: Mum visiting')
+    expect(r.body).toBe('Spare room ready')
+  })
+
+  it('leaves out work days, a household member’s events, deleted ones, and what is past or beyond the horizon', () => {
+    const list = build([
+      event('work', { work: 'office' }),
+      event('theirs', { ownerId: 'partner-0002' }),
+      event('gone', { deletedAt: NOW.toISOString() }),
+      event('past', { start: new Date(2026, 8, 7, 9, 0).toISOString() }),
+      event('far', { start: new Date(2026, 11, 25, 9, 0).toISOString() }),
+      event('unowned', { ownerId: undefined }),
+      event('mine', {}),
+    ])
+    expect(list.map(r => r.id).sort()).toEqual([reminderId('event:mine'), reminderId('event:unowned')].sort())
+  })
+
+  it('still fires when server push owns the due rows: push nudges about tasks alone', () => {
+    const list = buildLocalReminders([task('a', { dueAt: new Date(2026, 8, 8, 18, 30).toISOString() })], [], [], [], NOW, 30, { skipTaskDue: true, events: [event('e1', {})], myId: ME })
+    expect(list.map(r => r.url)).toEqual(['/?view=calendar'])
+  })
+
+  it('keeps the title and the place off a generic lock screen', () => {
+    const [r] = build([event('e1', { title: 'Clinic', location: '12 Harley Street' })], { generic: true })
+    expect(r.title).toBe('Something on your calendar')
+    expect(JSON.stringify(r)).not.toContain('Clinic')
+    expect(JSON.stringify(r)).not.toContain('Harley')
+  })
+
+  it('one reminder per event, so a rebuild after a move replaces it rather than adding another', () => {
+    const [a] = build([event('e1', {})])
+    const [b] = build([event('e1', { start: new Date(2026, 8, 9, 10, 0).toISOString(), end: new Date(2026, 8, 9, 11, 0).toISOString() })])
+    expect(a.id).toBe(b.id)
+    expect(b.at.getDate()).toBe(9)
+  })
+
+  it('sits after the tasks and before the occasions sharing its morning', () => {
+    const list = buildLocalReminders([task('bins', { dueAt: new Date(2026, 8, 8, 0, 0).toISOString() })], [person('mum', '1960-09-08')], [], [], NOW, 30, {
+      events: [event('fair', { allDay: true, start: '2026-09-08', end: '2026-09-09' })],
+      myId: ME,
+    })
+    expect(list.map(r => r.url)).toEqual(['/?task=bins', '/?view=calendar', '/?saw=mum'])
   })
 })
