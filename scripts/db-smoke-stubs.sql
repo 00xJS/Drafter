@@ -24,6 +24,9 @@ create schema storage;
 create table storage.buckets (id text primary key, name text, public boolean);
 create table storage.objects (id uuid default gen_random_uuid() primary key, bucket_id text, name text, owner uuid);
 alter table storage.objects enable row level security;
+-- Supabase grants these for real; without them `set local role authenticated`
+-- cannot touch the table, and the media policies could never be exercised
+grant select, insert, update, delete on storage.objects to authenticated, service_role;
 
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
 grant all on all tables in schema public to anon, authenticated, service_role;

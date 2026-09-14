@@ -1271,3 +1271,72 @@ begin
   raise notice 'ok v3.13-4: the canary passes all 15 kinds, note included, and leaves posts and history as they were';
 end $$;
 commit;
+
+-- -------------- v3.13-5. the daily snapshots are no signed-in account's to read
+-- The nightly backup writes them with the service key, so they have no owner.
+-- An ownerless object under backups/ is no signed-in account's, not even the
+-- owner's: Admin downloads them with the service key. An ownerless photo from
+-- before objects had owners stays readable.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'bk-owner-photo', '00000000-0000-0000-0000-00000000000a');
+commit;
+begin;
+set local role service_role;
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'backups/00000000-0000-0000-0000-00000000000a/2026-09-14.json', null),
+  ('media', 'bk-legacy-photo', null);
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare names text[];
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects
+   where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
+  if names <> array['bk-legacy-photo', 'bk-owner-photo'] then
+    raise exception 'FAIL v3.13-5: a household peer should see the owner''s photo and the legacy one, never a backup; saw %', names;
+  end if;
+  raise notice 'ok v3.13-5: a household peer sees the household''s photos but no backup';
+end $$;
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","role":"authenticated","email":"stranger@example.test"}', true);
+do $$
+declare names text[];
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects
+   where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
+  if names <> array['bk-legacy-photo'] then
+    raise exception 'FAIL v3.13-5: a stranger should see only the ownerless legacy photo, saw %', names;
+  end if;
+  raise notice 'ok v3.13-5: a stranger sees no backup and no household photo';
+end $$;
+commit;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare names text[];
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects
+   where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
+  if names <> array['bk-legacy-photo', 'bk-owner-photo'] then
+    raise exception 'FAIL v3.13-5: the owner should see their photo and the legacy one, not the backup; saw %', names;
+  end if;
+  raise notice 'ok v3.13-5: the owner too reads backups only through Admin''s service-key download';
+end $$;
+commit;
+
+-- leave storage as it was for any step after this one
+begin;
+set local role service_role;
+delete from storage.objects where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
+commit;
