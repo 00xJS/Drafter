@@ -3,7 +3,7 @@ import { sanitizeItem } from './schema'
 import { newerStamp } from '../shared/domain.mjs'
 import { mergeRecord, sameContent, type MergeConflict } from '../shared/merge.mjs'
 
-export { newerStamp, nextOccurrence, spawnId, isUntimed, localDate, localMidnightIso } from '../shared/domain.mjs'
+export { duplicateSpawns, newerStamp, nextOccurrence, spawnId, isUntimed, localDate, localMidnightIso } from '../shared/domain.mjs'
 
 /** Last-write-wins merge by id, using updatedAt (ISO strings compare lexically). */
 export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {

@@ -226,6 +226,45 @@ export function nextOccurrence(task, uidFn) {
   }
 }
 
+// every `~freq~day` spawnId has appended, from the first occurrence on
+const SPAWN_TAIL = new RegExp(`(?:~(?:${RECURRENCE_FREQS.join('|')})~\\d{4}-\\d{2}-\\d{2})+$`)
+
+/**
+ * Next occurrences that repeat one another: open copies spawned from the same
+ * repeating chore. Ticked off on the same day on two devices, a chore spawns
+ * the same id on both and they merge as one; ticked off on two devices on
+ * DIFFERENT days before they sync, it spawns two ids, and both came back. Only
+ * one may stay open. The one kept is the one due latest — a chore comes round
+ * again from when it was last done — and the rule reads nothing but each row's
+ * id, which never changes, so every device that sees both keeps the same one
+ * whatever else it has not heard yet.
+ *
+ * A series is read from the ids themselves (`spawnedFrom` does not survive a
+ * sync), so an occurrence of an occurrence counts too. Only an open copy that
+ * still repeats is a candidate: a finished occurrence reopened by hand has no
+ * repeat of its own, and neither has a copy restored from the Trash after this
+ * put it there. Returns the ids that should go to the Trash.
+ */
+export function duplicateSpawns(items) {
+  const series = new Map()
+  for (const i of Array.isArray(items) ? items : []) {
+    if (!i || i.kind !== 'task' || i.deletedAt || i.purged || !i.recurrence || i.status === 'done' || i.status === 'canceled') continue
+    const tail = typeof i.id === 'string' ? SPAWN_TAIL.exec(i.id) : null
+    if (!tail) continue
+    const root = i.id.slice(0, tail.index)
+    const list = series.get(root) ?? []
+    list.push({ id: i.id, day: i.id.slice(-10) })
+    series.set(root, list)
+  }
+  const out = []
+  for (const list of series.values()) {
+    if (list.length < 2) continue
+    list.sort((a, b) => (a.day === b.day ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.day < b.day ? -1 : 1))
+    for (const s of list.slice(0, -1)) out.push(s.id)
+  }
+  return out
+}
+
 /**
  * Tasks that belong on *my* calendar mirror / ICS feed. Household peers' chores
  * must not land in the owner's Google/Outlook. Unowned rows (local-only /

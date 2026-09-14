@@ -1,6 +1,6 @@
 import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
+import { applySync, duplicateSpawns, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
 import { applyLocalChoice } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
@@ -557,6 +557,24 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     )
   }
 
+  /**
+   * A repeating chore ticked off on two devices on different days, before
+   * they synced, spawned its next occurrence twice under two ids. Once a round
+   * brings both here, the extra ones go to the Trash — the same ones on every
+   * device (duplicateSpawns) — as an ordinary edit, dirty and pushed like any
+   * other. They lose their repeat on the way, so one restored from the Trash
+   * comes back as a one-off and is never put there again.
+   */
+  function retireDuplicateSpawns(): void {
+    const extra = new Set(duplicateSpawns(state.items))
+    if (extra.size === 0) return
+    const deletedAt = new Date(now()).toISOString()
+    commit(
+      state.items.map(p => (extra.has(p.id) && p.kind === 'task' ? { ...p, recurrence: undefined, deletedAt, updatedAt: newerStamp(p.updatedAt) } : p)),
+      extra,
+    )
+  }
+
   function setStatus(id: string, status: TaskStatus): StatusChange | null {
     const old = state.items.find(x => x.id === id)
     if (!old || old.kind !== 'task' || old.status === status) return null
@@ -829,6 +847,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       const found = decision.conflicts.map(c => ({ ...c, label: recordLabel(before.get(c.id)) }))
       for (const l of [...conflictListeners]) l(found)
     }
+    // what the round brought may be another device's next occurrence of a chore ticked here too
+    retireDuplicateSpawns()
   }
 
   function sync(): Promise<boolean> {
