@@ -19,6 +19,12 @@ export interface PushInfo {
   timezone: string | null
   /** Sunday's review draft runs for this account — push or not — and its journal switch can be saved. */
   sundayDraft: boolean
+  /**
+   * An AI provider key is set on the host. Sunday's draft is written by the
+   * provider, so without one none ever is, and the journal switch says so.
+   * Only a yes or no; an older server leaves it out, which reads as yes.
+   */
+  aiConfigured?: boolean
   email: string
 }
 

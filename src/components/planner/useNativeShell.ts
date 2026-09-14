@@ -1,8 +1,18 @@
 import { useEffect, useRef } from 'react'
 import type { Store } from '../../store'
 import { notifyDue } from '../../notify'
-import { clearAppBadge, genericRemindersEnabled, initNative, isNative, localRemindersEnabled, scheduleLocalReminders } from '../../native'
-import { buildLocalReminders, deviceHasServerPush } from '../../reminders'
+import {
+  clearAppBadge,
+  genericRemindersEnabled,
+  initNative,
+  isAppLockShowing,
+  isNative,
+  localRemindersEnabled,
+  planDayPref,
+  requestLocalNotificationPermission,
+  scheduleLocalReminders,
+} from '../../native'
+import { deviceHasServerPush, deviceReminders } from '../../reminders'
 import { fetchPushInfo } from '../../push'
 import type { useDeepLinks } from './useDeepLinks'
 
@@ -61,19 +71,29 @@ export function useNativeShell({ store, applyLinkRef }: Deps) {
   }, [])
 
   // iOS: the phone itself fires a notification at each due time and on occasion
-  // mornings — no server involved, so it works with no account and the app closed
+  // mornings — no server involved, so it works with no account and the app
+  // closed — and the morning's Plan your day, which is on until turned off
   const remindersRef = useRef(() => {})
   remindersRef.current = () => {
-    if (!isNative() || !localRemindersEnabled()) return
+    if (!isNative()) return
+    const local = localRemindersEnabled()
+    const planDay = planDayPref()
+    if (!local && !planDay.on) return
     void (async () => {
+      // Plan your day is on by default, so the first run that would set it asks
+      // iOS for notifications; after that iOS answers from the choice made,
+      // without asking again. Never over the lock screen: a later run asks
+      if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
       let skipTaskDue = false
-      try {
-        const info = await fetchPushInfo()
-        skipTaskDue = await deviceHasServerPush(info.subscriptions ?? [])
-      } catch {
-        /* offline / unsigned — keep local due reminders */
+      if (local) {
+        try {
+          const info = await fetchPushInfo()
+          skipTaskDue = await deviceHasServerPush(info.subscriptions ?? [])
+        } catch {
+          /* offline / unsigned — keep local due reminders */
+        }
       }
-      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+      await scheduleLocalReminders(deviceReminders(store, new Date(), { local, skipTaskDue, generic: genericRemindersEnabled(), planDay }))
     })()
   }
   // meals too: a takeaway logged tonight takes that place's nudge off the phone

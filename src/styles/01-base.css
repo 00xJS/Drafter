@@ -171,7 +171,10 @@
      it holds 3:1 from 0.75 on a card or a raised surface. --viz-empty is an
      empty or zero mark, drawn solid here because it also sits on --surface-2
      (an open person or place row) and faded in dark; --viz-ink is the mood
-     chart's currentColor, its labels drawn at --viz-label-opacity. */
+     chart's currentColor, its labels drawn at --viz-label-opacity, the scrub's
+     cursor at --viz-cursor-opacity and the weekly-average line at
+     --viz-avg-opacity. Both lines hold 3:1 on their own ground: the cursor on
+     the scrubbed day's lit column, the line on the --surface casing it runs on. */
   --viz-grid: #e1e4e9;
   --viz-baseline: #c3c9d2;
   --viz-series-1: #ea580c;
@@ -184,14 +187,17 @@
   --viz-mood-floor: 0.75;
   --viz-ink: #15181f;
   --viz-label-opacity: 0.6;
+  --viz-cursor-opacity: 0.6;
+  --viz-avg-opacity: 0.65;
 }
 
 /* Settings → Appearance → Dark (or Match system on a dark device). data-theme is
    stamped on <html> by index.html's inline script before the first paint and
    kept true by src/theme.ts. Values here are the palette the app shipped with
    until 2026-09-14, but for the few inks that did not read there (--muted, the
-   inverse pill's, the label on a danger fill, the mood chart's labels, a
-   calendar pill's dimmed time); theme-tokens.test.ts pins them all and lists
+   inverse pill's, the label on a danger fill, the mood chart's labels, scrub
+   cursor and average line, a calendar pill's dimmed time);
+   theme-tokens.test.ts pins them all and lists
    those changes with what each was. Only themed
    tokens appear here: the fixed ones (the accent with its glow and gradient
    ends, --on-accent, the ink on user colours, the photo controls, --sheen and
@@ -280,6 +286,8 @@
   --viz-mood-floor: 0.35;
   --viz-ink: #a9b0be;
   --viz-label-opacity: 0.8;
+  --viz-cursor-opacity: 0.6;
+  --viz-avg-opacity: 0.55;
 }
 
 * {

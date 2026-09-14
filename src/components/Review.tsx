@@ -4,6 +4,7 @@ import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRa
 import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
 import { habitsConsistency } from '../habits'
+import { habitLines } from '../../shared/review.mjs'
 import { JournalPeople } from './Journal'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
@@ -157,8 +158,9 @@ export function Review({ tasks, projects, people, reviews, journal, places, habi
         upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
         people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
         places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
-        // one compact line so the model can weigh it without a tally per day
-        habits: habitStats.due > 0 ? [`${habitStats.pct}% consistent (${habitStats.done}/${habitStats.due}): ${habitStats.rows.map(r => `${r.habit.name} ${r.done}/${r.due}`).join(' · ')}`] : [],
+        // one compact line — kept, missed and each streak — so the model can weigh
+        // it without a tally per day; Sunday's draft sends the same line (shared/review.mjs)
+        habits: habitLines(habitStats),
         reflections,
         lastTop,
         kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),

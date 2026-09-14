@@ -9,6 +9,7 @@ import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { graphicInk, heatStyle, readableInk } from '../contrast'
 import type { CalendarEvent, CalendarSource, Garment, Place, Project, Recipe, Task, Wear } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
+import { sheetSource } from './source'
 
 // The call sites of the theme sweep. A colour the stylesheet cannot know (a
 // project's, a feed's, a place's) is drawn through the contrast helpers, and
@@ -98,13 +99,22 @@ describe('a user colour drawn as a mark is deepened just enough to stand out on 
     expect(html).not.toContain('opacity')
   })
 
-  it('a Timeline span and a milestone’s edge', () => {
-    const project: Project = { kind: 'project', id: 'p', name: 'LIFE', color: amber, status: 'active', milestones: [{ id: 'm', name: 'Launch', dueAt: sept(10) }], createdAt: STAMP, updatedAt: STAMP }
+  it('a Timeline span, a milestone’s edge and a finished milestone’s fill', () => {
+    const milestones = [
+      { id: 'm', name: 'Launch', dueAt: sept(10) },
+      { id: 'd', name: 'Plans drawn', dueAt: sept(3), done: true },
+    ]
+    const project: Project = { kind: 'project', id: 'p', name: 'LIFE', color: amber, status: 'active', milestones, createdAt: STAMP, updatedAt: STAMP }
     const html = renderToStaticMarkup(<Roadmap projects={[project]} tasks={[]} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
     const ink = graphicInk(amber, 'light')
     expect(ink).not.toBe(amber)
     expect(html).toMatch(new RegExp(`class="rm-bar inferred" style="[^"]*background:${ink}"`))
     expect(html).toMatch(new RegExp(`class="rm-ms" style="[^"]*border-color:${ink}"`))
+    // an open milestone stays hollow on the sheet's --surface…
+    expect(html).not.toMatch(/class="rm-ms" style="[^"]*background/)
+    // …and a finished one fills with the project's colour, where the sheet once filled it with the text colour
+    expect(html).toMatch(new RegExp(`class="rm-ms done" style="[^"]*border-color:${ink};background:${ink}"`))
+    expect(sheetSource().replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/\.rm-ms\.done\s*\{/)
   })
 
   it('the mood columns carry their mood for the sheet to set their strength, not an opacity of their own', () => {
@@ -113,6 +123,28 @@ describe('a user colour drawn as a mark is deepened just enough to stand out on 
     expect(html).toMatch(/class="mood-col"[^>]*style="--mood:1"/)
     expect(html).toMatch(/class="mood-col"[^>]*style="--mood:5"/)
     expect(html).not.toMatch(/class="mood-col"[^>]*opacity/)
+  })
+
+  it('the weekly-average line runs on a casing of the card’s colour, drawn first, along the same points', () => {
+    const series = {
+      days: [
+        { date: '2026-09-05', mood: 2 as const },
+        { date: '2026-09-06', mood: 4 as const },
+        { date: '2026-09-07', mood: 5 as const },
+      ],
+      weekly: [
+        { start: '2026-08-30', avg: 2, count: 1 },
+        { start: '2026-09-06', avg: 4.5, count: 2 },
+      ],
+    }
+    const html = renderToStaticMarkup(<MoodChart series={series} summary="Moods" />)
+    const casing = /<polyline class="mood-avg-casing" points="([^"]+)"/.exec(html)
+    const line = /<polyline class="mood-avg-line" points="([^"]+)"/.exec(html)
+    expect(casing?.[1]).toBeTruthy()
+    expect(casing?.[1]).toBe(line?.[1])
+    expect(html.indexOf('mood-avg-casing')).toBeLessThan(html.indexOf('mood-avg-line'))
+    // the strength of both is the sheet's, per theme
+    expect(html).not.toMatch(/class="mood-(avg-casing|avg-line|cursor)"[^>]*(opacity|stroke=)/)
   })
 })
 

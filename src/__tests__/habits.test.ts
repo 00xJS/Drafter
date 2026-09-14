@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { Habit } from '../types'
 import { isDueOn, isDoneOn, toggleDone, streakOf, rangeStats, habitsConsistency } from '../habits'
 import { sanitizeHabit } from '../schema'
+import { habitLines } from '../../shared/review.mjs'
 
 function habit(over: Partial<Habit> = {}): Habit {
   return { kind: 'habit', id: 'h1', name: 'Read', done: [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', ...over }
@@ -117,6 +118,44 @@ describe('habits consistency for the review', () => {
     expect(habitsConsistency([fresh], new Date(2026, 7, 1), new Date(2026, 8, 1), day(10)).rows).toEqual([])
     // and a habit that predates the period is unaffected
     expect(habitsConsistency([habit()], start, end, day(20)).due).toBe(7)
+  })
+  it('gives each habit its misses and the streak it ended the period on', () => {
+    const read = habit({ id: 'a', done: ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'] }) // 6, 7 and 8 missed
+    const gym = habit({ id: 'b', days: [1, 3, 5], done: ['2026-09-04', '2026-09-07', '2026-09-09', '2026-09-11'] })
+    const c = habitsConsistency([read, gym], start, end, day(20))
+    expect(c.rows.map(r => [r.habit.id, r.done, r.missed, r.streak])).toEqual([
+      ['a', 4, 3, 4],
+      // the weekend is skipped, not missed, so the run reaches back into the week before
+      ['b', 3, 0, 4],
+    ])
+  })
+  it('ends a past period’s streak on a missed last day, where today unticked only waits', () => {
+    const h = habit({ done: ['2026-09-10', '2026-09-11'] }) // Sat 12 not ticked
+    expect(habitsConsistency([h], start, end, day(20)).rows[0].streak).toBe(0)
+    // on the 12th itself the day is still going, as on Today's card
+    expect(habitsConsistency([h], start, end, day(12)).rows[0].streak).toBe(2)
+    expect(habitsConsistency([h], start, end, day(12)).rows[0].streak).toBe(streakOf(h, day(12)))
+  })
+  it('never counts an archived or deleted habit', () => {
+    const gone = [habit({ id: 'x', archivedAt: '2026-09-01T00:00:00.000Z' }), habit({ id: 'y', deletedAt: '2026-09-01T00:00:00.000Z' })]
+    expect(habitsConsistency(gone, start, end, day(20))).toMatchObject({ rows: [], due: 0 })
+  })
+})
+
+describe('the habit line the ✨ summary and Sunday’s draft send', () => {
+  const start = day(6)
+  const end = day(13)
+  it('is one line: the total kept and missed, then each habit with its misses and streak', () => {
+    const read = habit({ id: 'a', name: 'Read', done: ['2026-09-06', '2026-09-07', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12'] })
+    const gym = habit({ id: 'b', name: 'Gym', days: [1, 3, 5], done: ['2026-09-07', '2026-09-09', '2026-09-11'] })
+    const floss = habit({ id: 'c', name: 'Floss', done: [] })
+    expect(habitLines(habitsConsistency([read, gym, floss], start, end, day(20)))).toEqual([
+      '53% consistent (9/17 kept, 8 missed): Read 6/7 (1 missed, streak 4) · Gym 3/3 (streak 3) · Floss 0/7 (7 missed)',
+    ])
+  })
+  it('is nothing when nothing was due', () => {
+    expect(habitLines(habitsConsistency([], start, end, day(20)))).toEqual([])
+    expect(habitLines(null)).toEqual([])
   })
 })
 

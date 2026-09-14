@@ -1,13 +1,15 @@
 // Web push subscriptions and digest preferences, per user.
-//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, digestJournal, timezone, sundayDraft }
+//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, digestJournal, timezone, sundayDraft, aiConfigured }
 //   POST /api/push { action } subscribe | unsubscribe | test | prefs
 // VAPID keys come from the host: `npx web-push generate-vapid-keys` →
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (+ VAPID_SUBJECT, a mailto: or https:).
 // Sunday's review draft runs for every account, push or not, so its journal
-// switch reads and saves wherever the settings store does.
+// switch reads and saves wherever the settings store does. The draft is the AI
+// provider's to write, so the switch is told whether the host has a key.
 
 import { withCors } from './lib/cors.mjs'
 import webpush from 'web-push'
+import { resolveProvider } from './lib/ai.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApnsWithRetry } from './lib/apns.mjs'
 import { adoptTimeZone } from './lib/timezone.mjs'
@@ -118,6 +120,10 @@ const handler = async req => {
         timezone: s?.timezone ?? null,
         // Sunday's review draft needs only somewhere to keep its switch, never push
         sundayDraft: settingsStoreConfigured(),
+        // …and an AI key to be written at all (the digest's own test,
+        // resolveProvider): without one no draft ever is, and the switch says
+        // so. A yes or no only, never a key or its provider
+        aiConfigured: !!resolveProvider(),
         email: user.email,
       })
     }

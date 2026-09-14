@@ -267,6 +267,45 @@ export function setGenericRemindersEnabled(on: boolean): void {
   }
 }
 
+const PLAN_DAY_KEY = 'drafter:plan-day-reminder'
+
+/**
+ * The morning's Plan your day on this phone (Settings → Reminders): a local
+ * notification every day at `time` that opens Plan my day. With push and the
+ * email digest off it is the one thing that reaches you outside the app, so it
+ * is on by default, at 8:00.
+ */
+export interface PlanDayPref {
+  on: boolean
+  /** HH:MM, in this phone's own time. */
+  time: string
+}
+
+export const PLAN_DAY_DEFAULT: PlanDayPref = { on: true, time: '08:00' }
+
+/** A time of day as `<input type="time">` gives it ('07:30'), or null for anything else. */
+export function validTime(raw: unknown): string | null {
+  return typeof raw === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw) ? raw : null
+}
+
+/** This phone's Plan your day: the default where nothing is saved, and for a part saved that cannot be read. */
+export function planDayPref(): PlanDayPref {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PLAN_DAY_KEY) ?? 'null') as Partial<PlanDayPref> | null
+    return { on: typeof saved?.on === 'boolean' ? saved.on : PLAN_DAY_DEFAULT.on, time: validTime(saved?.time) ?? PLAN_DAY_DEFAULT.time }
+  } catch {
+    return PLAN_DAY_DEFAULT
+  }
+}
+
+export function setPlanDayPref(pref: PlanDayPref): void {
+  try {
+    localStorage.setItem(PLAN_DAY_KEY, JSON.stringify(pref))
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Ask iOS once; false if the user said no (the fix is then the Settings app). */
 export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false
@@ -288,6 +327,8 @@ export interface PendingReminder {
   url: string
   /** TASK_ACTION_TYPE / OCCASION_ACTION_TYPE, or nothing for a title-less banner. */
   actionTypeId?: string
+  /** Fires every day at `at`'s time of day, not once at `at`: the morning's Plan your day. */
+  daily?: boolean
 }
 
 /**
@@ -301,7 +342,8 @@ let actionTypesRegistered = false
 
 /**
  * Replace every pending reminder with this set. iOS holds at most 64 pending
- * local notifications per app, so the soonest 60 win. Returns how many are set.
+ * local notifications per app: one that repeats every day keeps its slot, and
+ * the soonest of the rest fill up to 60. Returns how many are set.
  */
 export async function scheduleLocalReminders(items: PendingReminder[]): Promise<number> {
   if (!isNative()) return 0
@@ -329,28 +371,40 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
   const pending = await LocalNotifications.getPending()
   if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) })
   const now = Date.now()
+  const daily = items.filter(i => i.daily)
   const upcoming = items
-    .filter(i => i.at.getTime() > now)
+    .filter(i => !i.daily && i.at.getTime() > now)
     .sort((a, b) => a.at.getTime() - b.at.getTime())
-    .slice(0, 60)
-  if (upcoming.length) {
-    await LocalNotifications.schedule({
-      notifications: upcoming.map((i, idx) => ({
-        id: i.id,
-        title: i.title,
-        body: i.body,
-        schedule: { at: i.at, allowWhileIdle: true },
-        extra: { url: i.url },
-        sound: 'default',
-        // the badge counts reminders that have fired since Drafter was last
-        // opened — these are in time order, so the nth to fire leaves n behind.
-        // clearAppBadge() zeroes it again on the next launch or resume.
-        badge: idx + 1,
-        ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
-      })),
-    })
-  }
-  return upcoming.length
+    .slice(0, Math.max(0, 60 - daily.length))
+  const notifications = [
+    ...upcoming.map((i, idx) => ({
+      id: i.id,
+      title: i.title,
+      body: i.body,
+      schedule: { at: i.at, allowWhileIdle: true },
+      extra: { url: i.url },
+      sound: 'default',
+      // the badge counts reminders that have fired since Drafter was last
+      // opened — these are in time order, so the nth to fire leaves n behind.
+      // clearAppBadge() zeroes it again on the next launch or resume.
+      badge: idx + 1,
+      ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
+    })),
+    ...daily.map(i => ({
+      id: i.id,
+      title: i.title,
+      body: i.body,
+      // iOS matches this hour and minute every day (a repeating calendar
+      // trigger), so it comes on a morning after the app went unopened
+      schedule: { on: { hour: i.at.getHours(), minute: i.at.getMinutes() }, repeats: true, allowWhileIdle: true },
+      extra: { url: i.url },
+      sound: 'default',
+      // no badge: a number fixed now would be wrong from its second morning
+      ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
+    })),
+  ]
+  if (notifications.length) await LocalNotifications.schedule({ notifications })
+  return notifications.length
 }
 
 /** Clear the home-screen badge when the app comes forward. */

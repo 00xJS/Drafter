@@ -17,6 +17,12 @@ let calls: string[]
 let prepareFails: boolean
 let deleteFails: boolean
 let stored: unknown
+/** The sync check as app_config holds it (canary.mjs CANARY_KEY); null before any has run. */
+let canary: unknown
+/** Whose session asks: the owner's unless a test says otherwise. */
+let signedIn: string
+/** app_config does not answer. */
+let configDown: boolean
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -26,6 +32,9 @@ beforeEach(() => {
   prepareFails = false
   deleteFails = false
   stored = null
+  canary = null
+  signedIn = 'owner@example.test'
+  configDown = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -33,7 +42,7 @@ beforeEach(() => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push(`${method} ${url.split('?')[0]}`)
-      if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: 'owner@example.test' })
+      if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: signedIn })
       if (url.startsWith('/rest/v1/app_config?key=eq.owner_email')) return Response.json([{ value: 'owner@example.test' }])
       if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'GET') return Response.json({ id: LEAVER, email: 'leaving@example.test' })
       if (url === '/rest/v1/rpc/admin_prepare_user_deletion') {
@@ -44,7 +53,10 @@ beforeEach(() => {
       if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'DELETE') {
         return deleteFails ? Response.json({ msg: 'Database error deleting user' }, { status: 500 }) : Response.json({})
       }
-      if (url.startsWith('/rest/v1/app_config?key=eq.sync_canary')) return Response.json([])
+      if (url.startsWith('/rest/v1/app_config?key=eq.sync_canary')) {
+        if (configDown) return new Response('unavailable', { status: 503 })
+        return Response.json(canary ? [{ value: JSON.stringify(canary) }] : [])
+      }
       if (url === '/rest/v1/rpc/sync_canary') return Response.json({ ok: true, checked: body.kinds.length, failures: [] })
       if (url === '/rest/v1/app_config?on_conflict=key' && method === 'POST') {
         stored = JSON.parse(body.value)
@@ -112,5 +124,43 @@ describe('Admin → Data → Check now', () => {
     expect(body.sentence).toBe(`The server accepted a test write for all ${SYNC_KINDS.size} kinds, just now.`)
     expect(body.record).toMatchObject({ ok: true, checked: SYNC_KINDS.size, failures: [], alertedAt: null })
     expect(stored).toEqual(body.record)
+  })
+})
+
+describe('Today’s sync alarm reads the check as Admin → Data does', () => {
+  const failing = {
+    ok: false,
+    checked: 18,
+    failures: [{ kind: 'habit', reason: 'rejected' }],
+    error: null,
+    at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+    failingSince: new Date(Date.now() - 50 * 3_600_000).toISOString(),
+    alertedAt: null,
+  }
+
+  it('answers the stored record and Data’s own sentence, and runs nothing', async () => {
+    canary = failing
+    const res = await act('syncCheck')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ record: failing, sentence: 'The server refused a test write for habit (rejected), 3 hours ago. First seen 2 days ago.' })
+    expect(calls).not.toContain('POST /rest/v1/rpc/sync_canary')
+    expect(stored).toBeNull()
+  })
+
+  it('says none has run before the first', async () => {
+    expect(await (await act('syncCheck')).json()).toEqual({ record: null, sentence: 'No sync check has run yet. The hourly digest runs one, or press Check now.' })
+  })
+
+  it('is the owner’s alone', async () => {
+    canary = failing
+    signedIn = 'someone@example.test'
+    const res = await act('syncCheck')
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(await res.json())).not.toContain('habit')
+  })
+
+  it('fails, rather than saying none has run, when the record cannot be read', async () => {
+    configDown = true
+    expect((await act('syncCheck')).status).toBe(502)
   })
 })

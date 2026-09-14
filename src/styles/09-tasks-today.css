@@ -116,6 +116,31 @@
 .chart-card.warn-card {
   border-color: var(--tone-rose-border);
 }
+/* the site owner's sync alarm (Today.tsx SyncAlarmBanner): the hourly check
+   found the server refusing writes. Today's column gap spaces it, so it keeps
+   no margin of its own, and it wraps rather than scrolling at 375px: the
+   sentence takes the line, the buttons go under it. */
+.sync-alarm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--tone-rose-border);
+  border-radius: var(--radius);
+  background: var(--tone-rose-bg);
+  color: var(--text);
+}
+.sync-alarm p {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sync-alarm strong {
+  color: var(--tone-rose);
+}
 .tlist .trow {
   align-items: center;
   position: relative;
@@ -445,9 +470,8 @@
   padding: 0;
   z-index: 2;
 }
-.rm-ms.done {
-  background: currentColor;
-}
+/* a finished milestone is filled with its project's colour, set inline through
+   graphicInk like its edge (Roadmap.tsx), never the text colour */
 .rm-ms-name {
   position: absolute;
   left: 14px;

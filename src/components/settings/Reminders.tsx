@@ -1,33 +1,83 @@
 import { useEffect, useState } from 'react'
-import { genericRemindersEnabled, isNative, localRemindersEnabled, requestLocalNotificationPermission, scheduleLocalReminders, setGenericRemindersEnabled, setLocalRemindersEnabled } from '../../native'
+import {
+  PlanDayPref,
+  genericRemindersEnabled,
+  isNative,
+  localRemindersEnabled,
+  planDayPref,
+  requestLocalNotificationPermission,
+  scheduleLocalReminders,
+  setGenericRemindersEnabled,
+  setLocalRemindersEnabled,
+  setPlanDayPref,
+  validTime,
+} from '../../native'
 import { enableNotifications, notificationPermission } from '../../notify'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../../push'
-import { buildLocalReminders } from '../../reminders'
+import { deviceReminders } from '../../reminders'
 import { isSupabaseConfigured } from '../../supabase'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
 /**
  * Sunday's review draft is written on the server for every account, push or
- * not, so its one switch sits apart from push and says nothing about it.
+ * not, so its one switch sits apart from push and says nothing about it. The
+ * AI provider writes it: on a host with no AI key none is ever written, so the
+ * switch is drawn disabled, with the reason in one line.
  */
-export function SundayDraft({ journal, onChange }: { journal: boolean; onChange(on: boolean): void }) {
+export function SundayDraft({ journal, ai = true, onChange }: { journal: boolean; ai?: boolean; onChange(on: boolean): void }) {
   return (
     <>
       <h4>Sunday’s review</h4>
-      <p className="field-hint">Each Sunday, last week’s review is drafted for you, ready on Home → Week. It never writes over your own summary or reflections.</p>
+      <p className="field-hint">
+        {ai
+          ? 'Each Sunday, last week’s review is drafted for you, ready on Home → Week. It never writes over your own summary or reflections.'
+          : 'No Sunday draft is written: the server has no AI provider key.'}
+      </p>
       <p className="sync-line">
         <label className="cal-source mirror-row">
-          <input type="checkbox" checked={journal} onChange={e => onChange(e.target.checked)} />
+          <input type="checkbox" checked={journal} disabled={!ai} onChange={e => onChange(e.target.checked)} />
           <span className="cal-source-name">Let Sunday’s draft read my journal</span>
         </label>
-        <small className="field-hint">The week’s entries go to the AI provider with the draft. Off by default; the ✨ summary you press for on Home → Week always may.</small>
+        {ai && <small className="field-hint">The week’s entries go to the AI provider with the draft. Off by default; the ✨ summary you press for on Home → Week always may.</small>}
       </p>
     </>
   )
 }
 
-/** Reminders: server push and the morning digest, Sunday's review draft, then this iPhone's own reminders or the browser's. */
+/**
+ * The morning's Plan your day: a notification this iPhone fires by itself
+ * every day at the time chosen, with no push and no server, that opens Plan my
+ * day on Today. On, at 8:00, until changed here.
+ */
+export function PlanDayReminder({ pref, onChange }: { pref: PlanDayPref; onChange(next: PlanDayPref): void }) {
+  return (
+    <>
+      <h4>Plan your day</h4>
+      <p className="sync-line">
+        <label className="cal-source mirror-row">
+          <input type="checkbox" checked={pref.on} onChange={e => onChange({ ...pref, on: e.target.checked })} />
+          <span className="cal-source-name">Remind me every morning</span>
+        </label>
+        <label className="digest-hour">
+          at
+          <input
+            type="time"
+            value={pref.time}
+            disabled={!pref.on}
+            onChange={e => {
+              const time = validTime(e.target.value)
+              if (time) onChange({ ...pref, time })
+            }}
+          />
+        </label>
+      </p>
+      <p className="field-hint">The phone sends it itself, with no push and no server; tapping it opens Plan my day.</p>
+    </>
+  )
+}
+
+/** Reminders: server push and the morning digest, Sunday's review draft, then this iPhone's own reminders and its Plan your day, or the browser's. */
 export function Reminders({ store }: SettingsCtx) {
   const [notif, setNotif] = useState(notificationPermission())
   const [push, setPush] = useState<PushInfo | null>(null)
@@ -37,6 +87,7 @@ export function Reminders({ store }: SettingsCtx) {
   const [localOn, setLocalOn] = useState(localRemindersEnabled())
   const [genericOn, setGenericOn] = useState(genericRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
+  const [planDay, setPlanDay] = useState(planDayPref)
   useEffect(() => {
     // push is sent by the server, so without an account there is nothing to ask
     if (!isSupabaseConfigured()) return
@@ -56,6 +107,13 @@ export function Reminders({ store }: SettingsCtx) {
       setPush(await fetchPushInfo())
       setThisEndpoint(await currentEndpoint())
     })
+  // this phone's own reminders are one set, replaced whole (deviceReminders),
+  // so every switch below schedules all of it as it now stands
+  const serverPushHere = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
+  const reschedule = (over: { local?: boolean; generic?: boolean; planDay?: PlanDayPref } = {}) =>
+    scheduleLocalReminders(
+      deviceReminders(store, new Date(), { local: over.local ?? localOn, skipTaskDue: serverPushHere, generic: over.generic ?? genericOn, planDay: over.planDay ?? planDay }),
+    )
 
   return (
     <section className="settings-section g-reminders">
@@ -120,7 +178,7 @@ export function Reminders({ store }: SettingsCtx) {
       )}
       {pushError && push && <p className="warn">{pushError}</p>}
       {push?.sundayDraft && (
-        <SundayDraft journal={!!push.digestJournal} onChange={on => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: on }))} />
+        <SundayDraft journal={!!push.digestJournal} ai={push.aiConfigured !== false} onChange={on => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: on }))} />
       )}
       {isNative() ? (
         <>
@@ -144,17 +202,12 @@ export function Reminders({ store }: SettingsCtx) {
                     }
                     setLocalRemindersEnabled(true)
                     setLocalOn(true)
-                    let skipTaskDue = false
-                    try {
-                      skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
-                    } catch {
-                      /* ignore */
-                    }
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+                    await reschedule({ local: true })
                   } else {
                     setLocalRemindersEnabled(false)
                     setLocalOn(false)
-                    await scheduleLocalReminders([])
+                    // the morning's Plan your day has a switch of its own, and stays
+                    await reschedule({ local: false })
                   }
                 }}
               />
@@ -175,8 +228,7 @@ export function Reminders({ store }: SettingsCtx) {
                     const on = e.target.checked
                     setGenericRemindersEnabled(on)
                     setGenericOn(on)
-                    const skipTaskDue = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
-                    await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: on }))
+                    await reschedule({ generic: on })
                   }}
                 />
                 <span className="cal-source-name">Hide details on the lock screen</span>
@@ -184,6 +236,19 @@ export function Reminders({ store }: SettingsCtx) {
               <small className="field-hint">Reminders say “Something is due” or “An occasion today” instead of a task title or a person's name. Tapping one still opens the right thing.</small>
             </p>
           )}
+          <PlanDayReminder
+            pref={planDay}
+            onChange={async next => {
+              setLocalErr('')
+              if (next.on && !planDay.on && !(await requestLocalNotificationPermission())) {
+                setLocalErr('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
+                return
+              }
+              setPlanDayPref(next)
+              setPlanDay(next)
+              await reschedule({ planDay: next })
+            }}
+          />
           {localErr && <p className="warn">{localErr}</p>}
         </>
       ) : (

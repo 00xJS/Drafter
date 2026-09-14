@@ -493,7 +493,8 @@
   color: var(--muted);
   font-size: 0.75rem;
 }
-.digest-hour select {
+.digest-hour select,
+.digest-hour input {
   padding: 3px 6px;
 }
 

@@ -516,6 +516,9 @@ export function MoodChart({ series, summary }: { series: MoodSeries; summary: st
             )}
           </g>
         ))}
+        {/* the average line runs on a casing of the card's colour, so where it
+            crosses a column its ground is still the card */}
+        {markers.length > 1 && <polyline className="mood-avg-casing" points={markers.map(p => `${p.x},${p.y}`).join(' ')} />}
         {markers.length > 1 && <polyline className="mood-avg-line" points={markers.map(p => `${p.x},${p.y}`).join(' ')} />}
         {markers.map(p => (
           <circle key={p.start} className="mood-avg" cx={p.x} cy={p.y} r={3.5}>

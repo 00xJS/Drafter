@@ -49,6 +49,7 @@ import { dayClosed } from '../dayclose'
 import { canDress } from '../wardrobe'
 import { WardrobeCard } from './wardrobe/WardrobeCard'
 import type { WardrobeOpen } from './planner/useNavigation'
+import type { SyncAlarm } from '../syncalarm'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
 // and no project chips — a bar that never fills and a chip on every row would
@@ -119,6 +120,39 @@ interface Props {
   onLogWear?(w: Wear): void
   /** Pick…, Change and Forgot yesterday: Home → Wardrobe, on a day. */
   onOpenWardrobe?(o?: WardrobeOpen): void
+  // ---- the site owner's sync alarm. Optional: without it Today reads as it did.
+  /** The hourly sync check found the server refusing writes (syncalarm.ts): a banner at the top. */
+  syncAlarm?: SyncAlarm | null
+  /** Admin → Data, where the check's own card is. */
+  onOpenSyncCheck?(): void
+  /** Hides the banner on this device while this run of failures goes on, for twelve hours. */
+  onDismissSyncAlarm?(): void
+}
+
+/**
+ * The site owner's sync alarm: the hourly check found the server refusing
+ * writes. The check tells the owner through the digest's push or email; with
+ * both off this is how it reaches them, in the check's own words, with the
+ * way to Admin → Data and a way to put it aside.
+ */
+export function SyncAlarmBanner({ alarm, onOpen, onDismiss }: { alarm: SyncAlarm; onOpen?(): void; onDismiss?(): void }) {
+  return (
+    <section className="sync-alarm" role="status" aria-label="Sync check">
+      <p>
+        <strong>Some edits are not reaching the server.</strong> {alarm.sentence}
+      </p>
+      {onOpen && (
+        <button type="button" className="btn" onClick={onOpen}>
+          Open Admin → Data
+        </button>
+      )}
+      {onDismiss && (
+        <button type="button" className="btn subtle" onClick={onDismiss} aria-label="Dismiss the sync alarm" title="Dismiss">
+          ✕
+        </button>
+      )}
+    </section>
+  )
 }
 
 const STALE_DAYS = 14
@@ -540,6 +574,9 @@ export function Today({
   wears,
   onLogWear,
   onOpenWardrobe,
+  syncAlarm,
+  onOpenSyncCheck,
+  onDismissSyncAlarm,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -660,22 +697,28 @@ export function Today({
   const clearDay = !briefingFacts(events, habits, new Date()).events && s.overdue.length === 0 && s.today.length === 0
   const freeTime = clearDay ? freeTimeWishlist(tasks) : []
 
+  // the owner's sync alarm tops the page, the empty one too
+  const alarm = syncAlarm ? <SyncAlarmBanner alarm={syncAlarm} onOpen={onOpenSyncCheck} onDismiss={onDismissSyncAlarm} /> : null
+
   // a wardrobe that can dress you has its card to show, tasks or not
   const dressable = !!(wardrobeCard && garments && canDress(garments))
   if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable) {
     return (
-      <div className="empty-hero">
-        <h2>Welcome to your planner</h2>
-        <p>
-          Add tasks with due dates and this page becomes your daily driver: what's overdue, what's due today, and what
-          the week looks like.
-        </p>
-        <p>
-          <button className="btn primary" onClick={() => onNew()}>
-            + New task
-          </button>
-        </p>
-      </div>
+      <>
+        {alarm}
+        <div className="empty-hero">
+          <h2>Welcome to your planner</h2>
+          <p>
+            Add tasks with due dates and this page becomes your daily driver: what's overdue, what's due today, and what
+            the week looks like.
+          </p>
+          <p>
+            <button className="btn primary" onClick={() => onNew()}>
+              + New task
+            </button>
+          </p>
+        </div>
+      </>
     )
   }
 
@@ -737,6 +780,7 @@ export function Today({
           </p>
         </div>
       </header>
+      {alarm}
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
       <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} />
       <FocusCard

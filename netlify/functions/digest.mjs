@@ -30,7 +30,7 @@
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
 import { seenTasks } from '../../shared/people.mjs'
-import { peopleSeen, reviewLists } from '../../shared/review.mjs'
+import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/review.mjs'
 import { SYNC_KINDS } from '../../shared/kinds.mjs'
 import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
@@ -208,6 +208,17 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   const seen = peopleSeen(people, seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now), meta, iso => localParts(iso, opts.timezone || 'UTC').day)
     .map(p => p.person.name)
     .slice(0, 20)
+  // habits are personal, like the journal: only this user's own, never a
+  // household peer's. Kept, missed and the streak each ended the week on, in
+  // the one line the ✨ summary on Home → Week sends (shared/review.mjs)
+  const habits = habitLines(
+    habitsKept(
+      (items ?? []).filter(i => i.kind === 'habit' && (i.ownerId == null || i.ownerId === userId)),
+      meta,
+      now,
+      iso => localParts(iso, opts.timezone || 'UTC').day,
+    ),
+  )
   // the journal is personal: only this user's own entries, never a household peer's
   // …and it reaches the model only when the account opted in (user_settings.digest_journal);
   // the on-demand summary the user presses for is explicit consent and always may
@@ -224,6 +235,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
       )
     : []
   const list = xs => (xs.length ? xs.map(x => `- ${x}`).join('\n') : '- none')
+  const habitSection = habits.length ? `\n\nHabits:\n${list(habits)}` : ''
   const journalSection = opts.journal ? `\n\nMy journal this week:\n${list(wrote)}` : ''
 
   // the week's one try is claimed before the model is asked, just after the
@@ -247,7 +259,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
     complete({
       system:
         'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. When the journal explains why the week went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-      prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${journalSection}\n\nWrite the review in 120–220 words.`,
+      prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${habitSection}${journalSection}\n\nWrite the review in 120–220 words.`,
       maxTokens: 900,
     }),
     left(),
