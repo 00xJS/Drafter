@@ -70,8 +70,10 @@ export const isPlanned = w => w.planned === true
  * A look filed as a plan (`planned` true) or as worn (false), with its note as
  * given ('' clears it); either left out stays as it was. Unstamped: the
  * writers stamp.
+ * @param {{ planned?: boolean, note?: string }} [as]
  */
-export function marked(w, { planned, note } = {}) {
+export function marked(w, as = {}) {
+  const { planned, note } = as
   const next = { ...w }
   if (planned === true) next.planned = true
   else if (planned === false) delete next.planned
