@@ -558,6 +558,23 @@ describe('Sunday’s draft leaves an account disabled in Admin alone', () => {
     }
   })
 
+  it('drafts as before when a later page cannot be read: a list cut short cannot say who is disabled', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      bothDue()
+      // the disabled account is on the first page, which answers; the second does not
+      authUsers = [account(PEER, DISABLED), account(OWNER), ...others(203)]
+      authFailsFrom = 2
+      expect(await runAt('2026-09-13T08:00:00Z')).toBe('no subscribers; drafted 2; sync check ok')
+      expect(authPages).toEqual(['page=1&per_page=200', 'page=2&per_page=200'])
+      expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
+      expect(logged).toHaveBeenCalledOnce()
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/could not read which accounts are disabled.*503/))
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
   it('reads nothing in a run with no draft due', async () => {
     settings = [withPush(OWNER), quiet(PEER, { timezone: 'UTC' })]
     rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
