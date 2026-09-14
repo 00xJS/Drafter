@@ -237,6 +237,26 @@ describe('GitHub from the description', () => {
     expect(relinkGithub({ description: 'Fix the hinge, and oil it' }, unlinked)).toEqual({ githubUrl: issue, description: 'Fix the hinge, and oil it' })
   })
 
+  it('Unlink takes the same issue out however the text writes it, so the save cannot link it again, and Undo gives the text back', () => {
+    // a comment's permalink pasted from GitHub, http with www and another case,
+    // and a markdown link carrying a ?query: each one the card would show, and
+    // the save would link, as issue 12
+    const comment = `${issue}#issuecomment-99`
+    const plain = 'http://www.github.com/00xjs/drafter/issues/12'
+    const base = task({ githubUrl: issue, description: `See ${comment} for the fix.\n${plain}\n[the thread](${issue}?notification_referrer_id=7)\nParts: https://example.com/hinges` })
+    const form = initForm(base)
+    const { patch, unlinked } = unlinkGithub(form)
+    expect(patch).toEqual({ githubUrl: '', description: 'See for the fix.\nthe thread\nParts: https://example.com/hinges' })
+    const after = edit(form, patch)
+    expect(cardUrl(after)).toBeUndefined()
+    const saved = mergeOnto(base, after, base, true)
+    expect(saved.githubUrl).toBeUndefined()
+    expect(saved.description).toBe('See for the fix.\nthe thread\nParts: https://example.com/hinges')
+    const undone = edit(after, f => relinkGithub(f, unlinked))
+    expect(undone).toMatchObject({ githubUrl: issue, description: base.description })
+    expect(isDirty(undone, base, true)).toBe(false)
+  })
+
   it('Unlink takes only its own address: another GitHub address in the text stays, and is the card’s now', () => {
     const base = task({ githubUrl: issue, description: `Tracking ${issue}, see also ${pull}` })
     const form = edit(initForm(base), unlinkGithub(initForm(base)).patch)
@@ -277,9 +297,22 @@ describe('withoutUrl: an address taken out of a description', () => {
     expect(withoutUrl(`The [issue](${issue}) is open`, issue)).toBe('The issue is open')
   })
 
+  it('finds a GitHub item however it is written: a comment’s anchor, http, www, any case, or the pull request of that number', () => {
+    expect(withoutUrl(`Fixed, see ${issue}#issuecomment-99`, issue)).toBe('Fixed, see')
+    expect(withoutUrl('See http://www.github.com/00xjs/DRAFTER/issues/12?q=1 now', issue)).toBe('See now')
+    // an issue and a pull request share their repository's numbers
+    expect(withoutUrl('Merged in https://github.com/00xJS/Drafter/pull/12', issue)).toBe('Merged in')
+    expect(withoutUrl('Board: https://github.com/orgs/acme/projects/4/views/2', 'https://github.com/orgs/Acme/projects/4')).toBe('Board:')
+    expect(withoutUrl('Home: https://github.com/00xjs/drafter#readme', 'https://github.com/00xJS/Drafter')).toBe('Home:')
+  })
+
   it('leaves every other address, word and blank line as it was', () => {
     const text = 'Parts: https://example.com/hinges\n\n\nSee https://github.com/00xJS/Drafter/issues/120 and [the pull](https://github.com/00xJS/Drafter/pull/3)  too'
     expect(withoutUrl(text, issue)).toBe(text)
+    // the same number in another repository, and a page of the repository that is not its home
+    const others = 'https://github.com/00xJS/Other/issues/12 and https://github.com/00xJS/Drafter/blob/main/README.md'
+    expect(withoutUrl(others, issue)).toBe(others)
+    expect(withoutUrl(others, 'https://github.com/00xJS/Drafter')).toBe(others)
   })
 })
 

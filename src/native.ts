@@ -306,6 +306,25 @@ export function setPlanDayPref(pref: PlanDayPref): void {
   }
 }
 
+/** What iOS lets Drafter do about notifying: 'prompt' until it has asked, then the answer given. */
+export type LocalPermission = 'granted' | 'denied' | 'prompt'
+
+/**
+ * Whether this phone lets Drafter notify, without asking. After the first
+ * answer only the Settings app changes it, so a reminder switched on here can
+ * still reach nobody. Null on the web, or when the plugin can't say.
+ */
+export async function localNotificationPermission(): Promise<LocalPermission | null> {
+  if (!isNative()) return null
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications')
+    const { display } = await LocalNotifications.checkPermissions()
+    return display === 'granted' || display === 'denied' ? display : 'prompt'
+  } catch {
+    return null
+  }
+}
+
 /** Ask iOS once; false if the user said no (the fix is then the Settings app). */
 export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false
@@ -327,8 +346,12 @@ export interface PendingReminder {
   url: string
   /** TASK_ACTION_TYPE / OCCASION_ACTION_TYPE, or nothing for a title-less banner. */
   actionTypeId?: string
-  /** Fires every day at `at`'s time of day, not once at `at`: the morning's Plan your day. */
-  daily?: boolean
+  /**
+   * Fires every day at this hour and minute, this phone's own time, not once at
+   * `at`: the morning's Plan your day. Its own numbers, not `at`'s: on the
+   * morning the clocks go forward, a time in the skipped hour lands an hour on.
+   */
+  daily?: { hour: number; minute: number }
 }
 
 /**
@@ -371,7 +394,7 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
   const pending = await LocalNotifications.getPending()
   if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) })
   const now = Date.now()
-  const daily = items.filter(i => i.daily)
+  const daily = items.flatMap(i => (i.daily ? [{ ...i, on: i.daily }] : []))
   const upcoming = items
     .filter(i => !i.daily && i.at.getTime() > now)
     .sort((a, b) => a.at.getTime() - b.at.getTime())
@@ -396,7 +419,7 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
       body: i.body,
       // iOS matches this hour and minute every day (a repeating calendar
       // trigger), so it comes on a morning after the app went unopened
-      schedule: { on: { hour: i.at.getHours(), minute: i.at.getMinutes() }, repeats: true, allowWhileIdle: true },
+      schedule: { on: { hour: i.on.hour, minute: i.on.minute }, repeats: true, allowWhileIdle: true },
       extra: { url: i.url },
       sound: 'default',
       // no badge: a number fixed now would be wrong from its second morning

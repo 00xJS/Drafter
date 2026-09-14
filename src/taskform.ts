@@ -201,6 +201,29 @@ export function isGithubCardUrl(url: string): boolean {
   return parts.length === 2 && parts[0] !== 'orgs' && parts[0] !== 'users'
 }
 
+/**
+ * Two addresses of one issue, pull request, Projects board or repository home,
+ * however each is written: http or https, with or without www, a comment's
+ * #anchor or a ?query on the end, the owner and repo in any case. An issue and
+ * a pull request share their repository's numbers (GitHub sends /issues/3 on to
+ * /pull/3), so those two match as well. False for anything the card can't show.
+ */
+function sameGithubItem(a: string, b: string): boolean {
+  if (!isGithubCardUrl(a) || !isGithubCardUrl(b)) return false
+  const x = parseGithubUrl(a)!
+  const y = parseGithubUrl(b)!
+  const type = (t: string) => (t === 'pr' ? 'issue' : t)
+  return (
+    type(x.type) === type(y.type) &&
+    x.owner.toLowerCase() === y.owner.toLowerCase() &&
+    (x.repo ?? '').toLowerCase() === (y.repo ?? '').toLowerCase() &&
+    x.number === y.number
+  )
+}
+
+/** Two addresses of one link: the same URL (a trailing slash aside), or the same thing on GitHub. */
+const sameLink = (a: string, b: string) => sameUrl(a, b) || sameGithubItem(a, b)
+
 /** The first GitHub URL the card can show in a description, if there is one. */
 export const firstGithubUrl = (description: string) => urlsIn(description).find(isGithubCardUrl)
 
@@ -214,16 +237,18 @@ export function descriptionLinks(description: string, card?: string): string[] {
 
 /**
  * `text` without `url` wherever it links it: as a bare address, and as the
- * target of a [label](url) link, whose label stays as plain words. The space
- * the address leaves behind closes up, and a line it was alone on goes, with
- * the blank lines either side of it closing up to one. Every other word, link
- * and line stays exactly as it was.
+ * target of a [label](url) link, whose label stays as plain words. A GitHub
+ * address counts however it is written (sameGithubItem): a comment's permalink
+ * to the same issue would still link the task to it on save. The space the
+ * address leaves behind closes up, and a line it was alone on goes, with the
+ * blank lines either side of it closing up to one. Every other word, link and
+ * line stays exactly as it was.
  */
 export function withoutUrl(text: string, url: string): string {
-  let out = text.replace(/\[([^\]\n]*)\]\(\s*(https?:\/\/[^\s)]+)\s*\)/gi, (link: string, label: string, target: string) => (sameUrl(target, url) ? label : link))
+  let out = text.replace(/\[([^\]\n]*)\]\(\s*(https?:\/\/[^\s)]+)\s*\)/gi, (link: string, label: string, target: string) => (sameLink(target, url) ? label : link))
   const cuts = [...out.matchAll(URL_RE)]
     .map(m => ({ start: m.index!, end: m.index! + trimUrl(m[0]).length, found: trimUrl(m[0]) }))
-    .filter(c => sameUrl(c.found, url))
+    .filter(c => sameLink(c.found, url))
   // from the end back, so the offsets of the cuts still to make hold
   for (const { start, end } of cuts.reverse()) {
     const lineStart = out.lastIndexOf('\n', start - 1) + 1

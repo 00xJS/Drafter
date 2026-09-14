@@ -34,9 +34,9 @@ vi.mock('@capacitor/local-notifications', () => ({
   },
 }))
 
-import { PlanDayReminder } from '../components/settings/Reminders'
+import { NotificationsOff, PlanDayReminder } from '../components/settings/Reminders'
 import { paramsOf, parseLink } from '../links'
-import { PLAN_DAY_DEFAULT, planDayPref, scheduleLocalReminders, setPlanDayPref, validTime } from '../native'
+import { PLAN_DAY_DEFAULT, localNotificationPermission, planDayPref, scheduleLocalReminders, setPlanDayPref, validTime } from '../native'
 import { PLAN_DAY_URL, deviceReminders, planDayReminder, reminderId } from '../reminders'
 
 const NOW = new Date(2026, 8, 7, 12, 0) // Monday 7 September, noon, local
@@ -76,6 +76,7 @@ const due = (id: string, at: Date): Task => ({
 })
 const phone = (tasks: Task[] = []) => ({ tasks, people: [], places: [], meals: [] })
 const planDayOf = (list: Record<string, any>[]) => list.find(n => n.extra?.url === PLAN_DAY_URL)
+const source = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8')
 
 describe('Plan your day: what it is set to on this phone', () => {
   it('is on, at 8:00, on a phone that has never been told otherwise', () => {
@@ -106,10 +107,10 @@ describe('Plan your day: what it is set to on this phone', () => {
 describe('Plan your day: the notification', () => {
   it('is next due at 8:00 tomorrow from noon, and this morning before 8, and repeats every day', () => {
     const r = planDayReminder(PLAN_DAY_DEFAULT, NOW)
-    expect(r).toMatchObject({ id: reminderId('plan-day'), title: 'Plan your day', url: '/?plan=day', daily: true })
+    expect(r).toMatchObject({ id: reminderId('plan-day'), title: 'Plan your day', url: '/?plan=day', daily: { hour: 8, minute: 0 } })
     expect(r?.at).toEqual(new Date(2026, 8, 8, 8, 0))
     expect(planDayReminder(PLAN_DAY_DEFAULT, new Date(2026, 8, 7, 7, 59))?.at).toEqual(new Date(2026, 8, 7, 8, 0))
-    expect(planDayReminder({ on: true, time: '06:45' }, NOW)?.at).toEqual(new Date(2026, 8, 8, 6, 45))
+    expect(planDayReminder({ on: true, time: '06:45' }, NOW)).toMatchObject({ at: new Date(2026, 8, 8, 6, 45), daily: { hour: 6, minute: 45 } })
     expect(planDayReminder({ on: false, time: '08:00' }, NOW)).toBeNull()
   })
 
@@ -144,6 +145,15 @@ describe('Plan your day: scheduled with the phone’s own local notifications', 
     expect(plugin.scheduled.find(n => n.extra.url === '/?task=a')).toMatchObject({ badge: 1, schedule: { at: new Date(2026, 8, 9, 18) } })
   })
 
+  it('repeats at the time chosen, not wherever its next time landed: the morning the clocks go forward', async () => {
+    // on 28 March 2027 in London, setHours(1, 30) gives 02:30, as 01:30 never
+    // happens that day; the phone must still repeat at 01:30 every other morning
+    const plan = { ...planDayReminder({ on: true, time: '01:30' }, NOW)!, at: new Date(2026, 8, 8, 2, 30) }
+    expect(plan.daily).toEqual({ hour: 1, minute: 30 })
+    await scheduleLocalReminders([plan])
+    expect(planDayOf(plugin.scheduled)?.schedule.on).toEqual({ hour: 1, minute: 30 })
+  })
+
   it('keeps its slot on a full phone: the soonest 59 of the rest fill the 60', async () => {
     const tasks = Array.from({ length: 70 }, (_, i) => due(`t${i}`, new Date(2026, 8, 8, 9, i)))
     expect(await scheduleLocalReminders(deviceReminders(phone(tasks), NOW, { local: true, planDay: PLAN_DAY_DEFAULT }))).toBe(60)
@@ -174,9 +184,43 @@ describe('Plan your day: scheduled with the phone’s own local notifications', 
   })
 })
 
-describe('Plan your day: in the shell and in Settings → Reminders', () => {
-  const source = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8')
+// It is on by default, so a No at the launch prompt, or notifications turned
+// off later in the Settings app, left it ticked at 08:00 in Settings while
+// scheduleLocalReminders quietly set nothing. Settings now says so.
+describe('Plan your day: when iOS won’t let it through', () => {
+  it('reads what iOS allows without asking', async () => {
+    for (const [display, read] of [
+      ['granted', 'granted'],
+      ['denied', 'denied'],
+      ['prompt', 'prompt'],
+      ['prompt-with-rationale', 'prompt'],
+    ] as const) {
+      plugin.permission = display
+      expect(await localNotificationPermission(), display).toBe(read)
+    }
+  })
 
+  it('says so under the switches, with where to turn notifications on, or a button while iOS has yet to ask', () => {
+    const denied = renderToStaticMarkup(<NotificationsOff allowed="denied" onAllow={() => {}} />)
+    expect(denied).toMatch(/^<p class="warn">None of these can reach you/)
+    expect(denied).toContain('Turn them on in the iPhone Settings app, under Drafter.')
+    const prompt = renderToStaticMarkup(<NotificationsOff allowed="prompt" onAllow={() => {}} />)
+    expect(prompt).toContain('<button class="btn">Allow notifications</button>')
+    for (const allowed of ['granted', null] as const) expect(renderToStaticMarkup(<NotificationsOff allowed={allowed} onAllow={() => {}} />)).toBe('')
+  })
+
+  it('Settings reads it on open and on coming back to the app, shows it while a reminder is on, and a new time asks too', () => {
+    const settings = source('components/settings/Reminders.tsx')
+    expect(settings).toMatch(/localNotificationPermission\(\)\.then\(/)
+    expect(settings).toMatch(/document\.addEventListener\('visibilitychange', onShow\)/)
+    expect(settings).toMatch(/\(localOn \|\| planDay\.on\) && \(\s*<NotificationsOff\s+allowed=\{allowed\}/)
+    // not only when it is switched on: a change of time asks as well
+    expect(settings).toMatch(/const ok = next\.on \? await ask\(\) : true/)
+    expect(settings).not.toMatch(/next\.on && !planDay\.on && !\(await requestLocalNotificationPermission\(\)\)/)
+  })
+})
+
+describe('Plan your day: in the shell and in Settings → Reminders', () => {
   it('the shell sets it with the rest, even with the local reminders off, and asks iOS once, never over the lock', () => {
     const shell = source('components/planner/useNativeShell.ts')
     expect(shell).toMatch(/deviceReminders\(store, new Date\(\), \{ local, skipTaskDue, generic: genericRemindersEnabled\(\), planDay \}\)/)

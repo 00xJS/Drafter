@@ -28,8 +28,8 @@ export interface LocalReminder {
    * numbers the whole set in time order.
    */
   actionTypeId?: string
-  /** Repeats every day at `at`'s time of day rather than firing once: the morning's Plan your day. */
-  daily?: boolean
+  /** Repeats every day at this hour and minute rather than firing once at `at`: the morning's Plan your day. */
+  daily?: { hour: number; minute: number }
 }
 
 /** Stable 31-bit id from a string (djb2), so rescheduling replaces rather than duplicates. */
@@ -177,7 +177,9 @@ export const PLAN_DAY_URL = '/?plan=day'
 /**
  * The morning's Plan your day, when it is on: one notification that repeats
  * every day at the time chosen (`daily`), with no push and no server. `at` is
- * its next time, for ordering and for the hour and minute it repeats at.
+ * its next time, for ordering only: on the morning the clocks go forward,
+ * setHours moves a time in the skipped hour an hour on, so the hour and
+ * minute it repeats at are carried as chosen.
  */
 export function planDayReminder(pref: PlanDayPref, now = new Date()): LocalReminder | null {
   if (!pref.on) return null
@@ -186,7 +188,7 @@ export function planDayReminder(pref: PlanDayPref, now = new Date()): LocalRemin
   const at = new Date(now)
   at.setHours(hour, minute, 0, 0)
   if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
-  return { id: reminderId('plan-day'), title: 'Plan your day', body: 'Pick today’s focus and see what is due.', at, url: PLAN_DAY_URL, daily: true }
+  return { id: reminderId('plan-day'), title: 'Plan your day', body: 'Pick today’s focus and see what is due.', at, url: PLAN_DAY_URL, daily: { hour, minute } }
 }
 
 /**

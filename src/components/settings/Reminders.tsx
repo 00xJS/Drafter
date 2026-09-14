@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
+  LocalPermission,
   PlanDayPref,
   genericRemindersEnabled,
   isNative,
+  localNotificationPermission,
   localRemindersEnabled,
   planDayPref,
   requestLocalNotificationPermission,
@@ -77,6 +79,29 @@ export function PlanDayReminder({ pref, onChange }: { pref: PlanDayPref; onChang
   )
 }
 
+/** What a switch turned on here hears when iOS says no. */
+const NOT_ALLOWED = 'Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.'
+
+/**
+ * What this phone's reminders are missing from iOS, while one of them is on.
+ * A switch here stays ticked when iOS lets Drafter notify nothing — No at the
+ * launch prompt, or notifications turned off since in the Settings app — and
+ * then nothing is set and nothing comes. So the section says so, and where to
+ * turn them on; before iOS has asked at all, it offers to ask.
+ */
+export function NotificationsOff({ allowed, onAllow }: { allowed: LocalPermission | null; onAllow(): void }) {
+  if (allowed === 'denied') return <p className="warn">None of these can reach you: iOS isn’t letting Drafter send notifications. Turn them on in the iPhone Settings app, under Drafter.</p>
+  if (allowed !== 'prompt') return null
+  return (
+    <p className="sync-line">
+      <button className="btn" onClick={onAllow}>
+        Allow notifications
+      </button>
+      <small className="field-hint">iOS hasn’t asked yet whether Drafter may notify you, so none of these can come.</small>
+    </p>
+  )
+}
+
 /** Reminders: server push and the morning digest, Sunday's review draft, then this iPhone's own reminders and its Plan your day, or the browser's. */
 export function Reminders({ store }: SettingsCtx) {
   const [notif, setNotif] = useState(notificationPermission())
@@ -88,6 +113,28 @@ export function Reminders({ store }: SettingsCtx) {
   const [genericOn, setGenericOn] = useState(genericRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
   const [planDay, setPlanDay] = useState(planDayPref)
+  // whether iOS lets Drafter notify: read on open, and again on coming back
+  // from the Settings app, the one place it changes after the first answer
+  const [allowed, setAllowed] = useState<LocalPermission | null>(null)
+  useEffect(() => {
+    if (!isNative()) return
+    let live = true
+    const read = () =>
+      void localNotificationPermission().then(p => {
+        if (!live) return
+        setAllowed(p)
+        if (p === 'granted') setLocalErr('')
+      })
+    read()
+    const onShow = () => {
+      if (document.visibilityState === 'visible') read()
+    }
+    document.addEventListener('visibilitychange', onShow)
+    return () => {
+      live = false
+      document.removeEventListener('visibilitychange', onShow)
+    }
+  }, [])
   useEffect(() => {
     // push is sent by the server, so without an account there is nothing to ask
     if (!isSupabaseConfigured()) return
@@ -114,6 +161,12 @@ export function Reminders({ store }: SettingsCtx) {
     scheduleLocalReminders(
       deviceReminders(store, new Date(), { local: over.local ?? localOn, skipTaskDue: serverPushHere, generic: over.generic ?? genericOn, planDay: over.planDay ?? planDay }),
     )
+  // iOS asks only the first time; after that it answers from the choice made
+  const ask = async () => {
+    const ok = await requestLocalNotificationPermission()
+    setAllowed(ok ? 'granted' : 'denied')
+    return ok
+  }
 
   return (
     <section className="settings-section g-reminders">
@@ -196,8 +249,8 @@ export function Reminders({ store }: SettingsCtx) {
                 onChange={async e => {
                   setLocalErr('')
                   if (e.target.checked) {
-                    if (!(await requestLocalNotificationPermission())) {
-                      setLocalErr('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
+                    if (!(await ask())) {
+                      setLocalErr(NOT_ALLOWED)
                       return
                     }
                     setLocalRemindersEnabled(true)
@@ -240,16 +293,32 @@ export function Reminders({ store }: SettingsCtx) {
             pref={planDay}
             onChange={async next => {
               setLocalErr('')
-              if (next.on && !planDay.on && !(await requestLocalNotificationPermission())) {
-                setLocalErr('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
+              // every change that leaves it on asks first, a new time too: iOS
+              // may have been told no since, and then nothing would come
+              const ok = next.on ? await ask() : true
+              if (!ok && !planDay.on) {
+                // switched on and refused, it stays off
+                setLocalErr(NOT_ALLOWED)
                 return
               }
+              // a new time is kept even so, and the line below says why it won't come
               setPlanDayPref(next)
               setPlanDay(next)
               await reschedule({ planDay: next })
             }}
           />
-          {localErr && <p className="warn">{localErr}</p>}
+          {localErr ? (
+            <p className="warn">{localErr}</p>
+          ) : (
+            (localOn || planDay.on) && (
+              <NotificationsOff
+                allowed={allowed}
+                onAllow={async () => {
+                  if (await ask()) await reschedule()
+                }}
+              />
+            )
+          )}
         </>
       ) : (
         <>
