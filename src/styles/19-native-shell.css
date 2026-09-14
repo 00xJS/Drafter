@@ -141,6 +141,14 @@
   border: none;
   box-shadow: var(--shadow-sm);
 }
+/* Home holds four segments since the wardrobe joined it: at 375pt the
+   thumb's 10px sides pressed "Wardrobe" against its neighbours, so a phone's
+   take 6px. The label's own cap lives in 18-wardrobe.css. */
+@media (max-width: 640px) {
+  .native .people-tab-seg.home-seg .segmented .seg {
+    padding-inline: 6px;
+  }
+}
 
 /* --- Pull to refresh. Only the disc moves: the body is the scroller and the
    top bar is sticky, so translating .content would drag both. The disc sits

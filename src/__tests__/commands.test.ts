@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
 import { VIEWS, type HomeTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
+import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
 
@@ -13,6 +14,8 @@ interface ShellState {
   rememberedTasks: TasksTab
   rememberedPeople: PeopleTab
   journalDate: string | null
+  /** the one-shot way into Home → Wardrobe, when a command made one */
+  wardrobe: WardrobeOpen | null
   settingsOpen: boolean
   newTasks: unknown[][]
   /** the planning sheets opened, in order */
@@ -21,8 +24,8 @@ interface ShellState {
 
 /** Two starting points that disagree on every field, so no landing is true by accident. */
 const STARTS: ShellState[] = [
-  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, settingsOpen: false, newTasks: [], sheets: [] },
-  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, settingsOpen: false, newTasks: [], sheets: [] },
+  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
+  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
 ]
 
 /** 2pm: between the morning's quick action and the evening's, so the palette's other rows are pinned on their own. */
@@ -55,6 +58,11 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     setPeopleTab: tab => {
       s.peopleTab = tab
       s.rememberedPeople = tab
+    },
+    openWardrobe: (o = {}) => {
+      s.wardrobe = o
+      s.homeTab = 'wardrobe'
+      s.view = 'home'
     },
   }
   const overlays: PaletteOverlays = {
@@ -125,6 +133,7 @@ describe('the palette’s own commands', () => {
     ['go-home', { view: 'home', homeTab: 'today' }],
     ['go-week', { view: 'home', homeTab: 'week' }],
     ['go-journal', { view: 'home', homeTab: 'journal' }],
+    ['go-wardrobe', { view: 'home', homeTab: 'wardrobe' }],
     ['go-tasks', { view: 'tasks', tasksTab: 'list' }],
     ['go-board', { view: 'tasks', tasksTab: 'board' }],
     ['go-bills', { view: 'tasks', tasksTab: 'bills' }],
@@ -154,6 +163,40 @@ describe('the palette’s own commands', () => {
       expect(run('go-board', start).rememberedTasks).toBe(start.rememberedTasks)
       expect(run('go-places', start).rememberedPeople).toBe('places')
       expect(run('go-people', start).rememberedPeople).toBe('people')
+    }
+  })
+})
+
+describe('the wardrobe in the palette', () => {
+  const find = (id: string) => commands.find(c => c.id === id)
+
+  it('offers Wardrobe, What am I wearing? and Add clothing when typed for, never before', () => {
+    expect(find('go-wardrobe')).toMatchObject({ label: 'Wardrobe', icon: 'wardrobe' })
+    expect(find('log-wear')).toMatchObject({ label: 'What am I wearing?', icon: 'wardrobe', quick: false })
+    expect(find('add-clothing')).toMatchObject({ label: 'Add clothing', icon: 'camera', quick: false })
+    expect(find('go-wardrobe')?.quick).toBeFalsy()
+    for (const word of ['clothes', 'outfit', 'closet', 'wear']) expect(find('go-wardrobe')?.keywords).toContain(word)
+    for (const word of ['outfit', 'today', 'log']) expect(find('log-wear')?.keywords).toContain(word)
+    for (const word of ['photo', 'garment', 'shirt']) expect(find('add-clothing')?.keywords).toContain(word)
+  })
+
+  it('lands on today’s composer, or on Clothes with the sheet to add a piece, from anywhere', () => {
+    for (const start of STARTS) {
+      expect(run('log-wear', start)).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobe: { date: localDayKey() } })
+      expect(run('add-clothing', start)).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobe: { tab: 'clothes', add: true } })
+      // the plain way in names nothing, so the segment opens as it would from its button
+      expect(run('go-wardrobe', start).wardrobe).toEqual({})
+    }
+  })
+
+  it('moves nothing else', () => {
+    for (const start of STARTS) {
+      for (const id of ['go-wardrobe', 'log-wear', 'add-clothing']) {
+        const s = run(id, start)
+        expect(s).toMatchObject({ tasksTab: start.tasksTab, peopleTab: start.peopleTab, journalDate: start.journalDate, settingsOpen: false })
+        expect(s.sheets).toEqual([])
+        expect(s.newTasks).toEqual([])
+      }
     }
   })
 })

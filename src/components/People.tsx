@@ -5,6 +5,7 @@ import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, 
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
+import { Bars, TrendBadge } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
@@ -210,34 +211,6 @@ function LogVisit({
     </Modal>
   )
 }
-
-function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
-  const max = Math.max(1, ...weekly)
-  return (
-    <span className="person-bars" title={title}>
-      {weekly.map((n, i) => (
-        <span key={i} className="person-bar" style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : color, opacity: n === 0 ? 0.35 : 1 }} />
-      ))}
-    </span>
-  )
-}
-
-/** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
-function TrendBadge({ trend }: { trend: number }) {
-  return trend > 0 ? (
-    <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
-      ↑ more lately
-    </span>
-  ) : trend < 0 ? (
-    <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
-      ↓ drifting
-    </span>
-  ) : (
-    <small className="muted">steady</small>
-  )
-}
-
-export { Bars, TrendBadge }
 
 /** Days seen in the last `span` days, and the events under them when some shared a day. */
 function SeenCount({ days, events, span, className }: { days: number; events: number; span: number; className?: string }) {

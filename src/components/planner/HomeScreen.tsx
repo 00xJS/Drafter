@@ -3,20 +3,20 @@ import { localDayKey } from '../../journal'
 import { JournalView } from '../Journal'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
-import { Review } from './lazy'
+import { Review, Wardrobe } from './lazy'
 import { HOME_TABS } from './routes'
 
-/** Home: the day, the week's look-back and the journal, three segments of one tab. */
+/** Home: the day, the week's look-back, the journal and the wardrobe, four segments of one tab. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { store, household, filteredTasks, allEvents, sourceMap, showToast } = p
-  const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal } = p
+  const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
   return (
     <>
-      {/* one Home across three time horizons: the day, the week’s
-          look-back, and the journal — Today’s dashboard is the base */}
+      {/* one Home across four segments: the day, the week’s look-back, the
+          journal and what you wear — Today’s dashboard is the base */}
       <div className="people-tab-seg home-seg" role="tablist" aria-label="Home view">
         <span className="segmented">
           {HOME_TABS.map(t => (
@@ -30,6 +30,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
                 setHomeTab(t.key)
                 // the journal opens on today’s line, not the list above it
                 if (t.key === 'journal') setJournalOpenDate(localDayKey())
+                // and the wardrobe on today’s composer, whatever way in came before
+                if (t.key === 'wardrobe') setWardrobeOpen(null)
               }}
             >
               {t.label}
@@ -97,6 +99,16 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onPlanWeek={() => openSheet({ kind: 'week' })}
           onDeferFromFocus={deferFromFocus}
           onPlanMeal={planMealIdea}
+          // what you are wearing: one tap logs a look, with Undo; Pick… and
+          // Change open the wardrobe on the day
+          garments={store.garments}
+          outfits={store.outfits}
+          wears={store.wears}
+          onLogWear={w => {
+            store.upsert(w)
+            showToast('Logged for today', () => store.remove(w.id))
+          }}
+          onOpenWardrobe={openWardrobe}
         />
       )}
       {homeTab === 'week' && (
@@ -134,6 +146,19 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           }}
           openDate={journalOpenDate}
           onOpenDateConsumed={() => setJournalOpenDate(null)}
+        />
+      )}
+      {homeTab === 'wardrobe' && (
+        <Wardrobe
+          garments={store.garments}
+          outfits={store.outfits}
+          wears={store.wears}
+          onSave={item => store.upsert(item)}
+          onRemove={id => store.remove(id)}
+          onRestore={ids => store.restore(ids)}
+          showToast={showToast}
+          open={wardrobeOpen}
+          onOpenConsumed={() => setWardrobeOpen(null)}
         />
       )}
     </>

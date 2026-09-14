@@ -3,6 +3,7 @@ import { daysAgo, daysBetween } from './kitchen'
 import { monthsAndTrend, visitSummary } from './people'
 import { dateKey, uid } from './utils'
 import { newerStamp } from '../shared/domain.mjs'
+import { shiftDayKey } from '../shared/journal.mjs'
 
 // The wardrobe's rules and figures: pure, no DOM, worked out once per screen
 // from a WearIndex, the way Kitchen works from a CookedIndex and the pickers
@@ -79,6 +80,27 @@ export function liveById(garments: readonly Garment[]): Map<string, Garment> {
 /** Pieces in slot order (GARMENT_TYPES), stable within a slot; unknown ids dropped. */
 export function orderPieces(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string[] {
   return [...new Set(ids)].filter(id => byId.has(id)).sort((a, b) => slot(byId.get(a)!.type) - slot(byId.get(b)!.type))
+}
+
+/**
+ * A look with one more piece in it (the piece sheet's Wear today): the piece
+ * takes the place of whatever held its slot — a one-piece stands in for a top
+ * and a bottom, and either of those for a one-piece — while an accessory
+ * joins the others. Ids no longer known (a piece in Trash) stay, so a Restore
+ * still finds its day.
+ */
+export function withPiece(ids: readonly string[], g: Garment, byId: ReadonlyMap<string, Garment>): string[] {
+  const clashes = (type: GarmentType): boolean => {
+    if (g.type === 'accessory') return false
+    if (type === g.type) return true
+    if (g.type === 'onepiece') return type === 'top' || type === 'bottom'
+    return type === 'onepiece' && (g.type === 'top' || g.type === 'bottom')
+  }
+  const kept = ids.filter(id => {
+    const other = byId.get(id)
+    return id !== g.id && !(other && clashes(other.type))
+  })
+  return cleanIds([...kept.slice(0, MAX_PIECES - 1), g.id])
 }
 
 /** Exact combination: sorted unique ids joined by '+'. */
@@ -241,6 +263,49 @@ export function neverWorn(garments: readonly Garment[], ix: WearIndex, grace = N
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name))
 }
 
+/** Never worn first, the oldest added first; then the longest rested. */
+function restOrder(ix: WearIndex): (a: Garment, b: Garment) => number {
+  const last = (g: Garment) => ix.days.get(g.id)?.[0] ?? ''
+  return (a, b) => last(a).localeCompare(last(b)) || a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name)
+}
+
+/** Live, unretired pieces in rest order: what the composer's rows are dealt from. */
+export function byRest(garments: readonly Garment[], ix: WearIndex): Garment[] {
+  return garments.filter(g => !g.deletedAt && !g.archivedAt).sort(restOrder(ix))
+}
+
+/** The Clothes grid's orders. */
+export type ClothesSort = 'rest' | 'most' | 'newest' | 'name'
+export const CLOTHES_SORTS: { key: ClothesSort; label: string }[] = [
+  { key: 'rest', label: 'Not worn lately' },
+  { key: 'most', label: 'Most worn' },
+  { key: 'newest', label: 'Newest' },
+  { key: 'name', label: 'A–Z' },
+]
+
+/** Live pieces in a Clothes order: rest order (the default), most days worn, newest added, or by name. */
+export function clothesOrder(garments: readonly Garment[], ix: WearIndex, sort: ClothesSort): Garment[] {
+  const live = garments.filter(g => !g.deletedAt)
+  const worn = (g: Garment) => ix.days.get(g.id) ?? []
+  const byName = (a: Garment, b: Garment) => a.name.localeCompare(b.name)
+  if (sort === 'most') return live.sort((a, b) => worn(b).length - worn(a).length || (worn(b)[0] ?? '').localeCompare(worn(a)[0] ?? '') || byName(a, b))
+  if (sort === 'newest') return live.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || byName(a, b))
+  if (sort === 'name') return live.sort(byName)
+  return live.sort(restOrder(ix))
+}
+
+/** Stats' three tiles: pieces in use; days logged this month and its days so far; pieces in use worn in the last 90 days. */
+export function wardrobeTiles(garments: readonly Garment[], ix: WearIndex): { pieces: number; loggedThisMonth: number; daysThisMonth: number; wornLately: number } {
+  const inUse = garments.filter(g => !g.deletedAt && !g.archivedAt)
+  const month = ix.dayKey.slice(0, 7)
+  return {
+    pieces: inUse.length,
+    loggedThisMonth: ix.logged.filter(d => d.startsWith(month)).length,
+    daysThisMonth: Number(ix.dayKey.slice(8, 10)),
+    wornLately: inUse.filter(g => within(ix.days.get(g.id) ?? [], ix.dayKey, 90) > 0).length,
+  }
+}
+
 // ---- by month (monthsAndTrend over local-midday instants) ------------------------
 
 /** Days logged per month of `year`, with the 90-vs-90-day trend. */
@@ -306,11 +371,36 @@ const lastWorn = (days: number) => (days <= 1 ? daysAgo(days) : `last ${daysAgo(
  * core is gone.
  */
 export function outfitLine(o: Outfit, ix: WearIndex, byId: ReadonlyMap<string, Garment>): string {
-  const key = coreKey(o.garmentIds, byId)
-  if (!key) return o.garmentIds.some(id => !byId.has(id)) ? 'A piece was deleted' : 'Not worn yet'
-  const days = ix.logged.filter(day => (ix.looks.get(day) ?? []).some(w => coreKey(w.garmentIds, byId) === key))
+  if (!coreKey(o.garmentIds, byId)) return o.garmentIds.some(id => !byId.has(id)) ? 'A piece was deleted' : 'Not worn yet'
+  const days = outfitDays(o, ix, byId)
   if (days.length === 0) return 'Not worn yet'
   return `Worn ${times(days.length)} · ${lastWorn(daysBetween(days[0], ix.dayKey))}`
+}
+
+/** The days with a look of this outfit's core, newest first; none once its core is gone. */
+export function outfitDays(o: Outfit, ix: WearIndex, byId: ReadonlyMap<string, Garment>): string[] {
+  const key = coreKey(o.garmentIds, byId)
+  if (!key) return []
+  return ix.logged.filter(day => (ix.looks.get(day) ?? []).some(w => coreKey(w.garmentIds, byId) === key))
+}
+
+/** The saved outfits under the composer: the most days worn in the last 60 first, then the newest saved. */
+export function savedOrder(outfits: readonly Outfit[], ix: WearIndex, byId: ReadonlyMap<string, Garment>): Outfit[] {
+  const lately = new Map(outfits.map(o => [o.id, outfitDays(o, ix, byId).filter(d => daysBetween(d, ix.dayKey) < SUGGEST_DAYS).length]))
+  return outfits
+    .filter(o => !o.deletedAt)
+    .sort((a, b) => (lately.get(b.id) ?? 0) - (lately.get(a.id) ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
+}
+
+/**
+ * The Today card's "Forgot yesterday?": yesterday's day key, before noon only,
+ * when yesterday has no look and an earlier day has one — someone who has
+ * never logged is not asked about a day they would not have logged anyway.
+ */
+export function forgotYesterday(ix: WearIndex, hour: number): string | null {
+  if (hour >= 12) return null
+  const yesterday = shiftDayKey(ix.dayKey, -1)
+  return !ix.looks.has(yesterday) && ix.logged.some(d => d < yesterday) ? yesterday : null
 }
 
 /** How far back the Today card looks for what you wear often. */

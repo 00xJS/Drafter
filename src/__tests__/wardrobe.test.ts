@@ -5,9 +5,12 @@ import { dateKey } from '../utils'
 import {
   NEVER_WORN_GRACE_DAYS,
   NOT_WORN_DAYS,
+  byRest,
   canDress,
+  clothesOrder,
   colorName,
   coreKey,
+  forgotYesterday,
   garmentStats,
   liveById,
   looksOn,
@@ -17,6 +20,7 @@ import {
   newWear,
   notWornLately,
   orderPieces,
+  outfitDays,
   outfitLabel,
   outfitLine,
   pieceKey,
@@ -24,12 +28,15 @@ import {
   repeatedOutfits,
   retired,
   saveOutfit,
+  savedOrder,
   suggestedNames,
   todaySuggestions,
+  wardrobeTiles,
   wardrobeYearReport,
   wearId,
   wearIndex,
   wearsByMonth,
+  withPiece,
   withPieces,
   wornLine,
   wornShort,
@@ -514,5 +521,95 @@ describe('names from a colour', () => {
     expect(suggestedNames('shoes', '#7a4a2a')).toEqual(['Brown shoes', 'Shoes'])
     expect(suggestedNames('bottom')).toEqual(['Bottom'])
     expect(suggestedNames('bottom', 'nope')).toEqual(['Bottom'])
+  })
+})
+
+describe('the orders the composer and Clothes lead with', () => {
+  it('byRest: never worn first, the oldest added first, then the longest rested; retired and deleted left out', () => {
+    const early = piece('early', 'top', { createdAt: '2026-07-01T09:00:00.000Z' })
+    const late = piece('late', 'top', { createdAt: '2026-09-01T09:00:00.000Z' })
+    const ix = wearIndex([look(ago(2), ['tee']), look(ago(30), ['shirt'])], TODAY)
+    const gone = piece('gone', 'top', { deletedAt: T0 })
+    const old = piece('old', 'top', { archivedAt: T0 })
+    expect(byRest([tee, shirt, late, early, gone, old], ix).map(g => g.id)).toEqual(['early', 'late', 'shirt', 'tee'])
+  })
+
+  it('clothesOrder: rest order by default, then most worn, newest and A–Z, retired pieces included', () => {
+    const coatRetired = piece('a-coat', 'outerwear', { createdAt: '2026-09-10T09:00:00.000Z', archivedAt: T0 })
+    const newChinos = piece('chinos', 'bottom', { createdAt: '2026-09-12T09:00:00.000Z' })
+    const gone = piece('gone', 'top', { deletedAt: T0 })
+    const all = [tee, jeans, newChinos, coatRetired, gone]
+    const ix = wearIndex([look(ago(1), ['tee']), look(ago(2), ['tee', 'jeans']), look(ago(40), ['jeans'])], TODAY)
+    const ids = (sort: Parameters<typeof clothesOrder>[2]) => clothesOrder(all, ix, sort).map(g => g.id)
+    expect(ids('rest')).toEqual(['a-coat', 'chinos', 'jeans', 'tee'])
+    // two days each: the one worn more lately first
+    expect(ids('most')).toEqual(['tee', 'jeans', 'a-coat', 'chinos'])
+    expect(ids('newest')).toEqual(['chinos', 'a-coat', 'jeans', 'tee'])
+    expect(ids('name')).toEqual(['a-coat', 'chinos', 'jeans', 'tee'])
+  })
+
+  it('wardrobeTiles: pieces in use, the days logged this month so far, and pieces worn in the last 90 days', () => {
+    const ix = wearIndex([look(TODAY, ['tee', 'jeans']), look('2026-09-01', ['shirt', 'jeans']), look('2026-08-31', ['chinos', 'coat']), look(ago(95), ['dress'])], TODAY)
+    expect(wardrobeTiles([...everything, piece('old', 'top', { archivedAt: T0 })], ix)).toEqual({ pieces: 10, loggedThisMonth: 2, daysThisMonth: 14, wornLately: 5 })
+  })
+})
+
+describe('the piece sheet’s Wear today', () => {
+  const byId = liveById(everything)
+
+  it('withPiece: takes its slot, stands a one-piece in for a top and a bottom, and adds an accessory', () => {
+    expect(withPiece(['tee', 'jeans', 'trainers'], shirt, byId)).toEqual(['jeans', 'trainers', 'shirt'])
+    expect(withPiece(['tee', 'jeans', 'trainers'], dress, byId)).toEqual(['trainers', 'dress'])
+    expect(withPiece(['dress', 'boots'], jeans, byId)).toEqual(['boots', 'jeans'])
+    expect(withPiece(['tee', 'jeans', 'scarf'], watch, byId)).toEqual(['tee', 'jeans', 'scarf', 'watch'])
+    expect(withPiece(['tee', 'jeans', 'trainers'], boots, byId)).toEqual(['tee', 'jeans', 'boots'])
+    // already in the look: still once
+    expect(withPiece(['tee', 'jeans'], tee, byId)).toEqual(['jeans', 'tee'])
+    // a piece in Trash stays, so a Restore still finds the day
+    expect(withPiece(['gone-top', 'jeans'], shirt, byId)).toEqual(['gone-top', 'jeans', 'shirt'])
+  })
+
+  it('never lets a full look drop the piece being added', () => {
+    const full = Array.from({ length: 12 }, (_, i) => `acc-${i}`)
+    const added = withPiece(full, watch, byId)
+    expect(added).toHaveLength(12)
+    expect(added[11]).toBe('watch')
+  })
+})
+
+describe('saved outfits and Forgot yesterday', () => {
+  const byId = liveById(everything)
+
+  it('outfitDays: the days with a look of its core, newest first; none once its core is gone', () => {
+    const ix = wearIndex([look(ago(1), ['tee', 'jeans', 'boots']), look(ago(3), ['tee', 'chinos']), look(ago(5), ['tee', 'jeans'])], TODAY)
+    expect(outfitDays(outfit('o', ['tee', 'jeans', 'trainers']), ix, byId)).toEqual([ago(1), ago(5)])
+    expect(outfitDays(outfit('p', ['tee', 'purged-bottom']), ix, byId)).toEqual([])
+  })
+
+  it('savedOrder: the most worn in the last 60 days first, then the newest saved; deleted ones left out', () => {
+    const a = outfit('a', ['tee', 'jeans'], { createdAt: '2026-08-01T09:00:00.000Z' })
+    const b = outfit('b', ['shirt', 'chinos'], { createdAt: '2026-09-01T09:00:00.000Z' })
+    const c = outfit('c', ['dress'], { createdAt: '2026-09-05T09:00:00.000Z' })
+    const d = outfit('d', ['tee', 'chinos'], { createdAt: '2026-09-06T09:00:00.000Z', deletedAt: '2026-09-07T09:00:00.000Z' })
+    const ix = wearIndex(
+      [look(ago(2), ['tee', 'jeans']), look(ago(4), ['tee', 'jeans']), look(ago(70), ['shirt', 'chinos']), look(ago(71), ['shirt', 'chinos']), look(ago(72), ['shirt', 'chinos']), look(ago(10), ['dress'])],
+      TODAY,
+    )
+    expect(savedOrder([b, a, c, d], ix, byId).map(o => o.id)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('forgotYesterday: before noon, when yesterday is empty and an earlier day is not', () => {
+    const earlier = wearIndex([look(ago(2), ['tee', 'jeans'])], TODAY)
+    expect(forgotYesterday(earlier, 9)).toBe(ago(1))
+    expect(forgotYesterday(earlier, 11)).toBe(ago(1))
+    expect(forgotYesterday(earlier, 12)).toBeNull()
+    expect(forgotYesterday(wearIndex([], TODAY), 9)).toBeNull()
+    expect(forgotYesterday(wearIndex([look(ago(1), ['tee', 'jeans']), look(ago(2), ['tee'])], TODAY), 9)).toBeNull()
+    // today alone is not an earlier day
+    expect(forgotYesterday(wearIndex([look(TODAY, ['tee', 'jeans'])], TODAY), 9)).toBeNull()
+    // an empty look is no look
+    expect(forgotYesterday(wearIndex([look(ago(1), []), look(ago(3), ['tee'])], TODAY), 9)).toBe(ago(1))
+    // across the new year
+    expect(forgotYesterday(wearIndex([look('2026-12-30', ['tee'])], '2027-01-01'), 8)).toBe('2026-12-31')
   })
 })

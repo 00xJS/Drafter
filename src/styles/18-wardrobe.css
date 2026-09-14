@@ -1,0 +1,988 @@
+/* ---------- wardrobe (Home → Wardrobe, and Today's card) ----------
+   Colours are tokens only: a piece's own colour is data, set inline on the
+   element that shows it, the way a place's is. Phone rules sit under the
+   max-width and pointer guards, and nothing here spends --keyboard-h. */
+
+/* Outfit · Clothes · Stats keep the small-button shape (the native track is
+   scoped to the tab-level switchers), with Add clothing at the end of the row */
+.wardrobe-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.wardrobe-seg {
+  flex-wrap: nowrap;
+}
+.wardrobe-add {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* a piece's picture: whole, on the surface, never cropped */
+.garment-photo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: 0;
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+.garment-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.garment-photo-type {
+  padding: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+/* ----- the day line: ‹ Today · Sun 14 Sep › */
+.wardrobe-day {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-bottom: 6px;
+}
+.wardrobe-step {
+  padding: 5px 11px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.wardrobe-step:disabled {
+  opacity: 0.35;
+}
+.wardrobe-day-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* the native date picker lies over the label, so the tap itself opens it */
+.wardrobe-day-pick input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.wardrobe-day-pick input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  cursor: pointer;
+}
+.wardrobe-day-pick:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.wardrobe-day-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.wardrobe-logged {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.wardrobe-remove {
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+}
+.wardrobe-mode {
+  flex-wrap: nowrap;
+}
+
+/* ----- a swipeable row: the card in the middle is the chosen one */
+.snap {
+  --card-w: min(42vw, 160px);
+  margin-bottom: 4px;
+}
+.snap.small {
+  --card-w: 112px;
+}
+.snap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+.snap-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.snap-hide {
+  padding: 1px 8px;
+  font-size: 0.75rem;
+}
+.snap-wrap {
+  position: relative;
+}
+.snap-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  /* the first and last cards can come to the middle too */
+  padding-inline: calc(50% - var(--card-w) / 2);
+  padding-block: 3px;
+}
+.snap-row::-webkit-scrollbar {
+  display: none;
+}
+.snap-cell {
+  position: relative;
+  flex: none;
+  width: var(--card-w);
+  scroll-snap-align: center;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+.snap-cell.side {
+  transform: scale(0.92);
+  opacity: 0.7;
+}
+.snap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.snap-cell.on .snap-card {
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.snap-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.snap-card .garment-photo {
+  flex: 1;
+  min-height: 0;
+}
+.snap-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.snap-worn {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.snap-new {
+  align-self: flex-start;
+  padding: 1px 7px;
+  font-size: 0.625rem;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.snap-none {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* the middle card's way to its piece: a small dot inside a larger target */
+.snap-info {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.snap-info span {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-2);
+  font: italic 700 0.8125rem/1 Georgia, serif;
+}
+/* after the last card, a dashed tile to add one; it never snaps to the middle */
+.snap-add {
+  flex: none;
+  width: calc(var(--card-w) * 0.62);
+  aspect-ratio: 3 / 4;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  scroll-snap-align: none;
+}
+.snap-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: calc(var(--card-w) * 1.25);
+  margin: 3px 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+}
+/* ‹ › at the row's ends, for a mouse; a finger swipes */
+.snap-step {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .snap-step {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    color: var(--text);
+    font-size: 1.1rem;
+  }
+  .snap-step.prev {
+    left: 4px;
+  }
+  .snap-step.next {
+    right: 4px;
+  }
+  .snap-step:disabled {
+    opacity: 0.3;
+  }
+}
+
+/* ----- outerwear and shoes on request, accessories as chips */
+.wardrobe-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.wardrobe-acc {
+  margin: 6px 0;
+}
+.wardrobe-acc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.acc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+.acc-thumb {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+}
+.acc-add {
+  padding-left: 12px;
+  border-style: dashed;
+}
+.wardrobe-note {
+  margin: 4px 0;
+  font-size: 0.8125rem;
+  color: var(--danger);
+}
+
+/* ----- the look's moves, in reach: sticky above the tab bar on a phone, in the flow on a desktop */
+.wardrobe-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 12px;
+  padding: 8px 0;
+}
+.wardrobe-actions .btn {
+  white-space: nowrap;
+}
+.wardrobe-actions .btn:disabled {
+  opacity: 0.5;
+}
+
+/* ----- saved outfits, and a look drawn as one tile */
+.wardrobe-heading {
+  margin: 8px 0 6px;
+  font-size: 0.875rem;
+}
+.saved-strip {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 8px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.saved-tile {
+  position: relative;
+  flex: none;
+  width: 112px;
+}
+.saved-load {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 112px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.saved-load .collage {
+  width: 112px;
+  height: 140px;
+}
+.saved-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.saved-line {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.saved-more {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.saved-more span {
+  min-width: 26px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  line-height: 1;
+}
+.collage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.collage .garment-photo {
+  border-radius: 0;
+}
+.collage-half,
+.collage-full {
+  flex: 1;
+  min-height: 0;
+}
+.collage .garment-photo-type,
+.wardrobe-card-thumbs .garment-photo-type,
+.acc-thumb .garment-photo-type,
+.thumb-28 .garment-photo-type,
+.thumb-40 .garment-photo-type {
+  display: none;
+}
+.collage .collage-badge {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.collage-badge.outer {
+  top: 4px;
+  left: 4px;
+}
+.collage-badge.shoes {
+  right: 4px;
+  bottom: 4px;
+}
+
+/* ----- Today's card */
+.wardrobe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wardrobe-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 70px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.6875rem;
+  text-align: center;
+}
+.wardrobe-chip .collage {
+  width: 56px;
+  height: 70px;
+  border-radius: 8px;
+}
+.wardrobe-chip .collage-badge {
+  width: 18px;
+  height: 18px;
+}
+.wardrobe-chip-label {
+  width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.2;
+}
+.wardrobe-chip.pick {
+  justify-content: center;
+  min-height: 96px;
+  border-style: dashed;
+  color: var(--accent-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.wardrobe-forgot {
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-decoration: underline;
+}
+.wardrobe-card.logged {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-block: 10px;
+}
+.wardrobe-card-thumbs {
+  display: inline-flex;
+  flex: none;
+}
+.wardrobe-card-thumbs .garment-photo {
+  width: 32px;
+  height: 40px;
+  margin-left: -8px;
+  border: 1px solid var(--surface);
+}
+.wardrobe-card-thumbs .garment-photo:first-child {
+  margin-left: 0;
+}
+.wardrobe-card-line {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ----- Clothes */
+.clothes-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+/* one row of filters that scrolls sideways rather than wrapping */
+.clothes-filters {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.clothes-filters::-webkit-scrollbar {
+  display: none;
+}
+.clothes-filters .toggle {
+  flex: none;
+  white-space: nowrap;
+}
+.clothes-filters .count {
+  opacity: 0.7;
+}
+.clothes-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.clothes-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+}
+.clothes-grid > li {
+  display: flex;
+  min-width: 0;
+}
+.clothes-tile {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.clothes-tile .garment-photo {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+}
+.clothes-tile.add {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.clothes-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clothes-worn {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.clothes-retired {
+  margin-top: 14px;
+}
+.clothes-retired summary,
+.wardrobe-by-piece summary,
+.garment-more summary {
+  padding: 6px 0;
+  color: var(--text-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+.clothes-retired .clothes-grid {
+  margin-top: 8px;
+}
+.clothes-retired .clothes-tile {
+  opacity: 0.75;
+}
+
+/* ----- the piece sheet */
+.garment-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  padding: 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--text-2);
+  text-align: center;
+  cursor: pointer;
+}
+.garment-pick.has-photo {
+  padding: 0;
+  overflow: hidden;
+  border-style: solid;
+}
+.garment-pick img {
+  display: block;
+  width: 100%;
+  max-height: 42vh;
+  object-fit: contain;
+}
+.garment-pick:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.garment-pick-title {
+  color: var(--text);
+  font-weight: 600;
+}
+/* the file field itself is out of sight: the label around it is the target */
+.garment-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.garment-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.garment-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  /* a quick turn: the sheet caps every animation at 400ms, as the pull-down disc does */
+  animation: garment-spin 0.4s linear infinite;
+}
+@keyframes garment-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .garment-spinner {
+    animation: none;
+  }
+}
+.garment-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+.garment-types,
+.garment-names,
+.garment-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.garment-hero {
+  position: relative;
+}
+.garment-hero .garment-photo {
+  width: 100%;
+  height: min(42vh, 360px);
+  border-radius: var(--radius-lg);
+}
+.garment-hero .garment-busy {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+}
+.garment-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.garment-figures .person-bars {
+  flex: none;
+  height: 30px;
+}
+.garment-worn {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-weight: 600;
+}
+.garment-sub {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.garment-outfits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+}
+.garment-actions {
+  flex-wrap: wrap;
+}
+.garment-replace {
+  position: relative;
+  cursor: pointer;
+}
+.wardrobe-retired {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* ----- Stats */
+.wardrobe-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wardrobe-tiles .stat-value {
+  font-size: 1.5rem;
+}
+.wardrobe-hbars .hbar-row {
+  gap: 8px;
+}
+/* the shared bars' label is a fixed 92px gutter; here it carries a thumbnail and a name */
+.hbars .wardrobe-hbar-label {
+  flex: none;
+  width: 42%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.wardrobe-hbar-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thumb-28 {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.thumb-40 {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+.wardrobe-list,
+.wardrobe-repeats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wardrobe-list-row,
+.wardrobe-repeat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wardrobe-list-piece {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.wardrobe-list-piece > span,
+.wardrobe-repeat-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wardrobe-list-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wardrobe-repeat .collage {
+  flex: none;
+  width: 44px;
+  height: 56px;
+  border-radius: 8px;
+}
+.wardrobe-repeat .collage-badge {
+  width: 16px;
+  height: 16px;
+}
+.wardrobe-month-total {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.wardrobe-by-piece {
+  margin-top: 8px;
+}
+
+/* ----- a phone: the bar sticks above the tab bar, four Home segments fit one line */
+@media (max-width: 640px) {
+  .wardrobe-actions {
+    position: sticky;
+    /* the tab bar measures up to 4px over its 56px token (its capped label
+       grows with the text), so the bar keeps that clear and never tucks under */
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 4px);
+    z-index: 3;
+    margin-inline: -12px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-top: 1px solid var(--hairline);
+  }
+  /* the tab bar's precedent: labels grow with Dynamic Type, but only so far,
+     or "Wardrobe" pushes the fourth segment off a 375pt row */
+  .home-seg .seg {
+    font-size: calc(13px * min(1.15, var(--type-scale)));
+  }
+  .wardrobe-bar {
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  /* the day line keeps to one line at 375pt, logged or not: the two rows and
+     the bar under them have to fit above the tab bar */
+  .wardrobe-day {
+    gap: 4px;
+    margin-bottom: 2px;
+  }
+  .wardrobe-day-pick {
+    padding-inline: 2px;
+    font-size: 0.8125rem;
+  }
+  .wardrobe-day-state {
+    gap: 4px;
+  }
+  .wardrobe-logged {
+    padding: 1px 6px;
+    font-size: 0.625rem;
+  }
+  .wardrobe-remove {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+  }
+  /* "Remove", beside the Logged badge; its name stays "Remove look" */
+  .wardrobe-remove-more {
+    display: none;
+  }
+}
+/* a short phone (375×667 and the like): smaller cards, so both rows and the bar still fit */
+@media (max-width: 640px) and (max-height: 700px) {
+  .snap {
+    --card-w: min(34vw, 132px);
+  }
+}
+
+/* ----- a finger: every small control gets the 44pt floor */
+@media (pointer: coarse) {
+  .snap-info,
+  .saved-more {
+    width: 44px;
+    height: 44px;
+    top: 0;
+    right: 0;
+  }
+  .wardrobe-step,
+  .wardrobe-remove,
+  .snap-hide,
+  .wardrobe-forgot,
+  .wardrobe-list-piece,
+  .clothes-sort select {
+    min-height: 44px;
+  }
+  .wardrobe-step {
+    min-width: 44px;
+  }
+}

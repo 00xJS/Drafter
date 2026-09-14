@@ -17,6 +17,9 @@ export const People = preloadable(() => import('../People').then(m => m.People),
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
 export const Kitchen = preloadable(() => import('../Kitchen').then(m => m.Kitchen), 'Kitchen')
 export const Review = preloadable(() => import('../Review').then(m => m.Review), 'Review')
+// Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
+// Only Today's card and the thumbnails it draws stay in the Planner chunk.
+export const Wardrobe = preloadable(() => import('../wardrobe/Wardrobe').then(m => m.Wardrobe), 'Wardrobe')
 
 export const TaskEditor = preloadable(() => import('../TaskEditor').then(m => m.TaskEditor), 'TaskEditor')
 export const ProjectEditor = preloadable(() => import('../ProjectEditor').then(m => m.ProjectEditor), 'ProjectEditor')
@@ -35,7 +38,7 @@ export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskS
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
+  home: [Review.preload, Wardrobe.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
   people: [People.preload, Places.preload],
@@ -44,7 +47,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

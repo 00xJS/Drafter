@@ -2,6 +2,7 @@ import { Suspense, useState, type ReactNode } from 'react'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
 import type { AskDoc } from '../../ask'
 import { newerStamp } from '../../itemops'
+import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -344,8 +345,14 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               showToast('Restored')
             }}
             onPurge={id => {
+              // read first: the purge leaves a content-free tombstone in its place
+              const row = store.allItems.find(x => x.id === id)
               // queued until the server takes it: offline or refused, it stays unsynced and is retried
-              void store.purge([id]).then(done => showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync'))
+              void store.purge([id]).then(done => {
+                showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync')
+                // a piece of clothing's two photos go with it, from this device and the bucket
+                if (row?.kind === 'garment') void deleteMedia([row.photoId, row.thumbId])
+              })
             }}
             onClose={() => setTrashOpen(false)}
           />

@@ -1,4 +1,5 @@
 import { Priority, PRIORITY_META, Project, Task } from '../types'
+import { SEEN_META } from '../people'
 import { dueLabel, dueTone } from '../taskutils'
 
 export function ProjectChip({ project, compact }: { project: Project; compact?: boolean }) {
@@ -89,5 +90,34 @@ export function StatTile({
     >
       {body}
     </button>
+  )
+}
+
+// People's, Places' and the wardrobe's shared figures: they live here, not in
+// People.tsx, so neither the Places chunk nor the wardrobe's has to pull in People.
+
+export function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
+  const max = Math.max(1, ...weekly)
+  return (
+    <span className="person-bars" title={title}>
+      {weekly.map((n, i) => (
+        <span key={i} className="person-bar" style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : color, opacity: n === 0 ? 0.35 : 1 }} />
+      ))}
+    </span>
+  )
+}
+
+/** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
+export function TrendBadge({ trend }: { trend: number }) {
+  return trend > 0 ? (
+    <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
+      ↑ more lately
+    </span>
+  ) : trend < 0 ? (
+    <span className="badge" style={{ background: SEEN_META.due.bg, color: SEEN_META.due.color }}>
+      ↓ drifting
+    </span>
+  ) : (
+    <small className="muted">steady</small>
   )
 }

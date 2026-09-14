@@ -11,6 +11,7 @@ import {
   VIEW_ICONS,
   VIEW_LABELS,
   VIEWS,
+  WARDROBE_TABS,
   storedPeopleTab,
   storedTasksTab,
 } from '../components/planner/routes'
@@ -33,9 +34,20 @@ describe('five tabs, the same on the phone and the desktop', () => {
   })
 
   it('keeps the segments each tab holds', () => {
-    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal'])
+    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'wardrobe'])
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'timeline'])
+  })
+
+  it('gives the wardrobe a segment on Home, never a tab of its own', () => {
+    expect(VIEWS).toHaveLength(5)
+    expect(VIEWS as string[]).not.toContain('wardrobe')
+    expect(HOME_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')
+    expect(WARDROBE_TABS.map(t => [t.key, t.label])).toEqual([
+      ['outfit', 'Outfit'],
+      ['clothes', 'Clothes'],
+      ['stats', 'Stats'],
+    ])
   })
 })
 
@@ -46,8 +58,10 @@ describe('old links still land on a segment', () => {
     for (const tab of Object.values(LEGACY_VIEW_TO_TASKS)) expect(segments).toContain(tab)
   })
 
-  it('sends the former Today and Review views to Home’s day and week', () => {
-    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today', review: 'week' })
+  it('sends the former Today and Review views to Home’s day and week, and ?view=wardrobe to the wardrobe', () => {
+    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today', review: 'week', wardrobe: 'wardrobe' })
+    const segments = HOME_TABS.map(t => t.key) as string[]
+    for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(segments).toContain(tab)
   })
 
   it('never shadows a live view with a legacy name', () => {

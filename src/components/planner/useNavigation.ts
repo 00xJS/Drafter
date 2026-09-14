@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useState } from 'react'
-import type { Recipe } from '../../types'
+import type { GarmentType, Recipe } from '../../types'
 import {
   CAL_MODE_KEY,
   CALENDAR_MODES,
@@ -12,7 +12,16 @@ import {
   type PeopleTab,
   type TasksTab,
   type View,
+  type WardrobeTab,
 } from './routes'
+
+/**
+ * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette,
+ * a piece's worn days: which view, which day, and whether to open the piece
+ * sheet to add one (of a type) or on one. Consumed once by the segment, like
+ * journalOpenDate, so no entry point pins it.
+ */
+export type WardrobeOpen = { tab?: WardrobeTab; date?: string; add?: GarmentType | true; garmentId?: string }
 
 /**
  * Where the shell is: the tab, the segment inside each tab, and the one-shot
@@ -49,7 +58,7 @@ export function useNavigation() {
   /** Move the People segment for this visit only. */
   const goPeopleTab = (tab: PeopleTab) => startTransition(() => showPeopleTab(tab))
   /** Home's segment. It is not persisted: tapping Home always returns to the
-   *  day, the app's base surface; Week and Journal are opt-in from there. */
+   *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
   const setHomeTab = (tab: HomeTab) => startTransition(() => showHomeTab(tab))
   /** Remember the choice: the segment buttons, and nothing else. */
@@ -105,6 +114,13 @@ export function useNavigation() {
     goTasksTab('notes')
     setView('tasks')
   }
+  /** Where to land in the wardrobe (the Today card, the palette); consumed by the segment. */
+  const [wardrobeOpen, setWardrobeOpen] = useState<WardrobeOpen | null>(null)
+  const openWardrobe = (o: WardrobeOpen = {}) => {
+    setWardrobeOpen(o)
+    setHomeTab('wardrobe')
+    setView('home')
+  }
 
   useEffect(() => {
     try {
@@ -141,5 +157,8 @@ export function useNavigation() {
     noteOpenId,
     setNoteOpenId,
     openNote,
+    wardrobeOpen,
+    setWardrobeOpen,
+    openWardrobe,
   }
 }

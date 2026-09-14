@@ -4,10 +4,12 @@ import {
   CalendarEntry,
   CalendarEvent,
   CalendarSource,
+  Garment,
   Habit,
   JournalEntry,
   Meal,
   MealSlot,
+  Outfit,
   PLACE_CATEGORY_META,
   Person,
   Place,
@@ -17,6 +19,7 @@ import {
   Routine,
   Task,
   TaskStatus,
+  Wear,
 } from '../types'
 import { mealLabel, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
@@ -42,6 +45,9 @@ import { MealIdeasCard } from './MealIdeasCard'
 import { blocksOn } from '../focus'
 import type { PlanStep } from './PlanDaySheet'
 import { dayClosed } from '../dayclose'
+// the card and its thumbnails only: the rest of the wardrobe is Home → Wardrobe's own chunk
+import { WardrobeCard } from './wardrobe/WardrobeCard'
+import type { WardrobeOpen } from './planner/useNavigation'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
 // and no project chips — a bar that never fills and a chip on every row would
@@ -103,6 +109,15 @@ interface Props {
   onDeferFromFocus?(id: string, day: Date): void
   /** Plan one of today's meal ideas; the ideas card only shows when this is given. */
   onPlanMeal?(dayKey: string, slot: MealSlot, idea: MealIdea): void
+  // ---- the wardrobe. Optional: without all five Today reads as it did.
+  /** Your clothes, saved outfits and looks; the card shows once the wardrobe can dress you. */
+  garments?: Garment[]
+  outfits?: Outfit[]
+  wears?: Wear[]
+  /** A look from the card's one tap: the shell saves it and offers Undo. */
+  onLogWear?(w: Wear): void
+  /** Pick…, Change and Forgot yesterday: Home → Wardrobe, on a day. */
+  onOpenWardrobe?(o?: WardrobeOpen): void
 }
 
 const STALE_DAYS = 14
@@ -519,6 +534,11 @@ export function Today({
   onPlanWeek,
   onDeferFromFocus,
   onPlanMeal,
+  garments,
+  outfits,
+  wears,
+  onLogWear,
+  onOpenWardrobe,
 }: Props) {
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
@@ -530,6 +550,16 @@ export function Today({
    * (losing the caret, and the keystrokes since the last save) mid-sentence.
    */
   const [evening] = useState(() => new Date().getHours() >= 17)
+  /**
+   * Where the wardrobe card sits: straight under the focus card in the
+   * morning, while you are dressing, and above the habits after that. Frozen
+   * at mount like `evening`, so it never jumps under a thumb at noon.
+   */
+  const [morning] = useState(() => new Date().getHours() < 12)
+  const wardrobeCard =
+    garments && outfits && wears && onLogWear && onOpenWardrobe ? (
+      <WardrobeCard garments={garments} outfits={outfits} wears={wears} dayKey={dateKey(new Date())} onLog={onLogWear} onOpen={onOpenWardrobe} />
+    ) : null
   // NOT frozen: Today stays mounted across a night on the phone, and a routines
   // card still filtering by last night's hour would hide the morning list. The
   // card itself holds the hour still while an edit is open.
@@ -714,6 +744,7 @@ export function Today({
         onDefer={onDeferFromFocus ?? onDefer}
         onEdit={onPlanDay ? () => onPlanDay('focus') : undefined}
       />
+      {morning && wardrobeCard}
       {freeTime.length > 0 && (
         <section className="chart-card wishlist-nudge">
           <header className="chart-head">
@@ -835,6 +866,8 @@ export function Today({
       )}
 
       {evening && journalCard}
+
+      {!morning && wardrobeCard}
 
       <HabitsCard habits={habits} today={dateKey(new Date())} onSave={onSaveHabit} onDelete={onDeleteHabit} />
 

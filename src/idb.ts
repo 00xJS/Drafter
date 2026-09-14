@@ -38,6 +38,11 @@ export function idbDel(store: string, key: string): Promise<unknown> {
   return withStore(store, 'readwrite', s => s.delete(key))
 }
 
+/** Every value in a store: the media upload queue reads its pending photos from here. */
+export function idbAll<T>(store: string): Promise<T[]> {
+  return withStore<T[]>(store, 'readonly', s => s.getAll())
+}
+
 /**
  * Remove every trace of the signed-in person from this device: the cached
  * records, the photos, and every drafter:* preference. Signing out has to do
