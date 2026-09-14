@@ -69,7 +69,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
-  const { setView, goTasksTab, goPeopleTab, setNotesProjectId, openPlace, openJournal, openNote, setKitchenRecipe } = p
+  const { setView, goTasksTab, setNotesProjectId, openPlace, openPerson, openJournal, openNote, setKitchenRecipe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
@@ -90,10 +90,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       if (found) openProject(found)
     } else if (doc.kind === 'place') openPlace(doc.id)
     else if (doc.kind === 'journal') openJournal(doc.date)
-    else if (doc.kind === 'person') {
-      goPeopleTab('people')
-      setView('people')
-    } else if (doc.kind === 'recipe') {
+    else if (doc.kind === 'person') openPerson(doc.id)
+    else if (doc.kind === 'recipe') {
       const r = store.recipes.find(x => x.id === doc.id)
       if (r) setKitchenRecipe(r)
       setView('kitchen')
@@ -219,7 +217,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             commands={paletteCommands}
             onOpenTask={openTask}
             onOpenProject={openProject}
-            onOpenPerson={() => setView('people')}
+            // their card opens on the People segment, as a place's row does on Places
+            onOpenPerson={person => openPerson(person.id)}
             places={store.places}
             onOpenPlace={p => openPlace(p.id)}
             journal={store.journal}

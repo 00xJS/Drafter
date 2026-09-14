@@ -307,6 +307,10 @@ export interface Place extends Owned {
    */
   cadenceDays?: number
   notes?: string
+  /** Where it is, on one line ("21 Warwick St, London"). Open in Maps searches it, and an event whose location holds it is at this place. */
+  address?: string
+  /** Other names it goes by ("Pret" for Pret A Manger): an event's location, a question or an assistant finds the place by any of them. */
+  aliases?: string[]
   createdAt: string
   updatedAt: string
   deletedAt?: string

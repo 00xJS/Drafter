@@ -3,7 +3,7 @@ import { People, Places } from './lazy'
 
 /** People, with Places as its second segment. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, openPlace, openJournal } = p
+  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor } = p
   return (
     <>
@@ -75,6 +75,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
           onPlan={planWith}
           onOpenTask={openTask}
           onOpenEntry={e => setEventEditor({ entry: e, startIso: e.start })}
+          // a person picked in search (or Ask, or a reminder) arrives with their card open
+          openId={personOpenId}
+          onOpenConsumed={() => setPersonOpenId(null)}
         />
       )}
     </>

@@ -62,6 +62,7 @@ import {
 import { legacyPostToTask } from '../shared/domain.mjs'
 import { MAX_SIDES } from '../shared/kitchen.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
+import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
 import { isDayKey } from '../shared/weeks.mjs'
 import { sanitizeHtml } from './richtext'
 
@@ -445,6 +446,9 @@ export function sanitizePlace(raw: unknown): Place | null {
       typeof r.category === 'string' && PLACE_CATEGORY_SET.has(r.category) ? (r.category as PlaceCategory) : 'other',
     cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
     notes: str(r.notes)?.trim() || undefined,
+    // a place saved before these existed has neither, and reads as it did
+    address: tidyPlaceAddress(r.address),
+    aliases: tidyPlaceAliases(r.aliases, name),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeItem, sanitizePlace, sanitizeTask } from '../schema'
-import { favourites, lapsed, matchPlace, normalisePlaceText, outingsAt, placeByName, placeCadenceStatus, placeNameKey, placeStats, placeYearReport, placesWith } from '../places'
+import {
+  favourites,
+  findsPlace,
+  lapsed,
+  mapsUrl,
+  matchPlace,
+  normalisePlaceText,
+  outingsAt,
+  placeAliasesFromText,
+  placeByName,
+  placeCadenceStatus,
+  placeNameKey,
+  placeStats,
+  placeYearReport,
+  placesWith,
+  prefersAppleMaps,
+} from '../places'
+import { MAX_PLACE_ALIASES } from '../../shared/places.mjs'
 import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {
@@ -326,6 +343,20 @@ describe('placeByName: naming somewhere new must not duplicate somewhere old', (
     expect(placeByName('银龙 restaurant', [silver])?.id).toBe('pl4')
     expect(placeByName('Cafe Kafka', [{ ...place(), id: 'pl7', name: 'Café Kafka' }])?.id).toBe('pl7')
   })
+
+  // "Pret" typed in a Where picker made a second Pret beside the Pret A Manger
+  // that goes by it, splitting its outings
+  it('knows a place by one of its other names, after any place’s own name', () => {
+    const pret = { ...place(), id: 'pret', name: 'Pret A Manger', aliases: ['Pret', 'The Sandwich Shop'] }
+    expect(placeByName('pret', [pret])?.id).toBe('pret')
+    expect(placeByName('  the SANDWICH shop ', [pret])?.id).toBe('pret')
+    // a place called just that is the one it means, and the Trash keeps its names to itself
+    const mine = { ...place(), id: 'mine', name: 'Pret' }
+    expect(placeByName('Pret', [pret, mine])?.id).toBe('mine')
+    expect(placeByName('Pret', [{ ...pret, deletedAt: '2026-01-01T00:00:00.000Z' }])).toBeUndefined()
+    // part of another name is not that name
+    expect(placeByName('Sandwich', [pret])).toBeUndefined()
+  })
 })
 
 describe('placeNameKey: what makes two names the same place', () => {
@@ -426,5 +457,187 @@ describe('placeYearReport: the year in places counts outings', () => {
       if (tz === undefined) delete process.env.TZ
       else process.env.TZ = tz
     }
+  })
+})
+
+describe('a place’s address and other names are kept tidy', () => {
+  it('keeps the address on one line, and each other name once, never the name again', () => {
+    const p = sanitizePlace({ ...place(), address: '  21 Warwick St,\n  London ', aliases: [' Pret ', 'pret', "FRANCO'S", '', 7, 'Pret  A Manger', null] })
+    expect(p?.address).toBe('21 Warwick St, London')
+    expect(p?.aliases).toEqual(['Pret', 'Pret A Manger'])
+  })
+
+  it('reads a place saved before either existed as it was, with neither', () => {
+    const p = sanitizePlace(place({ notes: 'booth' }))
+    expect(p?.address).toBeUndefined()
+    expect(p?.aliases).toBeUndefined()
+    expect(p?.notes).toBe('booth')
+  })
+
+  it('drops what is not an address or a list of names, blanks included, and caps both', () => {
+    const odd = sanitizePlace({ ...place(), address: 42, aliases: 'Pret' })
+    expect([odd?.address, odd?.aliases]).toEqual([undefined, undefined])
+    const blank = sanitizePlace({ ...place(), address: '   ', aliases: ['  ', ''] })
+    expect([blank?.address, blank?.aliases]).toEqual([undefined, undefined])
+    const many = Array.from({ length: MAX_PLACE_ALIASES + 5 }, (_, i) => `Name ${i}`)
+    expect(sanitizePlace({ ...place(), aliases: many })?.aliases).toEqual(many.slice(0, MAX_PLACE_ALIASES))
+    expect(sanitizePlace({ ...place(), address: 'x'.repeat(500) })?.address).toHaveLength(200)
+  })
+
+  it('keeps them on a tombstone too, so a delete syncs as it always did', () => {
+    const p = sanitizePlace({ kind: 'place', id: 'pl1', name: '', aliases: ['Pret'], deletedAt: '2026-09-08T00:00:00.000Z', updatedAt: '2026-09-08T00:00:00.000Z' })
+    expect(p).toMatchObject({ id: 'pl1', aliases: ['Pret'], deletedAt: '2026-09-08T00:00:00.000Z' })
+  })
+
+  it('reads the editor’s Other names box: split at the commas, tidied the same way', () => {
+    expect(placeAliasesFromText(' Pret,  Pret A Manger ,, pret ', 'Pret A Manger (Soho)')).toEqual(['Pret', 'Pret A Manger'])
+    expect(placeAliasesFromText('Nopi', 'nopi')).toBeUndefined()
+    expect(placeAliasesFromText('', 'Nopi')).toBeUndefined()
+  })
+})
+
+describe('matchPlace finds a place by its name, other names or address', () => {
+  const pret = place({ id: 'pret', name: 'Pret A Manger', category: 'cafe', aliases: ['Pret', 'The Sandwich Shop'] })
+  const nopi = place({ id: 'nopi', name: 'Nopi', address: '21-22 Warwick St, London W1B 5NE' })
+  const bo = place({ id: 'bo', name: 'Café Bo', category: 'cafe', aliases: ['Bo', 'Q'] })
+
+  it('knows an other name, whole or inside the location, whatever its case and spacing', () => {
+    expect(matchPlace('Pret', [pret])?.id).toBe('pret')
+    expect(matchPlace('  pret  ', [pret])?.id).toBe('pret')
+    expect(matchPlace('PRET, 1 Oxford St', [pret])?.id).toBe('pret')
+    expect(matchPlace('Lunch at the sandwich shop (upstairs)', [pret])?.id).toBe('pret')
+  })
+
+  it('knows a full address the location opens with, but not a piece of it', () => {
+    expect(matchPlace('21-22 Warwick St, London W1B 5NE, United Kingdom', [nopi])?.id).toBe('nopi')
+    expect(matchPlace('21-22 Warwick St, London W1B 5NE', [nopi])?.id).toBe('nopi')
+    expect(matchPlace('The Warwick Arms, Warwick St', [nopi])).toBeUndefined()
+  })
+
+  // an address was looked for anywhere in a location, so the street, the town or
+  // the building a place shares with other venues marked their events as there
+  it('never marks another venue’s event by the street, the town or the building they share', () => {
+    const park = place({ id: 'park', name: 'Hyde Park', category: 'outdoors', address: 'London W2' })
+    const city = place({ id: 'city', name: 'Nopi', address: 'London' })
+    const uniqlo = place({ id: 'uniqlo', name: 'Uniqlo', category: 'shop', address: 'Oxford St, London' })
+    const waga = place({ id: 'waga', name: 'Wagamama', address: 'Westfield Stratford City, London E20 1EJ' })
+    const pilgrims = place({ id: 'pilgrims', name: 'Pizza Pilgrims', address: '2 Stratford Pl, London E20 1EJ' })
+    const all = [park, city, uniqlo, waga, pilgrims]
+    expect(matchPlace('Paddington Station, Praed St, London W2', all)).toBeUndefined()
+    expect(matchPlace('Dentist, 5 Harley St, London', all)).toBeUndefined()
+    expect(matchPlace('London Bridge Station', all)).toBeUndefined()
+    expect(matchPlace('Selfridges, 400 Oxford St, London', all)).toBeUndefined()
+    expect(matchPlace('Oxford St, London W1', all)).toBeUndefined()
+    expect(matchPlace("Nando's, Westfield Stratford City, London E20 1EJ", all)).toBeUndefined()
+    // a house number is not enough after another venue's name: a food hall, a shopping centre
+    expect(matchPlace("Nando's, 2 Stratford Pl, London E20 1EJ", all)).toBeUndefined()
+    // each still marks a location that is exactly it, and one naming its door a location that opens with it
+    expect(matchPlace('London W2', all)?.id).toBe('park')
+    expect(matchPlace('Westfield Stratford City, London E20 1EJ', all)?.id).toBe('waga')
+    expect(matchPlace('2 Stratford Pl, London E20 1EJ, UK', all)?.id).toBe('pilgrims')
+    expect(matchPlace('Pizza Pilgrims, 2 Stratford Pl, London E20 1EJ', all)?.id).toBe('pilgrims')
+  })
+
+  it('never finds a name or other name inside another word, a hyphenated one included', () => {
+    expect(matchPlace("Bob's Diner, High St", [bo])).toBeUndefined()
+    expect(matchPlace('Bonnie Doon', [bo])).toBeUndefined()
+    expect(matchPlace('Pretty Things boutique', [pret])).toBeUndefined()
+    // a hyphen makes one word of "Co-op", "Wok-to-Walk" and "Stratford-upon-Avon"
+    expect(matchPlace('Co-op, High St', [place({ id: 'one', name: 'Coffee One', aliases: ['Co'] })])).toBeUndefined()
+    const wok = place({ id: 'wok', name: 'Wok', category: 'fastfood' })
+    const stratford = place({ id: 'strat', name: 'The Stratford', category: 'bar', aliases: ['Stratford'] })
+    expect(matchPlace('Wok-to-Walk, 4 Hill Rd', [wok])).toBeUndefined()
+    expect(matchPlace('Lunch at Hill-Wok', [wok])).toBeUndefined()
+    expect(matchPlace('Weekend in Stratford-upon-Avon', [stratford])).toBeUndefined()
+    // as a word of its own it is found, before a possessive or a spaced dash too
+    expect(matchPlace("Wok's, 4 Hill Rd", [wok])?.id).toBe('wok')
+    expect(matchPlace('Train to Stratford - platform 2', [stratford])?.id).toBe('strat')
+    expect(matchPlace('Hill-Wok, then Wok', [wok])?.id).toBe('wok')
+  })
+
+  it('finds a hyphenated name however its hyphens are typed', () => {
+    const coop = place({ id: 'coop', name: 'Co-op', category: 'shop' })
+    expect(matchPlace('Co-op, High St', [coop])?.id).toBe('coop')
+    expect(matchPlace('Co op, High St', [coop])?.id).toBe('coop')
+    // and a place called Pret is not the start of "Pret-A-Manger"
+    expect(matchPlace('Pret-A-Manger, 1 High St', [place({ id: 'mine', name: 'Pret' }), pret])?.id).toBe('pret')
+  })
+
+  it('takes one or two letters only as the whole location, or the venue it opens with', () => {
+    expect(matchPlace('Q', [bo])?.id).toBe('bo')
+    expect(matchPlace('Q, 3 Hill Rd', [bo])?.id).toBe('bo')
+    expect(matchPlace('Flat Q, 3 Hill Rd', [bo])).toBeUndefined()
+    expect(matchPlace('Bo, High St', [bo])?.id).toBe('bo')
+    expect(matchPlace('Coffee at Bo, High St', [bo])).toBeUndefined()
+    const oz = place({ id: 'oz', name: 'Oz' })
+    expect(matchPlace('Oz, 4 Hill Rd', [oz])?.id).toBe('oz')
+    expect(matchPlace('Oz\n4 Hill Rd', [oz])?.id).toBe('oz')
+    expect(matchPlace('Ozone Bar', [oz])).toBeUndefined()
+    // a word in a sentence, or in a question to Ask, is not the bar called Up
+    const up = place({ id: 'up', name: 'Up', category: 'bar' })
+    expect(matchPlace('Meet up at the station', [up])).toBeUndefined()
+    expect(matchPlace('When did we last go up to see Mum?', [up])).toBeUndefined()
+    expect(matchPlace('Up', [up])?.id).toBe('up')
+  })
+
+  it('gives a place its own name before anyone else’s other name, whole or inside the location', () => {
+    const crown = place({ id: 'crown', name: 'The Crown', category: 'bar' })
+    const hotel = place({ id: 'hotel', name: 'Crown Hotel', category: 'venue', aliases: ['The Crown'] })
+    for (const list of [[hotel, crown], [crown, hotel]]) {
+      expect(matchPlace('The Crown', list)?.id).toBe('crown')
+      expect(matchPlace('The Crown, 5 High St', list)?.id).toBe('crown')
+    }
+    // and anyone's other name before an address
+    const yard = place({ id: 'yard', name: 'The Yard Bar', category: 'bar', aliases: ['The Yard'] })
+    const flat = place({ id: 'flat', name: 'Sam’s flat', category: 'home', address: 'The Yard' })
+    for (const list of [[flat, yard], [yard, flat]]) expect(matchPlace('The Yard', list)?.id).toBe('yard')
+  })
+
+  it('still takes whichever is named first, by name, other name or address alike', () => {
+    expect(matchPlace('Pret, then Nopi', [nopi, pret])?.id).toBe('pret')
+    expect(matchPlace('Nopi, then Pret', [pret, nopi])?.id).toBe('nopi')
+    expect(matchPlace('21-22 Warwick St, London W1B 5NE, then Pret', [pret, nopi])?.id).toBe('nopi')
+  })
+
+  it('ignores a place in the Trash, and other names or an address that are not strings', () => {
+    expect(matchPlace('Pret', [{ ...pret, deletedAt: '2026-09-01T00:00:00.000Z' }])).toBeUndefined()
+    expect(matchPlace('Pret', [{ ...pret, aliases: 'Pret' as unknown as string[] }])).toBeUndefined()
+    const odd = { ...place({ id: 'odd', name: 'Odd Bar' }), aliases: [7, null, {}] as unknown as string[], address: 42 as unknown as string }
+    expect(matchPlace('7', [odd])).toBeUndefined()
+    expect(matchPlace('42', [odd])).toBeUndefined()
+    expect(matchPlace('Odd Bar, 7 Hill Rd', [odd])?.id).toBe('odd')
+  })
+})
+
+describe('Open in Maps', () => {
+  it('searches the address when there is one, else the name', () => {
+    const apple = mapsUrl({ name: 'Nopi', address: '21 Warwick St, London' }, true)
+    expect(apple).toBe('https://maps.apple.com/?q=21%20Warwick%20St%2C%20London')
+    expect(new URL(apple).searchParams.get('q')).toBe('21 Warwick St, London')
+    const google = mapsUrl({ name: 'Franco & Sons' }, false)
+    expect(google).toBe('https://www.google.com/maps/search/?api=1&query=Franco%20%26%20Sons')
+    expect(new URL(google).searchParams.get('query')).toBe('Franco & Sons')
+    expect(mapsUrl({ name: ' Nopi ', address: '   ' }, true)).toBe('https://maps.apple.com/?q=Nopi')
+  })
+
+  it('uses Apple Maps on an iPhone, an iPad or a Mac, and Google Maps elsewhere', () => {
+    const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+    // iPadOS Safari says it is a Mac
+    const ipad = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+    const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+    const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36'
+    expect(prefersAppleMaps({ userAgent: iphone, platform: 'iPhone' })).toBe(true)
+    expect(prefersAppleMaps({ userAgent: ipad, platform: 'MacIntel' })).toBe(true)
+    expect(prefersAppleMaps({ userAgent: windows, platform: 'Win32' })).toBe(false)
+    expect(prefersAppleMaps({ userAgent: android, platform: 'Linux armv8l' })).toBe(false)
+    expect(prefersAppleMaps({})).toBe(false)
+  })
+})
+
+describe('Places’ find box', () => {
+  it('looks in the other names, the address and the notes as well as the name', () => {
+    const p = place({ name: 'Pret A Manger', aliases: ['The Sandwich Shop'], address: '1 Oxford St', notes: 'oat latte' })
+    for (const q of ['pret', 'sandwich', 'oxford', 'latte', '']) expect(findsPlace(p, q), q).toBe(true)
+    expect(findsPlace(p, 'nopi')).toBe(false)
   })
 })

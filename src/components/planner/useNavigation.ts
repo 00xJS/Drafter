@@ -98,6 +98,13 @@ export function useNavigation() {
     goPeopleTab('places')
     setView('people')
   }
+  /** A person's card to open (from search, Ask or a reminder); consumed by the People view. */
+  const [personOpenId, setPersonOpenId] = useState<string | null>(null)
+  const openPerson = (id?: string) => {
+    if (id) setPersonOpenId(id)
+    goPeopleTab('people')
+    setView('people')
+  }
   const openJournal = (date?: string) => {
     if (date) setJournalOpenDate(date)
     setHomeTab('journal')
@@ -151,6 +158,9 @@ export function useNavigation() {
     placeOpenId,
     setPlaceOpenId,
     openPlace,
+    personOpenId,
+    setPersonOpenId,
+    openPerson,
     openJournal,
     kitchenRecipe,
     setKitchenRecipe,

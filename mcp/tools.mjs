@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
 import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
-import { PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus } from '../shared/places.mjs'
+import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
 import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
@@ -144,6 +144,9 @@ export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = D
     category: p.category,
     emoji: p.emoji ?? null,
     notes: p.notes ?? null,
+    address: p.address ?? null,
+    /** Other names it goes by; placeName and a calendar location find it by any of them. */
+    aliases: Array.isArray(p.aliases) ? p.aliases : [],
     cadenceDays: p.cadenceDays ?? null,
     status: cadence.status,
     statusReason: cadence.reason || null,
@@ -546,7 +549,7 @@ export const TOOLS = [
         recurrence: { type: 'string', enum: RECURRENCE_FREQS },
         peopleIds: { type: 'array', items: { type: 'string' }, description: 'People this involves (ids from list_people); when done it counts as seeing them' },
         placeId: { type: 'string', description: 'Where this happens (id from list_places); when done it counts as an outing there' },
-        placeName: { type: 'string', description: 'Alternative to placeId: the name of a saved place' },
+        placeName: { type: 'string', description: 'Alternative to placeId: a saved place by its name, another name it goes by, or its address' },
       },
       required: ['title'],
     },
@@ -611,7 +614,7 @@ export const TOOLS = [
         tickChecklist: { type: 'array', items: { type: 'string' }, description: 'Checklist item texts (or ids) to mark done' },
         peopleIds: { type: 'array', items: { type: 'string' }, description: 'Replace the people attached (empty array clears)' },
         placeId: { type: 'string', description: 'Where this happens; empty string clears it' },
-        placeName: { type: 'string', description: 'Alternative to placeId: the name of a saved place' },
+        placeName: { type: 'string', description: 'Alternative to placeId: a saved place by its name, another name it goes by, or its address' },
         focus: {
           type: 'boolean',
           description: `true puts it in today's focus, the short list Plan my day fills on the Today page (${MAX_FOCUS} open at most); false takes it out of today's`,
@@ -902,7 +905,7 @@ export const TOOLS = [
     name: 'list_places',
     scope: 'read',
     annotations: READS,
-    description: `Places the user goes (restaurants, fast food, cafés, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise). category narrows the list to one of: ${PLACE_CATEGORY_CHOICES}.`,
+    description: `Places the user goes (restaurants, fast food, cafés, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise). Each has its address and its other names (aliases) when set. category narrows the list to one of: ${PLACE_CATEGORY_CHOICES}.`,
     inputSchema: { type: 'object', properties: { category: { type: 'string', enum: PLACE_CATEGORIES } } },
     async run({ category } = {}, { db, clock }) {
       const all = await db.fetchAll({ kinds: ['place', 'task', 'person', 'meal'] })
@@ -918,7 +921,7 @@ export const TOOLS = [
     name: 'create_place',
     scope: 'write',
     annotations: ADDS,
-    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due.`,
+    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due. address and aliases (other names it goes by) are optional: a calendar event whose location holds the name or one of the aliases as whole words, or is the address (or opens with it, when it starts with a house number), is marked as at this place, and placeName finds it by any of them.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -927,10 +930,12 @@ export const TOOLS = [
         emoji: { type: 'string' },
         cadenceDays: { type: 'integer', minimum: 1, description: 'Target days between outings, e.g. 30 for monthly. Omit for no target.' },
         notes: { type: 'string', description: 'Best table, what to order, booking tip…' },
+        address: { type: 'string', description: 'Where it is, on one line, e.g. "21 Warwick St, London". Open in Maps searches it.' },
+        aliases: { type: 'array', items: { type: 'string' }, description: `Other names it goes by, e.g. ["Pret"] for Pret A Manger (at most ${MAX_PLACE_ALIASES})` },
       },
       required: ['name'],
     },
-    async run({ name, category, emoji, cadenceDays, notes } = {}, { db, clock, newId }) {
+    async run({ name, category, emoji, cadenceDays, notes, address, aliases } = {}, { db, clock, newId }) {
       const clean = String(name ?? '').trim()
       if (!clean) throw new Error('name must not be empty')
       let cadence
@@ -938,9 +943,15 @@ export const TOOLS = [
         cadence = Number(cadenceDays)
         if (!Number.isInteger(cadence) || cadence <= 0) throw new Error('cadenceDays must be a positive integer')
       }
+      if (aliases !== undefined && aliases !== null && !Array.isArray(aliases)) throw new Error('aliases must be a list of names')
       const all = await db.fetchAll({ kinds: ['place'] })
-      const dup = matchPlace(clean, all.filter(i => i.kind === 'place'))
-      if (dup && normalisePlaceText(dup.name) === normalisePlaceText(clean)) throw new Error(`"${dup.name}" already exists (id ${dup.id}).`)
+      // a name is taken when a live place already goes by it, as its own name or one of its others
+      const key = normalisePlaceText(clean)
+      const namesOf = p => [p.name, ...(Array.isArray(p.aliases) ? p.aliases : [])]
+      const dup = key ? all.find(p => p.kind === 'place' && !p.deletedAt && namesOf(p).some(n => normalisePlaceText(n) === key)) : undefined
+      if (dup) {
+        throw new Error(normalisePlaceText(dup.name) === key ? `"${dup.name}" already exists (id ${dup.id}).` : `"${clean}" is another name for "${dup.name}" (id ${dup.id}).`)
+      }
       const stamp = clock.iso()
       const place = {
         kind: 'place',
@@ -951,6 +962,8 @@ export const TOOLS = [
         color: '#f97316',
         cadenceDays: cadence,
         notes: notes ? String(notes).trim() || undefined : undefined,
+        address: tidyPlaceAddress(typeof address === 'string' ? address : undefined),
+        aliases: tidyPlaceAliases(aliases, clean),
         createdAt: stamp,
         updatedAt: stamp,
       }
@@ -970,7 +983,7 @@ export const TOOLS = [
         personId: { type: 'string' },
         peopleIds: { type: 'array', items: { type: 'string' }, description: 'Several people at once' },
         placeId: { type: 'string' },
-        placeName: { type: 'string', description: 'Name of a saved place (must already exist)' },
+        placeName: { type: 'string', description: 'A saved place by its name, another name it goes by, or its address (it must already exist)' },
         at: { type: 'string', description: 'ISO date/datetime (default: now)' },
         note: { type: 'string', description: 'What you did, e.g. "Sunday lunch"' },
       },
@@ -1078,7 +1091,7 @@ export const TOOLS = [
         recipeName: { type: 'string' },
         title: { type: 'string', description: 'Free text when no recipe' },
         out: { type: 'boolean', description: 'Bought rather than cooked: takeaway, delivery, or a meal out' },
-        placeName: { type: 'string', description: 'Where a bought meal came from; must match a place from list_places' },
+        placeName: { type: 'string', description: 'Where a bought meal came from: the name, or one of the other names, of a place from list_places' },
         sides: {
           type: 'array',
           description: 'What goes with a cooked lunch or dinner. Replaces its sides; [] clears them; left out, they stay',
@@ -1109,7 +1122,12 @@ export const TOOLS = [
       if (placeName) {
         const needle = String(placeName).trim().toLowerCase()
         const places = all.filter(i => i.kind === 'place' && !i.deletedAt)
-        place = places.find(p => (p.name ?? '').toLowerCase() === needle) ?? places.find(p => (p.name ?? '').toLowerCase().includes(needle))
+        // a place's own name first, then one of its other names, then a name holding what was sent
+        const isOther = p => (Array.isArray(p.aliases) ? p.aliases : []).some(a => String(a).toLowerCase() === needle)
+        place =
+          places.find(p => (p.name ?? '').toLowerCase() === needle) ??
+          places.find(isOther) ??
+          places.find(p => (p.name ?? '').toLowerCase().includes(needle))
         if (!place) throw new Error(`No place named "${placeName}". Use list_places, or create_place first.`)
       }
       if (eatingOut && recipe) throw new Error('A meal is either cooked from a recipe or bought, not both.')

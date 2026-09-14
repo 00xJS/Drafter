@@ -150,6 +150,22 @@
   padding: 6px 12px;
   white-space: nowrap;
 }
+/* a place's Open in Maps is a link dressed as the buttons beside it */
+.person-actions a.btn {
+  text-decoration: none;
+}
+.person-actions a.btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+/* a place's address and other names head its card; a long address wraps
+   instead of pushing the row wider than a phone */
+.place-where {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
 
 /* people picker inside the task editor */
 .people-picker-search {

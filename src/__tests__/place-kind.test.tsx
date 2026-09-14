@@ -7,7 +7,7 @@ import { AttendancePicker, SaveLocation, canLogAttendance, locationPlaceName, pl
 import { SomewhereNew } from '../components/MealSlotRow'
 import { PlaceKindChooser } from '../components/PlaceKindChooser'
 import { NewPlaceStep, PlacePicker, enterPlace } from '../components/PlacePicker'
-import { matchPlace, newPlace, placeFor } from '../places'
+import { mapsUrl, matchPlace, newPlace, placeFor } from '../places'
 import { PLACE_CATEGORIES, PLACE_CATEGORY_META, type CalendarEvent, type Person, type Place, type PlaceCategory } from '../types'
 
 // Somewhere new asks what kind of place it is. A task's Where, Saw them, the
@@ -191,6 +191,14 @@ describe("the meal picker's Somewhere new", () => {
     expect(kafka.category).toBe('cafe')
     expect(create).not.toHaveBeenCalled()
   })
+
+  it('reuses a saved place for one of its other names too, rather than making a second', () => {
+    const pret = place('pret', 'Pret A Manger', { category: 'cafe', emoji: '🥪', aliases: ['Pret'] })
+    const html = text(renderToStaticMarkup(form({ name: 'pret', places: [...places, pret] })))
+    expect(html).not.toContain('radiogroup')
+    expect(html).toContain('Your saved 🥪 Pret A Manger')
+    expect(placeFor('pret', undefined, [...places, pret], vi.fn(boom))).toEqual({ place: pret, created: false })
+  })
 })
 
 describe('Who was there?', () => {
@@ -233,18 +241,26 @@ describe('Who was there?', () => {
     expect(onKind).toHaveBeenCalledWith('outdoors')
   })
 
-  it('saves the kind picked, named for the venue, the full address in its notes', () => {
+  it('saves the kind picked, named for the venue, the whole location as its address', () => {
     const opts = { id: 'p9', color: '#0ea5e9', now: new Date(STAMP) }
-    expect(placeFromLocation('Dishoom, 7 Boundary St, London', 'restaurant', opts)).toEqual({
+    const dishoom = placeFromLocation('Dishoom,  7 Boundary St, London ', 'restaurant', opts)
+    expect(dishoom).toEqual({
       kind: 'place',
       id: 'p9',
       name: 'Dishoom',
       category: 'restaurant',
       color: '#0ea5e9',
-      notes: 'Dishoom, 7 Boundary St, London',
+      address: 'Dishoom, 7 Boundary St, London',
       createdAt: STAMP,
       updatedAt: STAMP,
     })
+    // the notes stay yours, and Open in Maps searches the venue at that address
+    expect(dishoom.notes).toBeUndefined()
+    expect(mapsUrl(dishoom, true)).toBe('https://maps.apple.com/?q=Dishoom%2C%207%20Boundary%20St%2C%20London')
+    // the same location on the next event links back to it, and a piece of it never does
+    expect(placeAtLocation('Dishoom, 7 Boundary St, London', [dishoom])).toBe(dishoom)
+    expect(placeAtLocation('Boundary St', [dishoom])).toBeUndefined()
+    // a location that is only the venue has nothing more to keep
     expect(placeFromLocation('Hyde Park', 'outdoors', opts)).toEqual({ kind: 'place', id: 'p9', name: 'Hyde Park', category: 'outdoors', color: '#0ea5e9', createdAt: STAMP, updatedAt: STAMP })
     expect(locationPlaceName(', 12 High St')).toBe(', 12 High St')
   })
@@ -266,6 +282,17 @@ describe('Who was there?', () => {
     expect(placeAtLocation('Dishoom, 7 Boundary St', places)).toBeUndefined()
     expect(placeAtLocation('  ', places)).toBeUndefined()
     expect(placeAtLocation(undefined, places)).toBeUndefined()
+  })
+
+  it('knows a place by another of its names the location opens with, in any script', () => {
+    const ramen = place('ramen', 'Tokyo Ramen', { aliases: ['東京ラーメン'] })
+    expect(matchPlace('東京ラーメン, Shibuya', [ramen])).toBeUndefined()
+    expect(placeAtLocation('東京ラーメン, Shibuya', [ramen])).toBe(ramen)
+    const html = text(
+      renderToStaticMarkup(<AttendancePicker event={event('東京ラーメン, Shibuya')} people={[mum]} places={[ramen]} onSavePlace={boom} onSavePerson={noop} onDone={noop} onClose={noop} />),
+    )
+    expect(html).toContain('Tokyo Ramen ✕</button>')
+    expect(html).not.toContain('as a place')
   })
 
   it('shows no Where at all for an event with no location', () => {

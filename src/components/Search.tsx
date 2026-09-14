@@ -102,6 +102,25 @@ export function noteHits(notes: Note[], needle: string): { score: number; note: 
   return out
 }
 
+/**
+ * The places matching `needle` (lowercased): by name first, then by another
+ * name it goes by, its address or its notes, a hit that was not the name
+ * saying which it was.
+ */
+export function placeHits(places: Place[], needle: string): { score: number; place: Place; where: string }[] {
+  const out: { score: number; place: Place; where: string }[] = []
+  for (const p of places) {
+    if (p.deletedAt) continue
+    const alias = (p.aliases ?? []).find(a => a.toLowerCase().includes(needle))
+    const address = p.address ?? ''
+    const s = score(p.name, needle, 12) + (alias ? score(alias, needle, 10) : 0) + score(address, needle, 5) + score(p.notes ?? '', needle, 3)
+    if (s <= 0) continue
+    const where = score(p.name, needle, 1) ? '' : alias ? `also ${alias}` : score(address, needle, 1) ? excerpt(address, 70) : 'in notes'
+    out.push({ score: s, place: p, where })
+  }
+  return out
+}
+
 /** Cmd/Ctrl+K palette: jump anywhere, run a command, find anything, or create a
  *  task from what you typed. */
 export function Search({ tasks, projects, people, places = [], journal = [], notes = [], commands = [], onOpenTask, onOpenProject, onOpenPerson, onOpenPlace, onOpenJournal, onOpenNote, onSaw, onCreateTask, onAsk, onClose }: Props) {
@@ -157,10 +176,7 @@ export function Search({ tasks, projects, people, places = [], journal = [], not
       const s = score(p.name, needle, 12) + score(p.notes ?? '', needle, 3)
       if (s > 0) out.push({ kind: 'person', score: s, person: p, where: score(p.name, needle, 1) ? '' : 'in notes' })
     }
-    for (const p of places) {
-      const s = score(p.name, needle, 12) + score(p.notes ?? '', needle, 3)
-      if (s > 0) out.push({ kind: 'place', score: s, place: p, where: score(p.name, needle, 1) ? '' : 'in notes' })
-    }
+    for (const h of placeHits(places, needle)) out.push({ kind: 'place', ...h })
     for (const e of journal) {
       const s = score(e.body, needle, 5)
       if (s > 0) {

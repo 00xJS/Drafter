@@ -6,7 +6,14 @@ export declare const PLACE_CATEGORIES: PlaceCategory[]
 export declare const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }>
 
 export declare function normalisePlaceText(s: string | null | undefined): string
+/** By name or other name (alias) as whole words, or by an address that is the text or, naming a door, opens it; a place's own name wins a tie. */
 export declare function matchPlace(text: string | null | undefined, places: Place[]): Place | null
+
+export declare const MAX_PLACE_ALIASES: number
+/** One line, or undefined when blank or not a string. */
+export declare function tidyPlaceAddress(v: unknown): string | undefined
+/** Each once, never the place's own name, at most MAX_PLACE_ALIASES; undefined when none are left. */
+export declare function tidyPlaceAliases(v: unknown, name?: string | null): string[] | undefined
 
 /** A done task at the place, or a past meal you marked as eaten out there. */
 export type Outing = { kind: 'task'; task: Task; at: string } | { kind: 'meal'; meal: Meal; at: string }

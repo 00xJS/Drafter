@@ -38,19 +38,24 @@ export function locationPlaceName(location: string): string {
 }
 
 /**
- * The saved place an event's location means: one whose name it holds
- * (matchPlace), else one named just what the location opens with — 東京 in
- * "東京, Shibuya", which matchPlace's a–z key cannot see — so a place you have
- * is attached as it always was, never offered to be saved a second time.
+ * The saved place an event's location means: one it names (matchPlace), else
+ * one that goes by just what the location opens with, as its name or another
+ * of its names (placeByName) — 東京 in "東京, Shibuya", which matchPlace's a–z
+ * key cannot see — so a place you have is attached as it always was, never
+ * offered to be saved a second time.
  */
 export function placeAtLocation(location: string | undefined, places: Place[]): Place | undefined {
   if (!location?.trim()) return undefined
   return matchPlace(location, places) ?? placeByName(locationPlaceName(location), places)
 }
 
-/** An event's location saved as a place of the kind you picked: named for the venue, the full address kept in its notes. */
+/**
+ * An event's location saved as a place of the kind you picked: named for the
+ * venue, with the whole location as its address when it holds more than the
+ * venue (where the notes used to keep it), which is what Open in Maps searches.
+ */
 export function placeFromLocation(location: string, kind: PlaceCategory, opts: { id: string; color: string; now: Date }): Place {
-  return newPlace(locationPlaceName(location), kind, { ...opts, notes: location.includes(',') ? location.trim() : undefined })
+  return newPlace(locationPlaceName(location), kind, { ...opts, address: location.includes(',') ? location : undefined })
 }
 
 /**

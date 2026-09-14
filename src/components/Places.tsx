@@ -12,7 +12,21 @@ import {
   Task,
 } from '../types'
 import { newerStamp } from '../itemops'
-import { PlaceStats, favourites, lapsed, placeStats, placeYearReport, placesWith, recentOutings } from '../places'
+import { isNative } from '../native'
+import {
+  PlaceStats,
+  favourites,
+  findsPlace,
+  lapsed,
+  mapsUrl,
+  placeAliasesFromText,
+  placeStats,
+  placeYearReport,
+  placesWith,
+  prefersAppleMaps,
+  recentOutings,
+  tidyPlaceAddress,
+} from '../places'
 import { SEEN_META, countOf } from '../people'
 import { OutingIdea, OutingInput, suggestOuting } from '../ai'
 import { heatStyle } from '../contrast'
@@ -58,7 +72,7 @@ const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 
 
 const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
-function PlaceForm({
+export function PlaceForm({
   place,
   onSave,
   onDelete,
@@ -77,6 +91,9 @@ function PlaceForm({
   // No target by default: a place only nags when you ask it to.
   const [cadence, setCadence] = useState<Cadence | ''>((place?.cadenceDays as Cadence | undefined) ?? '')
   const [notes, setNotes] = useState(place?.notes ?? '')
+  const [address, setAddress] = useState(place?.address ?? '')
+  // one box, the names separated by commas: a name rarely holds a comma, an address often does
+  const [aliases, setAliases] = useState((place?.aliases ?? []).join(', '))
   const save = () => {
     if (!name.trim() || !category) return
     const now = new Date().toISOString()
@@ -89,6 +106,8 @@ function PlaceForm({
       color,
       cadenceDays: cadence === '' ? undefined : cadence,
       notes: notes.trim() || undefined,
+      address: tidyPlaceAddress(address),
+      aliases: placeAliasesFromText(aliases, name.trim()),
       createdAt: place?.createdAt ?? now,
       updatedAt: place ? newerStamp(place.updatedAt) : now,
     })
@@ -118,6 +137,20 @@ function PlaceForm({
             ))}
           </div>
         </div>
+        <label className="field">
+          <span>
+            Address <small>(optional)</small>
+          </span>
+          {/* autofill would offer your own address, which is not this place's */}
+          <input value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. 21 Warwick St, London" autoComplete="off" />
+        </label>
+        <label className="field">
+          <span>
+            Other names <small>(optional, separated by commas)</small>
+          </span>
+          <input value={aliases} onChange={e => setAliases(e.target.value)} placeholder="e.g. Franco's Pizzeria, Francos" autoComplete="off" />
+          <small className="field-hint">A calendar event at any of these names, or at the address, is marked as here.</small>
+        </label>
         <label className="field">
           <span>
             How often do you want to go back? <small>(only then does it nudge)</small>
@@ -238,7 +271,7 @@ function LogOuting({
   )
 }
 
-function PlaceRow({
+export function PlaceRow({
   stats,
   open,
   onToggle,
@@ -257,6 +290,8 @@ function PlaceRow({
 }) {
   const { place } = stats
   const cat = PLACE_CATEGORY_META[place.category]
+  // the iPhone app is an Apple device whatever its web view says
+  const apple = isNative() || prefersAppleMaps()
   // Only a place with a rhythm gets a badge; the rest are just tracked.
   const meta = stats.status === 'none' ? null : SEEN_META[stats.status]
   return (
@@ -291,6 +326,12 @@ function PlaceRow({
 
       {open && (
         <div className="person-detail">
+          {(!!place.address || !!place.aliases?.length) && (
+            <div className="place-where">
+              {place.address && <span>📍 {place.address}</span>}
+              {!!place.aliases?.length && <small className="muted">Also called {place.aliases.join(', ')}</small>}
+            </div>
+          )}
           <div className="person-stats">
             <Bars weekly={stats.weekly} color={place.color} />
             <span className="person-nums">
@@ -352,6 +393,11 @@ function PlaceRow({
             <button className="btn" onClick={onPlan}>
               Plan a trip
             </button>
+            {/* a link, as the app's other outside links are: a new tab on the web,
+                and in the iPhone app the system takes it, so Maps opens */}
+            <a className="btn" href={mapsUrl(place, apple)} target="_blank" rel="noreferrer">
+              Open in Maps
+            </a>
             <button className="btn subtle" onClick={onEdit}>
               Edit
             </button>
@@ -467,7 +513,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
     const needle = q.trim().toLowerCase()
     const list = allStats
       .filter(s => category === 'all' || s.place.category === category)
-      .filter(s => !needle || s.place.name.toLowerCase().includes(needle) || (s.place.notes ?? '').toLowerCase().includes(needle))
+      .filter(s => findsPlace(s.place, needle))
     const sorted = [...list]
     if (sort === 'attention')
       sorted.sort(
