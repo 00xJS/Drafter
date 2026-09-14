@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { graphicInk, heatStyle } from '../../contrast'
 import { daysAgo, daysBetween, shortDay } from '../../kitchen'
 import { countOf } from '../../people'
+import { useTheme, type Theme } from '../../theme'
 import type { Garment, Outfit } from '../../types'
 import { dateKey } from '../../utils'
 import {
@@ -38,8 +40,12 @@ interface Props {
   now?: Date
 }
 
-/** A piece's colour, or the chart's own when it has none. */
-const tint = (g: Garment) => g.color ?? 'var(--viz-series-1)'
+/**
+ * A piece's colour as a mark on the card. A photo's white or navy is moved just
+ * far enough to stand out on the theme's card; a piece with no colour takes the
+ * chart's own.
+ */
+const mark = (g: Garment, theme: Theme) => (g.color ? graphicInk(g.color, theme) : 'var(--viz-series-1)')
 
 /** Days logged in each month of the year, on the shared chart styles. */
 function MonthBars({ months, current }: { months: number[]; current: number }) {
@@ -94,6 +100,7 @@ function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line:
  * repeat most. Retired pieces still count in the history, and nowhere else.
  */
 export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, now = new Date() }: Props) {
+  const theme = useTheme()
   const [span, setSpan] = useState<WearWindow>(30)
   const thisYear = Number(ix.dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
@@ -140,7 +147,7 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
                   {r.garment.archivedAt && <span className="badge wardrobe-retired">Retired</span>}
                 </button>
                 <span className="hbar-track">
-                  <span className="hbar-fill" style={{ width: `${Math.max(4, (r.count / most) * 85)}%`, background: tint(r.garment) }} />
+                  <span className="hbar-fill" style={{ width: `${Math.max(4, (r.count / most) * 85)}%`, background: mark(r.garment, theme) }} />
                   <span className="hbar-value">{r.count}</span>
                 </span>
               </div>
@@ -230,14 +237,14 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
                   {report.map(r => (
                     <tr key={r.garment.id}>
                       <td>
-                        <span className="pdot" style={{ background: tint(r.garment) }} /> {r.garment.name}
+                        <span className="pdot" style={{ background: mark(r.garment, theme) }} /> {r.garment.name}
                       </td>
                       {r.months.map((n, i) => (
                         <td
                           key={i}
                           className="num year-cell"
                           title={n > 0 ? countOf(n, 'day') : undefined}
-                          style={n > 0 ? { background: `color-mix(in srgb, ${tint(r.garment)} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}
+                          style={n > 0 ? heatStyle(mark(r.garment, theme), n, theme) : undefined}
                         >
                           {n || ''}
                         </td>

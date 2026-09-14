@@ -5,8 +5,10 @@ import { MoodChart } from '../components/Journal'
 import { Bars } from '../components/bits'
 import { Places } from '../components/Places'
 import { Roadmap } from '../components/Roadmap'
+import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { graphicInk, heatStyle, readableInk } from '../contrast'
-import type { CalendarEvent, CalendarSource, Place, Project, Recipe, Task } from '../types'
+import type { CalendarEvent, CalendarSource, Garment, Place, Project, Recipe, Task, Wear } from '../types'
+import { liveById, wearIndex } from '../wardrobe'
 
 // The call sites of the theme sweep. A colour the stylesheet cannot know (a
 // project's, a feed's, a place's) is drawn through the contrast helpers, and
@@ -145,5 +147,36 @@ describe('the year in places gives a deep colour’s busiest cells their own ink
     expect(august.color).toBe('var(--on-deep-user-color)')
     expect(table()).toContain(`title="1 outing" style="${css(july)}"`)
     expect(table()).toContain(`title="4 outings" style="${css(august)}"`)
+  })
+})
+
+describe('the wardrobe’s most worn deepens a pale piece so its bar still shows on white', () => {
+  // the colour a white tee's photo suggests
+  const tee: Garment = { kind: 'garment', id: 'tee', name: 'White tee', type: 'top', color: '#f2f2f2', createdAt: STAMP, updatedAt: STAMP }
+  const worn = (date: string): Wear => ({ kind: 'wear', id: `wear~${date}~0000000000`, date, garmentIds: ['tee'], createdAt: STAMP, updatedAt: STAMP })
+  const stats = () =>
+    text(
+      renderToStaticMarkup(
+        <WardrobeStats
+          garments={[tee]}
+          outfits={[]}
+          byId={liveById([tee])}
+          ix={wearIndex([worn('2026-09-10'), worn('2026-09-11')], '2026-09-12')}
+          onOpenPiece={noop}
+          onRetire={noop}
+          onSaveOutfit={noop}
+          now={new Date(2026, 8, 12, 9)}
+        />,
+      ),
+    )
+
+  it('the bar and the year table’s dot take the deepened colour, and its cells the heat the other tables use', () => {
+    const ink = graphicInk('#f2f2f2', 'light')
+    expect(ink).not.toBe('#f2f2f2')
+    const html = stats()
+    expect(html).toContain(`class="hbar-fill" style="width:85%;background:${ink}"`)
+    expect(html).toContain(`class="pdot" style="background:${ink}"`)
+    const cell = heatStyle(ink, 2, 'light')
+    expect(html).toContain(`title="2 days" style="background:${cell.background}${cell.color ? `;color:${cell.color}` : ''}"`)
   })
 })
