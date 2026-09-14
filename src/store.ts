@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { CalendarEntry, CalendarSource, GroceryList, Habit, Item, JournalEntry, Meal, Note, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template } from './types'
+import { CalendarEntry, CalendarSource, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template, Wear } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
@@ -60,12 +60,19 @@ export interface Store {
    */
   notes: Note[]
   templates: Template[]
+  /** Your clothes (personal), retired pieces included — their history still counts — by name. */
+  garments: Garment[]
+  /** Your saved outfits (personal), oldest first. */
+  outfits: Outfit[]
+  /** What you wore (personal): newest day first, a day's latest look first. */
+  wears: Wear[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
   /**
    * Everything I may see: allItems minus other household members' personal
-   * records (journal, review, calendar). Trash, JSON export and counts use this
-   * so a peer's deleted diary never shows up in my bin.
+   * records (PERSONAL_KINDS: journal, review, calendar, habit, routine and the
+   * wardrobe). Trash, JSON export and counts use this so a peer's deleted diary
+   * never shows up in my bin.
    */
   visibleItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
@@ -239,6 +246,32 @@ export function useItems(myId: string | null = null): Store {
     () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
     [items],
   )
+  // The wardrobe is personal, like the journal: only mine (or unowned, local-mode
+  // rows). A retired piece stays in the list; each view leaves it out where it should.
+  const garments = useMemo(
+    () =>
+      items
+        .filter((i): i is Garment => i.kind === 'garment' && !i.deletedAt && isMine(i))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
+  const outfits = useMemo(
+    () =>
+      items
+        .filter((i): i is Outfit => i.kind === 'outfit' && !i.deletedAt && isMine(i))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
+  const wears = useMemo(
+    () =>
+      items
+        .filter((i): i is Wear => i.kind === 'wear' && !i.deletedAt && isMine(i))
+        .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
   const calendars = useMemo(
     () =>
       items
@@ -271,6 +304,9 @@ export function useItems(myId: string | null = null): Store {
     routines,
     notes,
     templates,
+    garments,
+    outfits,
+    wears,
     allItems: items,
     visibleItems,
     loaded: snap.loaded,

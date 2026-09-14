@@ -144,6 +144,13 @@ export function purgeTombstone(kind: Item['kind'], id: string, now: string, dele
       return { ...base, name: '', url: '', color: '#888', enabled: false }
     case 'note':
       return { ...base, title: '', body: '' }
+    case 'garment':
+      return { ...base, name: '', type: 'accessory' }
+    case 'outfit':
+      return { ...base, garmentIds: [] }
+    case 'wear':
+      // the day stays in the id (wear~YYYY-MM-DD~…); the pieces are gone on purpose
+      return { ...base, date: /^wear~(\d{4}-\d{2}-\d{2})~/.exec(id)?.[1] ?? '', garmentIds: [] }
     default:
       return base
   }

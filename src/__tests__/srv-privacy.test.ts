@@ -15,7 +15,7 @@ const row = (user_id: string, kind: string | undefined, id: string, extra: Recor
 })
 
 describe('the ICS feed never holds a household member’s personal rows', () => {
-  it('drops a peer’s journal, review, calendar, habit and routine, and keeps their shared rows and my own', () => {
+  it('drops a peer’s journal, review, calendar, habit, routine and wardrobe, and keeps their shared rows and my own', () => {
     const rows = [
       ...[...PERSONAL_KINDS].map(k => row(PEER, k, `peer-${k}`)),
       row(PEER, 'task', 'peer-task'),
@@ -24,6 +24,15 @@ describe('the ICS feed never holds a household member’s personal rows', () => 
       row(ME, 'journal', 'my-journal'),
     ]
     expect(readableItems(rows, ME).map(i => i.id).sort()).toEqual(['my-habit', 'my-journal', 'peer-event', 'peer-task'])
+  })
+
+  it('drops a peer’s garment and look by name, and keeps my own look', () => {
+    const rows = [
+      row(PEER, 'garment', 'peer-tee', { name: 'Tee', type: 'top' }),
+      row(PEER, 'wear', 'wear~2026-09-13~peer000001', { date: '2026-09-13', garmentIds: ['peer-tee'] }),
+      row(ME, 'wear', 'wear~2026-09-13~mine000001', { date: '2026-09-13', garmentIds: ['my-tee'] }),
+    ]
+    expect(readableItems(rows, ME).map(i => i.id)).toEqual(['wear~2026-09-13~mine000001'])
   })
 
   it('carries each row’s owner and still converts a legacy row with no kind', () => {
@@ -52,5 +61,10 @@ describe('a backup snapshot holds no other member’s personal rows', () => {
       row(ME, 'routine', 'r-mine'),
     ])
     expect((snap.items as { id: string }[]).map(i => i.id)).toEqual(['j-mine', 't-peer', 'r-mine'])
+  })
+
+  it('keeps the account’s own wardrobe and drops a peer’s', () => {
+    const snap = buildSnapshot(ME, [row(ME, 'garment', 'g-mine'), row(PEER, 'garment', 'g-peer'), row(PEER, 'outfit', 'o-peer'), row(PEER, 'wear', 'w-peer'), row(ME, 'wear', 'w-mine')])
+    expect((snap.items as { id: string }[]).map(i => i.id)).toEqual(['g-mine', 'w-mine'])
   })
 })

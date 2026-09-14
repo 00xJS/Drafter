@@ -20,6 +20,13 @@ import {
   GroceryState,
   GROCERY_STATES,
   JournalEntry,
+  Garment,
+  GarmentType,
+  GARMENT_TYPES,
+  GARMENT_TYPE_META,
+  MAX_PIECES,
+  Outfit,
+  Wear,
   Habit,
   Routine,
   RoutineStep,
@@ -780,6 +787,105 @@ export function sanitizeNote(raw: unknown): Note | null {
   }
 }
 
+const GARMENT_TYPE_SET = new Set<string>(GARMENT_TYPES)
+/** A media-store id: a uid, or personal/<user uuid>/<uid>. Never another path in the bucket. */
+const MEDIA_ID = /^(?:personal\/[0-9a-f-]{36}\/)?[0-9a-z-]{8,64}$/i
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+function mediaId(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  return s && MEDIA_ID.test(s) ? s : undefined
+}
+
+/** Unique, trimmed string ids in order, capped: an outfit's or a look's pieces. */
+function pieceIds(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const ids = v
+    .filter((x): x is string => typeof x === 'string')
+    .map(x => x.trim())
+    .filter(Boolean)
+  return [...new Set(ids)].slice(0, MAX_PIECES)
+}
+
+/** Coerce arbitrary data into a Garment. A live piece with no name takes its type's label. */
+export function sanitizeGarment(raw: unknown): Garment | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  if (!id) return null
+  const deletedAt = isoDate(r.deletedAt)
+  // an unknown type is read as the catch-all, which is never an outfit's core
+  const type: GarmentType = typeof r.type === 'string' && GARMENT_TYPE_SET.has(r.type) ? (r.type as GarmentType) : 'accessory'
+  const name = str(r.name)?.trim().slice(0, 80)
+  const color = str(r.color)?.trim()
+  const now = new Date().toISOString()
+  return {
+    kind: 'garment',
+    id,
+    name: name || (deletedAt ? '' : GARMENT_TYPE_META[type].label),
+    type,
+    photoId: mediaId(r.photoId),
+    thumbId: mediaId(r.thumbId),
+    color: color && HEX_COLOR.test(color) ? color.toLowerCase() : undefined,
+    notes: str(r.notes)?.trim().slice(0, 500) || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    archivedAt: isoDate(r.archivedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
+/** Coerce arbitrary data into an Outfit. A live outfit needs a piece; a tombstone only its id. */
+export function sanitizeOutfit(raw: unknown): Outfit | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const garmentIds = pieceIds(r.garmentIds)
+  const deletedAt = isoDate(r.deletedAt)
+  if (!id || (garmentIds.length === 0 && !deletedAt)) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'outfit',
+    id,
+    name: str(r.name)?.trim().slice(0, 80) || undefined,
+    garmentIds,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
+/**
+ * Coerce arbitrary data into a Wear. The day is a local day key and nothing else
+ * (dayKeyOnly: an ISO instant is refused, never turned into its UTC date). A purge
+ * tombstone has no date, but the day is in the id, as a journal entry's is. An
+ * empty look is kept (coerce, don't reject) and counted as nothing.
+ */
+export function sanitizeWear(raw: unknown): Wear | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const date = dayKeyOnly(r.date) ?? (id ? dayKeyOnly(/^wear~(\d{4}-\d{2}-\d{2})~/.exec(id)?.[1]) : undefined)
+  if (!id || (!date && !deletedAt)) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'wear',
+    id,
+    date: date ?? '',
+    garmentIds: pieceIds(r.garmentIds),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -888,6 +994,9 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'review') return sanitizeReview(converted)
   if (converted.kind === 'template') return sanitizeTemplate(converted)
   if (converted.kind === 'note') return sanitizeNote(converted)
+  if (converted.kind === 'garment') return sanitizeGarment(converted)
+  if (converted.kind === 'outfit') return sanitizeOutfit(converted)
+  if (converted.kind === 'wear') return sanitizeWear(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null
   return sanitizeTask(converted)
 }

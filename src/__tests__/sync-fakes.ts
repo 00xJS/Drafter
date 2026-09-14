@@ -6,7 +6,8 @@ import { vi } from 'vitest'
 import { newerStamp } from '../itemops'
 import { sanitizeItem } from '../schema'
 import { parseSyncResponse, type SyncResult } from '../sync'
-import { createSyncEngine, type CacheRecord, type SyncStorage } from '../syncengine'
+import { KINDS_EPOCH, createSyncEngine, type CacheRecord, type SyncStorage } from '../syncengine'
+import { KINDS_KEY } from '../syncstate'
 import { Item, Task } from '../types'
 
 export type ServerShape = 'new' | 'old' | 'legacy'
@@ -87,9 +88,19 @@ export interface Device {
   item<T extends Item = Item>(id: string): T | undefined
 }
 
-/** An engine with its own storage. Pass another device's kv and snapshot to "restart" it. */
-export function device(server: FakeServer | null, from?: { kv?: Map<string, string>; snapshot?: CacheRecord }): Device {
+/**
+ * An engine with its own storage. Pass another device's kv and snapshot to "restart" it.
+ *
+ * The kv starts out holding this build's kinds list, as it would on any device
+ * that has booted this build before, so a cursor handed in still means a delta
+ * round. `kinds` overrides that: null for a device that never recorded one, or
+ * an older build's list — either makes the first signed-in boot a full exchange.
+ */
+export function device(server: FakeServer | null, from?: { kv?: Map<string, string>; snapshot?: CacheRecord; kinds?: string | null }): Device {
   const kv = from?.kv ?? new Map<string, string>()
+  if (from?.kinds === null) kv.delete(KINDS_KEY)
+  else if (from?.kinds !== undefined) kv.set(KINDS_KEY, from.kinds)
+  else if (!kv.has(KINDS_KEY)) kv.set(KINDS_KEY, KINDS_EPOCH)
   let snapshot: CacheRecord | undefined = from?.snapshot
   const writes: CacheRecord[] = []
   let cleared = 0

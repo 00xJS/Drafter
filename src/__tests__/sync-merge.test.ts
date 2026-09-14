@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyLocalChoice, mergeRecord, same, sameContent } from '../../shared/merge.mjs'
-import { GroceryList, Habit, Routine, Task } from '../types'
+import { Garment, GroceryList, Habit, Outfit, Routine, Task, Wear } from '../types'
 
 const T0 = '2026-09-10T09:00:00.000Z'
 
@@ -122,6 +122,36 @@ describe('three-way merge of one record', () => {
     expect(merged.createdAt).toBe(T0)
     expect(merged.ownerId).toBe('u1')
     expect(merged.updatedAt).toBe('2026-09-10T10:00:00.000Z')
+  })
+})
+
+describe('the wardrobe', () => {
+  const outfit = (garmentIds: string[]): Outfit => ({ kind: 'outfit', id: 'o1', garmentIds, createdAt: T0, updatedAt: T0 })
+  const wear = (garmentIds: string[]): Wear => ({ kind: 'wear', id: 'wear~2026-09-10~a1b2c3d4e5', date: '2026-09-10', garmentIds, createdAt: T0, updatedAt: T0 })
+
+  it('an outfit’s pieces move as one value: two edits conflict and the other device’s stands, never a union', () => {
+    const { merged, conflicts } = mergeRecord(outfit(['tee', 'jeans']), outfit(['shirt', 'jeans']), outfit(['tee', 'chinos']))
+    // a union would be tee + shirt + jeans + chinos: a combination nobody chose
+    expect(merged.garmentIds).toEqual(['tee', 'chinos'])
+    expect(conflicts).toEqual([{ path: ['garmentIds'], local: ['shirt', 'jeans'], remote: ['tee', 'chinos'] }])
+    expect(applyLocalChoice(merged, conflicts).garmentIds).toEqual(['shirt', 'jeans'])
+  })
+
+  it('so do a look’s, and one side’s change alone simply lands', () => {
+    const base = wear(['tee', 'jeans'])
+    const both = mergeRecord(base, wear(['tee', 'jeans', 'trainers']), wear(['tee', 'jeans', 'boots']))
+    expect(both.merged.garmentIds).toEqual(['tee', 'jeans', 'boots'])
+    expect(both.conflicts.map(c => c.path)).toEqual([['garmentIds']])
+    const mine = mergeRecord(base, wear(['tee', 'jeans', 'trainers']), wear(['tee', 'jeans']))
+    expect(mine.merged.garmentIds).toEqual(['tee', 'jeans', 'trainers'])
+    expect(mine.conflicts).toEqual([])
+  })
+
+  it('a garment renamed here and given a new photo there keeps both', () => {
+    const g = (over: Partial<Garment>): Garment => ({ kind: 'garment', id: 'g1', name: 'Top', type: 'top', createdAt: T0, updatedAt: T0, ...over })
+    const { merged, conflicts } = mergeRecord(g({}), g({ name: 'Navy tee' }), g({ photoId: 'photo-0002', thumbId: 'thumb-0002', color: '#1f2a44' }))
+    expect(merged).toMatchObject({ name: 'Navy tee', photoId: 'photo-0002', thumbId: 'thumb-0002', color: '#1f2a44' })
+    expect(conflicts).toEqual([])
   })
 })
 

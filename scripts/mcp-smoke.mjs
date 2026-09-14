@@ -885,9 +885,13 @@ async function main() {
       peerRow('review', 'peer-3', { period: 'week', key: planned.weekKey, top: [`${PEER_SECRET} review`] }),
       peerRow('calendar', 'peer-4', { name: `${PEER_SECRET} calendar`, url: 'https://example.test/peer.ics', color: '#888', enabled: true }),
       peerRow('journal', `journal~${today}~peer`, { date: today, body: `${PEER_SECRET} journal`, mood: 2 }),
+      peerRow('garment', 'peer-5', { name: `${PEER_SECRET} shirt`, type: 'top' }),
+      peerRow('outfit', 'peer-6', { name: `${PEER_SECRET} outfit`, garmentIds: ['peer-5'] }),
+      // a look has no text of its own, so the marker rides in its piece ids
+      peerRow('wear', `wear~${today}~peer0001`, { date: today, garmentIds: ['peer-5', `${PEER_SECRET}-scarf`] }),
     ]
     seedRowsAsPeer([...peerPersonal, peerRow('task', 'peer-chore', { title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] })])
-    ok(peerPersonal.every(p => row(p.id)?.user_id === PEER), "the peer's habit, routine, review, calendar and journal are stored under the peer")
+    ok(peerPersonal.every(p => row(p.id)?.user_id === PEER), "the peer's habit, routine, review, calendar, journal, garment, outfit and look are stored under the peer")
 
     const peerTexts = []
     /** Any tool call, keeping what came back: the peer's marker must never be in it. */

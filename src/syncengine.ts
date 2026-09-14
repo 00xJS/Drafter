@@ -1,11 +1,12 @@
 import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
-import { migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
+import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
 import { applyLocalChoice } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { purgeTombstone, type SyncResult } from './sync'
 import {
+  KINDS_KEY,
   clearSyncCursor,
   prepareFullResync,
   readCursor,
@@ -34,6 +35,8 @@ const PUSH_MS = 2000
 const PERIODIC_MS = 60_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_CAP_MS = 30 * 60_000
+/** The kinds this build syncs, as KINDS_KEY records them: when the stored list differs, boot does one full exchange. */
+export const KINDS_EPOCH = [...KNOWN_KINDS].sort().join(',')
 
 /** How long a row refused `attempts` times in a row waits before the next try: 30s, 1m, 2m … capped at 30 min. */
 export function backoffMs(attempts: number): number {
@@ -218,6 +221,12 @@ export function recordLabel(item: Item | undefined): string {
       return `${item.period === 'month' ? 'Month' : 'Week'} review ${item.key}`.trim()
     case 'note':
       return item.title || 'Untitled note'
+    case 'wear':
+      return item.date ? `Outfit worn ${item.date}` : 'Outfit worn'
+    case 'outfit':
+      return item.name || 'An outfit'
+    case 'garment':
+      return item.name || 'Untitled piece'
     default:
       return item.name || 'Untitled'
   }
@@ -401,6 +410,27 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       dirty = new Set()
       failures = new Map()
       writeFailures(failures, kv)
+    }
+    // A build that did not know a kind dropped its rows on pull (sanitizeItem →
+    // null) and applySync still moved the cursor past them, so they would never
+    // arrive. The first boot of a build with a different kinds list forgets the
+    // cursor once — one full exchange, as Settings → Full resync does.
+    if (remote && myId) {
+      let stored: string | null = null
+      try {
+        stored = kv.getItem(KINDS_KEY)
+      } catch {
+        /* unreadable storage: treat as changed */
+      }
+      if (stored !== KINDS_EPOCH) {
+        prepareFullResync({}, kv) // clears the cursor; the dirty set stays
+        forceFull = true
+        try {
+          kv.setItem(KINDS_KEY, KINDS_EPOCH)
+        } catch {
+          /* the cleared cursor already forces the full round */
+        }
+      }
     }
     shadows = new Map(cached.shadows.filter(s => dirty.has(s.id)).map(s => [s.id, s]))
     // No blanket re-push of whole kinds on boot: a rejected id stays in the
