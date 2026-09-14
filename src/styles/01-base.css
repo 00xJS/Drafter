@@ -43,15 +43,22 @@
   --accent-text: #ad3a0b;
   --mark-bg: color-mix(in srgb, var(--accent) 28%, transparent);
   --danger: #b91c1c;
+  /* the label on a danger fill (an armed delete): white on this deep red, and
+     dark ink on dark's pale one, where white was 2.8:1 */
   --on-danger: #ffffff;
   /* An armed delete's label while hovered (a tap leaves :hover on a phone). A
-     danger or subtle button lays its pale hover wash over the red fill then,
-     where white would vanish, so here the label turns red instead. */
+     danger or subtle button lays its hover wash over the red fill then: pale
+     here, where white would vanish, so the label turns red; dark's wash is
+     dark, so there it stays white. */
   --on-armed-hover: var(--danger);
-  /* the "inverted" pill: a dark chip on the light ground, a light one in dark */
+  /* the "inverted" pill: a dark chip on the light ground, a light one in dark.
+     It has its own quiet ink and accent (a chosen chip's count, the toast's ✕
+     and Undo), because the page's --muted and --accent are tuned for the
+     page's ground, not the pill's. */
   --inverse-bg: #1f2329;
   --inverse-text: #f6f7f9;
   --inverse-muted: #a3aab6;
+  --inverse-accent: #f97316;
   --ok: #157338;
   --warn-bg: rgba(245, 158, 11, 0.14);
   --warn-text: #92400e;
@@ -101,10 +108,6 @@
   --code-bg: #f3f4f6;
   /* the stat tile's gradient top: flat white here, a lift off the card in dark */
   --tile-top: var(--surface);
-  /* A calendar pill's time, dimmed a touch against its title. Only in dark,
-     where the pill's colour has room to spare: here its ink is moved just far
-     enough to read (readableInk), so a dimmed time would fall under 4.5:1. */
-  --pill-time-opacity: 1;
   /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
      feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
   --radius-sm: 9px;
@@ -168,7 +171,7 @@
      it holds 3:1 from 0.75 on a card or a raised surface. --viz-empty is an
      empty or zero mark, drawn solid here because it also sits on --surface-2
      (an open person or place row) and faded in dark; --viz-ink is the mood
-     chart's currentColor. */
+     chart's currentColor, its labels drawn at --viz-label-opacity. */
   --viz-grid: #e1e4e9;
   --viz-baseline: #c3c9d2;
   --viz-series-1: #ea580c;
@@ -180,12 +183,16 @@
   --viz-mood: var(--viz-series-1-hot);
   --viz-mood-floor: 0.75;
   --viz-ink: #15181f;
+  --viz-label-opacity: 0.6;
 }
 
 /* Settings → Appearance → Dark (or Match system on a dark device). data-theme is
    stamped on <html> by index.html's inline script before the first paint and
-   kept true by src/theme.ts. Values here are exactly the palette the app
-   shipped with until 2026-09-14; theme-tokens.test.ts pins them. Only themed
+   kept true by src/theme.ts. Values here are the palette the app shipped with
+   until 2026-09-14, but for the few inks that did not read there (--muted, the
+   inverse pill's, the label on a danger fill, the mood chart's labels, a
+   calendar pill's dimmed time); theme-tokens.test.ts pins them all and lists
+   those changes with what each was. Only themed
    tokens appear here: the fixed ones (the accent with its glow and gradient
    ends, --on-accent, the ink on user colours, the photo controls, --sheen and
    --mark-bg) are declared once, above. */
@@ -200,7 +207,7 @@
   --hairline: rgba(255, 255, 255, 0.06);
   --text: #edeff3;
   --text-2: #a9b0be;
-  --muted: #737b8b;
+  --muted: #939bab;
   --placeholder: #a9a9a9;
   --accent-hover: #fb923c;
   --accent-ink: #f97316;
@@ -210,10 +217,12 @@
   --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
   --accent-text: #fca560;
   --danger: #f87171;
-  --on-armed-hover: var(--on-danger);
+  --on-danger: #0f1115;
+  --on-armed-hover: #ffffff;
   --inverse-bg: #e7e9ee;
   --inverse-text: #0f1115;
-  --inverse-muted: #737b8b;
+  --inverse-muted: #596170;
+  --inverse-accent: #ad3a0b;
   --ok: #4ade80;
   --warn-bg: rgba(245, 158, 11, 0.16);
   --warn-text: #fcd34d;
@@ -246,7 +255,6 @@
   --launch-bg: #0f1115;
   --code-bg: #0b0d11;
   --tile-top: var(--surface-2);
-  --pill-time-opacity: 0.85;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
@@ -271,6 +279,7 @@
   --viz-mood: var(--viz-series-1);
   --viz-mood-floor: 0.35;
   --viz-ink: #a9b0be;
+  --viz-label-opacity: 0.8;
 }
 
 * {

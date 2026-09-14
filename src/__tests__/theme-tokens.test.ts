@@ -41,7 +41,6 @@ const FIXED: Record<string, string> = {
   '--glow-accent': '0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent)',
   '--accent-bright': '#fb923c', // .brand-mark's first stop, var(--accent-hover) in dark
   '--accent-deep': '#e2620a', // .brand-mark's last stop
-  '--on-danger': '#ffffff', // .btn.armed's #fff
   '--on-media': '#ffffff', // .media-remove's #fff
   '--media-scrim': 'rgba(11, 11, 11, 0.6)',
   '--sheen': 'rgba(255, 255, 255, 0.25)',
@@ -53,7 +52,7 @@ const FIXED: Record<string, string> = {
 /**
  * The dark palette as it shipped until 2026-09-14 (81435a1), and each new token
  * at the literal or token it replaces there. A change here is a change to what
- * a Dark reader sees.
+ * a Dark reader sees. The few inks that did not read are in DARK_CHANGED instead.
  */
 const DARK: Record<string, string> = {
   'color-scheme': 'dark',
@@ -67,7 +66,6 @@ const DARK: Record<string, string> = {
   '--hairline': 'rgba(255, 255, 255, 0.06)',
   '--text': '#edeff3',
   '--text-2': '#a9b0be',
-  '--muted': '#737b8b',
   '--accent-hover': '#fb923c',
   '--accent-soft': 'color-mix(in srgb, var(--accent) 15%, transparent)',
   '--accent-softer': 'color-mix(in srgb, var(--accent) 9%, transparent)',
@@ -91,8 +89,7 @@ const DARK: Record<string, string> = {
   '--placeholder': '#a9a9a9', // WebKit's darkGray (Safari, the iOS app); Chromium's #757575 and Firefox's text at 54% change to it
   '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLOR
   '--focus-ring': '#f97316', // outline: 2px solid var(--accent)
-  '--inverse-muted': '#737b8b', // .toast-close's --muted
-  '--on-armed-hover': 'var(--on-danger)', // .btn.armed's #fff, which a hovered armed button kept
+  '--on-armed-hover': '#ffffff', // .btn.armed's #fff, which a hovered armed button kept
   '--tone-violet': '#c4b5fd', // STATUS_META.wishlist, GITHUB_STATE_META closed / merged
   '--tone-violet-bg': 'rgba(139, 92, 246, 0.2)',
   '--tone-amber': '#fcd34d', // STATUS_META.todo, .due-today
@@ -122,7 +119,6 @@ const DARK: Record<string, string> = {
   '--launch-bg': '#0f1115', // .lock-overlay
   '--code-bg': '#0b0d11', // .md pre
   '--tile-top': 'var(--surface-2)', // .stat-tile's gradient top
-  '--pill-time-opacity': '0.85', // .cal-pill-time's dimming, not a colour but themed with them
   '--shadow-overlay': '0 20px 50px rgba(0, 0, 0, 0.6)', // .modal, .cal-sheet
   '--shadow-palette': '0 24px 60px rgba(0, 0, 0, 0.6)', // .search-palette
   '--shadow-pop': '0 8px 24px rgba(0, 0, 0, 0.5)', // .toast, .action-menu-items, .notes-emoji
@@ -139,6 +135,29 @@ const DARK: Record<string, string> = {
   '--viz-mood': 'var(--viz-series-1)', // .mood-col's fill
   '--viz-mood-floor': '0.35', // the mood columns' 0.35 + (mood - 1) × 0.65 / 4
   '--viz-ink': '#a9b0be', // --text-2, the mood chart's currentColor
+}
+
+/**
+ * The dark inks that did not read as they shipped, changed on purpose; nothing
+ * else in dark moves. Each is at what it painted at 81435a1 (`was`) and what it
+ * is now (`now`, absent for a token gone from dark), beside the pair it failed.
+ * Dark placeholders also changed in Chromium and Firefox, which painted their
+ * own greys (#757575, and the input's text at 54%) where --placeholder is now
+ * WebKit's darkGray everywhere; the token itself is as it was.
+ */
+const DARK_CHANGED: Record<string, { was: string; now?: string }> = {
+  // muted text: 4.17:1 on a card, 3.74 on a raised surface, 3.02 on an accent chip there
+  '--muted': { was: '#737b8b', now: '#939bab' },
+  // the inverse pill's quiet ink (a chosen chip's count, the toast's ✕), .toast-close's --muted: 3.5:1 on the light pill
+  '--inverse-muted': { was: '#737b8b', now: '#596170' },
+  // the toast's Undo, .toast-undo's var(--accent): 2.31:1 on the light pill
+  '--inverse-accent': { was: '#f97316', now: '#ad3a0b' },
+  // an armed delete's label, .btn.armed's #fff: 2.77:1 on the pale red
+  '--on-danger': { was: '#ffffff', now: '#0f1115' },
+  // a calendar pill's time at 85%: under 4.5:1 for every colour readableInk moves, and some it does not
+  '--pill-time-opacity': { was: '0.85' },
+  // the mood chart's labels, .mood-chart text's 0.6 of --viz-ink: 3.74:1
+  '--viz-label-opacity': { was: '0.6', now: '0.8' },
 }
 
 describe('the two palettes in 01-base.css', () => {
@@ -158,8 +177,13 @@ describe('the two palettes in 01-base.css', () => {
     expect(themed.filter(p => !(p in dark))).toEqual([])
   })
 
-  it('paints dark exactly as it was', () => {
-    expect(dark).toEqual(DARK)
+  it('paints dark exactly as it was, but for the few inks changed on purpose', () => {
+    const changed = Object.fromEntries(Object.entries(DARK_CHANGED).flatMap(([p, c]) => (c.now === undefined ? [] : [[p, c.now]])))
+    expect(dark).toEqual({ ...DARK, ...changed })
+    for (const [p, c] of Object.entries(DARK_CHANGED)) {
+      expect(DARK, p).not.toHaveProperty(p)
+      expect(c.now, p).not.toBe(c.was)
+    }
     for (const [p, v] of Object.entries(FIXED)) expect(light[p], p).toBe(v)
   })
 
@@ -177,30 +201,34 @@ describe('the two palettes in 01-base.css', () => {
 
 type Rgba = [number, number, number, number]
 
-/** A light value as a colour: a hex, an rgba(), a var(), or one of those color-mix()ed with transparent. */
-function colour(value: string): Rgba {
+type Palette = Record<string, string>
+/** A token's value in `palette`; dark falls back to :root for the fixed colours, declared once. */
+const valueIn = (palette: Palette, token: string) => palette[token] ?? light[token]
+
+/** A value as a colour: a hex, an rgba(), a var() read in `palette`, or one of those color-mix()ed with transparent. */
+function colour(value: string, palette: Palette = light): Rgba {
   const ref = /^var\((--[\w-]+)\)$/.exec(value)
-  if (ref) return colour(light[ref[1]])
+  if (ref) return colour(valueIn(palette, ref[1]), palette)
   const hex = parseHex(value)
   if (hex) return [...hex, 1]
   const rgba = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(value)
   if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])]
   const mix = /^color-mix\(in srgb, (.+) ([\d.]+)%, transparent\)$/.exec(value)
   if (mix) {
-    const [r, g, b, a] = colour(mix[1])
+    const [r, g, b, a] = colour(mix[1], palette)
     return [r, g, b, (a * Number(mix[2])) / 100]
   }
   throw new Error(`not a colour: ${value}`)
 }
 const hexOf = ([r, g, b]: Rgba) => `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`
-/** What a light token paints on a solid ground. */
-const over = (token: string, ground: string) => {
-  const c = colour(light[token])
+/** What a token paints on a solid ground, in light unless `palette` says otherwise. */
+const over = (token: string, ground: string, palette: Palette = light) => {
+  const c = colour(valueIn(palette, token), palette)
   return mixHex(hexOf(c), ground, c[3])
 }
-/** A light token that must be solid, as a hex. */
-const solid = (token: string) => {
-  const c = colour(light[token])
+/** A token that must be solid, as a hex, in light unless `palette` says otherwise. */
+const solid = (token: string, palette: Palette = light) => {
+  const c = colour(valueIn(palette, token), palette)
   expect(c[3], token).toBe(1)
   return hexOf(c)
 }
@@ -257,15 +285,16 @@ describe('the light palette reads (WCAG 2.x)', () => {
 
   it('reads on the inverse pill and on the accent and danger fills', () => {
     const inverse = solid('--inverse-bg')
-    for (const ink of ['--inverse-text', '--inverse-muted', '--accent']) expect(contrast(solid(ink), inverse), ink).toBeGreaterThanOrEqual(4.5)
+    for (const ink of ['--inverse-text', '--inverse-muted', '--inverse-accent']) expect(contrast(solid(ink), inverse), ink).toBeGreaterThanOrEqual(4.5)
     for (const fill of ['--accent', '--accent-hover']) expect(contrast(solid('--on-accent'), solid(fill)), fill).toBeGreaterThanOrEqual(4.5)
     expect(contrast(solid('--on-danger'), solid('--danger'))).toBeGreaterThanOrEqual(4.5)
     // an armed delete, hovered: its label on the danger button's wash and on a subtle button's
     for (const ground of [mixHex(solid('--danger'), surface, 0.08), surface2]) expect(contrast(solid('--on-armed-hover'), ground)).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('leaves a calendar pill’s time undimmed, since readableInk moves its ink only as far as 4.5:1', () => {
-    expect(light['--pill-time-opacity']).toBe('1')
+  it('never dims a calendar pill’s time, in either theme: readableInk moves its ink only as far as 4.5:1', () => {
+    expect(light).not.toHaveProperty('--pill-time-opacity')
+    expect(strip(read('03-board-calendar.css'))).not.toMatch(/\.cal-pill-time\s*\{[^}]*opacity/)
   })
 
   it('gives focus rings and chart series 3:1, at the strength each mark is drawn', () => {
@@ -292,6 +321,46 @@ describe('the light palette reads (WCAG 2.x)', () => {
       const ratio = contrast(at('--viz-empty', '--viz-empty-opacity', ground), ground)
       expect(ratio, name).toBeGreaterThanOrEqual(1.4)
       expect(ratio, name).toBeLessThan(3)
+    }
+  })
+})
+
+describe('the inks changed in dark now read there (WCAG 2.x)', () => {
+  const d = (token: string) => solid(token, dark)
+  const grounds: Record<string, string> = { '--bg': d('--bg'), '--surface': d('--surface'), '--surface-2': d('--surface-2'), '--surface-3': d('--surface-3') }
+  const accent = d('--accent')
+  // the same washes the light palette is held to
+  const washes: Record<string, string> = {
+    'accent 4% on --surface': mixHex(accent, grounds['--surface'], 0.04),
+    'accent 6% on --surface-2': mixHex(accent, grounds['--surface-2'], 0.06),
+    '--accent-soft on --surface': over('--accent-soft', grounds['--surface'], dark),
+    '--accent-soft on --surface-2': over('--accent-soft', grounds['--surface-2'], dark),
+    'accent 20% on --surface': mixHex(accent, grounds['--surface'], 0.2),
+    '--code-bg': d('--code-bg'),
+  }
+
+  it('gives muted text 4.5:1 on every ground and accent wash', () => {
+    const low = Object.entries({ ...grounds, ...washes })
+      .map(([name, ground]) => [name, contrast(d('--muted'), ground)] as const)
+      .filter(([, ratio]) => ratio < 4.5)
+      .map(([name, ratio]) => `--muted on ${name}: ${ratio.toFixed(2)}`)
+    expect(low).toEqual([])
+  })
+
+  it('reads on the light pill dark draws for a chosen chip and the toast', () => {
+    for (const ink of ['--inverse-text', '--inverse-muted', '--inverse-accent']) expect(contrast(d(ink), d('--inverse-bg')), ink).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('gives an armed delete’s label 4.5:1 on the red, and on either hover wash', () => {
+    expect(contrast(d('--on-danger'), d('--danger'))).toBeGreaterThanOrEqual(4.5)
+    for (const ground of [mixHex(d('--danger'), grounds['--surface'], 0.08), grounds['--surface-2']]) expect(contrast(d('--on-armed-hover'), ground)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('gives the mood chart’s labels 4.5:1 on the card, in both themes', () => {
+    for (const [name, palette] of [['light', light], ['dark', dark]] as const) {
+      const card = solid('--surface', palette)
+      const label = mixHex(solid('--viz-ink', palette), card, Number(valueIn(palette, '--viz-label-opacity')))
+      expect(contrast(label, card), name).toBeGreaterThanOrEqual(4.5)
     }
   })
 })

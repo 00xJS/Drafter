@@ -248,7 +248,14 @@
 .bill-row.overdue {
   border-color: var(--danger);
 }
-.bill-row.paid {
+/* A paid bill steps back in ink, not opacity, which took its meta line under
+   4.5:1: its title and amount take the quiet ink the meta already has, and
+   only the glyph fades. */
+.bill-row.paid .bill-copy strong,
+.bill-row.paid .bill-amount {
+  color: var(--muted);
+}
+.bill-row.paid .bill-glyph {
   opacity: 0.75;
 }
 .bill-main {

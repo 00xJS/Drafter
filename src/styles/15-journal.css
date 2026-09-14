@@ -217,10 +217,11 @@
      low-vision reader needs (the anti-zoom note at the end of this sheet). */
   touch-action: pan-y pinch-zoom;
 }
-/* fixed SVG geometry, like .tick-label above */
+/* fixed SVG geometry, like .tick-label above. The labels' strength is a
+   token: 0.6 of dark's softer ink fell under 4.5:1. */
 .mood-chart text {
   fill: currentColor;
-  opacity: 0.6;
+  opacity: var(--viz-label-opacity);
   font-size: 10px;
 }
 .mood-chart .mood-grid {
