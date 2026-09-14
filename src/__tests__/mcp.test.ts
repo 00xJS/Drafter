@@ -831,3 +831,48 @@ describe('place categories over MCP are the app\'s own list', () => {
     expect(sent).toEqual([])
   })
 })
+
+describe('a place’s address and other names over MCP', () => {
+  const pret = { kind: 'place', id: 'pret', name: 'Pret A Manger', category: 'cafe', aliases: ['Pret', 'The Sandwich Shop'], address: '1 Oxford St, London', createdAt: STAMP, updatedAt: STAMP }
+  const withPret = () => [...household(), { user_id: OWNER, data: pret }]
+
+  it('create_place keeps both tidied, and says so', async () => {
+    const sent = serveHousehold(household())
+    const out = (await tool('create_place').run(
+      { name: 'Wagamama', category: 'restaurant', address: ' 4 Streatham St,  London ', aliases: ['Waga', 'waga', 'Wagamama', ''] },
+      ctxFor(),
+    )) as { created: { address: string; aliases: string[] } }
+    expect(out.created).toMatchObject({ address: '4 Streatham St, London', aliases: ['Waga'] })
+    expect(sent.find(i => i.kind === 'place')).toMatchObject({ name: 'Wagamama', address: '4 Streatham St, London', aliases: ['Waga'] })
+    // their descriptions tell an assistant what the two are for
+    const schema = tool('create_place').inputSchema.properties as Record<string, { type: string }>
+    expect([schema.address.type, schema.aliases.type]).toEqual(['string', 'array'])
+  })
+
+  it('list_places gives each place its address and other names: null and [] when it has none', async () => {
+    serveHousehold(withPret())
+    const { places } = (await tool('list_places').run({}, ctxFor())) as { places: { id: string; address: string | null; aliases: string[] }[] }
+    expect(places.find(p => p.id === 'pret')).toMatchObject({ address: '1 Oxford St, London', aliases: ['Pret', 'The Sandwich Shop'] })
+    expect(places.find(p => p.id === 'nopi')).toMatchObject({ address: null, aliases: [] })
+    expect(summarizePlace({ id: 'x', name: 'X', category: 'other', aliases: 'Pret' })).toMatchObject({ aliases: [] })
+  })
+
+  it('refuses a new place named what another already goes by, and other names that are not a list', async () => {
+    const sent = serveHousehold(withPret())
+    await expect(tool('create_place').run({ name: 'the sandwich shop' }, ctxFor())).rejects.toThrow(/"the sandwich shop" is another name for "Pret A Manger" \(id pret\)/)
+    await expect(tool('create_place').run({ name: 'NOPI' }, ctxFor())).rejects.toThrow(/"Nopi" already exists \(id nopi\)/)
+    await expect(tool('create_place').run({ name: 'Wagamama', aliases: 'Waga' }, ctxFor())).rejects.toThrow(/aliases must be a list of names/)
+    expect(sent).toEqual([])
+  })
+
+  it('finds a saved place for a task, a visit or a bought meal by another name, and for a task by its address', async () => {
+    const places = withPret().map(r => r.data)
+    expect(resolveContext(places, { placeName: 'The Sandwich Shop' }).placeId).toBe('pret')
+    expect(resolveContext(places, { placeName: '1 Oxford St, London' }).placeId).toBe('pret')
+    const sent = serveHousehold(withPret())
+    await tool('log_visit').run({ placeName: 'the sandwich shop', note: 'Lunch' }, ctxFor())
+    expect(sent.find(i => i.kind === 'task')).toMatchObject({ status: 'done', placeId: 'pret' })
+    await tool('plan_meal').run({ date: DAY, slot: 'lunch', out: true, placeName: 'THE SANDWICH SHOP' }, ctxFor())
+    expect(sent.find(i => i.kind === 'meal')).toMatchObject({ out: true, placeId: 'pret' })
+  })
+})

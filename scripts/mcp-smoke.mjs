@@ -662,10 +662,12 @@ async function main() {
     ])
 
     // --------------------------------------------------------------- places
-    const place = (await call('create_place', { name: 'Nopi', category: 'restaurant', cadenceDays: 30, notes: 'Book ahead' })).created
+    const place = (await call('create_place', { name: 'Nopi', category: 'restaurant', cadenceDays: 30, notes: 'Book ahead', address: '21-22 Warwick St,  London', aliases: ['Nopi Soho', 'nopi'] })).created
     const placeRow = row(place.id)
     eq(placeRow?.kind, 'place', 'create_place stored a place row')
     eq(placeRow.data.cadenceDays, 30, 'the place kept its cadence')
+    eq(placeRow.data.address, '21-22 Warwick St, London', 'the place kept its address, on one line')
+    eq(JSON.stringify(placeRow.data.aliases), '["Nopi Soho"]', 'the place kept its other name, and not its own name over again')
     eq(placeRow.user_id, OWNER, 'the place belongs to the owner')
 
     // ---------------------------------------------------------------- tasks
@@ -717,6 +719,8 @@ async function main() {
     const places = await call('list_places', {})
     const nopi = places.places.find(p => p.id === place.id)
     eq(nopi?.outingsAllTime, 1, 'list_places counts the outing it just logged')
+    eq(nopi?.address, '21-22 Warwick St, London', 'list_places gives the place its address')
+    eq(JSON.stringify(nopi?.aliases), '["Nopi Soho"]', 'list_places gives the place its other names')
 
     // --------------------------------------------------------------- kitchen
     const d = new Date()

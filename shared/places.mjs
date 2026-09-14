@@ -31,24 +31,78 @@ export function normalisePlaceText(s) {
     .trim()
 }
 
+/** The most other names a place keeps. */
+export const MAX_PLACE_ALIASES = 12
+const ALIAS_MAX = 80
+const ADDRESS_MAX = 200
+
+/** One line with single spaces, cut to `max` characters. */
+const oneLine = (s, max) => String(s).replace(/\s+/g, ' ').trim().slice(0, max).trim()
+
+/** A place's address as it is kept: one line, or undefined when there is none. */
+export function tidyPlaceAddress(v) {
+  return typeof v === 'string' ? oneLine(v, ADDRESS_MAX) || undefined : undefined
+}
+
 /**
- * Find the saved place a free-text location refers to. Exact name (or alias)
- * first; then a place whose whole name appears as a word sequence inside the
- * text ("Nopi" in "NOPI, 21 Warwick St"). Never fuzzier than that — a wrong
- * match would log an outing somewhere you never went.
+ * A place's other names ("Pret" for Pret A Manger) as the editor, the
+ * sanitizer and the MCP server all keep them: each on one line, each once
+ * however it is capitalised, never the place's own name over again, and at
+ * most MAX_PLACE_ALIASES. Undefined when none are left, so a place without
+ * any carries no empty list.
+ */
+export function tidyPlaceAliases(v, name) {
+  if (!Array.isArray(v)) return undefined
+  const seen = new Set([oneLine(name ?? '', ALIAS_MAX).toLowerCase()])
+  const out = []
+  for (const raw of v) {
+    if (typeof raw !== 'string') continue
+    const alias = oneLine(raw, ALIAS_MAX)
+    if (!alias || seen.has(alias.toLowerCase())) continue
+    seen.add(alias.toLowerCase())
+    out.push(alias)
+    if (out.length === MAX_PLACE_ALIASES) break
+  }
+  return out.length ? out : undefined
+}
+
+/**
+ * The shortest name, other name or address that is looked for inside a
+ * longer location. One letter ("Q") is too little to go on there: it links
+ * only a location that is exactly it.
+ */
+const MIN_TERM = 2
+
+/** What a place goes by, normalised: its name, then its other names, then its address. */
+function placeTerms(p) {
+  const aliases = Array.isArray(p.aliases) ? p.aliases : []
+  return [p.name, ...aliases, p.address].map(normalisePlaceText).filter(Boolean)
+}
+
+/**
+ * Find the saved place a free-text location refers to: an event's location,
+ * a question, a place an assistant names. A place goes by its name, its other
+ * names and its address, and the text finds it by any of them.
+ *
+ * The whole text being one of them wins first, a place's own name before
+ * anyone's other name or address. Then one of them as a run of whole words
+ * inside the text ("Nopi" in "NOPI, 21 Warwick St", an address in "Nopi, 21
+ * Warwick St, London"), never part of a word, so an other name "Bo" is not
+ * found in "Bob's Diner". Never fuzzier than that — a wrong match would log
+ * an outing somewhere you never went.
  */
 export function matchPlace(text, places) {
   const needle = normalisePlaceText(text)
   if (!needle) return null
   const list = (places ?? []).filter(p => p && !p.deletedAt && p.name)
-  const exact = list.find(p => normalisePlaceText(p.name) === needle || (p.aliases ?? []).some(a => normalisePlaceText(a) === needle))
+  const exact = list.find(p => normalisePlaceText(p.name) === needle) ?? list.find(p => placeTerms(p).includes(needle))
   if (exact) return exact
   // a location string usually opens with the venue: the earliest-named place
   // wins, and only between places starting at the same word does the longer win
   const padded = ` ${needle} `
   const contained = list
-    .map(p => ({ p, n: normalisePlaceText(p.name) }))
-    .filter(({ n }) => n.length >= 3)
+    .flatMap(p => placeTerms(p).map(n => ({ p, n })))
+    .filter(({ n }) => n.length >= MIN_TERM)
     .map(x => ({ ...x, at: padded.indexOf(` ${x.n} `) }))
     .filter(x => x.at >= 0)
     .sort((a, b) => a.at - b.at || b.n.length - a.n.length)

@@ -24,7 +24,7 @@ const gone = place('gone', 'The Ivy', { deletedAt: STAMP })
 /** Saturday 12 September 2026, local time. */
 const at = (h: number) => new Date(2026, 8, 12, h).toISOString()
 const event = (id: string, location?: string): CalendarEvent => ({ id, sourceId: 'family', title: `Event ${id}`, start: at(13), end: at(14), allDay: false, location })
-const events = [event('a', 'NOPI, 21 Warwick St'), event('b', 'Hyde Park, W2'), event('c', 'The Moon'), event('d', 'The Ivy')]
+const events = [event('a', 'NOPI, 21 Warwick St'), event('b', 'Hyde Park, W2'), event('c', 'The Moon'), event('d', 'The Ivy'), event('e', '1 Oxford St, London')]
 
 const render = (view: CalendarView, places: Place[] = [nopi, park, gone]) =>
   text(
@@ -81,6 +81,17 @@ describe('calendar rows mark a place you know', () => {
     expect(html).toMatch(/title="Event a · [^"]+ · 🍝 NOPI, 21 Warwick St"/)
     expect(html).toMatch(new RegExp(`title="Event b · [^"]+ · ${PLACE_CATEGORY_META.outdoors.emoji} Hyde Park, W2"`))
     expect(html).toMatch(/title="Event c · [^"]+ – [^"]+ · The Moon"/)
+  })
+
+  it('knows a place by another name it goes by, or by its address', () => {
+    const moon = place('moon', 'Moonbase Diner', { emoji: '🌙', aliases: ['The Moon'] })
+    const pret = place('pret', 'Pret A Manger', { emoji: '🥪', category: 'cafe', address: '1 Oxford St, London' })
+    const metas = [...render('week', [nopi, park, moon, pret]).matchAll(/<span class="cal-item-meta">([^<]*)<\/span>/g)].map(m => m[1])
+    expect(metas.find(m => m.endsWith('The Moon'))).toMatch(/^[^·]+ · 🌙 The Moon$/)
+    expect(metas.find(m => m.endsWith('1 Oxford St, London'))).toMatch(/^[^·]+ · 🥪 1 Oxford St, London$/)
+    // without them, both read as they did
+    const plain = [...render('week').matchAll(/<span class="cal-item-meta">([^<]*)<\/span>/g)].map(m => m[1])
+    expect(plain.find(m => m.endsWith('1 Oxford St, London'))).toMatch(/^[^·]+ · 1 Oxford St, London$/)
   })
 
   it('with no places saved, every location reads as it did', () => {

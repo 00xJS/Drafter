@@ -7,7 +7,7 @@ import { AttendancePicker, SaveLocation, canLogAttendance, locationPlaceName, pl
 import { SomewhereNew } from '../components/MealSlotRow'
 import { PlaceKindChooser } from '../components/PlaceKindChooser'
 import { NewPlaceStep, PlacePicker, enterPlace } from '../components/PlacePicker'
-import { matchPlace, newPlace, placeFor } from '../places'
+import { mapsUrl, matchPlace, newPlace, placeFor } from '../places'
 import { PLACE_CATEGORIES, PLACE_CATEGORY_META, type CalendarEvent, type Person, type Place, type PlaceCategory } from '../types'
 
 // Somewhere new asks what kind of place it is. A task's Where, Saw them, the
@@ -233,18 +233,26 @@ describe('Who was there?', () => {
     expect(onKind).toHaveBeenCalledWith('outdoors')
   })
 
-  it('saves the kind picked, named for the venue, the full address in its notes', () => {
+  it('saves the kind picked, named for the venue, the whole location as its address', () => {
     const opts = { id: 'p9', color: '#0ea5e9', now: new Date(STAMP) }
-    expect(placeFromLocation('Dishoom, 7 Boundary St, London', 'restaurant', opts)).toEqual({
+    const dishoom = placeFromLocation('Dishoom,  7 Boundary St, London ', 'restaurant', opts)
+    expect(dishoom).toEqual({
       kind: 'place',
       id: 'p9',
       name: 'Dishoom',
       category: 'restaurant',
       color: '#0ea5e9',
-      notes: 'Dishoom, 7 Boundary St, London',
+      address: 'Dishoom, 7 Boundary St, London',
       createdAt: STAMP,
       updatedAt: STAMP,
     })
+    // the notes stay yours, and Open in Maps searches the venue at that address
+    expect(dishoom.notes).toBeUndefined()
+    expect(mapsUrl(dishoom, true)).toBe('https://maps.apple.com/?q=Dishoom%2C%207%20Boundary%20St%2C%20London')
+    // the same location on the next event links back to it, and a piece of it never does
+    expect(placeAtLocation('Dishoom, 7 Boundary St, London', [dishoom])).toBe(dishoom)
+    expect(placeAtLocation('Boundary St', [dishoom])).toBeUndefined()
+    // a location that is only the venue has nothing more to keep
     expect(placeFromLocation('Hyde Park', 'outdoors', opts)).toEqual({ kind: 'place', id: 'p9', name: 'Hyde Park', category: 'outdoors', color: '#0ea5e9', createdAt: STAMP, updatedAt: STAMP })
     expect(locationPlaceName(', 12 High St')).toBe(', 12 High St')
   })

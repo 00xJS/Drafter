@@ -1,13 +1,54 @@
 import { Meal, PLACE_CATEGORY_META, Person, Place, PlaceCategory, Task } from './types'
 import { monthsAndTrend, visitSummary, visitsFor } from './people'
-import { Outing, PlaceCadenceState, PlaceCadenceStatus, matchPlace as sharedMatchPlace, normalisePlaceText, placeCadenceStatus, outingsAt as sharedOutingsAt } from '../shared/places.mjs'
+import {
+  Outing,
+  PlaceCadenceState,
+  PlaceCadenceStatus,
+  matchPlace as sharedMatchPlace,
+  normalisePlaceText,
+  placeCadenceStatus,
+  outingsAt as sharedOutingsAt,
+  tidyPlaceAddress,
+  tidyPlaceAliases,
+} from '../shared/places.mjs'
 
-export { normalisePlaceText, placeCadenceStatus }
+export { normalisePlaceText, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases }
 export type { Outing, PlaceCadenceState, PlaceCadenceStatus }
 
-/** The saved place a free-text location (calendar LOCATION, a note) refers to, or undefined. */
+/**
+ * The saved place a free-text location (calendar LOCATION, a note) refers to,
+ * or undefined: by its name, one of its other names or its address, as whole
+ * words (rule in shared/places.mjs).
+ */
 export function matchPlace(text: string | null | undefined, places: Place[]): Place | undefined {
   return sharedMatchPlace(text, places) ?? undefined
+}
+
+/** The editor's Other names box, "Pret, Pret A Manger": split at the commas and tidied as every other name is. */
+export function placeAliasesFromText(text: string, name: string): string[] | undefined {
+  return tidyPlaceAliases(text.split(','), name)
+}
+
+/**
+ * Whether Open in Maps goes to Apple Maps: on an iPhone, iPad or Mac, the
+ * iPhone app included (its web view says iPhone). iPadOS Safari says it is a
+ * Mac, which the Mac test covers. Everywhere else gets Google Maps.
+ */
+export function prefersAppleMaps(nav: { userAgent?: string; platform?: string } | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean {
+  if (!nav) return false
+  return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(nav.userAgent ?? '') || /^(Mac|iPhone|iPad|iPod)/i.test(nav.platform ?? '')
+}
+
+/** Open in Maps: a search for the place's address when it has one, else for its name. */
+export function mapsUrl(place: Pick<Place, 'name' | 'address'>, apple: boolean): string {
+  const query = encodeURIComponent(place.address?.trim() || place.name.trim())
+  return apple ? `https://maps.apple.com/?q=${query}` : `https://www.google.com/maps/search/?api=1&query=${query}`
+}
+
+/** Places' find box: the lower-cased query in a place's name, other names, address or notes. */
+export function findsPlace(p: Place, needle: string): boolean {
+  if (!needle) return true
+  return [p.name, ...(p.aliases ?? []), p.address ?? '', p.notes ?? ''].some(s => s.toLowerCase().includes(needle))
 }
 
 /**
@@ -70,15 +111,16 @@ export function placeSearch(query: string, places: readonly Place[]): { name: st
  * it here, and the kind is required — there is none to fall back on, so a place
  * is never filed under one nobody chose.
  */
-export function newPlace(name: string, category: PlaceCategory, opts: { id: string; color: string; now: Date; notes?: string }): Place {
+export function newPlace(name: string, category: PlaceCategory, opts: { id: string; color: string; now: Date; address?: string }): Place {
   const stamp = opts.now.toISOString()
+  const address = tidyPlaceAddress(opts.address)
   return {
     kind: 'place',
     id: opts.id,
     name: name.trim().replace(/\s+/g, ' '),
     category,
     color: opts.color,
-    ...(opts.notes ? { notes: opts.notes } : {}),
+    ...(address ? { address } : {}),
     createdAt: stamp,
     updatedAt: stamp,
   }

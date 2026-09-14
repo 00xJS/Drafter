@@ -48,9 +48,13 @@ export function placeAtLocation(location: string | undefined, places: Place[]): 
   return matchPlace(location, places) ?? placeByName(locationPlaceName(location), places)
 }
 
-/** An event's location saved as a place of the kind you picked: named for the venue, the full address kept in its notes. */
+/**
+ * An event's location saved as a place of the kind you picked: named for the
+ * venue, with the whole location as its address when it holds more than the
+ * venue (where the notes used to keep it), which is what Open in Maps searches.
+ */
 export function placeFromLocation(location: string, kind: PlaceCategory, opts: { id: string; color: string; now: Date }): Place {
-  return newPlace(locationPlaceName(location), kind, { ...opts, notes: location.includes(',') ? location.trim() : undefined })
+  return newPlace(locationPlaceName(location), kind, { ...opts, address: location.includes(',') ? location : undefined })
 }
 
 /**
