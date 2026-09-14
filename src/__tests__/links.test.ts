@@ -186,8 +186,8 @@ describe('Home Screen quick actions', () => {
     expect(items.find(i => i.type === 'wardrobe')).toMatchObject({ title: 'Wardrobe', icon: 'tshirt' })
   })
 
-  it('keeps Plan my day and Wardrobe among the first four, where iOS may stop', () => {
-    // Today goes last: Plan my day opens over Today too, so it is the one that can be spared
+  it('keeps Plan my day and Wardrobe among the first four, the only ones iOS shows', () => {
+    // Today goes last, and off the menu: Plan my day opens over Today too, so it is the one that can be spared
     expect(items.slice(0, 4).map(i => i.type)).toEqual(['journal', 'new', 'plan', 'wardrobe'])
   })
 

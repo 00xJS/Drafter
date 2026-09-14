@@ -216,8 +216,9 @@ What the shell adds over the installed web app:
   (`drafter://open?plan=day`: the day's planning sheet over Home → Today,
   writing nothing until you press its button), *Wardrobe*
   (`drafter://open?view=wardrobe`) and *Today* (`drafter://open?view=today`),
-  one gesture from the Home Screen, cold start or warm. iOS may show only an
-  app's first four, so *Today*, where *Plan my day* opens too, is listed last.
+  one gesture from the Home Screen, cold start or warm. iOS shows only an
+  app's first four, so *Today*, where *Plan my day* opens too, is listed last
+  and is the one left off the menu.
 - Syncs whenever the app comes to the foreground; haptics when a task
   completes and at each point a swipe latches, so you can defer one-handed
   without watching; the keyboard, pickers and status bar follow Settings →
