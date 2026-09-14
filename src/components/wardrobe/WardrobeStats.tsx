@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatMoney } from '../../bills'
 import { graphicInk, heatStyle } from '../../contrast'
 import { daysAgo, daysBetween, shortDay } from '../../kitchen'
 import { countOf } from '../../people'
@@ -7,6 +8,8 @@ import type { Garment, Outfit } from '../../types'
 import { dateKey } from '../../utils'
 import {
   NOT_WORN_DAYS,
+  wardrobeCosts,
+  lookCalendar,
   mostWorn,
   neverWorn,
   notWornLately,
@@ -14,7 +17,9 @@ import {
   repeatedOutfits,
   wardrobeTiles,
   wardrobeYearReport,
+  wearStreaks,
   wearsByMonth,
+  yourUniform,
   type WearIndex,
   type WearWindow,
 } from '../../wardrobe'
@@ -22,6 +27,9 @@ import { StatTile, TrendBadge } from '../bits'
 import { Collage, GarmentPhoto } from './GarmentPhoto'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** The photo calendar's weeks run Sunday to Saturday, as the Calendar's do. */
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const PLACES = ['First', 'Second', 'Third']
 const SPANS: { key: WearWindow; label: string }[] = [
   { key: 30, label: '30 days' },
   { key: 365, label: '12 months' },
@@ -36,6 +44,8 @@ interface Props {
   onOpenPiece(id: string): void
   onRetire(g: Garment): void
   onSaveOutfit(pieces: string[]): void
+  /** Outfit on a day: the photo calendar's days open it, to see a look or log one. */
+  onGoDay?(day: string): void
   /** The clock the trends are read from; the tests hand one in. */
   now?: Date
 }
@@ -46,6 +56,16 @@ interface Props {
  * chart's own.
  */
 const mark = (g: Garment, theme: Theme) => (g.color ? graphicInk(g.color, theme) : 'var(--viz-series-1)')
+
+/** "Watch", "Trainers and Watch", "Mac, Trainers and Watch". */
+const andList = (names: string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
+
+/** A "YYYY-MM" month moved by `delta` months. */
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
 
 /** Days logged in each month of the year, on the shared chart styles. */
 function MonthBars({ months, current }: { months: number[]; current: number }) {
@@ -76,6 +96,104 @@ function MonthBars({ months, current }: { months: number[]; current: number }) {
   )
 }
 
+/**
+ * The month in photos: Sunday-to-Saturday weeks with each day's look as a
+ * small collage. A day that has come opens Outfit on it — to see its look, or
+ * to log one it never had; a day still to come is only its number.
+ */
+function PhotoCalendar({ ix, byId, onGoDay }: { ix: WearIndex; byId: ReadonlyMap<string, Garment>; onGoDay?(day: string): void }) {
+  const thisMonth = ix.dayKey.slice(0, 7)
+  const [month, setMonth] = useState(thisMonth)
+  const [y, m] = month.split('-').map(Number)
+  const cells = lookCalendar(ix, y, m)
+  const logged = cells.filter(c => c.look).length
+  return (
+    <section className="chart-card wardrobe-photo-cal">
+      <header className="chart-head">
+        <div>
+          <h3>Photo calendar</h3>
+          <p className="chart-sub">Each day’s look · {countOf(logged, 'day')} logged</p>
+        </div>
+        <span className="segmented">
+          <button type="button" className="seg" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
+            ‹
+          </button>
+          <button type="button" className="seg on">
+            {MONTHS[m - 1]} {y}
+          </button>
+          <button type="button" className="seg" aria-label="Next month" disabled={month >= thisMonth} onClick={() => setMonth(shiftMonth(month, 1))}>
+            ›
+          </button>
+        </span>
+      </header>
+      <div className="photo-cal-head" aria-hidden="true">
+        {WEEKDAY_INITIALS.map((d, i) => (
+          <span key={i}>{d}</span>
+        ))}
+      </div>
+      <ol className="photo-cal" aria-label={`${MONTHS[m - 1]} ${y}`}>
+        {cells.map((c, i) => {
+          if (!c.day) return <li key={`pad-${i}`} className="photo-cal-pad" aria-hidden="true" />
+          const day = c.day
+          const come = day <= ix.dayKey
+          const what = c.look ? `${outfitLabel(c.look.garmentIds, byId)}${c.looks > 1 ? `, and ${countOf(c.looks - 1, 'more look')}` : ''}` : 'nothing logged'
+          const face = (
+            <>
+              {c.look && <Collage ids={c.look.garmentIds} byId={byId} />}
+              <span className="photo-cal-num">{Number(day.slice(8))}</span>
+            </>
+          )
+          return (
+            <li key={day} className={['photo-cal-cell', c.look ? 'has-look' : '', day === ix.dayKey ? 'today' : '', come ? '' : 'later'].filter(Boolean).join(' ')}>
+              {come && onGoDay ? (
+                <button type="button" className="photo-cal-day" aria-label={`${shortDay(day, ix.dayKey)}: ${what}`} onClick={() => onGoDay(day)}>
+                  {face}
+                </button>
+              ) : (
+                <span className="photo-cal-day" title={come ? `${shortDay(day, ix.dayKey)}: ${what}` : undefined}>
+                  {face}
+                </span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+/**
+ * The three most worn of all time on a podium: first in the middle and raised
+ * highest, second to its left, third to its right. A place nobody has reached
+ * yet is an empty step, so first stays in the middle with one or two pieces.
+ */
+function Podium({ top, onOpen }: { top: { garment: Garment; count: number }[]; onOpen(id: string): void }) {
+  return (
+    <ol className="podium">
+      {top.map((r, i) => (
+        <li key={r.garment.id} className={`podium-place rank-${i + 1}`}>
+          <button type="button" className="podium-piece" aria-label={`${PLACES[i]}: ${r.garment.name}, ${countOf(r.count, 'day')}`} onClick={() => onOpen(r.garment.id)}>
+            <GarmentPhoto garment={r.garment} className="podium-photo" />
+            <span className="podium-name">{r.garment.name}</span>
+            <span className="podium-count">
+              {countOf(r.count, 'day')}
+              {r.garment.archivedAt ? ' · Retired' : ''}
+            </span>
+          </button>
+          <span className="podium-step" aria-hidden="true">
+            {i + 1}
+          </span>
+        </li>
+      ))}
+      {PLACES.slice(top.length).map((place, j) => (
+        <li key={place} className={`podium-place rank-${top.length + j + 1} vacant`} aria-hidden="true">
+          <span className="podium-step" />
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line: string; onOpen(id: string): void; onRetire(g: Garment): void }) {
   return (
     <li className="wardrobe-list-row">
@@ -94,24 +212,32 @@ function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line:
 }
 
 /**
- * Stats: what you wear, counted in days — the most worn over 30 days, 12
- * months or all time; what has rested 60 days or more; what was never worn;
- * the days logged each month, with each piece's year; and the outfits you
- * repeat most. Retired pieces still count in the history, and nowhere else.
+ * Stats: what you wear, counted in days — the streaks; the month in photos;
+ * the podium of the three most worn of all time; the most worn over 30 days,
+ * 12 months or all time; what has rested 60 days or more; what was never
+ * worn; the days logged each month, with each piece's year; your uniform and
+ * the other outfits you repeat; and the cost per wear of the pieces with a
+ * price. Retired pieces still count in the history, and nowhere else.
  */
-export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, now = new Date() }: Props) {
+export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, onGoDay, now = new Date() }: Props) {
   const theme = useTheme()
   const [span, setSpan] = useState<WearWindow>(30)
   const thisYear = Number(ix.dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
   const tiles = wardrobeTiles(garments, ix)
+  const streaks = wearStreaks(ix)
+  const podium = mostWorn(garments, ix, 'all', 3)
   const top = mostWorn(garments, ix, span)
   const most = Math.max(1, ...top.map(r => r.count))
   const rested = notWornLately(garments, ix)
   const never = neverWorn(garments, ix)
   const months = wearsByMonth(ix, year, now)
   const report = wardrobeYearReport(garments, ix, year, now).slice(0, 20)
-  const repeats = repeatedOutfits(ix, byId, outfits).slice(0, 5)
+  const uniform = yourUniform(ix, byId, outfits)
+  // your uniform heads the list, so the rest follow it: five in all, as before
+  const repeats = repeatedOutfits(ix, byId, outfits).slice(1, 5)
+  const cost = wardrobeCosts(garments, ix)
+  const streakSub = ix.looks.has(ix.dayKey) ? 'logged in a row, today too' : streaks.current > 0 ? 'log today to keep it going' : 'log a day to start one'
 
   return (
     <div className="wardrobe-stats">
@@ -119,7 +245,23 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
         <StatTile label="Clothes" value={String(tiles.pieces)} sub="in use; retired ones aside" />
         <StatTile label="Days logged" value={`${tiles.loggedThisMonth} of ${tiles.daysThisMonth}`} sub="this month so far" />
         <StatTile label="Worn lately" value={`${tiles.wornLately} of ${tiles.pieces}`} sub="pieces worn in the last 90 days" />
+        <StatTile label="Streak" value={countOf(streaks.current, 'day')} sub={streakSub} />
+        <StatTile label="Best streak" value={countOf(streaks.best, 'day')} sub="logged in a row" />
       </div>
+
+      <PhotoCalendar ix={ix} byId={byId} onGoDay={onGoDay} />
+
+      {podium.length > 0 && (
+        <section className="chart-card">
+          <header className="chart-head">
+            <div>
+              <h3>Top three</h3>
+              <p className="chart-sub">Your most worn of all time, in days</p>
+            </div>
+          </header>
+          <Podium top={podium} onOpen={onOpenPiece} />
+        </section>
+      )}
 
       <section className="chart-card">
         <header className="chart-head">
@@ -271,29 +413,90 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
             <p className="chart-sub">The same top and bottom, or one-piece, whatever went with them</p>
           </div>
         </header>
-        {repeats.length === 0 ? (
+        {!uniform ? (
           <p className="empty">Wear the same top and bottom on two days and they show here.</p>
         ) : (
-          <ul className="wardrobe-repeats">
-            {repeats.map(r => (
-              <li key={r.key} className="wardrobe-repeat">
-                <Collage ids={r.garmentIds} byId={byId} />
-                <span className="wardrobe-repeat-text">
-                  <span className="wardrobe-list-name">{r.outfit?.name || outfitLabel(r.garmentIds, byId)}</span>
-                  <small className="muted">
-                    ×{r.days} · last {shortDay(r.lastWorn, ix.dayKey)}
-                  </small>
-                </span>
-                {!r.outfit && (
-                  <button type="button" className="btn subtle" onClick={() => onSaveOutfit(r.garmentIds)}>
+          <>
+            <div className="wardrobe-uniform">
+              <Collage ids={uniform.garmentIds} byId={byId} />
+              <span className="wardrobe-uniform-text">
+                <span className="wardrobe-uniform-label">Your uniform</span>
+                <span className="wardrobe-list-name">{uniform.outfit?.name || outfitLabel(uniform.garmentIds, byId)}</span>
+                <small className="muted">
+                  ×{uniform.days} · last {shortDay(uniform.lastWorn, ix.dayKey)}
+                </small>
+                <small className="muted">
+                  {Math.round(uniform.share * 100)}% of the days you logged
+                  {uniform.usually.length > 0 ? ` · usually with ${andList(uniform.usually.map(g => g.name))}` : ''}
+                </small>
+                {!uniform.outfit && (
+                  <button type="button" className="btn subtle" onClick={() => onSaveOutfit(uniform.garmentIds)}>
                     Save as outfit
                   </button>
                 )}
+              </span>
+            </div>
+            {repeats.length > 0 && (
+              <ul className="wardrobe-repeats">
+                {repeats.map(r => (
+                  <li key={r.key} className="wardrobe-repeat">
+                    <Collage ids={r.garmentIds} byId={byId} />
+                    <span className="wardrobe-repeat-text">
+                      <span className="wardrobe-list-name">{r.outfit?.name || outfitLabel(r.garmentIds, byId)}</span>
+                      <small className="muted">
+                        ×{r.days} · last {shortDay(r.lastWorn, ix.dayKey)}
+                      </small>
+                    </span>
+                    {!r.outfit && (
+                      <button type="button" className="btn subtle" onClick={() => onSaveOutfit(r.garmentIds)}>
+                        Save as outfit
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      {cost.rows.length > 0 && (
+        <section className="chart-card">
+          <header className="chart-head">
+            <div>
+              <h3>Cost per wear</h3>
+              <p className="chart-sub">
+                {formatMoney(cost.spent)} across {countOf(cost.rows.length, 'piece')}
+                {cost.perWear !== undefined ? ` · ${formatMoney(cost.perWear)} a wear overall` : ''}
+              </p>
+            </div>
+          </header>
+          <ul className="wardrobe-list">
+            {cost.rows.slice(0, 20).map(r => (
+              <li key={r.garment.id} className="wardrobe-list-row">
+                <button type="button" className="wardrobe-list-piece" onClick={() => onOpenPiece(r.garment.id)}>
+                  <GarmentPhoto garment={r.garment} className="thumb-40" />
+                  <span>
+                    <span className="wardrobe-list-name">{r.garment.name}</span>
+                    <small className="muted">
+                      {formatMoney(r.price)} · {r.wears > 0 ? `worn on ${countOf(r.wears, 'day')}` : 'not worn yet'}
+                    </small>
+                  </span>
+                </button>
+                <span className="wardrobe-cpw">
+                  {r.perWear !== undefined ? (
+                    <>
+                      <strong>{formatMoney(r.perWear)}</strong> <small className="muted">a wear</small>
+                    </>
+                  ) : (
+                    <small className="muted">no wears yet</small>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   )
 }

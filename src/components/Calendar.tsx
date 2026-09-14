@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useId, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, WorkMode, BILL_KIND_META } from '../types'
+import { CalendarEvent, CalendarSource, Garment, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, Wear, WorkMode, BILL_KIND_META } from '../types'
 import { clock, dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -22,7 +22,11 @@ import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
+import { liveById, lookOn, orderPieces, outfitLabel, wearIndex } from '../wardrobe'
+import { Icon } from './Icon'
 import { Modal } from './Modal'
+import type { WardrobeOpen } from './planner/useNavigation'
+import { GarmentPhoto } from './wardrobe/GarmentPhoto'
 
 export type CalendarView = 'month' | 'week'
 
@@ -65,6 +69,15 @@ interface Props {
   onAttendance(ev: CalendarEvent): void
   onOpenProject(p: Project): void
   onPlanOccasion(person: Person, kind: 'birthday' | 'anniversary', at: Date): void
+  /**
+   * Your clothes and what you wore (personal): a day with a look shows it as
+   * one small line in the week list and the day sheet. Not in a month cell,
+   * which at 375pt is a seventh of the width and has no room for it.
+   */
+  garments?: Garment[]
+  wears?: Wear[]
+  /** Home → Wardrobe on a day. Without it no look is shown. */
+  onOpenWardrobe?(o: WardrobeOpen): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -116,6 +129,9 @@ export function Calendar({
   onAttendance,
   onOpenProject,
   onPlanOccasion,
+  garments,
+  wears,
+  onOpenWardrobe,
 }: Props) {
   // one anchor day drives both grids: its month, or the week around it
   const [cursor, setCursor] = useState(() => dayStart(new Date()))
@@ -170,6 +186,40 @@ export function Calendar({
 
   const todayKey = dateKey(new Date())
   const label = view === 'week' ? weekLabel(cursor) : cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
+  // What you wore: one small line on a day in the week list and the day sheet.
+  // Like a work day it is a property of the day, not an item among its events,
+  // and it stays out of the month grid, whose cells have no room for it at 375pt.
+  const pieces = useMemo(() => liveById(garments ?? []), [garments])
+  const worn = useMemo(() => wearIndex(wears ?? [], todayKey), [wears, todayKey])
+  const lookLine = (d: Date) => {
+    const k = dateKey(d)
+    const on = garments ? lookOn(worn, k) : undefined
+    if (!on || !onOpenWardrobe) return null
+    const what = outfitLabel(on.look.garmentIds, pieces)
+    const thumbs = orderPieces(on.look.garmentIds, pieces).slice(0, 3)
+    const verb = k === todayKey ? 'Wearing' : 'Wore'
+    const more = on.looks > 1 ? `, and ${on.looks - 1} more look${on.looks > 2 ? 's' : ''}` : ''
+    return (
+      <button
+        type="button"
+        className="cal-look"
+        aria-label={`${verb} ${what}${more}: open the wardrobe on ${fullDate(d)}`}
+        onClick={() => {
+          setSheetDay(null)
+          onOpenWardrobe({ date: k })
+        }}
+      >
+        <span className="cal-look-thumbs" aria-hidden="true">
+          {thumbs.length > 0 ? thumbs.map(id => <GarmentPhoto key={id} garment={pieces.get(id)!} />) : <Icon name="wardrobe" size={14} />}
+        </span>
+        <span className="cal-look-label">
+          <span className="muted">{verb}</span> {what}
+        </span>
+        {on.looks > 1 && <span className="cal-look-more">{on.looks} looks</span>}
+      </button>
+    )
+  }
   const shift = (delta: number) =>
     setCursor(c => (view === 'week' ? addDays(c, delta * 7) : new Date(c.getFullYear(), c.getMonth() + delta, 1)))
 
@@ -418,6 +468,7 @@ export function Calendar({
                     )}
                   </div>
                 </div>
+                {lookLine(d)}
                 {items.length > 0 && <ul className="cal-daylist">{items.map(item => weekRow(item, d))}</ul>}
               </section>
             )
@@ -514,6 +565,7 @@ export function Calendar({
           </header>
 
           <div className="cal-sheet-body">
+            {lookLine(sheetDay)}
             {sheetItems.length === 0 && <p className="empty">Nothing on this day yet.</p>}
             <ul className="cal-rows">
               {sheetItems.map(item => {

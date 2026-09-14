@@ -84,6 +84,15 @@ const STAYED = [
   'weatherLine',
   'outerwearFor',
   'hasOuterwear',
+  // the wardrobe in the palette, Ask, the Calendar, the Week review and Stats
+  'garmentTags',
+  'lookOn',
+  'wearStreaks',
+  'lookCalendar',
+  'yourUniform',
+  'priceOf',
+  'wardrobeCosts',
+  'wornBetween',
 ]
 
 describe('the wardrobe rules the server shares', () => {

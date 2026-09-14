@@ -1101,6 +1101,369 @@
   margin-top: 8px;
 }
 
+/* ----- the photo calendar: seven columns that hold at 375pt, about 43pt a day */
+.photo-cal-head,
+.photo-cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+.photo-cal-head {
+  margin-bottom: 3px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+.photo-cal {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.photo-cal-cell,
+.photo-cal-pad {
+  min-width: 0;
+  aspect-ratio: 4 / 5;
+}
+.photo-cal-day {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+}
+button.photo-cal-day:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.photo-cal-day .collage {
+  position: absolute;
+  inset: 0;
+  gap: 1px;
+  border-radius: 0;
+}
+.photo-cal-day .collage-badge {
+  display: none;
+}
+/* the date sits on a chip of its own, never on a photo's colours */
+.photo-cal-num {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+.photo-cal-cell.today .photo-cal-day {
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.photo-cal-cell.today .photo-cal-num {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.photo-cal-cell.later .photo-cal-day {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.6;
+}
+
+/* ----- the podium: first in the middle and highest, second on its left, third on its right */
+.podium {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+.podium-place {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 132px;
+  display: flex;
+  flex-direction: column;
+}
+/* the list reads first, second, third; only the drawing moves them */
+.podium-place.rank-1 {
+  order: 2;
+}
+.podium-place.rank-2 {
+  order: 1;
+}
+.podium-place.rank-3 {
+  order: 3;
+}
+.podium-piece {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 6px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+.podium-piece:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.podium-photo {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+}
+.rank-2 .podium-photo,
+.rank-3 .podium-photo {
+  width: 84%;
+}
+.podium-name {
+  max-width: 100%;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.podium-count {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.podium-step {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 700;
+}
+.rank-1 .podium-step {
+  height: 44px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.rank-2 .podium-step {
+  height: 30px;
+}
+.rank-3 .podium-step {
+  height: 20px;
+}
+
+/* ----- your uniform: the most repeated combination, larger, at the head of the list */
+.wardrobe-uniform {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.wardrobe-uniform:not(:last-child) {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.wardrobe-uniform .collage {
+  flex: none;
+  width: 72px;
+  height: 90px;
+}
+.wardrobe-uniform .collage-badge {
+  width: 22px;
+  height: 22px;
+}
+.wardrobe-uniform-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.wardrobe-uniform-text .wardrobe-list-name {
+  max-width: 100%;
+}
+.wardrobe-uniform-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.wardrobe-uniform-text .btn {
+  margin-top: 4px;
+}
+/* cost per wear: the figure at the row's end */
+.wardrobe-cpw {
+  flex: none;
+  font-size: 0.875rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ----- the wardrobe elsewhere: the palette, the Calendar and the Week review */
+
+/* a saved outfit in a search row, at the size of a place's avatar */
+.search-kind .collage {
+  width: 22px;
+  height: 28px;
+  gap: 1px;
+  border-radius: 6px;
+}
+.search-kind .collage-badge,
+.search-kind .garment-photo-type {
+  display: none;
+}
+
+/* a day's look in the Calendar's week list and day sheet: one small line */
+.cal-look {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+}
+.cal-look:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.cal-look:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.cal-weekday > .cal-look:last-child {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.cal-weekday > .cal-look + .cal-daylist {
+  border-top: 1px solid var(--hairline);
+}
+/* in the day sheet it is set off from the rows under it as a row is from the next: a straight divider */
+.cal-sheet-body > .cal-look {
+  min-height: 44px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+.cal-look-thumbs {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+.cal-look-thumbs .garment-photo {
+  width: 18px;
+  height: 22px;
+  margin-left: -5px;
+  border: 1px solid var(--surface);
+  border-radius: 4px;
+}
+.cal-look-thumbs .garment-photo:first-child {
+  margin-left: 0;
+}
+.cal-look-thumbs .garment-photo-type {
+  display: none;
+}
+.cal-look-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-look-more {
+  flex: none;
+  color: var(--muted);
+}
+
+/* the Week review's looks: a strip of small collages, one a day */
+.review-looks {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 6px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.review-look {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.6875rem;
+}
+.review-look .collage {
+  width: 44px;
+  height: 56px;
+  border-radius: 8px;
+}
+.review-look .collage-badge {
+  width: 16px;
+  height: 16px;
+}
+.review-look:focus-visible,
+.review-most-worn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.review-most-worn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+}
+.review-most-worn-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* five tiles in the phone's two columns: the count of clothes spans the row, the four figures pair up under it */
+@media (max-width: 640px) {
+  .wardrobe-tiles > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (pointer: coarse) {
+  .cal-look,
+  .review-most-worn {
+    min-height: 44px;
+  }
+}
+
 /* ----- a phone: the bar sticks above the tab bar, four Home segments fit one line */
 @media (max-width: 640px) {
   .wardrobe-actions {

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarEntry, Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus } from '../types'
+import { CalendarEntry, Garment, Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus, Wear } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { countOf, seenLabel } from '../people'
-import { entriesInRange, journalLines, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
+import { entriesInRange, journalLines, localDayKey, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
 import { habitsConsistency } from '../habits'
 import { habitLines } from '../../shared/review.mjs'
 import { JournalPeople } from './Journal'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
-import { excerpt, fmtDate, uid } from '../utils'
+import { dateKey, excerpt, fmtDate, uid } from '../utils'
+import { liveById, outfitLabel, wearIndex, wornBetween } from '../wardrobe'
 import { DueBadge, StatTile } from './bits'
+import type { WardrobeOpen } from './planner/useNavigation'
+import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
 
 interface Props {
   tasks: Task[]
@@ -31,6 +34,11 @@ interface Props {
   onNew(preset?: Partial<Task>): void
   /** Open the "Plan next week" sheet. Without it there is no button. */
   onPlanWeek?(): void
+  /** Your clothes and what you wore (personal): the period's looks and its most worn piece. */
+  garments?: Garment[]
+  wears?: Wear[]
+  /** Home → Wardrobe: a look on its day, the most worn piece on its sheet. Without it there is no wardrobe card. */
+  onOpenWardrobe?(o: WardrobeOpen): void
 }
 
 /** "Plan next week" is the toolbar's main action from Friday to Sunday, when the week ahead is what there is to plan. */
@@ -93,12 +101,44 @@ export function reloadDraft(prev: { key: string; stamp?: string }, next: { key: 
 }
 
 const NO_ENTRIES: CalendarEntry[] = []
+const NO_GARMENTS: Garment[] = []
+const NO_WEARS: Wear[] = []
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-export function Review({ tasks, projects, people, reviews, journal, places, habits, entries = NO_ENTRIES, onSaveReview, onOpen, onStatus, onReschedule, onNew, onPlanWeek }: Props) {
+/** Under a look in the Week review's strip: its weekday, with the date too in a month's. */
+function lookDay(key: string, withDate: boolean): string {
+  const [y, m, d] = key.split('-').map(Number)
+  const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+  return withDate ? `${weekday} ${d}` : weekday
+}
+
+export function Review({
+  tasks,
+  projects,
+  people,
+  reviews,
+  journal,
+  places,
+  habits,
+  entries = NO_ENTRIES,
+  onSaveReview,
+  onOpen,
+  onStatus,
+  onReschedule,
+  onNew,
+  onPlanWeek,
+  garments = NO_GARMENTS,
+  wears = NO_WEARS,
+  onOpenWardrobe,
+}: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
   const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries), [range, tasks, projects, people, places, entries])
+  // what you wore in the period, counted in days as the Stats are: each day's
+  // look, and the piece worn on the most of them
+  const pieces = useMemo(() => liveById(garments), [garments])
+  const worn = useMemo(() => wornBetween(garments, wearIndex(wears, localDayKey()), dateKey(range.start), dateKey(range.end)), [garments, wears, range])
   const wrote = useMemo(() => entriesInRange(journal, range), [journal, range])
   const mood = moodAverage(wrote)
   const habitStats = useMemo(() => habitsConsistency(habits, range.start, range.end, new Date()), [habits, range])
@@ -382,6 +422,43 @@ export function Review({ tasks, projects, people, reviews, journal, places, habi
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+
+        {onOpenWardrobe && worn.days.length > 0 && (
+          <section className="chart-card review-wardrobe">
+            <header className="chart-head">
+              <div>
+                <h3>What you wore</h3>
+                <p className="chart-sub">
+                  {countOf(worn.days.length, 'day')} logged this {period}
+                </p>
+              </div>
+            </header>
+            <ul className="review-looks">
+              {worn.days.map(({ day, look, looks }) => (
+                <li key={day}>
+                  <button
+                    type="button"
+                    className="review-look"
+                    aria-label={`${relativeDayLabel(day)}: ${outfitLabel(look.garmentIds, pieces)}${looks > 1 ? `, and ${countOf(looks - 1, 'more look')}` : ''}`}
+                    onClick={() => onOpenWardrobe({ date: day })}
+                  >
+                    <Collage ids={look.garmentIds} byId={pieces} />
+                    <span>{lookDay(day, period === 'month')}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {worn.top && (
+              <button type="button" className="review-most-worn" onClick={() => worn.top && onOpenWardrobe({ tab: 'clothes', garmentId: worn.top.garment.id })}>
+                <GarmentPhoto garment={worn.top.garment} className="thumb-28" />
+                <span className="review-most-worn-name">
+                  <span className="muted">Most worn</span> {worn.top.garment.name}
+                </span>
+                <strong>{countOf(worn.top.days, 'day')}</strong>
+              </button>
+            )}
           </section>
         )}
 
