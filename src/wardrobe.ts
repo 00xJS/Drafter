@@ -626,8 +626,8 @@ export function yourUniform(
   return { ...top, share: top.days / ix.logged.length, usually }
 }
 
-/** A price the cost per wear can use: a finite amount above nothing. */
-const priceOf = (g: Garment): number | undefined => (typeof g.price === 'number' && Number.isFinite(g.price) && g.price > 0 ? g.price : undefined)
+/** A price the cost per wear can use: a finite amount above nothing. Ask reads a price through it too, so the two never disagree. */
+export const priceOf = (g: Garment): number | undefined => (typeof g.price === 'number' && Number.isFinite(g.price) && g.price > 0 ? g.price : undefined)
 
 export interface CostRow {
   garment: Garment

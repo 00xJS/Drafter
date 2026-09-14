@@ -5,7 +5,7 @@ import { relativeDayLabel } from '../journal'
 import { looksLikeQuestion } from '../ask'
 import { dueLabel } from '../taskutils'
 import { excerpt } from '../utils'
-import { garmentTags, liveById, outfitLabel } from '../wardrobe'
+import { garmentTags, liveById, orderPieces, outfitLabel } from '../wardrobe'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
@@ -122,11 +122,13 @@ export function noteHits(notes: Note[], needle: string): { score: number; note: 
  * by its name as a place does and by a tag as a task does, saying which tag
  * matched; a retired one still shows, below one in use. A saved outfit ranks
  * by its name or, left unnamed, by the pieces it is named by — a little
- * lower, so the piece itself comes first. Nothing in Trash shows.
+ * lower, so the piece itself comes first; one whose pieces are all gone has
+ * no name to be found by. Nothing in Trash shows. With `pieces` off a piece
+ * is no hit of its own, but it still names the outfits it is in.
  */
-export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: string): WardrobeHit[] {
+export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: string, { pieces = true }: { pieces?: boolean } = {}): WardrobeHit[] {
   const out: WardrobeHit[] = []
-  for (const g of garments) {
+  for (const g of pieces ? garments : []) {
     if (g.deletedAt) continue
     const tags = garmentTags(g)
     const s = score(g.name, needle, 12) + score(tags.join(' '), needle, 6)
@@ -138,7 +140,8 @@ export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: str
   for (const o of outfits) {
     if (o.deletedAt) continue
     const label = o.name || outfitLabel(o.garmentIds, byId)
-    const s = o.name ? score(o.name, needle, 11) : score(label, needle, 5)
+    // "Pieces since deleted" says what is left; it is not a name to find it by
+    const s = o.name ? score(o.name, needle, 11) : orderPieces(o.garmentIds, byId).length > 0 ? score(label, needle, 5) : 0
     if (s > 0) out.push({ kind: 'outfit', score: s, outfit: o, label })
   }
   return out
@@ -237,7 +240,8 @@ export function Search({
       }
     }
     if (canOpenNote) for (const h of noteHits(notes, needle)) out.push({ kind: 'note', ...h })
-    if (canOpenGarment || canOpenOutfit) out.push(...wardrobeHits(canOpenGarment ? garments : NO_GARMENTS, canOpenOutfit ? outfits : NO_OUTFITS, needle))
+    // the pieces always name an unnamed outfit; they are hits themselves only where they can open
+    if (canOpenGarment || canOpenOutfit) out.push(...wardrobeHits(garments, canOpenOutfit ? outfits : NO_OUTFITS, needle, { pieces: canOpenGarment }))
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
     const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }

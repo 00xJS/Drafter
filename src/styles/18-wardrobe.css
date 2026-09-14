@@ -1187,11 +1187,11 @@ button.photo-cal-day:focus-visible {
 .cal-weekday > .cal-look + .cal-daylist {
   border-top: 1px solid var(--hairline);
 }
+/* in the day sheet it is set off from the rows under it as a row is from the next: a straight divider */
 .cal-sheet-body > .cal-look {
   min-height: 44px;
   padding: 8px 4px;
   border-bottom: 1px solid var(--border);
-  border-radius: 8px;
   font-size: 0.8125rem;
 }
 .cal-look-thumbs {

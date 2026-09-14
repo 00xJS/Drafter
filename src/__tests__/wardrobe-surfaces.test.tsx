@@ -253,6 +253,13 @@ describe('the palette finds clothes and saved outfits', () => {
     expect(navy.filter(h => h.kind === 'outfit')).toHaveLength(1)
   })
 
+  it('names an unnamed outfit by its pieces where only outfits open, and never finds one by "Pieces since deleted"', () => {
+    const outfitsOnly = wardrobeHits(g, o, 'navy', { pieces: false })
+    expect(outfitsOnly).toEqual([expect.objectContaining({ kind: 'outfit', label: 'Navy tee + Chinos' })])
+    const orphan = outfit('orphan', ['gone-1', 'gone-2'])
+    for (const word of ['pieces', 'since', 'deleted']) expect(wardrobeHits(g, [orphan], word)).toEqual([])
+  })
+
   it('opens a piece on its sheet and an outfit in today’s rows, from the shell', () => {
     const shell = plannerSource()
     expect(shell).toContain('garments={store.garments}')
@@ -360,9 +367,9 @@ describe('Ask draws on what you wear', () => {
     expect(pieces.map(d => d.title).sort()).toEqual(['Band tee', 'Black jeans', 'Grey mac', 'Navy tee', 'Yellow shirt'])
     expect(pieces.every(d => /^C\d+$/.test(d.ref))).toBe(true)
     const tee = pieces.find(d => d.title === 'Navy tee')!
-    expect(tee.text).toContain('top · worn on 2 days · last worn 2026-09-12 · first worn 2026-09-08')
-    expect(tee.text).toContain('[phone]')
-    expect(tee.text).not.toContain('07700')
+    expect(tee.text).toBe('top · worn on 2 days · last worn 2026-09-12 · first worn 2026-09-08')
+    // a piece's notes are something you wrote: they never go, chip or no chip
+    for (const d of buildCorpus(src(), { now, includeJournal: true, includeAmounts: true })) expect(`${d.title} ${d.text}`).not.toMatch(/Ring|07700|\[phone\]|other colour/)
     expect(pieces.find(d => d.title === 'Band tee')!.text).toMatch(/^top · retired · worn on 1 day/)
     expect(pieces.find(d => d.title === 'Yellow shirt')!.text).toBe('top · not worn yet')
     const looks = docs.filter(d => d.kind === 'wear')
@@ -380,6 +387,16 @@ describe('Ask draws on what you wear', () => {
     const money = buildCorpus(src(), { now, includeJournal: false, includeAmounts: true }).find(d => d.title === 'Navy tee')!
     expect(money.text).toContain(`price ${formatMoney(20)}`)
     expect(money.text).toContain(`cost per wear ${formatMoney(10)}`)
+    // a price the Stats' cost per wear would not use is no price here either
+    for (const price of [0, -5, Number.NaN]) {
+      const odd = src({ garments: garments.map(g => (g.id === 'id-tee' ? { ...g, price } : g)) })
+      expect(buildCorpus(odd, { now, includeJournal: false, includeAmounts: true }).find(d => d.title === 'Navy tee')!.text).not.toMatch(/price|cost per wear/)
+    }
+  })
+
+  it('names a day by its latest look that still has a piece', () => {
+    const docs = buildCorpus(src({ wears: [look('2026-09-05', ['id-tee', 'id-jeans']), look('2026-09-05', ['id-purged'])] }), { now, includeJournal: false, includeAmounts: false })
+    expect(docs.filter(d => d.kind === 'wear')).toEqual([expect.objectContaining({ date: '2026-09-05', title: 'Navy tee + Black jeans', text: 'worn on 2026-09-05 · pieces: Navy tee, Black jeans' })])
   })
 
   it('has no wardrobe to draw on when it is given none', () => {
@@ -418,6 +435,30 @@ describe('Ask draws on what you wear', () => {
   it('keeps the wardrobe out of a question about something else', () => {
     const facts = factsFor(parseQuestion('When did I last see Mum?', src(), now), src(), now, 'Europe/London')
     expect(facts.some(f => /worn/i.test(f))).toBe(false)
+  })
+
+  const clothesIn = (docs: { kind: string }[]) => docs.filter(d => d.kind === 'garment' || d.kind === 'wear')
+
+  it('takes "my top 3" to be about something else, whatever a piece is called', () => {
+    // a piece saved with no name is left with its type's: Top
+    const s = src({ garments: [...garments, piece('id-top', 'top', { name: 'Top' })], wears: [...wears, look('2026-09-11', ['id-top', 'id-jeans'])] })
+    const q = parseQuestion('What were my top 3 last week?', s, now)
+    expect(q.garmentIds).toEqual([])
+    expect(q.intents.has('wardrobe')).toBe(false)
+    const prep = prepareAsk('What were my top 3 last week?', s, { now, tz: 'Europe/London', includeJournal: false })
+    expect(prep.facts.some(f => /worn|Top:/.test(f))).toBe(false)
+    // not the piece called Top, not a top by its type, and not a look for falling in last week
+    expect(clothesIn(prep.docs)).toEqual([])
+    // "worn on 2 days" is no answer to how a day went
+    expect(clothesIn(prepareAsk('How was my day yesterday?', s, { now, tz: 'Europe/London', includeJournal: false }).docs)).toEqual([])
+    // asked about clothes, Top is the piece
+    expect(parseQuestion('Which top did I wear most?', s, now).garmentIds).toEqual(['id-top'])
+  })
+
+  it('still finds a piece by a word of its own name in a question about something else', () => {
+    const docs = prepareAsk('Which jeans are black?', src(), { now, tz: 'Europe/London', includeJournal: false }).docs
+    expect(docs.some(d => d.kind === 'garment' && d.title === 'Black jeans')).toBe(true)
+    expect(docs.some(d => d.kind === 'garment' && d.title === 'Navy tee')).toBe(false)
   })
 
   it('never sends a real id, and tells the model clothes are part of the planner', () => {
@@ -607,7 +648,19 @@ describe('Stats: streaks, the photo calendar, the podium, your uniform and cost 
     const html = stats()
     expect(html).toContain('<h3>Top three</h3>')
     expect([...html.matchAll(/class="podium-piece" aria-label="([^"]+)"/g)].map(m => m[1])).toEqual(['First: chinos, 3 days', 'Second: jeans, 2 days', 'Third: tee, 2 days'])
+    expect(html).not.toContain('vacant')
     expect(stats({ ix: wearIndex([], TODAY) })).not.toContain('Top three')
+  })
+
+  it('keeps first in the middle with fewer than three: an empty step stands in, hidden from screen readers', () => {
+    const two = stats({ ix: wearIndex([look('2026-09-13', ['tee', 'jeans']), look('2026-09-12', ['tee'])], TODAY) })
+    expect([...two.matchAll(/class="podium-piece" aria-label="([^"]+)"/g)].map(m => m[1])).toEqual(['First: tee, 2 days', 'Second: jeans, 1 day'])
+    expect(two).toContain('<li class="podium-place rank-3 vacant" aria-hidden="true"><span class="podium-step"></span></li>')
+    const one = stats({ ix: wearIndex([look('2026-09-13', ['tee'])], TODAY) })
+    expect(one.match(/class="podium-place rank-\d vacant" aria-hidden="true"/g)).toEqual([
+      'class="podium-place rank-2 vacant" aria-hidden="true"',
+      'class="podium-place rank-3 vacant" aria-hidden="true"',
+    ])
   })
 
   it('heads the repeated outfits with your uniform: its share of the days, and Save as outfit until it is saved', () => {
@@ -651,5 +704,11 @@ describe('the wardrobe’s new styles', () => {
 
   it('draws a date on the photo calendar on a chip of its own, never on a photo', () => {
     expect(css).toMatch(/\.photo-cal-num \{[^}]*background: var\(--surface\);[^}]*color: var\(--text-2\);/)
+  })
+
+  it('divides the day sheet’s look from its rows with a straight line, as a row is divided from the next', () => {
+    const rule = /\.cal-sheet-body > \.cal-look \{([^}]*)\}/.exec(css)![1]
+    expect(rule).toContain('border-bottom: 1px solid var(--border);')
+    expect(rule).not.toContain('border-radius')
   })
 })

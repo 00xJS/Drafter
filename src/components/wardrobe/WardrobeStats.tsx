@@ -162,7 +162,11 @@ function PhotoCalendar({ ix, byId, onGoDay }: { ix: WearIndex; byId: ReadonlyMap
   )
 }
 
-/** The three most worn of all time on a podium: first in the middle and raised highest, second to its left, third to its right. */
+/**
+ * The three most worn of all time on a podium: first in the middle and raised
+ * highest, second to its left, third to its right. A place nobody has reached
+ * yet is an empty step, so first stays in the middle with one or two pieces.
+ */
 function Podium({ top, onOpen }: { top: { garment: Garment; count: number }[]; onOpen(id: string): void }) {
   return (
     <ol className="podium">
@@ -179,6 +183,11 @@ function Podium({ top, onOpen }: { top: { garment: Garment; count: number }[]; o
           <span className="podium-step" aria-hidden="true">
             {i + 1}
           </span>
+        </li>
+      ))}
+      {PLACES.slice(top.length).map((place, j) => (
+        <li key={place} className={`podium-place rank-${top.length + j + 1} vacant`} aria-hidden="true">
+          <span className="podium-step" />
         </li>
       ))}
     </ol>
