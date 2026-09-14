@@ -7,16 +7,26 @@ import adminFunction from '../../netlify/functions/admin.mjs'
 // posts.user_id is NOT NULL, and its foreign key is ON DELETE SET NULL. Admin
 // now hands the records over (admin_prepare_user_deletion, db-smoke step 14)
 // before it asks the auth server to delete the sign-in — never the other way.
+// Its wardrobe photos (personal/<id>/ in the media bucket) go in between.
 
 const admin = adminFunction as (req: Request) => Promise<Response>
 const SUPABASE = 'https://db.example.test'
 const OWNER = '00000000-0000-0000-0000-00000000000a'
 const LEAVER = '00000000-0000-0000-0000-00000000000d'
+const P1 = '11111111-1111-4111-8111-111111111111'
+const P2 = '22222222-2222-4222-8222-222222222222'
+const P3 = '33333333-3333-4333-8333-333333333333'
 
 let calls: string[]
 let prepareFails: boolean
 let deleteFails: boolean
 let stored: unknown
+/** Every piece of clothing left on the server once the leaver's own are deleted. */
+let garmentRows: { id: string; user_id: string; data: Record<string, unknown> }[]
+/** What the storage list answers for personal/<leaver>/. */
+let listed: { name: string; id: string | null; updated_at?: string }[]
+let listFails: boolean
+let removed: string[][]
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -26,6 +36,10 @@ beforeEach(() => {
   prepareFails = false
   deleteFails = false
   stored = null
+  garmentRows = []
+  listed = []
+  listFails = false
+  removed = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -43,6 +57,19 @@ beforeEach(() => {
       }
       if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'DELETE') {
         return deleteFails ? Response.json({ msg: 'Database error deleting user' }, { status: 500 }) : Response.json({})
+      }
+      if (url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment') && method === 'GET') {
+        const range = garmentRows.length ? `0-${garmentRows.length - 1}/${garmentRows.length}` : '*/0'
+        return new Response(JSON.stringify(garmentRows), { headers: { 'content-range': range } })
+      }
+      if (url === '/storage/v1/object/list/media' && method === 'POST') {
+        expect(body.prefix).toBe(`personal/${LEAVER}/`)
+        if (listFails) return new Response('{"message":"storage is down"}', { status: 503 })
+        return Response.json(body.offset === 0 ? listed : [])
+      }
+      if (url === '/storage/v1/object/media' && method === 'DELETE') {
+        removed.push(body.prefixes)
+        return Response.json(body.prefixes.map((name: string) => ({ name })))
       }
       if (url.startsWith('/rest/v1/app_config?key=eq.sync_canary')) return Response.json([])
       if (url === '/rest/v1/rpc/sync_canary') return Response.json({ ok: true, checked: body.kinds.length, failures: [] })
@@ -73,7 +100,7 @@ describe('Admin → delete an account', () => {
   it('hands the records over first, then deletes the sign-in, and says what moved', async () => {
     const res = await act('deleteUser', { userId: LEAVER })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, email: 'leaving@example.test', reassigned: 3, deleted: 2, historyReassigned: 1, historyDeleted: 4 })
+    expect(await res.json()).toEqual({ ok: true, email: 'leaving@example.test', reassigned: 3, deleted: 2, historyReassigned: 1, historyDeleted: 4, photosDeleted: 0 })
     const prepare = calls.indexOf('POST /rest/v1/rpc/admin_prepare_user_deletion')
     const remove = calls.indexOf(`DELETE /auth/v1/admin/users/${LEAVER}`)
     expect(prepare).toBeGreaterThan(-1)
@@ -101,6 +128,49 @@ describe('Admin → delete an account', () => {
     const res = await act('deleteUser', { userId: OWNER })
     expect(res.status).toBe(400)
     expect(calls).not.toContain('POST /rest/v1/rpc/admin_prepare_user_deletion')
+  })
+})
+
+describe('Admin → delete an account → its wardrobe photos', () => {
+  it('deletes the photos in its personal/ folder after handing the records over and before the sign-in goes', async () => {
+    listed = [
+      { name: P1, id: 'o1', updated_at: '2026-09-13T08:00:00.000Z' },
+      { name: P2, id: 'o2', updated_at: '2026-01-01T08:00:00.000Z' },
+    ]
+    const res = await act('deleteUser', { userId: LEAVER })
+    expect(res.status).toBe(200)
+    expect((await res.json()).photosDeleted).toBe(2)
+    // whatever their age: the account is going
+    expect(removed).toEqual([[`personal/${LEAVER}/${P1}`, `personal/${LEAVER}/${P2}`]])
+    const prepare = calls.indexOf('POST /rest/v1/rpc/admin_prepare_user_deletion')
+    const photos = calls.indexOf('DELETE /storage/v1/object/media')
+    const signIn = calls.indexOf(`DELETE /auth/v1/admin/users/${LEAVER}`)
+    expect(prepare).toBeLessThan(calls.indexOf('POST /storage/v1/object/list/media'))
+    expect(photos).toBeGreaterThan(prepare)
+    expect(signIn).toBeGreaterThan(photos)
+  })
+
+  it('keeps a photo another piece still points at, and anything in the folder that is not one of its photos', async () => {
+    garmentRows = [{ id: 'g-kept', user_id: OWNER, data: { kind: 'garment', id: 'g-kept', name: 'Coat', type: 'outerwear', photoId: `personal/${LEAVER}/${P3}` } }]
+    listed = [
+      { name: P1, id: 'o1' },
+      { name: P3, id: 'o3' },
+      { name: 'nested', id: null },
+      { name: 'x', id: 'ox' },
+    ]
+    const res = await act('deleteUser', { userId: LEAVER })
+    expect((await res.json()).photosDeleted).toBe(1)
+    expect(removed).toEqual([[`personal/${LEAVER}/${P1}`]])
+  })
+
+  it('keeps the sign-in when the photos cannot be deleted, so Try again finishes the job', async () => {
+    listFails = true
+    const res = await act('deleteUser', { userId: LEAVER })
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toMatch(/^Their records were handed over, but their wardrobe photos could not be deleted, so the sign-in was kept: .*503.*\. Try again\.$/)
+    expect(body.reassigned).toBe(3)
+    expect(calls).not.toContain(`DELETE /auth/v1/admin/users/${LEAVER}`)
   })
 })
 

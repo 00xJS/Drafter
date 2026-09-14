@@ -1,13 +1,15 @@
-import { Suspense, useEffect, useMemo } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
-import { watchPendingMedia } from '../media'
+import { trackMediaInUse, watchPendingMedia, type MediaInUse } from '../media'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
 import { ErrorBoundary } from './ErrorBoundary'
 import { PullToRefresh } from './PullToRefresh'
+import { useSignOut } from './SignOutGuard'
 import { forgetRetiredKeys } from '../retiredkeys'
+import { garmentMediaIds } from '../../shared/media.mjs'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
@@ -43,6 +45,19 @@ export default function Planner() {
   // a photo saved offline, or whose upload failed, goes up at launch, when the
   // connection comes back and whenever the app is shown again
   useEffect(() => watchPendingMedia(), [])
+  // a photo swapped out of a piece of clothing is deleted only once no piece
+  // here, live or in Trash, points at it: the swaps ask this, and get nothing
+  // until the records have loaded
+  const mediaInUse = useRef<() => MediaInUse | null>(() => null)
+  mediaInUse.current = () => (store.loaded ? { userId: household.myId, ids: garmentMediaIds(store.allItems) } : null)
+  useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])
+  // "Sign in again" signs out, which wipes this device: a photo still waiting
+  // to upload is asked about first
+  const signIn = useSignOut(async () => {
+    await getSupabase()?.auth.signOut()
+    await clearLocalData()
+    window.location.reload()
+  })
   const nav = useNavigation()
   const toaster = useToast({ store })
   const { showToast } = toaster
@@ -106,18 +121,12 @@ export default function Planner() {
       {store.syncInfo.authError && (
         <div className="auth-banner">
           Your session expired — changes are staying on this device only.
-          <button
-            className="btn"
-            onClick={async () => {
-              await getSupabase()?.auth.signOut()
-              await clearLocalData()
-              window.location.reload()
-            }}
-          >
+          <button className="btn" disabled={signIn.busy} onClick={signIn.start}>
             Sign in again
           </button>
         </div>
       )}
+      {signIn.question}
 
       {/* iOS: drag down from the top of a tab to refresh — the same set the
           foreground resume runs. Off while an editor or sheet owns the screen;

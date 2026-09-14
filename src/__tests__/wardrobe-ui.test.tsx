@@ -457,4 +457,16 @@ describe('the guards around the wardrobe', () => {
     expect(shell).toContain('useEffect(() => watchPendingMedia(), [])')
     expect(shell).toMatch(/const manualSync = async \(\) => \{[\s\S]*?void flushPendingMedia\(\)/)
   })
+
+  it('lets go of the photos Replace photo swapped out, and of the new ones when Undo swaps back', () => {
+    const wardrobe = source('Wardrobe')
+    expect(wardrobe).toMatch(/const editPiece = [\s\S]*?onSave\(after\)\s*letGo\(before, after\)[\s\S]*?onSave\(back\)\s*letGo\(after, back\)/)
+    expect(wardrobe).toMatch(/const \{ gone, now \} = swappedPhotos\(from, to\)\s*if \(gone\.length\) retireMedia\(gone, now\)/)
+    // a piece's thumbnail is saved as its photo's, so the two count as one photo
+    expect(source('GarmentSheet').match(/thumbOf: photoId/g)).toHaveLength(2)
+    // the swaps are told what every piece here, live or in Trash, points at — once the records are in
+    const shell = plannerSource()
+    expect(shell).toContain('store.loaded ? { userId: household.myId, ids: garmentMediaIds(store.allItems) } : null')
+    expect(shell).toContain('useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])')
+  })
 })

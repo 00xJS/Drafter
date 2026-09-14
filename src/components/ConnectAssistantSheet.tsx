@@ -3,6 +3,7 @@ import type { AgentScope } from '../agents'
 import { approveRequest, clearAuthorizeRequest, describeRequest, returnsTo, safeRedirect } from '../oauthRequest'
 import type { AuthorizeAnswer, AuthorizeDescription } from '../oauthRequest'
 import { Modal, ModalHead } from './Modal'
+import { useSignOut } from './SignOutGuard'
 
 interface Props {
   /** The captured /oauth/authorize query (pendingAuthorizeRequest()). */
@@ -38,6 +39,9 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
   const [canWrite, setCanWrite] = useState(true)
   const [journal, setJournal] = useState(false)
   const [busy, setBusy] = useState(false)
+  // signing out wipes this device on the way to the other account: a photo
+  // still waiting to upload is asked about first
+  const signOut = useSignOut(async () => onSignOut())
 
   // keyed on the query, not the object: a parent that rebuilds params on each render must not re-ask
   const query = params.toString()
@@ -113,10 +117,11 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
               </p>
               <p className="sync-line">
                 <small>Signed in as {email || 'you'}.</small>
-                <button type="button" className="btn subtle" onClick={onSignOut} disabled={busy}>
+                <button type="button" className="btn subtle" onClick={signOut.start} disabled={busy || signOut.busy}>
                   Sign out
                 </button>
               </p>
+              {signOut.question}
               <div className="field">
                 <span>It may</span>
                 <label className="cal-source mirror-row">

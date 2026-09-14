@@ -1,0 +1,253 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../shared/media.mjs'
+import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
+
+// Wardrobe photos are private, under personal/<user id>/ in the media bucket,
+// and nothing used to clear them out: a replaced photo, a piece aged out of
+// Trash or deleted forever all left theirs behind. These pin the rule both
+// sides share (shared/media.mjs) and the nightly sweep that runs with the
+// tombstone purge (netlify/functions/lib/backup.mjs): a photo goes only when it
+// is that account's own, no piece of clothing, live or in Trash, points at it,
+// and it is as old as a tombstone is kept. Note photos, task images and the
+// backups/ snapshots are never touched. The server is a stand-in here.
+
+const SUPABASE = 'https://db.example.test'
+const A = '00000000-0000-0000-0000-00000000000a'
+const B = '00000000-0000-0000-0000-00000000000b'
+const C = '00000000-0000-0000-0000-00000000000c'
+const NOW = new Date('2026-09-14T03:00:00.000Z')
+/** Before NOW minus 90 days (16 June). */
+const OLD = '2026-05-01T00:00:00.000Z'
+const RECENT = '2026-09-01T00:00:00.000Z'
+/** A uuid the media store could have made: n repeated, 1–9. */
+const uid = (n: number) => `${`${n}`.repeat(8)}-${`${n}`.repeat(4)}-4${`${n}`.repeat(3)}-8${`${n}`.repeat(3)}-${`${n}`.repeat(12)}`
+const photo = (user: string, n: number) => `personal/${user}/${uid(n)}`
+
+type Row = { id: string; user_id: string; deleted: boolean; data: Record<string, unknown> }
+const garment = (id: string, user: string, extra: Record<string, unknown> = {}): Row => ({
+  id,
+  user_id: user,
+  deleted: !!extra.deletedAt,
+  data: { kind: 'garment', id, name: id, type: 'top', createdAt: OLD, updatedAt: OLD, ...extra },
+})
+
+let posts: Row[]
+let objects: Map<string, { updated_at?: string; created_at?: string }>
+let calls: string[]
+/** PostgREST's max_rows: a page is never longer, whatever limit was asked for. */
+let maxRows: number
+let noCount: boolean
+let garmentsFail: boolean
+let listFails: string | null
+
+/** What the storage list endpoint answers for a prefix: its objects, and a null-id entry per folder under it. */
+function listUnder(prefix: string) {
+  const files: { name: string; id: string | null; updated_at: string | null; created_at: string | null }[] = []
+  const folders = new Set<string>()
+  for (const [path, o] of objects) {
+    if (!path.startsWith(prefix)) continue
+    const rest = path.slice(prefix.length)
+    if (rest.includes('/')) folders.add(rest.slice(0, rest.indexOf('/')))
+    else files.push({ name: rest, id: `obj:${path}`, updated_at: o.updated_at ?? null, created_at: o.created_at ?? null })
+  }
+  return [...[...folders].map(name => ({ name, id: null, updated_at: null, created_at: null })), ...files].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+beforeEach(() => {
+  vi.stubEnv('SUPABASE_URL', SUPABASE)
+  vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
+  calls = []
+  maxRows = 1000
+  noCount = false
+  garmentsFail = false
+  listFails = null
+  posts = [
+    garment('g-live', A, { photoId: photo(A, 1), thumbId: photo(A, 2) }),
+    garment('g-trash', A, { photoId: photo(A, 3), deletedAt: RECENT }),
+    garment('g-expired', A, { photoId: photo(A, 4), deletedAt: OLD }),
+    garment('g-purged', A, { deletedAt: RECENT, purged: true }),
+    garment('g-b', B, { photoId: photo(B, 6) }),
+    // another account's piece pointing into A's folder still counts
+    garment('g-b2', B, { photoId: `personal/${A}/${uid(9)}` }),
+    { id: 'n-note', user_id: A, deleted: false, data: { kind: 'note', id: 'n-note', title: 'Paint', body: `<img data-media="${uid(5)}">`, createdAt: OLD, updatedAt: OLD } },
+  ]
+  objects = new Map([
+    [photo(A, 1), { updated_at: OLD, created_at: OLD }],
+    [photo(A, 2), { updated_at: OLD, created_at: OLD }],
+    [photo(A, 3), { updated_at: OLD, created_at: OLD }],
+    [photo(A, 4), { updated_at: OLD, created_at: OLD }],
+    // replaced long ago, and nothing points at it now
+    [photo(A, 5), { updated_at: OLD, created_at: OLD }],
+    // just uploaded: its piece may not have reached the server yet
+    [photo(A, 7), { updated_at: RECENT, created_at: OLD }],
+    // times that can't be read
+    [photo(A, 8), {}],
+    [`personal/${A}/${uid(9)}`, { updated_at: OLD, created_at: OLD }],
+    [`personal/${A}/nested/${uid(1)}`, { updated_at: OLD, created_at: OLD }],
+    [`personal/${A}/short`, { updated_at: OLD, created_at: OLD }],
+    [photo(B, 6), { updated_at: OLD, created_at: OLD }],
+    [photo(B, 7), { updated_at: OLD, created_at: OLD }],
+    // C's pieces never reached the server: its folder is left alone
+    [photo(C, 1), { updated_at: OLD, created_at: OLD }],
+    [`backups/${A}/2026-06-01.json`, { updated_at: OLD, created_at: OLD }],
+    [uid(5), { updated_at: OLD, created_at: OLD }],
+  ])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input).replace(SUPABASE, '')
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push(`${method} ${decodeURIComponent(url)}${body?.prefix ? ` ${body.prefix}` : ''}`)
+      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=data,user_id&deleted=is.false')) {
+        return Response.json(posts.filter(p => !p.deleted).map(({ data, user_id }) => ({ data, user_id })))
+      }
+      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment')) {
+        if (garmentsFail) return new Response('{"message":"boom"}', { status: 500 })
+        const q = new URL(`https://x${url}`).searchParams
+        const after = q.get('id')?.replace(/^gt\./, '') ?? null
+        const left = posts.filter(p => p.data.kind === 'garment' && (after === null || p.id > after)).sort((x, y) => (x.id < y.id ? -1 : 1))
+        const page = left.slice(0, Math.min(Number(q.get('limit')), maxRows)).map(({ id, user_id, data }) => ({ id, user_id, data }))
+        const headers: Record<string, string> = noCount ? {} : { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` }
+        return new Response(JSON.stringify(page), { headers })
+      }
+      if (method === 'POST' && url === '/storage/v1/object/list/media') {
+        if (listFails && body.prefix === personalFolder(listFails)) return new Response('{"message":"storage is down"}', { status: 503 })
+        return Response.json(listUnder(body.prefix).slice(body.offset ?? 0, (body.offset ?? 0) + body.limit))
+      }
+      if (method === 'POST' && url.startsWith('/storage/v1/object/media/backups/')) {
+        objects.set(url.slice('/storage/v1/object/media/'.length), { updated_at: NOW.toISOString(), created_at: NOW.toISOString() })
+        return Response.json({ Key: url })
+      }
+      if (method === 'DELETE' && url === '/storage/v1/object/media') {
+        const gone = (body.prefixes as string[]).filter(p => objects.delete(p))
+        return Response.json(gone.map(name => ({ name })))
+      }
+      if (method === 'DELETE' && url.startsWith('/rest/v1/posts_history')) return new Response(null, { status: 204, headers: { 'content-range': '*/0' } })
+      if (method === 'DELETE' && url.startsWith('/rest/v1/posts?deleted=eq.true')) return new Response(null, { status: 204, headers: { 'content-range': '*/1' } })
+      throw new Error(`unexpected ${method} ${url}`)
+    }),
+  )
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+})
+
+describe('the shared rule: whose photo, and what still points at it', () => {
+  it('knows an account’s own photo from everything else in the bucket', () => {
+    expect(personalFolder(A)).toBe(`personal/${A}/`)
+    expect(isPersonalMediaOf(photo(A, 1), A)).toBe(true)
+    for (const other of [uid(1), photo(B, 1), `backups/${A}/2026-09-13.json`, `personal/${A}/nested/${uid(1)}`, `personal/${A}/../${uid(1)}`, `personal/${A}/`, `personal/${A}/short`, 42, null]) {
+      expect(isPersonalMediaOf(other, A), String(other)).toBe(false)
+    }
+    // no account, no photo of theirs
+    expect(isPersonalMediaOf(photo(A, 1), null)).toBe(false)
+    expect(isPersonalMediaOf('personal/x/12345678', 'x')).toBe(false)
+  })
+
+  it('counts a live piece’s photos and one’s in Trash, never a piece deleted forever or anything else', () => {
+    const ids = garmentMediaIds(posts.map(p => p.data))
+    expect([...ids].sort()).toEqual([photo(A, 1), photo(A, 2), photo(A, 3), photo(A, 4), `personal/${A}/${uid(9)}`, photo(B, 6)].sort())
+  })
+
+  it('with a cutoff, stops counting a piece that left every Trash before it, and still counts one whose deletion can’t be read', () => {
+    const cutoff = new Date(NOW.getTime() - TOMBSTONE_TTL_MS).toISOString()
+    const ids = garmentMediaIds([...posts.map(p => p.data), { kind: 'garment', photoId: 'personal/odd', deletedAt: 'last spring' }], { expiredBefore: cutoff })
+    expect(ids.has(photo(A, 4))).toBe(false)
+    expect(ids.has(photo(A, 3))).toBe(true)
+    expect(ids.has('personal/odd')).toBe(true)
+  })
+
+  it('sweeps a photo only when it is the account’s own, unpointed at and old enough — or at any age, for a deleted account', () => {
+    const listed = [
+      { name: uid(5), id: 'o5', updated_at: OLD, created_at: OLD },
+      { name: uid(7), id: 'o7', updated_at: RECENT, created_at: OLD },
+      { name: uid(8), id: 'o8' },
+      { name: uid(1), id: 'o1', updated_at: OLD, created_at: OLD },
+      { name: 'nested', id: null },
+      { name: 'short', id: 'os', updated_at: OLD, created_at: OLD },
+    ]
+    const inUse = new Set([photo(A, 1)])
+    expect(photosToSweep(A, listed, inUse, '2026-06-16T03:00:00.000Z')).toEqual([photo(A, 5)])
+    expect(photosToSweep(A, listed, inUse, null)).toEqual([photo(A, 5), photo(A, 7), photo(A, 8)])
+    expect(photosToSweep('not-an-account', listed, inUse, null)).toEqual([])
+  })
+
+  it('waits as long as a tombstone is kept', () => {
+    expect(PHOTO_GRACE_MS).toBe(TOMBSTONE_TTL_MS)
+  })
+})
+
+describe('restAll: every row, or a throw', () => {
+  it('reads past a max_rows cap shorter than the page it asked for, carrying on after the last id', async () => {
+    maxRows = 2
+    const rows = await restAll('posts?select=id,user_id,data&kind=eq.garment')
+    expect(rows.map(r => r.id)).toEqual(['g-b', 'g-b2', 'g-expired', 'g-live', 'g-purged', 'g-trash'])
+    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts')).length).toBe(3)
+    expect(calls[1]).toContain('&id=gt.g-b2&')
+  })
+
+  it('refuses an answer that does not say how many rows there are', async () => {
+    noCount = true
+    await expect(restAll('posts?select=id,user_id,data&kind=eq.garment')).rejects.toThrow(/did not say how many rows/)
+  })
+})
+
+describe('sweepPersonalPhotos: the nightly pass', () => {
+  it('deletes what nothing points at — replaced, aged out of Trash — once old enough, and keeps everything else', async () => {
+    const before = new Set(objects.keys())
+    expect(await sweepPersonalPhotos(NOW)).toEqual({ deleted: 3, failures: [] })
+    const gone = [...before].filter(p => !objects.has(p)).sort()
+    expect(gone).toEqual([photo(A, 4), photo(A, 5), photo(B, 7)].sort())
+    // C holds no piece on the server: its folder is never even listed
+    expect(calls.some(c => c.endsWith(personalFolder(C)))).toBe(false)
+    expect(objects.has(`backups/${A}/2026-06-01.json`) && objects.has(uid(5))).toBe(true)
+  })
+
+  it('reads every piece even when the server hands them over two at a time', async () => {
+    maxRows = 2
+    expect((await sweepPersonalPhotos(NOW)).deleted).toBe(3)
+    expect(objects.has(photo(A, 1)) && objects.has(photo(B, 6)) && objects.has(`personal/${A}/${uid(9)}`)).toBe(true)
+  })
+
+  it('deletes nothing when the pieces cannot all be read', async () => {
+    noCount = true
+    const before = objects.size
+    await expect(sweepPersonalPhotos(NOW)).rejects.toThrow()
+    expect(objects.size).toBe(before)
+    expect(calls.some(c => c.startsWith('DELETE /storage'))).toBe(false)
+  })
+
+  it('carries on past an account whose folder cannot be listed, and says so', async () => {
+    listFails = A
+    const { deleted, failures } = await sweepPersonalPhotos(NOW)
+    expect(deleted).toBe(1)
+    expect(objects.has(photo(B, 7))).toBe(false)
+    expect(objects.has(photo(A, 5))).toBe(true)
+    expect(failures).toEqual([expect.stringMatching(new RegExp(`^photos of ${A}: storage /object/list/media: 503`))])
+  })
+})
+
+describe('runBackup: the sweep rides with the tombstone purge', () => {
+  it('reports the photos deleted, and sweeps before the tombstones go', async () => {
+    const report = await runBackup(NOW)
+    expect(report.photosDeleted).toBe(3)
+    expect(report.tombstonesPurged).toBe(1)
+    expect(report.failures).toEqual([])
+    const read = calls.findIndex(c => c.startsWith('GET /rest/v1/posts?select=id,user_id,data&kind=eq.garment'))
+    const purge = calls.findIndex(c => c.startsWith('DELETE /rest/v1/posts?deleted=eq.true'))
+    expect(read).toBeGreaterThan(-1)
+    expect(purge).toBeGreaterThan(read)
+  })
+
+  it('still writes the snapshots and purges the tombstones when the sweep cannot run', async () => {
+    garmentsFail = true
+    const report = await runBackup(NOW)
+    expect(report.photosDeleted).toBeNull()
+    expect(report.users.map(u => u.userId).sort()).toEqual([A, B])
+    expect(report.tombstonesPurged).toBe(1)
+    expect(report.failures).toEqual([expect.stringMatching(/^photos: posts: 500/)])
+  })
+})

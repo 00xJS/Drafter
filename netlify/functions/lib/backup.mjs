@@ -4,16 +4,28 @@
 //
 // A snapshot is one JSON object per user in the private media bucket at
 // backups/<user_id>/<YYYY-MM-DD>.json. The newest KEEP_BACKUPS per user are
-// kept. The same pass drops posts_history rows past HISTORY_TTL_MS and
-// hard-deletes purged tombstones past TOMBSTONE_TTL_MS (peers have had time to
-// see them).
+// kept. The same pass drops posts_history rows past HISTORY_TTL_MS, deletes
+// the wardrobe photos no piece of clothing points at any more (see
+// sweepPersonalPhotos), and hard-deletes purged tombstones past
+// TOMBSTONE_TTL_MS (peers have had time to see them).
 
 import { kindOf, readableKind } from '../../../shared/kinds.mjs'
+import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mjs'
 
 const DAY = 86_400_000
 export const KEEP_BACKUPS = 14
 export const HISTORY_TTL_MS = 60 * DAY
 export const TOMBSTONE_TTL_MS = 90 * DAY
+/**
+ * A wardrobe photo nothing points at is swept only once it is this old: as old
+ * as a tombstone is kept. A piece deleted forever or aged out of Trash had its
+ * photos taken at least that long ago, while a photo just uploaded, whose
+ * piece may not have reached the server yet, is never this old.
+ */
+export const PHOTO_GRACE_MS = TOMBSTONE_TTL_MS
+/** Objects asked for per storage list, and paths per storage delete. */
+const LIST_PAGE = 1000
+const DELETE_BATCH = 100
 /** Private bucket and prefix the snapshots live under. */
 export const BUCKET = 'media'
 export const PREFIX = 'backups'
@@ -66,6 +78,35 @@ export async function storage(path, init = {}) {
 function rangeTotal(res) {
   const m = /\/(\d+|\*)$/.exec(res.headers.get('content-range') ?? '')
   return m && m[1] !== '*' ? Number(m[1]) : null
+}
+
+/**
+ * Every row a select matches, in id order, or a throw — never a shorter list.
+ * PostgREST cuts a response at max_rows (1000 on Supabase), and a list of
+ * pieces of clothing cut short would read as photos nothing points at. So
+ * each page asks how many rows are still to come (count=exact) and the next
+ * one carries on after the last id it got: a row deleted meanwhile cannot
+ * shift another out of the read, as an offset would. `path` selects `id`.
+ */
+export async function restAll(path, pageSize = 1000) {
+  const table = path.split('?')[0]
+  const out = []
+  let after = null
+  for (let page = 0; page < 1000; page++) {
+    const res = await restResponse(`${path}${after === null ? '' : `&id=gt.${encodeURIComponent(after)}`}&order=id.asc&limit=${pageSize}`, {
+      headers: { prefer: 'count=exact' },
+    })
+    const left = rangeTotal(res)
+    const text = await res.text()
+    const rows = text ? JSON.parse(text) : []
+    if (left === null || !Array.isArray(rows)) throw new Error(`${table}: the server did not say how many rows there are`)
+    out.push(...rows)
+    if (rows.length >= left) return out
+    const last = rows[rows.length - 1]?.id
+    if (typeof last !== 'string') throw new Error(`${table}: a page came back without an id to carry on from`)
+    after = last
+  }
+  throw new Error(`${table}: too many rows to read`)
 }
 
 export function dayKey(d = new Date()) {
@@ -216,6 +257,101 @@ export async function purgeTombstones(now = new Date()) {
   return res ? rangeTotal(res) : null
 }
 
+/** Objects directly in an account's personal/ folder, a page at a time. A short read only ever means fewer deleted. */
+async function listPersonalFolder(userId) {
+  const out = []
+  for (let offset = 0; offset < 100_000; offset += LIST_PAGE) {
+    const page = await storage(`/object/list/${BUCKET}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prefix: personalFolder(userId), limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
+    })
+    if (!Array.isArray(page)) throw new Error(`storage did not list ${personalFolder(userId)}`)
+    out.push(...page)
+    if (page.length < LIST_PAGE) break
+  }
+  return out
+}
+
+/**
+ * Which of the objects listed in an account's personal/ folder may be deleted:
+ * a photo of the media store's own shape (never a folder, a bare id or
+ * anything under backups/), that no piece of clothing points at and, unless
+ * `olderThan` is null, last written before that instant. An object whose
+ * times can't be read stays.
+ */
+export function photosToSweep(userId, listed, inUse, olderThan) {
+  const limit = olderThan === null ? Infinity : Date.parse(olderThan)
+  const out = []
+  for (const f of listed ?? []) {
+    // a folder comes back with a null id
+    if (typeof f?.name !== 'string' || !f.id) continue
+    const path = `${personalFolder(userId)}${f.name}`
+    if (!isPersonalMediaOf(path, userId) || inUse.has(path)) continue
+    if (olderThan !== null) {
+      const stamps = [f.updated_at, f.created_at].map(t => Date.parse(t ?? '')).filter(Number.isFinite)
+      if (stamps.length === 0 || !(Math.max(...stamps) < limit)) continue
+    }
+    out.push(path)
+  }
+  return out
+}
+
+/** Delete an account's own photos from the bucket, a batch at a time, refusing any other path; returns how many went. */
+async function removeOwnPhotos(userId, paths) {
+  const mine = paths.filter(p => isPersonalMediaOf(p, userId))
+  let removed = 0
+  for (let i = 0; i < mine.length; i += DELETE_BATCH) {
+    const batch = mine.slice(i, i + DELETE_BATCH)
+    const gone = await storage(`/object/${BUCKET}`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prefixes: batch }),
+    })
+    removed += Array.isArray(gone) ? gone.length : batch.length
+  }
+  return removed
+}
+
+/**
+ * The nightly wardrobe-photo sweep. For each account the server holds a piece
+ * of clothing for (live, in Trash or deleted forever), delete the photos in
+ * its personal/ folder that no piece points at any more — replaced ones the
+ * app could not delete itself, and those of pieces deleted forever or aged out
+ * of Trash — once they are PHOTO_GRACE_MS old. An account with no pieces on
+ * the server is left alone: they may still be waiting on its devices (a build
+ * ahead of `db push`) with their photos already uploaded. Every account's
+ * pieces count as pointing, not just the folder's owner's. Reads with the
+ * service key, and nothing it reads leaves here but a count.
+ */
+export async function sweepPersonalPhotos(now = new Date()) {
+  const rows = await restAll('posts?select=id,user_id,data&kind=eq.garment')
+  const cutoff = new Date(now.getTime() - PHOTO_GRACE_MS).toISOString()
+  const inUse = garmentMediaIds(rows.map(r => r?.data), { expiredBefore: cutoff })
+  const owners = [...new Set(rows.map(r => r?.user_id).filter(u => typeof u === 'string'))]
+  let deleted = 0
+  const failures = []
+  for (const userId of owners) {
+    try {
+      deleted += await removeOwnPhotos(userId, photosToSweep(userId, await listPersonalFolder(userId), inUse, cutoff))
+    } catch (e) {
+      failures.push(`photos of ${userId}: ${e?.message ?? e}`)
+    }
+  }
+  return { deleted, failures }
+}
+
+/**
+ * An account's wardrobe photos, deleted with the account: everything in its
+ * personal/ folder that no piece of clothing points at, whatever its age.
+ * Admin runs it once admin_prepare_user_deletion has deleted the account's own
+ * pieces, and before the sign-in goes. Returns how many went.
+ */
+export async function removePersonalPhotos(userId) {
+  const inUse = garmentMediaIds((await restAll('posts?select=id,user_id,data&kind=eq.garment')).map(r => r?.data))
+  return removeOwnPhotos(userId, photosToSweep(userId, await listPersonalFolder(userId), inUse, null))
+}
+
 /**
  * Snapshot every user with live posts, then purge what has aged out. One user
  * failing never costs the others their snapshot.
@@ -236,12 +372,18 @@ export async function runBackup(now = new Date()) {
     }
   }
 
+  // before the tombstones go: an account whose last pieces were deleted
+  // forever is still one the server holds pieces for, so its photos are swept
+  const photos = await sweepPersonalPhotos(now).catch(e => ({ deleted: null, failures: [`photos: ${e?.message ?? e}`] }))
+  failures.push(...photos.failures)
+
   return {
     date,
     users,
     failures,
     unowned: (rows ?? []).filter(r => !r?.user_id).length,
     historyPurged: await purgeHistory(now),
+    photosDeleted: photos.deleted,
     tombstonesPurged: await purgeTombstones(now),
   }
 }

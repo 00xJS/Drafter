@@ -358,12 +358,14 @@ export function Admin({ onClose }: Props) {
                     <ConfirmButton
                       className="btn subtle danger"
                       confirmLabel="Delete for good?"
-                      title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted.`}
+                      title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted, and their wardrobe photos with them.`}
                       onConfirm={() =>
                         run(async () => {
-                          const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number }>('deleteUser', { userId: u.id })
+                          const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number; photosDeleted?: number }>('deleteUser', {
+                            userId: u.id,
+                          })
                           setLinkOut(
-                            `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s) and ${r.historyDeleted} history row(s) were deleted.`,
+                            `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s), ${r.historyDeleted} history row(s) and ${r.photosDeleted ?? 0} wardrobe photo(s) were deleted.`,
                           )
                           await Promise.all([refreshUsers(), refreshStats()])
                         })
@@ -499,6 +501,7 @@ export function Admin({ onClose }: Props) {
                     ))}
                     {backupReport.unowned > 0 && <Stat label="Unowned rows skipped (no account to restore into)" value={backupReport.unowned} />}
                     <Stat label="History rows purged (60d)" value={backupReport.historyPurged ?? '—'} />
+                    <Stat label="Unused wardrobe photos deleted (90d)" value={backupReport.photosDeleted ?? '—'} />
                     <Stat label="Purged tombstones hard-deleted (90d)" value={backupReport.tombstonesPurged ?? '—'} />
                   </ul>
                   {backupReport.failures.length > 0 && <p className="warn">{backupReport.failures.join(' | ')}</p>}

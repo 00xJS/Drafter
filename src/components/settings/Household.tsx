@@ -4,6 +4,7 @@ import { clearLocalData } from '../../idb'
 import { disablePush } from '../../push'
 import { getSupabase } from '../../supabase'
 import { ConfirmButton } from '../ConfirmButton'
+import { useSignOut } from '../SignOutGuard'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
@@ -105,6 +106,16 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
 /** Household → Account: who is signed in here, and signing out (which wipes this device's copy). */
 export function Account({ supabaseOn, onClose }: SettingsCtx) {
   const [accountEmail, setAccountEmail] = useState('')
+  // stop notifications and wipe the local copy BEFORE dropping the session,
+  // while the token is still valid to deregister with; the wipe takes any
+  // photo still waiting to upload, so that is asked about first
+  const signOut = useSignOut(async () => {
+    await disablePush().catch(() => {})
+    await getSupabase()?.auth.signOut()
+    await clearLocalData()
+    onClose()
+    window.location.reload()
+  })
   useEffect(() => {
     getSupabase()
       ?.auth.getSession()
@@ -116,20 +127,10 @@ export function Account({ supabaseOn, onClose }: SettingsCtx) {
     <section className="settings-section g-household">
       <h3>Account</h3>
       <p>{accountEmail ? `Signed in as ${accountEmail}.` : 'Signed in.'}</p>
-      <button
-        className="btn"
-        onClick={async () => {
-          // stop notifications and wipe the local copy BEFORE dropping the
-          // session, while the token is still valid to deregister with
-          await disablePush().catch(() => {})
-          await getSupabase()?.auth.signOut()
-          await clearLocalData()
-          onClose()
-          window.location.reload()
-        }}
-      >
+      <button className="btn" disabled={signOut.busy} onClick={signOut.start}>
         Sign out
       </button>
+      {signOut.question}
     </section>
   )
 }

@@ -1493,7 +1493,7 @@ do $$
 declare r jsonb;
 begin
   r := public.sync_posts('[
-    {"kind":"garment","id":"e-coat","name":"Wool coat","type":"outerwear","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"garment","id":"e-coat","name":"Wool coat","type":"outerwear","photoId":"personal/00000000-0000-0000-0000-00000000000e/e0c0a7f1","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"outfit","id":"e-outfit","garmentIds":["e-coat"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"wear","id":"wear~2026-09-13~e1e2e3e4e5","date":"2026-09-13","garmentIds":["e-coat"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"task","id":"e-task","title":"Return the keys","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
@@ -1624,5 +1624,93 @@ begin
     raise exception 'FAIL v3.14-6: the owner could not delete their own personal photo';
   end if;
   raise notice 'ok v3.14-6: the owner sees, replaces and deletes their own personal photo, and no backup';
+end $$;
+commit;
+
+-- ------------- v3.14-7. what the wardrobe-photo clean-up reads, and may delete
+-- The nightly sweep (sweepPersonalPhotos in netlify/functions/lib/backup.mjs)
+-- and Admin's account deletion read every garment row with the service key
+-- (posts?kind=eq.garment) and delete a photo under personal/<user id>/ only
+-- when no live piece, or piece in Trash, points at it. Pinned here: the kind
+-- column finds live, trashed and purged pieces; a piece in Trash keeps its
+-- photo ids, so its photos are kept; a piece deleted forever keeps none, so
+-- its photos are found only by nothing pointing at them; no piece anywhere
+-- points into a deleted account's folder; and the uploader-only storage
+-- policies do not hold back the service role the Storage API runs as.
+-- storage.objects.owner has no foreign key in this stub and is unverified on
+-- Supabase, which is why Admin deletes the photos before the sign-in.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"garment","id":"g-coat","name":"Rain coat","type":"outerwear","photoId":"personal/00000000-0000-0000-0000-00000000000a/c0a7c0a7","thumbId":"personal/00000000-0000-0000-0000-00000000000a/c0a7c0a8","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z","deletedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"garment","id":"g-hat","name":"Sun hat","type":"accessory","photoId":"personal/00000000-0000-0000-0000-00000000000a/4a7a4a7a","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-7: the owner''s pieces were rejected: %', r -> 'rejected';
+  end if;
+  -- Delete forever: the content-free tombstone the app writes (purgeTombstone in src/sync.ts)
+  r := public.sync_posts('[
+    {"kind":"garment","id":"g-hat","name":"","type":"accessory","purged":true,"deletedAt":"2026-09-13T09:00:00.000Z","createdAt":"2026-09-13T09:00:00.000Z","updatedAt":"2026-09-13T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-7: the Delete forever tombstone was rejected: %', r -> 'rejected';
+  end if;
+end $$;
+commit;
+
+begin;
+set local role service_role;
+do $$
+declare referenced text[]; n integer; fks integer;
+begin
+  if (select count(*) from public.posts where kind = 'garment' and id in ('g-tee', 'g-coat', 'g-hat')) <> 3 then
+    raise exception 'FAIL v3.14-7: the service role should find the live, the trashed and the purged piece by kind';
+  end if;
+  if (select data ->> 'photoId' from public.posts where id = 'g-coat') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/c0a7c0a7'
+     or (select data ->> 'deletedAt' from public.posts where id = 'g-coat') is null then
+    raise exception 'FAIL v3.14-7: a piece in Trash should keep its photo ids, so the sweep keeps its photos';
+  end if;
+  if (select data ? 'photoId' or data ? 'thumbId' from public.posts where id = 'g-hat')
+     or (select data ->> 'purged' from public.posts where id = 'g-hat') is distinct from 'true' then
+    raise exception 'FAIL v3.14-7: a piece deleted forever should be stored content-free, pointing at no photo';
+  end if;
+  -- garmentMediaIds (shared/media.mjs) in SQL: every photo a live piece, or one in Trash, points at
+  select coalesce(array_agg(p order by p), '{}') into referenced
+    from public.posts, lateral (values (data ->> 'photoId'), (data ->> 'thumbId')) v(p)
+   where kind = 'garment' and coalesce(data ->> 'purged', 'false') <> 'true' and p is not null;
+  if referenced <> array[
+    'personal/00000000-0000-0000-0000-00000000000a/7f3c9a10',
+    'personal/00000000-0000-0000-0000-00000000000a/7f3c9a11',
+    'personal/00000000-0000-0000-0000-00000000000a/c0a7c0a7',
+    'personal/00000000-0000-0000-0000-00000000000a/c0a7c0a8'
+  ] then
+    raise exception 'FAIL v3.14-7: the photos pieces point at should be the live and the trashed piece''s, got %', referenced;
+  end if;
+  -- step v3.14-5 deleted …0e, whose coat had a photo: nothing may still point into that folder
+  if exists (select 1 from public.posts
+              where kind = 'garment'
+                and (data ->> 'photoId' like 'personal/00000000-0000-0000-0000-00000000000e/%'
+                  or data ->> 'thumbId' like 'personal/00000000-0000-0000-0000-00000000000e/%')) then
+    raise exception 'FAIL v3.14-7: a piece still points into the deleted account''s personal folder';
+  end if;
+  insert into storage.objects (bucket_id, name, owner) values
+    ('media', 'personal/00000000-0000-0000-0000-00000000000e/e0c0a7f1', '00000000-0000-0000-0000-00000000000e');
+  delete from storage.objects
+   where bucket_id = 'media'
+     and name in ('personal/00000000-0000-0000-0000-00000000000e/e0c0a7f1', 'personal/00000000-0000-0000-0000-00000000000b/mine');
+  get diagnostics n = row_count;
+  if n <> 2 then
+    raise exception 'FAIL v3.14-7: the service role should delete any account''s personal photo by name, deleted %', n;
+  end if;
+  if not exists (select 1 from storage.objects where name = 'n1')
+     or not exists (select 1 from storage.objects where name = 'backups/00000000-0000-0000-0000-00000000000a/2026-09-13.json') then
+    raise exception 'FAIL v3.14-7: deleting personal photos by name took the household photo or a backup with them';
+  end if;
+  select count(*) into fks from pg_constraint where conrelid = 'storage.objects'::regclass and contype = 'f';
+  raise notice 'ok v3.14-7: the clean-up finds live, trashed and purged pieces by kind; Trash keeps its photo ids, Delete forever keeps none; nothing points into a deleted account''s folder; the service role deletes personal photos by name and nothing else (storage.objects has % foreign key(s) here, a stub; unverified on Supabase)', fks;
 end $$;
 commit;

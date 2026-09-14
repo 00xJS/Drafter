@@ -32,6 +32,7 @@ import {
   saveOutfit,
   savedOrder,
   suggestedNames,
+  swappedPhotos,
   todaySuggestions,
   unwearable,
   wardrobeTiles,
@@ -745,5 +746,25 @@ describe('saved outfits and Forgot yesterday', () => {
     expect(forgotYesterday(wearIndex([look(ago(1), []), look(ago(3), ['tee'])], TODAY), 9)).toBe(ago(1))
     // across the new year
     expect(forgotYesterday(wearIndex([look('2026-12-30', ['tee'])], '2027-01-01'), 8)).toBe('2026-12-31')
+  })
+})
+
+describe('swappedPhotos: what a write did to a piece’s photos', () => {
+  const P = (n: number) => `personal/00000000-0000-0000-0000-00000000000a/${String(n).repeat(8)}`
+
+  it('Replace photo lets go of both old ids and points at the two new ones; its Undo is the same swap back', () => {
+    const before = piece('tee', 'top', { photoId: P(1), thumbId: P(2) })
+    const after = { ...before, photoId: P(3), thumbId: P(4) }
+    expect(swappedPhotos(before, after)).toEqual({ gone: [P(1), P(2)], now: [P(3), P(4)] })
+    expect(swappedPhotos(after, before)).toEqual({ gone: [P(3), P(4)], now: [P(1), P(2)] })
+  })
+
+  it('lets go of nothing a write kept: a rename, a retire, a first photo, the half that did not change', () => {
+    const g = piece('tee', 'top', { photoId: P(1), thumbId: P(2) })
+    expect(swappedPhotos(g, renamed(g, 'Old tee')).gone).toEqual([])
+    expect(swappedPhotos(g, retired(g, true)).gone).toEqual([])
+    const bare = piece('scarf', 'accessory')
+    expect(swappedPhotos(bare, { ...bare, photoId: P(3), thumbId: P(4) })).toEqual({ gone: [], now: [P(3), P(4)] })
+    expect(swappedPhotos(g, { ...g, photoId: P(5) })).toEqual({ gone: [P(1)], now: [P(5), P(2)] })
   })
 })

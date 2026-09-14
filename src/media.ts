@@ -1,5 +1,7 @@
+import { PERSONAL_PREFIX, isPersonalMediaOf } from '../shared/media.mjs'
 import { idbAll, idbDel, idbGet, idbSet } from './idb'
 import { getSupabase, storedUserId } from './supabase'
+import { browserKV, type KV } from './syncstate'
 import { uid } from './utils'
 
 // Images live in the Supabase Storage bucket "media" so every signed-in device
@@ -23,6 +25,8 @@ export interface MediaItem {
   pending?: true
   /** A garment's photo: sent only under personal/<user id>/. */
   personal?: true
+  /** A piece's thumbnail: the id of the photo it was made from, so the two count as one photo. */
+  thumbOf?: string
 }
 
 const urlCache = new Map<string, string>()
@@ -43,7 +47,7 @@ export class NotSignedIn extends Error {
  * access token has expired. With neither it is refused, never given a bare id.
  * In local mode the id is a bare uid, as a note photo's always is.
  */
-export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean; userId?: string | null } = {}): Promise<string> {
+export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean; userId?: string | null; thumbOf?: string } = {}): Promise<string> {
   const sb = getSupabase()
   let id = uid()
   if (opts.personal && sb) {
@@ -53,6 +57,7 @@ export async function saveMedia(file: Blob & { name?: string }, opts: { personal
   }
   const item: MediaItem = { id, name: file.name ?? id, type: file.type, blob: file }
   if (opts.personal) item.personal = true
+  if (opts.thumbOf) item.thumbOf = opts.thumbOf
   if (sb) item.pending = true
   await idbSet('media', id, item)
   void flushPendingMedia()
@@ -122,6 +127,8 @@ export function flushPendingMedia(): Promise<number> {
       again = false
       sent += await uploadPending({ items: () => idbAll<MediaItem>('media'), put: keepUploaded, upload: toBucket }).catch(() => 0)
     } while (again)
+    // what just went up may be what a swapped-out photo was waiting on
+    await retireSwapped().catch(() => {})
     return sent
   }
   flushing = run().finally(() => {
@@ -146,9 +153,126 @@ export function watchPendingMedia(win: Window = window, doc: Document = document
 }
 
 /**
+ * Photos this device holds that the bucket does not have yet: what signing out
+ * would lose, as clearLocalData deletes the whole database. A piece's
+ * thumbnail counts with its photo, as one; waiting alone, it counts itself.
+ */
+export async function unsentPhotoCount(): Promise<number> {
+  if (!getSupabase()) return 0
+  const waiting = (await idbAll<MediaItem>('media')).filter(i => i.pending)
+  const ids = new Set(waiting.map(i => i.id))
+  return waiting.filter(i => !(i.thumbOf && ids.has(i.thumbOf))).length
+}
+
+// ---- photos swapped out of a piece of clothing
+
+/** The swaps still to finish. A drafter:* key, so signing out forgets them with everything else. */
+export const RETIRE_KEY = 'drafter:media-retire'
+/** Well past the Undo toast (6 s, 15 s with an action), so an Undo never brings back a photo already deleted. */
+export const RETIRE_AFTER_MS = 60_000
+/** Kept at most: the oldest beyond it are forgotten, their photos left to the server's nightly sweep. */
+const MAX_RETIRING = 100
+
+/** A piece's photos swapped out: `ids` go once every one of `after` is in the bucket and RETIRE_AFTER_MS has passed since `at`. */
+export interface Retiring {
+  ids: string[]
+  after: string[]
+  at: number
+}
+
+/** What the planner knows: whose photos these are, and every one a piece of clothing here, live or in Trash, points at. */
+export interface MediaInUse {
+  userId: string | null
+  ids: ReadonlySet<string>
+}
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+
+function readRetiring(kv: KV = browserKV): Retiring[] {
+  try {
+    const list: unknown = JSON.parse(kv.getItem(RETIRE_KEY) ?? '[]')
+    if (!Array.isArray(list)) return []
+    return list.flatMap(e => (e && typeof e === 'object' && typeof e.at === 'number' ? [{ ids: strings(e.ids), after: strings(e.after), at: e.at }] : []))
+  } catch {
+    return []
+  }
+}
+
+function writeRetiring(list: readonly Retiring[], kv: KV = browserKV): void {
+  try {
+    if (list.length) kv.setItem(RETIRE_KEY, JSON.stringify(list))
+    else kv.removeItem(RETIRE_KEY)
+  } catch {
+    /* storage may be unavailable: the photos stay, which is the safe way to be wrong */
+  }
+}
+
+let inUse: (() => MediaInUse | null) | null = null
+
+/** The planner's records, for the swaps: `get` answers null until they have loaded. Returns the unsubscribe. */
+export function trackMediaInUse(get: () => MediaInUse | null): () => void {
+  inUse = get
+  return () => {
+    if (inUse === get) inUse = null
+  }
+}
+
+/**
+ * A piece's photos swapped out — by Replace photo, or by the Undo of one:
+ * delete them, from this device and the bucket, once every photo that took
+ * their place is up and the Undo toast has long gone, and then only the ones
+ * that are this account's own and that no piece of clothing here, live or in
+ * Trash, points at. Kept on this device, so a swap whose new photo is still
+ * uploading when the app closes finishes at a later launch. Signed in only: a
+ * local copy's photos have no bucket to be left in.
+ */
+export function retireMedia(ids: readonly (string | undefined)[], after: readonly (string | undefined)[]): void {
+  if (!getSupabase()) return
+  const gone = ids.filter((id): id is string => !!id && id.startsWith(PERSONAL_PREFIX))
+  if (gone.length === 0) return
+  writeRetiring([...readRetiring(), { ids: gone, after: after.filter((id): id is string => !!id), at: Date.now() }].slice(-MAX_RETIRING))
+  // nothing else may flush for a while: look again once the minute is up
+  setTimeout(() => void flushPendingMedia(), RETIRE_AFTER_MS + 1_000)
+}
+
+/**
+ * The swaps' core, with their state handed in (the tests run it with none). An
+ * entry is due once none of its replacements is waiting to upload and
+ * RETIRE_AFTER_MS has passed; a due entry's photos go if they are this
+ * account's own and nothing points at them, and the entry is done either way —
+ * a photo pointed at again was brought back (an Undo, another device) and
+ * stays. Without the planner's records, or an account, nothing is due.
+ */
+export function dueForRemoval(entries: readonly Retiring[], waiting: ReadonlySet<string>, used: MediaInUse | null, now: number): { keep: Retiring[]; remove: string[] } {
+  const keep: Retiring[] = []
+  const remove = new Set<string>()
+  for (const e of entries) {
+    if (!used?.userId || now - e.at < RETIRE_AFTER_MS || e.after.some(id => waiting.has(id))) {
+      keep.push(e)
+      continue
+    }
+    for (const id of e.ids) if (isPersonalMediaOf(id, used.userId) && !used.ids.has(id)) remove.add(id)
+  }
+  return { keep, remove: [...remove] }
+}
+
+/** After a flush: let go of the swapped-out photos that are due. */
+async function retireSwapped(): Promise<void> {
+  if (!inUse || readRetiring().length === 0) return
+  const waiting = new Set((await idbAll<MediaItem>('media')).filter(i => i.pending).map(i => i.id))
+  // the records as they are now, and the queue read and written with no await
+  // between, so a swap queued meanwhile is not lost
+  const used = inUse?.() ?? null
+  const { keep, remove } = dueForRemoval(readRetiring(), waiting, used && { ...used, userId: used.userId ?? storedUserId() }, Date.now())
+  writeRetiring(keep)
+  if (remove.length) await deleteMedia(remove)
+}
+
+/**
  * Gone for good: the object URL, this device's copy and the bucket's, best
- * effort. Only Trash → Delete forever on a garment calls it; a plain delete
- * keeps the photos so Restore brings the piece back whole.
+ * effort. Trash → Delete forever on a garment calls it, and so does a swap
+ * (retireMedia) for a photo no piece points at any more; a plain delete keeps
+ * the photos so Restore brings the piece back whole.
  */
 export async function deleteMedia(ids: readonly (string | undefined)[]): Promise<void> {
   const gone = ids.filter((id): id is string => !!id)
