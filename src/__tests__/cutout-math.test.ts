@@ -472,6 +472,43 @@ describe('Vision’s subjects', () => {
     expect(chooseSubjects(mask())).toBeNull()
   })
 
+  /** A 100 × 100 instance mask, painted as `mask` paints its 20 × 16. */
+  function big(...rects: [number, number, number, number, number][]): InstanceMask {
+    const data = new Uint8Array(100 * 100)
+    for (const [label, x0, y0, w, h] of rects) for (let y = y0; y < y0 + h; y++) data.fill(label, y * 100 + x0, y * 100 + x0 + w)
+    return { width: 100, height: 100, data }
+  }
+
+  it('takes a rug in a corner, pressed into two sides with the trainers on it, for the ground', () => {
+    // the rug covers 44.5% of the frame and touches the left and the bottom; each trainer is 2.25%
+    const corner = big([1, 0, 30, 70, 70], [2, 20, 50, 15, 15], [3, 40, 50, 15, 15])
+    expect(subjectsIn(corner).map(s => s.edgesTouched)).toEqual([2, 0, 0])
+    expect(chooseSubjects(corner)).toEqual({ keep: [2, 3], doubtful: false })
+  })
+
+  it('keeps small trainers beside a rug pressed into three sides, however large the rug', () => {
+    // the rug is 64% of the frame; each trainer 1.5%, under the speck a web mask is judged by, and far under a fifth of the rug
+    const room = big([1, 0, 30, 100, 70], [2, 20, 50, 15, 10], [3, 50, 50, 15, 10])
+    expect(chooseSubjects(room)).toEqual({ keep: [2, 3], doubtful: false })
+    // a stray pixel on it is still a speck: the rug stays, doubted
+    expect(chooseSubjects(big([1, 0, 30, 100, 70], [2, 50, 60, 1, 1]))).toEqual({ keep: [1], doubtful: true })
+  })
+
+  it('takes no close-up for ground just because it touches two sides', () => {
+    // jeans from the top of the frame to the bottom, and a shoe beside them on the floor, not on them
+    const jeans = big([1, 10, 0, 40, 100], [2, 70, 60, 12, 12])
+    expect(subjectsIn(jeans).map(s => s.edgesTouched)).toEqual([2, 0])
+    expect(chooseSubjects(jeans)).toEqual({ keep: [1], doubtful: false })
+    // two subjects pressed into two sides each: neither is the ground by its sides alone, so both
+    // stay, and a box between them, under a fifth of either, goes
+    expect(chooseSubjects(big([1, 0, 0, 30, 60], [2, 70, 40, 30, 60], [3, 40, 40, 10, 10]))).toEqual({ keep: [1, 2], doubtful: false })
+  })
+
+  it('keeps all of the ground when nothing else is more than a speck', () => {
+    // a garment filling most of the frame, pressed into three sides, and a strip of bed above it, pressed into three too
+    expect(chooseSubjects(mask([1, 0, 0, 20, 2], [2, 0, 2, 20, 14]))).toEqual({ keep: [1, 2], doubtful: true })
+  })
+
   it('gives a tap the subject under it alone, the ground too, but not the background or what is already shown', () => {
     expect(subjectForTap(rugAndShoes, onRightShoe, [2, 3])).toEqual([3])
     expect(subjectForTap(rugAndShoes, { x: 0.02, y: 0.02 }, [2, 3])).toEqual([1])

@@ -44,9 +44,13 @@ export const CUTOUT = {
   nearEdgeShare: 0.01,
   smallCropPx: 300,
   // Vision's subjects on the iPhone: what stays beside the largest (both shoes of
-  // a pair), and the ring, in the instance mask's own pixels, that goes with one
-  // left out
+  // a pair), the least of the frame a garment beside the ground can be (a
+  // trainer across the room is 1–2%), how much of the ring round a garment's
+  // box must be one subject for the garment to lie on it, and the ring, in the
+  // instance mask's own pixels, that goes with one left out
   subjectShare: 0.2,
+  subjectSpeck: 0.004,
+  groundRingShare: 0.5,
   subjectFringePx: 2,
   // snapToEdges (the web engine's mask, on the work photo): the guided filter's
   // radius and smoothing (on luma 0..1, so 0.001 answers to a step of about
@@ -881,21 +885,74 @@ export function subjectAt(mask: InstanceMask, at: Point): number {
 }
 
 /**
- * Which of Vision's subjects are the garment, with no tap to go by. One
- * pressed into three or more sides of the frame is the ground the garment
- * lies on (a rug, the bed, a door), so it gives way to any other subject that
- * is more than a speck; of those, each at least a fifth the size of the
- * largest stays, so both shoes of a pair do. When every subject looks like
- * ground, they all stay, since a garment can fill the frame; that is doubtful
- * only when there was a choice to make. Null when the mask holds no subject.
+ * How much of the ring just outside `box` (as far out as "near" a side of the
+ * frame is) is subject `label`, of the ring's pixels that are that subject or
+ * the background. Another subject's pixels count for neither: the other shoe
+ * of a pair stands on the same rug.
+ */
+function ringShare(mask: InstanceMask, box: Box, label: number): number {
+  const { width: w, height: h, data } = mask
+  const d = Math.max(CUTOUT.nearEdgePx, Math.round(Math.max(w, h) * CUTOUT.nearEdgeShare))
+  const [left, top, right, bottom] = [box.x - d, box.y - d, box.x + box.width - 1 + d, box.y + box.height - 1 + d]
+  let on = 0
+  let seen = 0
+  const look = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return
+    const at = data[y * w + x]
+    if (at === label) on++
+    if (at === label || at === 0) seen++
+  }
+  for (let x = left; x <= right; x++) {
+    look(x, top)
+    look(x, bottom)
+  }
+  for (let y = top + 1; y < bottom; y++) {
+    look(left, y)
+    look(right, y)
+  }
+  return seen ? on / seen : 0
+}
+
+/**
+ * The subjects a garment lies on. Any pressed into three or more sides of the
+ * frame (a rug, the bed, a door); and the one pressed into the most sides, two
+ * and more than any other, when something more than a speck lies on it,
+ * mostly ringed by it: the rug in a corner of the photo, with the trainers on
+ * it. Jeans from waistband to hem touch two sides too, but a shoe beside them
+ * lies on the floor, so they are no ground.
+ */
+function groundOf(mask: InstanceMask, subjects: readonly Subject[]): Set<number> {
+  const ground = new Set(subjects.filter(s => s.edgesTouched >= CUTOUT.frameEdges).map(s => s.label))
+  const most = Math.max(...subjects.map(s => s.edgesTouched))
+  const pressed = subjects.filter(s => s.edgesTouched === most)
+  if (most === 2 && pressed.length === 1) {
+    const [under] = pressed
+    const onIt = subjects.some(s => s.edgesTouched < most && s.area >= CUTOUT.subjectSpeck && ringShare(mask, s.box, under.label) >= CUTOUT.groundRingShare)
+    if (onIt) ground.add(under.label)
+  }
+  return ground
+}
+
+/**
+ * Which of Vision's subjects are the garment, with no tap to go by. The
+ * ground a garment lies on (groundOf) gives way to any other subject more than
+ * a speck; of those, each at least a fifth the size of the largest stays, so
+ * both shoes of a pair do, however large the rug under them. When nothing but
+ * ground and specks is left, all the ground stays, since a garment can fill
+ * the frame; that is doubtful only when there was a choice to make. Null when
+ * the mask holds no subject.
  */
 export function chooseSubjects(mask: InstanceMask): { keep: number[]; doubtful: boolean } | null {
   const subjects = subjectsIn(mask)
   if (!subjects.length) return null
-  const garments = subjects.filter(s => s.edgesTouched < CUTOUT.frameEdges && s.area >= CUTOUT.tinyCoverage)
-  const pool = garments.length ? garments : subjects
-  const largest = Math.max(...pool.map(s => s.area))
-  return { keep: pool.filter(s => s.area >= largest * CUTOUT.subjectShare).map(s => s.label), doubtful: !garments.length && subjects.length > 1 }
+  const ground = groundOf(mask, subjects)
+  const garments = subjects.filter(s => !ground.has(s.label) && s.area >= CUTOUT.subjectSpeck)
+  if (garments.length) {
+    const largest = Math.max(...garments.map(s => s.area))
+    return { keep: garments.filter(s => s.area >= largest * CUTOUT.subjectShare).map(s => s.label), doubtful: false }
+  }
+  const pool = ground.size ? subjects.filter(s => ground.has(s.label)) : subjects
+  return { keep: pool.map(s => s.label), doubtful: subjects.length > 1 }
 }
 
 /**

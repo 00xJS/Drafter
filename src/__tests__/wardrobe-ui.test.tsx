@@ -457,9 +457,9 @@ describe('the guards around the wardrobe', () => {
     expect(sheet).toContain('useEffect(warmCutout, [])')
     // what the sheet hands back is what prepareGarmentPhoto makes the piece's photos from, told whether it is the cut-out
     expect(sheet).toContain('prepareGarmentPhoto(picked.file, { cutout: picked.cutout })')
-    expect(sheet).toContain('onDone={(f, info) => setPicked({ file: f, cutout: info.cutout })}')
+    expect(sheet).toContain('onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })}')
     // Replace photo goes the same way
-    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout)}')
+    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout, info.offline)}')
     expect(sheet).toContain('prepareGarmentPhoto(file, { cutout })')
     // and no photo reaches prepareGarmentPhoto without the sheet: its only callers are those two
     expect(sheet.match(/prepareGarmentPhoto\(/g)).toHaveLength(2)

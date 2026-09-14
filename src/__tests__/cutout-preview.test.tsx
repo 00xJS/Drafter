@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CutoutPreview, CutoutSheet, type CutoutPreviewProps, type PreviewState } from '../components/CutoutSheet'
-import { CutoutLater, cutoutLaterLabel } from '../components/wardrobe/CutoutLater'
+import { CutoutLater, cutoutLaterLabel, keptOffline, UNREADABLE, wasKeptOffline } from '../components/wardrobe/CutoutLater'
 import { CUTOUT_TOTAL_BYTES } from '../cutoutassets'
 
 // "Check the cut-out", in every state it can be in. The copy is pinned: each
@@ -208,7 +208,61 @@ describe('Cut out background, from the piece sheet', () => {
   it('is one line in the piece sheet, and replaces the photo as Replace photo does', () => {
     const sheet = read('../components/wardrobe/GarmentSheet.tsx')
     expect(sheet.match(/<CutoutLater /g)).toHaveLength(1)
-    expect(sheet).toContain('<CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} />')
+    expect(sheet).toContain('<CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />')
+  })
+
+  it('says so in the piece sheet when the saved photo cannot be read, rather than doing nothing', () => {
+    const later = read('../components/wardrobe/CutoutLater.tsx')
+    expect(later).toMatch(/const open = async \(\) => \{[\s\S]*?try \{[\s\S]*?\} catch \{\s*onError\?\.\(UNREADABLE\)/)
+    // a fetch that answers 404 is no photo either
+    expect(later).toContain('return response.ok ? response.blob() : null')
+    expect(UNREADABLE).toBe('That photo could not be read on this device — try again online')
+  })
+
+  it('remembers, on this device, a photo kept as it was for being offline, so its sheet says Cut out now online', () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) })
+    try {
+      expect(wasKeptOffline('p1')).toBe(false)
+      keptOffline('p1')
+      keptOffline('p2')
+      keptOffline('p1')
+      expect(JSON.parse(store.get('drafter:uncut-offline')!)).toEqual(['p2', 'p1'])
+      expect(wasKeptOffline('p1')).toBe(true)
+      expect(wasKeptOffline(undefined)).toBe(false)
+      expect(cutoutLaterLabel(true, 'web', wasKeptOffline('p1'))).toBe('Cut out now')
+      // still nothing while no cut-out can be made
+      expect(cutoutLaterLabel(true, 'offline', wasKeptOffline('p1'))).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    // storage blocked: nothing remembered, and nothing thrown
+    const blocked = () => {
+      throw new Error('blocked')
+    }
+    vi.stubGlobal('localStorage', { getItem: blocked, setItem: blocked, removeItem: blocked })
+    try {
+      expect(() => keptOffline('p1')).not.toThrow()
+      expect(wasKeptOffline('p1')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('learns it from Use original offline, in Add clothing and in Replace photo, and forgets it once cut out or turned down online', () => {
+    expect(read('../components/CutoutSheet.tsx')).toContain("offline: result?.reason === 'offline' && !online")
+    const sheet = read('../components/wardrobe/GarmentSheet.tsx')
+    expect(sheet).toContain('if (photoId && picked?.offline) keptOffline(photoId)')
+    expect(sheet).toContain('if (offline) keptOffline(photoId)')
+    expect(read('../components/wardrobe/CutoutLater.tsx')).toContain('if (info.cutout || !info.offline) forgetOffline(id)')
+  })
+
+  it('opens Check the cut-out over the piece sheet, not inside it, leaving the sheet as it was', () => {
+    const sheet = read('../components/wardrobe/GarmentSheet.tsx')
+    expect(sheet.match(/createPortal\(/g)).toHaveLength(2)
+    // no fragment round either sheet's Modal, so its lines keep their place
+    expect(sheet).not.toMatch(/<>\s*<Modal/)
+    expect(sheet.match(/^ {4}<Modal onClose=\{close\} className="modal narrow garment-sheet">$/gm)).toHaveLength(2)
   })
 
   it('shows nothing until it has read the photo, so a server render has no button', () => {

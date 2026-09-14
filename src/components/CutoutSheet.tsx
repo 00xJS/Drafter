@@ -321,8 +321,12 @@ function useGarmentCutout(initial: Blob) {
 
 export interface CutoutSheetProps {
   photo: Blob
-  /** "Looks good" hands over the cut-out; "Use original" the photo as picked. */
-  onDone(file: File, info: { cutout: boolean; method: CutoutMethod }): void
+  /**
+   * "Looks good" hands over the cut-out; "Use original" the photo as picked,
+   * `offline` when that was only for want of a connection (the cut-out needs
+   * its one-time download), so the piece's sheet can offer it again online.
+   */
+  onDone(file: File, info: { cutout: boolean; method: CutoutMethod; offline?: boolean }): void
   /** ✕, Escape or the backdrop: the add is cancelled. */
   onCancel(): void
 }
@@ -367,7 +371,9 @@ export function CutoutSheet({ photo, onDone, onCancel }: CutoutSheetProps) {
         onAccept={() => {
           if (result && result.method !== 'none') onDone(garmentFile(result.image, `${stem(cut.photo)}-cutout.jpg`), { cutout: true, method: result.method })
         }}
-        onUseOriginal={() => onDone(cut.photo instanceof File ? cut.photo : garmentFile(cut.photo), { cutout: false, method: 'none' })}
+        onUseOriginal={() =>
+          onDone(cut.photo instanceof File ? cut.photo : garmentFile(cut.photo), { cutout: false, method: 'none', offline: result?.reason === 'offline' && !online })
+        }
         onRetake={() => {
           // synchronously, inside the tap: iOS Safari and WKWebView block a picker opened after an await
           picker.current?.click()

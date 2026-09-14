@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
 import { preloadable, warm } from '../../lazyload'
@@ -11,7 +12,7 @@ import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
-import { CutoutLater } from './CutoutLater'
+import { CutoutLater, keptOffline } from './CutoutLater'
 import { GarmentPhoto } from './GarmentPhoto'
 
 /** What the sheet is for: adding a piece (of a type, when the way in named one), or one piece. */
@@ -69,8 +70,8 @@ function TypeChips({ type, onChange }: { type: GarmentType; onChange(t: GarmentT
   )
 }
 
-/** What the cut-out sheet handed back for a photo: its cut-out, or the photo as picked. */
-type Picked = { file: File; cutout: boolean }
+/** What the cut-out sheet handed back for a photo: its cut-out, or the photo as picked (`offline`: only for want of a connection). */
+type Picked = { file: File; cutout: boolean; offline?: boolean }
 
 type Ready = { photo: Blob; thumb: Blob; color?: string; preview: string }
 
@@ -180,6 +181,8 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
         createdAt: now,
         updatedAt: now,
       })
+      // kept as it was only for want of a connection: its sheet offers Cut out now once online
+      if (photoId && picked?.offline) keptOffline(photoId)
       setLastSaved(type)
       next(type)
     } catch (err) {
@@ -195,88 +198,90 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   }
 
   return (
-    <>
-      <Modal onClose={close} className="modal narrow garment-sheet">
-        <ModalHead title={queue.length > 1 ? `Add clothing · ${at + 1} of ${queue.length}` : 'Add clothing'}>
-          {queue.length > 1 && (
-            <button type="button" className="btn subtle" onClick={() => next()}>
-              Skip
-            </button>
+    <Modal onClose={close} className="modal narrow garment-sheet">
+      <ModalHead title={queue.length > 1 ? `Add clothing · ${at + 1} of ${queue.length}` : 'Add clothing'}>
+        {queue.length > 1 && (
+          <button type="button" className="btn subtle" onClick={() => next()}>
+            Skip
+          </button>
+        )}
+      </ModalHead>
+      <div className="modal-body">
+        {/* the label is the target, so the tap itself opens the picker: on an
+            iPhone, Take Photo, Photo Library or Choose File */}
+        <label className={ready ? 'garment-pick has-photo' : 'garment-pick'}>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="garment-file"
+            onChange={e => {
+              choose(e.target.files)
+              e.target.value = ''
+            }}
+          />
+          {ready ? (
+            <img src={ready.preview} alt="The photo to save" />
+          ) : busy || checking ? (
+            <span className="garment-busy" role="status">
+              <span className="garment-spinner" aria-hidden="true" />
+              Getting the photo ready…
+            </span>
+          ) : (
+            <>
+              <Icon name="camera" size={28} />
+              <span className="garment-pick-title">{file ? 'Choose another photo' : 'Choose photo'}</span>
+              <small className="muted">or save the piece without one</small>
+            </>
           )}
-        </ModalHead>
-        <div className="modal-body">
-          {/* the label is the target, so the tap itself opens the picker: on an
-              iPhone, Take Photo, Photo Library or Choose File */}
-          <label className={ready ? 'garment-pick has-photo' : 'garment-pick'}>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="garment-file"
-              onChange={e => {
-                choose(e.target.files)
-                e.target.value = ''
-              }}
-            />
-            {ready ? (
-              <img src={ready.preview} alt="The photo to save" />
-            ) : busy || checking ? (
-              <span className="garment-busy" role="status">
-                <span className="garment-spinner" aria-hidden="true" />
-                Getting the photo ready…
-              </span>
-            ) : (
-              <>
-                <Icon name="camera" size={28} />
-                <span className="garment-pick-title">{file ? 'Choose another photo' : 'Choose photo'}</span>
-                <small className="muted">or save the piece without one</small>
-              </>
-            )}
-          </label>
-          {(error || failed) && (
-            <p className="garment-error" role="alert">
-              {error ?? failed}
-            </p>
-          )}
-          <div className="field">
-            <span>Type</span>
-            <TypeChips type={type} onChange={setType} />
-          </div>
-          <div className="field">
-            <span>Name</span>
-            <div className="garment-names">
-              {names.map(n => (
-                <button key={n} type="button" className={name === n ? 'toggle on' : 'toggle'} onClick={() => setName(n)}>
-                  {n}
-                </button>
-              ))}
-            </div>
-            <input value={name} placeholder={names[0]} maxLength={80} aria-label="Name" onChange={e => setName(e.target.value)} />
-          </div>
-          <details className="garment-more">
-            <summary>More</summary>
-            <label className="field">
-              <span>Notes</span>
-              <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
-            </label>
-          </details>
+        </label>
+        {(error || failed) && (
+          <p className="garment-error" role="alert">
+            {error ?? failed}
+          </p>
+        )}
+        <div className="field">
+          <span>Type</span>
+          <TypeChips type={type} onChange={setType} />
         </div>
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button type="button" className="btn" onClick={close}>
-            Cancel
-          </button>
-          <button type="button" className="btn primary" disabled={saving || busy || (!!file && !ready)} onClick={() => void save()}>
-            Save
-          </button>
-        </footer>
-      </Modal>
-      {file && checking && (
-        <Suspense fallback={null}>
-          <CutoutSheet key={`${round}.${at}`} photo={file} onDone={(f, info) => setPicked({ file: f, cutout: info.cutout })} onCancel={drop} />
-        </Suspense>
-      )}
-    </>
+        <div className="field">
+          <span>Name</span>
+          <div className="garment-names">
+            {names.map(n => (
+              <button key={n} type="button" className={name === n ? 'toggle on' : 'toggle'} onClick={() => setName(n)}>
+                {n}
+              </button>
+            ))}
+          </div>
+          <input value={name} placeholder={names[0]} maxLength={80} aria-label="Name" onChange={e => setName(e.target.value)} />
+        </div>
+        <details className="garment-more">
+          <summary>More</summary>
+          <label className="field">
+            <span>Notes</span>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+          </label>
+        </details>
+      </div>
+      <footer className="modal-foot">
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={close}>
+          Cancel
+        </button>
+        <button type="button" className="btn primary" disabled={saving || busy || (!!file && !ready)} onClick={() => void save()}>
+          Save
+        </button>
+      </footer>
+      {/* over the sheet, not inside its panel, which would clip it */}
+      {file &&
+        checking &&
+        createPortal(
+          <Suspense fallback={null}>
+            <CutoutSheet key={`${round}.${at}`} photo={file} onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })} onCancel={drop} />
+          </Suspense>,
+          document.body,
+        )}
+    </Modal>
   )
 }
 
@@ -314,7 +319,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     if (!cur || text === (cur.notes ?? '')) return
     onEdit(cur, { ...cur, notes: text || undefined, updatedAt: newerStamp(cur.updatedAt) })
   }
-  const replace = async (file: File, cutout: boolean) => {
+  const replace = async (file: File, cutout: boolean, offline?: boolean) => {
     setChecking(null)
     setPhotoBusy(true)
     setPhotoError(null)
@@ -325,6 +330,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
       // the old two stay where they are: an orphan is safer than a reference
       // that another device's edit of the piece could lose in a merge
       edit(cur => ({ ...cur, photoId, thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
+      if (offline) keptOffline(photoId)
     } catch (err) {
       setPhotoError(failure(err))
     } finally {
@@ -342,124 +348,124 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const inOutfits = outfits.filter(o => !o.deletedAt && o.garmentIds.includes(g.id))
 
   return (
-    <>
-      <Modal onClose={close} className="modal narrow garment-sheet">
-        <ModalHead title={g.name} />
-        <div className="modal-body">
-          <div className="garment-hero">
-            <GarmentPhoto garment={g} size="photo" alt={g.name} />
-            {photoBusy && (
-              <span className="garment-busy" role="status">
-                <span className="garment-spinner" aria-hidden="true" />
-                Getting the photo ready…
-              </span>
-            )}
-          </div>
-          {photoError && (
-            <p className="garment-error" role="alert">
-              {photoError}
-            </p>
-          )}
-          <div className="garment-figures">
-            <p className="garment-worn">
-              {wornLine(ix, g.id)}
-              {g.archivedAt && <span className="badge wardrobe-retired">Retired</span>}
-            </p>
-            {stats.firstWorn && (
-              <p className="garment-sub">
-                First worn {shortDay(stats.firstWorn, todayKey)} · 30 days: {stats.in30} · 12 months: {stats.in365}
-              </p>
-            )}
-            <Bars weekly={stats.weekly} color={g.color ?? 'var(--accent)'} title="Days worn per week, last 12 weeks" />
-          </div>
-          <label className="field">
-            <span>Name</span>
-            <input
-              value={draft}
-              maxLength={80}
-              onChange={e => setDraft(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  commitName()
-                }
-              }}
-            />
-          </label>
-          <div className="field">
-            <span>Type</span>
-            <TypeChips type={g.type} onChange={t => t !== g.type && edit(cur => ({ ...cur, type: t, updatedAt: newerStamp(cur.updatedAt) }))} />
-          </div>
-          <label className="field">
-            <span>Notes</span>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} onBlur={commitNotes} />
-          </label>
-          {wornOn.length > 0 && (
-            <div className="field">
-              <span>Worn on</span>
-              <div className="garment-days">
-                {wornOn.map(d => (
-                  <button
-                    key={d}
-                    type="button"
-                    className="toggle"
-                    onClick={() => {
-                      commitName()
-                      commitNotes()
-                      onGoDay(d)
-                    }}
-                  >
-                    {shortDay(d, todayKey)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {inOutfits.length > 0 && (
-            <div className="field">
-              <span>In outfits</span>
-              <ul className="garment-outfits">
-                {inOutfits.map(o => (
-                  <li key={o.id}>{o.name || outfitLabel(o.garmentIds, byId)}</li>
-                ))}
-              </ul>
-            </div>
+    <Modal onClose={close} className="modal narrow garment-sheet">
+      <ModalHead title={g.name} />
+      <div className="modal-body">
+        <div className="garment-hero">
+          <GarmentPhoto garment={g} size="photo" alt={g.name} />
+          {photoBusy && (
+            <span className="garment-busy" role="status">
+              <span className="garment-spinner" aria-hidden="true" />
+              Getting the photo ready…
+            </span>
           )}
         </div>
-        <footer className="modal-foot garment-actions">
-          <ConfirmButton className="btn subtle danger" onConfirm={() => onDelete(g)}>
-            Delete
-          </ConfirmButton>
-          <button type="button" className="btn subtle" onClick={() => onRetire(g, !g.archivedAt)}>
-            {g.archivedAt ? 'Bring back' : 'Retire'}
-          </button>
-          <label className="btn subtle garment-replace">
-            Replace photo
-            <input
-              type="file"
-              accept="image/*"
-              className="garment-file"
-              disabled={photoBusy}
-              onChange={e => {
-                const picked = e.target.files?.[0]
-                e.target.value = ''
-                if (picked) setChecking(picked)
-              }}
-            />
-          </label>
-          <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} />
-          <span className="spacer" />
-          <button type="button" className="btn primary" disabled={!!g.archivedAt} onClick={() => onWearToday(g)}>
-            Wear today
-          </button>
-        </footer>
-      </Modal>
-      {checking && (
-        <Suspense fallback={null}>
-          <CutoutSheet photo={checking} onDone={(f, info) => void replace(f, info.cutout)} onCancel={() => setChecking(null)} />
-        </Suspense>
-      )}
-    </>
+        {photoError && (
+          <p className="garment-error" role="alert">
+            {photoError}
+          </p>
+        )}
+        <div className="garment-figures">
+          <p className="garment-worn">
+            {wornLine(ix, g.id)}
+            {g.archivedAt && <span className="badge wardrobe-retired">Retired</span>}
+          </p>
+          {stats.firstWorn && (
+            <p className="garment-sub">
+              First worn {shortDay(stats.firstWorn, todayKey)} · 30 days: {stats.in30} · 12 months: {stats.in365}
+            </p>
+          )}
+          <Bars weekly={stats.weekly} color={g.color ?? 'var(--accent)'} title="Days worn per week, last 12 weeks" />
+        </div>
+        <label className="field">
+          <span>Name</span>
+          <input
+            value={draft}
+            maxLength={80}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitName()
+              }
+            }}
+          />
+        </label>
+        <div className="field">
+          <span>Type</span>
+          <TypeChips type={g.type} onChange={t => t !== g.type && edit(cur => ({ ...cur, type: t, updatedAt: newerStamp(cur.updatedAt) }))} />
+        </div>
+        <label className="field">
+          <span>Notes</span>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} onBlur={commitNotes} />
+        </label>
+        {wornOn.length > 0 && (
+          <div className="field">
+            <span>Worn on</span>
+            <div className="garment-days">
+              {wornOn.map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  className="toggle"
+                  onClick={() => {
+                    commitName()
+                    commitNotes()
+                    onGoDay(d)
+                  }}
+                >
+                  {shortDay(d, todayKey)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {inOutfits.length > 0 && (
+          <div className="field">
+            <span>In outfits</span>
+            <ul className="garment-outfits">
+              {inOutfits.map(o => (
+                <li key={o.id}>{o.name || outfitLabel(o.garmentIds, byId)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      <footer className="modal-foot garment-actions">
+        <ConfirmButton className="btn subtle danger" onConfirm={() => onDelete(g)}>
+          Delete
+        </ConfirmButton>
+        <button type="button" className="btn subtle" onClick={() => onRetire(g, !g.archivedAt)}>
+          {g.archivedAt ? 'Bring back' : 'Retire'}
+        </button>
+        <label className="btn subtle garment-replace">
+          Replace photo
+          <input
+            type="file"
+            accept="image/*"
+            className="garment-file"
+            disabled={photoBusy}
+            onChange={e => {
+              const picked = e.target.files?.[0]
+              e.target.value = ''
+              if (picked) setChecking(picked)
+            }}
+          />
+        </label>
+        <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />
+        <span className="spacer" />
+        <button type="button" className="btn primary" disabled={!!g.archivedAt} onClick={() => onWearToday(g)}>
+          Wear today
+        </button>
+      </footer>
+      {checking &&
+        createPortal(
+          <Suspense fallback={null}>
+            <CutoutSheet photo={checking} onDone={(f, info) => void replace(f, info.cutout, info.offline)} onCancel={() => setChecking(null)} />
+          </Suspense>,
+          document.body,
+        )}
+    </Modal>
   )
 }

@@ -127,10 +127,16 @@ describe('a run cancelled during the first download', () => {
     expect(engine.created).not.toHaveBeenCalled()
     expect([...store.keys()]).toEqual(CUTOUT_ASSETS.map(a => a.url))
     // the next photo needs no download, and makes the engine once
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
     const next = await segment({ signal: new AbortController().signal })
     expect(next?.alpha).toHaveLength(work.width * work.height)
     expect(engine.created).toHaveBeenCalledTimes(1)
     expect(net.fetch).toHaveBeenCalledTimes(3)
+    // the model by URL, never as bytes (MediaPipe's legacy graph loses those): an object URL of the cached file, let go once the engine is made
+    const [, options] = engine.created.mock.calls[0] as [unknown, { baseOptions: Record<string, unknown> }]
+    expect(options.baseOptions).toEqual({ modelAssetPath: expect.stringMatching(/^blob:/), delegate: 'CPU' })
+    expect(revoke).toHaveBeenCalledWith(options.baseOptions.modelAssetPath)
+    revoke.mockRestore()
   })
 })
 

@@ -20,6 +20,33 @@ import { isNative } from './native'
  * patterned duvet under it.
  */
 
+/** Where MediaPipe's bundle sends its usage records. */
+export const USAGE_LOG_HOST = 'odml.pa.googleapis.com'
+
+/**
+ * `fetch`, refusing MediaPipe's usage log. Every segmenter carries a logger
+ * the page cannot switch off, which posts to Google which task ran and how
+ * long it took, once a minute and when it closes, whether or not it started.
+ * The cut-out is made on this device and tells no one: the logger's first
+ * send is refused, and it stops for good. Every other request goes through.
+ */
+export function refusingUsageLog(real: typeof fetch): typeof fetch {
+  const refusing: typeof fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    let host = ''
+    try {
+      host = new URL(url, globalThis.location?.href).hostname
+    } catch {
+      // not a URL fetch can use either: it says so itself
+    }
+    return host === USAGE_LOG_HOST ? Promise.reject(new TypeError(`${USAGE_LOG_HOST} is MediaPipe's usage log, and the cut-out sends it nothing`)) : real(input, init)
+  }
+  return Object.assign(refusing, { refusesUsageLog: true })
+}
+
+// Once, as this module loads: before any segmenter, and so before any logger, exists.
+if (typeof fetch === 'function' && !(fetch as { refusesUsageLog?: boolean }).refusesUsageLog) globalThis.fetch = refusingUsageLog(fetch)
+
 /** A segmenter nobody has used for this long is closed. A burst of captures reuses it. */
 const IDLE_CLOSE_MS = 60_000
 
@@ -110,15 +137,16 @@ export async function prepare(onProgress?: (p: CutoutProgress) => void): Promise
 
 interface Opened {
   fileset: { wasmLoaderPath: string; wasmBinaryPath: string }
-  model: Uint8Array
+  /** The model: an object URL of the bytes read (and, from the bundle, checked) here. */
+  model: string
   close(): void
 }
 
-/** The runtime's two files as URLs MediaPipe can load, and the model's bytes. */
+/** The runtime's two files and the model, as URLs MediaPipe can load. */
 async function openAssets(): Promise<Opened> {
   if (isNative()) {
     // The app: MediaPipe fetches the runtime from the bundle itself, and only
-    // the model is read into memory here.
+    // the model is read into memory here, where its size and hash are checked.
     const started = performance.now()
     let told = false
     const bytes = await loadCutoutAssets(
@@ -135,7 +163,8 @@ async function openAssets(): Promise<Opened> {
       [CUTOUT_MODEL],
     )
     if (told) tell({ phase: 'cutting' })
-    return { fileset: { wasmLoaderPath: CUTOUT_LOADER.url, wasmBinaryPath: CUTOUT_WASM.url }, model: bytes.get(CUTOUT_MODEL.url)!, close: () => {} }
+    const model = URL.createObjectURL(new Blob([bytes.get(CUTOUT_MODEL.url)!], { type: CUTOUT_MODEL.type }))
+    return { fileset: { wasmLoaderPath: CUTOUT_LOADER.url, wasmBinaryPath: CUTOUT_WASM.url }, model, close: () => URL.revokeObjectURL(model) }
   }
   const cache = await caches.open(CUTOUT_CACHE)
   const read = async (asset: CutoutAsset) => {
@@ -145,11 +174,11 @@ async function openAssets(): Promise<Opened> {
     download = null
     throw new Error(`${asset.url} is no longer cached`)
   }
-  const [loader, wasm, model] = await Promise.all([read(CUTOUT_LOADER), read(CUTOUT_WASM), read(CUTOUT_MODEL)])
-  const urls = [URL.createObjectURL(loader), URL.createObjectURL(wasm)]
+  const files = await Promise.all([read(CUTOUT_LOADER), read(CUTOUT_WASM), read(CUTOUT_MODEL)])
+  const urls = files.map(blob => URL.createObjectURL(blob))
   return {
     fileset: { wasmLoaderPath: urls[0], wasmBinaryPath: urls[1] },
-    model: new Uint8Array(await model.arrayBuffer()),
+    model: urls[2],
     close: () => urls.forEach(url => URL.revokeObjectURL(url)),
   }
 }
@@ -170,7 +199,11 @@ async function createEngine(): Promise<Engine> {
   const canvas = document.createElement('canvas')
   try {
     const segmenter = await InteractiveSegmenterLegacy.createFromOptions(opened.fileset, {
-      baseOptions: { modelAssetBuffer: opened.model, delegate: 'CPU' },
+      // By URL, never as bytes: MediaPipe 1.0.1's legacy graph loses a model
+      // handed over as a buffer (StartGraph: "ExternalFile must specify at
+      // least one of 'file_content', …"), and keeps one it has fetched into
+      // its own file system. src/__tests__/cutout-mediapipe.test.ts runs both.
+      baseOptions: { modelAssetPath: opened.model, delegate: 'CPU' },
       canvas,
       outputConfidenceMasks: true,
       outputCategoryMask: false,
