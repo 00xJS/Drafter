@@ -9,39 +9,56 @@ import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
 
-class AIError extends Error {}
+/** Why an /api/ai call failed: the message, and the status and code the proxy answered with (0 and '' when it never answered). */
+export class AIError extends Error {
+  constructor(
+    message: string,
+    public status = 0,
+    public code = '',
+  ) {
+    super(message)
+  }
+}
+
+/** The code /api/ai answers with when a request that may go only to Claude could not (netlify/functions/lib/ai.mjs). */
+export const CLAUDE_ONLY = 'claude_only'
+
+/** What a request says about itself: `journal` means it carries the journal, so it goes to Claude alone. */
+export interface AIOptions {
+  journal?: boolean
+}
 
 /** One call to the proxy. Returns the model's text, which may be empty. */
-async function request(system: string, prompt: string, maxTokens: number, json: boolean): Promise<string> {
+async function request(system: string, prompt: string, maxTokens: number, json: boolean, opts: AIOptions = {}): Promise<string> {
   let res: Response
   try {
     res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ system, prompt, maxTokens, json }),
+      body: JSON.stringify({ system, prompt, maxTokens, json, ...(opts.journal ? { journal: true } : {}) }),
       timeoutMs: 180_000,
     })
   } catch (e) {
     throw new AIError((e as Error).message)
   }
-  if (res.status === 401) throw new AIError('Session expired — sign in again and retry.')
+  if (res.status === 401) throw new AIError('Session expired — sign in again and retry.', 401)
   if (!res.ok) {
     // 501 = no provider key on the host; the server names the env vars to set.
-    const body = await res.json().catch(() => null)
-    throw new AIError((body as { error?: string } | null)?.error ?? `AI request failed (HTTP ${res.status}).`)
+    const body = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown } | null
+    throw new AIError(typeof body?.error === 'string' ? body.error : `AI request failed (HTTP ${res.status}).`, res.status, typeof body?.code === 'string' ? body.code : '')
   }
   const data: unknown = await res.json()
   const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
   return typeof text === 'string' ? text : ''
 }
 
-async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
-  let text = await request(system, prompt, maxTokens, json)
+async function complete(system: string, prompt: string, maxTokens = 2048, json = false, opts: AIOptions = {}): Promise<string> {
+  let text = await request(system, prompt, maxTokens, json, opts)
   // A reasoning model (NVIDIA's default is one) can spend its budget thinking
   // and stop mid-answer — "Where should we go?" came back as half an array.
   // Ask once more, with room and no preamble, before giving up.
   if (json && !hasWholeJSON(text)) {
-    text = await request(`${system}\n\nReply with the JSON only — no reasoning and no commentary.`, prompt, Math.min(4096, Math.max(2048, maxTokens * 2)), json)
+    text = await request(`${system}\n\nReply with the JSON only — no reasoning and no commentary.`, prompt, Math.min(4096, Math.max(2048, maxTokens * 2)), json, opts)
   }
   if (!text.trim()) throw new AIError('The model returned an empty response — try again in a moment.')
   return text
@@ -345,11 +362,12 @@ export async function summarizeReview(input: {
  * Ask Drafter's one model call. The question, the retrieved records and the
  * facts go out; an answer comes back with the references it rests on. Only
  * references to records that were sent survive — the answer is rebuilt without
- * any other — so an invented citation can never become a chip.
+ * any other — so an invented citation can never become a chip. With `journal`
+ * (the Journal chip on) the call goes to Claude alone, never to NVIDIA.
  */
-export async function askDrafter(question: string, docs: AskDoc[], facts: string[]): Promise<{ answer: string; cites: string[] }> {
+export async function askDrafter(question: string, docs: AskDoc[], facts: string[], opts: AIOptions = {}): Promise<{ answer: string; cites: string[] }> {
   const { system, prompt } = buildAskPrompt(question, docs, facts)
-  const text = await complete(system, prompt, 500, true)
+  const text = await complete(system, prompt, 500, true, opts)
   let raw: { answer?: unknown; cites?: unknown } | null = null
   try {
     raw = extractJSON<{ answer?: unknown; cites?: unknown }>(text)

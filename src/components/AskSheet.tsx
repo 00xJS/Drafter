@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AskDoc, AskKind, AskPrep, AskSources, parseAskAnswer, prepareAsk } from '../ask'
-import { askDrafter } from '../ai'
+import { CLAUDE_ONLY, askDrafter } from '../ai'
 import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
 import { Modal, ModalHead } from './Modal'
@@ -55,8 +55,19 @@ export function aiFailureKind(message: string): 'busy' | 'unavailable' | 'other'
   return 'other'
 }
 
-/** What Ask says when no answer came. Unavailable is not an error here: the sources are the answer. */
-export function askFailure(message: string): { text: string; retry: boolean } {
+/**
+ * What Ask says when no answer came. Unavailable is not an error here: the
+ * sources are the answer. `error` is what the call threw: an AIError's status
+ * and code say when a question with the journal in it could not go to Claude,
+ * the only assistant the journal is sent to, and the offer is to ask without it.
+ */
+export function askFailure(message: string, error?: unknown): { text: string; retry: boolean; withoutJournal?: boolean } {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown }
+  if (code === CLAUDE_ONLY) {
+    return status === 501
+      ? { text: 'With Journal on, Ask uses only Claude, and Claude isn’t set up on this site.', retry: false, withoutJournal: true }
+      : { text: 'With Journal on, Ask uses only Claude, and Claude couldn’t answer just now.', retry: true, withoutJournal: true }
+  }
   const kind = aiFailureKind(message)
   if (kind === 'busy') return { text: 'Drafter’s assistant is busy — try again in a minute.', retry: true }
   if (kind === 'unavailable') return { text: 'The assistant isn’t available here, so there’s no written answer — these are the records that match.', retry: false }
@@ -77,7 +88,7 @@ type Phase =
   | { kind: 'busy' }
   | { kind: 'empty' }
   | { kind: 'answered'; parts: (string | AskDoc)[]; also: AskDoc[] }
-  | { kind: 'failed'; text: string; retry: boolean }
+  | { kind: 'failed'; text: string; retry: boolean; withoutJournal?: boolean }
 
 type Answer = { answer: string; cites: string[] }
 
@@ -89,8 +100,8 @@ interface Props {
   /** A source or a citation was tapped: route it by kind (the sheet stays as it is). */
   onOpen(doc: AskDoc): void
   onClose(): void
-  /** The model call. Defaults to askDrafter's one /api/ai request; tests pass their own. */
-  ask?(question: string, docs: AskDoc[], facts: string[]): Promise<Answer>
+  /** The model call. Defaults to askDrafter's one /api/ai request; tests pass their own. `journal`: it goes to Claude alone. */
+  ask?(question: string, docs: AskDoc[], facts: string[], opts: { journal: boolean }): Promise<Answer>
   /** The moment the question is asked about. Defaults to now. */
   now?: Date
 }
@@ -118,7 +129,8 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
       setPhase({ kind: 'empty' })
       return
     }
-    if (inflight.current?.id !== req.id) inflight.current = { id: req.id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts) }
+    // with the journal searched, the question may go to Claude alone
+    if (inflight.current?.id !== req.id) inflight.current = { id: req.id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts, { journal: req.prep.journal }) }
     const pending = inflight.current.answer
     let live = true
     setPhase({ kind: 'busy' })
@@ -131,7 +143,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
         setPhase({ kind: 'answered', parts, also })
       },
       (e: unknown) => {
-        if (live) setPhase({ kind: 'failed', ...askFailure(e instanceof Error ? e.message : String(e)) })
+        if (live) setPhase({ kind: 'failed', ...askFailure(e instanceof Error ? e.message : String(e), e) })
       },
     )
     return () => {
@@ -152,6 +164,13 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
     setJournal(next)
     writeAskJournal(next)
     if (req) setReq({ id: req.id + 1, question: req.question, prep: prepare(req.question, next) })
+  }
+
+  /** The journal needs Claude and Claude is not there: the same question without the journal, which stays off. */
+  const askWithoutJournal = () => {
+    setJournal(false)
+    writeAskJournal(false)
+    if (req) setReq({ id: req.id + 1, question: req.question, prep: prepare(req.question, false) })
   }
 
   const docs = req?.prep.docs ?? []
@@ -189,7 +208,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
           <button type="button" className={journal ? 'toggle on' : 'toggle'} aria-pressed={journal} onClick={toggleJournal}>
             📓 Journal
           </button>
-          <small className="ask-note">{journal ? 'Your journal entries are searched too.' : 'Journal off: your entries stay out of it.'}</small>
+          <small className="ask-note">{journal ? 'Your journal entries are searched too, and the question goes only to Claude.' : 'Journal off: your entries stay out of it.'}</small>
         </div>
 
         {req?.prep.journalHint && (
@@ -206,14 +225,13 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
             {phase.kind === 'busy' && <p className="ask-note">Reading your planner…</p>}
             {phase.kind === 'empty' && <p className="ask-note">Nothing in your planner matches that.</p>}
             {phase.kind === 'failed' && (
-              <p className="ask-note ask-failed">
-                {phase.text}{' '}
-                {phase.retry && (
-                  <button type="button" className="btn subtle" onClick={() => setReq({ ...req, id: req.id + 1 })}>
-                    Try again
-                  </button>
-                )}
-              </p>
+              <AskFailed
+                text={phase.text}
+                retry={phase.retry}
+                withoutJournal={phase.withoutJournal}
+                onRetry={() => setReq({ ...req, id: req.id + 1 })}
+                onWithoutJournal={askWithoutJournal}
+              />
             )}
             {phase.kind === 'answered' && (
               <>
@@ -263,10 +281,41 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
         )}
 
         <p className="ask-note ask-privacy">
-          Only the matching records go to the assistant — never a location, a contact detail or a real id, and the journal only with the chip on.
+          Only the matching records go to the assistant — never a location, a contact detail or a real id — and the journal only with the chip on, and then only to Claude.
         </p>
       </div>
     </Modal>
+  )
+}
+
+/** No answer came: why, and what can be done — try again, and when the journal needs Claude, ask without it. */
+export function AskFailed({
+  text,
+  retry,
+  withoutJournal,
+  onRetry,
+  onWithoutJournal,
+}: {
+  text: string
+  retry: boolean
+  withoutJournal?: boolean
+  onRetry(): void
+  onWithoutJournal(): void
+}) {
+  return (
+    <p className="ask-note ask-failed">
+      {text}{' '}
+      {retry && (
+        <button type="button" className="btn subtle" onClick={onRetry}>
+          Try again
+        </button>
+      )}{' '}
+      {withoutJournal && (
+        <button type="button" className="btn subtle" onClick={onWithoutJournal}>
+          Ask without the journal
+        </button>
+      )}
+    </p>
   )
 }
 

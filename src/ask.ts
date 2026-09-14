@@ -801,12 +801,15 @@ export interface AskPrep {
   facts: string[]
   /** The question reads as a journal question while the Journal chip is off: say "Turn on Journal to search your entries." */
   journalHint: boolean
+  /** The journal was searched (the chip is on), so the question goes to Claude alone, never to NVIDIA. */
+  journal: boolean
 }
 
 /**
  * Everything the sheet shows before the model answers — and all the model will
  * see. The privacy rules are applied here, in one place: the journal only with
- * the chip on, and amounts only for a question about money.
+ * the chip on (and then to Claude alone), and amounts only for a question about
+ * money.
  */
 export function prepareAsk(q: string, src: AskSources, o: { now: Date; tz: string; includeJournal: boolean }): AskPrep {
   const question = parseQuestion(q, src, o.now)
@@ -816,6 +819,7 @@ export function prepareAsk(q: string, src: AskSources, o: { now: Date; tz: strin
     docs: retrieve(corpus, question),
     facts: factsFor(question, src, o.now, o.tz),
     journalHint: !o.includeJournal && question.intents.has('journal'),
+    journal: o.includeJournal,
   }
 }
 
