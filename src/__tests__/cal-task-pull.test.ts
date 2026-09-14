@@ -231,6 +231,33 @@ describe.each(PROVIDERS)('mirrorChangeWrites: a task renamed or rewritten in %s'
     const t = task({ description: 'Kitchen\n\nProject: phase 2' })
     expect(mirrorChangeWrites([t], pulled(t))).toEqual(NOTHING)
   })
+
+  // An email-in task keeps the mail's own text, and the AI parse gives it a date,
+  // so it is mirrored: its angle brackets once read as HTML and the echo of
+  // Drafter's own push rewrote the description with the addresses gone.
+  it.each([
+    'Forwarded from Alice Smith <a.smith@example.com>\nPlease sign',
+    'Reply to <b@example.com> by Friday',
+    'Ask <li.wei@example.com> whether x<b and y>z\n<p> stands for paragraph',
+    'Type <br> for a new line, and </b> to stop bold',
+  ])('a description that looks like markup echoes as nothing: %j', description => {
+    const t = task({ description })
+    expect(mirrorChangeWrites([t], pulled(t))).toEqual(NOTHING)
+  })
+
+  it('a title of the owner’s own that starts with a priority mark is theirs, not Drafter’s', () => {
+    const climb = task({ title: '▲ Climb' })
+    expect(mirrorChangeWrites([climb], pulled(climb))).toEqual(NOTHING)
+    // renamed there, it keeps the mark that was the owner's own
+    const title = _ === 'Google' ? { summary: '▲ Climb higher' } : { subject: '▲ Climb higher' }
+    expect(mirrorChangeWrites([climb], pulled(climb, title)).writes[0].title).toBe('▲ Climb higher')
+  })
+
+  it('a copy written at a priority another device set since is still the echo', () => {
+    // made urgent on the phone, whose push this desk reads before the edit reaches it
+    expect(mirrorChangeWrites([task({ priority: 'high' })], pulled(task({ priority: 'urgent' })))).toEqual(NOTHING)
+    expect(mirrorChangeWrites([task({ priority: 'high' })], pulled(task({ priority: 'normal' })))).toEqual(NOTHING)
+  })
 })
 
 describe('what each calendar does to text, which is nobody’s edit', () => {

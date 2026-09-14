@@ -59,16 +59,22 @@ export async function runMirrorBatch(records, push, opts = {}) {
 //
 // Drafter writes the owner's notes into each copy with a footer of its own
 // under them — for a task its project, its status and priority and a link back;
-// for an entry just the link — and a task's title with its priority mark in
-// front. The owner may rewrite either there. Reading them back strips exactly
-// what Drafter added, in the order it added it, so a copy nobody touched reads
-// back as the notes and title it was written from, and a pull cannot bounce.
+// for an entry just the link. The owner may rewrite them there. Reading them
+// back strips exactly what Drafter added, in the order it added it, so a copy
+// nobody touched reads back as the notes it was written from, and a pull cannot
+// bounce. A task's title goes back as it reads there, priority mark and all:
+// only the app knows which mark was Drafter's (see mirrorChangeWrites).
 
 const FOOTER_LINK = /^Open in Drafter:\s*\S+$/
 const FOOTER_STATUS = /^Status: \S+\s*·\s*Priority: \S+$/
 const FOOTER_PROJECT = /^Project: .+$/
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·' }
-const HTML = /<(?:br|p|div|span|a|b|i|u|strong|em|ul|ol|li)\b[^>]*>|<\/(?:p|div|span|a|b|i|u|strong|em|ul|ol|li)>/i
+/**
+ * Markup Google's editor actually writes: a line break, a closing tag or a
+ * link. Never a bare `<…>`, which an owner's own text is full of — "From: Alice
+ * <a.smith@example.com>", "x<b and y>z" — and which read as a tag lost its words.
+ */
+const HTML = /<br\s*\/?>|<\/(?:p|div|span|a|b|i|u|strong|em|ul|ol|li|h[1-6])\s*>|<a\s+href\s*=/i
 
 /**
  * A copy's description as plain text. Google Calendar's own editor saves one
@@ -98,7 +104,11 @@ export function copyText(text) {
  * "Project: …" stays theirs.
  */
 export function ownNotes(text, opts = {}) {
-  let out = copyText(text).replace(/[ \t]+$/gm, '').trimEnd()
+  return withoutFooter(copyText(text), opts)
+}
+
+function withoutFooter(text, opts) {
+  let out = text.replace(/[ \t]+$/gm, '').trimEnd()
   const strip = re => {
     const last = /(?:^|\n[ \t]*\n)([^\n]*)$/.exec(out)
     if (!last || !re.test(last[1].trim())) return false
@@ -110,7 +120,19 @@ export function ownNotes(text, opts = {}) {
   return out.trim()
 }
 
-/** A task copy's title without the priority mark Drafter puts in front (‼ urgent, ▲ high). */
-export function ownTitle(summary) {
-  return String(summary ?? '').replace(/^(?:‼|▲) /, '')
+/**
+ * What a pull says of a copy's description: `notes`, the owner's words read as
+ * text (ownNotes), and — only when reading it as HTML changed anything —
+ * `notesRaw`, the same description with nothing but the footer taken off.
+ * Drafter's own plain text comes back exactly as it was written, so the app
+ * counts an edit only when neither reading is what it holds: a note that
+ * merely looks like markup can never read as changed on the echo of Drafter's
+ * own write. `html: false` for a body that is text by construction (Outlook's,
+ * asked for as text), which is never read as markup at all.
+ */
+export function copyNotes(text, opts = {}) {
+  const raw = withoutFooter(String(text ?? '').replace(/\r\n?/g, '\n'), opts)
+  if (opts.html === false) return { notes: raw }
+  const notes = ownNotes(text, opts)
+  return notes === raw ? { notes } : { notes, notesRaw: raw }
 }

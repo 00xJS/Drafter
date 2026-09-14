@@ -5,7 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
-import { ownNotes, ownTitle } from './mirror.mjs'
+import { copyNotes } from './mirror.mjs'
 import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
@@ -377,7 +377,9 @@ export function googleEntryBody(entry, site, opts = {}) {
   return {
     summary: entry.title || 'Untitled event',
     description: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') || undefined,
-    location: entry.location || undefined,
+    // always sent, '' once cleared: a PATCH keeps a field its body leaves out, so
+    // a place cleared in Drafter stayed in Google and came back on the next pull
+    location: entry.location || '',
     start: entry.allDay ? { date: entry.start } : { dateTime: new Date(entry.start).toISOString() },
     end: entry.allDay ? { date: entry.end } : { dateTime: new Date(entry.end).toISOString() },
     // a work day is working hours, not a meeting: you are available, so it is free time
@@ -441,7 +443,7 @@ export function googleEntryChange(ev) {
     updated: ev.updated ?? '',
     // the notes and place as the owner may have rewritten them there. Google
     // leaves a field out once it is emptied; a cancelled copy says nothing of either
-    ...(deleted ? {} : { notes: ownNotes(ev.description), location: typeof ev.location === 'string' ? ev.location : '' }),
+    ...(deleted ? {} : { ...copyNotes(ev.description), location: typeof ev.location === 'string' ? ev.location : '' }),
   }
 }
 
@@ -460,8 +462,9 @@ export function googlePullRows(items) {
         start: ev.start?.dateTime ?? ev.start?.date ?? null,
         allDay: !!ev.start?.date,
         updated: ev.updated,
-        // a rename or a rewritten description made there, Drafter's own marks taken off
-        ...(deleted ? {} : { title: ownTitle(ev.summary), notes: ownNotes(ev.description, { task: true }) }),
+        // a rename or a rewritten description made there: the footer taken off,
+        // the title as it reads (the app knows which priority mark was Drafter's)
+        ...(deleted ? {} : { title: typeof ev.summary === 'string' ? ev.summary : '', ...copyNotes(ev.description, { task: true }) }),
       })
       continue
     }

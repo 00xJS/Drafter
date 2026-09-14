@@ -5,7 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
-import { ownNotes, ownTitle } from './mirror.mjs'
+import { copyNotes } from './mirror.mjs'
 import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
@@ -426,7 +426,8 @@ export function graphEntryBody(entry, site, opts = {}) {
   return {
     subject: entry.title || 'Untitled event',
     body: { contentType: 'text', content: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') },
-    location: entry.location ? { displayName: entry.location } : undefined,
+    // always sent, empty once cleared: a PATCH keeps what its body leaves out (see googleEntryBody)
+    location: { displayName: entry.location || '' },
     isAllDay: !!entry.allDay,
     // home is "working elsewhere", Outlook's own status for exactly this; the office is free
     showAs: entry.work === 'home' ? 'workingElsewhere' : entry.work ? 'free' : 'busy',
@@ -514,7 +515,7 @@ export function graphEntryChange(ev) {
     allDay,
     updated: ev.lastModifiedDateTime ?? '',
     // the notes and place as the owner may have rewritten them there, when the listing asked for them
-    ...(!deleted && ev.body ? { notes: ownNotes(graphText(ev.body.content)) } : {}),
+    ...(!deleted && ev.body ? copyNotes(graphText(ev.body.content), { html: ev.body.contentType !== 'text' }) : {}),
     ...(!deleted && ev.location ? { location: typeof ev.location.displayName === 'string' ? ev.location.displayName : '' } : {}),
   }
 }
@@ -586,8 +587,10 @@ export function graphTaskChange(ev) {
     start: allDay && iso ? iso.slice(0, 10) : iso,
     allDay,
     updated: ev.lastModifiedDateTime,
-    ...(!deleted && typeof ev.subject === 'string' ? { title: ownTitle(ev.subject) } : {}),
-    ...(!deleted && ev.body ? { notes: ownNotes(graphText(ev.body.content), { task: true }) } : {}),
+    // the subject as it reads there: the app knows which priority mark was Drafter's
+    ...(!deleted && typeof ev.subject === 'string' ? { title: ev.subject } : {}),
+    // a body asked for as text is never read as markup
+    ...(!deleted && ev.body ? copyNotes(graphText(ev.body.content), { task: true, html: ev.body.contentType !== 'text' }) : {}),
   }
 }
 

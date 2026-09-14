@@ -128,7 +128,8 @@ export declare function googleEntryBody(
 ): {
   summary: string
   description?: string
-  location?: string
+  /** Always sent, '' once cleared: a PATCH keeps what its body leaves out. */
+  location: string
   start: { date?: string; dateTime?: string }
   end: { date?: string; dateTime?: string }
   transparency: 'opaque' | 'transparent'
@@ -158,6 +159,8 @@ export interface EntryChangeRow {
   updated: string
   /** The owner's notes there, Drafter's footer taken off. Absent on a delete. */
   notes?: string
+  /** The same with only the footer taken off, when reading it as HTML changed anything. */
+  notesRaw?: string
   /** Its place there ('' once emptied). Absent on a delete. */
   location?: string
 }
@@ -168,10 +171,12 @@ export interface TaskChangeRow {
   start: string | null
   allDay: boolean
   updated: string
-  /** Its title there, without Drafter's priority mark. Absent on a delete. */
+  /** Its title as it reads there, Drafter's priority mark included. Absent on a delete. */
   title?: string
   /** Its description there, Drafter's footer taken off. Absent on a delete. */
   notes?: string
+  /** The same with only the footer taken off, when reading it as HTML changed anything. */
+  notesRaw?: string
 }
 
 export declare const DRAFTER_DESCRIPTION: string

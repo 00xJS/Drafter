@@ -51,10 +51,11 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // due reminders while the app is open (device-local, never a store write)
+  // due tasks and my events as they start, while the app is open (device-local,
+  // never a store write): the copies in Google and Outlook no longer ring
   const notifyRef = useRef(() => {})
   notifyRef.current = () => {
-    notifyDue(store.tasks)
+    notifyDue(store.tasks, { events: store.events, myId })
   }
   useEffect(() => {
     notifyRef.current()
@@ -81,10 +82,12 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
       )
     })()
   }
-  // meals too: a takeaway logged tonight takes that place's nudge off the phone
+  // meals too: a takeaway logged tonight takes that place's nudge off the phone;
+  // and who I am, which may be known only after the last change, so a household
+  // member's events never stay on this phone for want of it
   useEffect(() => {
     if (!store.loaded) return
     const t = window.setTimeout(() => remindersRef.current(), 1500)
     return () => window.clearTimeout(t)
-  }, [store.loaded, store.tasks, store.people, store.places, store.meals, store.events])
+  }, [store.loaded, store.tasks, store.people, store.places, store.meals, store.events, myId])
 }

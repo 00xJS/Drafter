@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CalendarEntry, Person, Place, Task } from '../types'
 import { buildLocalReminders, reminderId } from '../reminders'
+import { dueNotices } from '../notify'
 
 const NOW = new Date(2026, 8, 7, 12, 0) // Mon 7 Sep 2026, noon local
 
@@ -268,5 +269,64 @@ describe('my own events', () => {
       myId: ME,
     })
     expect(list.map(r => r.url)).toEqual(['/?task=bins', '/?view=calendar', '/?saw=mum'])
+  })
+})
+
+// A browser with Drafter open is the other place a reminder can come from, and
+// without the phone's own it was the only one for an event whose copy in
+// Google or Outlook no longer rings. It goes by the phone's rule.
+describe('while the app is open (a browser’s notifications)', () => {
+  const ME = 'me-0001'
+  const event = (id: string, extra: Partial<CalendarEntry>): CalendarEntry => ({
+    kind: 'event',
+    id,
+    title: `Event ${id}`,
+    start: new Date(2026, 8, 8, 15, 0).toISOString(),
+    end: new Date(2026, 8, 8, 16, 0).toISOString(),
+    allDay: false,
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    ownerId: ME,
+    ...extra,
+  })
+  const on8th = (h: number, m = 0) => new Date(2026, 8, 8, h, m).getTime()
+
+  it('rings as one of my events starts, saying where; not before, not once it is over, and again once moved', () => {
+    const e = event('e1', { title: 'Dentist', location: 'High Street' })
+    expect(dueNotices([], on8th(14, 59), { events: [e], myId: ME })).toEqual([])
+    const [n] = dueNotices([], on8th(15, 10), { events: [e], myId: ME })
+    expect(n).toEqual({ key: `event:e1@${e.start}`, title: 'Dentist starts now', body: 'High Street' })
+    expect(dueNotices([], on8th(16, 0), { events: [e], myId: ME })).toEqual([])
+    const moved = { ...e, start: new Date(2026, 8, 8, 17, 0).toISOString(), end: new Date(2026, 8, 8, 18, 0).toISOString() }
+    expect(dueNotices([], on8th(17, 5), { events: [moved], myId: ME })[0].key).not.toBe(n.key)
+  })
+
+  it('an all-day event rings from 9am on its first day, as the phone’s does, and not the day after', () => {
+    const e = event('fair', { title: 'School fair', allDay: true, start: '2026-09-08', end: '2026-09-09', notes: 'Bring cakes' })
+    expect(dueNotices([], on8th(8, 59), { events: [e] })).toEqual([])
+    expect(dueNotices([], on8th(20, 0), { events: [e] })).toEqual([{ key: 'event:fair@2026-09-08', title: 'School fair is today', body: 'Bring cakes' }])
+    expect(dueNotices([], new Date(2026, 8, 9, 9, 30).getTime(), { events: [e] })).toEqual([])
+  })
+
+  it('never a work day, a household member’s event or a deleted one', () => {
+    const mine = event('mine', {})
+    const list = dueNotices([], on8th(15, 30), {
+      events: [event('work', { work: 'office' }), event('theirs', { ownerId: 'partner-0002' }), event('gone', { deletedAt: NOW.toISOString() }), mine],
+      myId: ME,
+    })
+    expect(list.map(n => n.key)).toEqual([`event:mine@${mine.start}`])
+  })
+
+  it('tasks ring as they always did: open, due within the last day, keyed by the task', () => {
+    const list = dueNotices(
+      [
+        task('a', { dueAt: new Date(2026, 8, 8, 15, 0).toISOString(), description: 'Card on file' }),
+        task('done', { dueAt: new Date(2026, 8, 8, 15, 0).toISOString(), status: 'done' }),
+        task('stale', { dueAt: new Date(2026, 8, 6, 15, 0).toISOString() }),
+        task('later', { dueAt: new Date(2026, 8, 8, 18, 0).toISOString() }),
+      ],
+      on8th(15, 30),
+    )
+    expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file' }])
   })
 })

@@ -82,10 +82,21 @@ function remindAt(dueAt: string): Date {
 }
 
 /** The same rule for an event: a timed one at its start, an all-day one on the morning of its first day. */
-function eventRemindAt(e: CalendarEntry): Date | null {
+export function eventRemindAt(e: CalendarEntry): Date | null {
   if (!e.allDay) return new Date(e.start)
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.start)
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), MORNING, 0, 0, 0) : null
+}
+
+/**
+ * Whether one of Drafter's own events reminds me at all. A work day is where
+ * you work, not something to be told has started, and a household member's
+ * evening is theirs. The phone's own reminders and a browser's while Drafter is
+ * open (notify.ts) both go by this.
+ */
+export function remindsMe(e: CalendarEntry | null | undefined, myId?: string | null): boolean {
+  if (!e || e.deletedAt || e.work) return false
+  return !(myId && e.ownerId && e.ownerId !== myId)
 }
 
 export interface BuildReminderOpts {
@@ -140,13 +151,11 @@ export function buildLocalReminders(
       })
     }
   }
-  // My own events, on the rule a task's due date follows. Never skipped for
-  // server push, which nudges about tasks alone. A work day is where you work,
-  // not something to be told has started, and there is nothing a banner's
-  // button could do about an event, so it carries none.
+  // My own events (remindsMe), on the rule a task's due date follows. Never
+  // skipped for server push, which nudges about tasks alone. There is nothing
+  // a banner's button could do about an event, so it carries none.
   for (const e of opts.events ?? []) {
-    if (!e || e.deletedAt || e.work) continue
-    if (opts.myId && e.ownerId && e.ownerId !== opts.myId) continue
+    if (!remindsMe(e, opts.myId)) continue
     const at = eventRemindAt(e)
     const ms = at?.getTime() ?? NaN
     if (!at || !Number.isFinite(ms) || ms <= nowMs || ms > until) continue

@@ -32,5 +32,9 @@ export declare function runMirrorBatch<R extends { id: string } = any>(
 export declare function copyText(text: unknown): string
 /** The owner's own notes in a copy's description, Drafter's footer taken off (`task` for a task's longer one). */
 export declare function ownNotes(text: unknown, opts?: { task?: boolean }): string
-/** A task copy's title without Drafter's priority mark. */
-export declare function ownTitle(summary: unknown): string
+/**
+ * A copy's description as a pull reports it: the notes read as text, and the
+ * footer-only reading as `notesRaw` when the two differ. `html: false` for a
+ * body that is text by construction.
+ */
+export declare function copyNotes(text: unknown, opts?: { task?: boolean; html?: boolean }): { notes: string; notesRaw?: string }

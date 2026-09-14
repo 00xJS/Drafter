@@ -1,10 +1,13 @@
-import { OPEN_STATUSES, Task } from './types'
+import { CalendarEntry, OPEN_STATUSES, Task } from './types'
 import { excerpt } from './utils'
+import { eventRemindAt, remindsMe } from './reminders'
 
 // Reminders are device-local by design: each open device notifies once per
-// task. Nothing here writes to the synced store (a UI event must never win a
-// data merge). While the app is closed no reminder fires — server-side push
-// would be the upgrade path.
+// task, and once as each of my own events starts — their copies in Google and
+// Outlook no longer ring, so this is where a browser hears of them. Nothing
+// here writes to the synced store (a UI event must never win a data merge).
+// While the app is closed no reminder fires — server-side push would be the
+// upgrade path.
 
 const SEEN_KEY = 'drafter:notified'
 
@@ -60,24 +63,66 @@ async function show(title: string, body: string): Promise<boolean> {
 
 const MAX_AGE_MS = 86_400_000 // don't nag about tasks overdue by more than a day
 
-/** Fire a reminder for every open task whose due time has arrived. */
-export async function notifyDue(tasks: Task[]): Promise<void> {
-  if (!notificationsSupported() || Notification.permission !== 'granted') return
-  const now = Date.now()
-  const already = seen()
-  let dirty = false
+export interface NotifyOpts {
+  /** Drafter's own events (store.events). Never a feed's: its own calendar reminds about that. */
+  events?: CalendarEntry[]
+  /** Only my own events remind me: a household member's evening is theirs. */
+  myId?: string | null
+}
+
+export interface DueNotice {
+  /** What this device remembers having shown: a task's id; an event's id and start, so a moved event rings again. */
+  key: string
+  title: string
+  body: string
+}
+
+/** When an event is over: its end instant, or the local midnight after an all-day one (its end is exclusive). */
+function eventEndMs(e: CalendarEntry): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.end)
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : Date.parse(e.end)
+}
+
+/**
+ * What should ring now: each open task whose due time arrived in the last day,
+ * and each of my own events on the phone's rule (remindsMe and eventRemindAt: a
+ * timed one at its start, an all-day one at 9am on its first day, never a work
+ * day or a household member's) that has not ended yet — "starts now" about an
+ * event already over is no reminder.
+ */
+export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): DueNotice[] {
+  const out: DueNotice[] = []
   for (const p of tasks) {
-    if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt || already.has(p.id)) continue
+    if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt) continue
     const due = new Date(p.dueAt).getTime()
     if (due <= now && now - due < MAX_AGE_MS) {
-      const shown = await show(
-        `${p.title || 'Untitled'} is due now`,
-        excerpt(p.description, 120) || 'Open Drafter for the details.',
-      )
-      if (shown) {
-        already.add(p.id)
-        dirty = true
-      }
+      out.push({ key: p.id, title: `${p.title || 'Untitled'} is due now`, body: excerpt(p.description, 120) || 'Open Drafter for the details.' })
+    }
+  }
+  for (const e of opts.events ?? []) {
+    if (!remindsMe(e, opts.myId)) continue
+    const at = eventRemindAt(e)?.getTime() ?? NaN
+    if (!(at <= now) || now - at >= MAX_AGE_MS || now >= eventEndMs(e)) continue
+    const title = e.title || 'Untitled event'
+    out.push({
+      key: `event:${e.id}@${e.start}`,
+      title: e.allDay ? `${title} is today` : `${title} starts now`,
+      body: e.location || excerpt(e.notes ?? '', 120) || 'Open Drafter for the details.',
+    })
+  }
+  return out
+}
+
+/** Fire a reminder for every open task whose due time has arrived, and for each of my own events as it starts. */
+export async function notifyDue(tasks: Task[], opts: NotifyOpts = {}): Promise<void> {
+  if (!notificationsSupported() || Notification.permission !== 'granted') return
+  const already = seen()
+  let dirty = false
+  for (const n of dueNotices(tasks, Date.now(), opts)) {
+    if (already.has(n.key)) continue
+    if (await show(n.title, n.body)) {
+      already.add(n.key)
+      dirty = true
     }
   }
   if (dirty) markSeen(already)

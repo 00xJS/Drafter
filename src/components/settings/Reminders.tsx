@@ -38,13 +38,20 @@ export function CopyReminders({ on, busy, error, onChange }: { on: boolean | nul
   return (
     <>
       <h4>Calendar copies</h4>
-      <p className="field-hint">Drafter sends your reminders itself — an iPhone’s own reminders, and push — so the tasks and events it writes into Google Calendar and Outlook don’t remind you a second time.</p>
+      <p className="field-hint">
+        Drafter sends your reminders itself, so the tasks and events it writes into Google Calendar and Outlook don’t remind you a second time. Your events remind you only
+        through Drafter: an iPhone with “Remind me on this iPhone” on, or a browser with Drafter open and notifications allowed — push nudges about tasks alone. With
+        neither, turn this on.
+      </p>
       <p className="sync-line">
         <label className="cal-source mirror-row">
           <input type="checkbox" checked={on === true} disabled={busy || on === null} onChange={e => onChange(e.target.checked)} />
           <span className="cal-source-name">Calendar copies remind me too</span>
         </label>
-        <small className="field-hint">Each calendar’s own reminders come back on those copies, as Drafter next writes each one. Off by default.</small>
+        <small className="field-hint">
+          Each calendar’s own notification settings apply to those copies again, as Drafter next writes each one: in Google, the Drafter calendar’s default notifications (set
+          them there if it has none); in Outlook, its reminder. Off by default.
+        </small>
       </p>
       {error && <p className="warn">{error}</p>}
     </>
@@ -238,7 +245,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
       ) : (
         <>
           <h4>While the app is open</h4>
-          <p className="field-hint">Browser notifications when a task's due time arrives on this device.</p>
+          <p className="field-hint">Browser notifications on this device when a task's due time arrives, and as each of your own events starts (9am on the first day of an all-day one; not work days or a household member's events).</p>
           <p>
             {notif === 'granted'
               ? 'Notifications are on.'

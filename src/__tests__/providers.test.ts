@@ -102,8 +102,10 @@ describe('Microsoft: the event body', () => {
     expect(prop.id).toContain('drafterEventId')
     expect(prop.id).not.toContain('drafterTaskId')
   })
-  it('omits a location rather than sending an empty one', () => {
-    expect(graphEntryBody({ ...timed, location: undefined }, '').location).toBeUndefined()
+  it('always sends the place, empty once cleared, so a PATCH clears it there too', () => {
+    // a PATCH keeps what its body leaves out: a cleared place stayed in the copy and came back on the next pull
+    expect(graphEntryBody({ ...timed, location: undefined }, '').location).toEqual({ displayName: '' })
+    expect(googleEntryBody({ ...timed, location: undefined }, '').location).toBe('')
   })
 })
 

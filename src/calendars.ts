@@ -838,10 +838,12 @@ export interface GoogleChange {
   start: string | null
   allDay: boolean
   updated: string
-  /** Its title there, without Drafter's priority mark. Absent from a delete, and from an older function. */
+  /** Its title as it reads there, Drafter's priority mark included (see titleThere). Absent from a delete, and from an older function. */
   title?: string
   /** Its description there, Drafter's footer taken off. Absent from a delete, and from an older function. */
   notes?: string
+  /** The same with only the footer taken off, sent when reading it as HTML changed anything (see notesThere). */
+  notesRaw?: string
 }
 
 /** One of my entries as a provider now holds it (googleEntryChange / graphEntryChange on the server). */
@@ -858,6 +860,8 @@ export interface EntryChange {
   updated: string
   /** Its notes there, Drafter's footer taken off. Absent from a delete, and from an older function. */
   notes?: string
+  /** The same with only the footer taken off, sent when reading it as HTML changed anything (see notesThere). */
+  notesRaw?: string
   /** Its place there ('' once emptied). Absent from a delete, and from an older function. */
   location?: string
 }
@@ -911,6 +915,43 @@ export interface MirrorWrites {
  * them as an edit again, on every pull.
  */
 const notesKey = (s?: string) => (s ?? '').replace(/<(?:https?|mailto):[^>\s]*>/gi, '').replace(/\s+/g, ' ').trim()
+
+/**
+ * The notes a copy came back with, or undefined when they are no edit. The
+ * function reads a description two ways once it looks like HTML: as text, and
+ * with nothing but the footer taken off (`notesRaw`). Drafter's own plain text
+ * comes back exactly as written, so when either reading is what the record
+ * holds it is the echo of Drafter's own write — "From: Alice
+ * <a.smith@example.com>" is the owner's words, not a tag to strip. Otherwise the
+ * text reading is the edit: what Google's own editor saved.
+ */
+function notesThere(c: { notes?: string; notesRaw?: string }, mine?: string): string | undefined {
+  if (typeof c.notes !== 'string') return undefined
+  const key = notesKey(mine)
+  if (notesKey(c.notes) === key || (typeof c.notesRaw === 'string' && notesKey(c.notesRaw) === key)) return undefined
+  return c.notes
+}
+
+const PRIORITY_MARK = /^(?:‼|▲) /
+
+/**
+ * The title a task's copy came back with, or undefined when it is no rename.
+ * Drafter writes ‼ (urgent) or ▲ (high) in front, so the copy's title read with
+ * or without a leading mark is the echo, whichever priority wrote it (another
+ * device may have changed that since) — and a title of the owner's own that
+ * starts with one ("▲ Climb", normal priority) is theirs, not Drafter's mark. A
+ * new title loses a mark Drafter would have put there and keeps one of theirs.
+ * An emptied title is no rename, and "Untitled task" is only Drafter's placeholder.
+ */
+function titleThere(t: Task, there?: string): string | undefined {
+  const title = there?.trim()
+  if (!title) return undefined
+  const bare = title.replace(PRIORITY_MARK, '')
+  const mine = t.title.trim()
+  if (title === mine || bare === mine || (bare === 'Untitled task' && !mine)) return undefined
+  const drafterMarks = t.priority === 'urgent' || t.priority === 'high'
+  return PRIORITY_MARK.test(mine) && !drafterMarks ? title : bare
+}
 
 /** The newest word on each record, when one page (or a page and a scan) carries two. */
 function newestWord<C extends { updated: string }>(changes: C[], key: (c: C) => unknown): C[] {
@@ -991,10 +1032,10 @@ export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[], event
     const patch: Partial<Task> = {}
     const dueAt = movedDue(t, c)
     if (dueAt) patch.dueAt = dueAt
-    // a title emptied there is no rename, and "Untitled task" is only Drafter's placeholder
-    const title = c.title?.trim()
-    if (title && !(title === 'Untitled task' && !t.title) && title !== t.title.trim()) patch.title = title
-    if (typeof c.notes === 'string' && notesKey(c.notes) !== notesKey(t.description)) patch.description = c.notes
+    const title = titleThere(t, c.title)
+    if (title !== undefined) patch.title = title
+    const notes = notesThere(c, t.description)
+    if (notes !== undefined) patch.description = notes
     if (Object.keys(patch).length) writes.push({ ...t, ...patch, updatedAt: newerStamp(t.updatedAt) })
   }
 
@@ -1016,7 +1057,7 @@ export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[], event
     const title = c.title === 'Untitled event' && !e.title ? '' : c.title
     const same = (a: string, b: string) => (c.allDay ? a === b : Date.parse(a) === Date.parse(b))
     const moved = c.allDay !== e.allDay || !same(c.start, e.start) || !same(c.end, e.end)
-    const notes = typeof c.notes === 'string' && notesKey(c.notes) !== notesKey(e.notes) ? c.notes : undefined
+    const notes = notesThere(c, e.notes)
     const location = typeof c.location === 'string' && c.location.trim() !== (e.location ?? '').trim() ? c.location.trim() : undefined
     if (!moved && title === e.title && notes === undefined && location === undefined) continue
     edited.push({

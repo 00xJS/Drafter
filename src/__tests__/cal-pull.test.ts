@@ -267,6 +267,65 @@ describe('notes and place come back too', () => {
   })
 })
 
+/** A PATCH as both providers apply one: each field the body carries replaces the copy's, and one it leaves out stays. */
+const patched = (copy: Record<string, unknown>, body: object, stamp: Record<string, string>) => ({ ...copy, ...JSON.parse(JSON.stringify(body)), ...stamp })
+
+describe('a place or notes cleared in Drafter stay cleared', () => {
+  // The echo of Drafter's own push is always newer than the entry, so a place the
+  // push left in the copy came back on the next pull — over the newer Drafter edit.
+  const cleared = () => entry({ location: undefined, notes: undefined, updatedAt: '2026-09-10T11:00:00.000Z' })
+
+  it('Google: the push clears them there, so its echo writes nothing back', () => {
+    const before = googleCopy(entry(), '2026-09-10T09:00:00.000Z')
+    const after = patched(before, googleEntryBody({ ...cleared() }, SITE), { updated: LATE })
+    expect(after.location).toBe('')
+    expect(entryWrites([cleared()], googlePullRows([after]).entries)).toEqual([])
+  })
+
+  it('Outlook: the same', () => {
+    const before = graphCopy(entry(), '2026-09-10T09:00:00Z')
+    const after = patched(before, graphEntryBody({ ...cleared() }, SITE), { lastModifiedDateTime: LATE })
+    expect(after.location).toEqual({ displayName: '' })
+    expect(entryWrites([cleared()], [graphEntryChange(after)!])).toEqual([])
+  })
+})
+
+describe('notes that look like markup are the owner’s words, never a tag to strip', () => {
+  // Forwarded mail and addresses in angle brackets once read as HTML, and the
+  // echo of Drafter's own push rewrote the notes with the words taken out.
+  const words = [
+    'Forwarded from Alice Smith <a.smith@example.com>\nPlease sign',
+    'Reply to <b@example.com> by Friday',
+    'Ask <li.wei@example.com> whether x<b and y>z\n<p> stands for paragraph',
+    // real-looking markup in a note: the reading as HTML differs, the raw one is the echo
+    'Type <br> for a new line, and </b> to stop bold',
+  ]
+
+  it.each(words)('Google: an echo of %j changes nothing', notes => {
+    const e = entry({ notes })
+    expect(entryWrites([e], googlePullRows([googleCopy(e, LATE)]).entries)).toEqual([])
+  })
+
+  it.each(words)('Outlook: an echo of %j changes nothing', notes => {
+    const e = entry({ notes })
+    expect(entryWrites([e], [graphEntryChange(graphCopy(e, LATE))!])).toEqual([])
+  })
+
+  it('Google: only a description that reads differently as HTML carries its raw reading too', () => {
+    const [plain] = googlePullRows([googleCopy(entry({ notes: words[0] }), LATE)]).entries
+    expect(plain).not.toHaveProperty('notesRaw')
+    const [markup] = googlePullRows([googleCopy(entry({ notes: words[3] }), LATE)]).entries
+    expect(markup.notesRaw).toBe(words[3])
+  })
+
+  it('Google: the same words edited in its own editor come back as text, the address kept', () => {
+    const e = entry({ notes: words[0] })
+    const html = `Forwarded from Alice Smith &lt;a.smith@example.com&gt;<br>Please sign today<br><br>Open in Drafter: <a href="${SITE}">${SITE}</a>`
+    const [row] = entryWrites([e], googlePullRows([googleCopy(e, LATE, { description: html })]).entries)
+    expect(row.notes).toBe('Forwarded from Alice Smith <a.smith@example.com>\nPlease sign today')
+  })
+})
+
 describe('an entry deleted in Google or Outlook goes to the Trash', () => {
   const gone = (over: Partial<EntryChange> = {}): EntryChange => ({ eventId: 'ev1', deleted: true, title: '', start: null, end: null, allDay: false, updated: LATE, ...over })
 

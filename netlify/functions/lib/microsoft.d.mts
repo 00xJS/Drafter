@@ -114,10 +114,12 @@ export interface TaskChangeRow {
   start: string | null
   allDay: boolean
   updated: string
-  /** Its subject there, without Drafter's priority mark. Absent on a delete. */
+  /** Its subject as it reads there, Drafter's priority mark included. Absent on a delete. */
   title?: string
   /** Its body there, Drafter's footer taken off. Absent on a delete. */
   notes?: string
+  /** Only for a body that came back as HTML: the same with only the footer taken off. */
+  notesRaw?: string
 }
 /** One Graph event as a TaskChangeRow; null when it is not a mirrored task. */
 export declare function graphTaskChange(ev: unknown): TaskChangeRow | null
@@ -159,6 +161,8 @@ export interface EntryChangeRow {
   updated: string
   /** The owner's notes there, Drafter's footer taken off; only when the listing asked for the body. */
   notes?: string
+  /** Only for a body that came back as HTML: the same with only the footer taken off. */
+  notesRaw?: string
   /** Its place there ('' once emptied); only when the listing asked for it. */
   location?: string
 }
@@ -197,7 +201,8 @@ export declare function graphEntryBody(
 ): {
   subject: string
   body: { contentType: 'text'; content: string }
-  location?: { displayName: string }
+  /** Always sent, empty once cleared: a PATCH keeps what its body leaves out. */
+  location: { displayName: string }
   isAllDay: boolean
   showAs: 'busy' | 'free' | 'workingElsewhere'
   isReminderOn: boolean
