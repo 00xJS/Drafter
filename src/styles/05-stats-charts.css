@@ -19,7 +19,7 @@
 
 .stat-tile {
   position: relative;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  background: linear-gradient(180deg, var(--tile-top), var(--surface));
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   padding: 15px 17px;

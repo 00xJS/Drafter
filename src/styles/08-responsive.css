@@ -277,7 +277,7 @@
     font-weight: 700;
   }
   .tabs-compact .tab.active .tab-icon {
-    color: var(--accent);
+    color: var(--accent-ink);
     transform: translateY(-1px);
   }
   .tabs-compact .tab:active .tab-icon {

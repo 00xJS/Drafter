@@ -57,7 +57,8 @@
   justify-content: center;
   /* initials drawn to a fixed 36px circle, not text */
   font-size: 18px;
-  color: var(--inverse-text);
+  /* on the person's own colour, which is the same in both themes */
+  color: var(--on-user-color);
   font-weight: 700;
   flex: none;
 }
@@ -95,7 +96,7 @@
 .person-bar {
   flex: 1;
   border-radius: 2px 2px 0 0;
-  background: var(--border);
+  background: var(--viz-empty);
   min-height: 2px;
 }
 .person-nums {
@@ -128,7 +129,7 @@
   cursor: pointer;
 }
 .person-recent li:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .person-actions {
   display: flex;
@@ -200,11 +201,11 @@
 }
 .spark-bar {
   flex: 1;
-  background: var(--border);
+  background: var(--viz-empty);
   border-radius: 2px 2px 0 0;
 }
 .spark-bar.now {
-  background: var(--accent);
+  background: var(--viz-series-1);
 }
 .stalled-line {
   display: flex;
@@ -240,7 +241,7 @@
 }
 .review-day {
   flex: 1;
-  background: var(--accent);
+  background: var(--viz-series-1);
   opacity: 0.8;
   border-radius: 2px 2px 0 0;
   min-height: 2px;
@@ -272,7 +273,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-palette);
   overflow: hidden;
 }
 .search-input {
@@ -309,7 +310,7 @@
   border-top: 1px solid var(--border);
   border-radius: 0;
   margin-top: 4px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .search-kind {
   width: 28px;
@@ -421,7 +422,7 @@
   margin-left: 6px;
 }
 .plan-list .plan-ms {
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 

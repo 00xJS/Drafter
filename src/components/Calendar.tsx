@@ -20,6 +20,8 @@ import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
 import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
+import { readableInk } from '../contrast'
+import { useTheme } from '../theme'
 import { Modal } from './Modal'
 
 export type CalendarView = 'month' | 'week'
@@ -70,13 +72,17 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 // normal day shows everything it has and only a packed one folds
 const MAX_PILLS = 4
 const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
-/** Cooked at home. */
-const MEAL_COLOR = '#f97316'
+// The calendar's own colours are theme tokens (src/styles/01-base.css), each
+// tuned to read in light and dark; a feed's or a project's colour is the user's.
+/** Cooked at home: the accent, as ink. */
+const MEAL_COLOR = 'var(--accent-ink)'
 /** Bought — a different colour so a run of takeaways stands out in the month grid. */
-const MEAL_OUT_COLOR = '#38bdf8'
+const MEAL_OUT_COLOR = 'var(--cal-meal-out)'
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
-const LOCAL_EVENT_COLOR = '#a78bfa'
+const LOCAL_EVENT_COLOR = 'var(--cal-event-local)'
+/** An event whose calendar has gone. */
+const FALLBACK_EVENT_COLOR = 'var(--dot-fallback)'
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -117,6 +123,8 @@ export function Calendar({
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
   const [addFor, setAddFor] = useState<string | null>(null)
+  // a pill written in a feed's or a project's colour moves only as far as it takes to read in this theme
+  const theme = useTheme()
 
   const sources: DaySources = useMemo(
     () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events.filter(e => !e.work)), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
@@ -165,7 +173,7 @@ export function Calendar({
   const shift = (delta: number) =>
     setCursor(c => (view === 'week' ? addDays(c, delta * 7) : new Date(c.getFullYear(), c.getMonth() + delta, 1)))
 
-  const eventColor = (ev: CalendarEvent) => (ev.localId ? LOCAL_EVENT_COLOR : (sourceMap.get(ev.sourceId)?.color ?? '#94a3b8'))
+  const eventColor = (ev: CalendarEvent) => (ev.localId ? LOCAL_EVENT_COLOR : (sourceMap.get(ev.sourceId)?.color ?? FALLBACK_EVENT_COLOR))
   const taskProject = (t: Task) => (t.projectId ? projectMap.get(t.projectId) : undefined)
 
   /** One line of context under an item's title, shared by the week list and the day sheet. */
@@ -242,7 +250,8 @@ export function Calendar({
         <button
           key={item.id}
           className={t.status === 'done' ? 'cal-pill done' : 'cal-pill'}
-          style={{ background: project ? project.color + '22' : STATUS_META[t.status].bg, color: project ? project.color : STATUS_META[t.status].color }}
+          // the tint is the project's own colour; its text moves only as far as it takes to read on it
+          style={{ background: project ? project.color + '22' : STATUS_META[t.status].bg, color: project ? readableInk(project.color, theme, { tint: true }) : STATUS_META[t.status].color }}
           draggable={t.status !== 'done'}
           onDragStart={e => {
             e.dataTransfer.setData('text/plain', t.id)
@@ -266,7 +275,8 @@ export function Calendar({
       <button
         key={item.id}
         className={'cal-pill ' + item.kind}
-        style={{ borderColor: color, color }}
+        // the outline keeps the colour as it is; the text is the same colour made readable here
+        style={{ borderColor: color, color: readableInk(color, theme) }}
         title={`${itemTitle(item)} · ${itemMeta(item)}`}
         // everything that is not a task expands the day rather than editing in place
         onClick={e => {

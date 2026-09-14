@@ -44,6 +44,10 @@
   --mark-bg: color-mix(in srgb, var(--accent) 28%, transparent);
   --danger: #b91c1c;
   --on-danger: #ffffff;
+  /* An armed delete's label while hovered (a tap leaves :hover on a phone). A
+     danger or subtle button lays its pale hover wash over the red fill then,
+     where white would vanish, so here the label turns red instead. */
+  --on-armed-hover: var(--danger);
   /* the "inverted" pill: a dark chip on the light ground, a light one in dark */
   --inverse-bg: #1f2329;
   --inverse-text: #f6f7f9;
@@ -97,6 +101,10 @@
   --code-bg: #f3f4f6;
   /* the stat tile's gradient top: flat white here, a lift off the card in dark */
   --tile-top: var(--surface);
+  /* A calendar pill's time, dimmed a touch against its title. Only in dark,
+     where the pill's colour has room to spare: here its ink is moved just far
+     enough to read (readableInk), so a dimmed time would fall under 4.5:1. */
+  --pill-time-opacity: 1;
   /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
      feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
   --radius-sm: 9px;
@@ -191,6 +199,7 @@
   --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
   --accent-text: #fca560;
   --danger: #f87171;
+  --on-armed-hover: var(--on-danger);
   --inverse-bg: #e7e9ee;
   --inverse-text: #0f1115;
   --inverse-muted: #737b8b;
@@ -226,6 +235,7 @@
   --launch-bg: #0f1115;
   --code-bg: #0b0d11;
   --tile-top: var(--surface-2);
+  --pill-time-opacity: 0.85;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
@@ -334,8 +344,16 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
+}
+
+/* The browser's own placeholder grey is too faint on white. Dark keeps the
+   darkGray WebKit and Blink paint there; opacity undoes Firefox's 0.54, which
+   would halve either. */
+::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
 }
 
 .app {

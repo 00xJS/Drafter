@@ -33,7 +33,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-menu);
 }
 .cal-add-menu button {
   display: flex;
@@ -128,12 +128,12 @@
   line-height: 1.4;
 }
 .cal-work-badge.home {
-  border-color: #34d399;
-  color: #34d399;
+  border-color: var(--tone-mint);
+  color: var(--tone-mint);
 }
 .cal-work-badge.office {
-  border-color: #60a5fa;
-  color: #60a5fa;
+  border-color: var(--tone-blue);
+  color: var(--tone-blue);
 }
 .cal-cell .cal-work-badge {
   margin: 0 0 2px;

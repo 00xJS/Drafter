@@ -15,6 +15,8 @@ import { newerStamp } from '../itemops'
 import { PlaceStats, favourites, lapsed, placeStats, placeYearReport, placesWith, recentOutings } from '../places'
 import { SEEN_META, countOf } from '../people'
 import { OutingIdea, OutingInput, suggestOuting } from '../ai'
+import { heatStyle } from '../contrast'
+import { useTheme } from '../theme'
 import { Bars, TrendBadge } from './People'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
@@ -410,6 +412,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
   const [year, setYear] = useState(() => new Date().getFullYear())
+  // the year table's cells choose their ink for the theme on screen
+  const theme = useTheme()
   // who is coming, if you say: the ideas draw on where you go together, and
   // the task a tapped idea makes has them on it
   const [withIds, setWithIds] = useState<string[]>([])
@@ -707,7 +711,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
                             key={i}
                             className="num year-cell"
                             title={n > 0 ? countOf(n, 'outing') : undefined}
-                            style={n > 0 ? { background: `color-mix(in srgb, ${r.place.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}
+                            style={n > 0 ? heatStyle(r.place.color, n, theme) : undefined}
                           >
                             {n || ''}
                           </td>

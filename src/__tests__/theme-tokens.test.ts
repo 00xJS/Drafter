@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { contrast, mixHex, ON_DEEP_USER, ON_USER, parseHex } from '../contrast'
+import { GITHUB_STATE_META } from '../github'
+import { SEEN_META } from '../people'
 import { THEME_GROUND, THEME_HEX } from '../theme'
+import { PRIORITY_META, PROJECT_STATUS_META, STATUS_META } from '../types'
 import { sheetImports } from './source'
 
 /*
@@ -89,6 +92,7 @@ const DARK: Record<string, string> = {
   '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLOR
   '--focus-ring': '#f97316', // outline: 2px solid var(--accent)
   '--inverse-muted': '#737b8b', // .toast-close's --muted
+  '--on-armed-hover': 'var(--on-danger)', // .btn.armed's #fff, which a hovered armed button kept
   '--tone-violet': '#c4b5fd', // STATUS_META.wishlist, GITHUB_STATE_META closed / merged
   '--tone-violet-bg': 'rgba(139, 92, 246, 0.2)',
   '--tone-amber': '#fcd34d', // STATUS_META.todo, .due-today
@@ -118,6 +122,7 @@ const DARK: Record<string, string> = {
   '--launch-bg': '#0f1115', // .lock-overlay
   '--code-bg': '#0b0d11', // .md pre
   '--tile-top': 'var(--surface-2)', // .stat-tile's gradient top
+  '--pill-time-opacity': '0.85', // .cal-pill-time's dimming, not a colour but themed with them
   '--shadow-overlay': '0 20px 50px rgba(0, 0, 0, 0.6)', // .modal, .cal-sheet
   '--shadow-palette': '0 24px 60px rgba(0, 0, 0, 0.6)', // .search-palette
   '--shadow-pop': '0 8px 24px rgba(0, 0, 0, 0.5)', // .toast, .action-menu-items, .notes-emoji
@@ -247,6 +252,12 @@ describe('the light palette reads (WCAG 2.x)', () => {
     for (const ink of ['--inverse-text', '--inverse-muted', '--accent']) expect(contrast(solid(ink), inverse), ink).toBeGreaterThanOrEqual(4.5)
     for (const fill of ['--accent', '--accent-hover']) expect(contrast(solid('--on-accent'), solid(fill)), fill).toBeGreaterThanOrEqual(4.5)
     expect(contrast(solid('--on-danger'), solid('--danger'))).toBeGreaterThanOrEqual(4.5)
+    // an armed delete, hovered: its label on the danger button's wash and on a subtle button's
+    for (const ground of [mixHex(solid('--danger'), surface, 0.08), surface2]) expect(contrast(solid('--on-armed-hover'), ground)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('leaves a calendar pill’s time undimmed, since readableInk moves its ink only as far as 4.5:1', () => {
+    expect(light['--pill-time-opacity']).toBe('1')
   })
 
   it('gives focus rings and chart series 3:1', () => {
@@ -270,5 +281,79 @@ describe('the copies other code keeps of the palette', () => {
   it('the contrast helpers’ inks are the user-colour ink tokens', () => {
     expect(ON_USER).toBe(light['--on-user-color'])
     expect(ON_DEEP_USER).toBe(light['--on-deep-user-color'])
+  })
+})
+
+type Paint = { color: string; bg?: string }
+
+/**
+ * The badge tables as they painted until 2026-09-14 (priority is a glyph, so a
+ * colour alone). Each entry now names a token, and in dark that token is
+ * exactly the colour the table held.
+ */
+const WAS: Record<string, Record<string, Paint>> = {
+  STATUS_META: {
+    wishlist: { color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+    todo: { color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
+    doing: { color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
+    blocked: { color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
+    done: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+    canceled: { color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+  },
+  PROJECT_STATUS_META: {
+    active: { color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
+    paused: { color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
+    done: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+    archived: { color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+  },
+  SEEN_META: {
+    never: { color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+    overdue: { color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
+    due: { color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
+    ok: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+  },
+  GITHUB_STATE_META: {
+    open: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+    closed: { color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+    merged: { color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
+    draft: { color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+  },
+  PRIORITY_META: {
+    low: { color: '#9ca3af' },
+    normal: { color: '#b3b8c4' },
+    high: { color: '#fb923c' },
+    urgent: { color: '#f87171' },
+  },
+}
+
+describe('the badge tables hold theme tokens', () => {
+  const tables: Record<string, Record<string, Paint>> = { STATUS_META, PROJECT_STATUS_META, SEEN_META, GITHUB_STATE_META, PRIORITY_META }
+  /** The token a value names, when it is exactly one var(). */
+  const tokenOf = (value: string) => /^var\((--[\w-]+)\)$/.exec(value)?.[1]
+  /** Each entry's colour, and its tint where it has one, as [what, value]. */
+  const paints = (table: Record<string, Paint>) =>
+    Object.entries(table).flatMap(([key, { color, bg }]) => [[`${key}.color`, color] as const, ...(bg === undefined ? [] : [[`${key}.bg`, bg] as const])])
+
+  it('names a token the light palette defines for every colour and tint', () => {
+    const loose = Object.entries(tables).flatMap(([name, table]) =>
+      paints(table)
+        .filter(([, value]) => {
+          const token = tokenOf(value)
+          return !token || !(token in light)
+        })
+        .map(([what, value]) => `${name}.${what} = ${value}`),
+    )
+    expect(loose).toEqual([])
+  })
+
+  it('paints dark exactly as the literals did', () => {
+    const inDark = (value: string) => dark[tokenOf(value)!] ?? light[tokenOf(value)!]
+    const now = Object.fromEntries(
+      Object.entries(tables).map(([name, table]) => [
+        name,
+        Object.fromEntries(Object.entries(table).map(([key, { color, bg }]) => [key, bg === undefined ? { color: inDark(color) } : { color: inDark(color), bg: inDark(bg) }])),
+      ]),
+    )
+    expect(now).toEqual(WAS)
   })
 })

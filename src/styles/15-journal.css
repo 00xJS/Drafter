@@ -42,7 +42,7 @@
 .mood-chip.on {
   opacity: 1;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   transform: scale(1.08);
 }
 .journal-people {
@@ -207,7 +207,8 @@
   display: block;
   width: 100%;
   height: auto;
-  color: var(--text-2);
+  /* the chart's one ink: every label, line and hover below is currentColor at an opacity */
+  color: var(--viz-ink);
   font-variant-numeric: tabular-nums;
   /* the scrub reads clientX along the chart, so the horizontal gesture is ours
      and the vertical one is still the page's. Never `none`: that would trap a
@@ -254,7 +255,7 @@
   opacity: 0.45;
 }
 .mood-chart .mood-col {
-  fill: var(--accent);
+  fill: var(--viz-series-1);
 }
 .mood-chart .mood-avg-line {
   fill: none;
@@ -370,10 +371,11 @@
   color: var(--text-2);
   line-height: 1.5;
 }
-/* the browser default is black-on-yellow, which is unreadable on the dark
-   surface and ignores the accent the rest of the app marks things with */
+/* the browser default is black-on-yellow, which ignores the accent the rest of
+   the app marks things with and sits badly on the dark surface: a wash of the
+   accent under the theme's own text reads in both */
 .journal-snippet mark {
-  background: rgba(249, 115, 22, 0.28);
+  background: var(--mark-bg);
   color: var(--text);
   border-radius: 3px;
   padding: 0 1px;
@@ -410,19 +412,19 @@
   width: 60%;
   min-height: 2px;
   border-radius: 3px 3px 0 0;
-  background: var(--accent);
+  background: var(--viz-series-1);
   opacity: 0.85;
 }
 /* the lowest average, marked. The caption under the bars names it too — the
    one thing this chart is for must not be carried by colour alone. */
 .weekday-col.low .weekday-track {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--viz-series-1);
 }
 .weekday-col.low .weekday-bar {
   opacity: 1;
 }
 .weekday-col.low .weekday-value {
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 .weekday-value {

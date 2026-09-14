@@ -182,7 +182,7 @@ export function Roadmap({ projects, tasks, events, sourceMap, onOpenProject, onO
                   <span
                     key={ev.id}
                     className="rm-event"
-                    style={{ left: model.x(at), background: sourceMap.get(ev.sourceId)?.color ?? '#94a3b8' }}
+                    style={{ left: model.x(at), background: sourceMap.get(ev.sourceId)?.color ?? 'var(--dot-fallback)' }}
                     title={`${ev.title} · ${fmtDate(at.toISOString())}`}
                   />
                 ))}

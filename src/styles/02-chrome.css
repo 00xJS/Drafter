@@ -44,9 +44,9 @@
   border-radius: 9px;
   /* a lit tile, not a flat square: a soft top-down accent gradient and a faint
      glow give the mark some dimension. */
-  background: linear-gradient(160deg, var(--accent-hover), var(--accent) 62%, #e2620a);
+  background: linear-gradient(160deg, var(--accent-bright), var(--accent) 62%, var(--accent-deep));
   color: var(--on-accent);
-  box-shadow: var(--glow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: var(--glow-accent), inset 0 1px 0 var(--sheen);
   font-size: 14px;
 }
 .brand-mark svg {
@@ -251,7 +251,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 .row-open:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 4px;
 }

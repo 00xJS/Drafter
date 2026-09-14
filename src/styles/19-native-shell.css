@@ -37,14 +37,14 @@
   align-items: flex-end;
   /* edge to edge, but clear of the notch in landscape */
   padding: 0 var(--safe-r) 0 var(--safe-l);
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim-sheet);
 }
 .native .modal {
   width: 100%;
   height: auto;
   max-height: 94dvh;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  box-shadow: 0 -10px 44px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-sheet);
   overflow: hidden;
   animation: sheet-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -97,10 +97,10 @@
 }
 
 /* --- The frosted bottom tab bar reads as glass over the app: a hair more
-   translucent on native, with a bright top hairline like a real UITabBar. */
+   translucent on native, with a hairline along its top like a real UITabBar. */
 .native .tabs-compact {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 var(--tabbar-edge);
 }
 
 /* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal,
