@@ -1,4 +1,4 @@
-import { useState, type MutableRefObject } from 'react'
+import { useRef, useState, type MutableRefObject } from 'react'
 import { countOf } from '../../people'
 import { garmentTags } from '../../schema'
 import { SEASONS, SEASON_META, type Garment } from '../../types'
@@ -41,18 +41,26 @@ export function readPrice(text: string): number | null | undefined {
 export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }: Props) {
   const [price, setPrice] = useState(() => priceText(g))
   const [tags, setTags] = useState(() => tagsText(g))
+  // what each field was last filled with: one left as it was writes nothing,
+  // whatever a sync has done to the piece since
+  const filled = useRef({ price, tags })
   const company = wornWith(g.id, ix, byId)
 
   const commitPrice = () => {
+    if (price === filled.current.price) return
     const n = readPrice(price)
     // not a price at all: the field goes back to what is kept
-    if (n === undefined) return setPrice(priceText(g))
-    setPrice(n === null ? '' : String(n))
-    if ((n ?? undefined) !== g.price) onEdit(cur => withDetails(cur, { price: n }))
+    const text = n === undefined ? priceText(g) : n === null ? '' : String(n)
+    setPrice(text)
+    filled.current.price = text
+    if (n !== undefined && (n ?? undefined) !== g.price) onEdit(cur => withDetails(cur, { price: n }))
   }
   const commitTags = () => {
+    if (tags === filled.current.tags) return
     const next = garmentTags(tags.split(',')) ?? []
-    setTags(next.join(', '))
+    const text = next.join(', ')
+    setTags(text)
+    filled.current.tags = text
     if (next.join(',') !== (g.tags ?? []).join(',')) onEdit(cur => withDetails(cur, { tags: next }))
   }
   keep.current = () => {

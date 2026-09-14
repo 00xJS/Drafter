@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { formatMoney } from '../bills'
 import type { PlannerCtx } from '../components/planner/ctx'
 import { HomeScreen } from '../components/planner/HomeScreen'
 import { Wardrobe as LazyWardrobe } from '../components/planner/lazy'
+import type { WardrobeOpen } from '../components/planner/useNavigation'
 import { Clothes } from '../components/wardrobe/Clothes'
 import { GarmentSheet, type SheetMode } from '../components/wardrobe/GarmentSheet'
 import { OutfitComposer } from '../components/wardrobe/OutfitComposer'
@@ -15,8 +16,9 @@ import { OutfitMenu } from '../components/wardrobe/SavedOutfits'
 import { Wardrobe } from '../components/wardrobe/Wardrobe'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { imageFiles } from '../media'
-import type { Garment, GarmentType, Outfit, Wear } from '../types'
+import type { Garment, GarmentType, Item, Outfit, Wear } from '../types'
 import { liveById, unwearable, wearIndex } from '../wardrobe'
+import { press, propsOf, rendered, settled, typeInto } from './rendered'
 import { plannerSource } from './source'
 
 // Home → Wardrobe as a server render sees it: the composer's rows and its
@@ -45,33 +47,36 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function composer(over: Partial<ComponentProps<typeof OutfitComposer>> = {}) {
+type ComposerProps = ComponentProps<typeof OutfitComposer>
+
+function composerProps(over: Partial<ComposerProps> = {}): ComposerProps {
   const garments = over.garments ?? [...tops, ...bottoms]
   const wears = over.wears ?? []
-  return renderToStaticMarkup(
-    <OutfitComposer
-      garments={garments}
-      outfits={[]}
-      wears={wears}
-      byId={liveById(garments)}
-      ix={wearIndex(wears, TODAY)}
-      day={TODAY}
-      todayKey={TODAY}
-      onDay={noop}
-      onLog={noop}
-      onRemoveLook={noop}
-      onSaveOutfit={noop}
-      onAdd={noop}
-      onOpenPiece={noop}
-      onWearOutfit={noop}
-      onRenameOutfit={noop}
-      onFavouriteOutfit={noop}
-      onDeleteOutfit={noop}
-      forecast={null}
-      {...over}
-    />,
-  )
+  return {
+    garments,
+    outfits: [],
+    wears,
+    byId: liveById(garments),
+    ix: wearIndex(wears, TODAY),
+    day: TODAY,
+    todayKey: TODAY,
+    onDay: noop,
+    onLog: noop,
+    onRemoveLook: noop,
+    onSaveOutfit: noop,
+    onAdd: noop,
+    onOpenPiece: noop,
+    onWearOutfit: noop,
+    onRenameOutfit: noop,
+    onFavouriteOutfit: noop,
+    onDeleteOutfit: noop,
+    forecast: null,
+    ...over,
+  }
 }
+const composer = (over: Partial<ComposerProps> = {}) => renderToStaticMarkup(<OutfitComposer {...composerProps(over)} />)
+/** The composer's note field. */
+const noteField = (p: Record<string, unknown>) => p.placeholder === 'wedding, interview…'
 
 /** The names on the chosen cards, row by row. */
 const chosenNames = (html: string) => [...html.matchAll(/aria-checked="true"[^>]*class="snap-card">[\s\S]*?class="snap-name">([^<]+)</g)].map(m => m[1])
@@ -231,6 +236,30 @@ describe('Outfit: the composer', () => {
     expect(html).toContain('value="wedding"')
     expect(html).toContain('Surprise me</button>')
     expect(composer()).not.toContain('value="wedding"')
+  })
+
+  it('logs the look with the note in its field, and gives + Another look only a note written for it', () => {
+    const onLog = vi.fn<ComposerProps['onLog']>()
+    const noted = composerProps({ wears: [{ ...look(TODAY, ['navy-tee', 'jeans']), note: 'wedding' }], onLog })
+    const tree = settled(OutfitComposer, noted)
+    press(tree, 'Update look')
+    expect(onLog.mock.lastCall?.[2]).toMatchObject({ note: 'wedding' })
+    expect(onLog.mock.lastCall?.[2].another).toBeUndefined()
+    // the evening change is a look of its own: the day's note stays the day's
+    press(tree, 'Another look')
+    expect(onLog.mock.lastCall?.[2]).toMatchObject({ another: true, note: '' })
+    // a note written since the field was filled goes with either
+    const written = settled(OutfitComposer, noted, t => typeInto(t, noteField, 'dinner'))
+    press(written, 'Another look')
+    expect(onLog.mock.lastCall?.[2]).toMatchObject({ another: true, note: 'dinner' })
+    press(written, 'Update look')
+    expect(onLog.mock.lastCall?.[2]).toMatchObject({ note: 'dinner' })
+    // and a day with no look yet takes what is typed
+    press(
+      settled(OutfitComposer, composerProps({ onLog }), t => typeInto(t, noteField, 'interview')),
+      'Wearing this',
+    )
+    expect(onLog.mock.lastCall?.[2]).toMatchObject({ note: 'interview' })
   })
 
   it('marks a favourite in its row, said as well as drawn', () => {
@@ -427,6 +456,30 @@ describe('the piece sheet', () => {
     expect(read('../components/wardrobe/PieceDetails.tsx')).not.toMatch(/useEffect/)
   })
 
+  it('writes nothing for a field left as it was, even once a sync has changed the piece under it', () => {
+    const keep = { current: noop }
+    const onEdit = vi.fn<(change: (cur: Garment) => Garment) => void>()
+    const tee = piece('tee', 'top', { price: 40, tags: ['work'] })
+    const synced = { ...tee, price: 55, tags: ['gym'], updatedAt: '2026-09-14T09:00:00.000Z' }
+    const ix = wearIndex([], TODAY)
+    // the sheet as it stands open: the piece it shows can change under it
+    let sync = noop
+    function Open() {
+      const [g, setG] = useState(tee)
+      sync = () => setG(synced)
+      return PieceDetails({ garment: g, ix, byId: liveById([g]), onEdit, onOpenPiece: noop, keep })
+    }
+    rendered(Open, {}, () => sync())
+    keep.current()
+    expect(onEdit).not.toHaveBeenCalled()
+    // a price typed is kept once, over the piece as it is by then
+    rendered(Open, {}, t => typeInto(t, p => p.inputMode === 'decimal', '45'))
+    keep.current()
+    keep.current()
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit.mock.calls[0][0](synced)).toMatchObject({ price: 45, tags: ['gym'] })
+  })
+
   it('reads a typed price as whole units of the currency, and nothing that is not a price', () => {
     expect(readPrice('40')).toBe(40)
     expect(readPrice(' £1,250 ')).toBe(1250)
@@ -550,6 +603,63 @@ describe('Home → Wardrobe', () => {
   })
 })
 
+describe('what the wardrobe writes', () => {
+  const trainers = piece('trainers', 'shoes')
+  const planned = (date: string, ids: string[]): Wear => ({ ...look(date, ids), planned: true })
+
+  /** Home → Wardrobe on the morning of TODAY, with what it saves and says caught. */
+  function shell(wears: Wear[], open: WardrobeOpen | null = null, outfits: Outfit[] = []) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 14, 10))
+    const onSave = vi.fn<(item: Item) => void>()
+    const showToast = vi.fn<(msg: string, undo?: () => void) => void>()
+    const tree = settled(Wardrobe, { garments: [...tops, ...bottoms, trainers], outfits, wears, onSave, onRemove: noop, onRestore: noop, showToast, open, onOpenConsumed: noop })
+    return { tree, showToast, written: () => onSave.mock.calls.map(c => c[0] as Wear) }
+  }
+
+  it('files a look for a day still to come as a plan, and one for today or a day gone as worn', () => {
+    const { tree, written, showToast } = shell([])
+    const { onLog } = propsOf(tree, OutfitComposer)
+    onLog('2026-09-20', ['navy-tee', 'jeans'], { shown: new Set() })
+    expect(written()[0]).toMatchObject({ date: '2026-09-20', garmentIds: ['navy-tee', 'jeans'], planned: true })
+    expect(showToast).toHaveBeenLastCalledWith('Planned for Sun 20 Sep', expect.any(Function))
+    onLog(TODAY, ['navy-tee', 'jeans'], { shown: new Set() })
+    onLog('2026-09-12', ['navy-tee', 'jeans'], { shown: new Set() })
+    expect(written().slice(1).map(w => 'planned' in w)).toEqual([false, false])
+  })
+
+  it('says today’s plan was worn when the composer logs it, the plan’s pieces on screen', () => {
+    const plan = planned(TODAY, ['grey-tee', 'cords'])
+    const { tree, written, showToast } = shell([plan])
+    propsOf(tree, OutfitComposer).onLog(TODAY, ['grey-tee', 'cords'], { shown: new Set(['grey-tee', 'cords']) })
+    expect(written()[0]).toMatchObject({ id: plan.id, garmentIds: ['grey-tee', 'cords'] })
+    expect('planned' in written()[0]).toBe(false)
+    expect(showToast).toHaveBeenLastCalledWith('Logged for today', expect.any(Function))
+  })
+
+  it('never says a plan was worn from a piece’s Wear today or a saved outfit’s: each is a look of its own beside it', () => {
+    const plan = planned(TODAY, ['grey-tee', 'cords'])
+    const friday = outfit('o1', ['navy-tee', 'jeans'], 'Friday')
+    const { tree, written, showToast } = shell([plan], { garmentId: 'trainers' }, [friday])
+    propsOf(tree, GarmentSheet).onWearToday(trainers)
+    expect(written()[0]).toMatchObject({ date: TODAY, garmentIds: ['trainers'] })
+    expect('planned' in written()[0]).toBe(false)
+    expect(showToast).toHaveBeenLastCalledWith('Logged for today', expect.any(Function))
+    propsOf(tree, OutfitComposer).onWearOutfit(friday)
+    expect(written()[1]).toMatchObject({ date: TODAY, garmentIds: ['navy-tee', 'jeans'] })
+    // the plan is left as it was: it counts only once it is said to be worn
+    expect(written().some(w => w.id === plan.id)).toBe(false)
+  })
+
+  it('puts a piece worn today into today’s look when that look was worn', () => {
+    const worn = look(TODAY, ['grey-tee', 'cords'])
+    const { tree, written, showToast } = shell([worn], { garmentId: 'trainers' })
+    propsOf(tree, GarmentSheet).onWearToday(trainers)
+    expect(written()[0]).toMatchObject({ id: worn.id, garmentIds: ['trainers', 'grey-tee', 'cords'] })
+    expect(showToast).toHaveBeenLastCalledWith('trainers added to today’s look', expect.any(Function))
+  })
+})
+
 describe('the guards around the wardrobe', () => {
   const files = ['Wardrobe', 'OutfitComposer', 'SnapRow', 'SavedOutfits', 'Clothes', 'GarmentSheet', 'PieceDetails', 'WardrobeStats', 'WardrobeCard', 'GarmentPhoto']
   const source = (f: string) => read(`../components/wardrobe/${f}.tsx`)
@@ -594,7 +704,13 @@ describe('the guards around the wardrobe', () => {
     expect(read('../components/RichNotes.tsx')).toContain('const list = imageFiles(files)')
     const sheet = source('GarmentSheet')
     expect(sheet).toContain('imageFiles(e.clipboardData?.files ?? [])')
-    expect(sheet).toContain('imageFiles(e.dataTransfer.files)')
+    expect(sheet).toContain('const photos = imageFiles(files)')
+    expect(sheet).toContain('take.current.drop(e.dataTransfer.files)')
+    // a file dropped anywhere while the sheet is open is its to take, never the browser's to open
+    expect(sheet).toContain("window.addEventListener('dragover', onDragOver)")
+    expect(sheet).toContain("window.addEventListener('drop', onDrop)")
+    // and none is taken while a save is still reading the queue
+    expect(sheet).toContain('if (picked.length === 0 || saving) return')
   })
 
   it('reads the forecast the briefing cached, and never fetches one of its own', () => {

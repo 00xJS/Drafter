@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
 import { NotSignedIn, imageFiles, saveMedia } from '../../media'
@@ -103,37 +103,52 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
 
   const choose = (files: FileList | readonly File[] | null) => {
     const picked = Array.from(files ?? [])
-    if (picked.length === 0) return
+    // a photo taken mid-save would move the queue under the save still reading it
+    if (picked.length === 0 || saving) return
     setQueue(picked)
     setAt(0)
     setName('')
     setNotes('')
     setFailed(null)
   }
-  // on a desktop, a photo pasted while the sheet is open, or dropped on the
-  // target, is taken as if it were picked, through the filter a note's photos
-  // go through; pasted text still goes into the fields as ever
-  const chooseNow = useRef(choose)
-  chooseNow.current = choose
+  /** Files dropped on the sheet: the photos among them, as if picked; with none, a word why. */
+  const drop = (files: FileList) => {
+    setDragging(false)
+    const photos = imageFiles(files)
+    if (photos.length > 0) choose(photos)
+    else setFailed('That is not a photo — try a JPEG or PNG')
+  }
+  // on a desktop, a photo pasted while the sheet is open, or dropped anywhere
+  // on it, is taken as if it were picked, through the filter a note's photos go
+  // through; pasted text still goes into the fields as ever, and a dropped file
+  // is never opened by the browser in the app's place
+  const take = useRef({ choose, drop })
+  take.current = { choose, drop }
   useEffect(() => {
+    const carriesFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
     const onPaste = (e: ClipboardEvent) => {
       const photos = imageFiles(e.clipboardData?.files ?? [])
       if (photos.length === 0) return
       e.preventDefault()
-      chooseNow.current(photos)
+      take.current.choose(photos)
+    }
+    const onDragOver = (e: DragEvent) => {
+      if (carriesFiles(e)) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!e.dataTransfer || !carriesFiles(e)) return
+      e.preventDefault()
+      take.current.drop(e.dataTransfer.files)
     }
     window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('paste', onPaste)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
   }, [])
-  const drop = (e: DragEvent<HTMLLabelElement>) => {
-    setDragging(false)
-    if (e.dataTransfer.files.length === 0) return
-    // a file dropped here is never opened by the browser in the app's place
-    e.preventDefault()
-    const photos = imageFiles(e.dataTransfer.files)
-    if (photos.length > 0) choose(photos)
-    else setFailed('That is not a photo — try a JPEG or PNG')
-  }
   /** On to the next photo picked (typed as the way in said, else as the last one saved), or done. */
   const next = (saved?: GarmentType) => {
     if (at + 1 >= queue.length) {
@@ -191,22 +206,24 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       </ModalHead>
       <div className="modal-body">
         {/* the label is the target, so the tap itself opens the picker: on an
-            iPhone, Take Photo, Photo Library or Choose File */}
+            iPhone, Take Photo, Photo Library or Choose File. A file dragged
+            over it lights it until the pointer leaves it — not as it crosses
+            what is inside — and the window takes the drop */}
         <label
           className={`${ready ? 'garment-pick has-photo' : 'garment-pick'}${dragging ? ' dragging' : ''}`}
           onDragOver={e => {
-            if (!Array.from(e.dataTransfer.types).includes('Files')) return
-            e.preventDefault()
-            setDragging(true)
+            if (Array.from(e.dataTransfer.types).includes('Files')) setDragging(true)
           }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={drop}
+          onDragLeave={e => {
+            if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) setDragging(false)
+          }}
         >
           <input
             type="file"
             accept="image/*"
             multiple
             className="garment-file"
+            disabled={saving}
             onChange={e => {
               choose(e.target.files)
               e.target.value = ''

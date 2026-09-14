@@ -111,9 +111,16 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     onRemove(g.id)
     showToast(`Deleted ${g.name}`, () => onRestore([g.id]))
   }
-  /** The piece sheet's Wear today: into today's latest look, in its own slot, or a look of its own. */
+  /**
+   * The piece sheet's Wear today: into today's latest look, in its own slot, or
+   * a look of its own. A plan is said to be worn only where its pieces are on
+   * screen — Today's Wore it, the composer — so beside today's plan the piece
+   * is a look of its own, as a saved outfit's Wear today is, and the plan
+   * stays a plan.
+   */
   const wearToday = (g: Garment) => {
-    const log = logLook(wears, todayKey, [g.id], records, { shown: NOTHING_SHOWN })
+    const another = !!lastOf(looksOn(wears, todayKey))?.planned
+    const log = logLook(wears, todayKey, [g.id], records, { shown: NOTHING_SHOWN, another })
     commit(log, 'remove' in log.undo ? 'Logged for today' : `${g.name} added to today’s look`)
   }
   /** A saved outfit's Wear today, as a Today chip logs: a look of its own, and only when every piece can be worn. */

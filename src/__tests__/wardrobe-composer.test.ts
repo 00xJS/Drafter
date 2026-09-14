@@ -145,7 +145,11 @@ describe('Surprise me', () => {
 
   it('never deals a piece only held for the day, nor one out of season while the row has one in it', () => {
     const { rows, sel } = visit([look(DAY, ['band-tee', 'jeans'])], DAY)
-    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(sel, rows, [], wearIndex([], TODAY), { random: () => r }), rows, []).slots.top).not.toBe('band-tee')
+    // the held tee leads its row and the rows start on it; moved off it first,
+    // only the draw itself can keep it out
+    expect(rows.top[0].id).toBe('band-tee')
+    const moved = picking(sel, { top: 'hoodie' })
+    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(moved, rows, [], wearIndex([], TODAY), { random: () => r }), rows, []).slots.top).not.toBe('band-tee')
     const tops = [piece('summer-tee', 'top', { seasons: ['summer'] }), piece('wool-top', 'top', { seasons: ['winter'] }), piece('plain-top', 'top')]
     const garments = [...tops, jeans]
     const ix = wearIndex([], TODAY)

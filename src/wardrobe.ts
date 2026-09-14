@@ -194,8 +194,9 @@ export interface LookLog {
  * none of today's look.
  *
  * A log is a look worn unless `planned` makes it a plan (a day still to
- * come), so logging a day whose latest look was a plan confirms that plan.
- * `note`, when given, is the look's note; '' clears it.
+ * come), so logging a day whose latest look was a plan confirms that plan: a
+ * caller that does not show the plan's pieces logs `another` beside it
+ * instead. `note`, when given, is the look's note; '' clears it.
  */
 export function logLook(
   wears: readonly Wear[],

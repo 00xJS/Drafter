@@ -5,6 +5,7 @@ import { Today } from '../components/Today'
 import { WardrobeCard } from '../components/wardrobe/WardrobeCard'
 import type { Garment, GarmentType, Outfit, Task, Wear } from '../types'
 import type { Forecast } from '../weather'
+import { button, press, settled } from './rendered'
 import { plannerSource } from './source'
 
 // Today's "What are you wearing?": when it shows at all, what it offers, the
@@ -31,8 +32,9 @@ const outfit = (id: string, garmentIds: string[], name?: string): Outfit => ({ k
 
 const wardrobe = [piece('tee', 'top'), piece('shirt', 'top'), piece('polo', 'top'), piece('jumper', 'top'), piece('jeans', 'bottom'), piece('chinos', 'bottom'), piece('dress', 'onepiece')]
 
-const card = (over: Partial<ComponentProps<typeof WardrobeCard>> = {}) =>
-  renderToStaticMarkup(<WardrobeCard garments={wardrobe} outfits={[]} wears={[]} dayKey={TODAY} onLog={noop} onOpen={noop} now={AT_NINE} forecast={null} {...over} />)
+type CardProps = ComponentProps<typeof WardrobeCard>
+const cardProps = (over: Partial<CardProps> = {}): CardProps => ({ garments: wardrobe, outfits: [], wears: [], dayKey: TODAY, onLog: noop, onOpen: noop, now: AT_NINE, forecast: null, ...over })
+const card = (over: Partial<CardProps> = {}) => renderToStaticMarkup(<WardrobeCard {...cardProps(over)} />)
 /** The one-tap chips, Pick… aside. */
 const chips = (html: string) => html.match(/class="wardrobe-chip"/g)?.length ?? 0
 
@@ -197,6 +199,27 @@ describe('a look planned for today', () => {
     expect(card({ wears: [planned(ago(1), ['tee', 'jeans']), look(ago(2), ['shirt', 'chinos'])], now: AT_NINE })).toContain('Forgot yesterday? Log it')
   })
 
+  it('says the plan was worn with the one tap: the same look, a plan no longer, stamped newer, with the plan kept for Undo', () => {
+    const plan = planned(TODAY, ['shirt', 'chinos'])
+    const onLog = vi.fn<CardProps['onLog']>()
+    press(settled(WardrobeCard, cardProps({ wears: [plan], onLog })), 'Wore it')
+    expect(onLog).toHaveBeenCalledTimes(1)
+    const [worn, opts] = onLog.mock.calls[0]
+    expect(worn).toMatchObject({ id: plan.id, date: TODAY, garmentIds: ['shirt', 'chinos'] })
+    expect('planned' in worn).toBe(false)
+    expect(worn.updatedAt > plan.updatedAt).toBe(true)
+    expect(opts).toEqual({ before: plan })
+  })
+
+  it('still asks "Forgot yesterday?" in the morning when today is planned', () => {
+    const wears = [planned(TODAY, ['shirt', 'chinos']), look(ago(2), ['tee', 'jeans'])]
+    expect(card({ wears, now: AT_NINE })).toContain('>Forgot yesterday? Log it</button>')
+    expect(card({ wears, now: AT_ONE })).not.toContain('Forgot yesterday?')
+    const onOpen = vi.fn<CardProps['onOpen']>()
+    press(settled(WardrobeCard, cardProps({ wears, onOpen })), 'Forgot yesterday? Log it')
+    expect(onOpen).toHaveBeenCalledWith({ date: ago(1) })
+  })
+
   it('shows a note under the look, or a way to add one', () => {
     const noted = card({ wears: [{ ...look(TODAY, ['tee', 'jeans']), note: 'wedding' }] })
     expect(noted).toContain('class="wardrobe-card-note has-note"')
@@ -217,6 +240,24 @@ describe('the weather on the card', () => {
     expect(html).toContain('<button type="button" aria-pressed="false" class="toggle">+ Mac</button>')
     // until it is asked for, the chips log the look as it was worn
     expect(html).not.toContain('collage-badge outer')
+  })
+
+  it('puts the coat on the one-tap looks once it is asked for, and not before', () => {
+    const onLog = vi.fn<CardProps['onLog']>()
+    const props = cardProps({ garments: withMac, forecast: COLD, wears: [look(ago(1), ['tee', 'jeans'])], onLog })
+    press(settled(WardrobeCard, props), 'tee + jeans')
+    expect(onLog.mock.lastCall?.[0].garmentIds).toEqual(['tee', 'jeans'])
+    const asked = settled(WardrobeCard, props, t => press(t, '+ Mac'))
+    expect(button(asked, '+ Mac').props['aria-pressed']).toBe(true)
+    press(asked, 'tee + jeans')
+    expect(onLog.mock.lastCall?.[0].garmentIds).toEqual(['tee', 'jeans', 'mac'])
+  })
+
+  it('offers no coat with no one-tap look to put it on: Pick… opens Outfit, which offers it there', () => {
+    const html = card({ garments: withMac, forecast: COLD })
+    expect(chips(html)).toBe(0)
+    expect(html).not.toContain('wardrobe-weather')
+    expect(html).toContain('>Pick…</button>')
   })
 
   it('says nothing on a mild dry day, with no forecast, or with no outerwear', () => {

@@ -79,21 +79,26 @@ export function OutfitComposer(props: Props) {
   const shown = useMemo(() => shownIn(rows), [rows])
   const [sel, setSel] = useState<Selection>(() => start(rows, latest, byId))
   const [openRows, setOpenRows] = useState<Optional[]>(storedRows)
-  const [note, setNote] = useState(() => latest?.note ?? '')
+  /** The note of the day's latest look: what the note field is filled with. */
+  const lookNote = latest?.note ?? ''
+  const [note, setNote] = useState(lookNote)
   const cached = useCachedForecast()
   const forecast = props.forecast !== undefined ? props.forecast : cached
 
-  // a day with a look brings its pieces (and its note) into the rows; a day
-  // without one keeps what is chosen, so a look put together here can be
-  // logged for yesterday or planned for tomorrow
+  // a day with a look brings its pieces into the rows; a day without one
+  // keeps what is chosen, so a look put together here can be logged for
+  // yesterday or planned for tomorrow
   const shownDay = useRef(day)
   useEffect(() => {
     if (shownDay.current === day) return
     shownDay.current = day
     setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
-    setNote(latest?.note ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
+  // the note field follows the day's latest look — another day's, a log, a
+  // Remove, an Undo, a sync — and a note typed with no look to follow stays,
+  // as the rows do
+  useEffect(() => setNote(lookNote), [latest?.id, lookNote])
 
   const { slots: chosen, accessories, both, onepieceMode, open, pieces, dressed } = chosenIn(sel, rows, openRows)
   const rowOpen = (s: Optional) => open.includes(s)
@@ -130,6 +135,9 @@ export function OutfitComposer(props: Props) {
   // a plan on a day that has come is confirmed by logging it, so it reads as a day not yet logged
   const primary = ahead ? (latest ? 'Update plan' : `Plan for ${shortDay(day, todayKey)}`) : worn ? 'Update look' : day === todayKey ? 'Wearing this' : `Log for ${shortDay(day, todayKey)}`
   const another = ahead ? !!latest : worn
+  // an evening change is a look of its own: it takes a note only when one was
+  // written for it, never the day's note the field was filled with
+  const anotherNote = note.trim() === lookNote ? '' : note
 
   // what today's forecast asks for, when the rows have no outerwear chosen yet
   const need = day === todayKey ? weatherNeed(forecast) : null
@@ -276,7 +284,7 @@ export function OutfitComposer(props: Props) {
         <span className="spacer" />
         {another && (
           // "+ Look" on a phone, where the three share one row
-          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true, note })}>
+          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true, note: anotherNote })}>
             + <span className="wardrobe-another-long">Another look</span>
             <span className="wardrobe-another-short">Look</span>
           </button>

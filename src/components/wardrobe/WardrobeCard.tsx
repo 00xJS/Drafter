@@ -141,6 +141,13 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
     </span>
   )
   const noteOn = (look: Wear) => <LookNote key={look.id} look={look} onSave={note => onLog(withNote(look, note), { before: look, msg: null })} />
+  // the morning's question about yesterday stands whether today is planned or not
+  const yesterday = forgotYesterday(ix, now.getHours())
+  const forgot = yesterday && (
+    <button type="button" className="wardrobe-forgot" onClick={() => onOpen({ date: yesterday })}>
+      Forgot yesterday? Log it
+    </button>
+  )
 
   const today = ix.looks.get(dayKey)
   if (today?.length) {
@@ -193,11 +200,11 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
             Wore it
           </button>
         </div>
+        {forgot}
       </section>
     )
   }
 
-  const yesterday = forgotYesterday(ix, now.getHours())
   // with the coat asked for, each look takes it, unless it has outerwear of its own
   const dressed = (ids: string[]) => (withCoat && coat && !hasOuterwear(ids, byId) ? [...ids, coat.id] : ids)
   return (
@@ -208,7 +215,9 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
           <p className="chart-sub">Tap one to log it, or pick</p>
         </div>
       </header>
-      {coat && sky && (
+      {/* the coat rides on the one-tap looks; with none to ride on, Pick… opens
+          Outfit, which offers it for today itself */}
+      {coat && sky && chips.length > 0 && (
         <p className="wardrobe-weather">
           {sky}
           <button type="button" aria-pressed={withCoat} className={withCoat ? 'toggle on' : 'toggle'} onClick={() => setWithCoat(on => !on)}>
@@ -230,11 +239,7 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
           Pick…
         </button>
       </div>
-      {yesterday && (
-        <button type="button" className="wardrobe-forgot" onClick={() => onOpen({ date: yesterday })}>
-          Forgot yesterday? Log it
-        </button>
-      )}
+      {forgot}
     </section>
   )
 }
