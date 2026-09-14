@@ -185,6 +185,40 @@ describe('a bot cannot start a second project', () => {
     expect(json.posts.rejected).toEqual(['another'])
   })
 
+  it('refuses another record rewritten as a project, and a project brought back from Trash, while LIFE is live', async () => {
+    // sync_posts keeps a stored id and takes the new data whatever its kind, so either would be a second live project
+    const later = '2026-09-14T12:00:00.000Z'
+    const { call, synced } = gateway([
+      LIFE,
+      row(OWNER, { kind: 'task', id: 'a-task', title: 'A task', status: 'todo' }),
+      row(OWNER, { kind: 'project', id: 'old', name: 'Old', status: 'done', deletedAt: STAMP }),
+    ])
+    const { json } = await call({
+      action: 'sync',
+      posts: [
+        { kind: 'project', id: 'a-task', name: 'Side hustle', status: 'active', updatedAt: later },
+        { kind: 'project', id: 'old', name: 'Old', status: 'active', updatedAt: later },
+        { kind: 'project', id: 'life', name: 'LIFE', status: 'active', notes: 'Still editable', updatedAt: later },
+      ],
+    })
+    expect(idsOf(synced[0] as { id: string }[])).toEqual(['life'])
+    expect(json.posts.rejected).toEqual(['a-task', 'old'])
+  })
+
+  it('brings a trashed LIFE back when no project is live', async () => {
+    const { call, synced } = gateway([row(OWNER, { kind: 'project', id: 'life', name: 'LIFE', status: 'active', deletedAt: STAMP })])
+    const { json } = await call({ action: 'sync', posts: [{ kind: 'project', id: 'life', name: 'LIFE', status: 'active', updatedAt: '2026-09-14T12:00:00.000Z' }] })
+    expect(idsOf(synced[0] as { id: string }[])).toEqual(['life'])
+    expect(json.posts.rejected).toEqual([])
+  })
+
+  it('names a refused id once, even when two rules refuse it', async () => {
+    // a peer's personal row is out of reach, and rewriting it as a project would also be a second one
+    const { call } = gateway([LIFE, row(PEER, { kind: 'habit', id: 'their-habit', name: 'Run' })])
+    const { json } = await call({ action: 'sync', posts: [{ kind: 'project', id: 'their-habit', name: 'Mine now', status: 'active', updatedAt: '2026-09-14T12:00:00.000Z' }] })
+    expect(json.posts.rejected).toEqual(['their-habit'])
+  })
+
   it('with no live project, lets the first new one in and refuses the rest of the batch', async () => {
     const { call, synced } = gateway([row(OWNER, { kind: 'project', id: 'old', name: 'Old', status: 'done', deletedAt: STAMP })])
     const { json } = await call({

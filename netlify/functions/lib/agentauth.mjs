@@ -279,6 +279,15 @@ function toConnection(r) {
 }
 
 /**
+ * Whether a stored connection still works: an OAuth grant until its refresh
+ * token expires, a token made by hand until it lapses. Leaving out revoked
+ * rows is the query's job.
+ */
+function connectionLive(r, now = Date.now()) {
+  return r.kind === 'oauth' ? !r.refresh_expires_at || Date.parse(r.refresh_expires_at) > now : !tokenLapsed(r, now)
+}
+
+/**
  * Live connections, newest first. An OAuth grant whose refresh token has
  * expired is gone for good, and so is a token made by hand that lapsed after
  * 180 days unused: neither is listed, nor counts towards the twenty.
@@ -286,9 +295,7 @@ function toConnection(r) {
 export async function listConnections(userId) {
   const rows = await serviceRest(`/rest/v1/agent_tokens?select=${CONNECTION_COLUMNS}&user_id=eq.${encodeURIComponent(userId)}&revoked_at=is.null&order=created_at.desc`)
   const now = Date.now()
-  return (Array.isArray(rows) ? rows : [])
-    .filter(r => (r.kind === 'oauth' ? !r.refresh_expires_at || Date.parse(r.refresh_expires_at) > now : !tokenLapsed(r, now)))
-    .map(toConnection)
+  return (Array.isArray(rows) ? rows : []).filter(r => connectionLive(r, now)).map(toConnection)
 }
 
 /**
@@ -336,9 +343,17 @@ export function revokeConnection(userId, id) {
   return patchOwn(userId, id, { revoked_at: new Date().toISOString() })
 }
 
+/**
+ * Rename one of the user's own live connections. One the list no longer
+ * shows (revoked, lapsed unused, or a grant whose refresh expired) is left as
+ * it is and answers false, so the app can say it is gone.
+ */
 export async function renameConnection(userId, id, name) {
   const clean = cleanName(name)
-  if (!clean) return false
+  if (!clean || !UUID.test(String(id ?? ''))) return false
+  const rows = await serviceRest(`/rest/v1/agent_tokens?select=kind,created_at,last_used_at,refresh_expires_at&id=eq.${id}&user_id=eq.${encodeURIComponent(userId)}&revoked_at=is.null`)
+  const found = Array.isArray(rows) ? rows[0] : null
+  if (!found || !connectionLive(found)) return false
   return patchOwn(userId, id, { name: clean })
 }
 

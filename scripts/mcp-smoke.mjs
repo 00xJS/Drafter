@@ -1109,7 +1109,7 @@ async function main() {
 
     // writing onto the peer's journal as the owner, below the tools: the database refuses it
     const { createRestData } = await import(pathToFileURL(join(ROOT, 'mcp/data.mjs')).href)
-    const asOwner = createRestData({ baseUrl: url, mode: 'user', userId: OWNER, auth: async () => ({ apikey: ANON_KEY, bearer: `user:${OWNER}` }) })
+    const asOwner = createRestData({ baseUrl: url, userId: OWNER, auth: async () => ({ apikey: ANON_KEY, bearer: `user:${OWNER}` }) })
     let peerWrite = null
     try {
       await asOwner.syncWrite([{ kind: 'journal', id: `journal~${today}~peer`, date: today, body: 'mine now', createdAt: peerStamp, updatedAt: new Date().toISOString() }])
@@ -1208,6 +1208,7 @@ async function main() {
     // ---------------------------------------- a token unused for 180 days lapses
     const idleTok = await agentauth.createManualToken(OWNER, { name: 'Old laptop', scopes: ['read'] })
     eq((await postMcp(idleTok.token, ping())).status, 200, 'a new token works')
+    eq(await agentauth.renameConnection(OWNER, idleTok.connection.id, 'Old work laptop'), true, 'and can be renamed')
     psqlValue(`update public.agent_tokens set last_used_at = now() - interval '181 days' where id = ${lit(idleTok.connection.id)}`)
     // a fresh function instance: nothing remembered about that last use
     agentauth.forgetAllSessions()
@@ -1215,6 +1216,8 @@ async function main() {
     eq(lapsed.status, 401, 'a token last used 181 days ago is refused')
     ok((lapsed.headers.get('www-authenticate') ?? '').includes('error_description="This token went unused for 180 days'), 'and told why')
     eq(psqlJson(`select to_json(last_used_at < now() - interval '180 days') from public.agent_tokens where id = ${lit(idleTok.connection.id)}`), true, 'the refusal did not stamp it back to life')
+    eq(await agentauth.renameConnection(OWNER, idleTok.connection.id, 'Renamed after it lapsed'), false, 'a lapsed token cannot be renamed: it is gone, as the list says')
+    eq(psqlJson(`select to_json(name) from public.agent_tokens where id = ${lit(idleTok.connection.id)}`), 'Old work laptop', 'and keeps the name it had')
     const neverTok = await agentauth.createManualToken(OWNER, { name: 'Never used', scopes: ['read'] })
     psqlValue(`update public.agent_tokens set created_at = now() - interval '181 days' where id = ${lit(neverTok.connection.id)}`)
     eq((await postMcp(neverTok.token, ping())).status, 401, 'one made 181 days ago and never used is refused too')

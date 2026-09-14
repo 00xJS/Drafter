@@ -13,6 +13,7 @@ import {
   listConnections,
   newSecret,
   normalizeScopes,
+  renameConnection,
   revokeConnection,
   checkBearer,
   tokenLapsed,
@@ -366,6 +367,28 @@ describe('connections', () => {
     expect(calls[0].search).toContain('revoked_at=is.null')
     expect(Object.keys(calls[0].body)).toEqual(['revoked_at'])
   })
+
+  it('renames only a live connection of the user\'s own: one that lapsed unused, or whose grant expired, answers false and is left as it is', async () => {
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    expect(await renameConnection(U1, 'not-a-uuid', 'Work laptop')).toBe(false)
+    expect(await renameConnection(U1, id, ' \n ')).toBe(false)
+    expect(calls).toEqual([])
+    fake.tokens = [row()]
+    expect(await renameConnection(U1, id, ' Work \n laptop ')).toBe(true)
+    expect(calls.map(c => c.method)).toEqual(['GET', 'PATCH'])
+    for (const { search } of calls) {
+      expect(search).toContain(`id=eq.${id}`)
+      expect(search).toContain(`user_id=eq.${U1}`)
+      expect(search).toContain('revoked_at=is.null')
+    }
+    expect(calls[1].body).toEqual({ name: 'Work laptop' })
+    for (const gone of [row({ created_at: '2025-06-01T00:00:00.000Z', last_used_at: '2026-03-01T00:00:00.000Z' }), row({ kind: 'oauth', refresh_expires_at: '2026-09-01T00:00:00.000Z' })]) {
+      calls = []
+      fake.tokens = [gone]
+      expect(await renameConnection(U1, id, 'Work laptop')).toBe(false)
+      expect(calls.map(c => c.method)).toEqual(['GET'])
+    }
+  })
 })
 
 describe('/api/agents', () => {
@@ -406,6 +429,8 @@ describe('/api/agents', () => {
     expect(body.connection.name).toBe('Laptop')
     expect(calls.find(c => c.path === '/rest/v1/user_settings' && c.method === 'POST')?.body).toMatchObject({ user_id: U1, timezone: 'Europe/London' })
     expect(await (await agentsHandler(req('POST', { action: 'revoke', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }))).json()).toEqual({ ok: true })
+    // a rename reads the connection first: only a live one takes a new name
+    fake.tokens = [{ row: { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', kind: 'token', name: 'Laptop', created_at: '2026-09-01T00:00:00.000Z', last_used_at: null, refresh_expires_at: null } }]
     expect(await (await agentsHandler(req('POST', { action: 'rename', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: 'Work laptop' }))).json()).toEqual({ ok: true })
     expect((await agentsHandler(req('POST', { action: 'rename', id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', name: ' ' }))).status).toBe(400)
     expect((await agentsHandler(req('POST', { action: 'explode' }))).status).toBe(400)

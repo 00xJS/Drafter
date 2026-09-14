@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantsSection, ConnectionRow } from '../components/AssistantsSection'
 import type { AssistantsApi } from '../components/AssistantsSection'
 import { ConnectAssistantSheet } from '../components/ConnectAssistantSheet'
-import { agentsRename, expiryLine, nameToSave, renameIn } from '../agents'
+import { agentsRename, expiryLine, nameToSave, renameIn, withoutConnection } from '../agents'
 import type { AgentsInfo } from '../agents'
 
 // The two standalone pieces a later stream wires into Settings and App: their
@@ -52,6 +52,9 @@ describe('AssistantsSection', () => {
     expect(html.match(/>Rename<\/button>/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Rename Laptop"')
     expect(html.match(/>Revoke<\/button>/g)).toHaveLength(2)
+    // the list's own class lets a row wrap (styles/10-editor-notes.css): the dates and expiry are a line of their own
+    expect(html).toContain('<ul class="cal-sources agent-connections">')
+    expect(html).toMatch(/<small>Connected [^<]* · drft_AbCd… · Expires after 180 days unused<\/small>/)
   })
 
   it('says so when the site is not set up, and loads without a seed', () => {
@@ -87,6 +90,16 @@ describe('renaming a connection', () => {
     expect(next.connections.map(c => c.name)).toEqual(['Claude', 'Work laptop'])
     expect(next.connections[0]).toBe(INFO.connections[0])
     expect(renameIn(INFO, 'gone', 'x').connections.map(c => c.name)).toEqual(['Claude', 'Laptop'])
+  })
+
+  it('drops a connection the server no longer has, and leaves the others as they were', () => {
+    // a revoke, or a rename the server answers ok: false because the connection was revoked or lapsed meanwhile
+    const next = withoutConnection(INFO, 'c2')
+    expect(next.connections.map(c => c.id)).toEqual(['c1'])
+    expect(next.connections[0]).toBe(INFO.connections[0])
+    expect(next.configured).toBe(true)
+    expect(INFO.connections).toHaveLength(2)
+    expect(withoutConnection(INFO, 'gone').connections).toEqual(INFO.connections)
   })
 
   it('asks /api/agents to rename that connection by id', async () => {

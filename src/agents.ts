@@ -71,6 +71,11 @@ export function renameIn(info: AgentsInfo, id: string, name: string): AgentsInfo
   return { ...info, connections: info.connections.map(c => (c.id === id ? { ...c, name: connectionName(name) } : c)) }
 }
 
+/** The list without one connection: revoked here, or found gone on the server. */
+export function withoutConnection(info: AgentsInfo, id: string): AgentsInfo {
+  return { ...info, connections: info.connections.filter(c => c.id !== id) }
+}
+
 /** The connector URL for Claude's "Add custom connector" and for Claude Code. */
 export function mcpUrl(): string {
   return `${siteOrigin()}/api/mcp`

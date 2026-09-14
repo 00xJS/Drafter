@@ -12,8 +12,10 @@
 // A sync answers { posts: { items, rejected, stale, gone } }: the rows the bot
 // may read; the ids refused; the ids whose write lost to a newer edit (the
 // newer copy is among the items, whatever `since` was); and the ids deleted
-// for good. Drafter keeps one project, so while the account has one a new
-// project is refused too, as the app never starts a second.
+// for good. Drafter keeps one project, so while the account has a live one a
+// write that would make a second is refused too — a new project, another
+// record rewritten as one, or one brought back from Trash — as the app never
+// makes a second.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -68,8 +70,8 @@ function scopeFilter(scope: Scope): string {
 }
 
 type Post = { id: string; kind?: unknown; deletedAt?: unknown }
-/** The rows already stored under a batch's ids: whose each one is, and what kind. */
-type Stored = Map<string, { user_id: string | null; kind: string }>
+/** The rows already stored under a batch's ids: whose each one is, what kind, and whether it is in Trash. */
+type Stored = Map<string, { user_id: string | null; kind: string; deleted: boolean }>
 
 /** The posts in a write batch that carry an id. */
 function postsOf(incoming: unknown[]): Post[] {
@@ -81,9 +83,11 @@ async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
   const stored: Stored = new Map()
   // a page of ids per request keeps the query string short
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await admin.from('posts').select('id,user_id,kind').in('id', ids.slice(i, i + 100))
+    const { data, error } = await admin.from('posts').select('id,user_id,kind,deleted').in('id', ids.slice(i, i + 100))
     if (error) throw new Error(error.message)
-    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string }[]) stored.set(r.id, { user_id: r.user_id, kind: r.kind })
+    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string; deleted: boolean }[]) {
+      stored.set(r.id, { user_id: r.user_id, kind: r.kind, deleted: r.deleted === true })
+    }
   }
   return stored
 }
@@ -101,14 +105,21 @@ function refusedIds(scope: Scope, incoming: unknown[], stored: Stored): string[]
 }
 
 /**
- * New projects in a write batch while the account already has one. Drafter
- * keeps one ongoing project (LIFE) and nothing in the app starts a second, so
- * neither may a bot: a project already stored can still be edited, and a new
- * one stores only while the owner can see no live project — the first of the
- * batch, and no more. They come back in `rejected` too.
+ * Writes in a batch that would make a second live project. Drafter keeps one
+ * ongoing project (LIFE) and nothing in the app starts another, so neither
+ * may a bot. A live project already stored can still be edited; anything else
+ * that would be a live project after the write — a new one, another record
+ * rewritten as one (sync_posts keeps a stored id and takes the new data
+ * whatever its kind) or a project brought back from Trash — stores only while
+ * the owner can see no live project: the first of the batch, and no more.
+ * They come back in `rejected` too.
  */
 async function extraProjects(admin: Admin, scope: Scope, incoming: unknown[], stored: Stored): Promise<string[]> {
-  const fresh = [...new Set(postsOf(incoming).filter(p => p.kind === 'project' && !p.deletedAt && !stored.has(p.id)).map(p => p.id))]
+  const liveProject = (id: string) => {
+    const r = stored.get(id)
+    return !!r && r.kind === 'project' && !r.deleted
+  }
+  const fresh = [...new Set(postsOf(incoming).filter(p => p.kind === 'project' && !p.deletedAt && !liveProject(p.id)).map(p => p.id))]
   if (fresh.length === 0) return []
   const { data, error } = await admin.from('posts').select('id').eq('kind', 'project').eq('deleted', false).or(scopeFilter(scope)).limit(1)
   if (error) throw new Error(error.message)
@@ -162,7 +173,8 @@ Deno.serve(async req => {
     let refused: string[]
     try {
       const stored = await storedRows(admin, incoming)
-      refused = [...refusedIds(scope, incoming, stored), ...(await extraProjects(admin, scope, incoming, stored))]
+      // one id can break both rules (a member's personal row rewritten as a project); it is named once
+      refused = [...new Set([...refusedIds(scope, incoming, stored), ...(await extraProjects(admin, scope, incoming, stored))])]
     } catch (e) {
       return fail(500, (e as Error).message)
     }

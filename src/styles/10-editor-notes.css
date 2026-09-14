@@ -349,6 +349,19 @@
   color: var(--muted);
   font-weight: 400;
 }
+/* Settings → Assistants: a connection's name and what it may do wrap, and its
+   dates and expiry get a line of their own, so none of it is clipped at 375px */
+.agent-connections .cal-source-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.agent-connections .cal-source-name .tag {
+  white-space: nowrap;
+}
+.agent-connections .cal-source-name small {
+  display: block;
+  margin-top: 2px;
+}
 .cal-source-status {
   font-size: 0.75rem;
   max-width: 40%;

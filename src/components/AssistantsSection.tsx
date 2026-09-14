@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_SCOPES,
   SCOPE_LABELS,
@@ -14,6 +14,7 @@ import {
   mcpUrl,
   nameToSave,
   renameIn,
+  withoutConnection,
 } from '../agents'
 import type { AgentConnection, AgentScope, AgentsInfo, CreatedToken } from '../agents'
 import { fmtDate, timeAgo } from '../utils'
@@ -69,7 +70,8 @@ function CopyRow({ value, label }: { value: string; label: string }) {
 /**
  * One connection in the Connected list: what it is and may do, when it was
  * last used and, for a token, how it lapses. Rename turns its name into a
- * field in place; Revoke asks twice.
+ * field in place, and Escape or Cancel puts the row back with focus on Rename;
+ * Revoke asks twice.
  */
 export function ConnectionRow({
   connection: c,
@@ -87,18 +89,37 @@ export function ConnectionRow({
   const [renaming, setRenaming] = useState(startRenaming)
   const [draft, setDraft] = useState(c.name)
   const [busy, setBusy] = useState(false)
+  const renameButton = useRef<HTMLButtonElement>(null)
+  // the field takes the row's place, so Rename is back to take focus only after the render that closes it
+  const refocus = useRef(false)
   const expiry = expiryLine(c)
+
+  useEffect(() => {
+    if (renaming || !refocus.current) return
+    refocus.current = false
+    renameButton.current?.focus()
+  }, [renaming])
+
+  const close = () => {
+    refocus.current = true
+    setRenaming(false)
+  }
+
+  const cancel = () => {
+    setDraft(c.name)
+    close()
+  }
 
   const save = async () => {
     const name = nameToSave(draft, c.name)
     if (!name) {
-      setRenaming(false)
+      close()
       return
     }
     setBusy(true)
     const done = await onRename(name)
     setBusy(false)
-    if (done) setRenaming(false)
+    if (done) close()
   }
 
   if (renaming) {
@@ -111,19 +132,25 @@ export function ConnectionRow({
             void save()
           }}
         >
-          <input value={draft} onChange={e => setDraft(e.target.value)} maxLength={80} aria-label={`New name for ${c.name}`} disabled={busy} autoFocus />
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              // handled here, and Settings (a Modal, which skips a handled key) stays open
+              if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                cancel()
+              }
+            }}
+            maxLength={80}
+            aria-label={`New name for ${c.name}`}
+            disabled={busy}
+            autoFocus
+          />
           <button type="submit" className="btn" disabled={busy || !draft.trim()}>
             {busy ? 'Saving…' : 'Save'}
           </button>
-          <button
-            type="button"
-            className="btn subtle"
-            disabled={busy}
-            onClick={() => {
-              setDraft(c.name)
-              setRenaming(false)
-            }}
-          >
+          <button type="button" className="btn subtle" disabled={busy} onClick={cancel}>
             Cancel
           </button>
         </form>
@@ -147,6 +174,7 @@ export function ConnectionRow({
         </small>
       </span>
       <button
+        ref={renameButton}
         type="button"
         className="btn subtle"
         aria-label={`Rename ${c.name}`}
@@ -219,7 +247,7 @@ export function AssistantsSection({ className = 'settings-section g-assistants',
     setError('')
     try {
       await api.revoke(id)
-      setInfo(prev => (prev ? { ...prev, connections: prev.connections.filter(c => c.id !== id) } : prev))
+      setInfo(prev => (prev ? withoutConnection(prev, id) : prev))
       setCreated(prev => (prev?.connection.id === id ? null : prev))
     } catch (e) {
       setError((e as Error).message)
@@ -235,7 +263,7 @@ export function AssistantsSection({ className = 'settings-section g-assistants',
         return true
       }
       setError('That connection is gone: it was revoked, or it lapsed unused.')
-      setInfo(prev => (prev ? { ...prev, connections: prev.connections.filter(c => c.id !== id) } : prev))
+      setInfo(prev => (prev ? withoutConnection(prev, id) : prev))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -308,7 +336,7 @@ export function AssistantsSection({ className = 'settings-section g-assistants',
           ) : info.connections.length === 0 ? (
             <p className="field-hint">Nothing is connected yet.</p>
           ) : (
-            <ul className="cal-sources">
+            <ul className="cal-sources agent-connections">
               {info.connections.map(c => (
                 <ConnectionRow key={c.id} connection={c} onRename={next => rename(c.id, next)} onRevoke={() => void revoke(c.id)} />
               ))}
