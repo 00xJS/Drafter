@@ -105,6 +105,11 @@
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+/* a day still to come, or one whose plan is not yet said to be worn */
+.wardrobe-planned {
+  background: var(--tone-sky-bg);
+  color: var(--tone-sky);
+}
 .wardrobe-remove {
   padding: 4px 8px;
   font-size: 0.8125rem;
@@ -172,6 +177,7 @@
   opacity: 0.7;
 }
 .snap-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -357,6 +363,61 @@
   margin: 4px 0;
   font-size: 0.8125rem;
   color: var(--danger);
+}
+.wardrobe-surprise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* a cold or wet day's word, with the coat it suggests */
+.wardrobe-weather {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 6px 0;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.wardrobe-look-note {
+  margin: 8px 0 0;
+}
+/* a favourite's star: a badge on the card's own surface, never on the photo's colours */
+.fav-mark {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--accent-text);
+}
+.fav-mark.inline {
+  position: static;
+  width: auto;
+  height: auto;
+  margin-right: 4px;
+  background: none;
+  box-shadow: none;
+  vertical-align: -1px;
+}
+.toggle.on .fav-mark {
+  color: inherit;
+}
+/* said to a screen reader, not drawn */
+.wardrobe-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 /* a saved outfit's menu, when Wear today is off: why */
 .outfit-why {
@@ -552,11 +613,52 @@
   font-size: 0.8125rem;
   text-decoration: underline;
 }
+/* once logged (or planned): the look on one line, its note under it */
 .wardrobe-card.logged {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 10px;
+}
+.wardrobe-card-look {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-block: 10px;
+  min-width: 0;
+}
+.wardrobe-card-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wardrobe-card-foot .btn.primary {
+  margin-left: auto;
+}
+.wardrobe-card-note {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.wardrobe-card-note.has-note {
+  color: var(--text-2);
+  font-style: italic;
+}
+.wardrobe-card-note-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  width: 100%;
+}
+.wardrobe-card .wardrobe-weather {
+  margin: 0 0 8px;
+}
+.wardrobe-card.logged .wardrobe-weather {
+  margin: 0;
 }
 .wardrobe-card-thumbs {
   display: inline-flex;
@@ -616,6 +718,10 @@
   font-size: 0.8125rem;
   color: var(--text-2);
 }
+/* the tags a wardrobe uses, on a line of their own under the rest */
+.clothes-tags {
+  flex-basis: 100%;
+}
 .clothes-grid {
   list-style: none;
   margin: 0;
@@ -629,6 +735,7 @@
   min-width: 0;
 }
 .clothes-tile {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -714,6 +821,20 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+/* a photo dragged over the target: it will take it */
+.garment-pick.dragging {
+  border-color: var(--focus-ring);
+  background: var(--accent-softer);
+}
+/* dropping and pasting are a desktop's; a finger has the picker */
+.garment-drop-hint {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .garment-drop-hint {
+    display: block;
+  }
+}
 .garment-pick-title {
   color: var(--text);
   font-weight: 600;
@@ -760,9 +881,57 @@
 }
 .garment-types,
 .garment-names,
-.garment-days {
+.garment-days,
+.garment-seasons {
   display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+}
+/* the sheet's star, beside its close button */
+.garment-fav {
+  margin-left: auto;
+  margin-right: 4px;
+  padding: 4px 8px;
+  line-height: 0;
+  color: var(--text-2);
+}
+.garment-fav.on {
+  color: var(--accent-text);
+}
+.garment-with {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.garment-with-piece {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.garment-with-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outfit-fav {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 .garment-hero {
@@ -992,6 +1161,10 @@
     padding: 1px 6px;
     font-size: calc(10px * min(1.15, var(--type-scale)));
   }
+  .wardrobe-planned {
+    padding: 1px 6px;
+    font-size: calc(10px * min(1.15, var(--type-scale)));
+  }
   .wardrobe-remove {
     padding: 4px 6px;
     font-size: calc(12px * min(1.15, var(--type-scale)));
@@ -1022,10 +1195,15 @@
   .snap-hide,
   .wardrobe-forgot,
   .wardrobe-list-piece,
-  .clothes-sort select {
+  .clothes-sort select,
+  .clothes-season,
+  .wardrobe-card-note,
+  .garment-with-piece,
+  .garment-fav {
     min-height: 44px;
   }
-  .wardrobe-step {
+  .wardrobe-step,
+  .garment-fav {
     min-width: 44px;
   }
   /* padding rather than flex, so the disclosure triangle stays */

@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react'
 import { mediaURL, peekMediaURL } from '../../media'
 import { GARMENT_TYPE_META, type Garment, type GarmentType } from '../../types'
+import { Icon } from '../Icon'
+
+/**
+ * A favourite's star, said as well as drawn: a badge in a card's corner, or
+ * `inline` before a name. It sits on the card's own surface, never on the
+ * photo's colours, so it reads the same over any picture and in either theme.
+ */
+export function FavouriteMark({ inline }: { inline?: boolean }) {
+  return (
+    <span className={inline ? 'fav-mark inline' : 'fav-mark'} title="Favourite">
+      <Icon name="star" size={inline ? 11 : 12} filled />
+      <span className="wardrobe-sr">Favourite: </span>
+    </span>
+  )
+}
 
 /**
  * A piece's picture: the 360px thumbnail (or, on the piece sheet, the 1200px

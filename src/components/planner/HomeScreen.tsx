@@ -99,14 +99,15 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onPlanWeek={() => openSheet({ kind: 'week' })}
           onDeferFromFocus={deferFromFocus}
           onPlanMeal={planMealIdea}
-          // what you are wearing: one tap logs a look, with Undo; Pick… and
-          // Change open the wardrobe on the day
+          // what you are wearing: one tap logs a look, or says a plan was worn,
+          // with Undo; Pick… and Change open the wardrobe on the day
           garments={store.garments}
           outfits={store.outfits}
           wears={store.wears}
-          onLogWear={w => {
+          onLogWear={(w, { before, msg = 'Logged for today' } = {}) => {
             store.upsert(w)
-            showToast('Logged for today', () => store.remove(w.id))
+            // Undo takes a new look away, or writes back the look an edit was made on, stamped newer again
+            if (msg !== null) showToast(msg, () => (before ? store.upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : store.remove(w.id)))
           }}
           onOpenWardrobe={openWardrobe}
         />

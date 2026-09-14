@@ -47,7 +47,7 @@ import type { PlanStep } from './PlanDaySheet'
 import { dayClosed } from '../dayclose'
 // the card and its thumbnails only: the rest of the wardrobe is Home → Wardrobe's own chunk
 import { canDress } from '../wardrobe'
-import { WardrobeCard } from './wardrobe/WardrobeCard'
+import { WardrobeCard, type CardLog } from './wardrobe/WardrobeCard'
 import type { WardrobeOpen } from './planner/useNavigation'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
@@ -115,8 +115,8 @@ interface Props {
   garments?: Garment[]
   outfits?: Outfit[]
   wears?: Wear[]
-  /** A look from the card's one tap: the shell saves it and offers Undo. */
-  onLogWear?(w: Wear): void
+  /** What the card logs — a look from its one tap, or an edit of today's (a plan worn, a note) — for the shell to save with Undo. */
+  onLogWear?(w: Wear, opts?: CardLog): void
   /** Pick…, Change and Forgot yesterday: Home → Wardrobe, on a day. */
   onOpenWardrobe?(o?: WardrobeOpen): void
 }

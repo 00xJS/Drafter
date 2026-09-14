@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Today } from '../components/Today'
 import { WardrobeCard } from '../components/wardrobe/WardrobeCard'
 import type { Garment, GarmentType, Outfit, Task, Wear } from '../types'
+import type { Forecast } from '../weather'
+import { plannerSource } from './source'
 
 // Today's "What are you wearing?": when it shows at all, what it offers, the
 // one line once today has a look, "Forgot yesterday?", and where it sits on
@@ -30,7 +32,7 @@ const outfit = (id: string, garmentIds: string[], name?: string): Outfit => ({ k
 const wardrobe = [piece('tee', 'top'), piece('shirt', 'top'), piece('polo', 'top'), piece('jumper', 'top'), piece('jeans', 'bottom'), piece('chinos', 'bottom'), piece('dress', 'onepiece')]
 
 const card = (over: Partial<ComponentProps<typeof WardrobeCard>> = {}) =>
-  renderToStaticMarkup(<WardrobeCard garments={wardrobe} outfits={[]} wears={[]} dayKey={TODAY} onLog={noop} onOpen={noop} now={AT_NINE} {...over} />)
+  renderToStaticMarkup(<WardrobeCard garments={wardrobe} outfits={[]} wears={[]} dayKey={TODAY} onLog={noop} onOpen={noop} now={AT_NINE} forecast={null} {...over} />)
 /** The one-tap chips, Pick… aside. */
 const chips = (html: string) => html.match(/class="wardrobe-chip"/g)?.length ?? 0
 
@@ -170,5 +172,71 @@ describe('where the card sits on Today', () => {
     const bare = today(9, true, [], [piece('tee', 'top')])
     expect(bare).toContain('Welcome to your planner')
     expect(bare).not.toContain('wardrobe-card')
+  })
+})
+
+describe('a look planned for today', () => {
+  const planned = (date: string, ids: string[], over: Partial<Wear> = {}): Wear => ({ ...look(date, ids), planned: true, ...over })
+
+  it('shows the plan with one tap to say it was worn, instead of the chips', () => {
+    const html = card({ wears: [look(ago(1), ['tee', 'jeans']), planned(TODAY, ['shirt', 'chinos'])] })
+    expect(html).toContain('class="chart-card wardrobe-card logged planned"')
+    expect(html).toContain('<span class="muted">Planned:</span> shirt + chinos')
+    expect(html).toContain('<button type="button" class="btn primary">Wore it</button>')
+    expect(html).toContain('>Change</button>')
+    expect(chips(html)).toBe(0)
+    expect(html).not.toContain('What are you wearing?')
+  })
+
+  it('gives way to a look worn today, and a plan for tomorrow is not today’s', () => {
+    expect(card({ wears: [planned(TODAY, ['shirt', 'chinos']), look(TODAY, ['tee', 'jeans'])] })).toContain('<span class="muted">Wearing</span> tee + jeans')
+    expect(card({ wears: [planned(ago(-1), ['shirt', 'chinos'])] })).toContain('What are you wearing?')
+  })
+
+  it('asks "Forgot yesterday?" when yesterday was only planned', () => {
+    expect(card({ wears: [planned(ago(1), ['tee', 'jeans']), look(ago(2), ['shirt', 'chinos'])], now: AT_NINE })).toContain('Forgot yesterday? Log it')
+  })
+
+  it('shows a note under the look, or a way to add one', () => {
+    const noted = card({ wears: [{ ...look(TODAY, ['tee', 'jeans']), note: 'wedding' }] })
+    expect(noted).toContain('class="wardrobe-card-note has-note"')
+    expect(noted).toContain('>wedding</button>')
+    expect(card({ wears: [look(TODAY, ['tee', 'jeans'])] })).toContain('>+ Note</button>')
+    expect(card({ wears: [planned(TODAY, ['shirt', 'chinos'], { note: 'interview' })] })).toContain('>interview</button>')
+  })
+})
+
+describe('the weather on the card', () => {
+  const COLD: Forecast = { tempC: 6, hiC: 9, loC: 3, rainPct: 20, code: 3, unit: '°C' }
+  const MILD: Forecast = { tempC: 17, hiC: 20, loC: 11, rainPct: 10, code: 1, unit: '°C' }
+  const withMac = [...wardrobe, piece('mac', 'outerwear', { name: 'Mac' })]
+
+  it('offers the coat when today is cold or wet, as a choice the chips then take', () => {
+    const html = card({ garments: withMac, forecast: COLD, wears: [look(ago(1), ['tee', 'jeans'])] })
+    expect(html).toContain('Cold today · 9° at most')
+    expect(html).toContain('<button type="button" aria-pressed="false" class="toggle">+ Mac</button>')
+    // until it is asked for, the chips log the look as it was worn
+    expect(html).not.toContain('collage-badge outer')
+  })
+
+  it('says nothing on a mild dry day, with no forecast, or with no outerwear', () => {
+    expect(card({ garments: withMac, forecast: MILD })).not.toContain('wardrobe-weather')
+    expect(card({ garments: withMac, forecast: null })).not.toContain('wardrobe-weather')
+    expect(card({ garments: wardrobe, forecast: COLD })).not.toContain('wardrobe-weather')
+  })
+
+  it('offers to add the coat to a plan without one; once dressed it keeps quiet', () => {
+    const plan: Wear = { ...look(TODAY, ['tee', 'jeans']), planned: true }
+    expect(card({ garments: withMac, forecast: COLD, wears: [plan] })).toContain('>Add Mac</button>')
+    expect(card({ garments: withMac, forecast: COLD, wears: [{ ...plan, garmentIds: ['tee', 'jeans', 'mac'] }] })).not.toContain('Add Mac')
+    expect(card({ garments: withMac, forecast: COLD, wears: [look(TODAY, ['tee', 'jeans'])] })).not.toContain('wardrobe-weather')
+  })
+})
+
+describe('the shell behind the card', () => {
+  it('undoes an edit by writing the look back, stamped newer, and a new look by removing it', () => {
+    const shell = plannerSource()
+    expect(shell).toContain("onLogWear={(w, { before, msg = 'Logged for today' } = {}) => {")
+    expect(shell).toContain('before ? store.upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : store.remove(w.id)')
   })
 })

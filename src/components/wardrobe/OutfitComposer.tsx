@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { shiftDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
-import { GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
-import { byRest, looksOn, type WearIndex } from '../../wardrobe'
+import { GARMENT_TYPE_META, LOOK_NOTE_MAX, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
+import { byRest, lastPlanDay, looksOn, outerwearFor, seasonOf, weatherLine, weatherNeed, type WearIndex } from '../../wardrobe'
+import type { Forecast } from '../../weather'
 import { ConfirmButton } from '../ConfirmButton'
-import { chosenIn, heldBadge, heldPieces, load, OPTIONAL, rowsOf, shownIn, start, type Optional, type Selection, type Slot } from './composer'
-import { GarmentPhoto } from './GarmentPhoto'
+import { Icon } from '../Icon'
+import { chosenIn, heldBadge, heldPieces, load, OPTIONAL, rowsOf, shownIn, start, surprise, type Optional, type Selection, type Slot } from './composer'
+import { useCachedForecast } from './forecast'
+import { FavouriteMark, GarmentPhoto } from './GarmentPhoto'
 import { SavedOutfits } from './SavedOutfits'
 import { SnapRow } from './SnapRow'
 
@@ -30,16 +33,17 @@ interface Props {
   wears: Wear[]
   byId: ReadonlyMap<string, Garment>
   ix: WearIndex
-  /** The day being dressed: today, or a day before it. */
+  /** The day being dressed: today, a day before it, or a day ahead to plan. */
   day: string
   todayKey: string
   onDay(day: string): void
   /**
    * Log the pieces on the day: its latest look takes them, or with `another` a
-   * new look does. `shown` is every piece in the rows, so whatever else that
-   * look holds stays.
+   * new look does; a day still to come is planned rather than logged. `shown`
+   * is every piece in the rows, so whatever else that look holds stays.
+   * `note` is the look's note, as the field under the rows says it.
    */
-  onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean }): void
+  onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string }): void
   onRemoveLook(day: string): void
   onSaveOutfit(pieces: string[]): void
   /** The piece sheet, to add one of a type. */
@@ -48,7 +52,10 @@ interface Props {
   onOpenPiece(id: string): void
   onWearOutfit(o: Outfit): void
   onRenameOutfit(o: Outfit, name: string): void
+  onFavouriteOutfit(o: Outfit, on: boolean): void
   onDeleteOutfit(o: Outfit): void
+  /** Today's forecast; by default the one the briefing cached (the tests hand one in). */
+  forecast?: Forecast | null
 }
 
 /**
@@ -56,9 +63,11 @@ interface Props {
  * One-pieces), Outerwear and Shoes when you open them, and Accessories as
  * chips; then Wearing this, or Save outfit, in a bar that stays in reach above
  * the tab bar. The rows lead with what has rested longest, in an order frozen
- * for the visit, and your saved outfits sit underneath. A day's look is shown
- * as it is: a retired piece in it, or one in Trash, joins its row for the
- * visit, badged, so Update look never writes over what you cannot see.
+ * for the visit, Surprise me deals them a look, and your saved outfits sit
+ * underneath. A day's look is shown as it is: a retired piece in it, or one in
+ * Trash, joins its row for the visit, badged, so Update look never writes over
+ * what you cannot see. A day still to come is planned: its look counts once it
+ * is said to be worn. On today, a cold or wet forecast offers a coat.
  */
 export function OutfitComposer(props: Props) {
   const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece } = props
@@ -70,14 +79,19 @@ export function OutfitComposer(props: Props) {
   const shown = useMemo(() => shownIn(rows), [rows])
   const [sel, setSel] = useState<Selection>(() => start(rows, latest, byId))
   const [openRows, setOpenRows] = useState<Optional[]>(storedRows)
+  const [note, setNote] = useState(() => latest?.note ?? '')
+  const cached = useCachedForecast()
+  const forecast = props.forecast !== undefined ? props.forecast : cached
 
-  // a day with a look brings its pieces into the rows; a day without one keeps
-  // what is chosen, so a look put together here can be logged for yesterday
+  // a day with a look brings its pieces (and its note) into the rows; a day
+  // without one keeps what is chosen, so a look put together here can be
+  // logged for yesterday or planned for tomorrow
   const shownDay = useRef(day)
   useEffect(() => {
     if (shownDay.current === day) return
     shownDay.current = day
     setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
+    setNote(latest?.note ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
 
@@ -102,11 +116,24 @@ export function OutfitComposer(props: Props) {
     }
   }
   const loadOutfit = (o: Outfit) => setSel(s => load(s, o.garmentIds, rows, byId))
+  // the rows move and nothing is written: Wearing this is still yours to press
+  const shuffle = () => setSel(s => surprise(s, rows, openRows, ix, { season: seasonOf(day) }))
+  const canShuffle = (onepieceMode ? rows.onepiece : [...rows.top, ...rows.bottom]).length > 0
 
   const yesterday = shiftDayKey(todayKey, -1)
-  const dayName = `${day === todayKey ? 'Today · ' : day === yesterday ? 'Yesterday · ' : ''}${shortDay(day, todayKey)}`
-  const logged = dayLooks.length > 0
-  const primary = logged ? 'Update look' : day === todayKey ? 'Wearing this' : `Log for ${shortDay(day, todayKey)}`
+  const tomorrow = shiftDayKey(todayKey, 1)
+  const lastDay = lastPlanDay(todayKey)
+  const dayName = `${day === todayKey ? 'Today · ' : day === yesterday ? 'Yesterday · ' : day === tomorrow ? 'Tomorrow · ' : ''}${shortDay(day, todayKey)}`
+  const ahead = day > todayKey
+  const planned = !!latest?.planned
+  const worn = !!latest && !planned
+  // a plan on a day that has come is confirmed by logging it, so it reads as a day not yet logged
+  const primary = ahead ? (latest ? 'Update plan' : `Plan for ${shortDay(day, todayKey)}`) : worn ? 'Update look' : day === todayKey ? 'Wearing this' : `Log for ${shortDay(day, todayKey)}`
+  const another = ahead ? !!latest : worn
+
+  // what today's forecast asks for, when the rows have no outerwear chosen yet
+  const need = day === todayKey ? weatherNeed(forecast) : null
+  const coat = need && !chosen.outerwear ? outerwearFor(garments, ix, need) : undefined
 
   const row = (slot: Slot, optional?: Optional) => {
     const meta = GARMENT_TYPE_META[slot]
@@ -141,13 +168,13 @@ export function OutfitComposer(props: Props) {
           </span>
           <input
             type="date"
-            max={todayKey}
+            max={lastDay}
             value={day}
             aria-label={`Day: ${dayName}`}
             onChange={e => {
               const v = e.target.value
-              // a look is for a day that has come: a future day is refused
-              if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= todayKey) onDay(v)
+              // a year ahead at most: a plan, not a diary
+              if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= lastDay) onDay(v)
             }}
             onClick={e => {
               try {
@@ -158,14 +185,14 @@ export function OutfitComposer(props: Props) {
             }}
           />
         </span>
-        <button type="button" className="btn subtle wardrobe-step" aria-label="The day after" disabled={day >= todayKey} onClick={() => onDay(shiftDayKey(day, 1))}>
+        <button type="button" className="btn subtle wardrobe-step" aria-label="The day after" disabled={day >= lastDay} onClick={() => onDay(shiftDayKey(day, 1))}>
           ›
         </button>
-        {logged && (
+        {latest && (
           <span className="wardrobe-day-state">
-            <span className="badge wardrobe-logged">Logged</span>
-            <ConfirmButton className="btn subtle danger wardrobe-remove" confirmLabel="Remove?" ariaLabel="Remove look" onConfirm={() => onRemoveLook(day)}>
-              Remove<span className="wardrobe-remove-more"> look</span>
+            <span className={planned ? 'badge wardrobe-planned' : 'badge wardrobe-logged'}>{planned ? 'Planned' : 'Logged'}</span>
+            <ConfirmButton className="btn subtle danger wardrobe-remove" confirmLabel="Remove?" ariaLabel={planned ? 'Remove plan' : 'Remove look'} onConfirm={() => onRemoveLook(day)}>
+              Remove<span className="wardrobe-remove-more">{planned ? ' plan' : ' look'}</span>
             </ConfirmButton>
           </span>
         )}
@@ -182,7 +209,15 @@ export function OutfitComposer(props: Props) {
       {OPTIONAL.filter(rowOpen).map(s => row(s, s))}
       {/* the rows' own options sit under them: at 375pt both rows and the bar
           need every point there is above the tab bar */}
-      {(both || OPTIONAL.some(s => !rowOpen(s))) && (
+      {forecast && need && coat && (
+        <p className="wardrobe-weather">
+          {weatherLine(forecast, need)}
+          <button type="button" className="toggle" onClick={() => pick('outerwear', coat.id)}>
+            Add {coat.name}
+          </button>
+        </p>
+      )}
+      {(both || OPTIONAL.some(s => !rowOpen(s)) || canShuffle) && (
         <div className="wardrobe-more">
           {both && (
             <span className="segmented wardrobe-mode" role="radiogroup" aria-label="Separates or a one-piece">
@@ -199,6 +234,11 @@ export function OutfitComposer(props: Props) {
               + {GARMENT_TYPE_META[s].label}
             </button>
           ))}
+          {canShuffle && (
+            <button type="button" className="toggle wardrobe-surprise" onClick={shuffle}>
+              <Icon name="shuffle" size={14} /> Surprise me
+            </button>
+          )}
         </div>
       )}
       {rows.accessory.length > 0 && (
@@ -211,6 +251,7 @@ export function OutfitComposer(props: Props) {
               return (
                 <button key={g.id} type="button" aria-pressed={on} className={on ? 'toggle on acc-chip' : 'toggle acc-chip'} onClick={() => toggleAccessory(g.id)}>
                   <GarmentPhoto garment={g} className="acc-thumb" />
+                  {g.favourite && <FavouriteMark inline />}
                   {g.name}
                   {badge && <span className="acc-held">{badge}</span>}
                 </button>
@@ -223,25 +264,38 @@ export function OutfitComposer(props: Props) {
         </div>
       )}
       {sel.note && <p className="wardrobe-note">{sel.note}</p>}
+      <label className="field wardrobe-look-note">
+        <span>Note on the look</span>
+        <input value={note} maxLength={LOOK_NOTE_MAX} placeholder="wedding, interview…" onChange={e => setNote(e.target.value)} />
+      </label>
 
       <div className="wardrobe-actions">
         <button type="button" className="btn" disabled={!dressed} onClick={() => onSaveOutfit(pieces)}>
           Save outfit
         </button>
         <span className="spacer" />
-        {logged && (
+        {another && (
           // "+ Look" on a phone, where the three share one row
-          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true })}>
+          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true, note })}>
             + <span className="wardrobe-another-long">Another look</span>
             <span className="wardrobe-another-short">Look</span>
           </button>
         )}
-        <button type="button" className="btn primary" disabled={!dressed} onClick={() => onLog(day, pieces, { shown })}>
+        <button type="button" className="btn primary" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, note })}>
           {primary}
         </button>
       </div>
 
-      <SavedOutfits outfits={outfits} byId={byId} ix={ix} onLoad={loadOutfit} onWear={props.onWearOutfit} onRename={props.onRenameOutfit} onDelete={props.onDeleteOutfit} />
+      <SavedOutfits
+        outfits={outfits}
+        byId={byId}
+        ix={ix}
+        onLoad={loadOutfit}
+        onWear={props.onWearOutfit}
+        onRename={props.onRenameOutfit}
+        onFavourite={props.onFavouriteOutfit}
+        onDelete={props.onDeleteOutfit}
+      />
     </div>
   )
 }

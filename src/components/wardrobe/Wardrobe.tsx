@@ -3,7 +3,7 @@ import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import type { Garment, Item, Outfit, Wear } from '../../types'
-import { liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, wearable, wearIndex, type LookLog } from '../../wardrobe'
+import { lastPlanDay, liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, starred, wearable, wearIndex, type LookLog } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
 import type { WardrobeOpen } from '../planner/useNavigation'
@@ -29,8 +29,8 @@ interface Props {
   onOpenConsumed(): void
 }
 
-/** A day the composer may show: a day key no later than today, else today. */
-const dayOr = (day: string | undefined, today: string) => (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today ? day : today)
+/** A day the composer may show: a day key no later than the last a look can be planned for, else today. */
+const dayOr = (day: string | undefined, today: string) => (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= lastPlanDay(today) ? day : today)
 const sheetFor = (o: WardrobeOpen | null): SheetMode | null => (o?.add ? { kind: 'add', type: o.add === true ? undefined : o.add } : o?.garmentId ? { kind: 'edit', id: o.garmentId } : null)
 const lastOf = <T,>(list: readonly T[]): T | undefined => list[list.length - 1]
 const NONE: Garment[] = []
@@ -72,16 +72,23 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     showToast(msg, () => ('remove' in undo ? onRemove(undo.remove) : onSave(undo)))
   }
   const loggedOn = (d: string) => (d === todayKey ? 'Logged for today' : `Logged for ${shortDay(d, todayKey)}`)
-  /** The composer's log: the day's latest look takes the pieces (unless `another`), else a new look does. */
-  const logDay = (d: string, pieces: readonly string[], opts: { shown: ReadonlySet<string>; another?: boolean }) => {
-    const log = logLook(wears, d, pieces, records, opts)
-    commit(log, 'remove' in log.undo ? loggedOn(d) : 'Look updated')
+  /**
+   * The composer's log: the day's latest look takes the pieces (unless
+   * `another`), else a new look does. A day still to come is planned; a plan
+   * logged on its day, or after, is confirmed worn.
+   */
+  const logDay = (d: string, pieces: readonly string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string }) => {
+    const planned = d > todayKey
+    const was = lastOf(looksOn(wears, d))
+    const log = logLook(wears, d, pieces, records, { ...opts, planned })
+    const added = 'remove' in log.undo
+    commit(log, planned ? (added ? `Planned for ${shortDay(d, todayKey)}` : 'Plan updated') : added || was?.planned ? loggedOn(d) : 'Look updated')
   }
   const removeLook = (d: string) => {
     const latest = lastOf(looksOn(wears, d))
     if (!latest) return
     onRemove(latest.id)
-    showToast('Look removed', () => onRestore([latest.id]))
+    showToast(latest.planned ? 'Plan removed' : 'Look removed', () => onRestore([latest.id]))
   }
   const saveCombo = (pieces: readonly string[]) => {
     const { outfit, reused } = saveOutfit(outfits, pieces)
@@ -152,6 +159,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           onOpenPiece={id => setSheet({ kind: 'edit', id })}
           onWearOutfit={wearOutfit}
           onRenameOutfit={(o, name) => onSave(renamed(o, name))}
+          onFavouriteOutfit={(o, on) => onSave(starred(o, on))}
           onDeleteOutfit={o => {
             onRemove(o.id)
             showToast('Outfit deleted', () => onRestore([o.id]))
@@ -182,6 +190,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           onDelete={removePiece}
           onWearToday={wearToday}
           onGoDay={goDay}
+          onOpenPiece={id => setSheet({ kind: 'edit', id })}
           onClose={() => setSheet(null)}
         />
       )}
