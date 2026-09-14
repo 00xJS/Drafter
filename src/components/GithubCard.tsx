@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GITHUB_STATE_META, GithubCard as Card, fetchGithubCard, githubLabel, parseGithubUrl, setIssueState } from '../github'
+import { readableInk } from '../contrast'
+import { useTheme } from '../theme'
 import { timeAgo } from '../utils'
 
 interface Props {
@@ -14,6 +16,9 @@ export function GithubCard({ url, onUnlink }: Props) {
   const [card, setCard] = useState<Card | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // a label keeps its GitHub colour, moved only as far as it takes to read on
+  // the card's own ground (--surface-2, 'raised')
+  const theme = useTheme()
 
   const load = async (force = false) => {
     if (!ref) return
@@ -86,7 +91,7 @@ export function GithubCard({ url, onUnlink }: Props) {
       {card && card.labels.length > 0 && (
         <div className="gh-labels">
           {card.labels.map(l => (
-            <span key={l.name} className="gh-label" style={l.color ? { borderColor: l.color, color: l.color } : undefined}>
+            <span key={l.name} className="gh-label" style={l.color ? { borderColor: l.color, color: readableInk(l.color, theme, { ground: 'raised' }) } : undefined}>
               {l.name}
             </span>
           ))}

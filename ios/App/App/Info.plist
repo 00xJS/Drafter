@@ -64,12 +64,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Settings → Appearance: no forced style. SceneDelegate sets the window's
+	     interface style from the app's own choice (light by default), and the
+	     status bar, keyboard, pickers and alerts follow the window. -->
 	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<false/>
+	<true/>
 	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleLightContent</string>
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
+	<string>UIStatusBarStyleDefault</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
 	<!-- The Enable weather button on Home asks WKWebView's navigator.geolocation,

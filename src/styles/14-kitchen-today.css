@@ -97,9 +97,15 @@
   font: inherit;
   cursor: pointer;
 }
+/* A ticked step steps back in ink, not opacity: 0.45 took its text under
+   3:1. The strike-through and aria-pressed say it is done. */
 .recipe-steps li.done .recipe-step {
-  opacity: 0.45;
+  color: var(--muted);
   text-decoration: line-through;
+}
+.recipe-steps li.done .recipe-step-n {
+  background: var(--surface-3);
+  color: var(--muted);
 }
 .recipe-step-n {
   flex: none;

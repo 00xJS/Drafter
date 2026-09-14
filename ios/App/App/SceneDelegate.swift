@@ -1,13 +1,15 @@
 import UIKit
+import WebKit
 import Capacitor
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
-    /// The dark LaunchScreen, held over the window while the scene is not active
-    /// so the App Switcher card cannot show the planner. `LockGate` only paints
-    /// once Capacitor's `resume` has reached JS and React has committed, which is
-    /// long after iOS took its snapshot — so the cover has to live out here.
+    /// The LaunchScreen, in the app's current light or dark, held over the window
+    /// while the scene is not active so the App Switcher card cannot show the
+    /// planner. `LockGate` only paints once Capacitor's `resume` has reached JS
+    /// and React has committed, which is long after iOS took its snapshot — so
+    /// the cover has to live out here.
     private var privacyCoverController: UIViewController?
     /// Bumped on every resign-active so the delayed uncover queued by an earlier
     /// activation cannot strip a cover that a later one has just put up.
@@ -17,7 +19,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // Settings → Appearance, before anything is drawn: the status bar, the
+        // keyboard, pickers, alerts and the web view's own prefers-color-scheme
+        // all follow the window's style. The page sends its choice again as it
+        // starts (AppearancePlugin, below).
+        window?.overrideUserInterfaceStyle = AppearanceChoice.saved
+        window?.rootViewController = DrafterBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
@@ -132,6 +139,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         controller.loadViewIfNeeded()
         let cover: UIView = controller.view
         cover.frame = window.bounds
+        // the storyboard's ground is the light one iOS launches on; the cover
+        // takes the app's current one, so a Dark app is covered in dark
+        cover.backgroundColor = Ground.of(window.traitCollection)
         cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         // Touches are not delivered to an inactive scene anyway, so swallowing
         // them buys nothing — and would eat a tap that arrives in the 0.15s
@@ -147,10 +157,80 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     /// If LaunchScreen.storyboard is ever missing or loses its initial view
-    /// controller, still cover — in the app's own #0f1115.
+    /// controller, still cover — on the app's light ground, which
+    /// `showPrivacyCover` repaints for the current theme.
     private func fallbackCoverController() -> UIViewController {
         let controller = UIViewController()
-        controller.view.backgroundColor = UIColor(red: 0.0588, green: 0.0667, blue: 0.0824, alpha: 1)
+        controller.view.backgroundColor = Ground.light
         return controller
+    }
+}
+
+// MARK: - Appearance (Settings → Appearance)
+
+/// The grounds painted before the page: THEME_GROUND in src/theme.ts.
+/// launchscreen.test.ts holds these, the storyboard and the web tokens equal.
+enum Ground {
+    static let light = UIColor(red: 0.9647, green: 0.9686, blue: 0.9765, alpha: 1)
+    static let dark = UIColor(red: 0.0588, green: 0.0667, blue: 0.0824, alpha: 1)
+    static func of(_ traits: UITraitCollection) -> UIColor { traits.userInterfaceStyle == .dark ? dark : light }
+}
+
+/// The page keeps the choice in localStorage ('drafter:theme'); this copy exists
+/// only so the window can take it before the web view has run a line.
+enum AppearanceChoice {
+    static let key = "drafter.theme"
+    static func style(_ raw: String?) -> UIUserInterfaceStyle {
+        switch raw {
+        case "dark": return .dark
+        case "system": return .unspecified
+        default: return .light
+        }
+    }
+    static var saved: UIUserInterfaceStyle { style(UserDefaults.standard.string(forKey: key)) }
+}
+
+/// `Appearance.apply({ style })` from syncNativeAppearance in src/native.ts: keep
+/// the choice for the next cold start and give it to the window now.
+@objc(AppearancePlugin)
+public class AppearancePlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AppearancePlugin"
+    public let jsName = "Appearance"
+    public let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "apply", returnType: CAPPluginReturnPromise)]
+
+    @objc func apply(_ call: CAPPluginCall) {
+        let raw = call.getString("style") ?? "light"
+        UserDefaults.standard.set(raw, forKey: AppearanceChoice.key)
+        DispatchQueue.main.async {
+            (self.bridge?.viewController as? DrafterBridgeViewController)?.applyAppearance(AppearanceChoice.style(raw))
+            call.resolve()
+        }
+    }
+}
+
+/// The bridge, plus the one native control the page needs: its own light or dark.
+class DrafterBridgeViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AppearancePlugin())
+        paintGround()
+    }
+
+    func applyAppearance(_ style: UIUserInterfaceStyle) {
+        view.window?.overrideUserInterfaceStyle = style
+        setNeedsStatusBarAppearanceUpdate()
+        paintGround()
+    }
+
+    /// Behind the page before it paints, and in the overscroll above and below it.
+    func paintGround() {
+        let ground = Ground.of(view.window?.traitCollection ?? traitCollection)
+        webView?.backgroundColor = ground
+        webView?.scrollView.backgroundColor = ground
+    }
+
+    // iOS 16 is the deployment target, so this rather than registerForTraitChanges (17+)
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        paintGround()
     }
 }

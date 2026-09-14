@@ -1061,7 +1061,7 @@ export function Today({
           <ul className="dash-list event-list">
             {upcomingEvents.map(ev => (
               <li key={ev.id} className="event-row">
-                <span className="pdot" style={{ background: sourceMap.get(ev.sourceId)?.color ?? '#94a3b8' }} />
+                <span className="pdot" style={{ background: sourceMap.get(ev.sourceId)?.color ?? 'var(--dot-fallback)' }} />
                 <div className="dash-main">
                   <span className="dash-title">{ev.title}</span>
                   <span className="dash-reason">

@@ -183,11 +183,12 @@ export function plannedGift(personId: string, kind: 'birthday' | 'anniversary', 
 /** Used when someone has no declared rhythm, so drift is still visible. */
 export { DEFAULT_CADENCE_DAYS }
 
+/** Theme tokens (a tone on its own tint), so each badge reads in light and dark. */
 export const SEEN_META: Record<SeenStatus, { label: string; color: string; bg: string }> = {
-  never: { label: 'No visits yet', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
-  overdue: { label: 'Overdue', color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
-  due: { label: 'Due a catch-up', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
-  ok: { label: 'On track', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+  never: { label: 'No visits yet', color: 'var(--tone-grey)', bg: 'var(--tone-grey-bg)' },
+  overdue: { label: 'Overdue', color: 'var(--tone-rose)', bg: 'var(--tone-rose-bg)' },
+  due: { label: 'Due a catch-up', color: 'var(--tone-amber)', bg: 'var(--tone-amber-bg)' },
+  ok: { label: 'On track', color: 'var(--tone-green)', bg: 'var(--tone-green-bg)' },
 }
 
 /** Sort: the people who need attention first, then by how long since. Planned catch-ups sort below true drift. */

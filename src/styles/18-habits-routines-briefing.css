@@ -17,7 +17,14 @@
 .habit-row:hover {
   background: var(--surface-2);
 }
-.habit-row.rest {
+/* A rest day steps back in ink, not opacity, which took its text under 4.5:1:
+   the name takes the quiet ink ("Rest day" has it already, below), and only
+   the tick and the emoji fade. */
+.habit-row.rest .habit-name {
+  color: var(--muted);
+}
+.habit-row.rest .habit-tick,
+.habit-row.rest .habit-emoji {
   opacity: 0.6;
 }
 /* the tick: an outlined ring in the habit's colour that fills when done today */
@@ -58,7 +65,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.habit-name:hover {
+.habit-name:hover,
+.habit-row.rest .habit-name:hover {
   color: var(--accent-text);
 }
 .habit-emoji {
@@ -395,7 +403,7 @@ button.briefing-cta-btn {
   color: var(--accent-text);
 }
 button.briefing-cta-btn:focus-visible {
-  outline: 2px solid var(--accent-ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

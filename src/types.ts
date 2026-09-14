@@ -679,13 +679,15 @@ export function pickerStatuses(current: TaskStatus): TaskStatus[] {
   return [...BOARD_STATUSES, current]
 }
 
+/* The badge tables below hold theme tokens, not colours: each tone is a text
+   colour on its own tint, defined for light and dark in src/styles/01-base.css. */
 export const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string }> = {
-  wishlist: { label: 'Wishlist', color: '#c4b5fd', bg: 'rgba(139, 92, 246, 0.2)' },
-  todo: { label: 'To do', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
-  doing: { label: 'Doing', color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
-  blocked: { label: 'Blocked', color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
-  done: { label: 'Done', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
-  canceled: { label: 'Canceled', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+  wishlist: { label: 'Wishlist', color: 'var(--tone-violet)', bg: 'var(--tone-violet-bg)' },
+  todo: { label: 'To do', color: 'var(--tone-amber)', bg: 'var(--tone-amber-bg)' },
+  doing: { label: 'Doing', color: 'var(--tone-sky)', bg: 'var(--tone-sky-bg)' },
+  blocked: { label: 'Blocked', color: 'var(--tone-rose)', bg: 'var(--tone-rose-bg)' },
+  done: { label: 'Done', color: 'var(--tone-green)', bg: 'var(--tone-green-bg)' },
+  canceled: { label: 'Canceled', color: 'var(--tone-grey)', bg: 'var(--tone-grey-bg)' },
 }
 
 /** Statuses that still need work — the "open" set every due-date view cares about. */
@@ -694,19 +696,19 @@ export const OPEN_STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked']
 export const PRIORITIES: Priority[] = ['low', 'normal', 'high', 'urgent']
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string; glyph: string; rank: number }> = {
-  low: { label: 'Low', color: '#9ca3af', glyph: '▽', rank: 0 },
-  normal: { label: 'Normal', color: '#b3b8c4', glyph: '—', rank: 1 },
-  high: { label: 'High', color: '#fb923c', glyph: '▲', rank: 2 },
-  urgent: { label: 'Urgent', color: '#f87171', glyph: '‼', rank: 3 },
+  low: { label: 'Low', color: 'var(--tone-grey)', glyph: '▽', rank: 0 },
+  normal: { label: 'Normal', color: 'var(--prio-normal)', glyph: '—', rank: 1 },
+  high: { label: 'High', color: 'var(--prio-high)', glyph: '▲', rank: 2 },
+  urgent: { label: 'Urgent', color: 'var(--danger)', glyph: '‼', rank: 3 },
 }
 
 export const PROJECT_STATUSES: ProjectStatus[] = ['active', 'paused', 'done', 'archived']
 
 export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; color: string; bg: string }> = {
-  active: { label: 'Active', color: '#7dd3fc', bg: 'rgba(14, 165, 233, 0.2)' },
-  paused: { label: 'Paused', color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
-  done: { label: 'Done', color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
-  archived: { label: 'Archived', color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
+  active: { label: 'Active', color: 'var(--tone-sky)', bg: 'var(--tone-sky-bg)' },
+  paused: { label: 'Paused', color: 'var(--tone-amber)', bg: 'var(--tone-amber-bg)' },
+  done: { label: 'Done', color: 'var(--tone-green)', bg: 'var(--tone-green-bg)' },
+  archived: { label: 'Archived', color: 'var(--tone-grey)', bg: 'var(--tone-grey-bg)' },
 }
 
 export const PROJECT_COLORS = ['#f97316', '#fbbf24', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#f87171', '#94a3b8']

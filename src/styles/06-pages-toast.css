@@ -36,7 +36,7 @@
 }
 
 .hero-accent {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .landing-hero > p {
@@ -185,14 +185,16 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-pop);
   z-index: 100;
 }
 
+/* the inverse pill's own accent, not the page's: the house orange on the dark
+   pill light draws, a deeper one on dark's light pill, where orange was 2.3:1 */
 .toast-undo {
   border: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--inverse-accent);
   font-weight: 700;
   padding: 0;
 }
@@ -201,10 +203,15 @@
   text-decoration: underline;
 }
 
+/* a focused Undo or ✕ rings in the same accent: --focus-ring is tuned for the page */
+.toast button:focus-visible {
+  outline-color: var(--inverse-accent);
+}
+
 .toast-close {
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--inverse-muted);
   padding: 0;
 }
 
@@ -214,7 +221,7 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--border);
+  background: var(--viz-empty);
   display: inline-block;
 }
 

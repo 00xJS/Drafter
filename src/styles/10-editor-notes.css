@@ -37,10 +37,12 @@
   border-radius: 50%;
   border: 2px solid transparent;
   padding: 0;
+  /* a pale colour keeps an edge on white; the ring is clear in dark */
+  box-shadow: inset 0 0 0 1px var(--dot-ring);
 }
 .swatch.on {
   border-color: var(--text);
-  box-shadow: 0 0 0 2px var(--surface);
+  box-shadow: inset 0 0 0 1px var(--dot-ring), 0 0 0 2px var(--surface);
 }
 .emoji-field {
   flex: 0 0 72px;
@@ -395,12 +397,18 @@
 .btn.armed {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   /* A standing ring, not a 1.8s heartbeat. The red fill is the signal; the
      pulse was decoration that Reduce Motion had to switch off, and a control
      whose armed cue vanishes for some readers is worse than one that never
      moved. It also kept the sheet's only animation above the 400ms line. */
-  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.28);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 28%, transparent);
+}
+/* hovered (or tapped: :hover sticks on a phone), a danger or subtle button's
+   own hover wash replaces the fill, so the label takes an ink that reads on it */
+.btn.danger.armed:hover,
+.btn.subtle.armed:hover {
+  color: var(--on-armed-hover);
 }
 
 /* trash */
@@ -468,7 +476,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-pop);
 }
 .notes-emoji button {
   border: 0;
@@ -561,7 +569,7 @@
   padding: 1px 5px;
 }
 .md pre {
-  background: #0b0d11;
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
@@ -581,7 +589,7 @@
   color: var(--text-2);
 }
 .md a {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .md hr {
   border: 0;
@@ -649,8 +657,9 @@
   overflow: auto;
   caret-color: var(--accent);
 }
+/* the pad's only focus cue (it has no outline), so the focus ring's colour */
 .notes-editable:focus {
-  border-color: var(--accent);
+  border-color: var(--focus-ring);
 }
 .notes.dragging .notes-editable {
   border-style: dashed;
@@ -924,7 +933,7 @@
 }
 .notes-page.note-page input.note-title-input:focus-visible {
   outline: none;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--focus-ring);
 }
 /* the title sits above the editor, so it starts a little shorter than a pad's */
 .note-page .notes-editable {

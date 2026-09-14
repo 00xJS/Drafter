@@ -228,12 +228,13 @@
   flex: none;
 }
 
+/* set apart from the title by weight and figures, never by dimming: the pill's
+   ink is moved only as far as 4.5:1 (readableInk), so a dimmed time fell under it */
 .cal-pill-time {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   font-size: 10px;
-  opacity: 0.85;
 }
 
 /* two lines of title, then an ellipsis — a one-line pill lost the point of

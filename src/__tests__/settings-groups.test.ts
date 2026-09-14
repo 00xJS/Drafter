@@ -1,6 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { Appearance } from '../components/settings/Appearance'
 import { sheetSource } from './source'
 
 /*
@@ -37,8 +40,8 @@ function componentSource(name: string): string | undefined {
 }
 
 describe('Settings groups: one registry, every group drawn and styled', () => {
-  it('reads the five groups, in nav order', () => {
-    expect(registry.map(g => g.key)).toEqual(['calendars', 'reminders', 'household', 'assistants', 'data'])
+  it('reads the six groups, in nav order', () => {
+    expect(registry.map(g => g.key)).toEqual(['calendars', 'reminders', 'appearance', 'household', 'assistants', 'data'])
   })
 
   it('gives every group sections that each draw settings-section g-<key>', () => {
@@ -68,5 +71,27 @@ describe('Settings groups: one registry, every group drawn and styled', () => {
     // rendering only the chosen group would hold back each section's fetches until its tab is picked
     expect(shell).toMatch(/SETTINGS_GROUPS\.flatMap\(g => g\.sections\.map\(/)
     expect(shell).toContain('settings-body showing-${group}')
+  })
+})
+
+describe('Settings → Appearance', () => {
+  // node has no usable storage, so this is a device where nothing is stored
+  const html = renderToStaticMarkup(createElement(Appearance))
+
+  it('offers Light, Dark and Match system as one segmented choice, with Light chosen by default', () => {
+    expect(html).toContain('<section class="settings-section g-appearance">')
+    expect(html).toContain('<div class="segmented" role="group" aria-label="Appearance">')
+    const buttons = [...html.matchAll(/<button type="button" class="([^"]+)" aria-pressed="(true|false)">([^<]+)<\/button>/g)].map(m => [m[3], m[1], m[2]])
+    expect(buttons).toEqual([
+      ['Light', 'seg on', 'true'],
+      ['Dark', 'seg', 'false'],
+      ['Match system', 'seg', 'false'],
+    ])
+  })
+
+  it('says the choice stays on this device, and keeps the Match system and iPhone notes for when they apply', () => {
+    expect(html).toContain('Light is the default. Your choice stays on this device, so a phone and a laptop can differ.')
+    expect(html).not.toContain('Following this')
+    expect(html).not.toContain('launch screen')
   })
 })

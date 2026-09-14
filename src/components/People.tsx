@@ -9,6 +9,8 @@ import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
+import { graphicInk, heatStyle } from '../contrast'
+import { useTheme } from '../theme'
 
 interface Props {
   people: Person[]
@@ -213,10 +215,13 @@ function LogVisit({
 
 function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { weekly: number[]; color: string; title?: string }) {
   const max = Math.max(1, ...weekly)
+  const theme = useTheme()
+  // drawn in an open row (--surface-2): the colour moves only as far as a bar needs to stand out there
+  const fill = graphicInk(color, theme, { ground: 'raised' })
   return (
     <span className="person-bars" title={title}>
       {weekly.map((n, i) => (
-        <span key={i} className="person-bar" style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : color, opacity: n === 0 ? 0.35 : 1 }} />
+        <span key={i} className={n === 0 ? 'person-bar zero' : 'person-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / max) * 80}%`, background: n === 0 ? undefined : fill }} />
       ))}
     </span>
   )
@@ -225,7 +230,7 @@ function Bars({ weekly, color, title = 'Visits per week, last 12 weeks' }: { wee
 /** A year table's trend: more lately, drifting, or steady. The places table reads it the same way. */
 function TrendBadge({ trend }: { trend: number }) {
   return trend > 0 ? (
-    <span className="badge" style={{ background: 'rgba(14, 165, 233, 0.2)', color: '#7dd3fc' }}>
+    <span className="badge" style={{ background: 'var(--tone-sky-bg)', color: 'var(--tone-sky)' }}>
       ↑ more lately
     </span>
   ) : trend < 0 ? (
@@ -463,6 +468,8 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [year, setYear] = useState(() => new Date().getFullYear())
+  // the year table's cells choose their ink for the theme on screen
+  const theme = useTheme()
 
   // An event of your own counts as seeing the people on it once it has
   // happened, the way a subscribed calendar's does once Who was there? logs
@@ -671,7 +678,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
                           key={i}
                           className="num year-cell"
                           title={n > 0 ? countOf(n, 'day') : undefined}
-                          style={n > 0 ? { background: `color-mix(in srgb, ${r.person.color} ${Math.min(90, 25 + n * 20)}%, transparent)` } : undefined}
+                          style={n > 0 ? heatStyle(r.person.color, n, theme) : undefined}
                         >
                           {n || ''}
                         </td>

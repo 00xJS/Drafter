@@ -1,4 +1,5 @@
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+import type { Theme, ThemePref } from './theme'
 
 // The iOS app is this same web bundle inside a native shell. Everything that
 // differs lives here, behind one check, so the rest of the code never asks
@@ -24,6 +25,36 @@ export function applyPlatformClasses(): void {
   const platform = forced && !isNative() ? 'ios' : Capacitor.getPlatform()
   root.classList.add(`platform-${platform}`)
   root.classList.toggle('ios', platform === 'ios')
+}
+
+/** The shell's own plugin (AppearancePlugin in ios/App/App/SceneDelegate.swift). */
+interface AppearancePlugin {
+  apply(options: { style: ThemePref }): Promise<void>
+}
+// registered once: Capacitor refuses a second registration under the same name
+let appearancePlugin: AppearancePlugin | null = null
+
+/**
+ * Settings → Appearance for what the page cannot paint: the status bar, keyboard,
+ * pickers, alerts and the App Switcher cover (AppearancePlugin in SceneDelegate.swift).
+ * No-op on the web; an older shell without the plugin just keeps its own look.
+ */
+export async function syncNativeAppearance(pref: ThemePref, theme: Theme): Promise<void> {
+  if (!isNative()) return
+  try {
+    appearancePlugin ??= registerPlugin<AppearancePlugin>('Appearance')
+    await appearancePlugin.apply({ style: pref })
+  } catch {
+    /* a shell built before the plugin existed */
+  }
+  // The window's style already sets the keyboard; this says it outright, in
+  // case a plugin update ever stops following the window.
+  try {
+    const { Keyboard, KeyboardStyle } = await import('@capacitor/keyboard')
+    await Keyboard.setStyle({ style: theme === 'dark' ? KeyboardStyle.Dark : KeyboardStyle.Light })
+  } catch {
+    /* optional */
+  }
 }
 
 /** Open a URL outside the web view: Safari's sheet on iOS, a new tab on the web. */

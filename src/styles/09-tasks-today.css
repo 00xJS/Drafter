@@ -45,6 +45,8 @@
   border-radius: 50%;
   flex: none;
   display: inline-block;
+  /* a pale user colour keeps an edge on white; the ring is clear in dark */
+  box-shadow: inset 0 0 0 1px var(--dot-ring);
 }
 
 /* priority + due */
@@ -68,34 +70,34 @@
   color: var(--text-2);
 }
 .due-overdue {
-  background: rgba(244, 63, 94, 0.2);
-  color: #fda4af;
+  background: var(--tone-rose-bg);
+  color: var(--tone-rose);
 }
 .due-late {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fdba74;
+  background: var(--tone-orange-bg);
+  color: var(--tone-orange);
 }
 .due-today {
-  background: rgba(245, 158, 11, 0.18);
-  color: #fcd34d;
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
 }
 .due-soon {
-  background: rgba(14, 165, 233, 0.2);
-  color: #7dd3fc;
+  background: var(--tone-sky-bg);
+  color: var(--tone-sky);
 }
 .card.prio-border-urgent {
-  border-left: 3px solid #f87171;
+  border-left: 3px solid var(--danger);
 }
 .card.prio-border-high {
-  border-left: 3px solid #fb923c;
+  border-left: 3px solid var(--prio-high);
 }
 .badge-blocked {
-  background: rgba(244, 63, 94, 0.2);
-  color: #fda4af;
+  background: var(--tone-rose-bg);
+  color: var(--tone-rose);
 }
 .badge-doing {
-  background: rgba(14, 165, 233, 0.2);
-  color: #7dd3fc;
+  background: var(--tone-sky-bg);
+  color: var(--tone-sky);
 }
 
 /* today */
@@ -112,7 +114,7 @@
   scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
 }
 .chart-card.warn-card {
-  border-color: rgba(244, 63, 94, 0.45);
+  border-color: var(--tone-rose-border);
 }
 .tlist .trow {
   align-items: center;
@@ -182,13 +184,13 @@
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
-  background: rgba(14, 165, 233, 0.25);
-  color: #7dd3fc;
+  background: var(--tone-sky-bg-strong);
+  color: var(--tone-sky);
   cursor: pointer;
 }
 .swipe-action.next {
-  background: rgba(99, 102, 241, 0.28);
-  color: #a5b4fc;
+  background: var(--tone-indigo-bg);
+  color: var(--tone-indigo);
 }
 /* the tap-equivalent of the swipe — the gesture alone is not discoverable */
 .swipe-handle {
@@ -422,7 +424,7 @@
   height: 18px;
   border-radius: 6px;
   border: 0;
-  opacity: 0.85;
+  opacity: var(--viz-bar-opacity);
   overflow: hidden;
   padding: 0;
 }
@@ -469,12 +471,14 @@
   border: 0;
   padding: 0;
   opacity: 0.9;
+  /* a pale project colour keeps an edge on white; the ring is clear in dark */
+  box-shadow: inset 0 0 0 1px var(--dot-ring);
 }
 .rm-task.done {
-  background: var(--border);
+  background: var(--viz-empty);
 }
 .rm-task.blocked {
-  outline: 2px solid #fda4af;
+  outline: 2px solid var(--tone-rose);
   outline-offset: 1px;
 }
 

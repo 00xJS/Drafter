@@ -1,4 +1,4 @@
-import { Fragment, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { CSSProperties, Fragment, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { newerStamp } from '../itemops'
 import {
@@ -389,8 +389,8 @@ export function useWidth<T extends HTMLElement>(initial: number): [RefObject<T>,
   return [ref, width]
 }
 
-/** Column opacity steps with the mood: 1 = 0.35 up to 5 = 1. */
-const moodOpacity = (m: Mood) => 0.35 + ((m - 1) * 0.65) / 4
+/** A column's mood as --mood: .mood-col steps its strength with it, from the theme's floor at 1 up to full at 5. */
+const moodStyle = (m: Mood) => ({ '--mood': m }) as CSSProperties
 
 /**
  * A run of weeks of moods: one thin column a day on a single 1..5 scale, a
@@ -510,7 +510,7 @@ export function MoodChart({ series, summary }: { series: MoodSeries; summary: st
             <title>{tip(d)}</title>
             <rect className="mood-hit" x={px(left + slot * i)} y={top} width={px(slot)} height={plotH} />
             {d.mood ? (
-              <path className="mood-col" d={column(i, d.mood)} style={{ opacity: moodOpacity(d.mood) }} />
+              <path className="mood-col" d={column(i, d.mood)} style={moodStyle(d.mood)} />
             ) : (
               <line className="mood-tick" x1={px(xc(i))} x2={px(xc(i))} y1={px(base - 2)} y2={base} />
             )}

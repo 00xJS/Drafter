@@ -2,13 +2,16 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
+import { THEME_GROUND, THEME_PREFS } from '../theme'
 
 /*
  * iOS draws the launch screen from its storyboard before any code runs, and
  * SceneDelegate lays the same storyboard over the App Switcher card. A missing
  * image there is an empty screen on every cold start and nothing in the build
  * fails, so the storyboard, the asset catalog and the artwork are checked here
- * against each other and against public/icon.svg.
+ * against each other and against public/icon.svg. The ground under the plane is
+ * the light one the app opens in (THEME_GROUND.light), held equal here to every
+ * other copy of it: the web view's, the manifest's, the meta's and SceneDelegate's.
  */
 
 const path = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.url))
@@ -27,8 +30,7 @@ const hex = (rgb: number[]) => `#${rgb.map(n => n.toString(16).padStart(2, '0'))
 /** An Interface Builder `red=".." green=".." blue=".."` colour as #rrggbb. */
 const ibColour = (a: Record<string, string>) => hex([a.red, a.green, a.blue].map(v => Math.round(Number(v) * 255)))
 
-/** The icon's ground (its rounded rect) and the plane's two fills. */
-const ground = /<rect\b[^>]*fill="(#[0-9a-f]{6})"/.exec(icon)![1]
+/** The plane's two fills in the icon (whose rounded rect keeps its own dark ground). */
 const planeFills = [...icon.matchAll(/<path\b[^>]*fill="(#[0-9a-f]{6})"/g)].map(m => m[1])
 
 /**
@@ -97,13 +99,84 @@ describe('Launch screen', () => {
     expect(storyboard).not.toMatch(/<label\b|<textView\b|\btext="/)
   })
 
-  it("paints the icon's ground, the same colour the web view and the privacy cover start from", () => {
+  it('paints the light ground the app starts in, the same colour every other ground starts from', () => {
     const background = attrs(/<color key="backgroundColor"[^>]*\/>/.exec(storyboard)![0])
-    expect(ibColour(background)).toBe(ground)
-    expect(/backgroundColor: '(#[0-9a-f]{6})'/.exec(read('capacitor.config.ts'))?.[1]).toBe(ground)
-    // SceneDelegate's cover if the storyboard ever fails to load
-    const fallback = /UIColor\(red: ([\d.]+), green: ([\d.]+), blue: ([\d.]+), alpha: 1\)/.exec(read(`${APP}/SceneDelegate.swift`))
-    expect(fallback && ibColour({ red: fallback[1], green: fallback[2], blue: fallback[3] })).toBe(ground)
+    expect(ibColour(background)).toBe(THEME_GROUND.light)
+    // drawn in the light appearance, whatever the phone is set to
+    expect(attrs(/<device\b[^>]*\/>/.exec(storyboard)![0]).appearance).toBe('light')
+    // the web view behind the page before it paints
+    expect(/backgroundColor: '(#[0-9a-f]{6})'/.exec(read('capacitor.config.ts'))?.[1]).toBe(THEME_GROUND.light)
+    // the installed web app's title bar and splash
+    const vite = read('vite.config.ts')
+    expect(/theme_color: '(#[0-9a-f]{6})'/.exec(vite)?.[1]).toBe(THEME_GROUND.light)
+    expect(/background_color: '(#[0-9a-f]{6})'/.exec(vite)?.[1]).toBe(THEME_GROUND.light)
+    // the browser's bar, until index.html's inline script says otherwise (theme.test.ts)
+    expect(/<meta name="theme-color" content="(#[0-9a-f]{6})"/.exec(read('index.html'))?.[1]).toBe(THEME_GROUND.light)
+  })
+
+  it("gives SceneDelegate the same two grounds, for the privacy cover and the web view's overscroll", () => {
+    const swift = read(`${APP}/SceneDelegate.swift`)
+    const ground = (name: string) => {
+      const m = new RegExp(`static let ${name} = UIColor\\(red: ([\\d.]+), green: ([\\d.]+), blue: ([\\d.]+), alpha: 1\\)`).exec(swift)
+      return m && ibColour({ red: m[1], green: m[2], blue: m[3] })
+    }
+    expect(ground('light')).toBe(THEME_GROUND.light)
+    expect(ground('dark')).toBe(THEME_GROUND.dark)
+    // the cover takes the window's current style, and the window takes the
+    // saved choice before the bridge (and so the web view) exists
+    expect(swift).toMatch(/cover\.backgroundColor = Ground\.of\(window\.traitCollection\)/)
+    expect(swift).toMatch(/overrideUserInterfaceStyle = AppearanceChoice\.saved\s+window\?\.rootViewController = DrafterBridgeViewController\(\)/)
+  })
+})
+
+/*
+ * Settings → Appearance reaches the shell through one plugin call:
+ * syncNativeAppearance in src/native.ts calls Appearance.apply({ style }), and
+ * AppearancePlugin in SceneDelegate.swift answers it. A name, method or key that
+ * drifts on either side fails silently — the page still paints its own theme and
+ * the call's error is swallowed by design — while the status bar, keyboard,
+ * pickers and privacy cover stop following the choice. So the two sides are
+ * held to each other here.
+ */
+describe('AppearancePlugin: the shell answers the call native.ts makes', () => {
+  const swift = read(`${APP}/SceneDelegate.swift`)
+  const native = read('src/native.ts')
+
+  it('is registered under the name, method and key syncNativeAppearance calls', () => {
+    const name = /registerPlugin<AppearancePlugin>\('(\w+)'\)/.exec(native)?.[1]
+    const call = /appearancePlugin\.(\w+)\(\{ (\w+): pref \}\)/.exec(native)
+    expect(name).toBe('Appearance')
+    expect(call?.slice(1)).toEqual(['apply', 'style'])
+    expect(native).toMatch(new RegExp(`${call![1]}\\(options: \\{ ${call![2]}: ThemePref \\}\\): Promise<void>`))
+    expect(/public let jsName = "(\w+)"/.exec(swift)?.[1]).toBe(name)
+    expect([...swift.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map(m => m[1])).toEqual([call![1]])
+    expect(swift).toMatch(new RegExp(`@objc func ${call![1]}\\(_ call: CAPPluginCall\\)`))
+    expect(/call\.getString\("(\w+)"\)/.exec(swift)?.[1]).toBe(call![2])
+    // the bridge registers the instance, or the call never arrives
+    expect(swift).toMatch(/bridge\?\.registerPluginInstance\(AppearancePlugin\(\)\)/)
+  })
+
+  it('reads every choice Settings offers: Dark and Match system by name, Light as the default', () => {
+    const style = /static func style\(_ raw: String\?\) -> UIUserInterfaceStyle \{([\s\S]*?)\n {4}\}/.exec(swift)?.[1] ?? ''
+    const cases = Object.fromEntries([...style.matchAll(/case "(\w+)": return \.(\w+)/g)].map(m => [m[1], m[2]]))
+    expect(cases).toEqual({ dark: 'dark', system: 'unspecified' })
+    expect(style).toMatch(/default: return \.light/)
+    expect([...THEME_PREFS].sort()).toEqual(['light', ...Object.keys(cases)].sort())
+  })
+})
+
+describe('Info.plist: the app follows Settings → Appearance, not a forced style', () => {
+  const plist = read(`${APP}/Info.plist`)
+  /** The element after `<key>name</key>`: its tag, and its text when it has any. */
+  const value = (key: string) => new RegExp(`<key>${key}</key>\\s*<(\\w+)\\s*/?>(?:([^<]*)</\\w+>)?`).exec(plist)
+
+  it('forces no interface style, so the window can take the one the app chose', () => {
+    expect(plist).not.toContain('UIUserInterfaceStyle')
+  })
+
+  it('lets the bridge set the status bar, in the default style that follows light and dark', () => {
+    expect(value('UIViewControllerBasedStatusBarAppearance')?.[1]).toBe('true')
+    expect(value('UIStatusBarStyle')?.[2]).toBe('UIStatusBarStyleDefault')
   })
 })
 

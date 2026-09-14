@@ -3,7 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f1115" />
+    <meta name="theme-color" content="#f6f7f9" />
+    <script>
+      // Settings → Appearance, before the first paint: main.tsx is a deferred module
+      // and can run after the browser has painted once. src/theme.ts owns the key,
+      // the default and the two grounds; theme.test.ts runs this script to keep them in step.
+      ;(function () {
+        var pref = 'light'
+        try {
+          pref = localStorage.getItem('drafter:theme') || 'light'
+        } catch (e) {}
+        var dark = pref === 'dark' || (pref === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        var root = document.documentElement
+        root.setAttribute('data-theme', dark ? 'dark' : 'light')
+        root.style.colorScheme = dark ? 'dark' : 'light'
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute('content', dark ? '#0f1115' : '#f6f7f9')
+      })()
+    </script>
     <meta name="description" content="Drafter is a home journal and planner: Home, Tasks, Calendar, People and Kitchen, with habits, routines, a weekly review and a command palette." />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
