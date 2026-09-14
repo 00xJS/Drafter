@@ -5,6 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
+import { copyNotes } from './mirror.mjs'
 import { isUntimed, localDate } from '../../../shared/domain.mjs'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
@@ -328,7 +329,12 @@ export async function drafterCalendarId(userId, accountId) {
   return (await resolveDrafterCalendar(userId, accountId)).id
 }
 
-function eventBodyFor(task, projectName, site, tz) {
+/**
+ * The Graph body for one task: free time, keyed on TASK_PROP. Silent unless
+ * `remind`: Drafter sends every reminder itself, and a copy Outlook was left to
+ * default rang besides (see googleReminders in lib/google.mjs for the rule).
+ */
+export function graphTaskBody(task, projectName, site, tz, remind = false) {
   const timed = !isUntimed(task.dueAt, tz)
   const start = new Date(task.dueAt)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
@@ -344,6 +350,7 @@ function eventBodyFor(task, projectName, site, tz) {
     },
     isAllDay: !timed,
     showAs: 'free',
+    isReminderOn: remind === true,
     start: timed ? { dateTime: stamp(start), timeZone: 'UTC' } : { dateTime: `${dayOnly}T00:00:00`, timeZone: 'UTC' },
     end: timed
       ? { dateTime: stamp(new Date(start.getTime() + 3_600_000)), timeZone: 'UTC' }
@@ -367,7 +374,8 @@ async function findMirrored(userId, accountId, calendarId, taskId) {
 
 /**
  * Mirror one task: upsert while open and dated, remove otherwise.
- * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task.
+ * A batch passes the owner's zone as `opts.tz` (null for none), rather than one settings read per task;
+ * `opts.remind` keeps Outlook's own reminder on the copy (off: Drafter sends them).
  */
 export async function pushTask(userId, accountId, calendarId, task, projectName, site, opts = {}) {
   const wanted = task.kind === 'task' && !task.deletedAt && OPEN.includes(task.status) && !!task.dueAt
@@ -383,7 +391,7 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     return 'skipped'
   }
   const tz = 'tz' in opts ? (opts.tz ?? undefined) : (await settingsGet(userId).catch(() => null))?.timezone
-  const body = eventBodyFor(task, projectName, site, tz)
+  const body = graphTaskBody(task, projectName, site, tz, opts.remind === true)
   if (existing) {
     await graph(userId, accountId, path(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
@@ -412,23 +420,26 @@ const graphStamp = d => new Date(d).toISOString().replace(/\.\d{3}Z$/, '')
 /**
  * The Graph body for one entry: busy, keyed on EVENT_PROP, and — for all-day —
  * midnight to an EXCLUSIVE midnight, which is exactly how a CalendarEntry
- * already stores one, so nothing is converted.
+ * already stores one, so nothing is converted. Silent unless `opts.remind`.
  */
-export function graphEntryBody(entry, site) {
+export function graphEntryBody(entry, site, opts = {}) {
   return {
     subject: entry.title || 'Untitled event',
     body: { contentType: 'text', content: [entry.notes, site ? `Open in Drafter: ${site}` : ''].filter(Boolean).join('\n\n') },
-    location: entry.location ? { displayName: entry.location } : undefined,
+    // always sent, empty once cleared: a PATCH keeps what its body leaves out (see googleEntryBody)
+    location: { displayName: entry.location || '' },
     isAllDay: !!entry.allDay,
     // home is "working elsewhere", Outlook's own status for exactly this; the office is free
     showAs: entry.work === 'home' ? 'workingElsewhere' : entry.work ? 'free' : 'busy',
+    isReminderOn: opts.remind === true,
     start: entry.allDay ? { dateTime: `${entry.start}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.start), timeZone: 'UTC' },
     end: entry.allDay ? { dateTime: `${entry.end}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.end), timeZone: 'UTC' },
     singleValueExtendedProperties: [{ id: EVENT_PROP, value: entry.id }],
   }
 }
 
-export async function pushEntry(userId, accountId, calendarId, entry, site) {
+/** Mirror one entry; `opts.remind` as for pushTask. */
+export async function pushEntry(userId, accountId, calendarId, entry, site, opts = {}) {
   const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(EVENT_PROP)} and ep/value eq ${odataLiteral(entry.id)})`
   const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(filter)}`
   const existing = (await graph(userId, accountId, q)).value?.[0] ?? null
@@ -441,7 +452,7 @@ export async function pushEntry(userId, accountId, calendarId, entry, site) {
     })
     return 'removed'
   }
-  const body = JSON.stringify(graphEntryBody(entry, site))
+  const body = JSON.stringify(graphEntryBody(entry, site, { remind: opts.remind === true }))
   if (plan.op === 'patch') {
     await graph(userId, accountId, path(plan.id), { method: 'PATCH', body })
     return 'updated'
@@ -467,6 +478,20 @@ async function graphPages(userId, accountId, first, init = {}, max = 2500) {
 
 const utcStamp = v => (!v ? null : /(?:Z|[+-]\d\d:\d\d)$/i.test(v) ? v : `${v}Z`)
 
+/** How a pull asks Graph to answer: times in UTC, and a body as the text Drafter wrote rather than Outlook's HTML. */
+const READ_PREFER = 'outlook.timezone="UTC", outlook.body-content-type="text"'
+
+/**
+ * A body Graph turned back into text. Outlook may link a bare address by
+ * itself, and a link comes back as its text followed by the address in angle
+ * brackets — `https://x<https://x/>` — which is nobody's edit.
+ */
+function graphText(content) {
+  return String(content ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/(https?:\/\/[^\s<>]+)<(https?:\/\/[^\s<>]+)>/g, (m, a, b) => (a.replace(/\/$/, '') === b.replace(/\/$/, '') ? a : m))
+}
+
 /**
  * One of our entries as Outlook now holds it, in the CalendarEntry convention.
  * With the UTC Prefer header Graph answers "2026-09-10T14:00:00.0000000" and no
@@ -480,14 +505,18 @@ export function graphEntryChange(ev) {
     const ms = Date.parse(utcStamp(v) ?? '')
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null
   }
+  const deleted = !!ev.isCancelled
   return {
     eventId,
-    deleted: !!ev.isCancelled,
+    deleted,
     title: typeof ev.subject === 'string' ? ev.subject : '',
     start: allDay ? (utcStamp(ev.start?.dateTime)?.slice(0, 10) ?? null) : instant(ev.start?.dateTime),
     end: allDay ? (utcStamp(ev.end?.dateTime)?.slice(0, 10) ?? null) : instant(ev.end?.dateTime),
     allDay,
     updated: ev.lastModifiedDateTime ?? '',
+    // the notes and place as the owner may have rewritten them there, when the listing asked for them
+    ...(!deleted && ev.body ? copyNotes(graphText(ev.body.content), { html: ev.body.contentType !== 'text' }) : {}),
+    ...(!deleted && ev.location ? { location: typeof ev.location.displayName === 'string' ? ev.location.displayName : '' } : {}),
   }
 }
 
@@ -496,24 +525,34 @@ export function graphEntryChange(ev) {
  * names one extended property, and the task pull expands TASK_PROP.
  */
 export async function pullEntryChanges(userId, accountId, calendarId, sinceIso) {
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,subject,start,end,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(EVENT_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
-  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,subject,body,location,start,end,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(EVENT_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: READ_PREFER } })
   return items.map(graphEntryChange).filter(Boolean)
+}
+
+/** The ids one of Drafter's extended properties carries across this calendar's events, and whether the listing reached the end. */
+async function mirroredIds(userId, accountId, calendarId, prop) {
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(prop)})`
+  const { items, complete } = await graphPages(userId, accountId, q, {}, 5000)
+  const ids = new Set()
+  for (const ev of items) {
+    const id = (ev.singleValueExtendedProperties ?? []).find(p => p.id === prop)?.value
+    if (id) ids.add(id)
+  }
+  return { ids, complete }
 }
 
 /**
  * The task ids the Drafter events in this calendar carry: what is actually
  * there, to set against what the app believes it put there.
  */
-export async function mirroredTaskIds(userId, accountId, calendarId) {
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})`
-  const { items, complete } = await graphPages(userId, accountId, q, {}, 5000)
-  const ids = new Set()
-  for (const ev of items) {
-    const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
-    if (taskId) ids.add(taskId)
-  }
-  return { ids, complete }
+export function mirroredTaskIds(userId, accountId, calendarId) {
+  return mirroredIds(userId, accountId, calendarId, TASK_PROP)
+}
+
+/** The same for entries: Graph hard-deletes an entry's copy too, so its delete is found the same way. */
+export function mirroredEntryIds(userId, accountId, calendarId) {
+  return mirroredIds(userId, accountId, calendarId, EVENT_PROP)
 }
 
 /**
@@ -534,27 +573,33 @@ export function outlookMissing(live, present, opts = {}) {
   return { missing: suspicious ? [] : absent, suspicious, absent }
 }
 
+/** One mirrored task as Outlook now holds it: when it is due, and its title and notes as the owner may have rewritten them. */
+export function graphTaskChange(ev) {
+  const taskId = (ev?.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
+  if (!taskId) return null
+  const raw = ev.start?.dateTime
+  const iso = raw ? (raw.endsWith('Z') ? raw : `${raw}Z`) : null
+  const allDay = !!ev.isAllDay
+  const deleted = !!ev.isCancelled
+  return {
+    taskId,
+    deleted,
+    start: allDay && iso ? iso.slice(0, 10) : iso,
+    allDay,
+    updated: ev.lastModifiedDateTime,
+    // the subject as it reads there: the app knows which priority mark was Drafter's
+    ...(!deleted && typeof ev.subject === 'string' ? { title: ev.subject } : {}),
+    // a body asked for as text is never read as markup
+    ...(!deleted && ev.body ? copyNotes(graphText(ev.body.content), { task: true, html: ev.body.contentType !== 'text' }) : {}),
+  }
+}
+
 /** Mirrored tasks changed in Outlook since `since` — the pull half of the sync. */
 export async function pullChanges(userId, accountId, calendarId, sinceIso) {
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
+  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=250&$select=id,subject,body,start,isAllDay,isCancelled,lastModifiedDateTime&$expand=singleValueExtendedProperties($filter=id eq ${odataLiteral(TASK_PROP)})&$filter=${encodeURIComponent(`lastModifiedDateTime ge ${sinceIso}`)}`
   // paged: one page of 250 dropped the rest of a busy window
-  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: 'outlook.timezone="UTC"' } })
-  return items
-    .map(ev => {
-      const taskId = (ev.singleValueExtendedProperties ?? []).find(p => p.id === TASK_PROP)?.value
-      if (!taskId) return null
-      const raw = ev.start?.dateTime
-      const iso = raw ? (raw.endsWith('Z') ? raw : `${raw}Z`) : null
-      const allDay = !!ev.isAllDay
-      return {
-        taskId,
-        deleted: !!ev.isCancelled,
-        start: allDay && iso ? iso.slice(0, 10) : iso,
-        allDay,
-        updated: ev.lastModifiedDateTime,
-      }
-    })
-    .filter(Boolean)
+  const { items } = await graphPages(userId, accountId, q, { headers: { Prefer: READ_PREFER } })
+  return items.map(graphTaskChange).filter(Boolean)
 }
 
 export function authUrl(clientId, redirectUri, state, loginHint) {

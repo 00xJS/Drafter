@@ -12,6 +12,7 @@ import {
   watchLifecycle,
   type EngineConflict,
   type ImportSummary,
+  type RetiredSpawn,
   type StatusChange,
   type SyncEngine,
   type SyncInfo,
@@ -22,8 +23,8 @@ import {
 // file subscribes to it, derives the per-kind lists every view renders, and
 // wires the page's lifecycle to it.
 
-export type { EngineConflict, ImportSummary, StatusChange, SyncInfo }
-export { conflictMessage, stampStatus } from './syncengine'
+export type { EngineConflict, ImportSummary, RetiredSpawn, StatusChange, SyncInfo }
+export { conflictMessage, retiredMessage, stampStatus } from './syncengine'
 
 /** A row the server refused, as Settings lists it. */
 export interface FailedSync extends SyncFailure {
@@ -107,6 +108,8 @@ export interface Store {
   onConflict(listener: (conflicts: EngineConflict[]) => void): () => void
   /** Put this device's values back for those conflicts, as a new and newer edit. */
   keepMine(conflicts: EngineConflict[]): void
+  /** Called when a round put in the Trash a repeat's extra next occurrence that held something the one kept does not. */
+  onRetired(listener: (retired: RetiredSpawn[]) => void): () => void
 }
 
 /** The Notes list order: pinned first, then the most recently edited (ties by id, so the order is stable). */
@@ -337,5 +340,6 @@ export function useItems(myId: string | null = null): Store {
     discardLocal: e.discard,
     onConflict: e.onConflict,
     keepMine: e.keepMine,
+    onRetired: e.onRetired,
   }
 }

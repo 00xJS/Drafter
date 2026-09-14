@@ -1,6 +1,14 @@
 // Resolve the signed-in Supabase user from the bearer token the app sends.
 // Every integration secret is keyed by this user id.
 
+/**
+ * Settings → Reminders → "Calendar copies remind me too", kept in the
+ * account's own sign-in metadata: every device and every mirror function reads
+ * the same answer, and no column had to be added for one switch. The app sets
+ * it (setCopyReminders in src/calendars.ts); getUser reads it on every request.
+ */
+export const COPY_REMINDERS_KEY = 'calendar_copies_remind'
+
 export async function getUser(req) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
@@ -10,7 +18,8 @@ export async function getUser(req) {
   const res = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, authorization: `Bearer ${token}` } })
   if (!res.ok) return { user: null, response: Response.json({ error: 'invalid session' }, { status: 401 }) }
   const u = await res.json()
-  return { user: { id: u.id, email: u.email ?? '' }, response: null }
+  // off unless the owner turned it on: Drafter alone sends reminders
+  return { user: { id: u.id, email: u.email ?? '', copiesRemind: u.user_metadata?.[COPY_REMINDERS_KEY] === true }, response: null }
 }
 
 /**

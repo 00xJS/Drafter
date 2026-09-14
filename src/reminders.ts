@@ -1,16 +1,18 @@
-import { Meal, OPEN_STATUSES, Person, Place, Task } from './types'
+import { CalendarEntry, Meal, OPEN_STATUSES, Person, Place, Task } from './types'
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
 import { currentEndpoint } from './push'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE } from './native'
 
-// Reminders the phone can fire by itself: one at each task's due time, one on
-// the morning of a birthday or anniversary, and a morning nudge for a place
-// whose rhythm you set and clearly missed. No server, no account, works
-// with the app closed. The set is rebuilt from local data whenever it changes,
-// so it is only ever as current as the last time the app ran — which for a
-// phone that opens Drafter daily is current enough.
+// Reminders the phone can fire by itself: one at each task's due time, one at
+// the start of each of your own events, one on the morning of a birthday or
+// anniversary, and a morning nudge for a place whose rhythm you set and
+// clearly missed. No server, no account, works with the app closed. The set is
+// rebuilt from local data whenever it changes, so it is only ever as current
+// as the last time the app ran — which for a phone that opens Drafter daily is
+// current enough. Drafter alone reminds: the copies the mirrors write into
+// Google and Outlook stay silent unless the owner asks for theirs too.
 
 export interface LocalReminder {
   /** Stable integer id — iOS identifies pending notifications by number. */
@@ -79,6 +81,24 @@ function remindAt(dueAt: string): Date {
   return d
 }
 
+/** The same rule for an event: a timed one at its start, an all-day one on the morning of its first day. */
+export function eventRemindAt(e: CalendarEntry): Date | null {
+  if (!e.allDay) return new Date(e.start)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.start)
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), MORNING, 0, 0, 0) : null
+}
+
+/**
+ * Whether one of Drafter's own events reminds me at all. A work day is where
+ * you work, not something to be told has started, and a household member's
+ * evening is theirs. The phone's own reminders and a browser's while Drafter is
+ * open (notify.ts) both go by this.
+ */
+export function remindsMe(e: CalendarEntry | null | undefined, myId?: string | null): boolean {
+  if (!e || e.deletedAt || e.work) return false
+  return !(myId && e.ownerId && e.ownerId !== myId)
+}
+
 export interface BuildReminderOpts {
   /**
    * When this device is already on the server's APNs/web-push list, skip local
@@ -92,6 +112,14 @@ export interface BuildReminderOpts {
    * occasion today" with the detail one tap away inside the app.
    */
   generic?: boolean
+  /**
+   * Drafter's own events (store.events). Their copies in Google and Outlook no
+   * longer remind, so the phone does. Never a feed's event: its own calendar
+   * reminds about that.
+   */
+  events?: CalendarEntry[]
+  /** Only my own events remind me: a household member's evening is theirs. */
+  myId?: string | null
 }
 
 export function buildLocalReminders(
@@ -122,6 +150,23 @@ export function buildLocalReminders(
         ...(opts.generic ? {} : { actionTypeId: TASK_ACTION_TYPE }),
       })
     }
+  }
+  // My own events (remindsMe), on the rule a task's due date follows. Never
+  // skipped for server push, which nudges about tasks alone. There is nothing
+  // a banner's button could do about an event, so it carries none.
+  for (const e of opts.events ?? []) {
+    if (!remindsMe(e, opts.myId)) continue
+    const at = eventRemindAt(e)
+    const ms = at?.getTime() ?? NaN
+    if (!at || !Number.isFinite(ms) || ms <= nowMs || ms > until) continue
+    const title = e.title || 'Untitled event'
+    out.push({
+      id: reminderId(`event:${e.id}`),
+      title: opts.generic ? 'Something on your calendar' : e.allDay ? `Today: ${title}` : `Starts now: ${title}`,
+      body: opts.generic ? 'Open Drafter to see what.' : e.location || (e.notes ? excerpt(e.notes, 100) : 'Open Drafter for the details.'),
+      at,
+      url: '/?view=calendar',
+    })
   }
   for (const o of upcomingOccasions(people, horizonDays, now)) {
     const at = new Date(o.at)
@@ -163,8 +208,8 @@ export function buildLocalReminders(
       url: `/?place=${encodeURIComponent(place.id)}`,
     })
   }
-  // stable sort: rows added at the same minute keep the order above, so tasks
-  // and occasions still lead the 9am group
+  // stable sort: rows added at the same minute keep the order above, so tasks,
+  // events and occasions still lead the 9am group
   return out.sort((a, b) => a.at.getTime() - b.at.getTime())
 }
 

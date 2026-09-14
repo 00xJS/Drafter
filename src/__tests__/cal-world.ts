@@ -20,8 +20,8 @@ export interface SeenRequest {
 export type Answer = { status?: number; body?: unknown } | undefined
 
 export interface WorldOptions {
-  /** Bearer token -> the user Supabase's /auth/v1/user answers with. */
-  sessions?: Record<string, { id: string; email: string }>
+  /** Bearer token -> the user Supabase's /auth/v1/user answers with, sign-in metadata and all. */
+  sessions?: Record<string, { id: string; email: string; user_metadata?: Record<string, unknown> }>
   googleToken?(form: URLSearchParams): Answer
   msToken?(form: URLSearchParams): Answer
   google?(req: SeenRequest): Answer

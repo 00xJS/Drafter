@@ -6,6 +6,7 @@ import { idbGet, idbSet } from './idb'
 import { hashId, localMidnightIso, newerStamp } from './itemops'
 import { oauthReasonLabel } from './links'
 import { isNative, onOAuthReturn, startOAuth } from './native'
+import { getSupabase } from './supabase'
 import { dateKey } from './utils'
 
 // External calendars are read through the session-gated /api/calendars proxy
@@ -830,12 +831,19 @@ function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[]
   return { ...state, pushNow, pullNow, dismissNotice }
 }
 
+/** One of my mirrored tasks as Google or Outlook now holds it (googlePullRows / graphTaskChange on the server). */
 export interface GoogleChange {
   taskId: string
   deleted: boolean
   start: string | null
   allDay: boolean
   updated: string
+  /** Its title as it reads there, Drafter's priority mark included (see titleThere). Absent from a delete, and from an older function. */
+  title?: string
+  /** Its description there, Drafter's footer taken off. Absent from a delete, and from an older function. */
+  notes?: string
+  /** The same with only the footer taken off, sent when reading it as HTML changed anything (see notesThere). */
+  notesRaw?: string
 }
 
 /** One of my entries as a provider now holds it (googleEntryChange / graphEntryChange on the server). */
@@ -850,6 +858,12 @@ export interface EntryChange {
   allDay: boolean
   /** When the provider last changed it. */
   updated: string
+  /** Its notes there, Drafter's footer taken off. Absent from a delete, and from an older function. */
+  notes?: string
+  /** The same with only the footer taken off, sent when reading it as HTML changed anything (see notesThere). */
+  notesRaw?: string
+  /** Its place there ('' once emptied). Absent from a delete, and from an older function. */
+  location?: string
 }
 
 const PULL_CURSOR_KEY = 'drafter:google-pull-cursor'
@@ -876,71 +890,134 @@ export async function pullGoogleChanges(): Promise<GoogleChange[]> {
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 
-/**
- * The entries a pull should rewrite. An edit made in Google or Outlook after
- * Drafter's own last write wins, as a moved task's due date already does
- * (provider `updated` against the record's updatedAt). Only what a calendar
- * shows comes back — the time, all-day, the title; notes and location keep
- * Drafter's copy, since the provider holds them with an "Open in Drafter"
- * footer and its own address formatting. A delete in the provider is left
- * alone: Google keeps it gone by itself, and the entry is Drafter's. An echo of
- * Drafter's own write changes nothing and is skipped, so a pull after a push
- * cannot bounce an entry back and forth.
- *
- * Planner applies these with store.upsert, against the entries as they are at
- * that moment, the same way it applies task moves.
- */
-export function entryPullWrites(entries: CalendarEntry[], changes: EntryChange[]): CalendarEntry[] {
-  // the newest word on each entry, when one page carries two
-  const latest = new Map<string, EntryChange>()
-  for (const c of changes) {
-    if (!c || typeof c.eventId !== 'string') continue
-    const cur = latest.get(c.eventId)
-    if (!cur || Date.parse(c.updated) > Date.parse(cur.updated)) latest.set(c.eventId, c)
-  }
-  const byId = new Map(entries.map(e => [e.id, e]))
-  const out: CalendarEntry[] = []
-  for (const c of latest.values()) {
-    const e = byId.get(c.eventId)
-    if (!e || e.deletedAt || c.deleted || !c.start || !c.end) continue
-    const updated = Date.parse(c.updated)
-    if (!Number.isFinite(updated) || updated <= Date.parse(e.updatedAt)) continue
-    const sane = c.allDay ? DAY_KEY.test(c.start) && DAY_KEY.test(c.end) && c.end > c.start : Date.parse(c.end) > Date.parse(c.start)
-    if (!sane) continue
-    // the provider's placeholder for an entry Drafter keeps untitled
-    const title = c.title === 'Untitled event' && !e.title ? '' : c.title
-    const same = (a: string, b: string) => (c.allDay ? a === b : Date.parse(a) === Date.parse(b))
-    const moved = c.allDay !== e.allDay || !same(c.start, e.start) || !same(c.end, e.end)
-    if (!moved && title === e.title) continue
-    out.push({ ...e, title, start: c.start, end: c.end, allDay: c.allDay, updatedAt: newerStamp(e.updatedAt) })
-  }
-  return out
-}
-
 /** A mirrored task Google or Outlook deleted, to mark done; Undo puts `prevStatus` back. */
 export interface MirrorDone {
   id: string
   prevStatus: TaskStatus
 }
 
+/** What a pull's changes do to Drafter's own records (see mirrorChangeWrites). */
+export interface MirrorWrites {
+  /** Tasks as they should now be saved: moved, renamed or with a rewritten description there. */
+  writes: Task[]
+  /** Mirrored tasks deleted there, to mark done. */
+  done: MirrorDone[]
+  /** Entries as they should now be saved: moved, retitled, or with new notes or a new place there. */
+  events: CalendarEntry[]
+  /** Entries deleted there, to move to the Trash. */
+  trashed: string[]
+}
+
 /**
- * What a pull's task changes do: the tasks whose due date moved in Google or
- * Outlook, as they should be saved, and the ones deleted there, to mark done.
- * Only a change newer than the task's own last edit counts. An all-day event
- * is an untimed task, so it comes back as local midnight, and one still on the
- * task's own local day is no move at all — Google echoing the push back, or
- * the old pull's made-up 09:00 on a date-only start, must not rewrite the task
- * or say it moved.
- *
- * Planner applies these against the tasks as they are at that moment, with a
- * toast for each kind and an Undo on the ones marked done.
+ * Notes as a comparison key. Line endings, blank lines, trailing spaces and the
+ * `<address>` Outlook writes after a link are nobody's edit — and a pull that
+ * read them as one would write the notes back, have them reformatted, and read
+ * them as an edit again, on every pull.
  */
-export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[]): { writes: Task[]; done: MirrorDone[] } {
+const notesKey = (s?: string) => (s ?? '').replace(/<(?:https?|mailto):[^>\s]*>/gi, '').replace(/\s+/g, ' ').trim()
+
+/**
+ * The notes a copy came back with, or undefined when they are no edit. The
+ * function reads a description two ways once it looks like HTML: as text, and
+ * with nothing but the footer taken off (`notesRaw`). Drafter's own plain text
+ * comes back exactly as written, so when either reading is what the record
+ * holds it is the echo of Drafter's own write — "From: Alice
+ * <a.smith@example.com>" is the owner's words, not a tag to strip. Otherwise the
+ * text reading is the edit: what Google's own editor saved.
+ */
+function notesThere(c: { notes?: string; notesRaw?: string }, mine?: string): string | undefined {
+  if (typeof c.notes !== 'string') return undefined
+  const key = notesKey(mine)
+  if (notesKey(c.notes) === key || (typeof c.notesRaw === 'string' && notesKey(c.notesRaw) === key)) return undefined
+  return c.notes
+}
+
+const PRIORITY_MARK = /^(?:‼|▲) /
+
+/**
+ * The title a task's copy came back with, or undefined when it is no rename.
+ * Drafter writes ‼ (urgent) or ▲ (high) in front, so the copy's title read with
+ * or without a leading mark is the echo, whichever priority wrote it (another
+ * device may have changed that since) — and a title of the owner's own that
+ * starts with one ("▲ Climb", normal priority) is theirs, not Drafter's mark. A
+ * new title loses a mark Drafter would have put there and keeps one of theirs.
+ * An emptied title is no rename, and "Untitled task" is only Drafter's placeholder.
+ */
+function titleThere(t: Task, there?: string): string | undefined {
+  const title = there?.trim()
+  if (!title) return undefined
+  const bare = title.replace(PRIORITY_MARK, '')
+  const mine = t.title.trim()
+  if (title === mine || bare === mine || (bare === 'Untitled task' && !mine)) return undefined
+  const drafterMarks = t.priority === 'urgent' || t.priority === 'high'
+  return PRIORITY_MARK.test(mine) && !drafterMarks ? title : bare
+}
+
+/** The newest word on each record, when one page (or a page and a scan) carries two. */
+function newestWord<C extends { updated: string }>(changes: C[], key: (c: C) => unknown): C[] {
+  const latest = new Map<string, C>()
+  for (const c of changes) {
+    const k = c ? key(c) : undefined
+    if (typeof k !== 'string') continue
+    const cur = latest.get(k)
+    if (!cur || Date.parse(c.updated) > Date.parse(cur.updated)) latest.set(k, c)
+  }
+  return [...latest.values()]
+}
+
+/** A provider's change counts only when it was made after the record's own last edit, here or on any device. */
+const newerThan = (updated: string, record: { updatedAt: string }) => Date.parse(updated) > Date.parse(record.updatedAt)
+
+/**
+ * The due date a task's copy was moved to, or null when it did not move. An
+ * all-day event is an untimed task, so it comes back as local midnight, and one
+ * still on the task's own local day is no move at all — Google echoing the push
+ * back, or the old pull's made-up 09:00 on a date-only start, must not rewrite
+ * the task or say it moved.
+ */
+function movedDue(t: Task, c: GoogleChange): string | null {
+  if (!c.start) return null
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10)
+  const at = Date.parse(c.start)
+  const next = c.allDay ? localMidnightIso(day) : Number.isFinite(at) ? new Date(at).toISOString() : null
+  if (!next || next === t.dueAt) return null
+  // An all-day change is compared by the task's local day against the
+  // event's own date, so a 09:00 rewrite is ignored. Never against the UTC
+  // date of the new local midnight: east of UTC that is the day before, the
+  // task's old day, and a move one day forward was dropped.
+  if (c.allDay && t.dueAt && dateKey(t.dueAt) === day) return null
+  return next
+}
+
+/**
+ * What a pull's changes do, to tasks and entries alike: the records changed in
+ * Google or Outlook, as they should be saved; the mirrored tasks deleted there,
+ * to mark done; and the entries deleted there, to move to the Trash.
+ *
+ * One rule over all of it: a change counts only when the provider made it
+ * after the record's own last edit, so an edit made in Drafter since is never
+ * overridden. What comes back is what the owner can change there — a task's due
+ * date, title and description; an entry's time, all-day, title, notes and
+ * place — read without Drafter's own footer and priority mark, so an echo of
+ * Drafter's own write changes nothing and a pull after a push cannot bounce a
+ * record back and forth. A field the function did not send (an older one) is
+ * no word at all.
+ *
+ * A task in a calendar is a reminder of it, so deleting the copy marks the task
+ * done, as it always has. An entry's copy is the entry itself, so deleting it
+ * there puts the entry in the Trash — never further, and Restore brings it back
+ * to every calendar.
+ *
+ * applyMirrorChanges applies these against the records as they are at that
+ * moment, with one toast, and an Undo for what it marked done or put in the Trash.
+ */
+export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[], events: CalendarEntry[] = [], entries: EntryChange[] = []): MirrorWrites {
   const writes: Task[] = []
   const done: MirrorDone[] = []
-  for (const c of changes) {
-    const t = tasks.find(x => x.id === c.taskId)
-    if (!t || c.updated <= t.updatedAt) continue
+  const taskById = new Map(tasks.map(t => [t.id, t]))
+  for (const c of newestWord(changes, c => c.taskId)) {
+    const t = taskById.get(c.taskId)
+    if (!t || !newerThan(c.updated, t)) continue
     if (c.deleted) {
       // A cancelled event for a task that is no longer mirrored is our OWN
       // delete echoing back, not the owner deleting it in the provider: the
@@ -952,41 +1029,125 @@ export function mirrorChangeWrites(tasks: Task[], changes: GoogleChange[]): { wr
       if (isMirroredTask(t)) done.push({ id: t.id, prevStatus: t.status })
       continue
     }
-    if (!c.start) continue
-    const day = /^\d{4}-\d{2}-\d{2}/.exec(c.start)?.[0] ?? c.start.slice(0, 10)
-    const next = c.allDay ? localMidnightIso(day) : new Date(c.start).toISOString()
-    if (!next || next === t.dueAt) continue
-    // An all-day change is compared by the task's local day against the
-    // event's own date, so a 09:00 rewrite is ignored. Never against the UTC
-    // date of the new local midnight: east of UTC that is the day before, the
-    // task's old day, and a move one day forward was dropped.
-    if (c.allDay && t.dueAt && dateKey(t.dueAt) === day) continue
-    writes.push({ ...t, dueAt: next, updatedAt: newerStamp(t.updatedAt) })
+    const patch: Partial<Task> = {}
+    const dueAt = movedDue(t, c)
+    if (dueAt) patch.dueAt = dueAt
+    const title = titleThere(t, c.title)
+    if (title !== undefined) patch.title = title
+    const notes = notesThere(c, t.description)
+    if (notes !== undefined) patch.description = notes
+    if (Object.keys(patch).length) writes.push({ ...t, ...patch, updatedAt: newerStamp(t.updatedAt) })
   }
-  return { writes, done }
+
+  const edited: CalendarEntry[] = []
+  const trashed: string[] = []
+  const entryById = new Map(events.map(e => [e.id, e]))
+  for (const c of newestWord(entries, c => c.eventId)) {
+    const e = entryById.get(c.eventId)
+    // a pull never brings a deleted entry back, nor deletes one twice
+    if (!e || e.deletedAt || !newerThan(c.updated, e)) continue
+    if (c.deleted) {
+      trashed.push(e.id)
+      continue
+    }
+    if (!c.start || !c.end) continue
+    const sane = c.allDay ? DAY_KEY.test(c.start) && DAY_KEY.test(c.end) && c.end > c.start : Date.parse(c.end) > Date.parse(c.start)
+    if (!sane) continue
+    // the provider's placeholder for an entry Drafter keeps untitled
+    const title = c.title === 'Untitled event' && !e.title ? '' : c.title
+    const same = (a: string, b: string) => (c.allDay ? a === b : Date.parse(a) === Date.parse(b))
+    const moved = c.allDay !== e.allDay || !same(c.start, e.start) || !same(c.end, e.end)
+    const notes = notesThere(c, e.notes)
+    const location = typeof c.location === 'string' && c.location.trim() !== (e.location ?? '').trim() ? c.location.trim() : undefined
+    if (!moved && title === e.title && notes === undefined && location === undefined) continue
+    edited.push({
+      ...e,
+      title,
+      start: c.start,
+      end: c.end,
+      allDay: c.allDay,
+      ...(notes !== undefined ? { notes: notes || undefined } : {}),
+      ...(location !== undefined ? { location: location || undefined } : {}),
+      updatedAt: newerStamp(e.updatedAt),
+    })
+  }
+  return { writes, done, events: edited, trashed }
+}
+
+/** What one pull brought back from a calendar: its task changes and its entry changes. */
+export interface MirrorPulled {
+  changes?: GoogleChange[]
+  entries?: EntryChange[]
+}
+
+/** The store as applyMirrorChanges uses it. */
+export interface MirrorStore {
+  tasks: Task[]
+  events: CalendarEntry[]
+  upsert(item: Item): void
+  /** Truthy when the status actually changed. */
+  setStatus(id: string, status: TaskStatus): unknown
+  remove(id: string): void
+  restore(ids: string[]): void
+}
+
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
+
+/**
+ * Save what a pull from `source` changed — mirrorChangeWrites decides — and say
+ * so in one toast. The toast's Undo takes back what took something off the
+ * owner's lists: the tasks marked done get their status back, and the entries
+ * put in the Trash come out of it, onto every calendar again. Moves and edits
+ * need no Undo: each is the owner's own, made in the other calendar.
+ */
+export function applyMirrorChanges(store: MirrorStore, pulled: MirrorPulled, source: string, toast: (msg: string, undo?: () => void) => void): void {
+  const { writes, done, events, trashed } = mirrorChangeWrites(store.tasks, pulled.changes ?? [], store.events, pulled.entries ?? [])
+  const before = new Map(store.tasks.map(t => [t.id, t]))
+  for (const t of writes) store.upsert(t)
+  for (const e of events) store.upsert(e)
+  const undone: MirrorDone[] = []
+  for (const d of done) if (store.setStatus(d.id, 'done')) undone.push(d)
+  for (const id of trashed) store.remove(id)
+  // "moved" while every task change is a new due date and nothing else, as the toast always said
+  const onlyMoved = writes.every(w => {
+    const t = before.get(w.id)
+    return !!t && w.title === t.title && w.description === t.description
+  })
+  const parts = [
+    writes.length ? `${count(writes.length, 'task')} ${onlyMoved ? 'moved' : 'updated'}` : '',
+    undone.length ? `${count(undone.length, 'task')} marked done` : '',
+    events.length ? `${count(events.length, 'event')} updated` : '',
+    trashed.length ? `${count(trashed.length, 'event')} moved to Trash` : '',
+  ].filter(Boolean)
+  if (parts.length === 0) return
+  const undo =
+    undone.length || trashed.length
+      ? () => {
+          for (const u of undone) store.setStatus(u.id, u.prevStatus)
+          if (trashed.length) store.restore(trashed)
+        }
+      : undefined
+  toast(`${parts.join(', ')} from ${source}`, undo)
 }
 
 /**
  * Mirror my tasks and entries into the Google "Drafter" calendar: whatever the
  * ledger says Google has not confirmed goes out a few seconds after a change,
- * on focus, every half hour and when the network returns, and then what moved
- * in Google comes back. Server-side every write is idempotent (upsert by
- * record id; remove a task that is no longer open and dated, or a deleted
- * entry). Only my rows go, so a partner's chores stay out of my calendar.
+ * on focus, every half hour and when the network returns, and then what changed
+ * in Google comes back, to `onPulled` (apply it with applyMirrorChanges).
+ * Server-side every write is idempotent (upsert by record id; remove a task
+ * that is no longer open and dated, or a deleted entry). Only my rows go, so a
+ * partner's chores stay out of my calendar.
  */
 export function useGooglePush(
   items: Item[],
   projects: Project[],
   enabled: boolean,
-  onPulled?: (changes: GoogleChange[]) => void,
+  onPulled?: (pulled: MirrorPulled) => void,
   myId?: string | null,
-  /** Entries edited in Google; apply with entryPullWrites. Without it they are not fetched for. */
-  onEntriesPulled?: (changes: EntryChange[]) => void,
 ): GooglePushState {
   const onPulledRef = useRef(onPulled)
   onPulledRef.current = onPulled
-  const onEntriesRef = useRef(onEntriesPulled)
-  onEntriesRef.current = onEntriesPulled
   const targets = useMemo<PassTarget[]>(
     () =>
       enabled
@@ -1005,11 +1166,9 @@ export function useGooglePush(
               push: (records, projectNames) => googleAction<MirrorBatchReply>('push', { records, projects: projectNames, timezone: deviceTimeZone() }),
               pull: async () => {
                 const apply = onPulledRef.current
-                const applyEntries = onEntriesRef.current
-                if (!apply && !applyEntries) return
+                if (!apply) return
                 const r = await pullGoogle()
-                if (apply && r.changes.length) apply(r.changes)
-                if (applyEntries && r.entries?.length) applyEntries(r.entries)
+                if (r.changes.length || r.entries?.length) apply({ changes: r.changes, entries: r.entries ?? [] })
                 return { calendarId: r.calendarId }
               },
             },
@@ -1030,6 +1189,36 @@ export function resetGooglePushCursor(userId?: string | null): void {
   }
   // an explicit empty ledger, so the next sweep cannot seed itself from a stale cursor
   resetMirrorLedger(googleLedgerKey(userId))
+}
+
+// ---- the copies' own reminders ----------------------------------------------------
+//
+// Drafter sends every reminder itself — the iPhone's own, and push — so the
+// copies the mirrors write into Google and every Outlook account carry none.
+// "Calendar copies remind me too" (Settings → Reminders, off by default) brings
+// each calendar's own back. It lives in the account's sign-in metadata, which
+// the mirror functions read with the session (COPY_REMINDERS_KEY in
+// netlify/functions/lib/session.mjs), so every device agrees without a column
+// of its own. A copy takes the setting the next time Drafter writes it: nothing
+// rewrites the owner's calendars in bulk.
+
+export const COPY_REMINDERS_KEY = 'calendar_copies_remind'
+
+/** Whether the copies remind too; false with no account. Throws with the reason when it cannot be read. */
+export async function copyRemindersOn(): Promise<boolean> {
+  const sb = getSupabase()
+  if (!sb) return false
+  const { data, error } = await sb.auth.getUser()
+  if (error) throw new Error(error.message)
+  return data.user?.user_metadata?.[COPY_REMINDERS_KEY] === true
+}
+
+/** Turn the copies' own reminders on or off for the account. Throws with the reason when it cannot. */
+export async function setCopyReminders(on: boolean): Promise<void> {
+  const sb = getSupabase()
+  if (!sb) throw new Error('Calendar copies need a signed-in account.')
+  const { error } = await sb.auth.updateUser({ data: { [COPY_REMINDERS_KEY]: on } })
+  if (error) throw new Error(error.message)
 }
 
 async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
@@ -1272,6 +1461,33 @@ export function outlookDeletions(ledger: MirrorLedger, missing: string[]): Googl
   })
 }
 
+/**
+ * The entries this device put into an Outlook calendar and has not touched
+ * since, judged as believedLive judges tasks: mine, not deleted, confirmed in
+ * their current version at least ten minutes ago. Graph hard-deletes an
+ * entry's copy too, so only these can be judged deleted when it is gone.
+ */
+export function believedLiveEntries(items: Item[], ledger: MirrorLedger, myId: string | null | undefined, now: number, marginMs = 10 * 60_000): string[] {
+  const out: string[] = []
+  for (const i of items) {
+    if (i.kind !== 'event' || i.deletedAt || !isMirrorRecord(i, myId)) continue
+    const at = confirmedAt(ledger, i)
+    if (at === null || now - at < marginMs) continue
+    out.push(i.id)
+    if (out.length >= 2000) break
+  }
+  return out
+}
+
+/** Entries missing from Outlook, as the delete a Google pull reports for one, stamped as outlookDeletions stamps a task's. */
+export function outlookEntryDeletions(ledger: MirrorLedger, missing: string[]): EntryChange[] {
+  return missing.flatMap(eventId => {
+    const sec = parseInt(ledger.seen[eventId]?.split('.')[1] ?? '', 36)
+    if (!Number.isFinite(sec)) return []
+    return [{ eventId, deleted: true, title: '', start: null, end: null, allDay: false, updated: new Date((sec + 1) * 1000).toISOString() }]
+  })
+}
+
 /** How often a pull also checks which mirrored tasks an Outlook calendar still holds. */
 const MS_SCAN_EVERY_MS = 15 * 60_000
 const MS_SCAN_AT = 'drafter:ms-scan-at'
@@ -1281,6 +1497,8 @@ interface MicrosoftPull {
   entries?: EntryChange[]
   /** Tasks believed there that the calendar no longer holds. */
   missing?: string[]
+  /** Entries believed there that the calendar no longer holds. */
+  missingEntries?: string[]
   resend?: string[]
   calendarId?: string
   at: string
@@ -1288,24 +1506,21 @@ interface MicrosoftPull {
 
 /**
  * Mirror my tasks and entries into the "Drafter" calendar of each Outlook
- * account that has mirroring on, then pull back what moved in Outlook. The same
- * sweep as Google, one account after another and each on its own, so a dead
- * account cannot stop the rest and reports under its own id; and the pull runs
- * on focus and every half hour like Google's, not only after a push.
+ * account that has mirroring on, then pull back what changed in Outlook, to
+ * `onPulled` (apply it with applyMirrorChanges). The same sweep as Google, one
+ * account after another and each on its own, so a dead account cannot stop the
+ * rest and reports under its own id; and the pull runs on focus and every half
+ * hour like Google's, not only after a push.
  */
 export function useMicrosoftSync(
   items: Item[],
   projects: Project[],
   accountIds: string[],
-  onPulled?: (changes: GoogleChange[]) => void,
+  onPulled?: (pulled: MirrorPulled) => void,
   myId?: string | null,
-  /** Entries edited in Outlook; apply with entryPullWrites. Without it they are not fetched. */
-  onEntriesPulled?: (changes: EntryChange[]) => void,
 ): GooglePushState {
   const onPulledRef = useRef(onPulled)
   onPulledRef.current = onPulled
-  const onEntriesRef = useRef(onEntriesPulled)
-  onEntriesRef.current = onEntriesPulled
   const signature = accountIds.join('\n')
   const targets = useMemo<PassTarget[]>(
     () =>
@@ -1321,29 +1536,30 @@ export function useMicrosoftSync(
             push: (records, projectNames) => microsoftAction<MirrorBatchReply>('push', { accountId, records, projects: projectNames, timezone: deviceTimeZone() }),
             pull: async current => {
               const apply = onPulledRef.current
-              const applyEntries = onEntriesRef.current
-              if (!apply && !applyEntries) return
+              if (!apply) return
               const pullKey = `${MS_PULL_CURSOR}:${accountId}`
               const scanKey = `${MS_SCAN_AT}:${accountId}`
               const ledger = readLedger(msLedgerKey(accountId))
               const now = Date.now()
-              // Graph hard-deletes, so a task deleted in Outlook is never a
-              // change; now and then, name the tasks we believe are there and
-              // hear back which are not
-              const scan = !!apply && !!ledger?.cal && now - (Number(readCursor(scanKey)) || 0) > MS_SCAN_EVERY_MS
+              // Graph hard-deletes, so a task or an entry deleted in Outlook is
+              // never a change; now and then, name the ones we believe are there
+              // and hear back which are not
+              const scan = !!ledger?.cal && now - (Number(readCursor(scanKey)) || 0) > MS_SCAN_EVERY_MS
               const live = scan && ledger ? believedLive(current, ledger, myId, now) : []
+              const liveEntries = scan && ledger ? believedLiveEntries(current, ledger, myId, now) : []
               const r = await microsoftAction<MicrosoftPull>('pull', {
                 accountId,
                 since: readCursor(pullKey) || undefined,
-                entries: !!applyEntries,
+                entries: true,
                 live: live.length ? live : undefined,
+                liveEntries: liveEntries.length ? liveEntries : undefined,
                 calendarId: ledger?.cal,
               })
               writeCursor(pullKey, r.at)
               if (scan) writeCursor(scanKey, String(now))
               const changes = [...(r.changes ?? []), ...(ledger ? outlookDeletions(ledger, r.missing ?? []) : [])]
-              if (apply && changes.length) apply(changes)
-              if (applyEntries && r.entries?.length) applyEntries(r.entries)
+              const entries = [...(r.entries ?? []), ...(ledger ? outlookEntryDeletions(ledger, r.missingEntries ?? []) : [])]
+              if (changes.length || entries.length) apply({ changes, entries })
               return { calendarId: r.calendarId, resend: r.resend }
             },
           }),

@@ -222,8 +222,9 @@ const handler = async req => {
         records,
         r => {
           const project = r.projectId ? projectNames[r.projectId] : undefined
-          if (!sweep || r.kind === 'task') return pushTask(user.id, calendarId, r, project, url.origin, { tz })
-          if (r.kind === 'event') return pushEntry(user.id, calendarId, r, url.origin)
+          // silent copies unless the owner asked for the calendar's own reminders too
+          if (!sweep || r.kind === 'task') return pushTask(user.id, calendarId, r, project, url.origin, { tz, remind: user.copiesRemind })
+          if (r.kind === 'event') return pushEntry(user.id, calendarId, r, url.origin, { remind: user.copiesRemind })
           // pushTask treats anything that is not a task as "remove its copy"
           throw Object.assign(new Error('not a task or an entry'), { status: 400 })
         },
@@ -236,7 +237,7 @@ const handler = async req => {
       const entry = body.event && typeof body.event === 'object' ? body.event : null
       if (!entry || typeof entry.id !== 'string') return Response.json({ error: 'event required' }, { status: 400 })
       const cal = await resolveDrafterCalendar(user.id)
-      const result = await pushEntry(user.id, cal.id, entry, url.origin, { revive: body.revive === true })
+      const result = await pushEntry(user.id, cal.id, entry, url.origin, { revive: body.revive === true, remind: user.copiesRemind })
       return Response.json({ calendarId: cal.id, replaced: cal.replaced, result })
     }
     return Response.json({ error: 'unknown action' }, { status: 400 })

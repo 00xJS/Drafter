@@ -55,17 +55,43 @@ export interface TaskLike {
   [key: string]: unknown
 }
 export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
-/** Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none). */
+/**
+ * Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none);
+ * `opts.remind` keeps the calendar's own reminders on the copy (off: Drafter sends them).
+ */
 export declare function pushTask(
   userId: string,
   calendarId: string,
   task: TaskLike,
   projectName: string | undefined,
   site: string,
-  opts?: { tz?: string | null },
+  opts?: { tz?: string | null; remind?: boolean },
 ): Promise<PushOutcome>
-/** Mirror one calendar entry; `opts.revive` brings back a copy Drafter itself cancelled (Undo). */
-export declare function pushEntry(userId: string, calendarId: string, entry: EntryLike, site: string, opts?: { revive?: boolean }): Promise<PushOutcome>
+/** Mirror one calendar entry; `opts.revive` brings back a copy Drafter itself cancelled (Undo); `opts.remind` as for pushTask. */
+export declare function pushEntry(userId: string, calendarId: string, entry: EntryLike, site: string, opts?: { revive?: boolean; remind?: boolean }): Promise<PushOutcome>
+
+/** A copy's reminders: none of its own unless `remind`, when the calendar's own apply. */
+export interface GoogleReminders {
+  useDefault: boolean
+  overrides: { method: string; minutes: number }[]
+}
+export declare function googleReminders(remind?: boolean): GoogleReminders
+/** The body a task is mirrored with. */
+export declare function googleTaskBody(
+  task: TaskLike,
+  projectName: string | undefined,
+  site: string,
+  tz?: string | null,
+  remind?: boolean,
+): {
+  summary: string
+  description: string
+  start: { date?: string; dateTime?: string }
+  end: { date?: string; dateTime?: string }
+  transparency: 'transparent'
+  reminders: GoogleReminders
+  extendedProperties: { private: { drafter: '1'; taskId: string } }
+}
 /** Every Drafter event changed since `sinceIso`, deleted ones included, as Google sends them. */
 export declare function listChangedMirrors(userId: string, calendarId: string, sinceIso: string): Promise<unknown[]>
 /** A random token from a CSPRNG, base64url. */
@@ -98,13 +124,16 @@ export declare function googleEntryPlan(
 export declare function googleEntryBody(
   entry: EntryLike,
   site: string,
+  opts?: { remind?: boolean },
 ): {
   summary: string
   description?: string
-  location?: string
+  /** Always sent, '' once cleared: a PATCH keeps what its body leaves out. */
+  location: string
   start: { date?: string; dateTime?: string }
   end: { date?: string; dateTime?: string }
   transparency: 'opaque' | 'transparent'
+  reminders: GoogleReminders
   extendedProperties: { private: { drafter: '1'; eventId: string } }
 }
 
@@ -128,6 +157,12 @@ export interface EntryChangeRow {
   end: string | null
   allDay: boolean
   updated: string
+  /** The owner's notes there, Drafter's footer taken off. Absent on a delete. */
+  notes?: string
+  /** The same with only the footer taken off, when reading it as HTML changed anything. */
+  notesRaw?: string
+  /** Its place there ('' once emptied). Absent on a delete. */
+  location?: string
 }
 
 export interface TaskChangeRow {
@@ -136,6 +171,12 @@ export interface TaskChangeRow {
   start: string | null
   allDay: boolean
   updated: string
+  /** Its title as it reads there, Drafter's priority mark included. Absent on a delete. */
+  title?: string
+  /** Its description there, Drafter's footer taken off. Absent on a delete. */
+  notes?: string
+  /** The same with only the footer taken off, when reading it as HTML changed anything. */
+  notesRaw?: string
 }
 
 export declare const DRAFTER_DESCRIPTION: string

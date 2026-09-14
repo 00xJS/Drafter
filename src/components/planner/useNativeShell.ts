@@ -9,6 +9,8 @@ import type { useDeepLinks } from './useDeepLinks'
 interface Deps {
   store: Store
   applyLinkRef: ReturnType<typeof useDeepLinks>['applyLinkRef']
+  /** Who is signed in: only my own events remind me on this phone. */
+  myId?: string | null
 }
 
 /**
@@ -16,7 +18,7 @@ interface Deps {
  * sync, due reminders while the app is open, and the local notifications the
  * phone fires on its own.
  */
-export function useNativeShell({ store, applyLinkRef }: Deps) {
+export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
   useEffect(() => {
     // the effect can be torn down before initNative resolves (React's
@@ -49,10 +51,11 @@ export function useNativeShell({ store, applyLinkRef }: Deps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // due reminders while the app is open (device-local, never a store write)
+  // due tasks and my events as they start, while the app is open (device-local,
+  // never a store write): the copies in Google and Outlook no longer ring
   const notifyRef = useRef(() => {})
   notifyRef.current = () => {
-    notifyDue(store.tasks)
+    notifyDue(store.tasks, { events: store.events, myId })
   }
   useEffect(() => {
     notifyRef.current()
@@ -60,8 +63,9 @@ export function useNativeShell({ store, applyLinkRef }: Deps) {
     return () => window.clearInterval(t)
   }, [])
 
-  // iOS: the phone itself fires a notification at each due time and on occasion
-  // mornings — no server involved, so it works with no account and the app closed
+  // iOS: the phone itself fires a notification at each due time, at the start
+  // of each of my events and on occasion mornings — no server involved, so it
+  // works with no account and the app closed
   const remindersRef = useRef(() => {})
   remindersRef.current = () => {
     if (!isNative() || !localRemindersEnabled()) return
@@ -73,13 +77,17 @@ export function useNativeShell({ store, applyLinkRef }: Deps) {
       } catch {
         /* offline / unsigned — keep local due reminders */
       }
-      await scheduleLocalReminders(buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled() }))
+      await scheduleLocalReminders(
+        buildLocalReminders(store.tasks, store.people, store.places, store.meals, new Date(), 30, { skipTaskDue, generic: genericRemindersEnabled(), events: store.events, myId }),
+      )
     })()
   }
-  // meals too: a takeaway logged tonight takes that place's nudge off the phone
+  // meals too: a takeaway logged tonight takes that place's nudge off the phone;
+  // and who I am, which may be known only after the last change, so a household
+  // member's events never stay on this phone for want of it
   useEffect(() => {
     if (!store.loaded) return
     const t = window.setTimeout(() => remindersRef.current(), 1500)
     return () => window.clearTimeout(t)
-  }, [store.loaded, store.tasks, store.people, store.places, store.meals])
+  }, [store.loaded, store.tasks, store.people, store.places, store.meals, store.events, myId])
 }

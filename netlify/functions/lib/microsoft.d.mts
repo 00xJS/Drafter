@@ -74,7 +74,10 @@ export interface TaskLike {
   [key: string]: unknown
 }
 export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
-/** Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none). */
+/**
+ * Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none);
+ * `opts.remind` keeps Outlook's own reminder on the copy (off: Drafter sends them).
+ */
 export declare function pushTask(
   userId: string,
   accountId: string,
@@ -82,10 +85,27 @@ export declare function pushTask(
   task: TaskLike,
   projectName: string | undefined,
   site: string,
-  opts?: { tz?: string | null },
+  opts?: { tz?: string | null; remind?: boolean },
 ): Promise<PushOutcome>
-/** Mirror one calendar entry into the account's Drafter calendar. */
-export declare function pushEntry(userId: string, accountId: string, calendarId: string, entry: EntryLike, site: string): Promise<PushOutcome>
+/** Mirror one calendar entry into the account's Drafter calendar; `opts.remind` as for pushTask. */
+export declare function pushEntry(userId: string, accountId: string, calendarId: string, entry: EntryLike, site: string, opts?: { remind?: boolean }): Promise<PushOutcome>
+/** The body a task is mirrored with. */
+export declare function graphTaskBody(
+  task: TaskLike,
+  projectName: string | undefined,
+  site: string,
+  tz?: string | null,
+  remind?: boolean,
+): {
+  subject: string
+  body: { contentType: 'text'; content: string }
+  isAllDay: boolean
+  showAs: 'free'
+  isReminderOn: boolean
+  start: { dateTime: string; timeZone: 'UTC' }
+  end: { dateTime: string; timeZone: 'UTC' }
+  singleValueExtendedProperties: { id: string; value: string }[]
+}
 
 /** A mirrored task as Outlook now holds it. */
 export interface TaskChangeRow {
@@ -94,7 +114,15 @@ export interface TaskChangeRow {
   start: string | null
   allDay: boolean
   updated: string
+  /** Its subject as it reads there, Drafter's priority mark included. Absent on a delete. */
+  title?: string
+  /** Its body there, Drafter's footer taken off. Absent on a delete. */
+  notes?: string
+  /** Only for a body that came back as HTML: the same with only the footer taken off. */
+  notesRaw?: string
 }
+/** One Graph event as a TaskChangeRow; null when it is not a mirrored task. */
+export declare function graphTaskChange(ev: unknown): TaskChangeRow | null
 /** Mirrored tasks changed in Outlook since `sinceIso`. */
 export declare function pullChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<TaskChangeRow[]>
 export declare function authUrl(clientId: string, redirectUri: string, state: string, loginHint?: string | null): string
@@ -131,6 +159,12 @@ export interface EntryChangeRow {
   end: string | null
   allDay: boolean
   updated: string
+  /** The owner's notes there, Drafter's footer taken off; only when the listing asked for the body. */
+  notes?: string
+  /** Only for a body that came back as HTML: the same with only the footer taken off. */
+  notesRaw?: string
+  /** Its place there ('' once emptied); only when the listing asked for it. */
+  location?: string
 }
 
 /** One of the account's calendars as Settings lists it; `drafter` marks the account's own Drafter calendar. */
@@ -149,6 +183,8 @@ export declare function resolveDrafterCalendar(userId: string, accountId: string
 export declare function graphEntryChange(ev: unknown): EntryChangeRow | null
 export declare function pullEntryChanges(userId: string, accountId: string, calendarId: string, sinceIso: string): Promise<EntryChangeRow[]>
 export declare function mirroredTaskIds(userId: string, accountId: string, calendarId: string): Promise<{ ids: Set<string>; complete: boolean }>
+/** The entry ids the Drafter events in this calendar carry, and whether the listing reached the end. */
+export declare function mirroredEntryIds(userId: string, accountId: string, calendarId: string): Promise<{ ids: Set<string>; complete: boolean }>
 export declare function outlookMissing(
   live: string[],
   present: Set<string> | string[],
@@ -161,12 +197,15 @@ export declare function graphEntryPlan(existing: { id: string } | null, entry: E
 export declare function graphEntryBody(
   entry: EntryLike,
   site: string,
+  opts?: { remind?: boolean },
 ): {
   subject: string
   body: { contentType: 'text'; content: string }
-  location?: { displayName: string }
+  /** Always sent, empty once cleared: a PATCH keeps what its body leaves out. */
+  location: { displayName: string }
   isAllDay: boolean
   showAs: 'busy' | 'free' | 'workingElsewhere'
+  isReminderOn: boolean
   start: { dateTime: string; timeZone: 'UTC' }
   end: { dateTime: string; timeZone: 'UTC' }
   singleValueExtendedProperties: [{ id: string; value: string }]
