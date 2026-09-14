@@ -2,6 +2,7 @@ import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type P
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendars'
 import { mealWrites } from '../../kitchen'
+import { newPlace } from '../../places'
 import { uid } from '../../utils'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -25,21 +26,13 @@ function afterWrites(lists: GroceryList[], rows: (Meal | GroceryList)[]): Grocer
  */
 export function useLifeActions({ store, showToast, newTask }: Deps) {
   /**
-   * A place created while planning a meal: somewhere you ate for the first time
-   * gets tracked from the meal picker, instead of a detour to the Places tab.
-   * Returns the row so the caller can attach it to the meal in the same tick.
+   * A place created while planning a meal, of the kind picked there: somewhere
+   * you ate for the first time gets tracked from the meal picker, instead of a
+   * detour to the Places tab. Returns the row so the caller can attach it to
+   * the meal in the same tick.
    */
   const createPlaceInline = (name: string, category: PlaceCategory): Place => {
-    const now = new Date().toISOString()
-    const place: Place = {
-      kind: 'place',
-      id: uid(),
-      name: name.trim(),
-      category,
-      color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-      createdAt: now,
-      updatedAt: now,
-    }
+    const place = newPlace(name, category, { id: uid(), color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)], now: new Date() })
     store.upsert(place)
     return place
   }

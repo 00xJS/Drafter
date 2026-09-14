@@ -157,6 +157,14 @@
   border-color: transparent;
 }
 
+/* A button waiting on something — a kind for somewhere new, a name — looks it.
+   A disabled Create place used to look exactly like a live one, so a tap that
+   did nothing read as broken rather than as "pick a kind first". */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn.danger:hover {
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
 }

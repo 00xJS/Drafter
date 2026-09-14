@@ -163,6 +163,49 @@
 .attendees {
   gap: 6px;
 }
+/* What kind of place somewhere new is (PlaceKindChooser): the nine kinds as one
+   row of small pills that wraps in whatever width it is given — a task's Where,
+   Saw them, Who was there? and the meal picker's Somewhere new. */
+.place-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.place-kinds .toggle {
+  padding: 3px 9px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+/* the question and its Create place, under the search that named the place */
+.place-new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.place-new-ask {
+  color: var(--muted);
+}
+.place-new-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  /* 375pt: three even columns, so the nine kinds are three tidy rows instead of
+     a ragged wrap, and a long label clips inside its own pill rather than
+     pushing the sheet sideways */
+  .place-kinds {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .place-kinds .toggle {
+    min-width: 0;
+    padding-inline: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 /* a person's 30/90-day windows in the open detail: the row already shows them
    above a phone's width, so they appear here only once the row hides them.
    Two classes, to outrank `.person-nums span`'s display: flex. */

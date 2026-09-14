@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { MEAL_SLOT_META, PLACE_CATEGORIES, PLACE_CATEGORY_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
+import { MEAL_SLOT_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { CookedIndex, MealMain, VisitIndex, lastCookedShort, lastWentShort, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
-import { placeByName } from '../places'
+import { placeByName, placeEmoji, placeFor } from '../places'
 import { ConfirmButton } from './ConfirmButton'
+import { PlaceKindChooser } from './PlaceKindChooser'
 
 // One control for "what are we eating on this day", used by the Kitchen tab's
 // week and by the calendar's day sheet. It lives here rather than in either of
@@ -26,6 +27,68 @@ export function foodFirst(places: Place[]): Place[] {
 
 /** The meals sides go with: a cooked lunch or dinner. Breakfast is one plate. */
 const SIDE_SLOTS: ReadonlySet<MealSlot> = new Set<MealSlot>(['lunch', 'dinner'])
+
+/**
+ * Eat out → Somewhere new…: where from, and — for a place not saved yet — what
+ * kind of place it is. A name you already have is that place (placeByName), so
+ * nothing is asked and Save just uses it; a new one keeps Save disabled until
+ * a kind is picked. It holds no state, so the row owns the name and the kind.
+ */
+export function SomewhereNew({
+  name,
+  kind,
+  places,
+  label,
+  onName,
+  onKind,
+  onSave,
+  onCancel,
+}: {
+  name: string
+  kind?: PlaceCategory
+  places: Place[]
+  /** The name field's label, which says which meal it is for. */
+  label: string
+  onName(name: string): void
+  onKind(kind: PlaceCategory): void
+  onSave(): void
+  onCancel(): void
+}) {
+  const saved = placeByName(name, places)
+  const ready = !!name.trim() && (!!saved || !!kind)
+  return (
+    <div className="meal-new-place">
+      <input
+        className="meal-new-place-name"
+        autoFocus
+        value={name}
+        onChange={e => onName(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onSave()
+          }
+          if (e.key === 'Escape') onCancel()
+        }}
+        placeholder="Where from?"
+        aria-label={label}
+      />
+      {saved ? (
+        <small className="muted meal-new-place-saved">
+          Your saved {placeEmoji(saved)} {saved.name}
+        </small>
+      ) : (
+        <PlaceKindChooser value={kind} onChange={onKind} />
+      )}
+      <button className="btn primary" onClick={onSave} disabled={!ready}>
+        Save
+      </button>
+      <button className="btn subtle" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  )
+}
 
 export function MealSlotRow({
   date,
@@ -77,7 +140,8 @@ export function MealSlotRow({
   // which inline form is open, if any: a place to eat out, a recipe to cook, or a side
   const [add, setAdd] = useState<null | 'place' | 'recipe' | 'side'>(null)
   const [newName, setNewName] = useState('')
-  const [newCategory, setNewCategory] = useState<PlaceCategory>('restaurant')
+  // the kind of somewhere new: none until picked, so Save waits for it
+  const [newCategory, setNewCategory] = useState<PlaceCategory | undefined>()
   const meta = MEAL_SLOT_META[slot]
   const slotName = meta.label.toLowerCase()
   /**
@@ -107,16 +171,17 @@ export function MealSlotRow({
   /**
    * Somewhere new. Typing a name that already exists reuses that place rather
    * than making a second copy of it — otherwise a fortnight of takeaways leaves
-   * three spellings of the same restaurant and the counts mean nothing.
+   * three spellings of the same restaurant and the counts mean nothing — and
+   * asks nothing more. A genuinely new one is saved only once its kind is
+   * picked (placeFor): no kind is assumed for it.
    */
   const addPlace = () => {
-    const name = newName.trim()
-    if (!name) return
-    const place = placeByName(name, places) ?? onCreatePlace(name, newCategory)
-    write({ out: true, placeId: place.id, title: place.name })
+    const hit = placeFor(newName, newCategory, places, onCreatePlace)
+    if (!hit) return
+    write({ out: true, placeId: hit.place.id, title: hit.place.name })
     setAdd(null)
     setNewName('')
-    setNewCategory('restaurant')
+    setNewCategory(undefined)
   }
 
   /**
@@ -169,6 +234,7 @@ export function MealSlotRow({
           value={current}
           onChange={e => {
             if (e.target.value === 'new') {
+              setNewCategory(undefined)
               setAdd('place')
               return
             }
@@ -271,40 +337,16 @@ export function MealSlotRow({
       )}
 
       {add === 'place' && (
-        <div className="meal-new-place">
-          <input
-            className="meal-new-place-name"
-            autoFocus
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                addPlace()
-              }
-              if (e.key === 'Escape') setAdd(null)
-            }}
-            placeholder="Where from?"
-            aria-label={`Name of the place for ${slotName} on ${date}`}
-          />
-          <select
-            value={newCategory}
-            onChange={e => setNewCategory(e.target.value as PlaceCategory)}
-            aria-label="Kind of place"
-          >
-            {PLACE_CATEGORIES.map(c => (
-              <option key={c} value={c}>
-                {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
-              </option>
-            ))}
-          </select>
-          <button className="btn primary" onClick={addPlace} disabled={!newName.trim()}>
-            Save
-          </button>
-          <button className="btn subtle" onClick={() => setAdd(null)}>
-            Cancel
-          </button>
-        </div>
+        <SomewhereNew
+          name={newName}
+          kind={newCategory}
+          places={places}
+          label={`Name of the place for ${slotName} on ${date}`}
+          onName={setNewName}
+          onKind={setNewCategory}
+          onSave={addPlace}
+          onCancel={() => setAdd(null)}
+        />
       )}
 
       {add === 'recipe' && (
