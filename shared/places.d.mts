@@ -6,7 +6,7 @@ export declare const PLACE_CATEGORIES: PlaceCategory[]
 export declare const PLACE_CATEGORY_META: Record<PlaceCategory, { label: string; emoji: string }>
 
 export declare function normalisePlaceText(s: string | null | undefined): string
-/** By name, other name (alias) or address; whole words only, a place's own name first. */
+/** By name or other name (alias) as whole words, or by an address that is the text or, naming a door, opens it; a place's own name wins a tie. */
 export declare function matchPlace(text: string | null | undefined, places: Place[]): Place | null
 
 export declare const MAX_PLACE_ALIASES: number

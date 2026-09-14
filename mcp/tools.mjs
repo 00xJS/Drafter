@@ -921,7 +921,7 @@ export const TOOLS = [
     name: 'create_place',
     scope: 'write',
     annotations: ADDS,
-    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due. address and aliases (other names it goes by) are optional: a calendar event whose location holds the name, one of the aliases or the address is marked as at this place, and placeName finds it by any of them.`,
+    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due. address and aliases (other names it goes by) are optional: a calendar event whose location holds the name or one of the aliases as whole words, or is the address (or opens with it, when it starts with a house number), is marked as at this place, and placeName finds it by any of them.`,
     inputSchema: {
       type: 'object',
       properties: {

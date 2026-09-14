@@ -191,6 +191,14 @@ describe("the meal picker's Somewhere new", () => {
     expect(kafka.category).toBe('cafe')
     expect(create).not.toHaveBeenCalled()
   })
+
+  it('reuses a saved place for one of its other names too, rather than making a second', () => {
+    const pret = place('pret', 'Pret A Manger', { category: 'cafe', emoji: '🥪', aliases: ['Pret'] })
+    const html = text(renderToStaticMarkup(form({ name: 'pret', places: [...places, pret] })))
+    expect(html).not.toContain('radiogroup')
+    expect(html).toContain('Your saved 🥪 Pret A Manger')
+    expect(placeFor('pret', undefined, [...places, pret], vi.fn(boom))).toEqual({ place: pret, created: false })
+  })
 })
 
 describe('Who was there?', () => {
@@ -274,6 +282,17 @@ describe('Who was there?', () => {
     expect(placeAtLocation('Dishoom, 7 Boundary St', places)).toBeUndefined()
     expect(placeAtLocation('  ', places)).toBeUndefined()
     expect(placeAtLocation(undefined, places)).toBeUndefined()
+  })
+
+  it('knows a place by another of its names the location opens with, in any script', () => {
+    const ramen = place('ramen', 'Tokyo Ramen', { aliases: ['東京ラーメン'] })
+    expect(matchPlace('東京ラーメン, Shibuya', [ramen])).toBeUndefined()
+    expect(placeAtLocation('東京ラーメン, Shibuya', [ramen])).toBe(ramen)
+    const html = text(
+      renderToStaticMarkup(<AttendancePicker event={event('東京ラーメン, Shibuya')} people={[mum]} places={[ramen]} onSavePlace={boom} onSavePerson={noop} onDone={noop} onClose={noop} />),
+    )
+    expect(html).toContain('Tokyo Ramen ✕</button>')
+    expect(html).not.toContain('as a place')
   })
 
   it('shows no Where at all for an event with no location', () => {

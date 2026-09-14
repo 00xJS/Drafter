@@ -80,20 +80,24 @@ export function placeNameKey(name: string | null | undefined): string {
  * Matching on placeNameKey is what stops a fortnight of takeaways leaving
  * three spellings of the same restaurant, which would split its counts and
  * make "how often do we eat there" meaningless, without ever taking one
- * place's name for another's.
+ * place's name for another's. A place's own name comes first, then one of
+ * its other names: "Pret" is the Pret A Manger that goes by it, not a second
+ * Pret beside it.
  */
 export function placeByName(name: string | null | undefined, places: readonly Place[]): Place | undefined {
   const key = placeNameKey(name)
   if (!key) return undefined
-  return places.find(p => !p.deletedAt && placeNameKey(p.name) === key)
+  const live = places.filter(p => !p.deletedAt)
+  return live.find(p => placeNameKey(p.name) === key) ?? live.find(p => (p.aliases ?? []).some(a => placeNameKey(a) === key))
 }
 
 /**
  * A place name being typed into a Where picker: the name tidied, the saved
  * place it already means, and up to eight places whose names hold it, that one
- * first. The saved place is placeByName's, so "Cafe Kafka" is "Café Kafka" and
- * the picker reuses it instead of offering to make a second copy, while
- * "金龙 Restaurant" is offered as new beside a saved "银龙 Restaurant".
+ * first and those that only another of their names holds last. The saved
+ * place is placeByName's, so "Cafe Kafka" is "Café Kafka" and "Pret" is Pret A
+ * Manger, and the picker reuses it instead of offering to make a second copy,
+ * while "金龙 Restaurant" is offered as new beside a saved "银龙 Restaurant".
  */
 export function placeSearch(query: string, places: readonly Place[]): { name: string; exact?: Place; matches: Place[] } {
   const name = query.trim().replace(/\s+/g, ' ')
@@ -101,8 +105,10 @@ export function placeSearch(query: string, places: readonly Place[]): { name: st
   const key = placeNameKey(name)
   const live = places.filter(p => !p.deletedAt)
   const exact = placeByName(name, live)
-  const hits = key ? live.filter(p => p.id !== exact?.id && placeNameKey(p.name).includes(key)) : []
-  return { name, exact, matches: (exact ? [exact, ...hits] : hits).slice(0, 8) }
+  const holds = (s: string) => !!key && placeNameKey(s).includes(key)
+  const byName = live.filter(p => p.id !== exact?.id && holds(p.name))
+  const byOther = live.filter(p => p.id !== exact?.id && !holds(p.name) && (p.aliases ?? []).some(holds))
+  return { name, exact, matches: [...(exact ? [exact] : []), ...byName, ...byOther].slice(0, 8) }
 }
 
 /**

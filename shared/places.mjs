@@ -67,16 +67,52 @@ export function tidyPlaceAliases(v, name) {
 }
 
 /**
- * The shortest name, other name or address that is looked for inside a
- * longer location. One letter ("Q") is too little to go on there: it links
- * only a location that is exactly it.
+ * The shortest name or other name looked for among the words of a longer
+ * text. One of one or two letters ("BK", "Q") is too little to go on there,
+ * where it could be any word ("Meet up at the station" for a bar called Up):
+ * it links only a text that is exactly it, or a location that opens with it
+ * as the venue, before the first comma or line ("BK, High St").
  */
-const MIN_TERM = 2
+const MIN_TERM = 3
 
-/** What a place goes by, normalised: its name, then its other names, then its address. */
+/**
+ * What a place goes by, normalised, each with its rank for a tie: its name
+ * (0), its other names (1) and its address (2). Whatever is not a string, as
+ * a malformed row may carry, is left out.
+ */
 function placeTerms(p) {
-  const aliases = Array.isArray(p.aliases) ? p.aliases : []
-  return [p.name, ...aliases, p.address].map(normalisePlaceText).filter(Boolean)
+  const aliases = Array.isArray(p.aliases) ? p.aliases.filter(a => typeof a === 'string') : []
+  return [
+    { n: normalisePlaceText(p.name), rank: 0 },
+    ...aliases.map(a => ({ n: normalisePlaceText(a), rank: 1 })),
+    { n: normalisePlaceText(typeof p.address === 'string' ? p.address : ''), rank: 2 },
+  ].filter(t => t.n)
+}
+
+/**
+ * normalisePlaceText letter for letter, except that a hyphen inside a word
+ * stays: "co-op high st" where normalisePlaceText gives "co op high st". The
+ * two line up, so a term found in one is checked in the other for a hyphen
+ * gluing it to the word beside it.
+ */
+function keepHyphens(s) {
+  return String(s ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, (run, at, all) => (run === '-' && at > 0 && at + 1 < all.length ? '-' : ' '))
+    .trim()
+}
+
+/**
+ * An address that names a door: it opens with a house number and runs to
+ * three words or more ("21-22 Warwick St, London"). A street, a town or a
+ * shopping centre ("Oxford St, London", "London W2") is every venue's on it,
+ * so an address without a number links only a location that is exactly it.
+ */
+function namesADoor(address) {
+  const words = address.split(' ')
+  return words.length >= 3 && /\d/.test(words[0])
 }
 
 /**
@@ -84,29 +120,43 @@ function placeTerms(p) {
  * a question, a place an assistant names. A place goes by its name, its other
  * names and its address, and the text finds it by any of them.
  *
- * The whole text being one of them wins first, a place's own name before
- * anyone's other name or address. Then one of them as a run of whole words
- * inside the text ("Nopi" in "NOPI, 21 Warwick St", an address in "Nopi, 21
- * Warwick St, London"), never part of a word, so an other name "Bo" is not
- * found in "Bob's Diner". Never fuzzier than that — a wrong match would log
- * an outing somewhere you never went.
+ * The whole text being one of them wins first: a place's own name before
+ * anyone's other name, and an other name before an address. Otherwise
+ * - a name or other name is found as a run of whole words inside the text
+ *   ("Nopi" in "NOPI, 21 Warwick St"), never part of a word: "Bo" is not in
+ *   "Bob's Diner", and a hyphen makes one word, so "Wok" is not in
+ *   "Wok-to-Walk". One of one or two letters counts only as the venue the
+ *   text opens with (MIN_TERM).
+ * - an address is found only at the start of the text, and only when it
+ *   names a door (namesADoor). After another venue's name it is that venue's
+ *   address too: a food hall, a shopping centre.
+ * The earliest found wins, then the longer, then a place's own name before an
+ * other name before an address. Never fuzzier than that — a wrong match would
+ * log an outing somewhere you never went.
  */
 export function matchPlace(text, places) {
-  const needle = normalisePlaceText(text)
+  const joined = keepHyphens(text)
+  const needle = joined.replace(/-/g, ' ')
   if (!needle) return null
-  const list = (places ?? []).filter(p => p && !p.deletedAt && p.name)
-  const exact = list.find(p => normalisePlaceText(p.name) === needle) ?? list.find(p => placeTerms(p).includes(needle))
-  if (exact) return exact
-  // a location string usually opens with the venue: the earliest-named place
-  // wins, and only between places starting at the same word does the longer win
+  const terms = (places ?? []).filter(p => p && !p.deletedAt && p.name).flatMap(p => placeTerms(p).map(t => ({ ...t, p })))
+  const exact = terms.filter(t => t.n === needle).sort((a, b) => a.rank - b.rank)[0]
+  if (exact) return exact.p
+  // a location string usually opens with the venue, before its first comma or line
+  const venue = normalisePlaceText(String(text ?? '').split(/[,;\n]/)[0])
   const padded = ` ${needle} `
-  const contained = list
-    .flatMap(p => placeTerms(p).map(n => ({ p, n })))
-    .filter(({ n }) => n.length >= MIN_TERM)
-    .map(x => ({ ...x, at: padded.indexOf(` ${x.n} `) }))
-    .filter(x => x.at >= 0)
-    .sort((a, b) => a.at - b.at || b.n.length - a.n.length)
-  return contained[0]?.p ?? null
+  const foundAt = ({ n, rank }) => {
+    if (rank === 2) return namesADoor(n) && padded.startsWith(` ${n} `) && joined[n.length] !== '-' ? 0 : -1
+    if (n.length < MIN_TERM) return n === venue ? 0 : -1
+    let at = padded.indexOf(` ${n} `)
+    // glued to the word beside it by a hyphen: try the next time it comes up
+    while (at >= 0 && (joined[at - 1] === '-' || joined[at + n.length] === '-')) at = padded.indexOf(` ${n} `, at + 1)
+    return at
+  }
+  const found = terms
+    .map(t => ({ ...t, at: foundAt(t) }))
+    .filter(t => t.at >= 0)
+    .sort((a, b) => a.at - b.at || b.n.length - a.n.length || a.rank - b.rank)
+  return found[0]?.p ?? null
 }
 
 const DAY_MS = 86_400_000

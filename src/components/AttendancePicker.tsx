@@ -38,10 +38,11 @@ export function locationPlaceName(location: string): string {
 }
 
 /**
- * The saved place an event's location means: one whose name it holds
- * (matchPlace), else one named just what the location opens with — 東京 in
- * "東京, Shibuya", which matchPlace's a–z key cannot see — so a place you have
- * is attached as it always was, never offered to be saved a second time.
+ * The saved place an event's location means: one it names (matchPlace), else
+ * one that goes by just what the location opens with, as its name or another
+ * of its names (placeByName) — 東京 in "東京, Shibuya", which matchPlace's a–z
+ * key cannot see — so a place you have is attached as it always was, never
+ * offered to be saved a second time.
  */
 export function placeAtLocation(location: string | undefined, places: Place[]): Place | undefined {
   if (!location?.trim()) return undefined

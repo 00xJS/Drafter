@@ -78,6 +78,25 @@ describe('a name is never taken for a different place', () => {
   })
 })
 
+describe('a place’s other names are that place too', () => {
+  const pret = place('pret', 'Pret A Manger', { category: 'cafe', emoji: '🥪', aliases: ['Pret', 'The Sandwich Shop'] })
+  const corner = place('corner', 'Sandwich Corner')
+
+  it('reuses Pret A Manger for "pret" rather than offering a second Pret', () => {
+    expect(placeSearch('pret', [pret]).exact).toBe(pret)
+    expect(enterPlace('pret', [pret], true)).toEqual({ pick: pret })
+    expect(enterPlace('THE sandwich SHOP', [pret], true)).toEqual({ pick: pret })
+    // a place called just that is still the one it means
+    const mine = place('mine', 'Pret')
+    expect(enterPlace('Pret', [pret, mine], true)).toEqual({ pick: mine })
+  })
+
+  it('lists a place that only another of its names holds, after those whose names do', () => {
+    expect(placeSearch('sandwich', [pret, corner]).matches).toEqual([corner, pret])
+    expect(enterPlace('sandwich', [pret, corner], true)).toEqual({ create: 'sandwich' })
+  })
+})
+
 describe('Enter in the picker', () => {
   it('picks the saved place rather than making a second copy', () => {
     expect(enterPlace('Cafe Kafka', places, true)).toEqual({ pick: kafka })
