@@ -1,10 +1,12 @@
 import Capacitor
 import Foundation
 
-/// The iPhone half of the garment cut-out: Vision lifts the garment out of the
-/// photo here, on the device, and the web view puts it on white (src/native.ts,
-/// liftSubject). Registered by DrafterBridgeViewController in SceneDelegate.swift,
-/// because `cap sync` lists only the plugins that come from node_modules.
+/// The iPhone half of the garment cut-out: Vision finds the subjects in the
+/// photo here, on the device, and hands back the frame (a JPEG) and their mask
+/// (a PNG's alpha); the web view lays the two together and puts the garment on
+/// white (src/native.ts, liftSubject). Registered by DrafterBridgeViewController
+/// in SceneDelegate.swift, because `cap sync` lists only the plugins that come
+/// from node_modules.
 @objc(SubjectLiftPlugin)
 public class SubjectLiftPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "SubjectLiftPlugin"
@@ -60,7 +62,8 @@ public class SubjectLiftPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 let lifted = try autoreleasepool { try SubjectLift.lift(data, maxDimension: maxDimension) }
                 call.resolve([
-                    "image": lifted.png.base64EncodedString(),
+                    "image": lifted.frame.base64EncodedString(),
+                    "alpha": lifted.alpha.base64EncodedString(),
                     "width": lifted.width,
                     "height": lifted.height,
                     "instanceMask": lifted.mask.base64EncodedString(),

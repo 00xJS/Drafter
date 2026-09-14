@@ -12,14 +12,19 @@ import Vision
 /// It only lifts. Which of the subjects is the garment is decided in the web
 /// view (chooseSubjects in src/cutoutmath.ts), where it is tested, and where a
 /// tap on the photo can pick another subject without asking Vision again. So
-/// every subject comes back over the whole frame, with the instance mask that
-/// tells them apart.
+/// the whole frame comes back, with every subject's soft mask over it and the
+/// instance mask that tells them apart.
 @available(iOS 17.0, macOS 14.0, *)
 enum SubjectLift {
     struct Result {
-        /// Every subject on transparency, over the whole upright, downscaled
-        /// frame Vision looked at, as an sRGB PNG.
-        let png: Data
+        /// The upright, downscaled frame Vision looked at, whole, as an sRGB
+        /// JPEG. With `alpha` laid over it, it is the subjects on transparency,
+        /// in a fraction of the bytes and the time a PNG of those took to write.
+        let frame: Data
+        /// Every subject's soft mask over the frame: a PNG whose alpha is the
+        /// mask and whose grey is black. Alpha is never colour managed, so the
+        /// web view's canvas reads back exactly these values.
+        let alpha: Data
         let width: Int
         let height: Int
         /// Vision's instance mask, a byte a pixel with no row padding: 0 for the
@@ -42,6 +47,9 @@ enum SubjectLift {
 
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
+    /// The frame's JPEG quality: the web view encodes the finished cut-out once more, at 0.88.
+    static let frameQuality = 0.92
+
     static func lift(_ data: Data, maxDimension: Int) throws -> Result {
         let frame = try uprightImage(data, maxDimension: maxDimension)
         let handler = VNImageRequestHandler(cgImage: frame, orientation: .up, options: [:])
@@ -54,28 +62,22 @@ enum SubjectLift {
         guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
             throw Failure.noSubject
         }
-        let masked: CVPixelBuffer
+        let soft: CVPixelBuffer
         do {
-            // not cropped: the instance mask covers the whole frame, and so must this
-            masked = try observation.generateMaskedImage(ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: false)
+            // every subject, at the frame's own size: the instance mask covers the whole frame, and so must this
+            soft = try observation.generateScaledMaskForImage(forInstances: observation.allInstances, from: handler)
         } catch {
             throw Failure.vision(error)
         }
-        // Vision copies the photo's own pixels, so they are in the photo's colour
-        // space (Display P3 on an iPhone). Say so, then write sRGB, which is what
-        // a canvas in the web view works in.
-        let source = frame.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let image = CIImage(cvPixelBuffer: masked, options: [.colorSpace: source])
-        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
-              let png = context.pngRepresentation(of: image, format: .RGBA8, colorSpace: srgb, options: [:])
-        else {
+        guard let jpeg = jpeg(of: frame), let png = alphaPNG(of: soft) else {
             throw Failure.encode
         }
         let (mask, maskWidth, maskHeight) = bytes(of: observation.instanceMask)
         return Result(
-            png: png,
-            width: CVPixelBufferGetWidth(masked),
-            height: CVPixelBufferGetHeight(masked),
+            frame: jpeg,
+            alpha: png,
+            width: frame.width,
+            height: frame.height,
             mask: mask,
             maskWidth: maskWidth,
             maskHeight: maskHeight,
@@ -99,6 +101,66 @@ enum SubjectLift {
             throw Failure.badImage
         }
         return image
+    }
+
+    /// The frame as JPEG. Vision saw the photo's own colours (Display P3 on an
+    /// iPhone), and this writes sRGB, which is what a canvas in the web view
+    /// works in.
+    static func jpeg(of frame: CGImage) -> Data? {
+        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
+        return context.jpegRepresentation(of: CIImage(cgImage: frame), colorSpace: srgb, options: [quality: frameQuality])
+    }
+
+    /// Vision's soft mask, a float a pixel, as the alpha of a grey-and-alpha
+    /// PNG whose grey is all black. Written byte by byte, so nothing between
+    /// here and the web view's canvas can recolour it.
+    static func alphaPNG(of soft: CVPixelBuffer) -> Data? {
+        let format = CVPixelBufferGetPixelFormatType(soft)
+        guard format == kCVPixelFormatType_OneComponent32Float || format == kCVPixelFormatType_OneComponent8 else { return nil }
+        CVPixelBufferLockBaseAddress(soft, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(soft, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(soft) else { return nil }
+        let width = CVPixelBufferGetWidth(soft)
+        let height = CVPixelBufferGetHeight(soft)
+        let rowBytes = CVPixelBufferGetBytesPerRow(soft)
+        var pixels = Data(count: width * height * 2)
+        pixels.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
+            guard let into = out.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for y in 0..<height {
+                let row = base.advanced(by: y * rowBytes)
+                // each pixel's grey stays 0; its alpha is the mask
+                if format == kCVPixelFormatType_OneComponent8 {
+                    for x in 0..<width {
+                        into[(y * width + x) * 2 + 1] = row.load(fromByteOffset: x, as: UInt8.self)
+                    }
+                } else {
+                    for x in 0..<width {
+                        let value = row.load(fromByteOffset: x * 4, as: Float32.self)
+                        into[(y * width + x) * 2 + 1] = UInt8((min(max(value, 0), 1) * 255).rounded())
+                    }
+                }
+            }
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData),
+              let image = CGImage(
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bitsPerPixel: 16,
+                  bytesPerRow: width * 2,
+                  space: CGColorSpaceCreateDeviceGray(),
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                  provider: provider,
+                  decode: nil,
+                  shouldInterpolate: false,
+                  intent: .defaultIntent
+              )
+        else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out as CFMutableData, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
     }
 
     /// The instance mask's bytes, row after row, without the buffer's row

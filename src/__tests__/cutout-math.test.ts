@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
+  boxMean,
   chooseSubjects,
   compositeOnWhite,
   CUTOUT,
   dilate,
   erode,
+  estimateForeground,
   fillSmallHoles,
   finishOnWhite,
   fitWithin,
+  guidedFilter,
+  joinAlpha,
   judgeMask,
   keepMainComponents,
   keepSubjects,
   liftedAlpha,
+  looksCutOut,
   maskStats,
   paddedBox,
   pickBest,
@@ -22,9 +27,13 @@ import {
   resizeArea,
   resizePlaneBilinear,
   smoothstep,
+  snapToEdges,
   subjectAt,
   subjectForTap,
+  subjectPoint,
+  subjectsForTaps,
   subjectsIn,
+  unionPlanes,
   usableMask,
   type InstanceMask,
   type MaskStats,
@@ -506,18 +515,40 @@ describe('Vision’s subjects', () => {
     expect(a(13, 16)).toBeLessThan(255)
   })
 
-  it('hands the cut-out the frame’s alpha with the right subjects left', () => {
+  it('hands the cut-out the frame’s alpha with the right subjects left, and a point on each', () => {
     const src = solid(40, 32, [240, 240, 240, 255])
-    // no tap: the rug goes and the trainers stay
-    const auto = liftedAlpha(src, rugAndShoes, undefined, [])!
+    // no tap: the rug goes and the trainers stay, each with a point on it for + Add another
+    const auto = liftedAlpha(src, rugAndShoes, [], [])!
     expect(auto).toMatchObject({ keep: [2, 3], doubtful: false })
     expect(auto.alpha[16 * 40 + 11]).toBe(255)
     expect(auto.alpha[0]).toBe(0)
-    // a tap on the left shoe: that one alone
-    expect(liftedAlpha(src, rugAndShoes, onLeftShoe, auto.keep)).toMatchObject({ keep: [2], doubtful: false })
+    expect(auto.points.map(p => subjectAt(rugAndShoes, p))).toEqual([2, 3])
+    // a tap on the left shoe: that one alone, and the tap is its point
+    expect(liftedAlpha(src, rugAndShoes, [onLeftShoe], auto.keep)).toMatchObject({ keep: [2], doubtful: false, points: [onLeftShoe] })
     // no mask: everything stays, and a tap has nothing to go on
-    expect(liftedAlpha(src, null, undefined, [])).toMatchObject({ keep: [], doubtful: false })
-    expect(liftedAlpha(src, null, onLeftShoe, [])).toBeNull()
+    expect(liftedAlpha(src, null, [], [])).toMatchObject({ keep: [], doubtful: false, points: [] })
+    expect(liftedAlpha(src, null, [onLeftShoe], [])).toBeNull()
+  })
+
+  it('keeps the subjects under several taps when they name two or more, and gives the rest to the web engine', () => {
+    // a tap picked the left shoe; + Add another taps the right one
+    expect(subjectsForTaps(rugAndShoes, [onLeftShoe, onRightShoe], [2])).toEqual([2, 3])
+    // in any order, and the rug too when it is tapped on purpose
+    expect(subjectsForTaps(rugAndShoes, [onRightShoe, { x: 0.02, y: 0.02 }], [3])).toEqual([1, 3])
+    // one tap on the background: the web engine takes them all
+    expect(subjectsForTaps(mask([2, 4, 4, 3, 8], [3, 12, 4, 3, 8]), [onLeftShoe, { x: 0.5, y: 0.02 }], [2])).toBeNull()
+    // every tap on one subject (trainers Vision saw as one with the rug): nothing for Vision to split
+    expect(subjectsForTaps(mask([1, 0, 0, 20, 16]), [onLeftShoe, onRightShoe], [1])).toBeNull()
+    // one tap is subjectForTap's
+    expect(subjectsForTaps(rugAndShoes, [onRightShoe], [2, 3])).toEqual([3])
+  })
+
+  it('puts a subject’s point on the subject, near the middle of its box, even where the middle is not on it', () => {
+    // an L, whose box's middle is off it
+    const ell = mask([4, 2, 2, 2, 10], [4, 2, 10, 10, 2])
+    expect(subjectAt(ell, subjectPoint(ell, 4)!)).toBe(4)
+    expect(subjectAt(rugAndShoes, subjectPoint(rugAndShoes, 3)!)).toBe(3)
+    expect(subjectPoint(rugAndShoes, 9)).toBeNull()
   })
 
   it('reads only a mask with a byte for every pixel', () => {
@@ -530,5 +561,176 @@ describe('Vision’s subjects', () => {
   it('tunes what stays beside the largest to a fifth, as the iPhone did before it chose in the page', () => {
     expect(CUTOUT.subjectShare).toBe(0.2)
     expect(CUTOUT.frameEdges).toBe(3)
+  })
+})
+
+describe('joinAlpha', () => {
+  it('lays the mask’s alpha into the frame’s colours', () => {
+    const frame = solid(4, 1, [10, 20, 30, 255])
+    const mask: Rgba = { width: 4, height: 1, data: Uint8ClampedArray.from([0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 128, 0, 0, 0, 255]) }
+    expect([...joinAlpha(frame, mask).data]).toEqual([10, 20, 30, 0, 10, 20, 30, 64, 10, 20, 30, 128, 10, 20, 30, 255])
+  })
+
+  it('stretches a mask of another size over the frame', () => {
+    const half: Rgba = { width: 2, height: 1, data: Uint8ClampedArray.from([0, 0, 0, 0, 0, 0, 0, 255]) }
+    const out = joinAlpha(solid(4, 2, [10, 20, 30, 255]), half)
+    expect([out.width, out.height]).toEqual([4, 2])
+    expect(out.data[3]).toBe(0)
+    expect(out.data[3 * 4 + 3]).toBe(255)
+    expect(out.data[1 * 4 + 3]).toBeGreaterThan(0)
+    expect(out.data[1 * 4 + 3]).toBeLessThan(out.data[2 * 4 + 3])
+  })
+})
+
+describe('unionPlanes', () => {
+  it('keeps the surest of the masks at each pixel', () => {
+    const a = plane(4, 1, x => [0.9, 0.1, 0, 0][x])
+    const b = plane(4, 1, x => [0, 0.2, 0.8, 0][x])
+    expect([...unionPlanes([a, b]).data]).toEqual([0.9, 0.2, 0.8, 0].map(Math.fround))
+    expect(unionPlanes([a]).data).toEqual(a.data)
+  })
+
+  it('refuses masks of two sizes', () => {
+    expect(() => unionPlanes([plane(4, 1, () => 1), plane(3, 1, () => 1)])).toThrow('different sizes')
+  })
+})
+
+describe('boxMean and guidedFilter', () => {
+  it('averages over the window, fewer pixels at the image’s edges', () => {
+    expect([...boxMean(plane(5, 1, x => x), 1).data]).toEqual([0.5, 1, 2, 3, 3.5])
+    for (const v of boxMean(plane(30, 20, () => 0.25), 7).data) expect(v).toBeCloseTo(0.25, 6)
+  })
+
+  it('moves a mask edge that is off the guide’s onto it', () => {
+    const guide = plane(40, 8, x => (x >= 20 ? 0.9 : 0.1))
+    const mask = plane(40, 8, x => (x >= 18 ? 1 : 0))
+    const q = guidedFilter(guide, mask, 8, 0.001)
+    const at = (x: number) => q.data[4 * 40 + x]
+    // two dark pixels the mask took are pulled down, and the light side stays
+    expect(at(19)).toBeLessThan(0.5)
+    expect(at(21)).toBeGreaterThan(0.9)
+  })
+
+  it('only blurs where the guide is flat', () => {
+    const mask = plane(40, 8, x => (x >= 18 ? 1 : 0))
+    const q = guidedFilter(plane(40, 8, () => 0.4), mask, 3, 0.001)
+    const twice = boxMean(boxMean(mask, 3), 3)
+    for (let i = 0; i < q.data.length; i++) expect(q.data[i]).toBeCloseTo(twice.data[i], 5)
+  })
+})
+
+describe('snapToEdges', () => {
+  // a dark floor, and a light garment from x 50 on
+  const photo = (() => {
+    const img = solid(100, 30, [40, 40, 40, 255])
+    for (let y = 0; y < 30; y++) for (let x = 50; x < 100; x++) img.data.set([220, 220, 220], (y * 100 + x) * 4)
+    return img
+  })()
+  const alphaOf = (f: (x: number) => number) => {
+    const alpha = new Uint8Array(100 * 30)
+    for (let y = 0; y < 30; y++) for (let x = 0; x < 100; x++) alpha[y * 100 + x] = f(x)
+    return alpha
+  }
+  const row = (alpha: Uint8Array, from: number, to: number) => [...alpha.subarray(15 * 100 + from, 15 * 100 + to)]
+
+  it('puts the web engine’s soft edge where the photo’s edge is', () => {
+    // a ramp over x 44 to 50, as a mask refined at 1024 px and grown to the work photo is
+    const soft = alphaOf(x => Math.round(255 * Math.min(1, Math.max(0, (x - 44) / 6))))
+    const out = snapToEdges(photo, soft)
+    for (const v of row(out, 40, 50)) expect(v).toBeLessThan(64)
+    expect(row(out, 50, 60)).toEqual(Array(10).fill(255))
+  })
+
+  it('takes a hard edge a pixel off back to the photo’s', () => {
+    const out = snapToEdges(photo, alphaOf(x => (x >= 49 ? 255 : 0)))
+    expect(out[15 * 100 + 49]).toBeLessThan(64)
+    expect(out[15 * 100 + 50]).toBe(255)
+  })
+
+  it('leaves the mask as it was where the photo is flat, and everything away from its edge', () => {
+    const soft = alphaOf(x => Math.round(255 * Math.min(1, Math.max(0, (x - 44) / 6))))
+    expect(snapToEdges(solid(100, 30, [128, 128, 128, 255]), soft)).toEqual(soft)
+    const out = snapToEdges(photo, soft)
+    for (let x = 0; x < 100; x++) if (x < 47 - CUTOUT.snapBandPx - 1 || x > 47 + CUTOUT.snapBandPx + 1) expect(out[15 * 100 + x], `x ${x}`).toBe(soft[15 * 100 + x])
+  })
+
+  it('hands back the same alpha when there is no edge at all', () => {
+    const none = new Uint8Array(100 * 30)
+    expect(snapToEdges(photo, none)).toBe(none)
+    const all = new Uint8Array(100 * 30).fill(255)
+    expect(snapToEdges(photo, all)).toBe(all)
+  })
+})
+
+describe('estimateForeground', () => {
+  // a red garment on a dark floor, with a rim of eight pixels where the alpha
+  // falls and the floor shows through: each pixel is α·red + (1 − α)·floor
+  const RED = [230, 30, 30]
+  const FLOOR = [20, 20, 20]
+  const a = (x: number) => Math.min(1, Math.max(0, (28 - x) / 8))
+  const photo: Rgba = { width: 60, height: 40, data: new Uint8ClampedArray(60 * 40 * 4) }
+  const alpha = new Uint8Array(60 * 40)
+  for (let y = 0; y < 40; y++) {
+    for (let x = 0; x < 60; x++) {
+      photo.data.set([...RED.map((c, k) => Math.round(a(x) * c + (1 - a(x)) * FLOOR[k])), 255], (y * 60 + x) * 4)
+      alpha[y * 60 + x] = Math.round(a(x) * 255)
+    }
+  }
+  const all = { x: 0, y: 0, width: 60, height: 40 }
+  const onWhite = (rgb: ArrayLike<number>, al: number) => [0, 1, 2].map(k => Math.round((al * rgb[k] + (255 - al) * 255) / 255))
+
+  it('gives the rim the garment’s colour, so white shows through it and not the floor', () => {
+    const fg = estimateForeground(photo, alpha, all)
+    const i = 20 * 60 + 24
+    expect(alpha[i]).toBe(128)
+    const ideal = onWhite(RED, 128)
+    const naive = onWhite(photo.data.subarray(i * 4, i * 4 + 3), 128)
+    const fixed = onWhite(fg.data.subarray(i * 4, i * 4 + 3), 128)
+    // the floor made the rim 52 levels too dark in red; now it is a few off
+    expect(ideal[0] - naive[0]).toBeGreaterThan(40)
+    for (let k = 0; k < 3; k++) expect(Math.abs(fixed[k] - ideal[k])).toBeLessThanOrEqual(6)
+  })
+
+  it('changes only the rim, and only inside the box', () => {
+    const fg = estimateForeground(photo, alpha, { x: 0, y: 0, width: 60, height: 20 })
+    for (let i = 0; i < alpha.length; i++) {
+      const rim = alpha[i] > 0 && alpha[i] < 255 && i < 20 * 60
+      if (!rim) expect([...fg.data.subarray(i * 4, i * 4 + 4)], `pixel ${i}`).toEqual([...photo.data.subarray(i * 4, i * 4 + 4)])
+    }
+    expect(fg.data[(10 * 60 + 24) * 4]).not.toBe(photo.data[(10 * 60 + 24) * 4])
+  })
+
+  it('is what finishOnWhite does with defringe, and only then', () => {
+    const plain = finishOnWhite(photo, alpha, 1200)!
+    const clean = finishOnWhite(photo, alpha, 1200, { defringe: true })!
+    expect(clean.crop).toEqual(plain.crop)
+    // the rim pixel at x 24, in the crop's own pixels
+    const at = (img: Rgba) => img.data[((20 - plain.crop.y) * img.width + (24 - plain.crop.x)) * 4]
+    expect(at(clean.image)).toBeGreaterThan(at(plain.image) + 40)
+  })
+})
+
+describe('looksCutOut', () => {
+  function framed(ground: number[], w = 90, h = 120): Rgba {
+    const img = solid(w, h, [...ground, 255])
+    for (let y = 12; y < h - 12; y++) for (let x = 12; x < w - 12; x++) img.data.set([30, 40, 90], (y * w + x) * 4)
+    return img
+  }
+
+  it('knows a cut-out by the white all round its edge, a JPEG’s few stray pixels aside', () => {
+    const cut = framed([255, 255, 255])
+    expect(looksCutOut(cut)).toBe(true)
+    for (let x = 30; x < 40; x++) cut.data.set([236, 236, 236], x * 4)
+    expect(looksCutOut(cut)).toBe(true)
+  })
+
+  it('knows a photo, even of a garment on a white sheet', () => {
+    expect(looksCutOut(framed([236, 238, 240]))).toBe(false)
+    expect(looksCutOut(framed([200, 190, 180]))).toBe(false)
+    // one white side is not a white edge
+    const side = framed([200, 190, 180])
+    for (let y = 0; y < 120; y++) side.data.set([255, 255, 255], y * 90 * 4)
+    expect(looksCutOut(side)).toBe(false)
+    expect(looksCutOut(solid(1, 1, [255, 255, 255, 255]))).toBe(false)
   })
 })

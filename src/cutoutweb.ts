@@ -1,7 +1,8 @@
 import { FilesetResolver, InteractiveSegmenterLegacy } from '@mediapipe/tasks-vision'
 import type { CutoutProgress, WebEngineProbe, WebSegment } from './cutout'
 import { CUTOUT_CACHE, CUTOUT_LOADER, CUTOUT_MODEL, CUTOUT_WASM, cutoutAssetsCached, loadCutoutAssets, type CutoutAsset } from './cutoutassets'
-import { CUTOUT, fitWithin, judgeMask, maskStats, pickBest, pickForegroundMask, planeToAlpha, refineMask, resizePlaneBilinear, type Plane, type Point, type Rgba } from './cutoutmath'
+import type { CutoutMath } from './cutoutjobs'
+import { CUTOUT, fitWithin, judgeMask, pickBest, pickForegroundMask, type MaskStats, type Plane, type Point, type Rgba } from './cutoutmath'
 import { isNative } from './native'
 
 /*
@@ -239,12 +240,14 @@ function runOnce(segmenter: InteractiveSegmenterLegacy, image: HTMLCanvasElement
 }
 
 /**
- * Find the garment in the work photo. With a tap, one run from that point.
- * Without one, the seeds in CUTOUT.seeds in turn, stopping at the first mask
- * that looks like one garment; else the best of the three. Each mask is
- * cleaned up at 1024 px (refineMask), then grown back to the work photo.
+ * Find the garment in the work photo. With taps, a run from each, and their
+ * masks as one (both shoes of a pair). Without any, the seeds in CUTOUT.seeds
+ * in turn, stopping at the first mask that looks like one garment; else the
+ * best of the three. MediaPipe runs here, on the page's thread; each mask is
+ * then cleaned up at 1024 px (refineMask) and grown back to the work photo by
+ * `math`, in the worker.
  */
-export async function segment(work: Rgba, opts: { point?: Point; signal: AbortSignal; onProgress?(p: CutoutProgress): void }): Promise<WebSegment | null> {
+export async function segment(work: Rgba, opts: { points: readonly Point[]; signal: AbortSignal; math: CutoutMath; onProgress?(p: CutoutProgress): void }): Promise<WebSegment | null> {
   clearTimeout(idle)
   running++
   // a download already under way (the warm-up's) is heard at once, so the watchdog rests
@@ -276,27 +279,37 @@ export async function segment(work: Rgba, opts: { point?: Point; signal: AbortSi
     g.drawImage(source, 0, 0, size.width, size.height)
     source.width = 0
     source.height = 0
-    const tried: { seed: Point; refined: Plane; stats: ReturnType<typeof maskStats> }[] = []
-    for (const seed of opts.point ? [opts.point] : CUTOUT.seeds) {
+    /** One run of the segmenter, from one point. */
+    const runFrom = async (seed: Point): Promise<Plane> => {
       // segment() holds the main thread until it is done: let "Cutting out…" paint first
       await new Promise(resolve => setTimeout(resolve, 0))
       throwIfAborted(opts.signal)
-      let conf: Plane
       try {
-        conf = runOnce(segmenter, input, seed)
+        return runOnce(segmenter, input, seed)
       } catch (err) {
         dropEngine()
         throw err
       }
-      const refined = refineMask(conf, seed)
-      const stats = maskStats(planeToAlpha(refined), refined.width, refined.height)
-      tried.push({ seed, refined, stats })
-      if (judgeMask(stats) === 'ok') break
     }
+    const taps = opts.points
+    const tried: { seed: Point; refined: Plane; stats: MaskStats }[] = []
+    if (taps.length) {
+      // each tap is a thing to keep: a run from each, and the masks as one
+      const confs: Plane[] = []
+      for (const tap of taps) confs.push(await runFrom(tap))
+      tried.push({ seed: taps[0], ...(await (taps.length === 1 ? opts.math.refine(confs[0], taps[0]) : opts.math.union(confs, taps))) })
+    } else {
+      for (const seed of CUTOUT.seeds) {
+        const judged = await opts.math.refine(await runFrom(seed), seed)
+        tried.push({ seed, ...judged })
+        if (judgeMask(judged.stats) === 'ok') break
+      }
+    }
+    throwIfAborted(opts.signal)
     const best = pickBest(tried)
     if (!best) return null
-    const alpha = planeToAlpha(resizePlaneBilinear(best.pick.refined, work.width, work.height))
-    return { alpha, doubtful: best.doubtful, point: best.pick.seed }
+    const alpha = await opts.math.grow(best.pick.refined, work.width, work.height)
+    return { alpha, doubtful: best.doubtful, point: best.pick.seed, points: taps.length ? [...taps] : [best.pick.seed] }
   } finally {
     for (const c of [source, input]) {
       c.width = 0

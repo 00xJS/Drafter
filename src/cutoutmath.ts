@@ -8,6 +8,11 @@
  * both: the garment on pure white, cropped with the same padding on every
  * side, at most 1200 px on its long edge.
  *
+ * The web engine's mask gets two more steps on the way: its edge is moved onto
+ * the photo's own (snapToEdges, a guided filter on luma), and its rim takes
+ * the garment's colour rather than the floor's (estimateForeground). The
+ * heavy steps run in a worker (src/cutoutjobs.ts), so the page keeps drawing.
+ *
  * Buffers are row-major. An Rgba has straight (not premultiplied) alpha, which
  * is what a canvas's getImageData gives back.
  */
@@ -43,6 +48,18 @@ export const CUTOUT = {
   // left out
   subjectShare: 0.2,
   subjectFringePx: 2,
+  // snapToEdges (the web engine's mask, on the work photo): the guided filter's
+  // radius and smoothing (on luma 0..1, so 0.001 answers to a step of about
+  // 0.03), and how far either side of the mask's edge it may move it
+  snapRadius: 8,
+  snapEps: 0.001,
+  snapBandPx: 6,
+  // estimateForeground: the radii of its two passes, wide and then fine
+  defringePx: [24, 4],
+  // looksCutOut: a cut-out's outermost pixels, white near enough, nearly all round
+  cutBorderPx: 2,
+  cutWhiteMin: 245,
+  cutWhiteShare: 0.98,
   // where the web engine looks without a tap: the middle, then a little above and below it
   seeds: [
     { x: 0.5, y: 0.5 },
@@ -205,6 +222,23 @@ export function planeToAlpha(p: Plane): Uint8Array {
   const alpha = new Uint8Array(p.width * p.height)
   for (let i = 0; i < alpha.length; i++) alpha[i] = Math.round(Math.min(1, Math.max(0, p.data[i])) * 255)
   return alpha
+}
+
+/**
+ * Vision's frame (a JPEG, opaque) with its subjects' mask (the alpha of a
+ * PNG) laid in: the frame's colours and the mask's alpha, which is what the
+ * lifted subjects on transparency were. A mask of another size is stretched
+ * to the frame.
+ */
+export function joinAlpha(frame: Rgba, mask: Rgba): Rgba {
+  const out = new Uint8ClampedArray(frame.data)
+  let alpha = alphaOf(mask)
+  if (mask.width !== frame.width || mask.height !== frame.height) {
+    const plane = { width: mask.width, height: mask.height, data: Float32Array.from(alpha, a => a / 255) }
+    alpha = planeToAlpha(resizePlaneBilinear(plane, frame.width, frame.height))
+  }
+  for (let i = 0; i < alpha.length; i++) out[i * 4 + 3] = alpha[i]
+  return { width: frame.width, height: frame.height, data: out }
 }
 
 /** 0 at or below `lo`, 1 at or above `hi`, and a smooth S between. */
@@ -414,6 +448,183 @@ export function refineMask(conf: Plane, seed?: Point): Plane {
   return { width, height, data: out }
 }
 
+/**
+ * Several masks as one, each pixel as sure as the surest of them: the web
+ * engine's answer to several taps, so both shoes of a pair stay. They are all
+ * made at the one mask size.
+ */
+export function unionPlanes(planes: readonly Plane[]): Plane {
+  const [first, ...rest] = planes
+  const out = new Float32Array(first.data)
+  for (const p of rest) {
+    if (p.width !== first.width || p.height !== first.height) throw new Error('unionPlanes: masks of different sizes')
+    for (let i = 0; i < out.length; i++) if (p.data[i] > out[i]) out[i] = p.data[i]
+  }
+  return { width: first.width, height: first.height, data: out }
+}
+
+// ---- the web engine's edge -----------------------------------------------------
+
+/** Rec. 601 luma of one pixel, 0..1: the guide snapToEdges follows. */
+const lumaAt = (data: Uint8ClampedArray, i: number) => (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255
+
+/**
+ * A summed-area table of a w × h field, (w + 1) × (h + 1) with a row and a
+ * column of zeros first: the sum over any rectangle is then four reads
+ * (sumIn). Written into `into` when it is given and big enough.
+ */
+function summed(field: ArrayLike<number>, w: number, h: number, into?: Float64Array<ArrayBuffer>): Float64Array<ArrayBuffer> {
+  const stride = w + 1
+  const sat = into && into.length >= stride * (h + 1) ? into : new Float64Array(stride * (h + 1))
+  sat.fill(0, 0, stride)
+  for (let y = 0; y < h; y++) {
+    const above = y * stride
+    const here = above + stride
+    let run = 0
+    sat[here] = 0
+    for (let x = 0; x < w; x++) {
+      run += field[y * w + x]
+      sat[here + x + 1] = sat[above + x + 1] + run
+    }
+  }
+  return sat
+}
+
+/** The sum of a summed-area table's field over columns x0 up to x1 and rows y0 up to y1, the ends not included. */
+const sumIn = (sat: Float64Array, stride: number, x0: number, y0: number, x1: number, y1: number) =>
+  sat[y1 * stride + x1] - sat[y0 * stride + x1] - sat[y1 * stride + x0] + sat[y0 * stride + x0]
+
+/**
+ * The mean of a plane over a (2r + 1)² window, cut off at the image's edges,
+ * where fewer pixels count. Prefix sums along the rows and then the columns,
+ * so the cost does not grow with r.
+ */
+export function boxMean(p: Plane, r: number): Plane {
+  const { width: w, height: h } = p
+  const sums = new Float64Array(Math.max(w, h) + 1)
+  const rows = new Float32Array(w * h)
+  for (let y = 0; y < h; y++) {
+    const row = y * w
+    for (let x = 0; x < w; x++) sums[x + 1] = sums[x] + p.data[row + x]
+    for (let x = 0; x < w; x++) {
+      const lo = Math.max(0, x - r)
+      const hi = Math.min(w, x + r + 1)
+      rows[row + x] = (sums[hi] - sums[lo]) / (hi - lo)
+    }
+  }
+  const out = new Float32Array(w * h)
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) sums[y + 1] = sums[y] + rows[y * w + x]
+    for (let y = 0; y < h; y++) {
+      const lo = Math.max(0, y - r)
+      const hi = Math.min(h, y + r + 1)
+      out[y * w + x] = (sums[hi] - sums[lo]) / (hi - lo)
+    }
+  }
+  return { width: w, height: h, data: out }
+}
+
+/**
+ * The guided filter's two answers: the input remade, window by window, as a
+ * straight-line function of the guide (so it can change only where the guide
+ * does), and how clear an edge the guide has round each pixel, from 0 where
+ * it is flat to nearly 1 where its variance is well over eps.
+ */
+function guided(guide: Plane, input: Plane, r: number, eps: number): { q: Plane; edge: Plane } {
+  const { width, height } = guide
+  const n = width * height
+  const plane = (data: Float32Array): Plane => ({ width, height, data })
+  const products = new Float32Array(n)
+  for (let i = 0; i < n; i++) products[i] = guide.data[i] * guide.data[i]
+  const meanII = boxMean(plane(products), r).data
+  for (let i = 0; i < n; i++) products[i] = guide.data[i] * input.data[i]
+  const meanIP = boxMean(plane(products), r).data
+  const meanI = boxMean(guide, r).data
+  const meanP = boxMean(input, r).data
+  const a = new Float32Array(n)
+  const b = new Float32Array(n)
+  const edge = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const variance = Math.max(0, meanII[i] - meanI[i] * meanI[i])
+    a[i] = (meanIP[i] - meanI[i] * meanP[i]) / (variance + eps)
+    b[i] = meanP[i] - a[i] * meanI[i]
+    edge[i] = variance / (variance + eps)
+  }
+  const meanA = boxMean(plane(a), r).data
+  const meanB = boxMean(plane(b), r).data
+  const q = new Float32Array(n)
+  for (let i = 0; i < n; i++) q[i] = meanA[i] * guide.data[i] + meanB[i]
+  return { q: plane(q), edge: boxMean(plane(edge), r) }
+}
+
+/** He, Sun and Tang's guided filter: `input` smoothed so that its edges follow the guide's. */
+export const guidedFilter = (guide: Plane, input: Plane, r: number, eps: number): Plane => guided(guide, input, r, eps).q
+
+/**
+ * The web engine's mask, moved onto the photo's own edges. It is refined at
+ * 1024 px and grown to the work photo, so its edge is soft and can sit a
+ * pixel or two off the garment's. Within CUTOUT.snapBandPx of that edge, a
+ * guided filter on the photo's luma puts it where the photo really changes,
+ * and the smoothstep refineMask ends with makes it as crisp again. Where the
+ * photo is flat there (a garment the tone of the floor), there is nothing to
+ * follow, and the mask stays as it was; further in and further out, nothing
+ * changes. The same alpha back when it has no edge at all.
+ */
+export function snapToEdges(src: Rgba, alpha: Uint8Array): Uint8Array {
+  const { width: w, height: h } = src
+  const b = CUTOUT.snapBandPx
+  const hard = new Uint8Array(w * h)
+  for (let i = 0; i < hard.length; i++) hard[i] = alpha[i] >= 128 ? 1 : 0
+  // the band: each pixel with both garment and ground within snapBandPx of it
+  const sat = summed(hard, w, h)
+  const band = new Uint8Array(w * h)
+  let [left, top, right, bottom] = [w, h, -1, -1]
+  for (let y = 0; y < h; y++) {
+    const ya = Math.max(0, y - b)
+    const yb = Math.min(h, y + b + 1)
+    for (let x = 0; x < w; x++) {
+      const xa = Math.max(0, x - b)
+      const xb = Math.min(w, x + b + 1)
+      const garment = sumIn(sat, w + 1, xa, ya, xb, yb)
+      if (garment === 0 || garment === (xb - xa) * (yb - ya)) continue
+      band[y * w + x] = 1
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+    }
+  }
+  if (right < 0) return alpha
+  // the band, and round it everything the filter reads: two windows of snapRadius
+  const reach = 2 * CUTOUT.snapRadius + 1
+  const x0 = Math.max(0, left - reach)
+  const y0 = Math.max(0, top - reach)
+  const rw = Math.min(w, right + reach + 1) - x0
+  const rh = Math.min(h, bottom + reach + 1) - y0
+  const guide = new Float32Array(rw * rh)
+  const input = new Float32Array(rw * rh)
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const s = (y0 + y) * w + x0 + x
+      guide[y * rw + x] = lumaAt(src.data, s)
+      input[y * rw + x] = alpha[s] / 255
+    }
+  }
+  const { q, edge } = guided({ width: rw, height: rh, data: guide }, { width: rw, height: rh, data: input }, CUTOUT.snapRadius, CUTOUT.snapEps)
+  const out = new Uint8Array(alpha)
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const s = (y0 + y) * w + x0 + x
+      if (!band[s]) continue
+      // the photo's edge where it has one, the mask as it was where it has none
+      const j = y * rw + x
+      const t = edge.data[j]
+      out[s] = Math.round((t * smoothstep(CUTOUT.edgeLo, CUTOUT.edgeHi, q.data[j]) + (1 - t) * input[j]) * 255)
+    }
+  }
+  return out
+}
+
 // ---- judging a mask ----------------------------------------------------------
 
 /** How many sides of a width × height image `box` comes within max(2 px, 1%) of. */
@@ -501,16 +712,111 @@ export function compositeOnWhite(src: Rgba, alpha: Uint8Array, crop: Box): Rgba 
 }
 
 /**
+ * The garment's own colour at its soft edge. A pixel on the rim of a mask is
+ * part garment and part ground, so laid on white as it is, a dark floor shows
+ * as a dark fringe round the garment. This is Forte and Pitié's blur fusion:
+ * the garment's colour near a pixel is the mean of the colours round it
+ * weighted by their alpha, the ground's the mean weighted by what alpha
+ * leaves, and the pixel's own colour is then shared out between the two. Two
+ * passes, wide and then fine (CUTOUT.defringePx), a colour at a time. Only
+ * the rim changes, the pixels inside `box` with some alpha but not all of it,
+ * so the sums round them come from summed-area tables and nothing else is
+ * worked out; the rest of the copy is `src` as it was.
+ */
+export function estimateForeground(src: Rgba, alpha: Uint8Array, box: Box): Rgba {
+  const out = new Uint8ClampedArray(src.data)
+  const done = { width: src.width, height: src.height, data: out }
+  const bx0 = Math.max(0, box.x)
+  const by0 = Math.max(0, box.y)
+  const bx1 = Math.min(src.width, box.x + box.width)
+  const by1 = Math.min(src.height, box.y + box.height)
+  // the box, and round it what the widest pass reads
+  const reach = Math.max(...CUTOUT.defringePx)
+  const x0 = Math.max(0, bx0 - reach)
+  const y0 = Math.max(0, by0 - reach)
+  const w = Math.max(0, Math.min(src.width, bx1 + reach) - x0)
+  const h = Math.max(0, Math.min(src.height, by1 + reach) - y0)
+  const rim: number[] = []
+  for (let y = by0; y < by1; y++) {
+    for (let x = bx0; x < bx1; x++) {
+      const a = alpha[y * src.width + x]
+      if (a > 0 && a < 255) rim.push((y - y0) * w + (x - x0))
+    }
+  }
+  if (!rim.length) return done
+  const n = w * h
+  const stride = w + 1
+  const a = new Float32Array(n)
+  const rest = new Float32Array(n)
+  const image = new Float32Array(n)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      a[y * w + x] = alpha[(y0 + y) * src.width + x0 + x] / 255
+      rest[y * w + x] = 1 - a[y * w + x]
+    }
+  }
+  const sureF = summed(a, w, h)
+  const sureB = summed(rest, w, h)
+  const fg = new Float32Array(n)
+  const bg = new Float32Array(n)
+  const weighted = new Float32Array(n)
+  let sumF = new Float64Array(0)
+  let sumB = new Float64Array(0)
+  const nextF = new Float32Array(rim.length)
+  const nextB = new Float32Array(rim.length)
+  for (let c = 0; c < 3; c++) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) image[y * w + x] = src.data[((y0 + y) * src.width + x0 + x) * 4 + c] / 255
+    fg.set(image)
+    bg.set(image)
+    for (const r of CUTOUT.defringePx) {
+      for (let i = 0; i < n; i++) weighted[i] = fg[i] * a[i]
+      sumF = summed(weighted, w, h, sumF)
+      for (let i = 0; i < n; i++) weighted[i] = bg[i] * rest[i]
+      sumB = summed(weighted, w, h, sumB)
+      for (let k = 0; k < rim.length; k++) {
+        const i = rim[k]
+        const x = i % w
+        const y = (i - x) / w
+        const [xa, ya, xb, yb] = [Math.max(0, x - r), Math.max(0, y - r), Math.min(w, x + r + 1), Math.min(h, y + r + 1)]
+        const weightF = sumIn(sureF, stride, xa, ya, xb, yb)
+        const weightB = sumIn(sureB, stride, xa, ya, xb, yb)
+        // far from any garment (or any ground) there is nothing to weigh, and the estimate stays
+        const f = weightF > 1e-6 ? sumIn(sumF, stride, xa, ya, xb, yb) / weightF : fg[i]
+        const g = weightB > 1e-6 ? sumIn(sumB, stride, xa, ya, xb, yb) / weightB : bg[i]
+        const residual = image[i] - a[i] * f - rest[i] * g
+        nextF[k] = Math.min(1, Math.max(0, f + a[i] * residual))
+        nextB[k] = Math.min(1, Math.max(0, g + rest[i] * residual))
+      }
+      // An opaque pixel's own colour is its garment colour, and a clear one's
+      // its ground's; the other estimate there has no weight. So only the rim
+      // moves, and every pass reads the one before it whole.
+      for (let k = 0; k < rim.length; k++) {
+        fg[rim[k]] = nextF[k]
+        bg[rim[k]] = nextB[k]
+      }
+    }
+    for (const i of rim) {
+      const x = i % w
+      out[((y0 + (i - x) / w) * src.width + x0 + x) * 4 + c] = Math.round(fg[i] * 255)
+    }
+  }
+  return done
+}
+
+/**
  * The one finish for both engines: the tight box of the garment, padded evenly,
  * composited on white and area-resized to at most `outEdge` on its long side.
- * Null when the alpha holds no garment at all.
+ * `defringe` first gives the rim the garment's own colour (estimateForeground),
+ * for the web engine, whose mask is drawn over the garment's ground. Null
+ * when the alpha holds no garment at all.
  */
-export function finishOnWhite(src: Rgba, alpha: Uint8Array, outEdge: number): { image: Rgba; crop: Box; stats: MaskStats } | null {
+export function finishOnWhite(src: Rgba, alpha: Uint8Array, outEdge: number, opts: { defringe?: boolean } = {}): { image: Rgba; crop: Box; stats: MaskStats } | null {
   const stats = maskStats(alpha, src.width, src.height)
   if (!stats.box) return null
   const crop = paddedBox(stats.box, CUTOUT.padRatio, CUTOUT.padMin)
+  const colours = opts.defringe ? estimateForeground(src, alpha, crop) : src
   const size = fitWithin(crop.width, crop.height, outEdge)
-  return { image: resizeArea(compositeOnWhite(src, alpha, crop), size.width, size.height), crop, stats }
+  return { image: resizeArea(compositeOnWhite(colours, alpha, crop), size.width, size.height), crop, stats }
 }
 
 // ---- Vision's subjects (the iPhone) --------------------------------------------
@@ -641,21 +947,71 @@ export function keepSubjects(alpha: Uint8Array, width: number, height: number, m
 }
 
 /**
- * Vision's lift as the cut-out uses it: which subjects, and the frame's alpha
- * with only them left. A tap picks by subjectForTap, else chooseSubjects
- * decides; with no mask to read, or none that holds a subject, everything
- * Vision lifted stays (`keep` empty). Null only for a tap Vision has nothing
- * for, which the web engine then takes.
+ * What several taps keep: the subjects under them, when every tap is on one
+ * and they name two or more (both shoes of a pair, after a tap picked only
+ * one). Null, and the web engine takes the taps, when one is on the
+ * background, or when every one is on a single subject, which Vision cannot
+ * split any further (trainers it saw as one with their rug). One tap is
+ * subjectForTap's.
  */
-export function liftedAlpha(src: Rgba, mask: InstanceMask | null, tap: Point | undefined, shown: readonly number[]): { alpha: Uint8Array; keep: number[]; doubtful: boolean } | null {
+export function subjectsForTaps(mask: InstanceMask, taps: readonly Point[], shown: readonly number[]): number[] | null {
+  if (taps.length === 1) return subjectForTap(mask, taps[0], shown)
+  const labels = taps.map(t => subjectAt(mask, t))
+  if (!labels.length || labels.includes(0)) return null
+  const distinct = [...new Set(labels)].sort((a, b) => a - b)
+  return distinct.length >= 2 ? distinct : null
+}
+
+/** A point on a subject, normalised: its pixel nearest the middle of its box. Null when the mask holds none of it. */
+export function subjectPoint(mask: InstanceMask, label: number): Point | null {
+  const { width: w, height: h, data } = mask
+  let [left, top, right, bottom] = [w, h, -1, -1]
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[y * w + x] !== label) continue
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+    }
+  }
+  if (right < 0) return null
+  const cx = (left + right) / 2
+  const cy = (top + bottom) / 2
+  let best = { x: left, y: top, d: Infinity }
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const d = (x - cx) ** 2 + (y - cy) ** 2
+      if (data[y * w + x] === label && d < best.d) best = { x, y, d }
+    }
+  }
+  return { x: (best.x + 0.5) / w, y: (best.y + 0.5) / h }
+}
+
+/**
+ * Vision's lift as the cut-out uses it: which subjects, the frame's alpha
+ * with only them left, and a point on each thing kept, which the preview adds
+ * a tap to when one more thing should stay. Taps pick by subjectsForTaps and
+ * are those points; without any, chooseSubjects decides and each kept subject
+ * gets its subjectPoint. With no mask to read, or none that holds a subject,
+ * everything Vision lifted stays (`keep` empty). Null only for taps Vision
+ * has nothing for, which the web engine then takes.
+ */
+export function liftedAlpha(
+  src: Rgba,
+  mask: InstanceMask | null,
+  taps: readonly Point[],
+  shown: readonly number[],
+): { alpha: Uint8Array; keep: number[]; doubtful: boolean; points: Point[] } | null {
   const alpha = alphaOf(src)
-  if (tap) {
-    const keep = mask ? subjectForTap(mask, tap, shown) : null
-    return mask && keep ? { alpha: keepSubjects(alpha, src.width, src.height, mask, keep), keep, doubtful: false } : null
+  if (taps.length) {
+    const keep = mask ? subjectsForTaps(mask, taps, shown) : null
+    return mask && keep ? { alpha: keepSubjects(alpha, src.width, src.height, mask, keep), keep, doubtful: false, points: [...taps] } : null
   }
   const choice = mask ? chooseSubjects(mask) : null
-  if (!mask || !choice) return { alpha, keep: [], doubtful: false }
-  return { alpha: keepSubjects(alpha, src.width, src.height, mask, choice.keep), keep: choice.keep, doubtful: choice.doubtful }
+  if (!mask || !choice) return { alpha, keep: [], doubtful: false, points: [] }
+  const points = choice.keep.map(label => subjectPoint(mask, label)).filter((p): p is Point => !!p)
+  return { alpha: keepSubjects(alpha, src.width, src.height, mask, choice.keep), keep: choice.keep, doubtful: choice.doubtful, points }
 }
 
 // ---- the preview's tap ---------------------------------------------------------
@@ -673,4 +1029,35 @@ export function pointInContainedImage(tap: Point, box: { width: number; height: 
   const x = (tap.x - (box.width - w) / 2) / w
   const y = (tap.y - (box.height - h) / 2) / h
   return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null
+}
+
+// ---- a photo that is a cut-out already -----------------------------------------
+
+/**
+ * Whether a photo is a cut-out already. finishOnWhite pads every one with pure
+ * white on all four sides, so its outermost pixels are white all the way
+ * round (near enough, after a JPEG or two and a thumbnail's resize). A photo
+ * of a garment on a bed, a floor or a door is not, even on a white sheet,
+ * whose white is never that white from edge to edge.
+ */
+export function looksCutOut(img: Rgba): boolean {
+  const { width: w, height: h, data } = img
+  const ring = Math.min(CUTOUT.cutBorderPx, Math.floor(Math.min(w, h) / 2))
+  if (ring < 1) return false
+  let seen = 0
+  let white = 0
+  const look = (i: number) => {
+    seen++
+    if (Math.min(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) >= CUTOUT.cutWhiteMin) white++
+  }
+  for (let y = 0; y < h; y++) {
+    if (y < ring || y >= h - ring) for (let x = 0; x < w; x++) look(y * w + x)
+    else {
+      for (let k = 0; k < ring; k++) {
+        look(y * w + k)
+        look(y * w + w - 1 - k)
+      }
+    }
+  }
+  return white >= seen * CUTOUT.cutWhiteShare
 }

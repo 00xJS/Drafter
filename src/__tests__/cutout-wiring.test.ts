@@ -53,6 +53,16 @@ describe('the build and the host', () => {
     expect(precache).toContain("'magic-touch-v1', 'magic_touch.tflite'")
     expect(precache).toContain("['vision_wasm_internal.js', 'vision_wasm_internal.wasm']")
   })
+
+  it('holds the whole precache to a byte budget, counted from the files dist/sw.js names', () => {
+    const precache = read('scripts/check-precache.mjs')
+    const budget = Number(/const PRECACHE_BUDGET_KIB = (\d+)/.exec(precache)?.[1])
+    // room for the app to grow, and none for a model or a library to slip in: 17.5 MB would be twelve times over
+    expect(budget).toBeGreaterThan(1200)
+    expect(budget).toBeLessThanOrEqual(2048)
+    expect(precache).toContain('over its budget of')
+    expect(precache).toContain('its install would fail')
+  })
 })
 
 describe('the files match the constants', () => {
@@ -183,7 +193,16 @@ describe('the WASM runtime’s own third-party parts', () => {
 })
 
 describe('privacy: the photo stays on the device', () => {
-  const files = ['src/cutout.ts', 'src/cutoutmath.ts', 'src/cutoutassets.ts', 'src/cutoutweb.ts', 'src/components/CutoutSheet.tsx']
+  const files = [
+    'src/cutout.ts',
+    'src/cutoutmath.ts',
+    'src/cutoutjobs.ts',
+    'src/cutout.worker.ts',
+    'src/cutoutassets.ts',
+    'src/cutoutweb.ts',
+    'src/components/CutoutSheet.tsx',
+    'src/components/wardrobe/CutoutLater.tsx',
+  ]
 
   it.each(files)('%s talks to no server, no storage and no other host', file => {
     const src = read(file)
@@ -207,6 +226,34 @@ describe('the web engine loads only when needed', () => {
     expect(read('src/cutout.ts')).toContain("import('./cutoutweb')")
     // and it takes nothing but types back from cutout.ts, so there is no cycle at run time
     expect(read('src/cutoutweb.ts')).toMatch(/^import type \{[^}]+\} from '\.\/cutout'$/m)
+  })
+
+  it('is reached from the piece sheet only through import(), as from Add clothing', () => {
+    const later = read('src/components/wardrobe/CutoutLater.tsx')
+    expect(later).not.toMatch(/from '\.\.\/CutoutSheet'|from '\.\.\/\.\.\/cutout'/)
+    expect(later).toContain("import('../CutoutSheet')")
+    expect(later).toContain("import('../../cutout')")
+  })
+})
+
+describe('the maths off the page’s thread', () => {
+  it('runs in a module worker that Vite builds from the line in cutout.ts that starts it', () => {
+    const cutout = read('src/cutout.ts')
+    expect(cutout).toContain("new Worker(new URL('./cutout.worker.ts', import.meta.url), { type: 'module' })")
+    expect(read('vite.config.ts')).toMatch(/worker: \{ format: 'es' \}/)
+    // and in the page, where no worker will start
+    expect(cutout).toContain('inPageMath')
+  })
+
+  it('never takes MediaPipe, the DOM or the bridge with it: those stay on the main thread', () => {
+    for (const file of ['src/cutout.worker.ts', 'src/cutoutjobs.ts']) {
+      const src = read(file)
+      expect(src, file).not.toMatch(/from '(@mediapipe\/tasks-vision|\.\/cutoutweb|\.\/cutout|\.\/native|react)'/)
+      expect(src, file).not.toContain('import(')
+    }
+    expect(read('src/cutout.worker.ts')).toMatch(/^import \{ answer, type JobRequest \} from '\.\/cutoutjobs'$/m)
+    // the web engine hands its masks to the jobs, and takes only a type from them
+    expect(read('src/cutoutweb.ts')).toMatch(/^import type \{ CutoutMath \} from '\.\/cutoutjobs'$/m)
   })
 })
 

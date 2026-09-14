@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { CutoutPreview, CutoutSheet, type CutoutPreviewProps, type PreviewState } from '../components/CutoutSheet'
+import { CutoutLater, cutoutLaterLabel } from '../components/wardrobe/CutoutLater'
 import { CUTOUT_TOTAL_BYTES } from '../cutoutassets'
 
 // "Check the cut-out", in every state it can be in. The copy is pinned: each
@@ -110,6 +113,18 @@ describe('the cut-out', () => {
     expect(text(render({ doubtful: true }))).toContain(note)
     expect(text(html)).not.toContain(note)
   })
+
+  it('offers + Add another beside the hint, after which a tap keeps one more thing', () => {
+    const offered = render({ onAdding: noop })
+    expect(button(offered, '+ Add another')?.attrs).toBe(' type="button" class="toggle" aria-pressed="false"')
+    const adding = render({ onAdding: noop, adding: true })
+    expect(button(adding, '+ Add another')?.attrs).toBe(' type="button" class="toggle on" aria-pressed="true"')
+    expect(text(adding)).toContain('Now tap the other thing to keep, in the photo.')
+    expect(adding).toContain('aria-label="Tap another thing to keep it too"')
+    // nothing to add to where the photo cannot be tapped, or where no one listens
+    expect(button(render({ onAdding: noop, canPick: false }), '+ Add another')).toBeUndefined()
+    expect(button(html, '+ Add another')).toBeUndefined()
+  })
 })
 
 describe('no cut-out', () => {
@@ -127,6 +142,16 @@ describe('no cut-out', () => {
     expect(text(html)).toContain('Cutting out needs a one-time download (17.5 MB), and you’re offline. Use the photo as it is for now.')
     expect(classOf(html, 'Use original')).toBe('btn primary')
     expect(html).not.toContain('Tap the garment to pick it')
+    expect(button(html, 'Cut out now')).toBeUndefined()
+  })
+
+  it('offers Cut out now once the device is back online', () => {
+    const html = render({ state: 'unavailable', cutoutUrl: undefined, reason: 'offline', backOnline: true })
+    expect(text(html)).toContain('You’re back online, so the cut-out can be made now.')
+    expect(classOf(html, 'Cut out now')).toBe('btn primary')
+    expect(classOf(html, 'Use original')).toBe('btn')
+    // a failure is not an offline try: Try again, as ever
+    expect(button(render({ state: 'unavailable', cutoutUrl: undefined, reason: 'failed', backOnline: true }), 'Cut out now')).toBeUndefined()
   })
 
   it('says when this browser cannot do it', () => {
@@ -149,6 +174,8 @@ describe('every state', () => {
     { state: 'downloading', progress: { loaded: 1, total: 2 } },
     { state: 'cutting' },
     { state: 'done', doubtful: true },
+    { state: 'done', onAdding: noop, adding: true },
+    { state: 'unavailable', reason: 'offline', backOnline: true },
     ...(['no-garment', 'offline', 'unsupported', 'failed'] as const).map(reason => ({ state: 'unavailable' as PreviewState, reason })),
   ]
 
@@ -158,6 +185,45 @@ describe('every state', () => {
       expect(found.length, over.state).toBeGreaterThanOrEqual(2)
       for (const b of found) expect(b.attrs, `${over.state} ${b.label}`).toMatch(/^ type="button"/)
     }
+  })
+})
+
+describe('Cut out background, from the piece sheet', () => {
+  const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+
+  it('says what it will do, and is not there where it cannot run', () => {
+    expect(cutoutLaterLabel(true, 'native', false)).toBe('Cut out background')
+    expect(cutoutLaterLabel(true, 'web', false)).toBe('Cut out background')
+    // offline before the one-time download, and then back online
+    expect(cutoutLaterLabel(true, 'offline', true)).toBeNull()
+    expect(cutoutLaterLabel(true, 'web', true)).toBe('Cut out now')
+    expect(cutoutLaterLabel(true, 'native', true)).toBe('Cut out now')
+    // a cut-out already, a photo not read yet, a browser that cannot, a question not answered
+    expect(cutoutLaterLabel(false, 'web', false)).toBeNull()
+    expect(cutoutLaterLabel(null, 'web', false)).toBeNull()
+    expect(cutoutLaterLabel(true, 'unsupported', false)).toBeNull()
+    expect(cutoutLaterLabel(true, null, false)).toBeNull()
+  })
+
+  it('is one line in the piece sheet, and replaces the photo as Replace photo does', () => {
+    const sheet = read('../components/wardrobe/GarmentSheet.tsx')
+    expect(sheet.match(/<CutoutLater /g)).toHaveLength(1)
+    expect(sheet).toContain('<CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} />')
+  })
+
+  it('shows nothing until it has read the photo, so a server render has no button', () => {
+    const T = '2026-09-14T09:00:00.000Z'
+    const html = renderToStaticMarkup(
+      <CutoutLater garment={{ kind: 'garment', id: 'g1', name: 'Tee', type: 'top', photoId: 'p1', thumbId: 't1', createdAt: T, updatedAt: T }} onCutout={noop} />,
+    )
+    expect(html).toBe('')
+  })
+
+  it('keeps to the wardrobe’s rules: no project, no haptics, and a sheet of its own over the piece’s', () => {
+    const later = read('../components/wardrobe/CutoutLater.tsx')
+    expect(later).not.toMatch(/project/i)
+    expect(later).not.toMatch(/haptic\(/)
+    expect(later).toContain('createPortal(')
   })
 })
 

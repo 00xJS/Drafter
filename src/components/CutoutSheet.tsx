@@ -27,9 +27,15 @@ export interface CutoutPreviewProps {
   progress?: { loaded: number; total: number }
   reason?: CutoutReason
   doubtful?: boolean
-  point?: Point
+  /** Where the cut-out was taken from, a dot on the photo for each: the taps, or the web engine's seed. */
+  points?: readonly Point[]
   /** The web engine can run here (bundled, cached or online), so a tap on the photo can pick. */
   canPick: boolean
+  /** "+ Add another" is pressed: the next tap keeps one more thing, not a different one. */
+  adding?: boolean
+  onAdding?(on: boolean): void
+  /** Offline when the cut-out was tried, and online again now: Cut out now runs it (onRetry). */
+  backOnline?: boolean
   view: 'cutout' | 'photo'
   onView(v: 'cutout' | 'photo'): void
   /** A tap at this point; null for a keyboard press, which runs the automatic seeds again. */
@@ -51,15 +57,20 @@ const UNAVAILABLE: Record<CutoutReason, string> = {
   cancelled: 'The cut-out didn’t work this time.',
 }
 
+/** Offline when it was tried, online now. */
+const BACK_ONLINE = 'You’re back online, so the cut-out can be made now.'
+
 export function CutoutPreview(props: CutoutPreviewProps) {
-  const { photoUrl, cutoutUrl, state, progress, reason, doubtful, point, canPick, view, onView, onPick, onAccept, onUseOriginal, onRetake, onRetry } = props
-  // the photo's own size, which places the dot: known once it has loaded
+  const { photoUrl, cutoutUrl, state, progress, reason, doubtful, points, canPick, adding, onAdding, backOnline, view, onView, onPick, onAccept, onUseOriginal, onRetake, onRetry } =
+    props
+  // the photo's own size, which places the dots: known once it has loaded
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
   const accept = useRef<HTMLButtonElement>(null)
   const done = state === 'done' && !!cutoutUrl
   const unavailable = state === 'unavailable'
   const pickable = canPick && (done || (unavailable && reason === 'no-garment'))
   const failed = unavailable && (reason === 'failed' || reason === 'cancelled')
+  const cutNow = unavailable && reason === 'offline' && !!backOnline && !!onRetry
 
   useEffect(() => {
     if (done) accept.current?.focus({ preventScroll: true })
@@ -78,11 +89,13 @@ export function CutoutPreview(props: CutoutPreviewProps) {
   const photo = photoUrl ? (
     <img src={photoUrl} alt="Your photo" onLoad={e => setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })} />
   ) : null
-  // drawn in the photo's own coordinates, so `meet` lays it over the contained image exactly
+  // drawn in the photo's own coordinates, so `meet` lays them over the contained image exactly
   const dot =
-    point && natural ? (
+    points?.length && natural ? (
       <svg className="cutout-dot" viewBox={`0 0 ${natural.width} ${natural.height}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-        <circle cx={point.x * natural.width} cy={point.y * natural.height} r={Math.max(natural.width, natural.height) * 0.018} />
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x * natural.width} cy={p.y * natural.height} r={Math.max(natural.width, natural.height) * 0.018} />
+        ))}
       </svg>
     ) : null
   const percent = progress && progress.total > 0 ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 0
@@ -93,9 +106,11 @@ export function CutoutPreview(props: CutoutPreviewProps) {
         ? `Getting the cut-out ready · ${mb(progress?.loaded ?? 0)} of ${mb(progress?.total ?? CUTOUT_TOTAL_BYTES)} MB`
         : state === 'cutting'
           ? 'Cutting out…'
-          : unavailable
-            ? UNAVAILABLE[reason ?? 'failed']
-            : ''
+          : cutNow
+            ? BACK_ONLINE
+            : unavailable
+              ? UNAVAILABLE[reason ?? 'failed']
+              : ''
 
   return (
     <>
@@ -114,7 +129,7 @@ export function CutoutPreview(props: CutoutPreviewProps) {
           <figure className="cutout-pane cutout-photo">
             <figcaption>Photo</figcaption>
             {pickable ? (
-              <button type="button" className="cutout-stage cutout-pick" aria-label="Tap the garment to pick it" onClick={pick}>
+              <button type="button" className="cutout-stage cutout-pick" aria-label={adding ? 'Tap another thing to keep it too' : 'Tap the garment to pick it'} onClick={pick}>
                 {photo}
                 {dot}
               </button>
@@ -147,7 +162,17 @@ export function CutoutPreview(props: CutoutPreviewProps) {
           </>
         )}
         {done && doubtful && <p className="cutout-note">This may have missed the garment. Tap it in the photo, or use the original.</p>}
-        {done && canPick && <small className="cutout-small">Picked the wrong thing? Tap the garment in the photo.</small>}
+        {done && canPick && (
+          <div className="cutout-hint">
+            <small className="cutout-small">{adding ? 'Now tap the other thing to keep, in the photo.' : 'Picked the wrong thing? Tap the garment in the photo.'}</small>
+            {/* both shoes of a pair: the next tap adds to the cut-out instead of starting again */}
+            {onAdding && (
+              <button type="button" className={adding ? 'toggle on' : 'toggle'} aria-pressed={!!adding} onClick={() => onAdding(!adding)}>
+                + Add another
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <footer className="modal-foot">
         <button type="button" className="btn subtle" onClick={onRetake}>
@@ -159,9 +184,14 @@ export function CutoutPreview(props: CutoutPreviewProps) {
             Try again
           </button>
         )}
-        <button type="button" className={unavailable ? 'btn primary' : 'btn'} onClick={onUseOriginal}>
+        <button type="button" className={unavailable && !cutNow ? 'btn primary' : 'btn'} onClick={onUseOriginal}>
           Use original
         </button>
+        {cutNow && (
+          <button type="button" className="btn primary" onClick={onRetry}>
+            Cut out now
+          </button>
+        )}
         {done && (
           <button ref={accept} type="button" className="btn primary" onClick={onAccept}>
             Looks good
@@ -175,8 +205,25 @@ export function CutoutPreview(props: CutoutPreviewProps) {
 interface Job {
   photo: Blob
   point?: Point
+  /** Several taps: everything the cut-out held, and one more thing. */
+  points?: Point[]
   web: boolean
   n: number
+}
+
+/** Whether the browser says it is online, kept up to date. */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false)
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine !== false)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+  return online
 }
 
 /**
@@ -207,6 +254,7 @@ function useGarmentCutout(initial: Blob) {
     setResult(undefined)
     void extractGarment(job.photo, {
       point: job.point,
+      points: job.points,
       engine: job.web ? 'web' : 'auto',
       signal: controller.signal,
       onProgress: p => {
@@ -259,11 +307,13 @@ function useGarmentCutout(initial: Blob) {
     result,
     cutoutUrl,
     canPick,
-    point: job.point ?? result?.point,
+    points: job.points ?? (job.point ? [job.point] : result?.point ? [result.point] : undefined),
     // A tap picks among Vision's subjects first, where it lifted this photo
     // (the extractor moves on to the web engine when Vision has nothing more);
     // a key press asks the web engine's own automatic seeds for a second opinion.
     pick: (point: Point | null) => setJob(j => ({ photo: j.photo, point: point ?? undefined, web: point === null, n: j.n + 1 })),
+    // + Add another: a point on everything the cut-out holds, and the tap
+    add: (point: Point) => setJob(j => ({ photo: j.photo, points: [...(result?.points ?? []), point], web: false, n: j.n + 1 })),
     retry: () => setJob(j => ({ ...j, n: j.n + 1 })),
     retake: (photo: Blob) => setJob(j => ({ photo, web: false, n: j.n + 1 })),
   }
@@ -283,6 +333,8 @@ const stem = (photo: Blob) => (photo instanceof File && photo.name ? photo.name.
 export function CutoutSheet({ photo, onDone, onCancel }: CutoutSheetProps) {
   const cut = useGarmentCutout(photo)
   const [view, setView] = useState<'cutout' | 'photo'>('cutout')
+  const [adding, setAdding] = useState(false)
+  const online = useOnline()
   const picker = useRef<HTMLInputElement>(null)
   const { result } = cut
   return (
@@ -295,13 +347,22 @@ export function CutoutSheet({ photo, onDone, onCancel }: CutoutSheetProps) {
         progress={cut.progress}
         reason={result?.reason}
         doubtful={result?.doubtful}
-        point={cut.point}
+        points={cut.points}
         canPick={cut.canPick}
+        adding={adding}
+        onAdding={on => {
+          setAdding(on)
+          // the phone's one stage shows the photo, ready for the tap
+          if (on) setView('photo')
+        }}
+        backOnline={result?.reason === 'offline' && online}
         view={view}
         onView={setView}
         onPick={point => {
           setView('cutout')
-          cut.pick(point)
+          if (adding && point) cut.add(point)
+          else cut.pick(point)
+          setAdding(false)
         }}
         onAccept={() => {
           if (result && result.method !== 'none') onDone(garmentFile(result.image, `${stem(cut.photo)}-cutout.jpg`), { cutout: true, method: result.method })
@@ -323,6 +384,7 @@ export function CutoutSheet({ photo, onDone, onCancel }: CutoutSheetProps) {
           e.target.value = ''
           if (!file) return
           setView('cutout')
+          setAdding(false)
           cut.retake(file)
         }}
       />

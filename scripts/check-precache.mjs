@@ -64,4 +64,22 @@ if (runtimes.length !== 1 || whole.length !== 1) {
   console.error(`check-precache: dist/cutout/ must hold exactly one mediapipe-<version>/ with vision_wasm_internal.js and .wasm, not ${runtimes.join(', ') || 'none'}`)
   process.exit(1)
 }
+// The precache is what every install and every app update downloads before
+// the app can open offline, so it has a budget. Raise it on purpose, with the
+// reason in the commit, rather than let it creep.
+const PRECACHE_BUDGET_KIB = 1536
+const entries = [...sw.matchAll(/\burl:\s*"([^"]+)"|"url":\s*"([^"]+)"/g)].map(m => m[1] ?? m[2])
+const absent = entries.filter(url => !existsSync(join(dist, url)))
+if (absent.length) {
+  console.error(`check-precache: dist/sw.js precaches files that are not in dist, so its install would fail:\n  ${absent.join('\n  ')}`)
+  process.exit(1)
+}
+const sizes = entries.map(url => ({ url, bytes: statSync(join(dist, url)).size })).sort((a, b) => b.bytes - a.bytes)
+const kib = sizes.reduce((sum, e) => sum + e.bytes, 0) / 1024
+if (kib > PRECACHE_BUDGET_KIB) {
+  const largest = sizes.slice(0, 5).map(e => `${e.url} (${(e.bytes / 1024).toFixed(1)} KiB)`)
+  console.error(`check-precache: the precache is ${kib.toFixed(1)} KiB, over its budget of ${PRECACHE_BUDGET_KIB} KiB; the largest files:\n  ${largest.join('\n  ')}`)
+  process.exit(1)
+}
+console.log(`check-precache: ${entries.length} precached files, ${kib.toFixed(1)} KiB of a ${PRECACHE_BUDGET_KIB} KiB budget`)
 console.log(`check-precache: all ${assets.length} files in dist/assets are precached by dist/sw.js`)

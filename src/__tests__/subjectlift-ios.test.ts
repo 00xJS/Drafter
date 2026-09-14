@@ -57,8 +57,22 @@ describe('the plugin and its wrapper agree', () => {
     const resolved = /call\.resolve\(\[([\s\S]*?)\]\)/.exec(swiftFunc(plugin, 'lift'))?.[1] ?? ''
     const keys = [...resolved.matchAll(/"(\w+)":/g)].map(m => m[1])
     expect(keys.sort()).toEqual(tsMembers('SubjectLiftPayload').sort())
-    // the frame with every subject, and the instance mask the web view chooses among them with
-    expect(keys).toEqual(['found', 'height', 'image', 'instanceMask', 'maskHeight', 'maskWidth', 'width'])
+    // the frame as a JPEG, every subject's mask as a PNG's alpha, and the
+    // instance mask the web view chooses among them with
+    expect(keys).toEqual(['alpha', 'found', 'height', 'image', 'instanceMask', 'maskHeight', 'maskWidth', 'width'])
+  })
+
+  it('on the transport: a JPEG of the frame and a PNG of the mask, not a PNG of the subjects', () => {
+    const lift = swiftFunc(core, 'lift')
+    expect(lift).toContain('generateScaledMaskForImage(forInstances: observation.allInstances, from: handler)')
+    expect(lift).not.toContain('generateMaskedImage')
+    expect(swiftFunc(core, 'jpeg')).toContain('jpegRepresentation(of: CIImage(cgImage: frame), colorSpace: srgb')
+    // the mask is the PNG's alpha, which no colour management touches, written by ImageIO
+    const png = swiftFunc(core, 'alphaPNG')
+    expect(png).toContain('CGImageAlphaInfo.last')
+    expect(png).toContain('"public.png"')
+    expect(native).toContain("frame: new Blob([base64ToBytes(r.image)], { type: 'image/jpeg' })")
+    expect(native).toContain("alpha: new Blob([base64ToBytes(r.alpha)], { type: 'image/png' })")
   })
 
   it('on the codes a lift rejects with', () => {
@@ -99,6 +113,15 @@ describe('the plugin is in the app', () => {
     const didLoad = swiftFunc(scene, 'capacitorDidLoad')
     expect(didLoad).toContain('bridge?.registerPluginInstance(AppearancePlugin())')
     expect(didLoad).toContain('bridge?.registerPluginInstance(SubjectLiftPlugin())')
+  })
+
+  it('names the same bridge as Main.storyboard’s first view controller, from the App target', () => {
+    const storyboard = read(`${APP}/Base.lproj/Main.storyboard`)
+    const initial = /initialViewController="([^"]+)"/.exec(storyboard)?.[1]
+    const controller = new RegExp(`<viewController id="${initial}"[^>]*>`).exec(storyboard)?.[0] ?? ''
+    expect(controller).toContain('customClass="DrafterBridgeViewController"')
+    expect(controller).toContain('customModule="App" customModuleProvider="target"')
+    expect(storyboard).not.toContain('CAPBridgeViewController')
   })
 })
 

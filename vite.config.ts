@@ -138,6 +138,9 @@ export default defineConfig({
       },
     }),
   ],
+  // the garment cut-out's maths runs in a module worker (src/cutout.worker.ts),
+  // built as an ES module so it loads the way the page's own chunks do
+  worker: { format: 'es' },
   build: {
     rollupOptions: {
       output: {

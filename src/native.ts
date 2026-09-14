@@ -661,8 +661,10 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
 
 /** What ios/App/App/SubjectLiftPlugin.swift resolves `lift` with. */
 interface SubjectLiftPayload {
-  /** Every subject Vision found, on transparency, over the whole upright frame: an sRGB PNG, as base64. */
+  /** The upright frame Vision looked at, whole: an sRGB JPEG, as base64. */
   image: string
+  /** Every subject Vision found, as a soft mask over that frame: the alpha of a PNG (its grey is black), as base64. */
+  alpha: string
   width: number
   height: number
   /** Vision's instance mask, a byte a pixel (0 the background, 1…n each subject), as base64. Empty if it could not be read. */
@@ -680,7 +682,7 @@ interface SubjectLiftPlugin {
 }
 
 export type SubjectLift =
-  | { ok: true; cutout: Blob; width: number; height: number; mask: { width: number; height: number; data: Uint8Array }; found: number }
+  | { ok: true; frame: Blob; alpha: Blob; width: number; height: number; mask: { width: number; height: number; data: Uint8Array }; found: number }
   | { ok: false; reason: 'unavailable' | 'too-large' | 'no-subject' | 'failed' }
 
 /** A photo bigger than this is never sent over the bridge (as base64 it would be 21.3M characters); the web engine takes it. */
@@ -755,10 +757,12 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * Lift the subjects out of `photo` with Apple's Vision, on this iPhone: every
- * one it found on transparency, over the whole frame (at most `maxDimension`
- * on its long side), as a PNG, with the instance mask that tells them apart.
- * Which of them is the garment is the cut-out's to say (chooseSubjects in
+ * Lift the subjects out of `photo` with Apple's Vision, on this iPhone: the
+ * whole frame it looked at (at most `maxDimension` on its long side) as a
+ * JPEG, every subject it found as a soft mask over it (a PNG's alpha), and the
+ * instance mask that tells them apart. A JPEG and a mask cross the bridge in
+ * a fraction of what the lifted subjects as one PNG did, and are quicker to
+ * write. Which of them is the garment is the cut-out's to say (chooseSubjects in
  * src/cutoutmath.ts). Never throws. `unavailable` covers the web, the
  * Simulator, iOS 16 and an app without the plugin; after it, `too-large` and
  * `failed` (a Vision error, or no answer in 20 s) the cut-out moves on to the
@@ -772,7 +776,15 @@ export async function liftSubject(photo: Blob, maxDimension: number): Promise<Su
     const image = bytesToBase64(new Uint8Array(await photo.arrayBuffer()))
     const r = await withTimeout(plugin.lift({ image, maxDimension }), SUBJECT_LIFT_TIMEOUT_MS)
     const mask = { width: r.maskWidth, height: r.maskHeight, data: base64ToBytes(r.instanceMask ?? '') }
-    return { ok: true, cutout: new Blob([base64ToBytes(r.image)], { type: 'image/png' }), width: r.width, height: r.height, mask, found: r.found }
+    return {
+      ok: true,
+      frame: new Blob([base64ToBytes(r.image)], { type: 'image/jpeg' }),
+      alpha: new Blob([base64ToBytes(r.alpha)], { type: 'image/png' }),
+      width: r.width,
+      height: r.height,
+      mask,
+      found: r.found,
+    }
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code
     if (code === 'NO_SUBJECT') return { ok: false, reason: 'no-subject' }

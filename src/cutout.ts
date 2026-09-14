@@ -1,4 +1,5 @@
-import { CUTOUT, finishOnWhite, fitWithin, judgeMask, liftedAlpha, usableMask, type Box, type Point, type Rgba } from './cutoutmath'
+import { inPageMath, workerMath, type CutoutMath, type WorkerLike } from './cutoutjobs'
+import { CUTOUT, fitWithin, judgeMask, looksCutOut, usableMask, type Box, type Point, type Rgba } from './cutoutmath'
 import { canLiftSubject, liftSubject, type SubjectLift } from './native'
 
 /*
@@ -11,8 +12,9 @@ import { canLiftSubject, liftSubject, type SubjectLift } from './native'
  * after Vision fails) MediaPipe's MagicTouch model runs in the page
  * (src/cutoutweb.ts, loaded on first use), and a tap on the photo tells it
  * which thing is the garment. Both paths finish through one tested function,
- * finishOnWhite (src/cutoutmath.ts). Nothing about the photo leaves the
- * device: the only requests are for our own /cutout/ files.
+ * finishOnWhite (src/cutoutmath.ts), which runs with the rest of the maths in
+ * a worker (src/cutoutjobs.ts). Nothing about the photo leaves the device:
+ * the only requests are for our own /cutout/ files.
  *
  * Nothing touches the DOM at module load, so node tests import this and drive
  * every branch through createGarmentExtractor with the I/O faked.
@@ -28,8 +30,14 @@ export interface CutoutProgress {
 }
 
 export interface CutoutOptions {
-  /** A tap, normalised 0..1 in the upright photo. Always runs the web engine, from this point. */
+  /** A tap, normalised 0..1 in the upright photo: Vision's subject under it where Vision lifted this photo, else the web engine from this point. */
   point?: Point
+  /**
+   * Several taps, each on a thing to keep (both shoes of a pair): Vision's
+   * subjects under them where they name two or more, else the web engine from
+   * each, its masks as one.
+   */
+  points?: readonly Point[]
   signal?: AbortSignal
   onProgress?(p: CutoutProgress): void
   /** 'web' skips Vision (tests, device checks). Default 'auto'. */
@@ -49,6 +57,12 @@ export interface CutoutResult {
   height: number
   /** The seed the web engine used, for the preview's dot. */
   point?: Point
+  /**
+   * A point on each thing the cut-out holds: the taps, the web engine's seed,
+   * or one on each of Vision's subjects. The preview adds a tap to these when
+   * one more thing should stay.
+   */
+  points?: Point[]
   ms: number
 }
 
@@ -63,11 +77,12 @@ export interface WebEngineProbe {
   online: boolean
 }
 
-/** The web engine's answer for the work photo: an alpha the same size, and the seed it used. */
+/** The web engine's answer for the work photo: an alpha the same size, the seed it used, and every seed the mask came from. */
 export interface WebSegment {
   alpha: Uint8Array
   doubtful: boolean
   point: Point
+  points: Point[]
 }
 
 export interface WebEngine {
@@ -75,15 +90,19 @@ export interface WebEngine {
   probe(): Promise<WebEngineProbe>
   /**
    * Fetch the files on first use, make the segmenter once, and find the garment
-   * in the work photo. Progress is 'download' while files arrive, then
-   * 'cutting' once they are all here. Null when there was nothing to find.
+   * in the work photo: from each tap in `points`, as one mask, or with none
+   * from its own seeds. Its maths runs through `math`. Progress is 'download'
+   * while files arrive, then 'cutting' once they are all here. Null when there
+   * was nothing to find.
    */
-  segment(work: Rgba, opts: { point?: Point; signal: AbortSignal; onProgress?(p: CutoutProgress): void }): Promise<WebSegment | null>
+  segment(work: Rgba, opts: { points: readonly Point[]; signal: AbortSignal; math: CutoutMath; onProgress?(p: CutoutProgress): void }): Promise<WebSegment | null>
 }
 
 /** The cut-out's I/O. extractGarment runs on domExtractorDeps(); tests pass fakes. */
 export interface ExtractorDeps {
   lift(photo: Blob, maxDimension: number): Promise<SubjectLift>
+  /** The maths: a worker in the page (src/cutoutjobs.ts), the same jobs in place in tests. */
+  math: CutoutMath
   webEngine: WebEngine
   /** Decode upright (EXIF orientation applied), fitted to maxEdge, with straight alpha. */
   decodeRgba(image: Blob, maxEdge: number): Promise<Rgba>
@@ -122,8 +141,9 @@ const smallCrop = (crop: Box) => Math.max(crop.width, crop.height) < CUTOUT.smal
  *    failed moves on. A tap on a photo Vision has lifted picks the subject
  *    under it at once, without a second lift; one on the background, or on the
  *    subject already cut out, has nothing more from Vision and moves on.
- * 2. The web engine, where chooseWebEngine allows it, from the tap if there
- *    was one.
+ *    Several taps keep the subjects under them, when they name two or more.
+ * 2. The web engine, where chooseWebEngine allows it, from the taps if there
+ *    were any, their masks as one.
  * Never rejects: every failure resolves as method 'none' with a reason, so a
  * capture step cannot break.
  */
@@ -154,24 +174,35 @@ export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?
     const disarm = () => clearTimeout(watchdog)
 
     try {
-      // 1. Vision, on this iPhone: a tap only on a photo it has lifted already
+      // what the owner pointed at: a tap, or several (both shoes of a pair)
+      const taps: Point[] = opts.points?.length ? [...opts.points] : opts.point ? [opts.point] : []
+      // 1. Vision, on this iPhone: taps only on a photo it has lifted already
       const known = seen?.photo === photo ? seen : null
-      if (opts.engine !== 'web' && (!opts.point || known)) {
+      if (opts.engine !== 'web' && (!taps.length || known)) {
         opts.onProgress?.({ phase: 'cutting' })
         const lifted = known?.lifted ?? (await step(deps.lift(photo, CUTOUT.workEdge)))
         if (lifted.ok) {
-          const src = await step(deps.decodeRgba(lifted.cutout, CUTOUT.workEdge))
-          const picked = liftedAlpha(src, usableMask(lifted.mask) ? lifted.mask : null, opts.point, known?.shown ?? [])
+          // the whole frame (a JPEG) and its subjects' mask (a PNG's alpha), laid together in the worker
+          const [frame, mask] = await step(Promise.all([deps.decodeRgba(lifted.frame, CUTOUT.workEdge), deps.decodeRgba(lifted.alpha, CUTOUT.workEdge)]))
+          const picked = await step(deps.math.finishLift(frame, mask, usableMask(lifted.mask) ? lifted.mask : null, taps, known?.shown ?? []))
           if (picked) {
             seen = { photo, lifted, shown: picked.keep }
-            const done = finishOnWhite(src, picked.alpha, CUTOUT.outEdge)
+            const done = picked.finished
             if (!done) return none('no-garment')
             const image = await step(deps.encodeJpeg(done.image, CUTOUT.jpegQuality))
             // the web engine's judge too: a speck, nearly the whole frame, or pressed into three of its sides
             const doubtful = picked.doubtful || judgeMask(done.stats) !== 'ok' || smallCrop(done.crop)
-            return result({ image, method: 'ios-vision', doubtful, width: done.image.width, height: done.image.height, point: opts.point })
+            return result({
+              image,
+              method: 'ios-vision',
+              doubtful,
+              width: done.image.width,
+              height: done.image.height,
+              point: taps.length === 1 ? taps[0] : undefined,
+              points: picked.points,
+            })
           }
-          // a tap Vision has nothing more for goes on to the web engine, from that point
+          // taps Vision has nothing more for go on to the web engine, from those points
         } else if (lifted.reason === 'no-subject') {
           // Vision looked and found nothing: keep the photo rather than run a
           // second engine on it unasked. The preview offers a tap instead.
@@ -196,8 +227,9 @@ export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?
       arm()
       const found = await step(
         deps.webEngine.segment(work, {
-          point: opts.point,
+          points: taps,
           signal: stop.signal,
+          math: deps.math,
           onProgress: p => {
             if (p.phase === 'download' && !downloading) {
               downloading = true
@@ -211,12 +243,22 @@ export function createGarmentExtractor(deps: ExtractorDeps): (photo: Blob, opts?
         }),
       )
       disarm()
-      const done = found && finishOnWhite(work, found.alpha, CUTOUT.outEdge)
-      if (!found || !done) return none('no-garment')
+      if (!found) return none('no-garment')
+      // its edge onto the photo's, its rim in the garment's colour, then on white
+      const done = await step(deps.math.finishWeb(work, found.alpha))
+      if (!done) return none('no-garment')
       const image = await step(deps.encodeJpeg(done.image, CUTOUT.jpegQuality))
       // the web engine's cut-out is what the photo shows now, none of Vision's subjects
       if (seen?.photo === photo) seen = { ...seen, shown: [] }
-      return result({ image, method: 'web', doubtful: found.doubtful || smallCrop(done.crop), width: done.image.width, height: done.image.height, point: found.point })
+      return result({
+        image,
+        method: 'web',
+        doubtful: found.doubtful || smallCrop(done.crop),
+        width: done.image.width,
+        height: done.image.height,
+        point: found.point,
+        points: found.points,
+      })
     } catch (err) {
       return none(err instanceof Stopped ? err.reason : stop.signal.aborted ? why() : 'failed')
     } finally {
@@ -291,10 +333,23 @@ async function encodeImage(image: Rgba, quality: number): Promise<Blob> {
   }
 }
 
+let math: CutoutMath | null = null
+
+/**
+ * The cut-out's maths in a module worker (src/cutout.worker.ts), started on
+ * first use; in the page where there are no workers. Vite builds the worker
+ * from this very line, into a chunk the precache keeps for offline use.
+ */
+function pageMath(): CutoutMath {
+  math ??= typeof Worker === 'function' ? workerMath(() => new Worker(new URL('./cutout.worker.ts', import.meta.url), { type: 'module' }) as WorkerLike) : inPageMath
+  return math
+}
+
 /** The browser's I/O, which extractGarment runs on. Exported so a device check can swap one piece (a fake lift) and keep the rest real. */
 export function domExtractorDeps(): ExtractorDeps {
   return {
     lift: liftSubject,
+    math: pageMath(),
     webEngine: {
       probe: async () => (await loadWeb()).probe(),
       segment: async (work, opts) => (await loadWeb()).segment(work, opts),
@@ -336,6 +391,34 @@ export async function canPickGarment(): Promise<boolean> {
     return chooseWebEngine(await (await loadWeb()).probe()).ok
   } catch {
     return false
+  }
+}
+
+/**
+ * Whether a cut-out can be made here, now: by Vision on this iPhone, by the
+ * web engine (from the app's bundle, the cache, or online), not while offline
+ * before the web engine's one-time download, or not in this browser at all.
+ * Fetches nothing big: the web engine's own JS is a precached chunk.
+ */
+export async function cutoutAvailability(): Promise<'native' | 'web' | 'offline' | 'unsupported'> {
+  try {
+    if (await canLiftSubject()) return 'native'
+    const gate = chooseWebEngine(await (await loadWeb()).probe())
+    return gate.ok ? 'web' : gate.reason
+  } catch {
+    return 'unsupported'
+  }
+}
+
+/** A saved photo is read this small to tell whether it is a cut-out already: the size of its thumbnail. */
+const CUT_CHECK_EDGE = 360
+
+/** Whether a saved photo is a cut-out already, white all round its edge (looksCutOut); null when it cannot be read here. */
+export async function isCutOutPhoto(photo: Blob): Promise<boolean | null> {
+  try {
+    return looksCutOut(await decodeImage(photo, CUT_CHECK_EDGE))
+  } catch {
+    return null
   }
 }
 

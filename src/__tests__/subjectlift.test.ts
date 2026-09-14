@@ -104,23 +104,28 @@ describe('the size cap', () => {
 })
 
 describe('a lift', () => {
-  it('sends the photo as base64 with the frame size, and hands back exactly the PNG and the instance mask it got', async () => {
+  it('sends the photo as base64 with the frame size, and hands back exactly the JPEG, the mask’s PNG and the instance mask it got', async () => {
+    const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
     const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 8, 9])
     // a 4 × 2 instance mask: a subject on the left, another on the right, the background between
     const labels = Uint8Array.from([1, 0, 0, 2, 1, 0, 2, 2])
-    env.plugin.lift.mockResolvedValue({ image: Buffer.from(png).toString('base64'), width: 1600, height: 1200, instanceMask: Buffer.from(labels).toString('base64'), maskWidth: 4, maskHeight: 2, found: 2 })
+    const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
+    env.plugin.lift.mockResolvedValue({ image: base64(jpeg), alpha: base64(png), width: 1600, height: 1200, instanceMask: base64(labels), maskWidth: 4, maskHeight: 2, found: 2 })
     const { liftSubject } = await load()
     const lifted = await liftSubject(photo, 1600)
     expect(env.plugin.lift).toHaveBeenCalledWith({ image: Buffer.from([1, 2, 3, 4, 5]).toString('base64'), maxDimension: 1600 })
     expect(lifted).toMatchObject({ ok: true, width: 1600, height: 1200, found: 2, mask: { width: 4, height: 2 } })
     if (!lifted.ok) throw new Error('expected a lift')
-    expect(lifted.cutout.type).toBe('image/png')
-    expect(new Uint8Array(await lifted.cutout.arrayBuffer())).toEqual(png)
+    // the whole frame, and every subject's mask as a PNG's alpha: the page lays them together
+    expect(lifted.frame.type).toBe('image/jpeg')
+    expect(new Uint8Array(await lifted.frame.arrayBuffer())).toEqual(jpeg)
+    expect(lifted.alpha.type).toBe('image/png')
+    expect(new Uint8Array(await lifted.alpha.arrayBuffer())).toEqual(png)
     expect(lifted.mask.data).toEqual(labels)
   })
 
   it('hands back an empty mask when the shell sent none it could read', async () => {
-    env.plugin.lift.mockResolvedValue({ image: 'iVBORw==', width: 10, height: 10, instanceMask: '', maskWidth: 0, maskHeight: 0, found: 1 })
+    env.plugin.lift.mockResolvedValue({ image: '/9j/', alpha: 'iVBORw==', width: 10, height: 10, instanceMask: '', maskWidth: 0, maskHeight: 0, found: 1 })
     const { liftSubject } = await load()
     const lifted = await liftSubject(photo, 1600)
     expect(lifted).toMatchObject({ ok: true, mask: { width: 0, height: 0 } })

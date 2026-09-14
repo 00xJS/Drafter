@@ -11,6 +11,7 @@ import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
+import { CutoutLater } from './CutoutLater'
 import { GarmentPhoto } from './GarmentPhoto'
 
 /** What the sheet is for: adding a piece (of a type, when the way in named one), or one piece. */
@@ -447,6 +448,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
               }}
             />
           </label>
+          <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} />
           <span className="spacer" />
           <button type="button" className="btn primary" disabled={!!g.archivedAt} onClick={() => onWearToday(g)}>
             Wear today

@@ -528,6 +528,15 @@ button.cutout-pick {
   color: var(--muted);
 }
 
+/* the hint under the cut-out, with + Add another beside it; they wrap on a narrow phone */
+.cutout-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
 /* the switch is for the phone's single stage; a desktop shows both panes */
 .cutout-seg {
   display: none;
@@ -562,7 +571,8 @@ button.cutout-pick {
 }
 
 @media (pointer: coarse) {
-  .cutout-sheet .modal-foot .btn {
+  .cutout-sheet .modal-foot .btn,
+  .cutout-sheet .cutout-hint .toggle {
     min-height: 44px;
   }
 }

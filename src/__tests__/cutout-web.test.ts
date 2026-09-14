@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CutoutProgress } from '../cutout'
 import { CUTOUT_ASSETS, CUTOUT_MODEL, CUTOUT_TOTAL_BYTES, type CutoutAsset } from '../cutoutassets'
-import type { Rgba } from '../cutoutmath'
+import { inPageMath } from '../cutoutjobs'
+import type { Point, Rgba } from '../cutoutmath'
 
 /*
  * The web engine's life in the page (src/cutoutweb.ts): when the segmenter is
@@ -10,7 +11,7 @@ import type { Rgba } from '../cutoutmath'
  * maths the engine calls is the real one.
  */
 
-const engine = vi.hoisted(() => ({ created: vi.fn(), closed: vi.fn() }))
+const engine = vi.hoisted(() => ({ created: vi.fn(), closed: vi.fn(), keypoints: [] as unknown[] }))
 
 vi.mock('@mediapipe/tasks-vision', () => ({
   FilesetResolver: { isSimdSupported: async () => true },
@@ -18,11 +19,13 @@ vi.mock('@mediapipe/tasks-vision', () => ({
     createFromOptions: async (...args: unknown[]) => {
       engine.created(...args)
       return {
-        // a confident block in the middle of whatever it is shown
-        segment: ({ width, height }: { width: number; height: number }) => {
+        // a confident block, half the width and half the height of whatever it is shown, round the point
+        segment: ({ width, height }: { width: number; height: number }, roi: { keypoint: { x: number; y: number } }) => {
+          engine.keypoints.push(roi.keypoint)
+          const { x: kx, y: ky } = roi.keypoint
           const data = new Float32Array(width * height)
-          for (let y = Math.floor(height / 4); y < Math.floor((3 * height) / 4); y++) {
-            for (let x = Math.floor(width / 4); x < Math.floor((3 * width) / 4); x++) data[y * width + x] = 1
+          for (let y = Math.max(0, Math.floor(height * (ky - 0.25))); y < Math.min(height, Math.floor(height * (ky + 0.25))); y++) {
+            for (let x = Math.max(0, Math.floor(width * (kx - 0.25))); x < Math.min(width, Math.floor(width * (kx + 0.25))); x++) data[y * width + x] = 1
           }
           return { confidenceMasks: [{ width, height, getAsFloat32Array: () => data }], close() {} }
         },
@@ -80,11 +83,15 @@ const work: Rgba = { width: 64, height: 48, data: new Uint8ClampedArray(64 * 48 
 
 let web: typeof import('../cutoutweb')
 
+/** A run with no taps, its maths done in place. */
+const segment = (opts: { signal: AbortSignal; onProgress?(p: CutoutProgress): void }) => web.segment(work, { points: [], math: inPageMath, ...opts })
+
 beforeEach(async () => {
   // a fresh module each time: the engine, the download and the idle timer are module state
   vi.resetModules()
   engine.created.mockClear()
   engine.closed.mockClear()
+  engine.keypoints.length = 0
   vi.stubGlobal('document', { createElement: canvas })
   vi.stubGlobal(
     'ImageData',
@@ -110,7 +117,7 @@ describe('a run cancelled during the first download', () => {
     const store = fakeCache()
     const net = gatedFetch()
     const controller = new AbortController()
-    const run = web.segment(work, { signal: controller.signal })
+    const run = segment({ signal: controller.signal })
     run.catch(() => {})
     await vi.waitFor(() => expect(net.fetch).toHaveBeenCalledTimes(1))
     // the sheet moves on (Use original), then the download finishes
@@ -120,7 +127,7 @@ describe('a run cancelled during the first download', () => {
     expect(engine.created).not.toHaveBeenCalled()
     expect([...store.keys()]).toEqual(CUTOUT_ASSETS.map(a => a.url))
     // the next photo needs no download, and makes the engine once
-    const next = await web.segment(work, { signal: new AbortController().signal })
+    const next = await segment({ signal: new AbortController().signal })
     expect(next?.alpha).toHaveLength(work.width * work.height)
     expect(engine.created).toHaveBeenCalledTimes(1)
     expect(net.fetch).toHaveBeenCalledTimes(3)
@@ -131,7 +138,7 @@ describe('closing the engine once the sheet lets go', () => {
   it('closes it after a minute nobody uses it', async () => {
     fakeCache()
     gatedFetch().open()
-    expect(await web.segment(work, { signal: new AbortController().signal })).not.toBeNull()
+    expect(await segment({ signal: new AbortController().signal })).not.toBeNull()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     web.release()
     await vi.advanceTimersByTimeAsync(59_000)
@@ -144,7 +151,7 @@ describe('closing the engine once the sheet lets go', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     fakeCache()
     const net = gatedFetch()
-    const run = web.segment(work, { signal: new AbortController().signal })
+    const run = segment({ signal: new AbortController().signal })
     await vi.waitFor(() => expect(net.fetch).toHaveBeenCalledTimes(1))
     // the sheet closes while the files are still coming, and they take over a minute
     web.release()
@@ -156,6 +163,33 @@ describe('closing the engine once the sheet lets go', () => {
     // the close was put off, not dropped: a minute on, nobody has used it
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(engine.closed).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('several taps', () => {
+  it('runs once from each, and keeps what each found as one mask', async () => {
+    fakeCache()
+    gatedFetch().open()
+    const taps: Point[] = [
+      { x: 0.2, y: 0.5 },
+      { x: 0.8, y: 0.5 },
+    ]
+    const found = await web.segment(work, { points: taps, math: inPageMath, signal: new AbortController().signal })
+    expect(engine.keypoints).toEqual(taps)
+    expect(found?.points).toEqual(taps)
+    // both blocks, and the gap between them left out
+    const at = (x: number) => found!.alpha[24 * work.width + x]
+    expect(at(8)).toBe(255)
+    expect(at(56)).toBe(255)
+    expect(at(31)).toBe(0)
+  })
+
+  it('takes a single tap as before, its point the seed', async () => {
+    fakeCache()
+    gatedFetch().open()
+    const found = await web.segment(work, { points: [{ x: 0.5, y: 0.5 }], math: inPageMath, signal: new AbortController().signal })
+    expect(engine.keypoints).toHaveLength(1)
+    expect(found).toMatchObject({ point: { x: 0.5, y: 0.5 }, points: [{ x: 0.5, y: 0.5 }] })
   })
 })
 
@@ -184,7 +218,7 @@ describe('the shared download', () => {
     void web.prepare(p => warm.push(p))
     await vi.waitFor(() => expect(warm[warm.length - 1]?.loaded).toBe(CUTOUT_MODEL.bytes + 1024))
     const heard: CutoutProgress[] = []
-    void web.segment(work, { signal: new AbortController().signal, onProgress: p => heard.push(p) }).catch(() => {})
+    void segment({ signal: new AbortController().signal, onProgress: p => heard.push(p) }).catch(() => {})
     // before any await: the cut-out's watchdog rests on this, not on the next chunk
     expect(heard).toEqual([{ phase: 'download', loaded: CUTOUT_MODEL.bytes + 1024, total: CUTOUT_TOTAL_BYTES }])
   })
@@ -194,7 +228,7 @@ describe('the shared download', () => {
     gatedFetch().open()
     await web.prepare()
     const heard: CutoutProgress[] = []
-    await web.segment(work, { signal: new AbortController().signal, onProgress: p => heard.push(p) })
+    await segment({ signal: new AbortController().signal, onProgress: p => heard.push(p) })
     expect(heard).toEqual([{ phase: 'cutting' }])
   })
 })

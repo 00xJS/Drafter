@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chooseWebEngine, createGarmentExtractor, CUTOUT_WATCHDOG_MS, garmentFile, type CutoutProgress, type ExtractorDeps, type WebEngineProbe, type WebSegment } from '../cutout'
+import { inPageMath } from '../cutoutjobs'
 import type { InstanceMask, Point, Rgba } from '../cutoutmath'
 import type { SubjectLift } from '../native'
 
@@ -9,8 +10,19 @@ import type { SubjectLift } from '../native'
 // so each branch of the order (Vision, then the web engine) runs in node.
 
 const photo = new Blob([new Uint8Array([9, 9, 9])], { type: 'image/jpeg' })
+/** What Vision hands back: the frame as a JPEG, and its subjects' mask as a PNG. */
+const frameJpeg = new Blob([new Uint8Array([0xff, 0xd8, 1])], { type: 'image/jpeg' })
 const png = new Blob([new Uint8Array([0x89, 0x50])], { type: 'image/png' })
 const jpeg = new Blob([new Uint8Array([0xff, 0xd8])], { type: 'image/jpeg' })
+
+/** The maths as the page runs it with no worker, each job a spy. */
+const spyMath = () => ({
+  refine: vi.fn(inPageMath.refine),
+  union: vi.fn(inPageMath.union),
+  grow: vi.fn(inPageMath.grow),
+  finishWeb: vi.fn(inPageMath.finishWeb),
+  finishLift: vi.fn(inPageMath.finishLift),
+})
 
 function image(width: number, height: number, rgba: number[], inside?: (x: number, y: number) => boolean, outsideAlpha = rgba[3]): Rgba {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -43,7 +55,8 @@ function subjects(...rects: [number, number, number, number, number][]): Instanc
 /** Vision's lift: an 800 × 600 frame, and one subject, the garment, at (200, 150) and 400 × 300. */
 const lifted = (over: Partial<Extract<SubjectLift, { ok: true }>> = {}): SubjectLift => ({
   ok: true,
-  cutout: png,
+  frame: frameJpeg,
+  alpha: png,
   width: 800,
   height: 600,
   mask: subjects([1, 50, 37, 100, 76]),
@@ -53,20 +66,22 @@ const lifted = (over: Partial<Extract<SubjectLift, { ok: true }>> = {}): Subject
 
 /**
  * A work photo of 100 × 80 red, and a web engine that finds a 20 × 20 garment
- * off to the right. Vision's PNG decodes to `frame`: by default the garment,
- * opaque where lifted() says it is, on transparency.
+ * off to the right. Vision's JPEG and its mask's PNG both decode to `frame`,
+ * which gives the colours and the alpha both: by default the garment, opaque
+ * where lifted() says it is, on transparency.
  */
 function fakes(over: { lift?: SubjectLift; probe?: WebEngineProbe; segment?: ExtractorDeps['webEngine']['segment']; frame?: Rgba } = {}) {
   const work = image(100, 80, [200, 30, 40, 255])
   const frame = over.frame ?? image(800, 600, [20, 90, 160, 255], inRect(200, 150, 400, 300), 0)
-  const found: WebSegment = { alpha: rectAlpha(100, 80, 60, 10, 20, 20), doubtful: false, point: { x: 0.5, y: 0.5 } }
+  const found: WebSegment = { alpha: rectAlpha(100, 80, 60, 10, 20, 20), doubtful: false, point: { x: 0.5, y: 0.5 }, points: [{ x: 0.5, y: 0.5 }] }
   const deps = {
     lift: vi.fn(async (_photo: Blob, _max: number) => over.lift ?? ({ ok: false, reason: 'unavailable' } as SubjectLift)),
+    math: spyMath(),
     webEngine: {
       probe: vi.fn(async () => over.probe ?? probe()),
       segment: vi.fn(over.segment ?? (async () => found)),
     },
-    decodeRgba: vi.fn(async (blob: Blob, _max: number) => (blob === png ? frame : work)),
+    decodeRgba: vi.fn(async (blob: Blob, _max: number) => (blob === png || blob === frameJpeg ? frame : work)),
     encodeJpeg: vi.fn(async (_image: Rgba, _quality: number) => jpeg),
     now: vi.fn(() => 0),
   }
@@ -123,7 +138,10 @@ describe('on an iPhone that can lift subjects', () => {
     const progress: CutoutProgress[] = []
     const r = await createGarmentExtractor(deps)(photo, { onProgress: p => progress.push(p) })
     expect(deps.lift).toHaveBeenCalledWith(photo, 1600)
+    // the frame and its subjects' mask, laid together by the maths
+    expect(deps.decodeRgba).toHaveBeenCalledWith(frameJpeg, 1600)
     expect(deps.decodeRgba).toHaveBeenCalledWith(png, 1600)
+    expect(deps.math.finishLift).toHaveBeenCalledTimes(1)
     // the garment is 400 × 300 in an 800 × 600 frame, padded by round(0.08 × 400) = 32 on each side
     expect(r).toMatchObject({ method: 'ios-vision', image: jpeg, width: 464, height: 364, doubtful: false })
     expect(r.reason).toBeUndefined()
@@ -132,6 +150,7 @@ describe('on an iPhone that can lift subjects', () => {
     expect(deps.encodeJpeg.mock.calls[0][1]).toBe(0.88)
     expect(deps.webEngine.probe).not.toHaveBeenCalled()
     expect(deps.webEngine.segment).not.toHaveBeenCalled()
+    expect(deps.math.finishWeb).not.toHaveBeenCalled()
     expect(progress).toEqual([{ phase: 'cutting' }])
   })
 
@@ -180,13 +199,44 @@ describe('on an iPhone that can lift subjects', () => {
     // on the one subject already cut out (Vision saw nothing else there)...
     const onIt: Point = { x: 0.5, y: 0.5 }
     expect(await extract(photo, { point: onIt })).toMatchObject({ method: 'web' })
-    expect(deps.webEngine.segment.mock.calls[0][1].point).toEqual(onIt)
+    expect(deps.webEngine.segment.mock.calls[0][1].points).toEqual([onIt])
     // ...and on the background
     const beside: Point = { x: 0.05, y: 0.05 }
     expect(await extract(photo, { point: beside })).toMatchObject({ method: 'web' })
-    expect(deps.webEngine.segment.mock.calls[1][1].point).toEqual(beside)
+    expect(deps.webEngine.segment.mock.calls[1][1].points).toEqual([beside])
     // with the web engine's cut-out showing, the subject is Vision's to give back
     expect(await extract(photo, { point: onIt })).toMatchObject({ method: 'ios-vision', width: 464, height: 364 })
+    expect(deps.lift).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps both shoes when two taps name them, from the lift it has, and says where each is', async () => {
+    const deps = fakes({ lift: lifted({ mask: subjects(...shoeSubjects), found: 2 }), frame: painted(null, ...SHOES) })
+    const extract = createGarmentExtractor(deps)
+    // no tap: both shoes, each with a point on it for the preview to add a tap to
+    const auto = await extract(photo)
+    expect(auto.points!.map(p => Math.round(p.x * 800))).toEqual([230, 570])
+    // a tap picked the right shoe alone; + Add another taps the left one
+    const right: Point = { x: 570 / 800, y: 300 / 600 }
+    const left: Point = { x: 230 / 800, y: 300 / 600 }
+    expect(await extract(photo, { point: right })).toMatchObject({ method: 'ios-vision', width: 192 })
+    const both = await extract(photo, { points: [right, left] })
+    expect(both).toMatchObject({ method: 'ios-vision', width: 556, height: 396, doubtful: false, points: [right, left] })
+    expect(both.point).toBeUndefined()
+    expect(deps.lift).toHaveBeenCalledTimes(1)
+    expect(deps.webEngine.segment).not.toHaveBeenCalled()
+  })
+
+  it('gives several taps to the web engine where Vision has one subject under them all', async () => {
+    const deps = fakes({ lift: lifted() })
+    const extract = createGarmentExtractor(deps)
+    await extract(photo)
+    // both on the one garment Vision found: it has nothing to split, so the web engine runs from each
+    const taps: Point[] = [
+      { x: 0.4, y: 0.5 },
+      { x: 0.6, y: 0.5 },
+    ]
+    expect(await extract(photo, { points: taps })).toMatchObject({ method: 'web', points: [{ x: 0.5, y: 0.5 }] })
+    expect(deps.webEngine.segment.mock.calls[0][1].points).toEqual(taps)
     expect(deps.lift).toHaveBeenCalledTimes(1)
   })
 
@@ -232,8 +282,21 @@ describe('asking for the web engine', () => {
     const point: Point = { x: 0.7, y: 0.25 }
     const r = await createGarmentExtractor(deps)(photo, { point })
     expect(deps.lift).not.toHaveBeenCalled()
-    expect(deps.webEngine.segment.mock.calls[0][1].point).toEqual(point)
+    expect(deps.webEngine.segment.mock.calls[0][1].points).toEqual([point])
     expect(r.method).toBe('web')
+    // and its maths goes to the same place the finish's does
+    expect(deps.webEngine.segment.mock.calls[0][1].math).toBe(deps.math)
+  })
+
+  it('runs the web engine from each of several taps on a photo Vision never lifted', async () => {
+    const deps = fakes({ lift: lifted() })
+    const taps: Point[] = [
+      { x: 0.2, y: 0.5 },
+      { x: 0.8, y: 0.5 },
+    ]
+    expect((await createGarmentExtractor(deps)(photo, { points: taps })).method).toBe('web')
+    expect(deps.lift).not.toHaveBeenCalled()
+    expect(deps.webEngine.segment.mock.calls[0][1].points).toEqual(taps)
   })
 
   it("never asks Vision with engine: 'web'", async () => {
@@ -262,13 +325,16 @@ describe('the web engine', () => {
       }
     }
     expect([left, top, out.width - 1 - right, out.height - 1 - bottom]).toEqual([12, 12, 12, 12])
-    expect(r).toMatchObject({ method: 'web', image: jpeg, width: 44, height: 44, point: { x: 0.5, y: 0.5 } })
+    expect(r).toMatchObject({ method: 'web', image: jpeg, width: 44, height: 44, point: { x: 0.5, y: 0.5 }, points: [{ x: 0.5, y: 0.5 }] })
     // 44 px across is a thumbnail, not a garment photo
     expect(r.doubtful).toBe(true)
+    // the web engine's own finish: its edge snapped and its rim defringed first
+    expect(deps.math.finishWeb).toHaveBeenCalledTimes(1)
+    expect(deps.math.finishLift).not.toHaveBeenCalled()
   })
 
   it('passes on its own doubt, and keeps the photo when it finds nothing', async () => {
-    const doubtful = fakes({ segment: async () => ({ alpha: rectAlpha(100, 80, 0, 0, 100, 80), doubtful: true, point: { x: 0.5, y: 0.64 } }) })
+    const doubtful = fakes({ segment: async () => ({ alpha: rectAlpha(100, 80, 0, 0, 100, 80), doubtful: true, point: { x: 0.5, y: 0.64 }, points: [{ x: 0.5, y: 0.64 }] }) })
     expect(await createGarmentExtractor(doubtful)(photo, { engine: 'web' })).toMatchObject({ method: 'web', doubtful: true, point: { x: 0.5, y: 0.64 } })
     const nothing = fakes({ segment: async () => null })
     const r = await createGarmentExtractor(nothing)(photo, { engine: 'web' })
@@ -292,7 +358,7 @@ describe('the web engine', () => {
       segment: async (work, opts) => {
         opts.onProgress?.({ phase: 'download', loaded: 5, total: 10 })
         opts.onProgress?.({ phase: 'cutting' })
-        return { alpha: rectAlpha(work.width, work.height, 30, 20, 40, 40), doubtful: false, point: { x: 0.5, y: 0.5 } }
+        return { alpha: rectAlpha(work.width, work.height, 30, 20, 40, 40), doubtful: false, point: { x: 0.5, y: 0.5 }, points: [{ x: 0.5, y: 0.5 }] }
       },
     })
     const progress: CutoutProgress[] = []
