@@ -687,6 +687,24 @@ describe('the guards around the wardrobe', () => {
     expect(index.indexOf("'./18-wardrobe.css'")).toBeLessThan(index.indexOf("'./19-native-shell.css'"))
   })
 
+  it('sends every photo through Check the cut-out, loaded only when it is needed', () => {
+    const sheet = source('GarmentSheet')
+    // the cut-out sheet and its engine come on demand, never in the wardrobe's own chunk
+    expect(sheet).toContain("preloadable(() => import('../CutoutSheet').then(m => m.CutoutSheet), 'CutoutSheet')")
+    expect(sheet).not.toMatch(/from '\.\.\/CutoutSheet'|from '\.\.\/\.\.\/cutout'/)
+    // warmed as Add clothing opens
+    expect(sheet).toContain("warm(CutoutSheet.preload, () => import('../../cutout').then(c => c.prepareGarmentCutout()))")
+    expect(sheet).toContain('useEffect(warmCutout, [])')
+    // what the sheet hands back is what prepareGarmentPhoto makes the piece's photos from, told whether it is the cut-out
+    expect(sheet).toContain('prepareGarmentPhoto(picked.file, { cutout: picked.cutout })')
+    expect(sheet).toContain('onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })}')
+    // Replace photo goes the same way
+    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout, info.offline)}')
+    expect(sheet).toContain('prepareGarmentPhoto(file, { cutout })')
+    // and no photo reaches prepareGarmentPhoto without the sheet: its only callers are those two
+    expect(sheet.match(/prepareGarmentPhoto\(/g)).toHaveLength(2)
+  })
+
   it('lets the iPhone app open the camera, for the wardrobe and for notes', () => {
     expect(read('../../ios/App/App/Info.plist')).toMatch(/<key>NSCameraUsageDescription<\/key>\s*<string>[^<]*wardrobe[^<]*notes[^<]*<\/string>/)
   })
@@ -728,7 +746,7 @@ describe('the guards around the wardrobe', () => {
     expect(sheet).toContain("window.addEventListener('dragover', onDragOver)")
     expect(sheet).toContain("window.addEventListener('drop', onDrop)")
     // and none is taken while a save is still reading the queue
-    expect(sheet).toContain('if (picked.length === 0 || saving) return')
+    expect(sheet).toContain('if (chosen.length === 0 || saving) return')
   })
 
   it('reads the forecast the briefing cached, and never fetches one of its own', () => {

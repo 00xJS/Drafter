@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { LEGACY_VIEW_TO_HOME } from '../components/planner/routes'
 import { oauthReasonLabel, paramsOf, parseLink, safeHttpUrl } from '../links'
 
 describe('parseLink', () => {
@@ -159,6 +160,8 @@ describe('Home Screen quick actions', () => {
     .map(body => ({
       type: /<key>UIApplicationShortcutItemType<\/key>\s*<string>([^<]*)<\/string>/.exec(body)?.[1] ?? '',
       title: /<key>UIApplicationShortcutItemTitle<\/key>\s*<string>([^<]*)<\/string>/.exec(body)?.[1] ?? '',
+      // a system icon, or an SF Symbol where there is no system icon for it (a T-shirt)
+      icon: /<key>UIApplicationShortcutItemIcon(?:Type|SymbolName)<\/key>\s*<string>([^<]*)<\/string>/.exec(body)?.[1] ?? '',
     }))
 
   /** The `case "<type>": … URL(string: "drafter://…")` mapper in SceneDelegate. */
@@ -173,9 +176,19 @@ describe('Home Screen quick actions', () => {
     ),
   )
 
-  it('advertises three items, each with the Title iOS requires', () => {
-    expect(items.map(i => i.type)).toEqual(['journal', 'new', 'today'])
-    for (const i of items) expect(i.title).not.toBe('')
+  it('advertises five items, each with the Title iOS requires and an icon', () => {
+    expect(items.map(i => i.type)).toEqual(['journal', 'new', 'plan', 'wardrobe', 'today'])
+    for (const i of items) {
+      expect(i.title, i.type).not.toBe('')
+      expect(i.icon, i.type).not.toBe('')
+    }
+    expect(items.find(i => i.type === 'plan')?.title).toBe('Plan my day')
+    expect(items.find(i => i.type === 'wardrobe')).toMatchObject({ title: 'Wardrobe', icon: 'tshirt' })
+  })
+
+  it('keeps Plan my day and Wardrobe among the first four, the only ones iOS shows', () => {
+    // Today goes last, and off the menu: Plan my day opens over Today too, so it is the one that can be spared
+    expect(items.slice(0, 4).map(i => i.type)).toEqual(['journal', 'new', 'plan', 'wardrobe'])
   })
 
   it('maps every advertised type to a drafter:// route', () => {
@@ -192,7 +205,21 @@ describe('Home Screen quick actions', () => {
     expect(parse(routes.get('journal')!).journal).toBeUndefined()
     // an empty capture sheet
     expect(parse(routes.get('new')!).capture).toEqual({ title: '', description: undefined, link: undefined })
+    // Plan my day's sheet and nothing else: no view of its own, no capture, nothing to write
+    expect(parse(routes.get('plan')!)).toEqual({ plan: 'day' })
+    // Home → Wardrobe, by the link the wardrobe has always answered to
+    expect(parse(routes.get('wardrobe')!)).toEqual({ view: 'wardrobe' })
+    expect(LEGACY_VIEW_TO_HOME.wardrobe).toBe('wardrobe')
     // and the Today view
     expect(parse(routes.get('today')!).view).toBe('today')
+  })
+
+  it('lands each route where its name says, through the router', () => {
+    const router = read('../components/planner/useDeepLinks.ts')
+    // ?view=wardrobe and ?view=today: the Home segment LEGACY_VIEW_TO_HOME names
+    expect(router).toMatch(/LEGACY_VIEW_TO_HOME\[parsed\.view\]\) \{\s*setHomeTab\(LEGACY_VIEW_TO_HOME\[parsed\.view\]\)\s*setView\('home'\)/)
+    // ?plan=day with no view: Home → Today, and the day's planning sheet over it
+    expect(router).toMatch(/if \(!parsed\.view\) \{\s*setHomeTab\(parsed\.plan === 'week' \? 'week' : 'today'\)\s*setView\('home'\)/)
+    expect(router).toContain("openSheet(parsed.plan === 'day' ? { kind: 'day' }")
   })
 })

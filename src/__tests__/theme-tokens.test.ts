@@ -47,6 +47,7 @@ const FIXED: Record<string, string> = {
   '--on-user-color': '#0f1115', // .person-avatar's --inverse-text in dark
   '--on-deep-user-color': '#ffffff',
   '--mark-bg': 'color-mix(in srgb, var(--accent) 28%, transparent)', // rgba(249, 115, 22, 0.28)
+  '--photo-white': '#ffffff', // the garment cut-out's ground: the product image, white in both
 }
 
 /**

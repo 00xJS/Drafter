@@ -56,6 +56,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return URL(string: "drafter://open?tab=journal")
         case "new":
             return URL(string: "drafter://new")
+        case "plan":
+            // Plan my day, over Home → Today; it writes nothing until its own button is pressed
+            return URL(string: "drafter://open?plan=day")
+        case "wardrobe":
+            // Home → Wardrobe (routes.ts, LEGACY_VIEW_TO_HOME)
+            return URL(string: "drafter://open?view=wardrobe")
         case "today":
             return URL(string: "drafter://open?view=today")
         default:
@@ -208,10 +214,17 @@ public class AppearancePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-/// The bridge, plus the one native control the page needs: its own light or dark.
+/// The bridge, plus the plugins compiled into this target: the page's own light
+/// or dark (AppearancePlugin, above) and the garment cut-out's subject lifting
+/// (SubjectLiftPlugin.swift). `cap sync` writes packageClassList from
+/// node_modules alone and rewrites it every time, so a plugin that lives in
+/// ios/App is registered here, by hand. It has to be this hook: registering
+/// injects the plugin's JS proxy as a user script, and capacitorDidLoad is the
+/// last moment before the page loads.
 class DrafterBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(AppearancePlugin())
+        bridge?.registerPluginInstance(SubjectLiftPlugin())
         paintGround()
     }
 

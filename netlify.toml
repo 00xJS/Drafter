@@ -131,6 +131,12 @@
   to = "/404.html"
   status = 404
 
+# The garment cut-out's files: a missing one must 404, never come back as the app page
+[[redirects]]
+  from = "/cutout/*"
+  to = "/cutout/not-found"
+  status = 404
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -179,5 +185,11 @@
 
 [[headers]]
   for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Versioned folders (magic-touch-v1, mediapipe-<version>); their contents never change
+[[headers]]
+  for = "/cutout/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"

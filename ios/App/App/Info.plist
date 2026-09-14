@@ -98,7 +98,9 @@
 	</array>
 	<!-- Long-press the Home Screen icon. Every type here is mapped to a drafter://
 	     route in SceneDelegate.url(for:); src/__tests__/links.test.ts keeps the two
-	     lists in step and checks each route still parses. -->
+	     lists in step and checks each route still parses. iOS shows only an app's
+	     first four, so Today, where Plan my day opens too, comes last and is the
+	     one left off the menu. -->
 	<key>UIApplicationShortcutItems</key>
 	<array>
 		<dict>
@@ -118,6 +120,22 @@
 			<string>New task</string>
 			<key>UIApplicationShortcutItemIconType</key>
 			<string>UIApplicationShortcutIconTypeAdd</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>plan</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Plan my day</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTask</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>wardrobe</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Wardrobe</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>tshirt</string>
 		</dict>
 		<dict>
 			<key>UIApplicationShortcutItemType</key>

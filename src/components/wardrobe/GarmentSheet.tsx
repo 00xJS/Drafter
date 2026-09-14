@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
+import { preloadable, warm } from '../../lazyload'
 import { NotSignedIn, imageFiles, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
 import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit } from '../../types'
@@ -10,6 +12,7 @@ import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
+import { CutoutLater, keptOffline } from './CutoutLater'
 import { GarmentPhoto } from './GarmentPhoto'
 import { PieceDetails } from './PieceDetails'
 
@@ -39,6 +42,23 @@ interface Props {
   onClose(): void
 }
 
+/**
+ * Check the cut-out (src/components/CutoutSheet.tsx): every photo picked here
+ * goes through it first, and the piece keeps what it hands back, the garment
+ * on white or the photo as picked. Loaded on first use.
+ */
+const CutoutSheet = preloadable(() => import('../CutoutSheet').then(m => m.CutoutSheet), 'CutoutSheet')
+
+/**
+ * As Add clothing opens: the cut-out sheet's code, and the cut-out's engine
+ * where this device needs one (nothing on an iPhone that lifts subjects
+ * itself; the one-time download on the web), so both are ready by the time a
+ * photo is. Quiet on failure: the sheet fetches again when it opens.
+ */
+function warmCutout(): void {
+  warm(CutoutSheet.preload, () => import('../../cutout').then(c => c.prepareGarmentCutout()))
+}
+
 const failure = (err: unknown) => (err instanceof PhotoUnreadable || err instanceof NotSignedIn ? err.message : 'That photo could not be kept on this device — try again')
 
 function TypeChips({ type, onChange }: { type: GarmentType; onChange(t: GarmentType): void }) {
@@ -53,32 +73,36 @@ function TypeChips({ type, onChange }: { type: GarmentType; onChange(t: GarmentT
   )
 }
 
+/** What the cut-out sheet handed back for a photo: its cut-out, or the photo as picked (`offline`: only for want of a connection). */
+type Picked = { file: File; cutout: boolean; offline?: boolean }
+
 type Ready = { photo: Blob; thumb: Blob; color?: string; preview: string }
 
-/** A picked photo made ready — decoded once, sized twice, its colour sampled — with a preview URL let go when it goes. */
-function usePrepared(file: File | null): { ready: Ready | null; busy: boolean; error: string | null } {
-  const [done, setDone] = useState<{ file: File; ready: Ready | null; error: string | null } | null>(null)
+/** A photo made ready — decoded once, sized twice, its colour sampled — with a preview URL let go when it goes. */
+function usePrepared(picked: Picked | null): { ready: Ready | null; busy: boolean; error: string | null } {
+  const [done, setDone] = useState<{ picked: Picked; ready: Ready | null; error: string | null } | null>(null)
   useEffect(() => {
-    if (!file) return
+    if (!picked) return
     let live = true
     let preview: string | null = null
-    prepareGarmentPhoto(file).then(
+    // the cut-out step: a cut-out of 1200px or less is kept as the photo, not encoded again
+    prepareGarmentPhoto(picked.file, { cutout: picked.cutout }).then(
       p => {
         preview = URL.createObjectURL(p.photo)
-        if (live) setDone({ file, ready: { ...p, preview }, error: null })
+        if (live) setDone({ picked, ready: { ...p, preview }, error: null })
         else URL.revokeObjectURL(preview)
       },
       err => {
-        if (live) setDone({ file, ready: null, error: failure(err) })
+        if (live) setDone({ picked, ready: null, error: failure(err) })
       },
     )
     return () => {
       live = false
       if (preview) URL.revokeObjectURL(preview)
     }
-  }, [file])
-  const current = done !== null && done.file === file
-  return { ready: current ? done.ready : null, busy: !!file && !current, error: current ? done.error : null }
+  }, [picked])
+  const current = done !== null && done.picked === picked
+  return { ready: current ? done.ready : null, busy: !!picked && !current, error: current ? done.error : null }
 }
 
 /** The piece sheet: add one (or a queue of them from several photos), or everything about one. */
@@ -90,8 +114,13 @@ export function GarmentSheet(props: Props) {
 function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType; userId?: string | null; onCreate(g: Garment): void; onClose(): void }) {
   const [queue, setQueue] = useState<File[]>([])
   const [at, setAt] = useState(0)
+  // each choice of photos is a new round, so the cut-out sheet starts afresh on its first
+  const [round, setRound] = useState(0)
   const file = queue[at] ?? null
-  const { ready, busy, error } = usePrepared(file)
+  // what the cut-out sheet handed back for `file`; until it answers, it is open on it
+  const [picked, setPicked] = useState<Picked | null>(null)
+  const checking = !!file && !picked
+  const { ready, busy, error } = usePrepared(picked)
   const [lastSaved, setLastSaved] = useState<GarmentType | null>(null)
   const [type, setType] = useState<GarmentType>(preset ?? 'top')
   const [name, setName] = useState('')
@@ -101,12 +130,16 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const [dragging, setDragging] = useState(false)
   const names = suggestedNames(type, ready?.color)
 
+  useEffect(warmCutout, [])
+
   const choose = (files: FileList | readonly File[] | null) => {
-    const picked = Array.from(files ?? [])
+    const chosen = Array.from(files ?? [])
     // a photo taken mid-save would move the queue under the save still reading it
-    if (picked.length === 0 || saving) return
-    setQueue(picked)
+    if (chosen.length === 0 || saving) return
+    setQueue(chosen)
     setAt(0)
+    setRound(r => r + 1)
+    setPicked(null)
     setName('')
     setNotes('')
     setFailed(null)
@@ -156,10 +189,20 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       return
     }
     setAt(at + 1)
+    setPicked(null)
     setName('')
     setNotes('')
     setFailed(null)
     setType(preset ?? saved ?? lastSaved ?? 'top')
+  }
+  /** The cut-out sheet closed without a choice: that photo is not used, and the next one picked comes up, or the picker again. */
+  const skipPhoto = () => {
+    setPicked(null)
+    if (at + 1 < queue.length) setAt(at + 1)
+    else {
+      setQueue([])
+      setAt(0)
+    }
   }
   const save = async () => {
     if (saving || busy || (file && !ready)) return
@@ -181,6 +224,8 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
         createdAt: now,
         updatedAt: now,
       })
+      // kept as it was only for want of a connection: its sheet offers Cut out now once online
+      if (photoId && picked?.offline) keptOffline(photoId)
       setLastSaved(type)
       next(type)
     } catch (err) {
@@ -231,7 +276,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
           />
           {ready ? (
             <img src={ready.preview} alt="The photo to save" />
-          ) : busy ? (
+          ) : busy || checking ? (
             <span className="garment-busy" role="status">
               <span className="garment-spinner" aria-hidden="true" />
               Getting the photo ready…
@@ -282,6 +327,15 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
           Save
         </button>
       </footer>
+      {/* over the sheet, not inside its panel, which would clip it */}
+      {file &&
+        checking &&
+        createPortal(
+          <Suspense fallback={null}>
+            <CutoutSheet key={`${round}.${at}`} photo={file} onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })} onCancel={skipPhoto} />
+          </Suspense>,
+          document.body,
+        )}
     </Modal>
   )
 }
@@ -297,6 +351,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const [photoError, setPhotoError] = useState<string | null>(null)
   /** Keeps what the details still have typed (the price, the tags), as the name and notes are kept. */
   const keepDetails = useRef(() => {})
+  // a replacement photo goes through the cut-out sheet first, as an added one does
+  const [checking, setChecking] = useState<File | null>(null)
   // gone from under the sheet (deleted, here or on another device): nothing left to show
   useEffect(() => {
     if (!g) onClose()
@@ -320,18 +376,19 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     if (!cur || text === (cur.notes ?? '')) return
     onEdit(cur, { ...cur, notes: text || undefined, updatedAt: newerStamp(cur.updatedAt) })
   }
-  const replace = async (file: File | undefined) => {
-    if (!file) return
+  const replace = async (file: File, cutout: boolean, offline?: boolean) => {
+    setChecking(null)
     setPhotoBusy(true)
     setPhotoError(null)
     try {
-      const p = await prepareGarmentPhoto(file)
+      const p = await prepareGarmentPhoto(file, { cutout })
       const photoId = await saveMedia(p.photo, { personal: true, userId })
       const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })
       // the old two go once these two are up and the Undo has had its time,
       // and only if no piece points at them by then (Wardrobe → retireMedia):
       // deleted at once, an Undo or another device's copy would point at nothing
       edit(cur => ({ ...cur, photoId, thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
+      if (offline) keptOffline(photoId)
     } catch (err) {
       setPhotoError(failure(err))
     } finally {
@@ -476,16 +533,25 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
             className="garment-file"
             disabled={photoBusy}
             onChange={e => {
-              void replace(e.target.files?.[0])
+              const picked = e.target.files?.[0]
               e.target.value = ''
+              if (picked) setChecking(picked)
             }}
           />
         </label>
+        <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />
         <span className="spacer" />
         <button type="button" className="btn primary" disabled={!!g.archivedAt} onClick={() => onWearToday(g)}>
           Wear today
         </button>
       </footer>
+      {checking &&
+        createPortal(
+          <Suspense fallback={null}>
+            <CutoutSheet photo={checking} onDone={(f, info) => void replace(f, info.cutout, info.offline)} onCancel={() => setChecking(null)} />
+          </Suspense>,
+          document.body,
+        )}
     </Modal>
   )
 }
