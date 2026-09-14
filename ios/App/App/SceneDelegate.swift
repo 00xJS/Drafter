@@ -56,6 +56,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return URL(string: "drafter://open?tab=journal")
         case "new":
             return URL(string: "drafter://new")
+        case "plan":
+            // Plan my day, over Home → Today; it writes nothing until its own button is pressed
+            return URL(string: "drafter://open?plan=day")
+        case "wardrobe":
+            // Home → Wardrobe (routes.ts, LEGACY_VIEW_TO_HOME)
+            return URL(string: "drafter://open?view=wardrobe")
         case "today":
             return URL(string: "drafter://open?view=today")
         default:

@@ -201,7 +201,8 @@ What the shell adds over the installed web app:
   a one-time token so the cookie-bound state still holds.
 - **A URL scheme for capture.** `drafter://new` (an empty capture sheet),
   `drafter://new?title=…`, `drafter://new?url=…`, `drafter://open?task=<id>`,
-  `drafter://open?view=review` (Home → Week), `drafter://open?tab=journal` (today's journal
+  `drafter://open?view=review` (Home → Week), `drafter://open?view=wardrobe`
+  (Home → Wardrobe), `drafter://open?tab=journal` (today's journal
   editor), `drafter://open?tab=people` or `tab=places` (that segment of
   People), `drafter://open?plan=day`, `plan=shutdown` or `plan=week` (Plan my
   day, Shut down or Plan next week, which write nothing until you press their
@@ -211,9 +212,12 @@ What the shell adds over the installed web app:
   from Share Sheet" → "Open URL" `drafter://new?url=[URL-encoded Shortcut
   Input]`) puts Drafter in every share sheet.
 - **Home Screen quick actions.** Long-press the icon for *Journal*
-  (`drafter://open?tab=journal`), *New task* (`drafter://new`) and *Today*
-  (`drafter://open?view=today`), one gesture from the Home Screen, cold start
-  or warm.
+  (`drafter://open?tab=journal`), *New task* (`drafter://new`), *Plan my day*
+  (`drafter://open?plan=day`: the day's planning sheet over Home → Today,
+  writing nothing until you press its button), *Wardrobe*
+  (`drafter://open?view=wardrobe`) and *Today* (`drafter://open?view=today`),
+  one gesture from the Home Screen, cold start or warm. iOS may show only an
+  app's first four, so *Today*, where *Plan my day* opens too, is listed last.
 - Syncs whenever the app comes to the foreground; haptics when a task
   completes and at each point a swipe latches, so you can defer one-handed
   without watching; the keyboard, pickers and status bar follow Settings →
