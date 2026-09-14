@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
+import { retireMedia } from '../../media'
 import type { Garment, Item, Outfit, Wear } from '../../types'
-import { liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, wearable, wearIndex, type LookLog } from '../../wardrobe'
+import { liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, swappedPhotos, wearable, wearIndex, type LookLog } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
 import type { WardrobeOpen } from '../planner/useNavigation'
@@ -93,10 +94,21 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     showToast('Outfit saved', () => onRemove(outfit.id))
   }
 
+  /** Photos a write of a piece swapped out go once the new ones are up and the server has the write, if nothing points at them by then (media.ts retireMedia). */
+  const letGo = (from: Garment, to: Garment) => {
+    const { gone, now } = swappedPhotos(from, to)
+    if (gone.length) retireMedia(gone, now, to.id)
+  }
   /** An edit of a piece; with a message, Undo writes the copy it was made on back, stamped newer again. */
   const editPiece = (before: Garment, after: Garment, msg?: string) => {
     onSave(after)
-    if (msg) showToast(msg, () => onSave({ ...before, updatedAt: newerStamp(after.updatedAt) }))
+    letGo(before, after)
+    if (msg)
+      showToast(msg, () => {
+        const back = { ...before, updatedAt: newerStamp(after.updatedAt) }
+        onSave(back)
+        letGo(after, back)
+      })
   }
   const retire = (g: Garment, on: boolean) => editPiece(g, retired(g, on), on ? `Retired ${g.name}` : `${g.name} is back`)
   const removePiece = (g: Garment) => {

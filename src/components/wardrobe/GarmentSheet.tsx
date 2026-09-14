@@ -124,7 +124,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     try {
       // the two photos go into this device's store, and its upload queue, first; the piece then points at them
       const photoId = ready ? await saveMedia(ready.photo, { personal: true, userId }) : undefined
-      const thumbId = ready ? await saveMedia(ready.thumb, { personal: true, userId }) : undefined
+      const thumbId = ready ? await saveMedia(ready.thumb, { personal: true, userId, thumbOf: photoId }) : undefined
       const now = new Date().toISOString()
       onCreate({
         kind: 'garment',
@@ -270,9 +270,10 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     try {
       const p = await prepareGarmentPhoto(file)
       const photoId = await saveMedia(p.photo, { personal: true, userId })
-      const thumbId = await saveMedia(p.thumb, { personal: true, userId })
-      // the old two stay where they are: an orphan is safer than a reference
-      // that another device's edit of the piece could lose in a merge
+      const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })
+      // the old two go once these two are up and the Undo has had its time,
+      // and only if no piece points at them by then (Wardrobe → retireMedia):
+      // deleted at once, an Undo or another device's copy would point at nothing
       edit(cur => ({ ...cur, photoId, thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
     } catch (err) {
       setPhotoError(failure(err))

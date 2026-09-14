@@ -72,6 +72,26 @@ describe('boot and the everyday round', () => {
     expect(d.engine.getState().syncInfo).toMatchObject({ online: true, pending: 0 })
   })
 
+  it('says what the server has not confirmed yet: the records waiting to push, and its last copy of each it had', async () => {
+    const server = new FakeServer()
+    server.seed(task('a'))
+    const d = device(server)
+    await ready(d)
+    expect(d.engine.unconfirmed()).toEqual({ ids: new Set(), shadows: [] })
+    server.offline = true
+    edit(d, 'a', { title: 'Offline edit' })
+    d.engine.upsert(task('new', { title: 'Offline idea', updatedAt: newerStamp() }))
+    await vi.advanceTimersByTimeAsync(2000)
+    await idle(d)
+    const waiting = d.engine.unconfirmed()
+    expect([...waiting.ids].sort()).toEqual(['a', 'new'])
+    // the server's copy of 'a' is still the one it had; 'new' it has never seen
+    expect(waiting.shadows).toEqual([expect.objectContaining({ id: 'a', title: 'a' })])
+    server.offline = false
+    expect(await d.engine.sync()).toBe(true)
+    expect(d.engine.unconfirmed()).toEqual({ ids: new Set(), shadows: [] })
+  })
+
   it('a restart while offline still sends what the last session left', async () => {
     const server = new FakeServer()
     const d = device(server)

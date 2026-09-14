@@ -1,13 +1,15 @@
-import { Suspense, useEffect, useMemo } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
-import { watchPendingMedia } from '../media'
+import { retireDue, trackMediaInUse, watchPendingMedia, type MediaInUse } from '../media'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
 import { ErrorBoundary } from './ErrorBoundary'
 import { PullToRefresh } from './PullToRefresh'
+import { useSignOut } from './SignOutGuard'
 import { forgetRetiredKeys } from '../retiredkeys'
+import { garmentMediaIds } from '../../shared/media.mjs'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
@@ -44,6 +46,26 @@ export default function Planner() {
   // a photo saved offline, or whose upload failed, goes up at launch, when the
   // connection comes back and whenever the app is shown again
   useEffect(() => watchPendingMedia(), [])
+  // a photo swapped out of a piece of clothing is deleted only once no piece
+  // here, live or in Trash, points at it and the server has the edit that let
+  // it go, and no copy the server may still hold points at it: the swaps ask
+  // this, and get nothing until the records have loaded
+  const mediaInUse = useRef<() => MediaInUse | null>(() => null)
+  mediaInUse.current = () => {
+    if (!store.loaded) return null
+    const { ids: unsynced, shadows } = store.unconfirmed()
+    return { userId: household.myId, ids: garmentMediaIds(store.allItems), unsynced, onServer: garmentMediaIds(shadows) }
+  }
+  useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])
+  // a round the server answered may be the one that confirmed such an edit
+  useEffect(() => void retireDue(), [store.syncInfo.lastAt])
+  // "Sign in again" signs out, which wipes this device: a photo still waiting
+  // to upload is asked about first, and with the session gone none can upload
+  const signIn = useSignOut(async () => {
+    await getSupabase()?.auth.signOut()
+    await clearLocalData()
+    window.location.reload()
+  }, store.syncInfo.authError)
   const nav = useNavigation()
   const toaster = useToast({ store })
   const { showToast } = toaster
@@ -110,18 +132,12 @@ export default function Planner() {
       {store.syncInfo.authError && (
         <div className="auth-banner">
           Your session expired — changes are staying on this device only.
-          <button
-            className="btn"
-            onClick={async () => {
-              await getSupabase()?.auth.signOut()
-              await clearLocalData()
-              window.location.reload()
-            }}
-          >
+          <button className="btn" disabled={signIn.busy} onClick={signIn.start}>
             Sign in again
           </button>
         </div>
       )}
+      {signIn.question}
 
       {/* iOS: drag down from the top of a tab to refresh — the same set the
           foreground resume runs. Off while an editor or sheet owns the screen;

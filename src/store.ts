@@ -110,6 +110,8 @@ export interface Store {
   keepMine(conflicts: EngineConflict[]): void
   /** Called when a round put in the Trash a repeat's extra next occurrence that held something the one kept does not. */
   onRetired(listener: (retired: RetiredSpawn[]) => void): () => void
+  /** Records whose latest edit the server has not confirmed yet, and its last confirmed copy of each it had. */
+  unconfirmed(): { ids: ReadonlySet<string>; shadows: Item[] }
 }
 
 /** The Notes list order: pinned first, then the most recently edited (ties by id, so the order is stable). */
@@ -132,6 +134,15 @@ function engine(): SyncEngine {
     },
   })
   return shared
+}
+
+/**
+ * A round now, if this page has started the engine; never starts one. A
+ * sign-out's Try uploading now sends the edits the wipe would take with the
+ * photos, the pieces that point at them among them.
+ */
+export function syncIfStarted(): Promise<boolean> {
+  return shared ? shared.sync() : Promise.resolve(false)
 }
 
 export function useItems(myId: string | null = null): Store {
@@ -341,5 +352,6 @@ export function useItems(myId: string | null = null): Store {
     onConflict: e.onConflict,
     keepMine: e.keepMine,
     onRetired: e.onRetired,
+    unconfirmed: e.unconfirmed,
   }
 }

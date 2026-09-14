@@ -61,6 +61,13 @@ export function retired(g: Garment, on: boolean, now = new Date().toISOString())
   return next
 }
 
+/** What a write of a piece did to its photos — Replace photo, or the Undo of one: the ids it let go of, and the ones it points at now. */
+export function swappedPhotos(before: Garment, after: Garment): { gone: string[]; now: string[] } {
+  const now = [after.photoId, after.thumbId].filter((id): id is string => !!id)
+  const gone = [before.photoId, before.thumbId].filter((id): id is string => !!id && !now.includes(id))
+  return { gone, now }
+}
+
 /** Save or reuse: a live outfit with the same pieces, in any order, is returned instead of a copy. */
 export function saveOutfit(outfits: readonly Outfit[], garmentIds: readonly string[], name?: string, now = new Date().toISOString()): { outfit: Outfit; reused: boolean } {
   const ids = cleanIds(garmentIds)

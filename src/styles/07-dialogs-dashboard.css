@@ -84,6 +84,14 @@
   width: 560px;
 }
 
+/* the sign-out question's three answers keep to the right and wrap from
+   there, so on a narrow screen Try uploading now drops to its own row under
+   the other two instead of pushing the footer sideways */
+.unsent-foot {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .settings-section {
   border-bottom: 1px solid var(--border);
   padding-bottom: 14px;

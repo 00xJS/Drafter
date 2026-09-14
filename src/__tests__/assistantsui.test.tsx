@@ -144,7 +144,7 @@ describe('ConnectAssistantSheet', () => {
         params={new URLSearchParams('client_id=dcr_x')}
         email="owner@example.test"
         onDone={() => {}}
-        onSignOut={() => {}}
+        onSignOut={async () => {}}
         describe={never}
         approve={never}
         navigate={url => went.push(url)}

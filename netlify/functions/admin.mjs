@@ -15,7 +15,7 @@ import { googleConfigured, missingGoogleEnv } from './lib/google.mjs'
 import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
 import { complete } from './lib/ai.mjs'
-import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, runBackup, signSnapshotUrl } from './lib/backup.mjs'
+import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
@@ -337,14 +337,25 @@ const handler = async req => {
         historyReassigned: Number(handed?.historyReassigned) || 0,
         historyDeleted: Number(handed?.historyDeleted) || 0,
       }
+      // Their wardrobe photos (personal/<id>/ in the media bucket) go next, and
+      // before the sign-in: whatever storage does with objects whose owner no
+      // longer exists, none of theirs is left for it to do it to. Their pieces
+      // went in the step above; a photo another piece still points at stays.
+      // Failing keeps the sign-in, so Try again finishes the job.
+      let photosDeleted
+      try {
+        photosDeleted = await removePersonalPhotos(userId)
+      } catch (e) {
+        return Response.json({ error: `Their records were handed over, but their wardrobe photos could not be deleted, so the sign-in was kept: ${e?.message ?? e}. Try again.`, ...counts }, { status: 502 })
+      }
       try {
         await authAdmin(`users/${userId}`, { method: 'DELETE' })
       } catch (e) {
         // the records have moved and the sign-in is still there; running this
         // again moves nothing twice and retries the delete
-        return Response.json({ error: `Their records were handed over, but the sign-in could not be deleted: ${e?.message ?? e}. Try again.`, ...counts }, { status: 502 })
+        return Response.json({ error: `Their records were handed over, but the sign-in could not be deleted: ${e?.message ?? e}. Try again.`, ...counts, photosDeleted }, { status: 502 })
       }
-      return Response.json({ ok: true, email: target?.email ?? null, ...counts })
+      return Response.json({ ok: true, email: target?.email ?? null, ...counts, photosDeleted })
     }
 
     if (action === 'listBackups') {

@@ -1,6 +1,8 @@
 export const KEEP_BACKUPS: number
 export const HISTORY_TTL_MS: number
 export const TOMBSTONE_TTL_MS: number
+export const PHOTO_GRACE_MS: number
+export const TRASH_KEEPS_PHOTOS_MS: number
 export const BUCKET: string
 export const PREFIX: string
 
@@ -38,11 +40,23 @@ export interface BackupReport {
   failures: string[]
   unowned: number
   historyPurged: number | null
+  /** Wardrobe photos no piece of clothing pointed at, deleted; null when the sweep could not run. */
+  photosDeleted: number | null
   tombstonesPurged: number | null
+}
+
+/** One entry of a storage list: a folder has a null id. */
+export interface ListedObject {
+  name?: string
+  id?: string | null
+  updated_at?: string | null
+  created_at?: string | null
 }
 
 export function baseUrl(): string | undefined
 export function rest(path: string, init?: RequestInit): Promise<unknown>
+/** Every row a select matches (it must select `id`), or a throw: never a list cut short at max_rows. */
+export function restAll(path: string, pageSize?: number): Promise<Record<string, unknown>[]>
 export function storage(path: string, init?: RequestInit): Promise<unknown>
 export function dayKey(d?: Date | string | number): string
 export function groupRowsByUser(rows: PostRow[] | null | undefined): Map<string, PostRow[]>
@@ -56,4 +70,8 @@ export function signSnapshotUrl(objectPath: string, expiresIn?: number): Promise
 export function backupUser(userId: string, rows: PostRow[], date?: string, exportedAt?: Date): Promise<BackupWrite>
 export function purgeHistory(now?: Date): Promise<number | null>
 export function purgeTombstones(now?: Date): Promise<number | null>
+/** The paths in an account's personal/ folder that may go: its own photos, pointed at by no piece, older than `olderThan` (null: any age). */
+export function photosToSweep(userId: string, listed: readonly (ListedObject | null | undefined)[] | null | undefined, inUse: ReadonlySet<string>, olderThan: string | null): string[]
+export function sweepPersonalPhotos(now?: Date): Promise<{ deleted: number; failures: string[] }>
+export function removePersonalPhotos(userId: string): Promise<number>
 export function runBackup(now?: Date): Promise<BackupReport>

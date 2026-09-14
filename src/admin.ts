@@ -66,6 +66,8 @@ export interface BackupReport {
   failures: string[]
   unowned: number
   historyPurged: number | null
+  /** Wardrobe photos no piece pointed at any more, deleted; null when the sweep could not run. */
+  photosDeleted?: number | null
   tombstonesPurged: number | null
 }
 

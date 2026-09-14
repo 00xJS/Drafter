@@ -3,6 +3,7 @@ import type { AgentScope } from '../agents'
 import { approveRequest, clearAuthorizeRequest, describeRequest, returnsTo, safeRedirect } from '../oauthRequest'
 import type { AuthorizeAnswer, AuthorizeDescription } from '../oauthRequest'
 import { Modal, ModalHead } from './Modal'
+import { useSignOut } from './SignOutGuard'
 
 interface Props {
   /** The captured /oauth/authorize query (pendingAuthorizeRequest()). */
@@ -11,8 +12,8 @@ interface Props {
   email: string
   /** The sheet is finished without leaving the app: denied in place, an unusable request dismissed. */
   onDone(): void
-  /** "Not you?" — sign out, keeping the request so the right account can answer it. */
-  onSignOut(): void
+  /** "Not you?" — sign out, keeping the request so the right account can answer it. Settles when the page is on its way out. */
+  onSignOut(): Promise<void>
   /** Tests and previews: the server calls and the navigation (defaults: src/oauthRequest.ts, location.assign). */
   describe?: (params: URLSearchParams) => Promise<AuthorizeDescription>
   approve?: (params: URLSearchParams, decision: 'allow' | 'deny', scopes: readonly AgentScope[]) => Promise<AuthorizeAnswer>
@@ -38,6 +39,10 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
   const [canWrite, setCanWrite] = useState(true)
   const [journal, setJournal] = useState(false)
   const [busy, setBusy] = useState(false)
+  // signing out wipes this device on the way to the other account: a photo
+  // still waiting to upload is asked about first, and the button stays held
+  // until the sign-out is done
+  const signOut = useSignOut(onSignOut)
 
   // keyed on the query, not the object: a parent that rebuilds params on each render must not re-ask
   const query = params.toString()
@@ -113,10 +118,11 @@ export function ConnectAssistantSheet({ params, email, onDone, onSignOut, descri
               </p>
               <p className="sync-line">
                 <small>Signed in as {email || 'you'}.</small>
-                <button type="button" className="btn subtle" onClick={onSignOut} disabled={busy}>
+                <button type="button" className="btn subtle" onClick={signOut.start} disabled={busy || signOut.busy}>
                   Sign out
                 </button>
               </p>
+              {signOut.question}
               <div className="field">
                 <span>It may</span>
                 <label className="cal-source mirror-row">
