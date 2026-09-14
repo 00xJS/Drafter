@@ -218,13 +218,15 @@ export async function fetchForecast(lat: number, lon: number, fetchFn: typeof fe
 /**
  * The forecast to show right now: cached while fresh, refetched when stale,
  * and the stale one when the refetch fails — an old forecast beats an empty
- * tile when the signal drops. Null when weather is off or nothing has ever
- * loaded. `now` is injectable so the tests never read the clock.
+ * tile when the signal drops. `force` fetches past the half-hour cache: a pull
+ * to refresh is someone asking for the sky as it is now, and a fetch that
+ * fails still answers the last forecast. Null when weather is off or nothing
+ * has ever loaded. `now` is injectable so the tests never read the clock.
  */
-export async function getWeather(now = Date.now()): Promise<Forecast | null> {
+export async function getWeather(now = Date.now(), { force = false }: { force?: boolean } = {}): Promise<Forecast | null> {
   const c = readCache()
   if (!c.enabled || !Number.isFinite(c.lat) || !Number.isFinite(c.lon)) return null
-  if (c.forecast && !isStale(c.fetchedAt, now)) return c.forecast
+  if (c.forecast && !force && !isStale(c.fetchedAt, now)) return c.forecast
   const f = await fetchForecast(c.lat!, c.lon!, fetch, unitFor(c))
   // Re-read after the wait: a "Weather off" pick while the fetch was in flight
   // has already forgotten the location, and writing the pre-fetch snapshot
@@ -311,13 +313,14 @@ export function disableWeather(): void {
  * coming back to the front, and the briefing's weather is part of that. The
  * strip sits deep in Home and is often not mounted at all, so the ask is an
  * event it listens for beside visibilitychange rather than a prop threaded
- * down to it; getWeather still decides whether the ask means a network call.
+ * down to it. Only a pull or the pill sends it, and it always means a fetch
+ * now (watchWeather); coming back to the front still leaves it to the cache.
  */
 export const WEATHER_REFRESH_EVENT = 'drafter:weather-refresh'
 
 const windowTarget = (): EventTarget | undefined => (typeof window !== 'undefined' ? window : undefined)
 
-/** Ask whatever is showing the weather to refresh it. Nothing listening, nothing happens. */
+/** Ask whatever is showing the weather to fetch it now. Nothing listening, nothing happens. */
 export function requestWeatherRefresh(target: EventTarget | undefined = windowTarget()): void {
   target?.dispatchEvent(new Event(WEATHER_REFRESH_EVENT))
 }
@@ -327,4 +330,35 @@ export function onWeatherRefresh(cb: () => void, target: EventTarget | undefined
   if (!target) return () => {}
   target.addEventListener(WEATHER_REFRESH_EVENT, cb)
   return () => target.removeEventListener(WEATHER_REFRESH_EVENT, cb)
+}
+
+/** Whether the page is showing, as watchWeather reads it: the document, or a stand-in in the tests. */
+type VisibilityTarget = EventTarget & { readonly visibilityState: DocumentVisibilityState }
+
+const documentTarget = (): VisibilityTarget | undefined => (typeof document !== 'undefined' ? document : undefined)
+
+/**
+ * Hand whatever shows the weather a forecast until the returned function is
+ * called: once now, whenever the page comes back to the front, and on every
+ * requestWeatherRefresh. The first two leave it to the half-hour cache, so
+ * there is no timer and no request while nothing is looking. A pull to
+ * refresh or the sync pill is someone asking for the sky as it is now, so
+ * that one fetches past the cache — and when the fetch fails it answers the
+ * last forecast (getWeather), so a pull in a tunnel never blanks the tile.
+ */
+export function watchWeather(
+  show: (f: Forecast | null) => void,
+  { win = windowTarget(), doc = documentTarget() }: { win?: EventTarget; doc?: VisibilityTarget } = {},
+): () => void {
+  const refresh = (force: boolean) => void getWeather(Date.now(), { force }).then(show)
+  refresh(false)
+  const onVisible = () => {
+    if (doc?.visibilityState === 'visible') refresh(false)
+  }
+  doc?.addEventListener('visibilitychange', onVisible)
+  const offPull = onWeatherRefresh(() => refresh(true), win)
+  return () => {
+    doc?.removeEventListener('visibilitychange', onVisible)
+    offPull()
+  }
 }

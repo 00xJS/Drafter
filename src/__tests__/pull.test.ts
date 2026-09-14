@@ -173,17 +173,19 @@ describe('pull to refresh: wired the way the shell needs', () => {
     expect(planner).toContain('Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])')
   })
 
-  it('asks the briefing’s weather to refresh too, as coming to the foreground does', () => {
+  it('asks the briefing’s weather to refresh too, and the strip fetches it fresh for the ask', () => {
     // the ask goes out as the sync starts, and the spinner does not wait on it
     const sync = read('../components/planner/useCalendarSync.ts')
     const manual = sync.slice(sync.indexOf('const manualSync = async () => {'), sync.indexOf('const mirrorsOn'))
     expect(manual).toMatch(/setSyncing\(true\)\s+requestWeatherRefresh\(\)\s+try \{/)
-    // the strip hears it beside visibilitychange, and lets go of both together
+    // the strip follows the weather with watchWeather, which hears the ask
+    // beside visibilitychange (weather-refresh.test.ts runs it); it lets go on
+    // unmount, and an empty answer never blanks the forecast it shows
     const card = read('../components/BriefingCard.tsx')
     const effect = card.slice(card.indexOf('useEffect(() => {\n    if (!cache.enabled) return'), card.indexOf('}, [cache.enabled, cache.lat, cache.lon])'))
-    expect(effect).toContain("document.addEventListener('visibilitychange', onVisible)")
-    expect(effect).toContain('const offPull = onWeatherRefresh(refresh)')
-    expect(effect).toMatch(/return \(\) => \{[\s\S]*removeEventListener\('visibilitychange', onVisible\)[\s\S]*offPull\(\)/)
+    expect(effect).toContain('const stop = watchWeather(')
+    expect(effect).toContain('if (live) setForecast(prev => f ?? prev)')
+    expect(effect).toMatch(/return \(\) => \{\s+live = false\s+stop\(\)/)
   })
 
   it('has a refresh icon, and its chrome lives in the native shell block', () => {
