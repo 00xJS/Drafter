@@ -46,6 +46,7 @@ import { blocksOn } from '../focus'
 import type { PlanStep } from './PlanDaySheet'
 import { dayClosed } from '../dayclose'
 // the card and its thumbnails only: the rest of the wardrobe is Home → Wardrobe's own chunk
+import { canDress } from '../wardrobe'
 import { WardrobeCard } from './wardrobe/WardrobeCard'
 import type { WardrobeOpen } from './planner/useNavigation'
 
@@ -659,7 +660,9 @@ export function Today({
   const clearDay = !briefingFacts(events, habits, new Date()).events && s.overdue.length === 0 && s.today.length === 0
   const freeTime = clearDay ? freeTimeWishlist(tasks) : []
 
-  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft) {
+  // a wardrobe that can dress you has its card to show, tasks or not
+  const dressable = !!(wardrobeCard && garments && canDress(garments))
+  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable) {
     return (
       <div className="empty-hero">
         <h2>Welcome to your planner</h2>

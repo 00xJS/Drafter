@@ -151,8 +151,10 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
       {homeTab === 'wardrobe' && (
         <Wardrobe
           garments={store.garments}
+          inTrash={store.garmentsInTrash}
           outfits={store.outfits}
           wears={store.wears}
+          myId={household.myId}
           onSave={item => store.upsert(item)}
           onRemove={id => store.remove(id)}
           onRestore={ids => store.restore(ids)}

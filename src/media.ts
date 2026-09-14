@@ -1,5 +1,5 @@
 import { idbAll, idbDel, idbGet, idbSet } from './idb'
-import { getSupabase } from './supabase'
+import { getSupabase, storedUserId } from './supabase'
 import { uid } from './utils'
 
 // Images live in the Supabase Storage bucket "media" so every signed-in device
@@ -9,7 +9,9 @@ import { uid } from './utils'
 // flaky connection goes up later rather than never. Note photos and task
 // images are the household's; a garment's is personal, under its uploader's
 // own personal/<user id>/ folder, which the v3.14 storage policies keep to
-// that account. Local mode keeps working, local-only.
+// that account, and it is never sent under anything else: a bare id is one
+// every household member may list and download. Local mode keeps working,
+// local-only.
 
 export interface MediaItem {
   id: string
@@ -19,29 +21,38 @@ export interface MediaItem {
   /** Saved here, not yet in the bucket. Absent on every item saved before the
    *  queue and on every downloaded copy, so nothing old is ever re-uploaded. */
   pending?: true
+  /** A garment's photo: sent only under personal/<user id>/. */
+  personal?: true
 }
 
 const urlCache = new Map<string, string>()
 
+/** A personal photo with no account to file it under: nothing is saved, and the sheet says so. */
+export class NotSignedIn extends Error {
+  constructor() {
+    super('Sign in again to save photos of your clothes — this one was not saved')
+    this.name = 'NotSignedIn'
+  }
+}
+
 /**
  * Keep a photo or file on this device and queue it for the bucket. A personal
- * one is filed under personal/<the session's user id>/ (getSession reads local
- * storage, so this works offline); in local mode, or with no session, the id is
- * a bare uid, as a note photo's always is.
+ * one is filed under personal/<user id>/: the account the caller names (the
+ * planner's own), else the one auth-js last stored on this device — read with
+ * no network and no token refresh, so it is there offline and after the
+ * access token has expired. With neither it is refused, never given a bare id.
+ * In local mode the id is a bare uid, as a note photo's always is.
  */
-export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean } = {}): Promise<string> {
+export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean; userId?: string | null } = {}): Promise<string> {
   const sb = getSupabase()
   let id = uid()
   if (opts.personal && sb) {
-    try {
-      const { data } = await sb.auth.getSession()
-      const user = data.session?.user.id
-      if (user) id = `personal/${user}/${uid()}`
-    } catch {
-      /* no session to read: a bare id, which the owner-scoped policies still cover */
-    }
+    const user = opts.userId || storedUserId()
+    if (!user) throw new NotSignedIn()
+    id = `personal/${user}/${uid()}`
   }
   const item: MediaItem = { id, name: file.name ?? id, type: file.type, blob: file }
+  if (opts.personal) item.personal = true
   if (sb) item.pending = true
   await idbSet('media', id, item)
   void flushPendingMedia()
@@ -79,6 +90,8 @@ export async function uploadPending(deps: {
 async function toBucket(item: MediaItem): Promise<boolean> {
   const sb = getSupabase()
   if (!sb) return false
+  // the household may read a bare id: a personal photo stays on this device rather than go up under one
+  if (item.personal && !item.id.startsWith('personal/')) return false
   const { error } = await sb.storage.from('media').upload(item.id, item.blob, { contentType: item.type, upsert: true })
   if (error) console.error('Media upload failed (kept on this device, will retry):', error.message)
   return !error

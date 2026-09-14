@@ -89,12 +89,12 @@ describe('where the card sits on Today', () => {
 
   const task = (id: string, over: Partial<Task> = {}): Task => ({ kind: 'task', id, title: `Task ${id}`, description: '', status: 'todo', priority: 'normal', tags: [], createdAt: T0, updatedAt: T0, ...over })
 
-  function today(hour: number, withWardrobe = true) {
+  function today(hour: number, withWardrobe = true, tasks?: Task[], garments = wardrobe) {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 14, hour))
     // the journal card asks the viewport how wide it is; a static render has none
     if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
-    const focus = [task('garage', { title: 'Sort the garage', focusOn: TODAY, focusBy: 'me' })]
+    const focus = tasks ?? [task('garage', { title: 'Sort the garage', focusOn: TODAY, focusBy: 'me' })]
     const props: ComponentProps<typeof Today> = {
       tasks: focus,
       allTasks: focus,
@@ -132,7 +132,7 @@ describe('where the card sits on Today', () => {
       onSaveRoutine: noop,
       onDeleteRoutine: noop,
       myId: 'me',
-      ...(withWardrobe ? { garments: wardrobe, outfits: [], wears: [], onLogWear: noop, onOpenWardrobe: noop } : {}),
+      ...(withWardrobe ? { garments, outfits: [], wears: [], onLogWear: noop, onOpenWardrobe: noop } : {}),
     }
     return renderToStaticMarkup(<Today {...props} />)
   }
@@ -160,5 +160,15 @@ describe('where the card sits on Today', () => {
     expect(at).toBeLessThan(habits)
     // nothing between the two but the habits card's own opening tag
     expect(html.slice(at, habits).match(/<section/g)).toHaveLength(1)
+  })
+
+  it('shows the card instead of the welcome when there are no tasks yet but the wardrobe can dress you', () => {
+    const html = today(9, true, [])
+    expect(html).toContain('What are you wearing?')
+    expect(html).not.toContain('Welcome to your planner')
+    // a wardrobe that cannot dress you yet leaves the welcome as it was
+    const bare = today(9, true, [], [piece('tee', 'top')])
+    expect(bare).toContain('Welcome to your planner')
+    expect(bare).not.toContain('wardrobe-card')
   })
 })

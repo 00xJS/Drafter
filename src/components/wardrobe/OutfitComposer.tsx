@@ -1,37 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { shiftDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
-import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
-import { byRest, coreKey, looksOn, type WearIndex } from '../../wardrobe'
+import { GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
+import { byRest, looksOn, type WearIndex } from '../../wardrobe'
 import { ConfirmButton } from '../ConfirmButton'
+import { chosenIn, heldBadge, heldPieces, load, OPTIONAL, rowsOf, shownIn, start, type Optional, type Selection, type Slot } from './composer'
 import { GarmentPhoto } from './GarmentPhoto'
 import { SavedOutfits } from './SavedOutfits'
 import { SnapRow } from './SnapRow'
 
-/** The slots that hold one piece each; accessories hold any number. */
-type Slot = Exclude<GarmentType, 'accessory'>
-type Rows = Record<GarmentType, Garment[]>
-interface Picked {
-  top: string | null
-  bottom: string | null
-  onepiece: string | null
-  outerwear: string | null
-  shoes: string | null
-  accessories: string[]
-}
-interface Selection {
-  picked: Picked
-  /** The One-piece side of the Separates / One-piece switch. */
-  onepiece: boolean
-  /** Said under the rows when an outfit with a deleted piece is put in them. */
-  note?: string
-}
-
-/** The two rows you open when you want them. */
-const OPTIONAL = ['outerwear', 'shoes'] as const
-type Optional = (typeof OPTIONAL)[number]
-/** Which of them are open: this device's preference, like the journal's stats. */
+/** Which of the optional rows are open: this device's preference, like the journal's stats. */
 const ROWS_KEY = 'drafter:wardrobe-rows'
+const NONE: Garment[] = []
 
 function storedRows(): Optional[] {
   try {
@@ -42,55 +22,10 @@ function storedRows(): Optional[] {
   }
 }
 
-/**
- * The rows, dealt in the order frozen when the composer mounted: a piece added
- * since goes on the end of its row, and one retired or deleted since drops
- * out. They never re-sort under a thumb during a visit.
- */
-function rowsOf(garments: readonly Garment[], frozen: readonly string[]): Rows {
-  const rows = Object.fromEntries(GARMENT_TYPES.map(t => [t, [] as Garment[]])) as Rows
-  const live = new Map(garments.filter(g => !g.deletedAt && !g.archivedAt).map(g => [g.id, g]))
-  for (const id of frozen) {
-    const g = live.get(id)
-    if (g) rows[g.type].push(g)
-  }
-  const dealt = new Set(frozen)
-  for (const g of [...live.values()].filter(g => !dealt.has(g.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) rows[g.type].push(g)
-  return rows
-}
-
-/**
- * A look or an outfit put in the rows. A slot it has a piece for takes it (the
- * first, when it has two); one it has none for keeps its card, except
- * outerwear and shoes, which go to None. A piece that is in no row (retired or
- * deleted) leaves its row where it was.
- */
-function load(sel: Selection, ids: readonly string[], rows: Rows): Selection {
-  const inRows = new Map(GARMENT_TYPES.flatMap(t => rows[t].map(g => [g.id, g] as const)))
-  const picked: Picked = { ...sel.picked, outerwear: null, shoes: null, accessories: [] }
-  const filled = new Set<GarmentType>()
-  for (const id of ids) {
-    const g = inRows.get(id)
-    if (!g) continue
-    if (g.type === 'accessory') picked.accessories.push(g.id)
-    else if (!filled.has(g.type)) picked[g.type] = g.id
-    filled.add(g.type)
-  }
-  const onepiece = filled.has('onepiece') ? true : filled.has('top') || filled.has('bottom') ? false : sel.onepiece
-  return { picked, onepiece }
-}
-
-/** Where the rows start: on the day's latest look when it has one, otherwise on each row's first card. */
-function start(rows: Rows, look: Wear | undefined): Selection {
-  const first: Selection = {
-    picked: { top: rows.top[0]?.id ?? null, bottom: rows.bottom[0]?.id ?? null, onepiece: rows.onepiece[0]?.id ?? null, outerwear: null, shoes: null, accessories: [] },
-    onepiece: false,
-  }
-  return look ? load(first, look.garmentIds, rows) : first
-}
-
 interface Props {
   garments: Garment[]
+  /** Pieces in Trash: a day whose look still holds one shows it in its row. */
+  inTrash?: Garment[]
   outfits: Outfit[]
   wears: Wear[]
   byId: ReadonlyMap<string, Garment>
@@ -99,8 +34,12 @@ interface Props {
   day: string
   todayKey: string
   onDay(day: string): void
-  /** Log the pieces on the day: its latest look takes them, or with `another` a new look does. */
-  onLog(day: string, pieces: string[], another?: boolean): void
+  /**
+   * Log the pieces on the day: its latest look takes them, or with `another` a
+   * new look does. `shown` is every piece in the rows, so whatever else that
+   * look holds stays.
+   */
+  onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean }): void
   onRemoveLook(day: string): void
   onSaveOutfit(pieces: string[]): void
   /** The piece sheet, to add one of a type. */
@@ -117,15 +56,19 @@ interface Props {
  * One-pieces), Outerwear and Shoes when you open them, and Accessories as
  * chips; then Wearing this, or Save outfit, in a bar that stays in reach above
  * the tab bar. The rows lead with what has rested longest, in an order frozen
- * for the visit, and your saved outfits sit underneath.
+ * for the visit, and your saved outfits sit underneath. A day's look is shown
+ * as it is: a retired piece in it, or one in Trash, joins its row for the
+ * visit, badged, so Update look never writes over what you cannot see.
  */
 export function OutfitComposer(props: Props) {
-  const { garments, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece } = props
+  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece } = props
   const [frozen] = useState(() => byRest(garments, ix).map(g => g.id))
-  const rows = useMemo(() => rowsOf(garments, frozen), [garments, frozen])
   const dayLooks = looksOn(wears, day)
   const latest = dayLooks[dayLooks.length - 1]
-  const [sel, setSel] = useState<Selection>(() => start(rows, latest))
+  const held = useMemo(() => heldPieces(latest, garments, inTrash), [latest, garments, inTrash])
+  const rows = useMemo(() => rowsOf(garments, frozen, held), [garments, frozen, held])
+  const shown = useMemo(() => shownIn(rows), [rows])
+  const [sel, setSel] = useState<Selection>(() => start(rows, latest, byId))
   const [openRows, setOpenRows] = useState<Optional[]>(storedRows)
 
   // a day with a look brings its pieces into the rows; a day without one keeps
@@ -134,28 +77,12 @@ export function OutfitComposer(props: Props) {
   useEffect(() => {
     if (shownDay.current === day) return
     shownDay.current = day
-    if (latest) setSel(s => load(s, latest.garmentIds, rows))
+    setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
 
-  /** The chosen id when it is still in its row (a piece retired from its sheet mid-visit is not). */
-  const member = (type: GarmentType, id: string | null) => (id && rows[type].some(g => g.id === id) ? id : null)
-  const chosen: Record<Slot, string | null> = {
-    top: member('top', sel.picked.top) ?? rows.top[0]?.id ?? null,
-    bottom: member('bottom', sel.picked.bottom) ?? rows.bottom[0]?.id ?? null,
-    onepiece: member('onepiece', sel.picked.onepiece) ?? rows.onepiece[0]?.id ?? null,
-    outerwear: member('outerwear', sel.picked.outerwear),
-    shoes: member('shoes', sel.picked.shoes),
-  }
-  const accessories = sel.picked.accessories.filter(id => member('accessory', id))
-  const separates = rows.top.length > 0 || rows.bottom.length > 0
-  const onepieces = rows.onepiece.length > 0
-  const onepieceMode = onepieces && (!separates || sel.onepiece)
-  const rowOpen = (s: Optional) => openRows.includes(s) || !!chosen[s]
-  const pieces = [...(onepieceMode ? [chosen.onepiece] : [chosen.top, chosen.bottom]), ...OPTIONAL.map(s => (rowOpen(s) ? chosen[s] : null)), ...accessories].filter(
-    (id): id is string => !!id,
-  )
-  const dressed = coreKey(pieces, byId) !== null
+  const { slots: chosen, accessories, both, onepieceMode, open, pieces, dressed } = chosenIn(sel, rows, openRows)
+  const rowOpen = (s: Optional) => open.includes(s)
 
   const pick = (slot: Slot, id: string | null) => setSel(s => ({ ...s, note: undefined, picked: { ...s.picked, [slot]: id } }))
   const toggleAccessory = (id: string) =>
@@ -174,7 +101,7 @@ export function OutfitComposer(props: Props) {
       /* a preference, not data */
     }
   }
-  const loadOutfit = (o: Outfit) => setSel(s => ({ ...load(s, o.garmentIds, rows), note: o.garmentIds.some(id => !byId.has(id)) ? 'A piece was deleted' : undefined }))
+  const loadOutfit = (o: Outfit) => setSel(s => load(s, o.garmentIds, rows, byId))
 
   const yesterday = shiftDayKey(todayKey, -1)
   const dayName = `${day === todayKey ? 'Today · ' : day === yesterday ? 'Yesterday · ' : ''}${shortDay(day, todayKey)}`
@@ -255,9 +182,9 @@ export function OutfitComposer(props: Props) {
       {OPTIONAL.filter(rowOpen).map(s => row(s, s))}
       {/* the rows' own options sit under them: at 375pt both rows and the bar
           need every point there is above the tab bar */}
-      {((separates && onepieces) || OPTIONAL.some(s => !rowOpen(s))) && (
+      {(both || OPTIONAL.some(s => !rowOpen(s))) && (
         <div className="wardrobe-more">
-          {separates && onepieces && (
+          {both && (
             <span className="segmented wardrobe-mode" role="radiogroup" aria-label="Separates or a one-piece">
               <button type="button" role="radio" aria-checked={!onepieceMode} className={onepieceMode ? 'seg' : 'seg on'} onClick={() => setSel(s => ({ ...s, onepiece: false }))}>
                 Separates
@@ -280,10 +207,12 @@ export function OutfitComposer(props: Props) {
           <div className="wardrobe-acc-chips" role="group" aria-label="Accessories">
             {rows.accessory.map(g => {
               const on = accessories.includes(g.id)
+              const badge = heldBadge(g)
               return (
                 <button key={g.id} type="button" aria-pressed={on} className={on ? 'toggle on acc-chip' : 'toggle acc-chip'} onClick={() => toggleAccessory(g.id)}>
                   <GarmentPhoto garment={g} className="acc-thumb" />
                   {g.name}
+                  {badge && <span className="acc-held">{badge}</span>}
                 </button>
               )
             })}
@@ -301,11 +230,13 @@ export function OutfitComposer(props: Props) {
         </button>
         <span className="spacer" />
         {logged && (
-          <button type="button" className="btn" disabled={!dressed} onClick={() => onLog(day, pieces, true)}>
-            + Another look
+          // "+ Look" on a phone, where the three share one row
+          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true })}>
+            + <span className="wardrobe-another-long">Another look</span>
+            <span className="wardrobe-another-short">Look</span>
           </button>
         )}
-        <button type="button" className="btn primary" disabled={!dressed} onClick={() => onLog(day, pieces)}>
+        <button type="button" className="btn primary" disabled={!dressed} onClick={() => onLog(day, pieces, { shown })}>
           {primary}
         </button>
       </div>

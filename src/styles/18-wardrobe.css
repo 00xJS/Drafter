@@ -215,6 +215,14 @@
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+/* a piece the day's look holds that the rows are not dealt: retired, or in Trash */
+.snap-held {
+  align-self: flex-start;
+  padding: 1px 7px;
+  font-size: 0.625rem;
+  background: var(--surface-2);
+  color: var(--muted);
+}
 .snap-none {
   flex: 1;
   display: flex;
@@ -341,10 +349,20 @@
   padding-left: 12px;
   border-style: dashed;
 }
+.acc-held {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
 .wardrobe-note {
   margin: 4px 0;
   font-size: 0.8125rem;
   color: var(--danger);
+}
+/* a saved outfit's menu, when Wear today is off: why */
+.outfit-why {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
 
 /* ----- the look's moves, in reach: sticky above the tab bar on a phone, in the flow on a desktop */
@@ -361,6 +379,10 @@
 }
 .wardrobe-actions .btn:disabled {
   opacity: 0.5;
+}
+/* "+ Another look" is "+ Look" on a phone, where the three share one row */
+.wardrobe-another-short {
+  display: none;
 }
 
 /* ----- saved outfits, and a look drawn as one tile */
@@ -918,10 +940,31 @@
        grows with the text), so the bar keeps that clear and never tucks under */
     bottom: calc(var(--tabbar-h) + var(--safe-b) + 4px);
     z-index: 3;
+    /* one row, always: "+ Look" and the capped type below keep the three in 375pt */
+    flex-wrap: nowrap;
     margin-inline: -12px;
     padding: 8px 12px;
     background: var(--surface);
     border-top: 1px solid var(--hairline);
+  }
+  /* chrome gives before content: the bar's buttons and the day line grow with
+     Dynamic Type only so far, as the tab bar's labels do, so the Bottoms row
+     stays above the bar */
+  .wardrobe-actions .btn {
+    font-size: calc(14px * min(1.15, var(--type-scale)));
+  }
+  .wardrobe-another-long {
+    display: none;
+  }
+  .wardrobe-another-short {
+    display: inline;
+  }
+  /* the app's toast sits on the tab bar, as the bar does, and would cover all
+     three buttons for its six seconds: while the composer is on screen it
+     rises clear of the bar. With the keyboard up the tab bar is gone, and
+     .keyboard-open .toast places it as ever */
+  html:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 64px);
   }
   /* the tab bar's precedent: labels grow with Dynamic Type, but only so far,
      or "Wardrobe" pushes the fourth segment off a 375pt row */
@@ -940,18 +983,18 @@
   }
   .wardrobe-day-pick {
     padding-inline: 2px;
-    font-size: 0.8125rem;
+    font-size: calc(13px * min(1.15, var(--type-scale)));
   }
   .wardrobe-day-state {
     gap: 4px;
   }
   .wardrobe-logged {
     padding: 1px 6px;
-    font-size: 0.625rem;
+    font-size: calc(10px * min(1.15, var(--type-scale)));
   }
   .wardrobe-remove {
     padding: 4px 6px;
-    font-size: 0.75rem;
+    font-size: calc(12px * min(1.15, var(--type-scale)));
   }
   /* "Remove", beside the Logged badge; its name stays "Remove look" */
   .wardrobe-remove-more {
@@ -984,5 +1027,12 @@
   }
   .wardrobe-step {
     min-width: 44px;
+  }
+  /* padding rather than flex, so the disclosure triangle stays */
+  .clothes-retired summary,
+  .wardrobe-by-piece summary,
+  .garment-more summary {
+    min-height: 44px;
+    padding-block: 12px;
   }
 }

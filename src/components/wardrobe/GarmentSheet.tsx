@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
-import { saveMedia } from '../../media'
+import { NotSignedIn, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
 import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit } from '../../types'
 import { uid } from '../../utils'
@@ -22,6 +22,8 @@ interface Props {
   byId: ReadonlyMap<string, Garment>
   ix: WearIndex
   todayKey: string
+  /** The account signed in: a piece's photos are filed under its own personal/ folder. */
+  userId?: string | null
   /** A new piece, to save; the segment says so, with Undo. */
   onCreate(g: Garment): void
   /** An edit of a piece; with a message, a toast whose Undo writes `before` back. */
@@ -34,7 +36,7 @@ interface Props {
   onClose(): void
 }
 
-const failure = (err: unknown) => (err instanceof PhotoUnreadable ? err.message : 'That photo could not be kept on this device — try again')
+const failure = (err: unknown) => (err instanceof PhotoUnreadable || err instanceof NotSignedIn ? err.message : 'That photo could not be kept on this device — try again')
 
 function TypeChips({ type, onChange }: { type: GarmentType; onChange(t: GarmentType): void }) {
   return (
@@ -79,10 +81,10 @@ function usePrepared(file: File | null): { ready: Ready | null; busy: boolean; e
 /** The piece sheet: add one (or a queue of them from several photos), or everything about one. */
 export function GarmentSheet(props: Props) {
   const { mode } = props
-  return mode.kind === 'add' ? <AddPiece preset={mode.type} onCreate={props.onCreate} onClose={props.onClose} /> : <EditPiece {...props} id={mode.id} />
+  return mode.kind === 'add' ? <AddPiece preset={mode.type} userId={props.userId} onCreate={props.onCreate} onClose={props.onClose} /> : <EditPiece {...props} id={mode.id} />
 }
 
-function AddPiece({ preset, onCreate, onClose }: { preset?: GarmentType; onCreate(g: Garment): void; onClose(): void }) {
+function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType; userId?: string | null; onCreate(g: Garment): void; onClose(): void }) {
   const [queue, setQueue] = useState<File[]>([])
   const [at, setAt] = useState(0)
   const file = queue[at] ?? null
@@ -121,8 +123,8 @@ function AddPiece({ preset, onCreate, onClose }: { preset?: GarmentType; onCreat
     setSaving(true)
     try {
       // the two photos go into this device's store, and its upload queue, first; the piece then points at them
-      const photoId = ready ? await saveMedia(ready.photo, { personal: true }) : undefined
-      const thumbId = ready ? await saveMedia(ready.thumb, { personal: true }) : undefined
+      const photoId = ready ? await saveMedia(ready.photo, { personal: true, userId }) : undefined
+      const thumbId = ready ? await saveMedia(ready.thumb, { personal: true, userId }) : undefined
       const now = new Date().toISOString()
       onCreate({
         kind: 'garment',
@@ -229,7 +231,7 @@ function AddPiece({ preset, onCreate, onClose }: { preset?: GarmentType; onCreat
   )
 }
 
-function EditPiece({ id, garments, outfits, byId, ix, todayKey, onEdit, onRetire, onDelete, onWearToday, onGoDay, onClose }: Props & { id: string }) {
+function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, onRetire, onDelete, onWearToday, onGoDay, onClose }: Props & { id: string }) {
   const g = garments.find(x => x.id === id)
   // edits after an await read the piece as it is by then, so each is stamped newer than the last
   const latest = useRef(g)
@@ -267,8 +269,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, onEdit, onRetire
     setPhotoError(null)
     try {
       const p = await prepareGarmentPhoto(file)
-      const photoId = await saveMedia(p.photo, { personal: true })
-      const thumbId = await saveMedia(p.thumb, { personal: true })
+      const photoId = await saveMedia(p.photo, { personal: true, userId })
+      const thumbId = await saveMedia(p.thumb, { personal: true, userId })
       // the old two stay where they are: an orphan is safer than a reference
       // that another device's edit of the piece could lose in a merge
       edit(cur => ({ ...cur, photoId, thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')

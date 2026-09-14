@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react'
 import type { Garment } from '../../types'
 import { wornShort, type WearIndex } from '../../wardrobe'
+import { heldBadge } from './composer'
 import { GarmentPhoto } from './GarmentPhoto'
 
 interface Props {
@@ -159,13 +160,20 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
                       <>
                         <GarmentPhoto garment={g} />
                         <span className="snap-name">{g.name}</span>
-                        {ix.days.has(g.id) ? <span className="snap-worn">{wornShort(ix, g.id)}</span> : <span className="badge snap-new">New</span>}
+                        {heldBadge(g) ? (
+                          <span className="badge snap-held">{heldBadge(g)}</span>
+                        ) : ix.days.has(g.id) ? (
+                          <span className="snap-worn">{wornShort(ix, g.id)}</span>
+                        ) : (
+                          <span className="badge snap-new">New</span>
+                        )}
                       </>
                     ) : (
                       <span className="snap-none">None</span>
                     )}
                   </div>
-                  {on && g && (
+                  {/* a piece in Trash, held for the day it was worn, has no sheet to open here */}
+                  {on && g && !g.deletedAt && (
                     <button type="button" className="snap-info" aria-label={`About ${g.name}`} onClick={() => onInfo(g.id)}>
                       <span aria-hidden="true">i</span>
                     </button>

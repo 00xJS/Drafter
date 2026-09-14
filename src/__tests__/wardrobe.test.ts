@@ -13,11 +13,13 @@ import {
   forgotYesterday,
   garmentStats,
   liveById,
+  logLook,
   looksOn,
   middayOf,
   mostWorn,
   neverWorn,
   newWear,
+  notInUse,
   notWornLately,
   orderPieces,
   outfitDays,
@@ -31,12 +33,13 @@ import {
   savedOrder,
   suggestedNames,
   todaySuggestions,
+  unwearable,
   wardrobeTiles,
   wardrobeYearReport,
   wearId,
   wearIndex,
+  wearable,
   wearsByMonth,
-  withPiece,
   withPieces,
   wornLine,
   wornShort,
@@ -391,6 +394,53 @@ describe('by month', () => {
       else process.env.TZ = tz
     }
   })
+
+  it('keeps a look on the 1st of a month in its own month west of UTC, where a UTC midnight is the day before', () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      // the zone is in force: 2026-01-01 at UTC midnight is the evening of 31 December here
+      expect(new Date(Date.parse('2026-01-01')).getMonth()).toBe(11)
+      const now = new Date(2026, 8, 13, 12)
+      const ix = wearIndex([look('2026-01-01', ['tee']), look('2026-03-01', ['tee', 'jeans'])], '2026-09-13')
+      const year = wearsByMonth(ix, 2026, now)
+      expect(year.months.slice(0, 3)).toEqual([1, 0, 1])
+      expect(year.total).toBe(2)
+      expect(wearsByMonth(ix, 2025, now).total).toBe(0)
+      expect(wardrobeYearReport([tee, jeans], ix, 2026, now).map(r => [r.garment.id, r.months.slice(0, 3)])).toEqual([
+        ['tee', [1, 0, 1]],
+        ['jeans', [0, 0, 1]],
+      ])
+      expect(wardrobeYearReport([tee, jeans], ix, 2025, now)).toEqual([])
+    } finally {
+      if (tz === undefined) delete process.env.TZ
+      else process.env.TZ = tz
+    }
+  })
+
+  it('never worn: counts the week’s grace in local days either side of UTC', () => {
+    const tz = process.env.TZ
+    try {
+      // Kiritimati's midday is 22:00 UTC the day before; Los Angeles's evening is 03:00 UTC the day after
+      for (const [zone, hour] of [
+        ['Pacific/Kiritimati', 12],
+        ['America/Los_Angeles', 20],
+      ] as const) {
+        process.env.TZ = zone
+        const addedAt = (n: number) => {
+          const [y, m, d] = ago(n).split('-').map(Number)
+          return new Date(y, m - 1, d, hour).toISOString()
+        }
+        // the ISO string's own date is not the local day, so reading it would be a day out
+        expect(addedAt(6).slice(0, 10), zone).not.toBe(ago(6))
+        const garments = [piece('six', 'top', { createdAt: addedAt(6) }), piece('seven', 'top', { createdAt: addedAt(7) })]
+        expect(neverWorn(garments, wearIndex([], TODAY)).map(g => g.id), zone).toEqual(['seven'])
+      }
+    } finally {
+      if (tz === undefined) delete process.env.TZ
+      else process.env.TZ = tz
+    }
+  })
 })
 
 describe('repeatedOutfits', () => {
@@ -554,26 +604,110 @@ describe('the orders the composer and Clothes lead with', () => {
   })
 })
 
-describe('the piece sheet’s Wear today', () => {
-  const byId = liveById(everything)
+describe('logLook: what a log writes, and what its Undo puts back', () => {
+  const shownAll = new Set(everything.map(g => g.id))
 
-  it('withPiece: takes its slot, stands a one-piece in for a top and a bottom, and adds an accessory', () => {
-    expect(withPiece(['tee', 'jeans', 'trainers'], shirt, byId)).toEqual(['jeans', 'trainers', 'shirt'])
-    expect(withPiece(['tee', 'jeans', 'trainers'], dress, byId)).toEqual(['trainers', 'dress'])
-    expect(withPiece(['dress', 'boots'], jeans, byId)).toEqual(['boots', 'jeans'])
-    expect(withPiece(['tee', 'jeans', 'scarf'], watch, byId)).toEqual(['tee', 'jeans', 'scarf', 'watch'])
-    expect(withPiece(['tee', 'jeans', 'trainers'], boots, byId)).toEqual(['tee', 'jeans', 'boots'])
+  it('writes a new look on a day with none, and Undo removes it', () => {
+    const { write, undo } = logLook([], TODAY, ['tee', 'jeans'], everything, { now: '2026-09-14T08:00:00.000Z' })
+    expect(write).toMatchObject({ kind: 'wear', date: TODAY, garmentIds: ['tee', 'jeans'], createdAt: '2026-09-14T08:00:00.000Z' })
+    expect(undo).toEqual({ remove: write.id })
+  })
+
+  it('edits the day’s latest look under its own id, strictly newer, and Undo writes the copy back newer still', () => {
+    vi.useFakeTimers({ now: new Date('2026-09-14T08:00:00.000Z') })
+    const first = look(TODAY, ['tee', 'jeans'], { createdAt: '2026-09-14T07:00:00.000Z' })
+    // stamped by another device whose clock runs ten minutes fast
+    const latest = look(TODAY, ['shirt', 'jeans'], { createdAt: '2026-09-14T07:30:00.000Z', updatedAt: '2026-09-14T08:10:00.000Z' })
+    const { write, undo } = logLook([first, latest], TODAY, ['shirt', 'chinos'], everything, { shown: shownAll })
+    expect(write.id).toBe(latest.id)
+    expect(write.garmentIds).toEqual(['shirt', 'chinos'])
+    expect(write.updatedAt > latest.updatedAt).toBe(true)
+    expect(undo).toMatchObject({ id: latest.id, garmentIds: ['shirt', 'jeans'] })
+    expect((undo as Wear).updatedAt > write.updatedAt).toBe(true)
+  })
+
+  it('writes a second look with `another`, and leaves the first alone', () => {
+    const morning = look(TODAY, ['tee', 'jeans'])
+    const { write, undo } = logLook([morning], TODAY, ['shirt', 'chinos'], everything, { another: true, shown: shownAll })
+    expect(write.id).not.toBe(morning.id)
+    expect(write).toMatchObject({ date: TODAY, garmentIds: ['shirt', 'chinos'] })
+    expect(undo).toEqual({ remove: write.id })
+  })
+
+  it('keeps what the screen did not show — a piece in Trash, a retired one, an id with no record — and drops what it showed', () => {
+    const binned = piece('binned-scarf', 'accessory', { deletedAt: T0 })
+    const oldShoes = piece('old-shoes', 'shoes', { archivedAt: T0 })
+    const day = look(ago(3), ['tee', 'jeans', 'binned-scarf', 'old-shoes', 'ghost'])
+    // by default the screen is the composer's rows: every live, unretired piece
+    expect(logLook([day], ago(3), ['tee', 'chinos'], [...everything, binned, oldShoes]).write.garmentIds).toEqual(['tee', 'chinos', 'binned-scarf', 'old-shoes', 'ghost'])
+    const shown = look(ago(4), ['tee', 'jeans', 'scarf'])
+    expect(logLook([shown], ago(4), ['tee', 'jeans'], everything, { shown: new Set(['tee', 'jeans', 'scarf']) }).write.garmentIds).toEqual(['tee', 'jeans'])
+  })
+
+  it('lets a piece chosen now take a hidden piece’s slot, so a Restore never finds two tops', () => {
+    const binnedTop = piece('binned-top', 'top', { deletedAt: T0 })
+    const day = look(ago(3), ['binned-top', 'jeans', 'scarf'])
+    const all = [...everything, binnedTop]
+    const hidden = new Set<string>()
+    expect(logLook([day], ago(3), ['shirt', 'jeans'], all, { shown: hidden }).write.garmentIds).toEqual(['shirt', 'jeans', 'scarf'])
+    expect(logLook([day], ago(3), ['dress'], all, { shown: hidden }).write.garmentIds).toEqual(['dress', 'scarf'])
+    // an accessory takes nobody's place
+    expect(logLook([day], ago(3), ['watch'], all, { shown: hidden }).write.garmentIds).toEqual(['watch', 'binned-top', 'jeans', 'scarf'])
+  })
+})
+
+describe('the piece sheet’s Wear today: a log of one piece that shows none of today’s look', () => {
+  const wear = (ids: string[], id: string) => logLook([look(TODAY, ids)], TODAY, [id], everything, { shown: new Set() }).write.garmentIds
+
+  it('takes its slot, stands a one-piece in for a top and a bottom, and adds an accessory', () => {
+    expect(wear(['tee', 'jeans', 'trainers'], 'shirt')).toEqual(['shirt', 'jeans', 'trainers'])
+    expect(wear(['tee', 'jeans', 'trainers'], 'dress')).toEqual(['dress', 'trainers'])
+    expect(wear(['dress', 'boots'], 'jeans')).toEqual(['jeans', 'boots'])
+    expect(wear(['tee', 'jeans', 'scarf'], 'watch')).toEqual(['watch', 'tee', 'jeans', 'scarf'])
+    expect(wear(['tee', 'jeans', 'trainers'], 'boots')).toEqual(['boots', 'tee', 'jeans'])
     // already in the look: still once
-    expect(withPiece(['tee', 'jeans'], tee, byId)).toEqual(['jeans', 'tee'])
-    // a piece in Trash stays, so a Restore still finds the day
-    expect(withPiece(['gone-top', 'jeans'], shirt, byId)).toEqual(['gone-top', 'jeans', 'shirt'])
+    expect(wear(['tee', 'jeans'], 'tee')).toEqual(['tee', 'jeans'])
+    // an id with no record stays: a piece deleted forever takes nothing with it
+    expect(wear(['gone-top', 'jeans'], 'shirt')).toEqual(['shirt', 'gone-top', 'jeans'])
+    // nothing on today: a look of its own
+    expect(logLook([], TODAY, ['shirt'], everything, { shown: new Set() }).write.garmentIds).toEqual(['shirt'])
   })
 
   it('never lets a full look drop the piece being added', () => {
     const full = Array.from({ length: 12 }, (_, i) => `acc-${i}`)
-    const added = withPiece(full, watch, byId)
+    const added = wear(full, 'watch')
     expect(added).toHaveLength(12)
-    expect(added[11]).toBe('watch')
+    expect(added[0]).toBe('watch')
+  })
+})
+
+describe('what can be worn as it is', () => {
+  const oldTop = piece('old-top', 'top', { name: 'Old band tee', archivedAt: T0 })
+  const mac = piece('mac', 'outerwear', { name: 'Mac', archivedAt: T0 })
+  const byId = liveById([...everything, oldTop, mac])
+
+  it('wearable: every piece live and unretired, and a top and a bottom or a one-piece among them — the Today chips’ rule', () => {
+    expect(wearable(['tee', 'jeans', 'trainers'], byId)).toBe(true)
+    expect(wearable(['dress'], byId)).toBe(true)
+    expect(wearable(['old-top', 'jeans'], byId)).toBe(false)
+    expect(wearable(['tee', 'jeans', 'mac'], byId)).toBe(false)
+    expect(wearable(['tee', 'jeans', 'ghost'], byId)).toBe(false)
+    expect(wearable(['tee', 'trainers'], byId)).toBe(false)
+    expect(wearable([], byId)).toBe(false)
+  })
+
+  it('notInUse names what is retired, and says when a piece was deleted', () => {
+    expect(notInUse(['tee', 'jeans'], byId)).toBe('')
+    expect(notInUse(['old-top', 'jeans'], byId)).toBe('Old band tee is retired')
+    expect(notInUse(['old-top', 'mac'], byId)).toBe('Old band tee and Mac are retired')
+    expect(notInUse(['ghost', 'tee'], byId)).toBe('A piece was deleted')
+    expect(notInUse(['old-top', 'ghost'], byId)).toBe('Old band tee is retired · A piece was deleted')
+  })
+
+  it('unwearable says why not, or nothing when it can be worn', () => {
+    expect(unwearable(['tee', 'jeans'], byId)).toBeNull()
+    expect(unwearable(['old-top', 'jeans'], byId)).toBe('Old band tee is retired')
+    expect(unwearable(['tee', 'trainers'], byId)).toBe('It needs a top and a bottom, or a one-piece')
   })
 })
 

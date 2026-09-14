@@ -3,7 +3,7 @@ import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import type { Garment, Item, Outfit, Wear } from '../../types'
-import { liveById, looksOn, newWear, outfitLabel, renamed, retired, saveOutfit, wearIndex, withPiece, withPieces } from '../../wardrobe'
+import { liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, wearable, wearIndex, type LookLog } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
 import type { WardrobeOpen } from '../planner/useNavigation'
@@ -14,8 +14,12 @@ import { WardrobeStats } from './WardrobeStats'
 
 interface Props {
   garments: Garment[]
+  /** Pieces in Trash: only for a day whose look still holds one, so its row shows it and a log keeps its slot. */
+  inTrash?: Garment[]
   outfits: Outfit[]
   wears: Wear[]
+  /** The account signed in: a piece's photos are filed under its own personal/ folder. */
+  myId?: string | null
   onSave(item: Item): void
   onRemove(id: string): void
   onRestore(ids: string[]): void
@@ -29,6 +33,9 @@ interface Props {
 const dayOr = (day: string | undefined, today: string) => (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today ? day : today)
 const sheetFor = (o: WardrobeOpen | null): SheetMode | null => (o?.add ? { kind: 'add', type: o.add === true ? undefined : o.add } : o?.garmentId ? { kind: 'edit', id: o.garmentId } : null)
 const lastOf = <T,>(list: readonly T[]): T | undefined => list[list.length - 1]
+const NONE: Garment[] = []
+/** The piece sheet shows none of today's look, so its Wear today keeps all of it but what the piece replaces. */
+const NOTHING_SHOWN: ReadonlySet<string> = new Set()
 
 /**
  * Home → Wardrobe: Outfit (the composer), Clothes (every piece) and Stats,
@@ -36,12 +43,14 @@ const lastOf = <T,>(list: readonly T[]): T | undefined => list[list.length - 1]
  * every write the three make, each with its toast and Undo; nothing here ever
  * rewrites a look or an outfit because a piece changed or went away.
  */
-export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore, showToast, open, onOpenConsumed }: Props) {
+export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null, onSave, onRemove, onRestore, showToast, open, onOpenConsumed }: Props) {
   const todayKey = localDayKey()
   const [tab, setTab] = useState<WardrobeTab>(() => open?.tab ?? 'outfit')
   const [day, setDay] = useState(() => dayOr(open?.date, todayKey))
   const [sheet, setSheet] = useState<SheetMode | null>(() => sheetFor(open))
   const byId = useMemo(() => liveById(garments), [garments])
+  /** Every piece this device has, Trash included: a log reads each one's slot here. */
+  const records = useMemo(() => [...garments, ...inTrash], [garments, inTrash])
   const ix = useMemo(() => wearIndex(wears, todayKey), [wears, todayKey])
 
   // a way in is used once — the view, the day, the sheet — and then forgotten,
@@ -57,19 +66,16 @@ export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  /** Log pieces on a day: the day's latest look takes them (unless `another`), else a new look does. */
-  const logDay = (d: string, pieces: readonly string[], another = false) => {
-    const latest = another ? undefined : lastOf(looksOn(wears, d))
-    if (latest) {
-      // a piece in Trash stays in the look, so a Restore still finds the day
-      const edited = withPieces(latest, [...pieces, ...latest.garmentIds.filter(id => !byId.has(id))])
-      onSave(edited)
-      showToast('Look updated', () => onSave({ ...latest, updatedAt: newerStamp(edited.updatedAt) }))
-      return
-    }
-    const w = newWear(d, pieces)
-    onSave(w)
-    showToast(d === todayKey ? 'Logged for today' : `Logged for ${shortDay(d, todayKey)}`, () => onRemove(w.id))
+  /** Write a log and say so; Undo removes a new look, or writes back the copy an edit was made on. */
+  const commit = ({ write, undo }: LookLog, msg: string) => {
+    onSave(write)
+    showToast(msg, () => ('remove' in undo ? onRemove(undo.remove) : onSave(undo)))
+  }
+  const loggedOn = (d: string) => (d === todayKey ? 'Logged for today' : `Logged for ${shortDay(d, todayKey)}`)
+  /** The composer's log: the day's latest look takes the pieces (unless `another`), else a new look does. */
+  const logDay = (d: string, pieces: readonly string[], opts: { shown: ReadonlySet<string>; another?: boolean }) => {
+    const log = logLook(wears, d, pieces, records, opts)
+    commit(log, 'remove' in log.undo ? loggedOn(d) : 'Look updated')
   }
   const removeLook = (d: string) => {
     const latest = lastOf(looksOn(wears, d))
@@ -100,14 +106,12 @@ export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore
   }
   /** The piece sheet's Wear today: into today's latest look, in its own slot, or a look of its own. */
   const wearToday = (g: Garment) => {
-    const latest = lastOf(looksOn(wears, todayKey))
-    if (!latest) {
-      logDay(todayKey, [g.id])
-      return
-    }
-    const edited = withPieces(latest, withPiece(latest.garmentIds, g, byId))
-    onSave(edited)
-    showToast(`${g.name} added to today’s look`, () => onSave({ ...latest, updatedAt: newerStamp(edited.updatedAt) }))
+    const log = logLook(wears, todayKey, [g.id], records, { shown: NOTHING_SHOWN })
+    commit(log, 'remove' in log.undo ? 'Logged for today' : `${g.name} added to today’s look`)
+  }
+  /** A saved outfit's Wear today, as a Today chip logs: a look of its own, and only when every piece can be worn. */
+  const wearOutfit = (o: Outfit) => {
+    if (wearable(o.garmentIds, byId)) commit(logLook(wears, todayKey, o.garmentIds, records, { another: true }), 'Logged for today')
   }
   const goDay = (d: string) => {
     setSheet(null)
@@ -133,6 +137,7 @@ export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore
       {tab === 'outfit' && (
         <OutfitComposer
           garments={garments}
+          inTrash={inTrash}
           outfits={outfits}
           wears={wears}
           byId={byId}
@@ -145,7 +150,7 @@ export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore
           onSaveOutfit={saveCombo}
           onAdd={type => setSheet({ kind: 'add', type })}
           onOpenPiece={id => setSheet({ kind: 'edit', id })}
-          onWearOutfit={o => logDay(todayKey, o.garmentIds.filter(id => byId.has(id)))}
+          onWearOutfit={wearOutfit}
           onRenameOutfit={(o, name) => onSave(renamed(o, name))}
           onDeleteOutfit={o => {
             onRemove(o.id)
@@ -167,6 +172,7 @@ export function Wardrobe({ garments, outfits, wears, onSave, onRemove, onRestore
           byId={byId}
           ix={ix}
           todayKey={todayKey}
+          userId={myId}
           onCreate={g => {
             onSave(g)
             showToast(`Added ${g.name}`, () => onRemove(g.id))

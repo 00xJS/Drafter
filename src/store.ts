@@ -62,6 +62,8 @@ export interface Store {
   templates: Template[]
   /** Your clothes (personal), retired pieces included — their history still counts — by name. */
   garments: Garment[]
+  /** Your clothes in Trash, for the composer alone: a day whose look still holds one shows it there, badged, and a log keeps its slot. */
+  garmentsInTrash: Garment[]
   /** Your saved outfits (personal), oldest first. */
   outfits: Outfit[]
   /** What you wore (personal): newest day first, a day's latest look first. */
@@ -256,6 +258,11 @@ export function useItems(myId: string | null = null): Store {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, myId],
   )
+  const garmentsInTrash = useMemo(
+    () => items.filter((i): i is Garment => i.kind === 'garment' && !!i.deletedAt && !i.purged && isMine(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
   const outfits = useMemo(
     () =>
       items
@@ -305,6 +312,7 @@ export function useItems(myId: string | null = null): Store {
     notes,
     templates,
     garments,
+    garmentsInTrash,
     outfits,
     wears,
     allItems: items,

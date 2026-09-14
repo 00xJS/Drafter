@@ -3,12 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // The media store's upload queue: a photo is kept on this device first,
 // marked pending, and uploaded once; a failure is left for the next try, and
 // nothing saved before the queue (or downloaded) is ever sent again. A
-// garment's photo is filed under its uploader's own personal/<user id>/.
+// garment's photo is filed under its uploader's own personal/<user id>/, and
+// is never sent under anything else: a bare id is one the household can read.
 // IndexedDB and the bucket are stand-ins here: vitest runs in node.
 
 const { rows, sb } = vi.hoisted(() => ({
   rows: new Map<string, unknown>(),
-  sb: { client: null as unknown },
+  sb: { client: null as unknown, stored: null as string | null },
 }))
 
 vi.mock('../idb', () => ({
@@ -17,10 +18,10 @@ vi.mock('../idb', () => ({
   idbDel: vi.fn(async (_store: string, key: string) => void rows.delete(key)),
   idbAll: vi.fn(async () => [...rows.values()]),
 }))
-vi.mock('../supabase', () => ({ getSupabase: () => sb.client }))
+vi.mock('../supabase', () => ({ getSupabase: () => sb.client, storedUserId: () => sb.stored }))
 
 import { idbDel } from '../idb'
-import { deleteMedia, flushPendingMedia, mediaURL, saveMedia, uploadPending, watchPendingMedia, type MediaItem } from '../media'
+import { deleteMedia, flushPendingMedia, mediaURL, NotSignedIn, saveMedia, uploadPending, watchPendingMedia, type MediaItem } from '../media'
 import { sanitizeGarment } from '../schema'
 
 const USER = '00000000-0000-0000-0000-00000000000a'
@@ -29,12 +30,19 @@ const pending = (id: string): MediaItem => ({ id, name: id, type: 'image/jpeg', 
 /** A few ticks: long enough for a flush that an event started to finish against the stand-ins. */
 const settle = () => new Promise(r => setTimeout(r, 20))
 
-/** A signed-in client whose bucket records what it was sent; `fail` refuses some uploads. */
-function signedIn(opts: { user?: string | null; fail?: (id: string) => boolean; during?: (id: string) => void } = {}) {
+/**
+ * A signed-in client whose bucket records what it was sent; `fail` refuses
+ * some uploads. Asking auth-js for the session is a failure here: it can hold
+ * a save for half a minute of refresh retries, and nothing may wait on it.
+ */
+function signedIn(opts: { fail?: (id: string) => boolean; during?: (id: string) => void } = {}) {
   const uploads: string[] = []
   const removed: string[][] = []
+  const getSession = vi.fn(async () => {
+    throw new Error('getSession is never asked: it can refresh, and a refresh can hang')
+  })
   sb.client = {
-    auth: { getSession: async () => ({ data: { session: opts.user === null ? null : { user: { id: opts.user ?? USER } } }, error: null }) },
+    auth: { getSession },
     storage: {
       from: () => ({
         upload: async (id: string) => {
@@ -50,13 +58,14 @@ function signedIn(opts: { user?: string | null; fail?: (id: string) => boolean; 
       }),
     },
   }
-  return { uploads, removed }
+  return { uploads, removed, getSession }
 }
 
 afterEach(async () => {
   await flushPendingMedia()
   rows.clear()
   sb.client = null
+  sb.stored = null
   vi.restoreAllMocks()
 })
 
@@ -89,22 +98,49 @@ describe('uploadPending: the queue’s core', () => {
 })
 
 describe('saveMedia: kept here first, then sent', () => {
-  it('files a personal photo under the signed-in user’s own folder, pending until the bucket has it', async () => {
-    const { uploads } = signedIn()
-    const id = await saveMedia(blob(), { personal: true })
+  it('files a personal photo under the account the planner names, marked personal and pending until the bucket has it', async () => {
+    const { uploads, getSession } = signedIn()
+    const id = await saveMedia(blob(), { personal: true, userId: USER })
     expect(id).toMatch(new RegExp(`^personal/${USER}/[0-9a-f-]{36}$`))
     // the garment's sanitizer keeps an id of exactly this shape
     expect(sanitizeGarment({ id: 'g', name: 'Tee', type: 'top', photoId: id })?.photoId).toBe(id)
+    expect(rows.get(id)).toMatchObject({ id, personal: true, pending: true })
     await flushPendingMedia()
     expect(uploads).toEqual([id])
     expect((rows.get(id) as MediaItem).pending).toBeUndefined()
     expect((rows.get(id) as MediaItem).blob).toBeInstanceOf(Blob)
+    expect(getSession).not.toHaveBeenCalled()
   })
 
-  it('gives a bare id when there is no session to read, which the owner-scoped policies still cover', async () => {
-    signedIn({ user: null })
+  it('falls back to the account stored on this device, which outlives an expired token and needs no network', async () => {
+    const { getSession } = signedIn()
+    sb.stored = USER
     const id = await saveMedia(blob(), { personal: true })
-    expect(id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(id).toMatch(new RegExp(`^personal/${USER}/[0-9a-f-]{36}$`))
+    // the planner's own account wins over the stored one
+    sb.stored = '00000000-0000-0000-0000-00000000000b'
+    expect(await saveMedia(blob(), { personal: true, userId: USER })).toMatch(new RegExp(`^personal/${USER}/`))
+    expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it('refuses a personal photo with no account to file it under, and keeps nothing: never a bare id the household can read', async () => {
+    const { uploads, getSession } = signedIn()
+    await expect(saveMedia(blob(), { personal: true })).rejects.toBeInstanceOf(NotSignedIn)
+    await expect(saveMedia(blob(), { personal: true, userId: null })).rejects.toThrow(/Sign in again/)
+    expect(rows.size).toBe(0)
+    await flushPendingMedia()
+    expect(uploads).toEqual([])
+    expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it('never sends a personal photo that has a bare id, however it came to have one', async () => {
+    const { uploads } = signedIn()
+    rows.set('bare', { ...pending('bare'), personal: true })
+    rows.set(`personal/${USER}/filed`, { ...pending(`personal/${USER}/filed`), personal: true })
+    expect(await flushPendingMedia()).toBe(1)
+    expect(uploads).toEqual([`personal/${USER}/filed`])
+    // kept on this device, still pending: nothing is lost, and nothing is shared
+    expect(rows.get('bare')).toMatchObject({ pending: true, personal: true })
   })
 
   it('in local mode: a bare id, kept here, and nothing to send', async () => {
@@ -120,6 +156,7 @@ describe('saveMedia: kept here first, then sent', () => {
     const id = await saveMedia(new File(['png'], 'garden.png', { type: 'image/png' }))
     expect(id).toMatch(/^[0-9a-f-]{36}$/)
     expect(rows.get(id)).toMatchObject({ id, name: 'garden.png', type: 'image/png', pending: true })
+    expect('personal' in (rows.get(id) as object)).toBe(false)
     await flushPendingMedia()
     // refused: still here, still pending, for the next flush
     expect((rows.get(id) as MediaItem).pending).toBe(true)

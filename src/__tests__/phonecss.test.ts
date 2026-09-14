@@ -44,9 +44,9 @@ function specificity(sel: string): [number, number, number] {
   let ids = 0
   let classes = 0
   let elements = 0
-  // :not()/:is() take the specificity of their most specific argument; ours are
-  // all single simple selectors, so summing the inner counts is exact here.
-  let rest = sel.replace(/:(?:not|is)\(([^)]*)\)/g, (_, inner: string) => {
+  // :not()/:is()/:has() take the specificity of their most specific argument;
+  // ours are all single simple selectors, so summing the inner counts is exact here.
+  let rest = sel.replace(/:(?:not|is|has)\(([^)]*)\)/g, (_, inner: string) => {
     const [a, b, c] = specificity(inner)
     ids += a
     classes += b
@@ -661,5 +661,36 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(floor, 'no @media (pointer: coarse) rule for .snap-info, .saved-more').toBeTruthy()
     expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/width:\s*44px/)
     expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/height:\s*44px/)
+  })
+
+  it('lifts the app’s toast clear of the bar while the composer is on screen, and leaves it to the keyboard rule when the keyboard is up', () => {
+    const sel = 'html:not(.keyboard-open) body:has(.wardrobe-actions) .toast'
+    const block = narrow.find(b => rule(b.body, sel))
+    expect(block, `no @media (max-width: 640px) rule for ${sel}`).toBeTruthy()
+    const offset = (declarations: string) => Number(/bottom:\s*calc\(var\(--tabbar-h\) \+ var\(--safe-b\) \+ (\d+)px\)/.exec(declarations)?.[1])
+    const bar = narrow.map(b => rule(b.body, '.wardrobe-actions')).find(Boolean) ?? ''
+    // the bar is one row: 8px of padding each side of a button at most 40px tall at the capped size, and its border
+    expect(offset(rule(block!.body, sel))).toBeGreaterThanOrEqual(offset(bar) + 8 + 40 + 8 + 1)
+    // it outranks the phone's own toast rule, and the keyboard's rule stands as it was
+    expect(compare(specificity(sel), specificity('.toast'))).toBeGreaterThan(0)
+    expect(bare).toMatch(/\.keyboard-open \.toast\s*\{[^}]*bottom:\s*calc\(var\(--safe-b\) \+ 12px\)/)
+  })
+
+  it('keeps the bar to one row, with its buttons and the day line capped like the tab bar’s labels', () => {
+    const phone = (sel: string) => narrow.map(b => rule(b.body, sel)).find(Boolean) ?? ''
+    expect(phone('.wardrobe-actions')).toMatch(/flex-wrap:\s*nowrap/)
+    for (const sel of ['.wardrobe-actions .btn', '.wardrobe-day-pick', '.wardrobe-logged', '.wardrobe-remove']) {
+      expect(phone(sel), sel).toMatch(/font-size:\s*calc\(\d+px \* min\(1\.15, var\(--type-scale\)\)\)/)
+    }
+    // "+ Another look" is "+ Look" there
+    expect(phone('.wardrobe-another-long')).toMatch(/display:\s*none/)
+    expect(rule(bare, '.wardrobe-another-short')).toMatch(/display:\s*none/)
+  })
+
+  it('gives the Retired, By piece and More disclosures the 44pt floor under a finger', () => {
+    const sel = '.clothes-retired summary, .wardrobe-by-piece summary, .garment-more summary'
+    const floor = coarseBlocks().find(b => rule(b.body, sel))
+    expect(floor, `no @media (pointer: coarse) rule for ${sel}`).toBeTruthy()
+    expect(rule(floor!.body, sel)).toMatch(/min-height:\s*44px/)
   })
 })

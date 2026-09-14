@@ -83,24 +83,54 @@ export function orderPieces(ids: readonly string[], byId: ReadonlyMap<string, Ga
 }
 
 /**
- * A look with one more piece in it (the piece sheet's Wear today): the piece
- * takes the place of whatever held its slot — a one-piece stands in for a top
- * and a bottom, and either of those for a one-piece — while an accessory
- * joins the others. Ids no longer known (a piece in Trash) stay, so a Restore
- * still finds its day.
+ * Whether putting `g` on takes the place of `other` in a look: a piece of its
+ * own type, a one-piece for a top and a bottom, and either of those for a
+ * one-piece. An accessory joins the others, and a piece with no record at all
+ * (deleted forever, or not synced here yet) is never displaced.
  */
-export function withPiece(ids: readonly string[], g: Garment, byId: ReadonlyMap<string, Garment>): string[] {
-  const clashes = (type: GarmentType): boolean => {
-    if (g.type === 'accessory') return false
-    if (type === g.type) return true
-    if (g.type === 'onepiece') return type === 'top' || type === 'bottom'
-    return type === 'onepiece' && (g.type === 'top' || g.type === 'bottom')
+function displaces(g: Garment, other: Garment | undefined): boolean {
+  if (!other || g.type === 'accessory') return false
+  if (other.type === g.type) return true
+  if (g.type === 'onepiece') return other.type === 'top' || other.type === 'bottom'
+  return other.type === 'onepiece' && (g.type === 'top' || g.type === 'bottom')
+}
+
+/** A log: the look to write, and what its Undo puts back — that look as it was, stamped newer again, or the new one to remove. */
+export interface LookLog {
+  write: Wear
+  undo: Wear | { remove: string }
+}
+
+/**
+ * Pieces logged on a day. With `another`, or on a day with no look yet, a new
+ * look. Otherwise the day's latest look takes them under its own id, stamped
+ * newer. What that look held and the screen did not show (`shown`; by default
+ * the composer's rows, every live and unretired piece) stays, unless a new
+ * piece takes its slot: a retired piece, or one in Trash, keeps its day, and
+ * nothing is written that nobody chose. `records` is every piece this device
+ * has, Trash included, so one in Trash still has a slot; an id with no record
+ * always stays. The piece sheet's Wear today is a log of one piece that shows
+ * none of today's look.
+ */
+export function logLook(
+  wears: readonly Wear[],
+  day: string,
+  pieces: readonly string[],
+  records: readonly Garment[],
+  opts: { another?: boolean; shown?: ReadonlySet<string>; now?: string } = {},
+): LookLog {
+  const looks = opts.another ? [] : looksOn(wears, day)
+  const latest = looks[looks.length - 1]
+  if (!latest) {
+    const write = newWear(day, pieces, opts.now)
+    return { write, undo: { remove: write.id } }
   }
-  const kept = ids.filter(id => {
-    const other = byId.get(id)
-    return id !== g.id && !(other && clashes(other.type))
-  })
-  return cleanIds([...kept.slice(0, MAX_PIECES - 1), g.id])
+  const known = new Map(records.filter(g => !g.purged).map(g => [g.id, g]))
+  const shown = opts.shown ?? new Set([...known.values()].filter(g => !g.deletedAt && !g.archivedAt).map(g => g.id))
+  const putOn = pieces.map(id => known.get(id)).filter((g): g is Garment => !!g)
+  const kept = latest.garmentIds.filter(id => !pieces.includes(id) && !shown.has(id) && !putOn.some(g => displaces(g, known.get(id))))
+  const write = withPieces(latest, [...pieces, ...kept])
+  return { write, undo: { ...latest, updatedAt: newerStamp(write.updatedAt) } }
 }
 
 /** Exact combination: sorted unique ids joined by '+'. */
@@ -122,6 +152,37 @@ export function coreKey(ids: readonly string[], byId: ReadonlyMap<string, Garmen
 /** Enough to dress: a live, unretired top and bottom, or a one-piece. The Today card shows only then. */
 export function canDress(garments: readonly Garment[]): boolean {
   return dresses(new Set(garments.filter(g => !g.deletedAt && !g.archivedAt).map(g => g.type)))
+}
+
+/**
+ * Wearable as it is: every piece live and unretired, and a core among them.
+ * What a Today chip offers, and all a saved outfit's Wear today will log.
+ */
+export function wearable(ids: readonly string[], byId: ReadonlyMap<string, Garment>): boolean {
+  return (
+    ids.length > 0 &&
+    ids.every(id => {
+      const g = byId.get(id)
+      return !!g && !g.archivedAt
+    }) &&
+    coreKey(ids, byId) !== null
+  )
+}
+
+/**
+ * What of these pieces is not in use, in words: "Old band tee is retired",
+ * "Old band tee and Mac are retired", "A piece was deleted", or both; '' when
+ * every one is live and unretired.
+ */
+export function notInUse(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string {
+  const names = [...new Set(ids)].map(id => byId.get(id)).filter((g): g is Garment => !!g?.archivedAt).map(g => g.name)
+  const retiredLine = names.length === 0 ? '' : names.length === 1 ? `${names[0]} is retired` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are retired`
+  return [retiredLine, ids.some(id => !byId.has(id)) ? 'A piece was deleted' : ''].filter(Boolean).join(' · ')
+}
+
+/** Why these pieces cannot be worn as they are — what is retired or deleted, or no core — or null when they can. */
+export function unwearable(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string | null {
+  return wearable(ids, byId) ? null : notInUse(ids, byId) || 'It needs a top and a bottom, or a one-piece'
 }
 
 /**
@@ -421,12 +482,6 @@ export function todaySuggestions(
   byId: ReadonlyMap<string, Garment>,
   limit = 3,
 ): { key: string; garmentIds: string[]; label: string; reason: 'saved' | 'often' }[] {
-  const wearable = (ids: readonly string[]) =>
-    ids.length > 0 &&
-    ids.every(id => {
-      const g = byId.get(id)
-      return !!g && !g.archivedAt
-    })
   const found = new Map<string, { saved?: Outfit; pieces?: string[]; days: Set<string>; lastWorn: string }>()
   const at = (key: string) => {
     const got = found.get(key) ?? { days: new Set<string>(), lastWorn: '' }
@@ -434,7 +489,7 @@ export function todaySuggestions(
     return got
   }
   for (const o of outfits) {
-    const key = o.deletedAt || !wearable(o.garmentIds) ? null : coreKey(o.garmentIds, byId)
+    const key = o.deletedAt || !wearable(o.garmentIds, byId) ? null : coreKey(o.garmentIds, byId)
     if (!key) continue
     const c = at(key)
     c.saved ??= o
@@ -448,7 +503,7 @@ export function todaySuggestions(
       const c = at(key)
       c.days.add(day)
       if (day > c.lastWorn) c.lastWorn = day
-      if (!c.pieces && wearable(look.garmentIds)) c.pieces = [...look.garmentIds]
+      if (!c.pieces && wearable(look.garmentIds, byId)) c.pieces = [...look.garmentIds]
     }
   }
   const ranked: { key: string; garmentIds: string[]; label: string; reason: 'saved' | 'often'; score: number; lastWorn: string }[] = []

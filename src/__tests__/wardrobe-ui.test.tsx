@@ -9,10 +9,11 @@ import { Wardrobe as LazyWardrobe } from '../components/planner/lazy'
 import { Clothes } from '../components/wardrobe/Clothes'
 import { GarmentSheet, type SheetMode } from '../components/wardrobe/GarmentSheet'
 import { OutfitComposer } from '../components/wardrobe/OutfitComposer'
+import { OutfitMenu } from '../components/wardrobe/SavedOutfits'
 import { Wardrobe } from '../components/wardrobe/Wardrobe'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import type { Garment, GarmentType, Outfit, Wear } from '../types'
-import { liveById, wearIndex } from '../wardrobe'
+import { liveById, unwearable, wearIndex } from '../wardrobe'
 import { plannerSource } from './source'
 
 // Home → Wardrobe as a server render sees it: the composer's rows and its
@@ -104,7 +105,7 @@ describe('Outfit: the composer', () => {
     expect(html).toContain('>Wearing this</button>')
     expect(html).toContain('>Save outfit</button>')
     expect(html).not.toContain('Update look')
-    expect(html).not.toContain('+ Another look')
+    expect(html).not.toContain('Another look')
     expect(html).not.toContain('Remove look')
   })
 
@@ -113,7 +114,9 @@ describe('Outfit: the composer', () => {
     expect(chosenNames(html)).toEqual(['grey-tee', 'cords'])
     expect(html).toContain('>Logged</span>')
     expect(html).toContain('>Update look</button>')
-    expect(html).toContain('>+ Another look</button>')
+    // "+ Another look", or "+ Look" on a phone: named the same either way
+    expect(html).toContain('aria-label="Another look"')
+    expect(html).toContain('+ <span class="wardrobe-another-long">Another look</span><span class="wardrobe-another-short">Look</span>')
     expect(html).toContain('Remove look')
   })
 
@@ -170,6 +173,48 @@ describe('Outfit: the composer', () => {
     expect(html).toContain('Worn 1 time · last 3 days ago')
     expect(html).toContain('Not worn yet')
     expect(html).toContain('aria-label="More for Friday smart"')
+  })
+
+  it('shows a retired piece the day holds first in its row, chosen and badged; any other day leaves it out', () => {
+    const old = piece('old-band-tee', 'top', { archivedAt: T0 })
+    const garments = [...tops, ...bottoms, old]
+    const html = composer({ garments, wears: [look(TODAY, ['old-band-tee', 'jeans'])] })
+    expect(chosenNames(html)).toEqual(['old-band-tee', 'jeans'])
+    expect(html).toContain('class="badge snap-held">Retired</span>')
+    // its sheet, with Bring back, is a tap away
+    expect(html).toContain('aria-label="About old-band-tee"')
+    expect(html).not.toContain('wardrobe-note')
+    expect(composer({ garments, wears: [look('2026-09-13', ['old-band-tee', 'jeans'])] })).not.toContain('old-band-tee')
+  })
+
+  it('shows a piece in Trash the day holds, badged and with no sheet, and says when one was deleted forever', () => {
+    const binned = piece('binned-tee', 'top', { deletedAt: T0 })
+    const html = composer({ inTrash: [binned], wears: [look(TODAY, ['binned-tee', 'chinos', 'purged-scarf'])] })
+    expect(chosenNames(html)).toEqual(['binned-tee', 'chinos'])
+    expect(html).toContain('class="badge snap-held">In Trash</span>')
+    expect(html).not.toContain('aria-label="About binned-tee"')
+    expect(html).toContain('<p class="wardrobe-note">A piece was deleted</p>')
+    // it still makes a top and a bottom, so the look can be updated
+    expect(html).toContain('<button type="button" class="btn primary">Update look</button>')
+  })
+})
+
+describe('a saved outfit’s menu', () => {
+  const menu = (garments: Garment[], o: Outfit) =>
+    renderToStaticMarkup(<OutfitMenu outfit={o} title="t" placeholder="p" why={unwearable(o.garmentIds, liveById(garments))} onWear={noop} onRename={noop} onDelete={noop} onClose={noop} />)
+
+  it('wears it today only as a Today chip would log it: every piece in use, and a top and a bottom or a one-piece', () => {
+    const old = piece('old-band-tee', 'top', { name: 'Old band tee', archivedAt: T0 })
+    const garments = [...tops, ...bottoms, piece('boots', 'shoes'), old]
+    const fine = menu(garments, outfit('ok', ['navy-tee', 'jeans', 'boots']))
+    expect(fine).toContain('<button type="button" class="btn primary">Wear today</button>')
+    expect(fine).not.toContain('outfit-why')
+    const retiredTop = menu(garments, outfit('r', ['old-band-tee', 'jeans']))
+    expect(retiredTop).toContain('<button type="button" class="btn primary" disabled="">Wear today</button>')
+    expect(retiredTop).toContain('<p class="outfit-why">Old band tee is retired</p>')
+    // a top and shoes with the bottom gone: never a partial look
+    expect(menu(garments, outfit('d', ['navy-tee', 'boots', 'gone']))).toContain('<p class="outfit-why">A piece was deleted</p>')
+    expect(menu(garments, outfit('s', ['navy-tee', 'boots']))).toContain('<p class="outfit-why">It needs a top and a bottom, or a one-piece</p>')
   })
 })
 
@@ -352,7 +397,7 @@ describe('Home → Wardrobe', () => {
   it('is Home’s fourth segment, and opens on the composer', () => {
     at10()
     const store = { garments: [...tops, ...bottoms], outfits: [], wears: [], upsert: noop, remove: noop, restore: noop }
-    const p = { store, homeTab: 'wardrobe', wardrobeOpen: null, setHomeTab: noop, setJournalOpenDate: noop, setWardrobeOpen: noop, openWardrobe: noop, showToast: noop } as unknown as PlannerCtx
+    const p = { store, household: { myId: null }, homeTab: 'wardrobe', wardrobeOpen: null, setHomeTab: noop, setJournalOpenDate: noop, setWardrobeOpen: noop, openWardrobe: noop, showToast: noop } as unknown as PlannerCtx
     const html = renderToStaticMarkup(<HomeScreen p={p} />)
     const tabs = [...html.matchAll(/role="tab" aria-selected="(true|false)" class="seg(?: on)?">([^<]+)</g)].map(m => `${m[2]}${m[1] === 'true' ? '*' : ''}`)
     expect(tabs).toEqual(['Today', 'Week', 'Journal', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])

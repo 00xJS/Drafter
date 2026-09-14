@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import type { Garment, Outfit } from '../../types'
-import { outfitLabel, outfitLine, savedOrder, type WearIndex } from '../../wardrobe'
+import { outfitLabel, outfitLine, savedOrder, unwearable, type WearIndex } from '../../wardrobe'
 import { ConfirmButton } from '../ConfirmButton'
 import { Modal, ModalHead } from '../Modal'
 import { Collage } from './GarmentPhoto'
@@ -49,6 +49,7 @@ export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onDe
           outfit={menu}
           title={label(menu)}
           placeholder={outfitLabel(menu.garmentIds, byId)}
+          why={unwearable(menu.garmentIds, byId)}
           onWear={onWear}
           onRename={onRename}
           onDelete={onDelete}
@@ -59,10 +60,16 @@ export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onDe
   )
 }
 
-function OutfitMenu({
+/**
+ * One saved outfit's "…": rename it, delete it, or wear it today — logged as
+ * a Today chip logs, so only when every piece is in use and it has a core;
+ * otherwise the menu says why.
+ */
+export function OutfitMenu({
   outfit,
   title,
   placeholder,
+  why,
   onWear,
   onRename,
   onDelete,
@@ -71,6 +78,8 @@ function OutfitMenu({
   outfit: Outfit
   title: string
   placeholder: string
+  /** Why it cannot be worn as it is ("Old band tee is retired"); null when it can. */
+  why: string | null
   onWear(o: Outfit): void
   onRename(o: Outfit, name: string): void
   onDelete(o: Outfit): void
@@ -110,6 +119,7 @@ function OutfitMenu({
             }}
           />
         </label>
+        {why && <p className="outfit-why">{why}</p>}
       </div>
       <footer className="modal-foot">
         <ConfirmButton
@@ -125,6 +135,7 @@ function OutfitMenu({
         <button
           type="button"
           className="btn primary"
+          disabled={!!why}
           onClick={() => {
             commit()
             onWear(outfit)
