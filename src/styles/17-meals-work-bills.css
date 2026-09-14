@@ -83,10 +83,21 @@
   flex: 1 1 140px;
   min-width: 0;
 }
+/* the kind of a place not saved yet, or the saved place the name already is:
+   each on a line of its own under the name, so the nine kinds wrap in the
+   slot's width instead of squeezing the name field */
+.meal-new-place > .place-kinds,
+.meal-new-place > .meal-new-place-saved {
+  flex: 1 1 100%;
+}
 @media (max-width: 640px) {
   .meal-new-place > * {
     /* thumb-sized, and never small enough to make WKWebView zoom on focus */
     min-height: 44px;
+  }
+  /* a line of text, not a control */
+  .meal-new-place > .meal-new-place-saved {
+    min-height: 0;
   }
 }
 

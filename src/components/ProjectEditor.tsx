@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template, projectProgress } from '../types'
+import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
 import { BUILT_IN_TEMPLATES, extendProject, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
@@ -8,7 +8,6 @@ import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../gith
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
 import { ConfirmButton } from './ConfirmButton'
-import { ProgressBar } from './bits'
 import { Modal, ModalHead } from './Modal'
 
 interface Props {
@@ -264,8 +263,6 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
           updatedAt: base.createdAt,
         }
       : null
-
-  const progress = projectProgress(tasks)
 
   function formValues(): FormFields {
     return {
@@ -554,15 +551,6 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             <small className="field-hint">A running notepad with formatting, checklists, links, code, emoji and inline photos. Autosaves.</small>
           </div>
         )}
-        <div className="field">
-          <span>Progress</span>
-          <div className="project-progress-row">
-            <ProgressBar pct={progress.pct} color={color} />
-            <small>
-              {progress.done} of {progress.total} tasks done
-            </small>
-          </div>
-        </div>
       </div>
 
       <footer className="modal-foot">

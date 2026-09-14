@@ -1,4 +1,4 @@
-import { Meal, PLACE_CATEGORY_META, Person, Place, Task } from './types'
+import { Meal, PLACE_CATEGORY_META, Person, Place, PlaceCategory, Task } from './types'
 import { monthsAndTrend, visitSummary, visitsFor } from './people'
 import { Outing, PlaceCadenceState, PlaceCadenceStatus, matchPlace as sharedMatchPlace, normalisePlaceText, placeCadenceStatus, outingsAt as sharedOutingsAt } from '../shared/places.mjs'
 
@@ -62,6 +62,45 @@ export function placeSearch(query: string, places: readonly Place[]): { name: st
   const exact = placeByName(name, live)
   const hits = key ? live.filter(p => p.id !== exact?.id && placeNameKey(p.name).includes(key)) : []
   return { name, exact, matches: (exact ? [exact, ...hits] : hits).slice(0, 8) }
+}
+
+/**
+ * Somewhere new, as the app saves it: the name tidied and the kind you picked.
+ * Every path that makes a place from a typed name or an event's location builds
+ * it here, and the kind is required — there is none to fall back on, so a place
+ * is never filed under one nobody chose.
+ */
+export function newPlace(name: string, category: PlaceCategory, opts: { id: string; color: string; now: Date; notes?: string }): Place {
+  const stamp = opts.now.toISOString()
+  return {
+    kind: 'place',
+    id: opts.id,
+    name: name.trim().replace(/\s+/g, ' '),
+    category,
+    color: opts.color,
+    ...(opts.notes ? { notes: opts.notes } : {}),
+    createdAt: stamp,
+    updatedAt: stamp,
+  }
+}
+
+/**
+ * The place a name typed for somewhere new ends up as: the saved place it
+ * already means (placeByName), reused without asking anything, else a new one
+ * of the kind you picked. With no kind picked nothing is made and it answers
+ * null, so the caller's Save waits for one.
+ */
+export function placeFor(
+  name: string,
+  kind: PlaceCategory | undefined,
+  places: readonly Place[],
+  create: (name: string, kind: PlaceCategory) => Place,
+): { place: Place; created: boolean } | null {
+  const clean = name.trim().replace(/\s+/g, ' ')
+  if (!clean) return null
+  const saved = placeByName(clean, places)
+  if (saved) return { place: saved, created: false }
+  return kind ? { place: create(clean, kind), created: true } : null
 }
 
 /** A place's own emoji, else its category's: what its row on Places shows. */

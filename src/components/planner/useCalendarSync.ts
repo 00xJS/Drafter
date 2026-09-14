@@ -164,9 +164,10 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
    * feeds, what moved in Google or Outlook, and the briefing's weather.
    * allSettled so one failing feed cannot stop the items sync; each piece
    * reports its own error in its own place. The weather is only asked (the
-   * strip refreshes itself when it is on screen, and its half-hour cache
-   * decides whether that means a fetch), so the spinner never waits on it;
-   * nor on a photo still waiting for the bucket, which is sent on its own.
+   * strip refreshes itself when it is on screen, and for this ask fetches
+   * now rather than trusting its half-hour cache), so the spinner never
+   * waits on it; nor on a photo still waiting for the bucket, which is sent
+   * on its own.
    * The GitHub board pull refreshes itself on foreground and is left to its
    * own timer here.
    */

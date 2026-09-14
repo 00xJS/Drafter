@@ -3,7 +3,7 @@ import { CalendarEvent, Habit, MEAL_SLOT_META, WORK_MODE_META } from '../types'
 import { eventDayKeys } from '../calendars'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
-import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, getWeather, onWeatherRefresh, readCache, requestLocation, setCity } from '../weather'
+import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, readCache, requestLocation, setCity, watchWeather } from '../weather'
 import { mealLabel, tonightDinner } from '../kitchen'
 
 /** Same 17:00 line Today uses to move the journal card to the evening. */
@@ -107,30 +107,23 @@ export function BriefingCard({
   const [forecast, setForecast] = useState<Forecast | null>(() => (cache.enabled ? (cache.forecast ?? null) : null))
 
   // Refresh when the strip mounts, when the place changes, whenever the app
-  // comes back to the front, and on a pull to refresh (or the sync pill);
-  // getWeather decides for itself whether that means a network call, so there
-  // is no timer and no request while nothing is looking. The coordinates are
-  // in the deps so switching from one city to another (enabled stays true)
-  // still fetches the new sky.
+  // comes back to the front, and on a pull to refresh (or the sync pill).
+  // watchWeather leaves all but the pull to the half-hour cache, so there is
+  // no timer and no request while nothing is looking; a pull is someone
+  // asking, so it fetches now. The coordinates are in the deps so switching
+  // from one city to another (enabled stays true) still fetches the new sky.
   useEffect(() => {
     if (!cache.enabled) return
     let live = true
-    const refresh = () => {
-      void getWeather().then(f => {
-        if (live) setForecast(f)
-      })
-    }
-    refresh()
-    const hasDoc = typeof document !== 'undefined'
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh()
-    }
-    if (hasDoc) document.addEventListener('visibilitychange', onVisible)
-    const offPull = onWeatherRefresh(refresh)
+    const stop = watchWeather(f => {
+      // an empty answer never blanks a sky already showing: switching weather
+      // off or to another place clears the tile in choose(), so here it only
+      // means nothing could be fetched
+      if (live) setForecast(prev => f ?? prev)
+    })
     return () => {
       live = false
-      if (hasDoc) document.removeEventListener('visibilitychange', onVisible)
-      offPull()
+      stop()
     }
   }, [cache.enabled, cache.lat, cache.lon])
 

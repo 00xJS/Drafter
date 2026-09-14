@@ -783,10 +783,3 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; color: 
 export const PROJECT_COLORS = ['#f97316', '#fbbf24', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#f87171', '#94a3b8']
 
 export { engagement, impressions, SOCIAL_PROJECT_ID } from '../shared/domain.mjs'
-
-/** Progress of a project's tasks: done vs everything that isn't canceled. */
-export function projectProgress(tasks: Task[]): { done: number; total: number; pct: number } {
-  const live = tasks.filter(t => t.status !== 'canceled')
-  const done = live.filter(t => t.status === 'done').length
-  return { done, total: live.length, pct: live.length === 0 ? 0 : Math.round((done / live.length) * 100) }
-}

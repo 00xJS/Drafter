@@ -131,12 +131,6 @@
 .comment-form textarea {
   flex: 1;
 }
-.project-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-}
 
 /* github card */
 .gh-card {

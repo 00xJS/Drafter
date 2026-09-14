@@ -1,21 +1,24 @@
 import { useMemo, useState } from 'react'
-import { CalendarEvent, PROJECT_COLORS, Person, Place } from '../types'
-import { matchPlace } from '../places'
+import { CalendarEvent, PROJECT_COLORS, Person, Place, PlaceCategory } from '../types'
+import { matchPlace, newPlace, placeByName } from '../places'
 import { newPerson } from '../taskform'
 import { uid } from '../utils'
 import { Modal, ModalHead } from './Modal'
+import { PlaceKindChooser } from './PlaceKindChooser'
 
 interface Props {
   event: CalendarEvent
   people: Person[]
   places?: Place[]
-  /** Persist a place created from the event's location. */
+  /** Persist a place saved from the event's location. */
   onSavePlace?(p: Place): void
   /** Persist someone added by name who isn't in People yet. */
   onSavePerson?(p: Person): void
   onDone(peopleIds: string[], placeId?: string): void
   onClose(): void
 }
+
+const randomColor = () => PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)]
 
 /**
  * The person a typed name means: someone already saved (any case, any
@@ -29,43 +32,102 @@ export function attendeeFor(name: string, people: Person[], create: (name: strin
   return existing ? { person: existing, created: false } : { person: create(clean), created: true }
 }
 
+/** The name a place saved from an event's location gets: the venue, before the address. */
+export function locationPlaceName(location: string): string {
+  return location.split(',')[0].trim().slice(0, 80) || location.trim().slice(0, 80)
+}
+
+/**
+ * The saved place an event's location means: one whose name it holds
+ * (matchPlace), else one named just what the location opens with — 東京 in
+ * "東京, Shibuya", which matchPlace's a–z key cannot see — so a place you have
+ * is attached as it always was, never offered to be saved a second time.
+ */
+export function placeAtLocation(location: string | undefined, places: Place[]): Place | undefined {
+  if (!location?.trim()) return undefined
+  return matchPlace(location, places) ?? placeByName(locationPlaceName(location), places)
+}
+
+/** An event's location saved as a place of the kind you picked: named for the venue, the full address kept in its notes. */
+export function placeFromLocation(location: string, kind: PlaceCategory, opts: { id: string; color: string; now: Date }): Place {
+  return newPlace(locationPlaceName(location), kind, { ...opts, notes: location.includes(',') ? location.trim() : undefined })
+}
+
+/**
+ * Whether Log can go: someone ticked or a place attached, and — with Save
+ * “…” as a place ticked — a kind picked for it. Ticked Save with no kind
+ * holds Log back, rather than save the place under a kind nobody chose or
+ * quietly leave it unsaved.
+ */
+export function canLogAttendance(o: { people: number; placeId?: string; saving: boolean; kind?: PlaceCategory }): boolean {
+  if (o.saving) return !!o.kind
+  return o.people > 0 || !!o.placeId
+}
+
+/**
+ * Save “<location>” as a place: never ticked for you, and once ticked it asks
+ * what kind of place it is. Holds no state, so the picker owns both answers.
+ */
+export function SaveLocation({
+  location,
+  checked,
+  kind,
+  onCheck,
+  onKind,
+}: {
+  location: string
+  checked: boolean
+  kind?: PlaceCategory
+  onCheck(on: boolean): void
+  onKind(kind: PlaceCategory): void
+}) {
+  const name = locationPlaceName(location)
+  return (
+    <>
+      <label className="cal-source mirror-row">
+        <input type="checkbox" checked={checked} onChange={e => onCheck(e.target.checked)} />
+        <span className="cal-source-name">Save “{location}” as a place</span>
+      </label>
+      {checked && (
+        <div className="place-new">
+          <small className="place-new-ask">What kind of place is “{name}”?</small>
+          <PlaceKindChooser value={kind} onChange={onKind} label={`Kind of place for “${name}”`} />
+        </div>
+      )}
+    </>
+  )
+}
+
 /**
  * "Who was there?" — tick the people at a past calendar event; each gets a
  * visit logged. If the event's location matches a saved place it is attached
- * too, and an unknown location can be saved as a place in the same tap.
+ * too. An unknown location is saved as a place only if you tick Save and say
+ * what kind of place it is — never by itself.
  */
 export function AttendancePicker({ event, people, places = [], onSavePlace, onSavePerson, onDone, onClose }: Props) {
   const [ids, setIds] = useState<string[]>([])
   const [newName, setNewName] = useState('')
   const addSomeone = () => {
-    const hit = attendeeFor(newName, people, name =>
-      newPerson(name, { id: uid(), color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)], now: new Date() }),
-    )
+    const hit = attendeeFor(newName, people, name => newPerson(name, { id: uid(), color: randomColor(), now: new Date() }))
     if (!hit) return
     if (hit.created) onSavePerson?.(hit.person)
     setIds(cur => (cur.includes(hit.person.id) ? cur : [...cur, hit.person.id]))
     setNewName('')
   }
-  const matched = useMemo(() => matchPlace(event.location, places), [event.location, places])
+  const matched = useMemo(() => placeAtLocation(event.location, places), [event.location, places])
   const [placeId, setPlaceId] = useState<string | undefined>(matched?.id)
   const [saveLocation, setSaveLocation] = useState(false)
-  const canSaveLocation = !!event.location && !matched && !!onSavePlace
+  const [kind, setKind] = useState<PlaceCategory | undefined>()
+  const canSaveLocation = !!event.location?.trim() && !matched && !!onSavePlace
+  const saving = saveLocation && canSaveLocation
   const place = placeId ? places.find(p => p.id === placeId) : undefined
+  const canLog = canLogAttendance({ people: ids.length, placeId, saving, kind })
 
   const finish = () => {
+    if (!canLog) return
     let chosen = placeId
-    if (saveLocation && canSaveLocation) {
-      const now = new Date().toISOString()
-      const created: Place = {
-        kind: 'place',
-        id: uid(),
-        name: event.location!.split(',')[0].trim().slice(0, 80) || event.location!.slice(0, 80),
-        color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-        category: 'other',
-        notes: event.location!.includes(',') ? event.location : undefined,
-        createdAt: now,
-        updatedAt: now,
-      }
+    if (saving && kind) {
+      const created = placeFromLocation(event.location!, kind, { id: uid(), color: randomColor(), now: new Date() })
       onSavePlace!(created)
       chosen = created.id
     }
@@ -131,10 +193,16 @@ export function AttendancePicker({ event, people, places = [], onSavePlace, onSa
                 </button>
               </div>
             ) : (
-              <label className="cal-source mirror-row">
-                <input type="checkbox" checked={saveLocation} onChange={e => setSaveLocation(e.target.checked)} />
-                <span className="cal-source-name">Save “{event.location}” as a place</span>
-              </label>
+              <SaveLocation
+                location={event.location!}
+                checked={saveLocation}
+                kind={kind}
+                onCheck={on => {
+                  setSaveLocation(on)
+                  if (!on) setKind(undefined)
+                }}
+                onKind={setKind}
+              />
             )}
           </div>
         )}
@@ -145,7 +213,7 @@ export function AttendancePicker({ event, people, places = [], onSavePlace, onSa
         <button className="btn" onClick={onClose}>
           Cancel
         </button>
-        <button className="btn primary" disabled={ids.length === 0 && !placeId && !(saveLocation && canSaveLocation)} onClick={finish}>
+        <button className="btn primary" disabled={!canLog} onClick={finish}>
           {ids.length ? `Log ${ids.length} ${ids.length === 1 ? 'person' : 'people'}` : 'Log the outing'}
         </button>
       </footer>
