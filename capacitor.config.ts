@@ -6,10 +6,13 @@ const config: CapacitorConfig = {
   appId: 'app.drafter.ios',
   appName: 'Drafter',
   webDir: 'dist',
-  backgroundColor: '#0f1115',
+  // the light ground the app opens in (THEME_GROUND.light in src/theme.ts); the
+  // bridge in SceneDelegate repaints it from the saved Settings → Appearance
+  backgroundColor: '#f6f7f9',
   ios: {
     contentInset: 'never',
-    // the web app already paints its own dark chrome; keep the status bar text light
+    // the status bar follows Settings → Appearance through the window's
+    // interface style (SceneDelegate): dark text on light, light text on dark
     preferredContentMode: 'mobile',
   },
   plugins: {

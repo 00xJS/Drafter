@@ -7,6 +7,7 @@ import type { SettingsCtx } from './settings/context'
 import { Modal, ModalHead } from './Modal'
 import { useFeedInfo } from './settings/useFeedInfo'
 import { AdminLink } from './settings/AdminLink'
+import { Appearance } from './settings/Appearance'
 import { Assistants } from './settings/Assistants'
 import { Calendars } from './settings/Calendars'
 import { EmailIn } from './settings/EmailIn'
@@ -26,8 +27,8 @@ interface SettingsGroupDef {
 }
 
 /**
- * Settings was one 800-line scroll; these are the four things you come here
- * for, and this list is the one registry of them. Each section (in
+ * Settings was one 800-line scroll; these are the things you come here for,
+ * and this list is the one registry of them. Each section (in
  * ./settings/) draws its own `settings-section g-<key>`, or nothing when it
  * does not apply here. A new group is one entry plus its section component,
  * and a `.settings-body.showing-<key> .g-<key>` rule in the stylesheet —
@@ -36,6 +37,7 @@ interface SettingsGroupDef {
 const SETTINGS_GROUPS: SettingsGroupDef[] = [
   { key: 'calendars', label: 'Calendars', sections: [Calendars] },
   { key: 'reminders', label: 'Reminders', sections: [Lock, Reminders] },
+  { key: 'appearance', label: 'Appearance', sections: [Appearance] },
   { key: 'household', label: 'Household', needsAccount: true, sections: [Household, Account] },
   { key: 'assistants', label: 'Assistants', needsAccount: true, sections: [Assistants] },
   { key: 'data', label: 'Data', sections: [Sync, EmailIn, Templates, AdminLink] },

@@ -69,6 +69,8 @@ Five tabs, on desktop and phone alike: **Home · Tasks · Calendar · People · 
 
 The task editor's ✨ buttons break a task into checklist steps and suggest tags, and under the description ✨ Clarify, ✨ Add details and ✨ Summarize each propose a rewrite that you can use in place of yours, add below it, or discard. Pasting or sharing a sentence fills the same fields as typing it into the palette, and a URL goes into the description, where every link other than the GitHub card's shows under the text as a chip that opens in a new tab (Safari's sheet on the phone).
 
+**Appearance.** Drafter is light unless you choose otherwise: Settings → Appearance offers Light (the default), Dark and Match system, which follows the device's own setting as it changes. The choice is kept on each device, so a phone and a laptop can differ, and it is applied before the first paint, so neither theme flashes on the way in.
+
 ## GitHub links and write-back
 
 Paste a GitHub URL into a task's description, or a project's **GitHub** field — an issue, pull request, repository, or a Projects (v2) board like `https://github.com/users/you/projects/3` — and the editor shows a live card (for a task, from the first GitHub URL in its description, which saving links): title, open/closed/merged/draft state, labels, assignees, comment count, last update. The lookup goes through the session-gated `/api/github` function. Public issues and repos work without configuration; set `GITHUB_TOKEN` on Netlify (a fine-grained PAT with read access to the repos, plus `read:project` for Projects boards) for private repos, Projects, and a far higher rate limit. With `GITHUB_TOKEN` granted write access, the card gains **Close issue on GitHub / Reopen**, marking a task with a linked issue done closes the issue, and a task in a project that links a repo can **Create a GitHub issue** from its title and description.
@@ -151,8 +153,9 @@ What the shell adds over the installed web app:
   this phone, the phone leaves due tasks to the server and keeps only
   occasions and places, so nothing arrives twice.
 - **Lock this iPhone.** Opt-in Face ID / Touch ID / device passcode (Settings
-  → Reminders) before the signed-in cache is shown. The dark launch screen is
-  laid over the window the moment the app stops being active — that is when iOS
+  → Reminders) before the signed-in cache is shown. The launch screen, in the
+  app's current light or dark, is laid over the window the moment the app stops
+  being active — that is when iOS
   takes the App Switcher snapshot — so the multitasking card never shows the
   planner, and it lifts a beat after the app is forward again. It asks again
   only when the app has been away for more than 12 seconds, so a quick look
@@ -161,9 +164,11 @@ What the shell adds over the installed web app:
 - **Keyboard.** Sheets shrink above the iOS keyboard, the tab bar slides out
   of the way so it never covers what you are typing, fields no longer zoom the
   page when you tap them, and multi-line fields get a Done key.
-- **Dark launch screen.** The app icon's orange paper plane, centred on
-  `#0f1115`, matching the app. `LaunchLogo` in the asset catalog is the plane
-  from `public/icon.svg` alone, on a transparent ground.
+- **Launch screen.** The app icon's orange paper plane, centred on `#f6f7f9`,
+  the light ground the app opens in. `LaunchLogo` in the asset catalog is the
+  plane from `public/icon.svg` alone, on a transparent ground. It stays light
+  when Settings → Appearance is Dark, because iOS draws it before any of the
+  app runs; the app turns dark a moment later.
 - **Reminders you can act on.** A due-task banner offers **Done** and
   **Tomorrow**; a birthday or anniversary offers **Saw them**. Reminders with
   details hidden get no buttons — a banner that will not name the task should
@@ -192,8 +197,8 @@ What the shell adds over the installed web app:
   or warm.
 - Syncs whenever the app comes to the foreground; haptics when a task
   completes and at each point a swipe latches, so you can defer one-handed
-  without watching; dark system UI, and the status bar tucked into the app's
-  own header.
+  without watching; the keyboard, pickers and status bar follow Settings →
+  Appearance, and the status bar tucks into the app's own header.
 
 ### When you join the Apple Developer Program
 

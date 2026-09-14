@@ -1,0 +1,274 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+import { contrast, mixHex, ON_DEEP_USER, ON_USER, parseHex } from '../contrast'
+import { THEME_GROUND, THEME_HEX } from '../theme'
+import { sheetImports } from './source'
+
+/*
+ * The two palettes in src/styles/01-base.css: light on the bare :root, dark on
+ * :root[data-theme='dark']. These pin the shape (every themed token in both,
+ * the fixed ones once), hold dark to exactly what shipped until 2026-09-14,
+ * compute the light palette's contrast, and keep the copies other code holds
+ * (THEME_GROUND, THEME_HEX, the contrast helpers' inks) equal to the sheet.
+ */
+
+const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../styles/${rel}`, import.meta.url)), 'utf8')
+const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
+const base = strip(read('01-base.css'))
+
+/** The declarations of the one rule in 01-base.css whose selector is exactly `selector`, whitespace collapsed. */
+function block(selector: string): Record<string, string> {
+  const rules = [...base.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].trim() === selector)
+  expect(rules, selector).toHaveLength(1)
+  return Object.fromEntries([...rules[0][2].matchAll(/([-\w]+)\s*:\s*([^;]+);/g)].map(m => [m[1], m[2].trim().replace(/\s+/g, ' ')]))
+}
+
+const light = block(':root')
+const dark = block(":root[data-theme='dark']")
+const props = (b: Record<string, string>) => Object.keys(b).filter(k => k.startsWith('--'))
+
+/** Tokens that are not colours; they live on the bare :root only. */
+const NON_COLOUR = ['--type-scale', '--radius-sm', '--radius', '--radius-lg', '--radius-xl', '--tabbar-h', '--topbar-h', '--fab-size', '--safe-b', '--safe-l', '--safe-r', '--keyboard-h']
+
+/** Colours that are the same in both themes, declared once on :root, at the value dark has always painted. */
+const FIXED: Record<string, string> = {
+  '--accent': '#f97316',
+  '--on-accent': '#1a1206',
+  '--glow-accent': '0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent)',
+  '--accent-bright': '#fb923c', // .brand-mark's first stop, var(--accent-hover) in dark
+  '--accent-deep': '#e2620a', // .brand-mark's last stop
+  '--on-danger': '#ffffff', // .btn.armed's #fff
+  '--on-media': '#ffffff', // .media-remove's #fff
+  '--media-scrim': 'rgba(11, 11, 11, 0.6)',
+  '--sheen': 'rgba(255, 255, 255, 0.25)',
+  '--on-user-color': '#0f1115', // .person-avatar's --inverse-text in dark
+  '--on-deep-user-color': '#ffffff',
+  '--mark-bg': 'color-mix(in srgb, var(--accent) 28%, transparent)', // rgba(249, 115, 22, 0.28)
+}
+
+/**
+ * The dark palette as it shipped until 2026-09-14 (81435a1), and each new token
+ * at the literal or token it replaces there. A change here is a change to what
+ * a Dark reader sees.
+ */
+const DARK: Record<string, string> = {
+  'color-scheme': 'dark',
+  // the themed colour tokens that already existed
+  '--bg': '#0c0e12',
+  '--surface': '#15181f',
+  '--surface-2': '#1e222b',
+  '--surface-3': '#272c37',
+  '--border': '#2a2f3a',
+  '--border-strong': '#3a4150',
+  '--hairline': 'rgba(255, 255, 255, 0.06)',
+  '--text': '#edeff3',
+  '--text-2': '#a9b0be',
+  '--muted': '#737b8b',
+  '--accent-hover': '#fb923c',
+  '--accent-soft': 'color-mix(in srgb, var(--accent) 15%, transparent)',
+  '--accent-softer': 'color-mix(in srgb, var(--accent) 9%, transparent)',
+  '--accent-ring': 'color-mix(in srgb, var(--accent) 34%, transparent)',
+  '--accent-text': '#fca560',
+  '--danger': '#f87171',
+  '--inverse-bg': '#e7e9ee',
+  '--inverse-text': '#0f1115',
+  '--ok': '#4ade80',
+  '--warn-bg': 'rgba(245, 158, 11, 0.16)',
+  '--warn-text': '#fcd34d',
+  '--shadow-sm': '0 1px 2px rgba(0, 0, 0, 0.35)',
+  '--shadow': '0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24)',
+  '--shadow-md': '0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34)',
+  '--shadow-lg': '0 4px 8px rgba(0, 0, 0, 0.32), 0 18px 44px rgba(0, 0, 0, 0.46)',
+  '--viz-grid': '#2b303b',
+  '--viz-baseline': '#3d4453',
+  '--viz-series-1': '#f97316',
+  '--viz-series-1-hot': '#fb923c',
+  // new tokens, each at what its readers painted at 81435a1
+  '--placeholder': '#a9a9a9', // WebKit's and Blink's own placeholder grey
+  '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLOR
+  '--focus-ring': '#f97316', // outline: 2px solid var(--accent)
+  '--inverse-muted': '#737b8b', // .toast-close's --muted
+  '--tone-violet': '#c4b5fd', // STATUS_META.wishlist, GITHUB_STATE_META closed / merged
+  '--tone-violet-bg': 'rgba(139, 92, 246, 0.2)',
+  '--tone-amber': '#fcd34d', // STATUS_META.todo, .due-today
+  '--tone-amber-bg': 'rgba(245, 158, 11, 0.18)',
+  '--tone-sky': '#7dd3fc', // STATUS_META.doing, .due-soon, TrendBadge
+  '--tone-sky-bg': 'rgba(14, 165, 233, 0.2)',
+  '--tone-sky-bg-strong': 'rgba(14, 165, 233, 0.25)', // .swipe-action
+  '--tone-rose': '#fda4af', // STATUS_META.blocked, .due-overdue
+  '--tone-rose-bg': 'rgba(244, 63, 94, 0.2)',
+  '--tone-rose-border': 'rgba(244, 63, 94, 0.45)', // .chart-card.warn-card
+  '--tone-green': '#86efac', // STATUS_META.done, GITHUB_STATE_META.open
+  '--tone-green-bg': 'rgba(34, 197, 94, 0.18)',
+  '--tone-grey': '#9ca3af', // STATUS_META.canceled, PRIORITY_META.low
+  '--tone-grey-bg': 'rgba(148, 163, 184, 0.16)',
+  '--tone-orange': '#fdba74', // .due-late
+  '--tone-orange-bg': 'rgba(251, 146, 60, 0.2)',
+  '--tone-indigo': '#a5b4fc', // .swipe-action.next
+  '--tone-indigo-bg': 'rgba(99, 102, 241, 0.28)',
+  '--tone-mint': '#34d399', // .cal-work-badge.home
+  '--tone-blue': '#60a5fa', // .cal-work-badge.office
+  '--prio-normal': '#b3b8c4', // PRIORITY_META.normal
+  '--prio-high': '#fb923c', // PRIORITY_META.high, .card.prio-border-high
+  '--cal-meal-out': '#38bdf8', // MEAL_OUT_COLOR
+  '--cal-event-local': '#a78bfa', // LOCAL_EVENT_COLOR
+  '--dot-fallback': '#94a3b8', // an event whose calendar is gone
+  '--dot-ring': 'transparent', // new, and invisible in dark
+  '--launch-bg': '#0f1115', // .lock-overlay
+  '--code-bg': '#0b0d11', // .md pre
+  '--tile-top': 'var(--surface-2)', // .stat-tile's gradient top
+  '--shadow-overlay': '0 20px 50px rgba(0, 0, 0, 0.6)', // .modal, .cal-sheet
+  '--shadow-palette': '0 24px 60px rgba(0, 0, 0, 0.6)', // .search-palette
+  '--shadow-pop': '0 8px 24px rgba(0, 0, 0, 0.5)', // .toast, .action-menu-items, .notes-emoji
+  '--shadow-menu': '0 10px 30px rgba(0, 0, 0, 0.35)', // .cal-add-menu's rgb(0 0 0 / 0.35)
+  '--shadow-sheet': '0 -10px 44px rgba(0, 0, 0, 0.5)', // .native .modal
+  '--scrim': 'rgba(0, 0, 0, 0.6)', // .modal-backdrop, .cal-sheet-backdrop
+  '--scrim-sheet': 'rgba(0, 0, 0, 0.5)', // .native .modal-backdrop
+  '--scrim-strong': 'rgba(0, 0, 0, 0.65)', // .auth-overlay
+  '--tabbar-edge': 'rgba(255, 255, 255, 0.05)', // .native .tabs-compact
+  '--viz-empty': '#2a2f3a', // --border, on the chart fills that read it
+  '--viz-ink': '#a9b0be', // --text-2, the mood chart's currentColor
+}
+
+describe('the two palettes in 01-base.css', () => {
+  it('is light by default and dark under data-theme', () => {
+    expect(light['color-scheme']).toBe('light')
+    expect(dark['color-scheme']).toBe('dark')
+  })
+
+  it('declares every dark token on the bare :root too, so nothing is dark-only', () => {
+    expect(props(dark).filter(p => !(p in light))).toEqual([])
+  })
+
+  it('keeps the non-colour tokens and the fixed colours out of the dark block, and every other colour in it', () => {
+    for (const p of [...NON_COLOUR, ...Object.keys(FIXED)]) expect(dark, p).not.toHaveProperty(p)
+    for (const p of NON_COLOUR) expect(light, p).toHaveProperty(p)
+    const themed = props(light).filter(p => !NON_COLOUR.includes(p) && !(p in FIXED))
+    expect(themed.filter(p => !(p in dark))).toEqual([])
+  })
+
+  it('paints dark exactly as it was', () => {
+    expect(dark).toEqual(DARK)
+    for (const [p, v] of Object.entries(FIXED)) expect(light[p], p).toBe(v)
+  })
+
+  it('is the only place a colour token is declared', () => {
+    const colourTokens = props(light).filter(p => !NON_COLOUR.includes(p))
+    for (const file of sheetImports().filter(f => f !== '01-base.css')) {
+      const declared = [...strip(read(file)).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1])
+      expect(
+        declared.filter(p => colourTokens.includes(p)),
+        file,
+      ).toEqual([])
+    }
+  })
+})
+
+type Rgba = [number, number, number, number]
+
+/** A light value as a colour: a hex, an rgba(), a var(), or one of those color-mix()ed with transparent. */
+function colour(value: string): Rgba {
+  const ref = /^var\((--[\w-]+)\)$/.exec(value)
+  if (ref) return colour(light[ref[1]])
+  const hex = parseHex(value)
+  if (hex) return [...hex, 1]
+  const rgba = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(value)
+  if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])]
+  const mix = /^color-mix\(in srgb, (.+) ([\d.]+)%, transparent\)$/.exec(value)
+  if (mix) {
+    const [r, g, b, a] = colour(mix[1])
+    return [r, g, b, (a * Number(mix[2])) / 100]
+  }
+  throw new Error(`not a colour: ${value}`)
+}
+const hexOf = ([r, g, b]: Rgba) => `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`
+/** What a light token paints on a solid ground. */
+const over = (token: string, ground: string) => {
+  const c = colour(light[token])
+  return mixHex(hexOf(c), ground, c[3])
+}
+/** A light token that must be solid, as a hex. */
+const solid = (token: string) => {
+  const c = colour(light[token])
+  expect(c[3], token).toBe(1)
+  return hexOf(c)
+}
+
+describe('the light palette reads (WCAG 2.x)', () => {
+  const surface = solid('--surface')
+  const surface2 = solid('--surface-2')
+  const accent = solid('--accent')
+  const grounds: Record<string, string> = { '--bg': solid('--bg'), '--surface': surface, '--surface-2': surface2 }
+  // the accent washes that text sits on: row hovers, chips on --accent-soft, the 20% tint, code
+  const washes: Record<string, string> = {
+    'accent 4% on --surface': mixHex(accent, surface, 0.04),
+    'accent 6% on --surface-2': mixHex(accent, surface2, 0.06),
+    '--accent-soft on --surface': over('--accent-soft', surface),
+    '--accent-soft on --surface-2': over('--accent-soft', surface2),
+    'accent 20% on --surface': mixHex(accent, surface, 0.2),
+    '--code-bg': solid('--code-bg'),
+  }
+
+  /** Every pair under `min`, as "ink on ground: ratio", so a failure names them all. */
+  const under = (min: number, inks: string[], on: Record<string, string>) =>
+    inks.flatMap(ink =>
+      Object.entries(on)
+        .map(([name, ground]) => [name, contrast(solid(ink), ground)] as const)
+        .filter(([, ratio]) => ratio < min)
+        .map(([name, ratio]) => `${ink} on ${name}: ${ratio.toFixed(2)}`),
+    )
+
+  it('gives every text colour 4.5:1 on the page, a card and a raised surface', () => {
+    const text = ['--text', '--text-2', '--muted', '--placeholder', '--accent-text', '--accent-ink', '--danger', '--ok', '--warn-text']
+    const drawn = ['--prio-normal', '--prio-high', '--cal-meal-out', '--cal-event-local', '--dot-fallback', '--tone-mint', '--tone-blue']
+    expect(under(4.5, [...text, ...drawn], grounds)).toEqual([])
+  })
+
+  it('keeps 4.5:1 for the text that also sits on an accent wash', () => {
+    const inks = ['--text', '--text-2', '--muted', '--accent-text', '--accent-ink', '--danger', '--prio-normal', '--prio-high']
+    expect(under(4.5, inks, washes)).toEqual([])
+    expect(contrast(solid('--text'), over('--mark-bg', surface))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('gives every tone 4.5:1 on its own tint, over each ground', () => {
+    const tints = (bg: string) => Object.fromEntries(Object.entries(grounds).map(([name, g]) => [`${bg} over ${name}`, over(bg, g)]))
+    const low: string[] = []
+    for (const hue of ['violet', 'amber', 'sky', 'rose', 'green', 'grey', 'orange', 'indigo']) {
+      low.push(...under(4.5, [`--tone-${hue}`], tints(`--tone-${hue}-bg`)))
+    }
+    low.push(...under(4.5, ['--tone-sky'], tints('--tone-sky-bg-strong')))
+    low.push(...under(4.5, ['--warn-text'], tints('--warn-bg')))
+    expect(low).toEqual([])
+  })
+
+  it('reads on the inverse pill and on the accent and danger fills', () => {
+    const inverse = solid('--inverse-bg')
+    for (const ink of ['--inverse-text', '--inverse-muted', '--accent']) expect(contrast(solid(ink), inverse), ink).toBeGreaterThanOrEqual(4.5)
+    for (const fill of ['--accent', '--accent-hover']) expect(contrast(solid('--on-accent'), solid(fill)), fill).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(solid('--on-danger'), solid('--danger'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('gives focus rings and chart series 3:1', () => {
+    expect(under(3, ['--focus-ring'], { ...grounds, '--surface-3': solid('--surface-3') })).toEqual([])
+    expect(under(3, ['--viz-series-1', '--viz-series-1-hot'], grounds)).toEqual([])
+  })
+})
+
+describe('the copies other code keeps of the palette', () => {
+  it('THEME_HEX is the sheet’s surface, ink ground and text in each theme', () => {
+    expect(THEME_HEX.light).toEqual({ surface: light['--surface'], inkGround: light['--surface-2'], text: light['--text'] })
+    expect(THEME_HEX.dark).toEqual({ surface: dark['--surface'], inkGround: dark['--surface'], text: dark['--text'] })
+  })
+
+  it('THEME_GROUND is the light page ground and each theme’s launch ground', () => {
+    expect(THEME_GROUND.light).toBe(light['--bg'])
+    expect(THEME_GROUND.light).toBe(light['--launch-bg'])
+    expect(THEME_GROUND.dark).toBe(dark['--launch-bg'])
+  })
+
+  it('the contrast helpers’ inks are the user-colour ink tokens', () => {
+    expect(ON_USER).toBe(light['--on-user-color'])
+    expect(ON_DEEP_USER).toBe(light['--on-deep-user-color'])
+  })
+})

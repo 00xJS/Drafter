@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   /* Dynamic Type. 1 in every browser, where the reader's own zoom already does
      this job; the iOS shell writes 0.9-1.6 here from the system text size
      (watchTextSize in src/native.ts, which measures -apple-system-body).
@@ -7,37 +7,96 @@
      that moves it, so almost nothing else has to read this — only the few
      boxes that must grow with the text they hold. */
   --type-scale: 1;
-  /* app chrome — dark by design. The neutrals carry a faint warm/blue bias
-     rather than pure grey, and the four surface steps are spaced far enough
-     apart that a card reads as raised off the ground without leaning on its
-     border. Elevation (the --shadow-* ramp) does the separating now; borders
-     are back to being hairlines. */
-  --bg: #0c0e12;
-  --surface: #15181f;
-  --surface-2: #1e222b;
-  --surface-3: #272c37;
-  --border: #2a2f3a;
-  --border-strong: #3a4150;
-  --hairline: rgba(255, 255, 255, 0.06);
-  --text: #edeff3;
-  --text-2: #a9b0be;
-  --muted: #737b8b;
+  /* app chrome. Light is the default (Settings → Appearance); the dark palette
+     is the :root[data-theme='dark'] block under this one, and only colours
+     change there. The neutrals carry a faint blue bias rather than pure grey,
+     and the surface steps are spaced far enough apart that a card reads as
+     raised off the ground without leaning on its border. Elevation (the
+     --shadow-* ramp) does the separating; borders are hairlines. */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --surface-3: #e4e7ec;
+  --border: #dce0e6;
+  --border-strong: #c3c9d2;
+  --hairline: rgba(15, 17, 21, 0.08);
+  --text: #15181f;
+  --text-2: #434a59;
+  --muted: #596170;
+  --placeholder: #596170;
+  /* The house orange is a fill: buttons, borders, the caret, accent-color. On
+     white it is under 3:1, so wherever the accent is drawn as text or an icon
+     it is --accent-ink, and a focus outline is --focus-ring. */
   --accent: #f97316;
-  --accent-hover: #fb923c;
+  --accent-hover: #ea580c;
   --on-accent: #1a1206;
-  /* accent as a wash, not a fill: tinted chips, active states, focus rings, the
+  --accent-ink: #ad3a0b;
+  --focus-ring: #c2410c;
+  /* the brand mark's gradient ends, the same in both themes */
+  --accent-bright: #fb923c;
+  --accent-deep: #e2620a;
+  /* accent as a wash, not a fill: tinted chips, active states, hover rings, the
      glow under the primary button. color-mix keeps them all one hue apart. */
-  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
-  --accent-softer: color-mix(in srgb, var(--accent) 9%, transparent);
-  --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
-  --accent-text: #fca560;
-  --danger: #f87171;
-  /* the "inverted" pill: light chip on the dark ground */
-  --inverse-bg: #e7e9ee;
-  --inverse-text: #0f1115;
-  --ok: #4ade80;
-  --warn-bg: rgba(245, 158, 11, 0.16);
-  --warn-text: #fcd34d;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 7%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  --accent-text: #ad3a0b;
+  --mark-bg: color-mix(in srgb, var(--accent) 28%, transparent);
+  --danger: #b91c1c;
+  --on-danger: #ffffff;
+  /* the "inverted" pill: a dark chip on the light ground, a light one in dark */
+  --inverse-bg: #1f2329;
+  --inverse-text: #f6f7f9;
+  --inverse-muted: #a3aab6;
+  --ok: #157338;
+  --warn-bg: rgba(245, 158, 11, 0.14);
+  --warn-text: #92400e;
+  /* status and badge pairs: --tone-<hue> text on its own --tone-<hue>-bg tint */
+  --tone-violet: #6d28d9;
+  --tone-violet-bg: rgba(139, 92, 246, 0.14);
+  --tone-amber: #92400e;
+  --tone-amber-bg: rgba(245, 158, 11, 0.16);
+  --tone-sky: #03649c;
+  --tone-sky-bg: rgba(14, 165, 233, 0.14);
+  --tone-sky-bg-strong: rgba(14, 165, 233, 0.2);
+  --tone-rose: #be123c;
+  --tone-rose-bg: rgba(244, 63, 94, 0.12);
+  --tone-rose-border: rgba(225, 29, 72, 0.45);
+  --tone-green: #157338;
+  --tone-green-bg: rgba(34, 197, 94, 0.14);
+  --tone-grey: #4b5563;
+  --tone-grey-bg: rgba(148, 163, 184, 0.2);
+  --tone-orange: #ad3a0b;
+  --tone-orange-bg: rgba(251, 146, 60, 0.16);
+  --tone-indigo: #4338ca;
+  --tone-indigo-bg: rgba(99, 102, 241, 0.16);
+  --tone-mint: #047857;
+  --tone-blue: #1d4ed8;
+  /* priority glyphs and the high-priority card edge (low is --tone-grey, urgent --danger) */
+  --prio-normal: #434a59;
+  --prio-high: #ad3a0b;
+  /* the calendar's own colours: a meal eaten out, an event made in Drafter, and
+     an event whose calendar has gone */
+  --cal-meal-out: #0369a1;
+  --cal-event-local: #6d28d9;
+  --dot-fallback: #5b6474;
+  /* Person, place, project and habit colours are the user's, the same in both
+     themes, so the ink drawn on them is too: dark on every PROJECT_COLORS entry,
+     white on a colour too deep for it (inkOn in src/contrast.ts chooses). The
+     ring gives a pale dot or swatch an edge on white; it is clear in dark. */
+  --on-user-color: #0f1115;
+  --on-deep-user-color: #ffffff;
+  --dot-ring: rgba(15, 17, 21, 0.14);
+  /* a control laid over a photo, and the highlight along the orange brand mark */
+  --media-scrim: rgba(11, 11, 11, 0.6);
+  --on-media: #ffffff;
+  --sheen: rgba(255, 255, 255, 0.25);
+  /* the ground painted before the page: the lock overlay here, and THEME_GROUND
+     in src/theme.ts for the meta theme-color, the manifest and the launch screen */
+  --launch-bg: #f6f7f9;
+  --code-bg: #f3f4f6;
+  /* the stat tile's gradient top: flat white here, a lift off the card in dark */
+  --tile-top: var(--surface);
   /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
      feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
   --radius-sm: 9px;
@@ -46,11 +105,23 @@
   --radius-xl: 22px;
   /* elevation ramp. Two layers each: a tight contact shadow plus a softer
      ambient one, so a raised surface reads as lifted rather than outlined. */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
-  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.32), 0 18px 44px rgba(0, 0, 0, 0.46);
+  --shadow-sm: 0 1px 2px rgba(15, 17, 21, 0.1);
+  --shadow: 0 1px 2px rgba(15, 17, 21, 0.06), 0 3px 8px rgba(15, 17, 21, 0.06);
+  --shadow-md: 0 2px 4px rgba(15, 17, 21, 0.06), 0 8px 20px rgba(15, 17, 21, 0.1);
+  --shadow-lg: 0 4px 8px rgba(15, 17, 21, 0.08), 0 18px 44px rgba(15, 17, 21, 0.16);
   --glow-accent: 0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  /* what floats over the page, and the dimmed page behind it: dialogs and the
+     day sheet, the command palette, popovers, menus and the phone's card sheet */
+  --shadow-overlay: 0 20px 50px rgba(15, 17, 21, 0.18);
+  --shadow-palette: 0 24px 60px rgba(15, 17, 21, 0.2);
+  --shadow-pop: 0 8px 24px rgba(15, 17, 21, 0.14);
+  --shadow-menu: 0 10px 30px rgba(15, 17, 21, 0.12);
+  --shadow-sheet: 0 -10px 44px rgba(15, 17, 21, 0.16);
+  --scrim: rgba(15, 17, 21, 0.32);
+  --scrim-sheet: rgba(15, 17, 21, 0.28);
+  --scrim-strong: rgba(15, 17, 21, 0.45);
+  /* the top edge of the phone's frosted tab bar */
+  --tabbar-edge: rgba(15, 17, 21, 0.08);
   /* phone chrome: everything that floats measures itself off these */
   --tabbar-h: 56px;
   /* The sticky .topbar's own height, safe area excluded: 10px + its tallest
@@ -81,11 +152,99 @@
      and collapses the sheet. Key layout off the `keyboard-open` class instead
      (src/native.ts sets both). */
   --keyboard-h: 0px;
-  /* chart tokens */
+  /* chart tokens. A series needs 3:1 against the card, so here it is a step
+     deeper than --accent and its "hot" mark deeper again. --viz-empty is an
+     empty or zero mark; --viz-ink is the mood chart's currentColor. */
+  --viz-grid: #e1e4e9;
+  --viz-baseline: #c3c9d2;
+  --viz-series-1: #ea580c;
+  --viz-series-1-hot: #c2410c;
+  --viz-empty: #d5dae1;
+  --viz-ink: #15181f;
+}
+
+/* Settings → Appearance → Dark (or Match system on a dark device). data-theme is
+   stamped on <html> by index.html's inline script before the first paint and
+   kept true by src/theme.ts. Values here are exactly the palette the app
+   shipped with until 2026-09-14; theme-tokens.test.ts pins them. Only themed
+   tokens appear here: the fixed ones (the accent with its glow and gradient
+   ends, --on-accent, the ink on user colours, the photo controls, --sheen and
+   --mark-bg) are declared once, above. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0c0e12;
+  --surface: #15181f;
+  --surface-2: #1e222b;
+  --surface-3: #272c37;
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --hairline: rgba(255, 255, 255, 0.06);
+  --text: #edeff3;
+  --text-2: #a9b0be;
+  --muted: #737b8b;
+  --placeholder: #a9a9a9;
+  --accent-hover: #fb923c;
+  --accent-ink: #f97316;
+  --focus-ring: #f97316;
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 9%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 34%, transparent);
+  --accent-text: #fca560;
+  --danger: #f87171;
+  --inverse-bg: #e7e9ee;
+  --inverse-text: #0f1115;
+  --inverse-muted: #737b8b;
+  --ok: #4ade80;
+  --warn-bg: rgba(245, 158, 11, 0.16);
+  --warn-text: #fcd34d;
+  --tone-violet: #c4b5fd;
+  --tone-violet-bg: rgba(139, 92, 246, 0.2);
+  --tone-amber: #fcd34d;
+  --tone-amber-bg: rgba(245, 158, 11, 0.18);
+  --tone-sky: #7dd3fc;
+  --tone-sky-bg: rgba(14, 165, 233, 0.2);
+  --tone-sky-bg-strong: rgba(14, 165, 233, 0.25);
+  --tone-rose: #fda4af;
+  --tone-rose-bg: rgba(244, 63, 94, 0.2);
+  --tone-rose-border: rgba(244, 63, 94, 0.45);
+  --tone-green: #86efac;
+  --tone-green-bg: rgba(34, 197, 94, 0.18);
+  --tone-grey: #9ca3af;
+  --tone-grey-bg: rgba(148, 163, 184, 0.16);
+  --tone-orange: #fdba74;
+  --tone-orange-bg: rgba(251, 146, 60, 0.2);
+  --tone-indigo: #a5b4fc;
+  --tone-indigo-bg: rgba(99, 102, 241, 0.28);
+  --tone-mint: #34d399;
+  --tone-blue: #60a5fa;
+  --prio-normal: #b3b8c4;
+  --prio-high: #fb923c;
+  --cal-meal-out: #38bdf8;
+  --cal-event-local: #a78bfa;
+  --dot-fallback: #94a3b8;
+  --dot-ring: transparent;
+  --launch-bg: #0f1115;
+  --code-bg: #0b0d11;
+  --tile-top: var(--surface-2);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.32), 0 18px 44px rgba(0, 0, 0, 0.46);
+  --shadow-overlay: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --shadow-palette: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-menu: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-sheet: 0 -10px 44px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --scrim-sheet: rgba(0, 0, 0, 0.5);
+  --scrim-strong: rgba(0, 0, 0, 0.65);
+  --tabbar-edge: rgba(255, 255, 255, 0.05);
   --viz-grid: #2b303b;
   --viz-baseline: #3d4453;
   --viz-series-1: #f97316;
   --viz-series-1-hot: #fb923c;
+  --viz-empty: #2a2f3a;
+  --viz-ink: #a9b0be;
 }
 
 * {

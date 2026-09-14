@@ -41,8 +41,12 @@ export default defineConfig({
           method: 'GET',
           params: { title: 'title', text: 'text', url: 'url' },
         },
-        theme_color: '#0f1115',
-        background_color: '#0f1115',
+        // The light ground the app opens in (THEME_GROUND.light in src/theme.ts;
+        // launchscreen.test.ts holds them equal). A manifest cannot follow
+        // Settings → Appearance: the live <meta name="theme-color"> does, and
+        // browsers take it over theme_color. background_color is the install splash.
+        theme_color: '#f6f7f9',
+        background_color: '#f6f7f9',
         display: 'standalone',
         start_url: '/',
         icons: [
