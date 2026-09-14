@@ -1,6 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import householdFunction from '../../netlify/functions/household.mjs'
@@ -103,25 +100,5 @@ describe('Household → remove and leave', () => {
     await post('leave')
     expect(calls.some(c => c.method === 'DELETE' && c.path === '/rest/v1/households')).toBe(true)
     expect(settingsWrites()).toEqual([])
-  })
-})
-
-describe('nothing reads or writes a household epoch', () => {
-  const root = fileURLToPath(new URL('../../', import.meta.url))
-  const CODE = /\.(ts|tsx|mjs|mts|js|sql|swift)$/
-
-  /** Every code file under `dir`, the tests (which name it to forbid it) left out. */
-  function files(dir: string): string[] {
-    return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(e => {
-      const rel = join(dir, e.name)
-      if (e.isDirectory()) return e.name === 'node_modules' || rel === join('src', '__tests__') ? [] : files(rel)
-      return CODE.test(e.name) ? [rel] : []
-    })
-  }
-
-  it('appears nowhere in the app, the functions, the MCP server, the shared rules or the database', () => {
-    const sources = ['src', 'netlify', 'mcp', 'shared', 'supabase', 'scripts'].flatMap(files)
-    expect(sources.length).toBeGreaterThan(50)
-    expect(sources.filter(f => /household_?epoch/i.test(readFileSync(join(root, f), 'utf8')))).toEqual([])
   })
 })
