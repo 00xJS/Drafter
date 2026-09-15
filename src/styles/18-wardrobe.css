@@ -1392,6 +1392,10 @@ button.photo-cal-day:focus-visible {
   flex: none;
   color: var(--muted);
 }
+/* a planned look: its "Planned:" in the tone of the composer's Planned badge; the line is the same one, so it fits as a worn look's does */
+.cal-look.planned .cal-look-label > .muted {
+  color: var(--tone-sky);
+}
 
 /* the Week review's looks: a strip of small collages, one a day */
 .review-looks {

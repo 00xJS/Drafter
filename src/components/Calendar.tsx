@@ -22,7 +22,7 @@ import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
-import { liveById, lookOn, orderPieces, outfitLabel, wearIndex } from '../wardrobe'
+import { liveById, lookOn, looksOn, orderPieces, outfitLabel, planFor, wearIndex } from '../wardrobe'
 import { Icon } from './Icon'
 import { Modal } from './Modal'
 import type { WardrobeOpen } from './planner/useNavigation'
@@ -190,21 +190,28 @@ export function Calendar({
   // What you wore: one small line on a day in the week list and the day sheet.
   // Like a work day it is a property of the day, not an item among its events,
   // and it stays out of the month grid, whose cells have no room for it at 375pt.
+  // A day whose looks are all plans shows its plan instead, "Planned: …", as
+  // Today's card does (planFor). A plan counts in no figure, so it is read from
+  // the looks themselves, never from the index every figure reads.
   const pieces = useMemo(() => liveById(garments ?? []), [garments])
   const worn = useMemo(() => wearIndex(wears ?? [], todayKey), [wears, todayKey])
   const lookLine = (d: Date) => {
+    if (!garments || !onOpenWardrobe) return null
     const k = dateKey(d)
-    const on = garments ? lookOn(worn, k) : undefined
-    if (!on || !onOpenWardrobe) return null
-    const what = outfitLabel(on.look.garmentIds, pieces)
-    const thumbs = orderPieces(on.look.garmentIds, pieces).slice(0, 3)
-    const verb = k === todayKey ? 'Wearing' : 'Wore'
-    const more = on.looks > 1 ? `, and ${on.looks - 1} more look${on.looks > 2 ? 's' : ''}` : ''
+    const on = lookOn(worn, k)
+    const plan = on ? undefined : planFor(wears ?? [], k)
+    const look = on?.look ?? plan
+    if (!look) return null
+    const looks = on ? on.looks : looksOn(wears ?? [], k).filter(w => w.garmentIds.length > 0).length
+    const what = outfitLabel(look.garmentIds, pieces)
+    const thumbs = orderPieces(look.garmentIds, pieces).slice(0, 3)
+    const verb = plan ? 'Planned:' : k === todayKey ? 'Wearing' : 'Wore'
+    const more = looks > 1 ? `, and ${looks - 1} more look${looks > 2 ? 's' : ''}` : ''
     return (
       <button
         type="button"
-        className="cal-look"
-        aria-label={`${verb} ${what}${more}: open the wardrobe on ${fullDate(d)}`}
+        className={plan ? 'cal-look planned' : 'cal-look'}
+        aria-label={`${verb} ${what}${more}${plan ? '; ' : ': '}open the wardrobe on ${fullDate(d)}`}
         onClick={() => {
           setSheetDay(null)
           onOpenWardrobe({ date: k })
@@ -216,7 +223,7 @@ export function Calendar({
         <span className="cal-look-label">
           <span className="muted">{verb}</span> {what}
         </span>
-        {on.looks > 1 && <span className="cal-look-more">{on.looks} looks</span>}
+        {looks > 1 && <span className="cal-look-more">{looks} looks</span>}
       </button>
     )
   }

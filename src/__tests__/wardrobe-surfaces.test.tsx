@@ -541,6 +541,55 @@ describe('the Calendar shows a day’s look', () => {
     expect(lines[1]).toMatch(/aria-label="Wearing Navy tee \+ Black jeans, and 1 more look: open the wardrobe on [^"]+"/)
   })
 
+  // a look can be planned a year ahead, and the Calendar never showed one
+  describe('and a planned one, as “Planned: …”', () => {
+    const planned = (date: string, ids: string[]) => look(date, ids, { planned: true })
+    const week = () => [
+      // a plan whose day passed and was never said to be worn
+      planned('2026-09-07', ['tee', 'jeans']),
+      look('2026-09-08', ['tee', 'jeans']),
+      // today: a plan beside a look that was worn
+      planned('2026-09-09', ['jeans']),
+      look('2026-09-09', ['tee', 'jeans']),
+      planned('2026-09-11', ['tee', 'jeans']),
+      // two plans on a day: its latest is shown, and the count
+      planned('2026-09-12', ['jeans']),
+      planned('2026-09-12', ['tee', 'jeans']),
+    ]
+    const linesOf = (html: string) => [...html.matchAll(/<button type="button" class="cal-look( planned)?"[^>]*>[\s\S]*?<\/button>/g)].map(m => m[0])
+
+    it('in the week list, on a day whose looks are all plans, past or to come; a worn look wins its day', () => {
+      // Wednesday 9 September 2026: the week of 6–12 September
+      at(new Date(2026, 8, 9, 9))
+      const lines = linesOf(render('week', { garments, wears: week(), onOpenWardrobe: noop }))
+      expect(lines).toHaveLength(5)
+      expect(lines[0]).toContain('class="cal-look planned"')
+      expect(lines[0]).toContain('<span class="muted">Planned:</span> Navy tee + Black jeans')
+      expect(lines[1]).toContain('<span class="muted">Wore</span> Navy tee + Black jeans')
+      expect(lines[2]).toContain('<span class="muted">Wearing</span> Navy tee + Black jeans')
+      expect(lines[2]).not.toMatch(/Planned|cal-look-more/)
+      expect(lines[3]).toMatch(/aria-label="Planned: Navy tee \+ Black jeans; open the wardrobe on [^"]+"/)
+      expect(lines[4]).toContain('<span class="muted">Planned:</span> Navy tee + Black jeans')
+      expect(lines[4]).toContain('<span class="cal-look-more">2 looks</span>')
+    })
+
+    it('never in the month grid, and in no figure', () => {
+      at(new Date(2026, 8, 9, 9))
+      expect(render('month', { garments, wears: week(), onOpenWardrobe: noop })).not.toContain('cal-look')
+      // the index every figure reads still has only the two days worn
+      expect(wearIndex(week(), '2026-09-12').logged).toEqual(['2026-09-09', '2026-09-08'])
+    })
+
+    it('in the day sheet through the same line, which holds at 375pt in either theme: one line, cut short, in theme tokens', () => {
+      expect(read('../components/Calendar.tsx')).toContain('const plan = on ? undefined : planFor(wears ?? [], k)')
+      const css = read('../styles/18-wardrobe.css')
+      expect(/\.cal-look-label \{([^}]*)\}/.exec(css)![1]).toMatch(/min-width: 0;\s*white-space: nowrap;\s*overflow: hidden;\s*text-overflow: ellipsis;/)
+      const rule = /\.cal-look\.planned [^{]*\{([^}]*)\}/.exec(css)![1]
+      expect(rule).toMatch(/color: var\(--[a-z0-9-]+\);/)
+      expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgb|hsl/i)
+    })
+  })
+
   it('not in the month grid, where a phone’s day cell has no room for it', () => {
     at(new Date(2026, 8, 12, 9))
     expect(render('month')).not.toContain('cal-look')
