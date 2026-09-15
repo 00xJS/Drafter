@@ -57,12 +57,15 @@ function pageOf(path: string, rows: StoredRow[]) {
 let requests: { url: string; headers: Headers }[]
 /** What the posts table holds. */
 let rows: StoredRow[]
+/** The read of the posts fails, in the database's own words. */
+let postsFail: boolean
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   requests = []
   rows = [...stored]
+  postsFail = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,7 +78,9 @@ beforeEach(() => {
       }
       if (path === `household_members?user_id=eq.${ME}&select=household_id`) return Response.json([{ household_id: 'home' }])
       if (path === 'household_members?household_id=eq.home&select=user_id') return Response.json([{ user_id: ME }, { user_id: PEER }])
-      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&user_id=in.')) return pageOf(path, rows)
+      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&user_id=in.')) {
+        return postsFail ? Response.json({ message: 'canceling statement due to statement timeout on relation "posts"' }, { status: 500 }) : pageOf(path, rows)
+      }
       throw new Error(`unexpected read ${path}`)
     }),
   )
@@ -123,6 +128,22 @@ describe('GET /api/feed.ics', () => {
     expect(ics).toContain('UID:task-assigned@drafter')
     expect(ics).not.toMatch(/Peer chore|Peer diary entry|Peer habit/)
     expect(requests.filter(r => r.url.includes('/rest/v1/posts?'))).toHaveLength(2)
+  })
+
+  // a feed token is a link: whoever holds it reads the answer, so what the
+  // database said about a failed read goes to the function's log alone
+  it('answers a read it cannot finish with a bare 502, and keeps the detail for the log', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      postsFail = true
+      const res = await fetchFeed()
+      expect(res.status).toBe(502)
+      expect(await res.text()).toBe('feed unavailable')
+      expect(logged).toHaveBeenCalledOnce()
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/^feed: posts: 500 .*statement timeout/))
+    } finally {
+      logged.mockRestore()
+    }
   })
 })
 

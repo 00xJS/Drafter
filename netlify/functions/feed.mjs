@@ -64,7 +64,9 @@ const handler = async req => {
     try {
       items = await loadItems(await visibleOwnerIds(row.user_id), row.user_id)
     } catch (e) {
-      return new Response(`feed unavailable: ${e?.message ?? e}`, { status: 502 })
+      // anyone holding the link sees the answer, so the database's own words stay in the log
+      console.error(`feed: ${e?.message ?? e}`)
+      return new Response('feed unavailable', { status: 502 })
     }
     const tz = row.timezone ?? undefined
     return new Response(buildICS('Drafter', feedFor(items, url.origin, tz, row.user_id)), {
