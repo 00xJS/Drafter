@@ -265,7 +265,7 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
         className="year-report kitchen-months"
         title="Meals by month"
         sub="Cooked at home, eaten out at a place, or bought with no place named · the trend is home-cooked days, the last 90 against the 90 before"
-        aside={<Stepper label={String(year)} unit="year" onStep={delta => setYear(y => y + delta)} />}
+        aside={<Stepper label={String(year)} unit="year" canNext={year < thisYear} onStep={delta => setYear(y => Math.min(thisYear, y + delta))} />}
       >
         <MealMonthsChart months={months} current={year === thisYear ? Number(ix.dayKey.slice(5, 7)) - 1 : -1} />
         <WayKey counts={{ cooked: total(months.cooked), out: total(months.out), bought: total(months.bought) }} />

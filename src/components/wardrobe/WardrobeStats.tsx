@@ -166,7 +166,7 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
         className="year-report wardrobe-months"
         title="Wears by month"
         sub="Days logged each month · trend compares the last 90 days with the 90 before"
-        aside={<Stepper label={String(year)} unit="year" onStep={delta => setYear(y => y + delta)} />}
+        aside={<Stepper label={String(year)} unit="year" canNext={year < thisYear} onStep={delta => setYear(y => Math.min(thisYear, y + delta))} />}
       >
         <MonthBars
           prefix={PREFIX}

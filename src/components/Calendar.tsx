@@ -17,6 +17,7 @@ import {
   workByDay,
 } from '../calgrid'
 import { cookedIndex, visitIndex, mealLabel, mealsByDay } from '../kitchen'
+import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
 import { MealSlotRow } from './MealSlotRow'
@@ -91,10 +92,14 @@ const MAX_PILLS = 4
 const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
 // The calendar's own colours are theme tokens (src/styles/01-base.css), each
 // tuned to read in light and dark; a feed's or a project's colour is the user's.
-/** Cooked at home: the accent, as ink. */
-const MEAL_COLOR = 'var(--accent-ink)'
-/** Bought — a different colour so a run of takeaways stands out in the month grid. */
-const MEAL_OUT_COLOR = 'var(--cal-meal-out)'
+/**
+ * A meal in the colour of the way it is had (mealWay, the Kitchen's own rule),
+ * a plan in the way it is planned: cooked at home in the accent, as ink; eaten
+ * out at a saved place in blue, and bought, with no place named or at one
+ * since deleted, in rose, the two Kitchen → Stats keys those ways by, so a run
+ * of takeaways stands out in the month grid.
+ */
+const MEAL_COLORS: Record<MealWay, string> = { cooked: 'var(--accent-ink)', out: 'var(--cal-meal-out)', bought: 'var(--cal-meal-bought)' }
 const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
 const LOCAL_EVENT_COLOR = 'var(--cal-event-local)'
@@ -302,11 +307,15 @@ export function Calendar({
     return item.task.title || item.task.description.slice(0, 60) || 'Untitled'
   }
 
+  // a meal's way by the Kitchen's own rule (mealWay): a place in the Trash leaves a meal out there bought
+  const saved = useMemo(() => savedPlaces(places), [places])
+  const mealColor = (m: Meal) => MEAL_COLORS[mealWay(m, saved)]
+
   const itemColor = (item: DayItem): string => {
     if (item.kind === 'occasion') return item.occasion.person.color
     if (item.kind === 'event') return eventColor(item.event)
     if (item.kind === 'mark') return item.mark.project.color
-    if (item.kind === 'meal') return item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR
+    if (item.kind === 'meal') return mealColor(item.meal)
     return taskProject(item.task)?.color ?? STATUS_META[item.task.status].color
   }
 
@@ -689,7 +698,7 @@ export function Calendar({
                 if (item.kind === 'meal') {
                   return (
                     <li key={item.id} className="cal-row">
-                      <span className="cal-item-dot" style={{ background: item.meal.out ? MEAL_OUT_COLOR : MEAL_COLOR }} />
+                      <span className="cal-item-dot" style={{ background: mealColor(item.meal) }} />
                       <div className="cal-row-main">
                         <span className="cal-row-title">
                           {mealGlyph(item.meal)} {mealLabel(item.meal)}

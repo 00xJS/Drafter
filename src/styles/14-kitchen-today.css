@@ -672,8 +672,8 @@
    18-wardrobe.css. These are the Kitchen's own pieces: a dish
    drawn as its emoji or first letters, and the three ways a
    meal is had, each in its colour — cooked in the chart's own,
-   eaten out in the calendar's blue for a night out, bought in
-   rose.
+   eaten out and bought in the Calendar's own blue and rose for
+   them, so a meal is one colour on both.
    ============================================================ */
 .kitchen-stats {
   display: flex;
@@ -734,7 +734,7 @@
   background: var(--cal-meal-out);
 }
 .photo-cal-cell.dinner-bought .photo-cal-day::after {
-  background: var(--tone-rose);
+  background: var(--cal-meal-bought);
 }
 /* tonight's dinner out before its outing counts here (outingsAt's midday
    UTC): a plan, dashed as a day to come is, and with no bar */
@@ -751,8 +751,8 @@
   background: var(--cal-meal-out);
 }
 .kitchen-way-bought {
-  fill: var(--tone-rose);
-  background: var(--tone-rose);
+  fill: var(--cal-meal-bought);
+  background: var(--cal-meal-bought);
 }
 .kitchen-month-bars .tick-label.now {
   fill: var(--text-2);

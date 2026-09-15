@@ -244,7 +244,7 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
         className="year-report place-stats-year"
         title="The year in places"
         sub="Outings per month, a meal eaten out there included, two in one day counted as two · trend compares outings in the last 90 days with the 90 before"
-        aside={<Stepper label={String(year)} unit="year" onStep={delta => setYear(y => y + delta)} />}
+        aside={<Stepper label={String(year)} unit="year" canNext={year < thisYear} onStep={delta => setYear(y => Math.min(thisYear, y + delta))} />}
       >
         <MonthBars
           months={months.months}

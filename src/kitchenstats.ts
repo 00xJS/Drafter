@@ -22,6 +22,9 @@ import { dateKey } from './utils'
  * - A meal out with no place named ("Out, no place"), or at one since
  *   deleted, was bought. Any other meal, a dish typed with no recipe
  *   included, was cooked at home once its day had come.
+ * - Which of the three a meal is, whatever its day, is mealWay's rule. The
+ *   Calendar colours every meal by it, a plan by the way it is planned, so
+ *   a meal is one colour there and here.
  *
  * Kitchen has no Mine / Everyone: its recipes, meals and grocery lists are
  * the household's and the tab shows all of them, so nothing here reads who
@@ -58,11 +61,28 @@ export interface KitchenIndex {
   ways: ReadonlyMap<string, MealWay>
 }
 
+/** The saved places a meal can be eaten out at, by id: the live ones. One in the Trash, or anything else handed in, is none. */
+export function savedPlaces(places: readonly Place[]): ReadonlyMap<string, Place> {
+  return new Map(places.filter(p => p.kind === 'place' && !p.deletedAt).map(p => [p.id, p]))
+}
+
+/**
+ * How a meal is had, or is planned to be, whatever its day: eaten out at a
+ * place still saved (`places`, as savedPlaces keeps them); bought when it is
+ * out with no place named, or at one since deleted; and cooked at home
+ * otherwise. The Calendar colours every meal by it, a plan by the way it is
+ * planned. When a meal counts is kitchenIndex's rule, below, not this one's.
+ */
+export function mealWay(meal: Pick<Meal, 'out' | 'placeId'>, places: ReadonlyMap<string, Place>): MealWay {
+  if (!meal.out) return 'cooked'
+  return meal.placeId && places.has(meal.placeId) ? 'out' : 'bought'
+}
+
 export function kitchenIndex(recipes: readonly Recipe[], meals: readonly Meal[], places: readonly Place[], now: Date = new Date()): KitchenIndex {
   const dayKey = dateKey(now)
   const liveRecipes = recipes.filter(r => r.kind === 'recipe' && !r.deletedAt)
   const liveMeals = meals.filter(m => m.kind === 'meal' && !m.deletedAt && typeof m.date === 'string')
-  const livePlaces = places.filter(p => p.kind === 'place' && !p.deletedAt)
+  const placeById = savedPlaces(places)
   const days = new Map<string, Set<string>>()
   for (const m of liveMeals) {
     for (const id of cookedRecipeIds(m, dayKey)) {
@@ -74,23 +94,22 @@ export function kitchenIndex(recipes: readonly Recipe[], meals: readonly Meal[],
   // eaten out: each place's own outings, the meals among them, as its card
   // counts them. The meals out are sorted to their places in one pass, so a
   // place is asked about its own meals only, never every meal there is.
-  const placeById = new Map(livePlaces.map(p => [p.id, p]))
   const outBy = new Map<string, Meal[]>()
   for (const m of liveMeals) {
-    if (!m.out || !m.placeId || !placeById.has(m.placeId)) continue
-    const at = outBy.get(m.placeId) ?? []
+    // out at a saved place, so it names one
+    if (mealWay(m, placeById) !== 'out') continue
+    const at = outBy.get(m.placeId!) ?? []
     at.push(m)
-    outBy.set(m.placeId, at)
+    outBy.set(m.placeId!, at)
   }
   const out = new Set<string>()
   for (const [id, at] of outBy) for (const o of outingsAt(id, [], at, now)) if (o.kind === 'meal') out.add(o.meal.id)
   const ways = new Map<string, MealWay>()
   for (const m of liveMeals) {
-    if (out.has(m.id)) ways.set(m.id, 'out')
-    else if (m.date > dayKey) continue
-    else if (!m.out) ways.set(m.id, 'cooked')
-    // out at a saved place but not an outing yet (its day has come here, and not yet at midday UTC): it counts once it is one
-    else if (!m.placeId || !placeById.has(m.placeId)) ways.set(m.id, 'bought')
+    const way = mealWay(m, placeById)
+    // a meal out at a saved place counts once it is one of the place's outings
+    // (its day has come here, and midday UTC has too); any other once its day has
+    if (way === 'out' ? out.has(m.id) : m.date <= dayKey) ways.set(m.id, way)
   }
   return {
     dayKey,

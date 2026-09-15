@@ -387,8 +387,8 @@ describe('the Stats view', () => {
     expect(year).toContain('Bought<strong>2</strong>')
     expect(year).toContain('<p class="stats-month-total">9 home-cooked days in 2026 <span class="badge"')
     expect(year).toContain('<tr><td>Sep</td><td class="num">9</td><td class="num">1</td><td class="num">2</td><td class="num">8</td></tr>')
-    // ‹ year › steps on past this year, as the wardrobe's, People's and Places' do
-    expect(year).not.toContain('aria-label="Next year" disabled=""')
+    // ‹ year › stops at this year, as the wardrobe's, People's and Places' do
+    expect(year).toContain('aria-label="Next year" disabled=""')
 
     const shares = card(out, 'Lunch and dinner')
     expect(shares).toContain('<strong>Dinner</strong><small class="muted">10 dinners · 70% cooked</small>')
@@ -732,7 +732,10 @@ describe('its chunk and its styles', () => {
     const css = sheetSource()
     expect(css).toMatch(/\.kitchen-way-cooked \{\s*fill: var\(--viz-series-1\);\s*background: var\(--viz-series-1\);/)
     expect(css).toMatch(/\.kitchen-way-out \{\s*fill: var\(--cal-meal-out\);\s*background: var\(--cal-meal-out\);/)
-    expect(css).toMatch(/\.kitchen-way-bought \{\s*fill: var\(--tone-rose\);\s*background: var\(--tone-rose\);/)
+    // bought in the Calendar's own colour for it, so a takeaway is one colour on both
+    expect(css).toMatch(/\.kitchen-way-bought \{\s*fill: var\(--cal-meal-bought\);\s*background: var\(--cal-meal-bought\);/)
+    expect(css).toMatch(/\.photo-cal-cell\.dinner-bought \.photo-cal-day::after \{\s*background: var\(--cal-meal-bought\);/)
+    expect(css).toMatch(/\.photo-cal-cell\.dinner-out \.photo-cal-day::after \{\s*background: var\(--cal-meal-out\);/)
     expect(css).toMatch(/@media \(pointer: coarse\) \{\s*\.kitchen-by-month summary \{[^}]*min-height: 44px/)
     // a keyboard sees the app's own ring on it, as on a button
     expect(css).toMatch(/\.kitchen-by-month summary:focus-visible \{\s*outline: 2px solid var\(--focus-ring\);/)

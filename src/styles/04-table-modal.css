@@ -253,6 +253,15 @@ textarea {
   font-weight: 600;
 }
 
+/* A stepper's › stopped at the present (a Stats card's ‹ year ›, the month
+   calendar's ‹ month ›) dims, as the wardrobe's day steps do. .seg's own ink
+   and border hide the browser's grey, so a › that did nothing looked live and
+   read as broken. */
+.seg:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .warn {
   color: var(--danger);
   font-size: 0.75rem;

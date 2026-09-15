@@ -288,7 +288,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
             className="year-report"
             title={`The year with ${who}`}
             sub="Days seen per month, however many events a day held · trend compares days seen in the last 90 days with the 90 before"
-            aside={<Stepper label={String(year)} unit="year" onStep={delta => setYear(y => y + delta)} />}
+            aside={<Stepper label={String(year)} unit="year" canNext={year < thisYear} onStep={delta => setYear(y => Math.min(thisYear, y + delta))} />}
           >
             <MonthBars
               months={months.months}
