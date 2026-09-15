@@ -32,7 +32,7 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 
 - Give each person a rhythm ("every 2 weeks"). Done tasks, past events and one-tap logs count as seeing them, and Today says who's due a catch-up. Birthdays and anniversaries come with **Plan a gift**.
 - **Places** (restaurants, cafés, bars, the outdoors and more) track when you last went, how often and with whom; a meal eaten out counts. A return rhythm nudges you, and ✨ **Where should we go?** suggests outings.
-- **Stats** in each (switch **List · Stats**) show:
+- **Stats** in each (switch **List · Stats**) follow the list's search and chips, and show:
   - who you see and where you go most, streaks, and a month calendar;
   - each month of the year;
   - groups and kinds of place, and who you go with;
