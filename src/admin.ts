@@ -15,6 +15,8 @@ export interface IntegrationPiece {
   missing: string[]
   redirectUri?: string
   nvidia?: boolean
+  /** How many NVIDIA keys the host has (NVIDIA_API_KEY, NVIDIA_API_KEY_2): 0, 1 or 2. Never their values. */
+  nvidiaKeys?: number
   anthropic?: boolean
 }
 

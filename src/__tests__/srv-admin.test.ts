@@ -280,3 +280,36 @@ describe('Admin → the digest it runs reads every record, past a thousand', () 
     expect(ranges).toEqual(['0-999', '1000-1999'])
   })
 })
+
+// A second NVIDIA key, NVIDIA_API_KEY_2, is optional: either one alone means
+// the ✨ features are set up, and the panel says how many there are, never
+// what they are.
+describe('Admin → status counts either NVIDIA key, and names neither', () => {
+  beforeEach(() => {
+    for (const key of ['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'ANTHROPIC_API_KEY', 'AI_PROVIDER']) vi.stubEnv(key, '')
+  })
+  const aiStatus = async () => {
+    const text = await (await act('status')).text()
+    return { ai: JSON.parse(text).ai, text }
+  }
+
+  it('is set up with the second key alone', async () => {
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvapi-second-secret')
+    const { ai, text } = await aiStatus()
+    expect(ai).toEqual({ configured: true, missing: [], nvidia: true, nvidiaKeys: 1, anthropic: false })
+    expect(text).not.toContain('nvapi-second-secret')
+  })
+
+  it('counts two keys, one value under both names as one, and none as missing', async () => {
+    vi.stubEnv('NVIDIA_API_KEY', 'nvapi-main-secret')
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvapi-second-secret')
+    const both = await aiStatus()
+    expect(both.ai).toMatchObject({ configured: true, nvidia: true, nvidiaKeys: 2 })
+    expect(both.text).not.toMatch(/nvapi-(main|second)-secret/)
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvapi-main-secret')
+    expect((await aiStatus()).ai).toMatchObject({ nvidiaKeys: 1 })
+    vi.stubEnv('NVIDIA_API_KEY', '')
+    vi.stubEnv('NVIDIA_API_KEY_2', '')
+    expect((await aiStatus()).ai).toEqual({ configured: false, missing: ['NVIDIA_API_KEY or ANTHROPIC_API_KEY'], nvidia: false, nvidiaKeys: 0, anthropic: false })
+  })
+})

@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.stubEnv('URL', 'https://site.test')
   // no AI provider, so Sunday's automatic review draft never leaves the test
   vi.stubEnv('NVIDIA_API_KEY', '')
+  vi.stubEnv('NVIDIA_API_KEY_2', '')
   vi.stubEnv('ANTHROPIC_API_KEY', '')
   vi.useFakeTimers({ toFake: ['Date'] })
   pushes.length = 0

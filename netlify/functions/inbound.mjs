@@ -101,6 +101,8 @@ async function triageTask(task, { subject, text, from }, { tz, now }) {
     prompt: `Now: ${wallNow(now, tz)} (${tz})\nFrom: ${from || '(unknown)'}\nSubject: ${subject || '(none)'}\n\n${text.slice(0, 2500)}\n\nCurrent title: ${task.title}`,
     maxTokens: 400,
     json: true,
+    // the webhook's own pass, with nobody at a screen: a second NVIDIA key takes it first
+    background: true,
   })
   if (ai.error || !ai.text) return null
   let raw

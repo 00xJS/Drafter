@@ -21,6 +21,8 @@ let settingsRow: Record<string, unknown>
 let stored: Record<string, unknown>[]
 /** The user message of each model call. */
 let prompts: string[]
+/** The key each model call carried. */
+let aiKeys: string[]
 
 /** A request that only ever ends by being aborted, like a provider that stopped answering. */
 const hang = (init?: RequestInit) =>
@@ -31,12 +33,14 @@ beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   vi.stubEnv('NVIDIA_API_KEY', 'nvidia-key')
+  vi.stubEnv('NVIDIA_API_KEY_2', '')
   slow = new Set()
   calls = []
   aiReply = '{"title":"Pay the plumber","priority":"high"}'
   settingsRow = { user_id: 'user-one', inbound_token: KEY }
   stored = []
   prompts = []
+  aiKeys = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -54,7 +58,10 @@ beforeEach(() => {
                 })()
       calls.push(route)
       if (route === 'store') stored.push(JSON.parse(String(init?.body)).incoming[0])
-      if (route === 'ai') prompts.push(JSON.parse(String(init?.body)).messages.at(-1).content)
+      if (route === 'ai') {
+        prompts.push(JSON.parse(String(init?.body)).messages.at(-1).content)
+        aiKeys.push(new Headers(init?.headers).get('authorization') ?? '')
+      }
       if (slow.has(route)) return hang(init)
       if (route === 'settings') return Response.json([settingsRow])
       if (route === 'store') return Response.json({ items: [], rejected: [] })
@@ -195,5 +202,22 @@ describe('inbound email triage dates', () => {
     aiReply = JSON.stringify({ title: 'Dentist appointment', dueAt })
     await answer(appointment())
     expect(triaged()).not.toHaveProperty('dueAt')
+  })
+})
+
+// Email-in's triage is the webhook's own pass, with nobody at a screen: work
+// the server starts by itself. With a second NVIDIA key it goes on that key
+// first, so the owner's own ✨ requests keep the main key's quota.
+describe('inbound email triage is background work', () => {
+  it('asks on the main key while it is the only one', async () => {
+    await answer(email())
+    expect(aiKeys).toEqual(['Bearer nvidia-key'])
+  })
+
+  it('asks on NVIDIA_API_KEY_2 first when the host has one', async () => {
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvidia-key-2')
+    const { res } = await answer(email())
+    expect(await res.json()).toMatchObject({ ok: true, title: 'Pay the plumber', triaged: true })
+    expect(aiKeys).toEqual(['Bearer nvidia-key-2'])
   })
 })

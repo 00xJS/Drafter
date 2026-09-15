@@ -591,12 +591,12 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
               <HealthCard title="AI assist" piece={status.ai}>
                 <p className="field-hint">
                   The ✨ features (break a task into steps, suggest tags, refine a description) run through the site's server-side proxy — configure{' '}
-                  <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify). No key is ever stored in the
-                  browser.
+                  <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify), and optionally a second NVIDIA
+                  key, <code>NVIDIA_API_KEY_2</code>, which scheduled work uses first. No key is ever stored in the browser.
                   {status.ai.configured && (
                     <>
                       {' '}
-                      Currently using {status.ai.nvidia ? 'NVIDIA' : null}
+                      Currently using {status.ai.nvidia ? (status.ai.nvidiaKeys === 2 ? 'NVIDIA (two keys)' : 'NVIDIA') : null}
                       {status.ai.nvidia && status.ai.anthropic ? ' (Anthropic also set)' : null}
                       {!status.ai.nvidia && status.ai.anthropic ? 'Anthropic' : null}.
                     </>

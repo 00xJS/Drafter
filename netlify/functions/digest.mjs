@@ -261,6 +261,8 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
         'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. When the journal explains why the week went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
       prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${habitSection}${journalSection}\n\nWrite the review in 120–220 words.`,
       maxTokens: 900,
+      // nobody is waiting on it: a second NVIDIA key takes it first, and the owner's own requests keep the main one
+      background: true,
     }),
     left(),
     { error: 'the run ran out of time' },

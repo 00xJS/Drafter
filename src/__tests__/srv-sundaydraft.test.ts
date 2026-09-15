@@ -25,6 +25,8 @@ const { pushes, ai } = vi.hoisted(() => ({
     hangs: false,
     // what happens elsewhere while the model is asked: the clock moving on, a phone's save
     during: null as null | ((prompt: string) => void),
+    /** Each ask's background flag: with a second NVIDIA key, background work takes it first. */
+    backgrounds: [] as (boolean | undefined)[],
   },
 }))
 vi.mock('../../netlify/functions/push.mjs', () => ({
@@ -36,8 +38,9 @@ vi.mock('../../netlify/functions/push.mjs', () => ({
 }))
 vi.mock('../../netlify/functions/lib/ai.mjs', () => ({
   resolveProvider: () => ai.provider,
-  complete: async ({ prompt }: { prompt: string }) => {
+  complete: async ({ prompt, background }: { prompt: string; background?: boolean }) => {
     ai.prompts.push(prompt)
+    ai.backgrounds.push(background)
     ai.during?.(prompt)
     if (ai.hangs) return new Promise(() => {})
     if (ai.throws) throw new Error('the function ran out of time')
@@ -97,6 +100,7 @@ beforeEach(() => {
   ai.throws = false
   ai.hangs = false
   ai.during = null
+  ai.backgrounds.length = 0
   settings = []
   rows = []
   households = []
@@ -207,6 +211,16 @@ const taskRow = (user_id: string | null, id: string, title: string, over: Record
   row(user_id, { kind: 'task', id, title, description: '', status: 'todo', priority: 'normal', tags: [], ...over })
 const quiet = (user_id: string, over: Record<string, unknown> = {}) => ({ user_id, push_subscriptions: [], digest_email: false, nudged: {}, ...over })
 const drafts = () => rows.filter(r => r.data.kind === 'review')
+
+describe('Sunday’s draft is work the server starts by itself', () => {
+  it('asks as background work, so a second NVIDIA key takes it and the owner’s own requests keep the main one', async () => {
+    settings = [quiet(OWNER, { digest_hour: 9, timezone: 'America/New_York' })]
+    rows = [taskRow(OWNER, 'fence', 'Fixed the fence', { status: 'done', completedAt: '2026-09-10T16:00:00.000Z' })]
+    await runAt('2026-09-13T13:00:00.000Z')
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.backgrounds).toEqual([true])
+  })
+})
 
 describe('Sunday’s draft runs for every account, push or not', () => {
   it('drafts an account with no push and no email on its own Sunday after its hour — once', async () => {

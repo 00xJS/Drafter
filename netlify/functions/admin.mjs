@@ -14,7 +14,7 @@ import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './li
 import { googleConfigured, missingGoogleEnv } from './lib/google.mjs'
 import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
-import { complete } from './lib/ai.mjs'
+import { complete, nvidiaKeyOrder } from './lib/ai.mjs'
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
@@ -136,7 +136,9 @@ function shortEndpoint(sub) {
 
 function integrationStatus(origin) {
   const vapidMissing = [!process.env.VAPID_PUBLIC_KEY && 'VAPID_PUBLIC_KEY', !process.env.VAPID_PRIVATE_KEY && 'VAPID_PRIVATE_KEY'].filter(Boolean)
-  const aiMissing = [!process.env.NVIDIA_API_KEY && !process.env.ANTHROPIC_API_KEY && 'NVIDIA_API_KEY or ANTHROPIC_API_KEY'].filter(Boolean)
+  // either NVIDIA key counts; how many are set is said, never what they are
+  const nvidiaKeys = nvidiaKeyOrder().length
+  const aiMissing = [!nvidiaKeys && !process.env.ANTHROPIC_API_KEY && 'NVIDIA_API_KEY or ANTHROPIC_API_KEY'].filter(Boolean)
   return {
     google: {
       configured: googleConfigured(),
@@ -157,9 +159,10 @@ function integrationStatus(origin) {
       missing: missingApnsEnv(),
     },
     ai: {
-      configured: !!(process.env.NVIDIA_API_KEY || process.env.ANTHROPIC_API_KEY),
+      configured: !!(nvidiaKeys || process.env.ANTHROPIC_API_KEY),
       missing: aiMissing,
-      nvidia: !!process.env.NVIDIA_API_KEY,
+      nvidia: nvidiaKeys > 0,
+      nvidiaKeys,
       anthropic: !!process.env.ANTHROPIC_API_KEY,
     },
     github: {

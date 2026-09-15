@@ -96,7 +96,7 @@ describe('/api/push without push: Sunday’s journal switch still reads and save
 describe('/api/push says whether the host can write the draft at all', () => {
   // the digest drafts only when resolveProvider() finds a key (digest.mjs)
   beforeEach(() => {
-    for (const key of ['NVIDIA_API_KEY', 'ANTHROPIC_API_KEY', 'AI_PROVIDER']) vi.stubEnv(key, '')
+    for (const key of ['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'ANTHROPIC_API_KEY', 'AI_PROVIDER']) vi.stubEnv(key, '')
   })
 
   it('no when the host has no AI key', async () => {
@@ -112,6 +112,13 @@ describe('/api/push says whether the host can write the draft at all', () => {
     vi.stubEnv('NVIDIA_API_KEY', '')
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret')
     expect((await (await call('GET')).json()).aiConfigured).toBe(true)
+  })
+
+  it('yes with the second NVIDIA key alone, and never that key either', async () => {
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvapi-second-456')
+    const body = await (await call('GET')).text()
+    expect(JSON.parse(body)).toMatchObject({ aiConfigured: true })
+    expect(body).not.toContain('nvapi-second-456')
   })
 
   it('no when AI_PROVIDER names a provider whose key is missing, as the digest reads it', async () => {

@@ -41,6 +41,8 @@ beforeEach(() => {
   vi.stubEnv('NVIDIA_API_KEY', 'nvidia-key')
   vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
   vi.stubEnv('AI_PROVIDER', '')
+  // the build runs the tests with the site's own variables: a second NVIDIA key there must not count here
+  vi.stubEnv('NVIDIA_API_KEY_2', '')
   claude.asked = 0
   nvidiaPrompts = []
   nvidiaStatus = 200
