@@ -1,4 +1,5 @@
 import { CalendarEntry, Person, Task } from './types'
+import { monthsAndTrend } from './stats'
 import { startOfDay } from './taskutils'
 import { dateKey } from './utils'
 import {
@@ -229,36 +230,11 @@ export interface YearRow {
 }
 
 /**
- * One row of a year table: a count for each month of `year` (Jan..Dec, on the
- * viewer's calendar), the year's total, and a trend — the last 90 days against
- * the 90 before, positive when more lately. `count` says what one of them is:
- * People counts the days among the visits, Places every outing (the default).
+ * One row of a year table: a count for each month of `year`, the year's total
+ * and the 90-against-90-day trend. The Stats rules' own (src/stats.ts), under
+ * the name People, Places and the wardrobe have always imported.
  */
-export function monthsAndTrend(
-  visits: { at: string }[],
-  year: number,
-  now: Date = new Date(),
-  count: (visits: { at: string }[]) => number = vs => vs.length,
-): { months: number[]; total: number; trend: number } {
-  const nowMs = now.getTime()
-  const byMonth = Array.from({ length: 12 }, (): { at: string }[] => [])
-  for (const v of visits) {
-    const d = new Date(v.at)
-    if (d.getFullYear() === year) byMonth[d.getMonth()].push(v)
-  }
-  const months = byMonth.map(count)
-  // each window is counted on its own: a day with events either side of the
-  // 90-day line lands in both, which adds one to each side and leaves the
-  // difference alone
-  const recent = count(visits.filter(v => nowMs - Date.parse(v.at) < 90 * DAY_MS))
-  const before = count(
-    visits.filter(v => {
-      const age = nowMs - Date.parse(v.at)
-      return age >= 90 * DAY_MS && age < 180 * DAY_MS
-    }),
-  )
-  return { months, total: months.reduce((a, b) => a + b, 0), trend: recent - before }
-}
+export { monthsAndTrend }
 
 export function yearReport(people: Person[], tasks: Task[], year: number, now: Date = new Date()): YearRow[] {
   return people

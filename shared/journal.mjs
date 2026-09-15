@@ -3,6 +3,8 @@
 // can exist (two devices offline) and are all kept — the newest edit is the one
 // you type into.
 
+import { dayStreaks } from './stats.mjs'
+
 export const DAY_MS = 86_400_000
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -119,16 +121,10 @@ export function peopleNamesOf(entry, peopleById) {
   return entry.peopleIds.map(id => lookup(String(id))).filter(n => typeof n === 'string' && n.trim())
 }
 
-/** Consecutive days with an entry, counting back from today (or yesterday if today is still blank). */
+/** Consecutive days with an entry, counting back from today (or yesterday if today is still blank): the Stats rules' dayStreaks. */
 export function streak(entries, today = localDayKey()) {
-  const days = new Set((entries ?? []).filter(e => e && e.kind === 'journal' && !e.deletedAt && DATE_RE.test(e.date)).map(e => e.date))
-  let day = days.has(today) ? today : shiftDayKey(today, -1)
-  let n = 0
-  while (days.has(day)) {
-    n++
-    day = shiftDayKey(day, -1)
-  }
-  return n
+  const days = (entries ?? []).filter(e => e && e.kind === 'journal' && !e.deletedAt && DATE_RE.test(e.date)).map(e => e.date)
+  return dayStreaks(days, today).current
 }
 
 /** Mean mood of the entries that carry one, to one decimal; undefined when none do. */

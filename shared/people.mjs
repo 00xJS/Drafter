@@ -1,6 +1,8 @@
 // People cadence / occasions shared by the web app, digest, and MCP.
 // Dependency-free ESM.
 
+import { distinctDays } from './stats.mjs'
+
 export const DEFAULT_CADENCE_DAYS = 90
 export const DAY_MS = 86_400_000
 
@@ -18,19 +20,10 @@ export function visitsFor(personId, tasks) {
  * The distinct days among these visits, in their order (newest first for
  * visitsFor's list): three events on one Saturday are one day seen. `dayKeyOf`
  * turns an instant into YYYY-MM-DD in the viewer's zone, so the app passes its
- * local calendar and the MCP server its clock's.
+ * local calendar and the MCP server its clock's. The Stats rules' distinctDays
+ * (shared/stats.mjs), under the name People has always used.
  */
-export function visitDays(visits, dayKeyOf) {
-  const seen = new Set()
-  const out = []
-  for (const v of visits ?? []) {
-    const key = dayKeyOf(v.at)
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push(key)
-  }
-  return out
-}
+export const visitDays = distinctDays
 
 /**
  * Your own calendar entries that have happened with people on them, as the done
