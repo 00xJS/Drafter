@@ -412,7 +412,10 @@ describe('what People → Stats is handed', () => {
       expect(element('PeopleStats'), prop).toContain(prop)
       expect(element('People'), prop).toContain(prop)
     }
-    expect(screen).not.toMatch(/filteredTasks|mineOnly/)
+    // Mine / Everyone narrows no count: nothing on the tab is handed filteredTasks, and neither People view reads Mine
+    expect(screen).not.toMatch(/filteredTasks/)
+    expect(element('PeopleStats')).not.toMatch(/mineOnly/)
+    expect(element('People')).not.toMatch(/mineOnly/)
   })
 
   it('is nothing personal: no journal, habits, routines or wardrobe', () => {
@@ -442,7 +445,7 @@ describe('List · Stats', () => {
     const screen = source('components/planner/PeopleScreen.tsx')
     expect(screen).toContain("<ListStatsSwitch label=\"People list or stats\" value={innerViews.people} onChange={v => setInnerView('people', v)} />")
     expect(screen).toMatch(/innerViews\.people === 'stats' \? \(\s*<PeopleStats/)
-    expect(screen).toContain("import { People, PeopleStats, Places } from './lazy'")
+    expect(screen).toContain("import { People, PeopleStats, Places, PlacesStats } from './lazy'")
     expect(source('components/planner/lazy.ts')).toContain("import('../PeopleStats')")
     // under the tab-level segments, never inside them, where the native shell draws its track
     expect(screen.indexOf('<ListStatsSwitch')).toBeGreaterThan(screen.indexOf('<div className="people-tab-seg">'))

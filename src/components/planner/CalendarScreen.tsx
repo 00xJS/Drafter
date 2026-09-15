@@ -55,7 +55,7 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
           garments={store.garments}
           wears={store.wears}
           onOpenWardrobe={openWardrobe}
-          // a day People → Stats' month opened, its day sheet up
+          // a day the month calendar in People → Stats or Places → Stats opened, its day sheet up
           openDay={calendarOpenDay}
           onOpenDayConsumed={() => setCalendarOpenDay(null)}
         />

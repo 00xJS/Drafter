@@ -587,6 +587,82 @@
   }
 }
 
+/* ----- People → Places → Stats (PlacesStats), drawn with the Stats kit. Its
+   List · Stats is the People segment's switch (.list-stats-bar, above), which
+   sits outside .people-tab-seg, so the native track (19-native-shell.css)
+   stays the tab-level segments' own. A place's colour is data, set inline
+   through readableInk on its mark. */
+.place-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* the column's gap spaces the cards; the list's own margins would double it */
+.place-stats .people-controls,
+.place-stats .people-kpis,
+.place-stats .year-report {
+  margin: 0;
+}
+/* a place's emoji on its colour: the podium's tile, a bar's or a row's thumbnail, a day's dot */
+.place-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 1;
+}
+.place-mark.thumb-28 {
+  border-radius: 50%;
+  /* an emoji drawn to a fixed 28px circle, like .person-avatar.small */
+  font-size: 15px;
+}
+.place-mark.thumb-40 {
+  border-radius: 50%;
+  /* …and to a fixed 40px one */
+  font-size: 20px;
+}
+.place-mark.podium-photo {
+  border-radius: 12px;
+  font-size: 2.25rem;
+}
+.rank-2 .place-mark.podium-photo,
+.rank-3 .place-mark.podium-photo {
+  font-size: 1.75rem;
+}
+/* a day's places under its date: two to a row in a 375pt cell, then "+n".
+   There a day is about 40.7 × 51.4px inside its border, and the date chip
+   (top 2px, 14px tall) ends at 16px: that leaves 34.4px, and two rows of 16px
+   dots with a 1px gap take 33px, so the third dot never runs under the chip. */
+.place-dots {
+  position: absolute;
+  inset: 16px 1px 1px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  justify-content: center;
+  gap: 1px;
+}
+.place-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  /* an emoji drawn to a fixed 16px dot */
+  font-size: 10px;
+}
+.place-dots-more {
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text-2);
+}
+/* a By kind bar opens with the kind's own emoji */
+.place-kind-emoji {
+  flex: none;
+  width: 28px;
+  text-align: center;
+  font-size: 1.125rem;
+}
+
 /* Week review: days seen per person, the events under them when some shared a day */
 .seen-count {
   display: flex;

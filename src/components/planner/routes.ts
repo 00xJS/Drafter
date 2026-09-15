@@ -83,10 +83,11 @@ export interface Toast {
 
 // The segmented views remember which half you chose — but only when you
 // chose it. Everything else (a deep link, a nudge, the palette's Board or
-// Notes, a day opened from People → Stats) moves the segment for that visit
-// alone, so a template's new tasks shown on the Board cannot leave Tasks
-// opening there, the People tab cannot get pinned to Places by one search
-// result, and the Calendar cannot be moved off the Timeline by one day.
+// Notes, a day opened from People → Stats or Places → Stats) moves the
+// segment for that visit alone, so a template's new tasks shown on the Board
+// cannot leave Tasks opening there, the People tab cannot get pinned to
+// Places by one search result, and one day tapped in Stats cannot move the
+// Calendar off the Timeline.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)
@@ -102,7 +103,7 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
-/** The Calendar's Month / Week / Timeline, as last chosen on its buttons; the month otherwise. */
+/** The Calendar's Month · Week · Timeline, as last chosen on its three buttons (a day opened from Stats does not count); the month otherwise. */
 export const storedCalMode = (): CalendarMode => {
   try {
     const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
@@ -131,6 +132,10 @@ export const storedInnerView = (tab: PeopleTab): InnerView => {
 }
 export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('people'), places: storedInnerView('places') })
 
-/** A Stats view's own link: `?view=people-stats` opens People → People on its
- *  Stats for that visit, as `?view=wardrobe` opens Home → Wardrobe. */
-export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people' }
+/** A Stats view's own link, as `?view=wardrobe` opens Home → Wardrobe:
+ *  `?view=people-stats` and `?view=places-stats` open that segment of People
+ *  on its Stats, for that visit. */
+export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people', 'places-stats': 'places' }
+/** The segment a link's view opens on its Stats, or null. Its own names only, so `?view=constructor` names none. */
+export const peopleTabOfStatsView = (view: string | undefined): PeopleTab | null =>
+  view && Object.prototype.hasOwnProperty.call(STATS_VIEW_TO_PEOPLE, view) ? STATS_VIEW_TO_PEOPLE[view] : null

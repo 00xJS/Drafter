@@ -21,17 +21,14 @@ import {
   mapsUrl,
   placeAliasesFromText,
   placeStats,
-  placeYearReport,
   placesWith,
   prefersAppleMaps,
   recentOutings,
   tidyPlaceAddress,
 } from '../places'
-import { SEEN_META, countOf } from '../people'
+import { SEEN_META } from '../people'
 import { OutingIdea, OutingInput, suggestOuting } from '../ai'
-import { heatStyle } from '../contrast'
-import { useTheme } from '../theme'
-import { Bars, TrendBadge } from './bits'
+import { Bars } from './bits'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -40,7 +37,7 @@ interface Props {
   places: Place[]
   people: Person[]
   tasks: Task[]
-  /** Meals eaten out here count as outings, so the stats need them too. */
+  /** Meals eaten out here count as outings, so the rows need them too. */
   meals: Meal[]
   onSave(p: Place): void
   onDelete(id: string): void
@@ -69,8 +66,6 @@ const SORTS: { key: SortKey; label: string }[] = [
 
 // Needs attention: overdue, due, never (a rhythm but no outing yet), then the rest by most recently been.
 const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3 }
-
-const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
 export function PlaceForm({
   place,
@@ -458,9 +453,6 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
-  const [year, setYear] = useState(() => new Date().getFullYear())
-  // the year table's cells choose their ink for the theme on screen
-  const theme = useTheme()
   // who is coming, if you say: the ideas draw on where you go together, and
   // the task a tapped idea makes has them on it
   const [withIds, setWithIds] = useState<string[]>([])
@@ -531,21 +523,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
     return sorted
   }, [allStats, category, sort, q])
 
-  const beenAWhile = useMemo(() => shown.filter(s => s.status === 'due' || s.status === 'overdue').length, [shown])
-
-  const shownPlaces = useMemo(() => shown.map(s => s.place), [shown])
-
-  // The calendar year, summed from the year table's own count (a meal on its
-  // own date), so the tile and this year's table cannot disagree. The rows
-  // above count the last 12 months instead, as their "12mo" says.
-  const thisYear = new Date().getFullYear()
-  const outingsThisYear = useMemo(
-    () => placeYearReport(shownPlaces, tasks, meals, thisYear).reduce((n, r) => n + r.total, 0),
-    [shownPlaces, tasks, meals, thisYear],
-  )
-
-  const report = useMemo(() => placeYearReport(shownPlaces, tasks, meals, year), [shownPlaces, tasks, meals, year])
-
+  // The tiles and the year in places moved to Places → Stats (PlacesStats),
+  // which counts from these same rows, so the list keeps to the places.
   return (
     <section className="people">
       <div className="toolbar people-toolbar">
@@ -682,21 +661,6 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
             </button>
           </div>
 
-          <div className="kpi-row people-kpis">
-            <div className="stat-tile">
-              <div className="stat-label">Places</div>
-              <div className="stat-value">{shown.length}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Outings this year</div>
-              <div className="stat-value">{outingsThisYear}</div>
-            </div>
-            <div className="stat-tile" title="Places with a rhythm that are due or overdue a return">
-              <div className="stat-label">Been a while</div>
-              <div className="stat-value">{beenAWhile}</div>
-            </div>
-          </div>
-
           {shown.length === 0 ? (
             <p className="empty">Nothing matches.</p>
           ) : (
@@ -714,67 +678,6 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
                 />
               ))}
             </ul>
-          )}
-
-          {shown.length > 0 && (
-            <section className="chart-card year-report">
-              <header className="chart-head">
-                <div>
-                  <h3>The year in places</h3>
-                  <p className="chart-sub">Outings per month, a meal eaten out there included, two in one day counted as two · trend compares outings in the last 90 days with the 90 before</p>
-                </div>
-                <span className="segmented">
-                  <button className="seg" onClick={() => setYear(y => y - 1)} aria-label="Previous year">
-                    ‹
-                  </button>
-                  <button className="seg on">{year}</button>
-                  <button className="seg" onClick={() => setYear(y => y + 1)} aria-label="Next year">
-                    ›
-                  </button>
-                </span>
-              </header>
-              <div className="table-scroll">
-                <table className="year-table">
-                  <thead>
-                    <tr>
-                      <th>Place</th>
-                      {MONTHS.map((m, i) => (
-                        <th key={i} className="num">
-                          {m}
-                        </th>
-                      ))}
-                      <th className="num">Outings</th>
-                      <th>Trend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.map(r => (
-                      <tr key={r.place.id}>
-                        <td>
-                          <span className="pdot" style={{ background: r.place.color }} /> {r.place.name}
-                        </td>
-                        {r.months.map((n, i) => (
-                          <td
-                            key={i}
-                            className="num year-cell"
-                            title={n > 0 ? countOf(n, 'outing') : undefined}
-                            style={n > 0 ? heatStyle(r.place.color, n, theme) : undefined}
-                          >
-                            {n || ''}
-                          </td>
-                        ))}
-                        <td className="num">
-                          <strong>{r.total}</strong>
-                        </td>
-                        <td>
-                          <TrendBadge trend={r.trend} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
           )}
         </>
       )}

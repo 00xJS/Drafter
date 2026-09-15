@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, STATS_VIEW_TO_PEOPLE, VIEWS, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, peopleTabOfStatsView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -101,15 +101,18 @@ export function useDeepLinks({
     // Every inbound link lands on the view it names. Views that became segments
     // still resolve: board / bills / notes open the Tasks tab on that segment,
     // and the former today / review views open Home on the day or the week.
+    // people-stats and places-stats open that segment of People on its Stats,
+    // for this visit only.
+    const statsTab = peopleTabOfStatsView(parsed.view)
     if (parsed.view && LEGACY_VIEW_TO_TASKS[parsed.view]) {
       goTasksTab(LEGACY_VIEW_TO_TASKS[parsed.view])
       setView('tasks')
     } else if (parsed.view && LEGACY_VIEW_TO_HOME[parsed.view]) {
       setHomeTab(LEGACY_VIEW_TO_HOME[parsed.view])
       setView('home')
-    } else if (parsed.view && STATS_VIEW_TO_PEOPLE[parsed.view]) {
+    } else if (statsTab) {
       // a Stats view's own link: its segment of People on Stats, for this visit
-      openStats(STATS_VIEW_TO_PEOPLE[parsed.view])
+      openStats(statsTab)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

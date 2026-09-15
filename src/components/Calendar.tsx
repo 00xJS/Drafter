@@ -78,7 +78,7 @@ interface Props {
   wears?: Wear[]
   /** Home → Wardrobe on a day. Without it no look is shown. */
   onOpenWardrobe?(o: WardrobeOpen): void
-  /** A day (YYYY-MM-DD) to open on arrival, its day sheet up — People → Stats' month; consumed once. */
+  /** A day (YYYY-MM-DD) to open on arrival, its day sheet up — the month calendar in People → Stats or Places → Stats; consumed once. */
   openDay?: string | null
   onOpenDayConsumed?(): void
 }

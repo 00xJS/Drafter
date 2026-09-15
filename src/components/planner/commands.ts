@@ -41,7 +41,7 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
   const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openStats } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
-  /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats does not linger. */
+  /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats or Places stats does not linger. */
   const goPeople = (tab: PeopleTab) => {
     setPeopleTab(tab)
     goInnerView(tab, storedInnerView(tab))
@@ -69,12 +69,13 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
     { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
     { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
-    // on the mode last chosen, as a tab tap opens it, not one a day from People → Stats left for its visit
+    // on the mode last chosen, as a tab tap opens it, not one a day from a Stats view left for its visit
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => goView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => goPeople('people') },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => goPeople('places') },
     // a segment's figures, for this visit: the next tab tap opens the view last chosen
     { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
+    { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openStats('places') },
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]

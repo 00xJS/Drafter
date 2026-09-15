@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Calendar } from '../components/Calendar'
 import { MoodChart } from '../components/Journal'
 import { Bars } from '../components/bits'
-import { Places } from '../components/Places'
+import { PlacesStats } from '../components/PlacesStats'
 import { Roadmap } from '../components/Roadmap'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { graphicInk, heatStyle, readableInk } from '../contrast'
@@ -167,16 +167,20 @@ describe('the year in places gives a deep colour’s busiest cells their own ink
   // one outing in July, four in August
   const tasks = [outing('jul', 6, 4), ...[3, 10, 17, 24].map(d => outing(`aug-${d}`, 7, d))]
   const table = () => {
-    const html = renderToStaticMarkup(<Places places={[indigo]} people={[]} tasks={tasks} meals={[]} onSave={noop} onDelete={noop} onLogOuting={noop} onPlan={noop} onOpenTask={noop} />)
+    // on Places → Stats since the list keeps to the places
+    const html = renderToStaticMarkup(<PlacesStats places={[indigo]} people={[]} tasks={tasks} meals={[]} onOpenPlace={noop} onPlan={noop} />)
     return html.slice(html.indexOf('class="year-table"'))
   }
   const css = (s: { background: string; color?: string }) => `background:${s.background}${s.color ? `;color:${s.color}` : ''}`
 
   it('keeps the page’s text on a light cell and puts white on the deepest', () => {
-    const july = heatStyle('#4f46e5', 1, 'light')
-    const august = heatStyle('#4f46e5', 4, 'light')
+    // the place's colour drawn as a mark (graphicInk), its dot and its cells alike, as the wardrobe's table draws a piece's
+    const ink = graphicInk('#4f46e5', 'light')
+    const july = heatStyle(ink, 1, 'light')
+    const august = heatStyle(ink, 4, 'light')
     expect(july.color).toBeUndefined()
     expect(august.color).toBe('var(--on-deep-user-color)')
+    expect(table()).toContain(`class="pdot" style="background:${ink}"`)
     expect(table()).toContain(`title="1 outing" style="${css(july)}"`)
     expect(table()).toContain(`title="4 outings" style="${css(august)}"`)
   })

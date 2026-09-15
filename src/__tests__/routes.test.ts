@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  CAL_MODE_KEY,
   CALENDAR_MODES,
   COMPACT_TABS,
   HOME_TABS,
@@ -15,6 +16,8 @@ import {
   VIEW_LABELS,
   VIEWS,
   WARDROBE_TABS,
+  peopleTabOfStatsView,
+  storedCalMode,
   storedInnerView,
   storedInnerViews,
   storedPeopleTab,
@@ -44,6 +47,15 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'timeline'])
   })
 
+  it('gives People and Places each a List · Stats switch inside its segment, never a tab of its own', () => {
+    expect(INNER_VIEWS.map(v => [v.key, v.label])).toEqual([
+      ['list', 'List'],
+      ['stats', 'Stats'],
+    ])
+    expect(VIEWS as string[]).not.toContain('stats')
+    expect(VIEWS as string[]).not.toContain('places')
+  })
+
   it('gives the wardrobe a segment on Home, never a tab of its own', () => {
     expect(VIEWS).toHaveLength(5)
     expect(VIEWS as string[]).not.toContain('wardrobe')
@@ -69,18 +81,26 @@ describe('old links still land on a segment', () => {
     for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(segments).toContain(tab)
   })
 
+  it('opens People or Places on its Stats for ?view=people-stats or ?view=places-stats, names no live view or old link has', () => {
+    expect(STATS_VIEW_TO_PEOPLE).toEqual({ 'people-stats': 'people', 'places-stats': 'places' })
+    const taken = [...VIEWS, ...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME)] as string[]
+    for (const name of Object.keys(STATS_VIEW_TO_PEOPLE)) expect(taken).not.toContain(name)
+  })
+
+  it('reads a Stats view’s own names only, so an inherited one opens nothing', () => {
+    expect(peopleTabOfStatsView('people-stats')).toBe('people')
+    expect(peopleTabOfStatsView('places-stats')).toBe('places')
+    for (const name of [undefined, '', 'people', 'stats', 'constructor', 'toString', '__proto__']) expect(peopleTabOfStatsView(name)).toBeNull()
+  })
+
   it('never shadows a live view with a legacy name', () => {
     const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE)]
     for (const name of legacy) expect(VIEWS as string[]).not.toContain(name)
     expect(new Set(legacy).size).toBe(legacy.length)
   })
-
-  it('sends ?view=people-stats to People → People on its Stats', () => {
-    expect(STATS_VIEW_TO_PEOPLE).toEqual({ 'people-stats': 'people' })
-  })
 })
 
-describe('People’s own List · Stats', () => {
+describe('People’s and Places’ own List · Stats', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -145,6 +165,30 @@ describe('the remembered segment', () => {
     expect(storedPeopleTab()).toBe('people')
   })
 
+  it('reopens Places on Stats only when Stats was chosen', () => {
+    withStorage({ [INNER_VIEW_KEYS.places]: 'stats' })
+    expect(storedInnerView('places')).toBe('stats')
+    for (const other of ['list', 'board', '']) {
+      withStorage({ [INNER_VIEW_KEYS.places]: other })
+      expect(storedInnerView('places')).toBe('list')
+    }
+    withStorage({})
+    expect(storedInnerView('places')).toBe('list')
+  })
+
+  it('reopens the Calendar on the mode chosen on its buttons, and on Month for anything else', () => {
+    for (const mode of CALENDAR_MODES) {
+      withStorage({ [CAL_MODE_KEY]: mode })
+      expect(storedCalMode()).toBe(mode)
+    }
+    for (const other of ['board', 'stats', '']) {
+      withStorage({ [CAL_MODE_KEY]: other })
+      expect(storedCalMode()).toBe('month')
+    }
+    withStorage({})
+    expect(storedCalMode()).toBe('month')
+  })
+
   it('falls back to the first segment when storage cannot be read', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
@@ -153,5 +197,7 @@ describe('the remembered segment', () => {
     })
     expect(storedTasksTab()).toBe('list')
     expect(storedPeopleTab()).toBe('people')
+    expect(storedInnerView('places')).toBe('list')
+    expect(storedCalMode()).toBe('month')
   })
 })

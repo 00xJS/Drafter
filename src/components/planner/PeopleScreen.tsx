@@ -1,11 +1,11 @@
 import type { PlannerCtx } from './ctx'
-import { People, PeopleStats, Places } from './lazy'
+import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
 
-/** People, with Places as its second segment; People has its own List · Stats. */
+/** People, with Places as its second segment; each segment has its own List · Stats. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
-  const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay } = p
+  const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, inHousehold, mineOnly } = p
   return (
     <>
       <div className="people-tab-seg">
@@ -31,30 +31,50 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
         </span>
       </div>
       {peopleTab === 'places' ? (
-        <Places
-          places={store.places}
-          people={store.people}
-          tasks={store.tasks}
-          meals={store.meals}
-          onSave={p => store.upsert(p)}
-          onDelete={id => {
-            store.remove(id)
-            showToast('Removed', () => store.restore([id]))
-          }}
-          onLogOuting={(place, at, note, peopleIds) =>
-            logOuting({
-              at,
-              title: note || `Went to ${place.name}`,
-              placeId: place.id,
-              peopleIds,
-            })
-          }
-          onPlan={planAt}
-          onOpenTask={openTask}
-          openId={placeOpenId}
-          onOpenConsumed={() => setPlaceOpenId(null)}
-          onNewTask={preset => newTask(preset)}
-        />
+        <>
+          {/* remembered as the segments are: chosen here, and nowhere else */}
+          <ListStatsSwitch label="Places list or stats" value={innerViews.places} onChange={v => setInnerView('places', v)} />
+          {innerViews.places === 'stats' ? (
+            <PlacesStats
+              // the records the list is handed, so each figure agrees with its row
+              places={store.places}
+              people={store.people}
+              tasks={store.tasks}
+              meals={store.meals}
+              onOpenPlace={place => openPlace(place.id)}
+              onPlan={planAt}
+              onOpenPerson={person => openPerson(person.id)}
+              onOpenDay={openCalendarDay}
+              // with Mine on in a household the Calendar a day opens shows only your tasks, while these count everyone's outings
+              mineOnCalendar={inHousehold && mineOnly}
+            />
+          ) : (
+            <Places
+              places={store.places}
+              people={store.people}
+              tasks={store.tasks}
+              meals={store.meals}
+              onSave={p => store.upsert(p)}
+              onDelete={id => {
+                store.remove(id)
+                showToast('Removed', () => store.restore([id]))
+              }}
+              onLogOuting={(place, at, note, peopleIds) =>
+                logOuting({
+                  at,
+                  title: note || `Went to ${place.name}`,
+                  placeId: place.id,
+                  peopleIds,
+                })
+              }
+              onPlan={planAt}
+              onOpenTask={openTask}
+              openId={placeOpenId}
+              onOpenConsumed={() => setPlaceOpenId(null)}
+              onNewTask={preset => newTask(preset)}
+            />
+          )}
+        </>
       ) : (
         <>
           {/* remembered as the segments are: chosen here, and nowhere else */}

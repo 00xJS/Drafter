@@ -81,7 +81,7 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  /** The Calendar's Month / Week / Timeline buttons, remembered as the other segments are. */
+  /** …the Calendar's Month · Week · Timeline: its three buttons, and nothing else. */
   const setCalMode = (mode: CalendarMode) => {
     goCalMode(mode)
     try {
@@ -90,7 +90,7 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  /** Remember a segment's List · Stats: its own switch, and nothing else. */
+  /** …and each segment's List · Stats: its own switch, and nothing else. */
   const setInnerView = (tab: PeopleTab, v: InnerView) => {
     goInnerView(tab, v)
     try {
@@ -122,8 +122,8 @@ export function useNavigation() {
     if (id) setPlaceOpenId(id)
     goPeopleTab('places')
     setView('people')
-    // the row is on the list, whichever view the segment was left on
-    goInnerView('places', 'list')
+    // the row it opens is on the list, whichever half the segment was left on
+    if (id) goInnerView('places', 'list')
   }
   /** A person's card to open (from search, Ask or a reminder); consumed by the People view. */
   const [personOpenId, setPersonOpenId] = useState<string | null>(null)
@@ -131,10 +131,10 @@ export function useNavigation() {
     if (id) setPersonOpenId(id)
     goPeopleTab('people')
     setView('people')
-    // the card is on the list, whichever view the segment was left on
-    goInnerView('people', 'list')
+    // the card it opens is on the list, whichever half the segment was left on
+    if (id) goInnerView('people', 'list')
   }
-  /** A segment's Stats (the palette, ?view=people-stats), for this visit only: a tab tap opens the view last chosen. */
+  /** A segment's Stats (the palette's People stats and Places stats, ?view=people-stats and ?view=places-stats), for this visit only: a tab tap opens the view last chosen. */
   const openStats = (tab: PeopleTab) => {
     goPeopleTab(tab)
     goInnerView(tab, 'stats')
@@ -163,12 +163,12 @@ export function useNavigation() {
     setHomeTab('wardrobe')
     setView('home')
   }
-  /** A day for the Calendar to open, its day sheet up (People → Stats' month); consumed by the view. */
+  /** A day for the Calendar to open, its day sheet up (the month calendar in People → Stats or Places → Stats); consumed by the view. */
   const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
   const openCalendarDay = (day: string) => {
     setCalendarOpenDay(day)
     // the Timeline has no day to open; the month has, for this visit only:
-    // the next tab tap reopens the Timeline, which stays the one remembered
+    // the next tab tap and the next launch reopen the Timeline, which stays the one remembered
     if (calMode === 'timeline') goCalMode('month')
     setView('calendar')
   }
@@ -177,6 +177,7 @@ export function useNavigation() {
     view,
     setView,
     calMode,
+    goCalMode,
     setCalMode,
     tasksTab,
     goTasksTab,
