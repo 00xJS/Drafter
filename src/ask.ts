@@ -828,10 +828,10 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
           : `${g.name}: not worn yet${retiredNote}.`,
       )
     }
+    // a piece's line says "for work" or "for personal time" only when it is marked: the rest are for both
+    if ([...pieces.values()].some(g => g.occasion)) facts.push('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
     if (pq.intents.has('wardrobe')) {
       const garments = src.garments ?? []
-      // a piece's line says "for work" or "for personal time" only when it is marked: the rest are for both
-      if ([...pieces.values()].some(g => g.occasion)) facts.push('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
       const top = mostWorn(garments, worn, 30, 5)
       if (top.length) facts.push(`Most worn in the last 30 days: ${top.map(r => `${r.garment.name} (${countOf(r.count, 'day')})`).join(', ')}.`)
       const rested = notWornLately(garments, worn).slice(0, 5)

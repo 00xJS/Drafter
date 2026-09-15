@@ -188,7 +188,8 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, oc
                           ) : (
                             <span className="badge snap-new">New</span>
                           )}
-                          {g.occasion && <span className={`badge occasion-badge ${g.occasion}`}>{OCCASION_META[g.occasion].label}</span>}
+                          {/* a held piece's badge says why it is here, and takes the line */}
+                          {g.occasion && !held && <span className={`badge occasion-badge ${g.occasion}`}>{OCCASION_META[g.occasion].label}</span>}
                         </span>
                       </>
                     ) : (

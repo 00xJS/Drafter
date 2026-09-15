@@ -351,6 +351,11 @@
   background: var(--surface-2);
   color: var(--muted);
 }
+/* a small card (Outerwear, Shoes) has room for a Work or Personal badge or
+   "3 weeks ago", not both: the badge keeps the line, whole */
+.snap.small .snap-line:has(.occasion-badge) .snap-worn {
+  display: none;
+}
 /* a card's other side: a button beside the card, not in it, over the photo's
    bottom-right corner — above the foot (1.2rem + 1rem), its two 2px gaps and
    the 6px padding, 4px in */
@@ -359,16 +364,18 @@
   bottom: calc(2.2rem + 14px);
   width: calc((var(--card-w) - 12px) * 0.3);
 }
-/* a piece for the other occasion: still in the row, quieter */
+/* a piece for the other occasion: still in the row, quieter — a sunken ground
+   and its badge, never the dashed edge of None or + Add. Its name keeps the
+   text colour, and only a side card's photo and inset dim, lightly: chosen
+   for the day anyway (a saved outfit loads on any day), it shows in full */
 .snap-cell.off .snap-card {
-  border-style: dashed;
   background: var(--surface-2);
 }
-.snap-cell.off .snap-card .garment-photo img {
-  opacity: 0.7;
+.snap-cell.side.off .snap-card .garment-photo img,
+.snap-cell.side.off .snap-flip {
+  opacity: 0.85;
 }
 .snap-cell.off .snap-name {
-  color: var(--text-2);
   font-weight: 500;
 }
 .snap-none {
@@ -1719,14 +1726,23 @@ button.photo-cal-day:focus-visible {
     align-items: flex-start;
     gap: 0;
   }
+  /* the date keeps most of its tap height: with the occasion under it the
+     column is still inside the 44pt line at type scale 1 */
   .wardrobe-day-mid .wardrobe-day-pick {
-    padding-block: 1px;
+    padding-block: 4px;
   }
+  /* no pill here, so a dotted hairline under the words says they can be
+     tapped (an underline, which adds no height to the stacked column) */
   .wardrobe-occasion {
+    min-width: 36px;
     padding: 0 2px;
     border: 0;
     background: none;
     font-size: calc(11px * min(1.15, var(--type-scale)));
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--border-strong);
+    text-underline-offset: 2px;
   }
   .wardrobe-day-state {
     gap: 4px;
@@ -1793,8 +1809,9 @@ button.photo-cal-day:focus-visible {
   }
 }
 /* a phone's day line stacks the occasion under the date, where its words fit
-   but a 44pt box would not: the box stays small, and its target reaches down
-   over the first row's heading line, which holds only the row's name */
+   but a 44pt box would not: the box stays small, and its target, 44pt tall
+   whatever the type size and 44pt wide with the box's 36px floor, reaches
+   down over the first row's heading line, which holds only the row's name */
 @media (max-width: 640px) and (pointer: coarse) {
   .wardrobe-occasion {
     position: relative;
@@ -1804,6 +1821,9 @@ button.photo-cal-day:focus-visible {
   .wardrobe-occasion::after {
     content: '';
     position: absolute;
-    inset: -2px -2px -22px;
+    top: -2px;
+    left: -4px;
+    right: -4px;
+    height: 44px;
   }
 }

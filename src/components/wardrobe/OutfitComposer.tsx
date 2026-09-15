@@ -243,7 +243,7 @@ export function OutfitComposer(props: Props) {
           <button
             type="button"
             className={occasion === calendarSays ? 'wardrobe-occasion' : 'wardrobe-occasion changed'}
-            aria-label={`${DAY_OCCASION_LABEL[occasion]}: dress for ${occasion === 'work' ? 'a day off' : 'work'} instead`}
+            aria-label={`${DAY_OCCASION_LABEL[occasion]}${occasion === calendarSays ? '' : ', changed for now'}: dress for ${occasion === 'work' ? 'a day off' : 'work'} instead`}
             title={occasion === calendarSays ? (occasion === 'work' ? 'A work day on your calendar' : 'No work day on your calendar') : 'Changed for now: nothing is saved'}
             onClick={flipDay}
           >

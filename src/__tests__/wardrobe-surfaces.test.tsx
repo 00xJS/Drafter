@@ -415,6 +415,11 @@ describe('Ask draws on what you wear', () => {
     for (const sent of [JSON.stringify(buildCorpus(marked, { now, includeJournal: true, includeAmounts: true })), JSON.stringify(prep.docs), system, prompt]) {
       expect(sent).not.toMatch(/f1f1f1f1|f2f2f2f2|b1b1b1b1|b2b2b2b2|photoId|thumbId|backPhotoId|backThumbId|showBack/)
     }
+    // a question that only names a piece is told too: its line may say nothing, and that means both
+    const named = parseQuestion('Tell me about my navy tee', marked, now)
+    expect(named.intents.has('wardrobe')).toBe(false)
+    expect(named.garmentIds).toEqual(['id-tee'])
+    expect(factsFor(named, marked, now, 'Europe/London')).toContain('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
     // a wardrobe with nothing marked needs no word about it
     expect(factsFor(parseQuestion(q, src(), now), src(), now, 'Europe/London').join(' ')).not.toContain('marked for neither')
   })

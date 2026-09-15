@@ -85,7 +85,7 @@ export function Clothes({ garments, ix, onAdd, onOpen }: Props) {
         </select>
         {/* a piece for both is for work and for personal time, so it stays under either */}
         <select className="clothes-season" aria-label="Occasion" value={occasion} onChange={e => setOccasion(e.target.value as Occasion | '')}>
-          <option value="">Work and personal</option>
+          <option value="">Any occasion</option>
           <option value="work">For work</option>
           <option value="personal">For personal</option>
         </select>

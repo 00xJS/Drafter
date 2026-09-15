@@ -126,6 +126,14 @@ describe('the day’s occasion', () => {
     expect(workDaysOf([], ME).size).toBe(0)
   })
 
+  it('takes no owned entry for yours until this device knows who you are', () => {
+    // signed in, the household not read yet: a partner's office day is not yours
+    expect(workDaysOf([workEntry('w-peer', '2026-09-17', { ownerId: PEER })], null).size).toBe(0)
+    expect(workDaysOf([workEntry('w-mine', TODAY)], null).size).toBe(0)
+    // local mode: an entry with no owner is this device's own
+    expect([...workDaysOf([workEntry('w-local', '2026-09-23', { ownerId: undefined })], null)]).toEqual(['2026-09-23'])
+  })
+
   it('reads the Calendar’s own work badge: one map, workByDay', () => {
     const mine = entries.filter(e => e.ownerId !== PEER && !e.deletedAt)
     expect([...workByDay(mine.map(entryToEvent)).keys()].sort()).toEqual([...workDaysOf(entries, ME)].sort())
@@ -149,7 +157,8 @@ describe('the day’s occasion', () => {
     const props = composerProps({ onLog, onSaveOutfit, onDay, onOpenPiece })
     expect(rowsIn(settled(OutfitComposer, props))[0]).toEqual(['shirt', 'suit', 'gym-top'])
     const after = settled(OutfitComposer, props, t => press(t, 'Work day: dress for a day off instead'))
-    expect(button(after, 'Day off: dress for work instead').props).toMatchObject({ className: 'wardrobe-occasion changed', title: 'Changed for now: nothing is saved' })
+    // the name says it was changed, not only the title
+    expect(button(after, 'Day off, changed for now: dress for work instead').props).toMatchObject({ className: 'wardrobe-occasion changed', title: 'Changed for now: nothing is saved' })
     expect(rowsIn(after)[0]).toEqual(['gym-top', 'shirt', 'suit'])
     for (const f of [onLog, onSaveOutfit, onDay, onOpenPiece]) expect(f).not.toHaveBeenCalled()
   })
@@ -182,6 +191,16 @@ describe('the composer’s rows', () => {
     expect(off.indexOf('>gym-top</span>')).toBeLessThan(off.indexOf('>suit</span>'))
   })
 
+  it('give a held piece’s badge the line: a retired one says Retired, not Work', () => {
+    const oldSuit = piece('old-suit', 'top', { occasion: 'work', archivedAt: T0 })
+    const html = renderToStaticMarkup(
+      <SnapRow label="Tops" pieces={[oldSuit, suit]} ix={wearIndex([], TODAY)} selected="old-suit" onSelect={noop} occasion="work" onInfo={noop} onAdd={noop} addLabel="+ Add top" emptyLabel="No tops yet" />,
+    )
+    expect(html).toContain('class="badge snap-held">Retired</span>')
+    // one Work badge, the suit's; the retired suit's line is its Retired badge alone
+    expect(html.match(/occasion-badge work/g)).toHaveLength(1)
+  })
+
   it('still start a day off from a saved outfit for work', () => {
     expect(chosenNames(composer({ day: '2026-09-16', pending: ['suit', 'slacks'] }))).toEqual(['suit', 'slacks'])
   })
@@ -193,8 +212,17 @@ describe('Surprise me', () => {
     expect(surprisePool(rows.top, 'autumn', 'work').map(g => g.id)).toEqual(['shirt', 'suit'])
     expect(surprisePool(rows.top, 'autumn', 'personal').map(g => g.id)).toEqual(['shirt', 'gym-top'])
     expect(surprisePool([{ ...shirt, seasons: ['summer'] }, suit, gym], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
-    // a row with nothing for the day keeps its whole deal: nothing is ruled out for good
-    expect(surprisePool([suit], 'autumn', 'personal').map(g => g.id)).toEqual(['suit'])
+    // a row with nothing for the day draws nothing, and a row with nothing in season keeps the day's pieces
+    expect(surprisePool([suit], 'autumn', 'personal')).toEqual([])
+    expect(surprisePool([{ ...suit, seasons: ['summer'] }], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
+    // so Surprise me leaves that row where it is: a day off never gets the suit
+    const workOnly = rowsOf([suit, slacks, jeans], frozen, [], 'personal')
+    const onSuit = start(workOnly, undefined, liveById([suit, slacks, jeans]))
+    for (const r of [0, 0.5, 0.999]) {
+      const { slots } = chosenIn(surprise(onSuit, workOnly, [], wearIndex([], TODAY), { occasion: 'personal', random: () => r }), workOnly, [])
+      expect(slots.top, String(r)).toBe(chosenIn(onSuit, workOnly, []).slots.top)
+      expect(slots.bottom, String(r)).toBe('jeans')
+    }
     // and a draw never lands on a piece for the other occasion
     const sel = start(rows, undefined, liveById(wardrobe))
     for (const r of [0, 0.3, 0.6, 0.999]) {
@@ -241,7 +269,9 @@ describe('Clothes', () => {
     const props = { garments: wardrobe, ix: wearIndex([], TODAY), onAdd: noop, onOpen: noop }
     const html = renderToStaticMarkup(<Clothes {...props} />)
     expect(html).toContain('<select class="clothes-season" aria-label="Occasion">')
-    for (const label of ['Work and personal', 'For work', 'For personal']) expect(html).toContain(`>${label}</option>`)
+    // the no-filter option reads as the season's does, never as the pieces for both
+    for (const label of ['Any occasion', 'For work', 'For personal']) expect(html).toContain(`>${label}</option>`)
+    expect(html).not.toContain('Work and personal')
     expect(html.indexOf('aria-label="Occasion"')).toBeGreaterThan(html.indexOf('aria-label="Season"'))
     const shownFor = (value: string) => {
       const tree = settled(Clothes, props, t => {

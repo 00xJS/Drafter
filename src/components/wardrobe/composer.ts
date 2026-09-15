@@ -141,13 +141,13 @@ export function chosenIn(sel: Selection, rows: Rows, asked: readonly Optional[])
 /**
  * What Surprise me draws a row from: the pieces dealt to it (not one only
  * held for the day, retired or in Trash) that fit the day's `occasion` — for
- * it, or for both — and of those the ones in `season`; a row with none that
- * fits keeps its whole deal at that step, so nothing is ruled out for good.
+ * it, or for both — and of those the ones in `season`. A row with none for
+ * the day draws nothing, so Surprise me leaves it where it is; one with none
+ * in season keeps the day's pieces, as a season is a lean, not a rule.
  */
 export function surprisePool(row: readonly Garment[], season: Season, occasion?: DayOccasion): Garment[] {
   const dealt = row.filter(g => !heldBadge(g))
-  const forDay = occasion ? dealt.filter(g => fitsOccasion(g, occasion)) : dealt
-  const day = forDay.length > 0 ? forDay : dealt
+  const day = occasion ? dealt.filter(g => fitsOccasion(g, occasion)) : dealt
   const inTime = day.filter(g => inSeason(g, season))
   return inTime.length > 0 ? inTime : day
 }

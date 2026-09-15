@@ -125,10 +125,12 @@ export function workByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]>
 /**
  * The days your own work-day entries fall on — the Calendar's work badge
  * (workByDay), from your entries alone: a household member's work day is not
- * yours. An entry with no owner is this device's own (local mode).
+ * yours. An entry with no owner is this device's own (local mode); one with
+ * an owner counts only once this device knows who you are, so a signed-in
+ * device still waiting on the household never takes a partner's for yours.
  */
 export function workDaysOf(entries: readonly CalendarEntry[], myId?: string | null): Set<string> {
-  const mine = entries.filter(e => !e.deletedAt && e.work && (!e.ownerId || !myId || e.ownerId === myId))
+  const mine = entries.filter(e => !e.deletedAt && e.work && (!e.ownerId || e.ownerId === myId))
   return new Set(workByDay(mine.map(entryToEvent)).keys())
 }
 
