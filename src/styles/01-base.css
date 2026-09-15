@@ -86,9 +86,11 @@
   /* priority glyphs and the high-priority card edge (low is --tone-grey, urgent --danger) */
   --prio-normal: #434a59;
   --prio-high: #ad3a0b;
-  /* the calendar's own colours: a meal eaten out, an event made in Drafter, and
-     an event whose calendar has gone */
+  /* the calendar's own colours: a meal eaten out at a saved place and one
+     bought with no place (Kitchen → Stats draws those two ways in them too), an
+     event made in Drafter, and an event whose calendar has gone */
   --cal-meal-out: #0369a1;
+  --cal-meal-bought: #be123c;
   --cal-event-local: #6d28d9;
   --dot-fallback: #5b6474;
   /* Person, place, project and habit colours are the user's, the same in both
@@ -258,6 +260,7 @@
   --prio-normal: #b3b8c4;
   --prio-high: #fb923c;
   --cal-meal-out: #38bdf8;
+  --cal-meal-bought: #fda4af;
   --cal-event-local: #a78bfa;
   --dot-fallback: #94a3b8;
   --dot-ring: transparent;

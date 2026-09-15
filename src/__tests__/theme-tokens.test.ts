@@ -88,7 +88,7 @@ const DARK: Record<string, string> = {
   '--viz-series-1-hot': '#fb923c',
   // new tokens, each at what its readers painted at 81435a1
   '--placeholder': '#a9a9a9', // WebKit's darkGray (Safari, the iOS app); Chromium's #757575 and Firefox's text at 54% change to it
-  '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLOR
+  '--accent-ink': '#f97316', // color: var(--accent) on text and icons; MEAL_COLORS.cooked
   '--focus-ring': '#f97316', // outline: 2px solid var(--accent)
   '--on-armed-hover': '#ffffff', // .btn.armed's #fff, which a hovered armed button kept
   '--tone-violet': '#c4b5fd', // STATUS_META.wishlist, GITHUB_STATE_META closed / merged
@@ -113,7 +113,8 @@ const DARK: Record<string, string> = {
   '--tone-blue': '#60a5fa', // .cal-work-badge.office
   '--prio-normal': '#b3b8c4', // PRIORITY_META.normal
   '--prio-high': '#fb923c', // PRIORITY_META.high, .card.prio-border-high
-  '--cal-meal-out': '#38bdf8', // MEAL_OUT_COLOR
+  '--cal-meal-out': '#38bdf8', // MEAL_COLORS.out
+  '--cal-meal-bought': '#fda4af', // .kitchen-way-bought's var(--tone-rose); a bought meal on the Calendar was MEAL_COLOR's orange
   '--cal-event-local': '#a78bfa', // LOCAL_EVENT_COLOR
   '--dot-fallback': '#94a3b8', // an event whose calendar is gone
   '--dot-ring': 'transparent', // new, and invisible in dark
@@ -267,7 +268,7 @@ describe('the light palette reads (WCAG 2.x)', () => {
 
   it('gives every text colour 4.5:1 on the page, a card and a raised surface', () => {
     const text = ['--text', '--text-2', '--muted', '--placeholder', '--accent-text', '--accent-ink', '--danger', '--ok', '--warn-text']
-    const drawn = ['--prio-normal', '--prio-high', '--cal-meal-out', '--cal-event-local', '--dot-fallback', '--tone-mint', '--tone-blue']
+    const drawn = ['--prio-normal', '--prio-high', '--cal-meal-out', '--cal-meal-bought', '--cal-event-local', '--dot-fallback', '--tone-mint', '--tone-blue']
     expect(under(4.5, [...text, ...drawn], grounds)).toEqual([])
   })
 
@@ -327,6 +328,34 @@ describe('the light palette reads (WCAG 2.x)', () => {
       expect(ratio, name).toBeGreaterThanOrEqual(1.4)
       expect(ratio, name).toBeLessThan(3)
     }
+  })
+})
+
+describe('a meal’s colour, on the Calendar and in Kitchen → Stats alike (WCAG 2.x)', () => {
+  /** Cooked, eaten out at a saved place, and bought: MEAL_COLORS in Calendar.tsx. */
+  const WAYS = ['--accent-ink', '--cal-meal-out', '--cal-meal-bought']
+  const THEMES = [
+    ['light', light],
+    ['dark', dark],
+  ] as const
+
+  it('declares eaten out and bought in both palettes', () => {
+    for (const token of ['--cal-meal-out', '--cal-meal-bought']) {
+      expect(light, token).toHaveProperty(token)
+      expect(dark, token).toHaveProperty(token)
+    }
+    expect(light['--cal-meal-bought']).not.toBe(dark['--cal-meal-bought'])
+  })
+
+  it('writes each way 4.5:1 on a meal pill’s raised ground and on a day’s card, in both themes', () => {
+    const low = THEMES.flatMap(([name, palette]) =>
+      ['--surface', '--surface-2'].flatMap(ground =>
+        WAYS.map(ink => [ink, ground, contrast(solid(ink, palette), solid(ground, palette))] as const)
+          .filter(([, , ratio]) => ratio < 4.5)
+          .map(([ink, g, ratio]) => `${ink} on ${g} in ${name}: ${ratio.toFixed(2)}`),
+      ),
+    )
+    expect(low).toEqual([])
   })
 })
 

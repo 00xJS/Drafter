@@ -73,6 +73,7 @@ describe('readableInk: a user colour drawn as text', () => {
 
   it('passes a token through: it is already tuned for both themes', () => {
     expect(readableInk('var(--cal-meal-out)', 'light')).toBe('var(--cal-meal-out)')
+    expect(readableInk('var(--cal-meal-bought)', 'dark')).toBe('var(--cal-meal-bought)')
     expect(readableInk('var(--accent-ink)', 'dark', { tint: true })).toBe('var(--accent-ink)')
   })
 

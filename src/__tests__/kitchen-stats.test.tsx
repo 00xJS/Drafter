@@ -732,7 +732,10 @@ describe('its chunk and its styles', () => {
     const css = sheetSource()
     expect(css).toMatch(/\.kitchen-way-cooked \{\s*fill: var\(--viz-series-1\);\s*background: var\(--viz-series-1\);/)
     expect(css).toMatch(/\.kitchen-way-out \{\s*fill: var\(--cal-meal-out\);\s*background: var\(--cal-meal-out\);/)
-    expect(css).toMatch(/\.kitchen-way-bought \{\s*fill: var\(--tone-rose\);\s*background: var\(--tone-rose\);/)
+    // bought in the Calendar's own colour for it, so a takeaway is one colour on both
+    expect(css).toMatch(/\.kitchen-way-bought \{\s*fill: var\(--cal-meal-bought\);\s*background: var\(--cal-meal-bought\);/)
+    expect(css).toMatch(/\.photo-cal-cell\.dinner-bought \.photo-cal-day::after \{\s*background: var\(--cal-meal-bought\);/)
+    expect(css).toMatch(/\.photo-cal-cell\.dinner-out \.photo-cal-day::after \{\s*background: var\(--cal-meal-out\);/)
     expect(css).toMatch(/@media \(pointer: coarse\) \{\s*\.kitchen-by-month summary \{[^}]*min-height: 44px/)
     // a keyboard sees the app's own ring on it, as on a button
     expect(css).toMatch(/\.kitchen-by-month summary:focus-visible \{\s*outline: 2px solid var\(--focus-ring\);/)
