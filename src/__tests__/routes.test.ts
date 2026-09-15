@@ -15,6 +15,7 @@ import {
   VIEW_ICONS,
   VIEW_LABELS,
   VIEW_TO_KITCHEN,
+  VIEW_TO_WARDROBE,
   VIEWS,
   WARDROBE_TABS,
   peopleTabOfStatsView,
@@ -24,6 +25,7 @@ import {
   storedPeopleTab,
   storedTasksTab,
   viewIn,
+  wardrobeTabOfView,
 } from '../components/planner/routes'
 
 /*
@@ -95,15 +97,26 @@ describe('old links still land on a segment', () => {
     for (const name of [undefined, '', 'people', 'stats', 'constructor', 'toString', '__proto__']) expect(peopleTabOfStatsView(name)).toBeNull()
   })
 
+  it('opens Home → Wardrobe on its Stats for ?view=wardrobe-stats, and leaves ?view=wardrobe to the composer', () => {
+    expect(VIEW_TO_WARDROBE).toEqual({ 'wardrobe-stats': 'stats' })
+    const views = WARDROBE_TABS.map(t => t.key) as string[]
+    for (const tab of Object.values(VIEW_TO_WARDROBE)) expect(views).toContain(tab)
+    expect(wardrobeTabOfView('wardrobe-stats')).toBe('stats')
+    // the plain link names none of the Wardrobe's own views, and nor does a name every object inherits
+    for (const name of [undefined, '', 'wardrobe', 'stats', 'outfit', 'clothes', 'constructor', 'toString', '__proto__', 'hasOwnProperty'])
+      expect(wardrobeTabOfView(name), String(name)).toBeNull()
+    expect(LEGACY_VIEW_TO_HOME.wardrobe).toBe('wardrobe')
+  })
+
   it('reads every link table by its own names, so an inherited one names nothing', () => {
     expect(viewIn(LEGACY_VIEW_TO_TASKS, 'board')).toBe('board')
     expect(viewIn(LEGACY_VIEW_TO_HOME, 'review')).toBe('week')
-    for (const table of [LEGACY_VIEW_TO_TASKS, LEGACY_VIEW_TO_HOME, STATS_VIEW_TO_PEOPLE, VIEW_TO_KITCHEN] as Record<string, unknown>[])
+    for (const table of [LEGACY_VIEW_TO_TASKS, LEGACY_VIEW_TO_HOME, STATS_VIEW_TO_PEOPLE, VIEW_TO_KITCHEN, VIEW_TO_WARDROBE] as Record<string, unknown>[])
       for (const name of [undefined, '', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(viewIn(table, name), String(name)).toBeNull()
   })
 
   it('never shadows a live view with a legacy name', () => {
-    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE), ...Object.keys(VIEW_TO_KITCHEN)]
+    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE), ...Object.keys(VIEW_TO_KITCHEN), ...Object.keys(VIEW_TO_WARDROBE)]
     for (const name of legacy) expect(VIEWS as string[]).not.toContain(name)
     expect(new Set(legacy).size).toBe(legacy.length)
   })

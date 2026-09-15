@@ -223,6 +223,7 @@ describe('the palette’s own commands', () => {
     ['go-places-stats', { view: 'people', peopleTab: 'places', placesView: 'stats' }],
     ['go-kitchen', { view: 'kitchen' }],
     ['go-kitchen-stats', { view: 'kitchen', kitchenTab: 'stats' }],
+    ['go-wardrobe-stats', { view: 'home', homeTab: 'wardrobe', wardrobe: { tab: 'stats' } }],
   ]
 
   it.each(landings)('%s lands on its tab and segment from anywhere', (id, where) => {
@@ -343,9 +344,22 @@ describe('the wardrobe in the palette', () => {
     }
   })
 
+  it('offers Wardrobe stats when typed for, and lands on the Wardrobe’s Stats from anywhere, for that visit', () => {
+    const stats = find('go-wardrobe-stats')
+    expect(stats).toMatchObject({ label: 'Wardrobe stats', icon: 'wardrobe' })
+    expect(stats?.quick).toBeFalsy()
+    for (const word of ['most worn', 'never worn', 'cost per wear', 'streak', 'uniform', 'insights', 'figures']) expect(stats?.keywords).toContain(word)
+    for (const start of STARTS) {
+      // a one-shot way in, as Add clothing's is, naming the view alone: no day, no sheet, no outfit
+      const s = run('go-wardrobe-stats', start)
+      expect(s).toMatchObject({ view: 'home', homeTab: 'wardrobe' })
+      expect(s.wardrobe).toEqual({ tab: 'stats' })
+    }
+  })
+
   it('moves nothing else', () => {
     for (const start of STARTS) {
-      for (const id of ['go-wardrobe', 'log-wear', 'add-clothing']) {
+      for (const id of ['go-wardrobe', 'log-wear', 'add-clothing', 'go-wardrobe-stats']) {
         const s = run(id, start)
         expect(s).toMatchObject({ tasksTab: start.tasksTab, peopleTab: start.peopleTab, journalDate: start.journalDate, settingsOpen: false })
         expect(s.sheets).toEqual([])

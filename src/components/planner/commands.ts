@@ -82,6 +82,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => goView('kitchen') },
     // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
     { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
+    // the wardrobe's figures, for this visit: a link does the same, and the next visit opens on today's composer
+    { id: 'go-wardrobe-stats', label: 'Wardrobe stats', icon: 'wardrobe', keywords: 'most worn never worn cost per wear streak uniform photo calendar repeated outfits insights figures', run: () => openWardrobe({ tab: 'stats' }) },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]
 }
