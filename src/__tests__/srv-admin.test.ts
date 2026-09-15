@@ -234,3 +234,49 @@ describe('Today’s sync alarm reads the check as Admin → Data does', () => {
     expect((await act('syncCheck')).status).toBe(502)
   })
 })
+
+// The owner's digest, as Admin runs it, read every record in one request, and
+// PostgREST answers at most max_rows (1000) a request: past that the digest it
+// showed or sent was cut short. It now pages as the scheduled run does.
+describe('Admin → the digest it runs reads every record, past a thousand', () => {
+  const MAX_ROWS = 1000
+  let ranges: string[]
+  let rows: { user_id: string; data: Record<string, unknown> }[]
+
+  beforeEach(() => {
+    ranges = []
+    rows = Array.from({ length: 1500 }, (_, i) => {
+      const id = `t-${String(i).padStart(4, '0')}`
+      const at = '2020-01-01T00:00:00.000Z'
+      return { user_id: OWNER, data: { kind: 'task', id, title: `Chore ${i}`, description: '', status: 'todo', priority: 'normal', tags: [], dueAt: '2020-01-01T09:00:00.000Z', createdAt: at, updatedAt: at } }
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace(SUPABASE, '')
+        if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: signedIn })
+        if (url.startsWith('/rest/v1/app_config?key=eq.owner_email')) return Response.json([{ value: 'owner@example.test' }])
+        if (url.startsWith(`/rest/v1/user_settings?user_id=eq.${OWNER}&`)) return Response.json([{ user_id: OWNER, timezone: 'UTC' }])
+        if (url === '/rest/v1/household_members?select=household_id,user_id') return Response.json([])
+        if (url === '/rest/v1/rpc/owner_user_id') return Response.json(OWNER)
+        if (url === '/rest/v1/posts?select=data,user_id&deleted=is.false&order=id.asc') {
+          const range = new Headers(init?.headers).get('range') ?? ''
+          ranges.push(range)
+          const [from, to] = range.split('-').map(Number)
+          if (from >= rows.length) return new Response(null, { status: 416 })
+          return Response.json(rows.slice(from, Math.min(to + 1, from + MAX_ROWS)))
+        }
+        throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`)
+      }),
+    )
+  })
+
+  it('counts all 1,500 overdue tasks, a thousand a request', async () => {
+    const res = await act('runDigest')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.counts.overdue).toBe(1500)
+    expect(body.lines).toContainEqual(expect.stringMatching(/^1500 overdue: /))
+    expect(ranges).toEqual(['0-999', '1000-1999'])
+  })
+})

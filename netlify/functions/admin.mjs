@@ -173,12 +173,16 @@ function integrationStatus(origin) {
   }
 }
 
-/** The owner's own digest, computed exactly as the scheduled run would see it. */
+/**
+ * The owner's own digest, computed exactly as the scheduled run would see it:
+ * the same paged read (one request stops at max_rows), so an account past a
+ * thousand records is not cut short.
+ */
 async function ownerDigest(userId) {
   const settings = (await settingsGet(userId)) ?? {}
   const timezone = settings.timezone || 'UTC'
   const [rows, peers, ownerId] = await Promise.all([
-    rest('posts?select=data,user_id&deleted=is.false'),
+    fetchAll('posts?select=data,user_id&deleted=is.false&order=id.asc'),
     buildPeerMap().catch(() => new Map()),
     rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
   ])

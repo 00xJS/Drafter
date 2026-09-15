@@ -8,6 +8,7 @@
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mjs'
 import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
+import { restAll } from './lib/backup.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
 import { adoptTimeZone } from './lib/timezone.mjs'
@@ -33,7 +34,9 @@ async function visibleOwnerIds(userId) {
  * MUST be applied here: without it one feed token would dump every user's
  * tasks. Scope is the token's owner plus their household, matching the app —
  * minus a household member's personal kinds, which the policy keeps to their
- * owner and readableItems does here.
+ * owner and readableItems does here. The rows come a page at a time (restAll,
+ * as the backup reads them): one request stops at max_rows, and a calendar cut
+ * short there would quietly drop what is due.
  */
 async function loadItems(ownerIds, readerId) {
   if (!ownerIds.length) return []
@@ -43,9 +46,7 @@ async function loadItems(ownerIds, readerId) {
   // so a row read straight from the table carries no owner at all — and every
   // "only mine" filter in feedFor silently passed a household peer's events,
   // project targets and unassigned tasks into this user's calendar.
-  const res = await fetch(`${baseUrl()}/rest/v1/posts?select=data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`, { headers: serviceHeaders() })
-  if (!res.ok) throw new Error(`Supabase ${res.status}`)
-  return readableItems(await res.json(), readerId)
+  return readableItems(await restAll(`posts?select=id,data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`), readerId)
 }
 
 const feedUrl = (origin, token) => `${origin}/api/feed.ics?token=${encodeURIComponent(token)}`

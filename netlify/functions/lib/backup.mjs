@@ -362,12 +362,15 @@ export async function removePersonalPhotos(userId) {
 
 /**
  * Snapshot every user with live posts, then purge what has aged out. One user
- * failing never costs the others their snapshot.
+ * failing never costs the others their snapshot. The live posts are read a
+ * page at a time (restAll): one request stops at max_rows, and a snapshot cut
+ * short there would look whole. A read that cannot be finished writes no
+ * snapshot at all.
  */
 export async function runBackup(now = new Date()) {
   if (!process.env.SUPABASE_SERVICE_KEY) throw Object.assign(new Error('SUPABASE_SERVICE_KEY is not set on the host'), { status: 501 })
 
-  const rows = await rest('posts?select=data,user_id&deleted=is.false')
+  const rows = await restAll('posts?select=id,data,user_id&deleted=is.false')
   const byUser = groupRowsByUser(rows)
   const date = dayKey(now)
   const users = []

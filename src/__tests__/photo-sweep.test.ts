@@ -39,6 +39,22 @@ let maxRows: number
 let noCount: boolean
 let garmentsFail: boolean
 let listFails: string | null
+/** Each snapshot runBackup wrote, by its path in the bucket. */
+let snapshots: Map<string, { exportedAt: string; userId: string; items: { id: string }[] }>
+
+/**
+ * One page of `rows` as PostgREST answers restAll: the rows after the id it
+ * carried on from, in id order, never more than maxRows, and how many were
+ * still to come (unless noCount).
+ */
+function pageOf(url: string, rows: Row[]) {
+  const q = new URL(`https://x${url}`).searchParams
+  const after = q.get('id')?.replace(/^gt\./, '') ?? null
+  const left = rows.filter(p => after === null || p.id > after).sort((x, y) => (x.id < y.id ? -1 : 1))
+  const page = left.slice(0, Math.min(Number(q.get('limit')), maxRows)).map(({ id, user_id, data }) => ({ id, user_id, data }))
+  const headers: Record<string, string> = noCount ? {} : { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` }
+  return new Response(JSON.stringify(page), { headers })
+}
 
 /** What the storage list endpoint answers for a prefix: its objects, and a null-id entry per folder under it. */
 function listUnder(prefix: string) {
@@ -61,6 +77,7 @@ beforeEach(() => {
   noCount = false
   garmentsFail = false
   listFails = null
+  snapshots = new Map()
   posts = [
     garment('g-live', A, { photoId: photo(A, 1), thumbId: photo(A, 2) }),
     garment('g-trash', A, { photoId: photo(A, 3), deletedAt: RECENT }),
@@ -99,24 +116,20 @@ beforeEach(() => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push(`${method} ${decodeURIComponent(url)}${body?.prefix ? ` ${body.prefix}` : ''}`)
-      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=data,user_id&deleted=is.false')) {
-        return Response.json(posts.filter(p => !p.deleted).map(({ data, user_id }) => ({ data, user_id })))
-      }
+      // every live record, as runBackup reads them for the snapshots
+      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,data,user_id&deleted=is.false')) return pageOf(url, posts.filter(p => !p.deleted))
       if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment')) {
         if (garmentsFail) return new Response('{"message":"boom"}', { status: 500 })
-        const q = new URL(`https://x${url}`).searchParams
-        const after = q.get('id')?.replace(/^gt\./, '') ?? null
-        const left = posts.filter(p => p.data.kind === 'garment' && (after === null || p.id > after)).sort((x, y) => (x.id < y.id ? -1 : 1))
-        const page = left.slice(0, Math.min(Number(q.get('limit')), maxRows)).map(({ id, user_id, data }) => ({ id, user_id, data }))
-        const headers: Record<string, string> = noCount ? {} : { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` }
-        return new Response(JSON.stringify(page), { headers })
+        return pageOf(url, posts.filter(p => p.data.kind === 'garment'))
       }
       if (method === 'POST' && url === '/storage/v1/object/list/media') {
         if (listFails && body.prefix === personalFolder(listFails)) return new Response('{"message":"storage is down"}', { status: 503 })
         return Response.json(listUnder(body.prefix).slice(body.offset ?? 0, (body.offset ?? 0) + body.limit))
       }
       if (method === 'POST' && url.startsWith('/storage/v1/object/media/backups/')) {
-        objects.set(url.slice('/storage/v1/object/media/'.length), { updated_at: NOW.toISOString(), created_at: NOW.toISOString() })
+        const path = url.slice('/storage/v1/object/media/'.length)
+        objects.set(path, { updated_at: NOW.toISOString(), created_at: NOW.toISOString() })
+        snapshots.set(path, body)
         return Response.json({ Key: url })
       }
       if (method === 'DELETE' && url === '/storage/v1/object/media') {
@@ -261,5 +274,36 @@ describe('runBackup: the sweep rides with the tombstone purge', () => {
     expect(report.users.map(u => u.userId).sort()).toEqual([A, B])
     expect(report.tombstonesPurged).toBe(1)
     expect(report.failures).toEqual([expect.stringMatching(/^photos: posts: 500/)])
+  })
+})
+
+// The nightly snapshot read every live record in one request, and PostgREST
+// answers at most max_rows (1000) a request: an account past that was backed
+// up short, and the snapshot looked whole. It now reads a page at a time.
+describe('runBackup reads every live record, however many there are', () => {
+  const task = (n: number): Row => {
+    const id = `t-${String(n).padStart(5, '0')}`
+    return { id, user_id: A, deleted: false, data: { kind: 'task', id, title: `Chore ${n}`, status: 'todo', createdAt: OLD, updatedAt: OLD } }
+  }
+
+  it('pages past max_rows, and the snapshot keeps its shape', async () => {
+    posts.push(...Array.from({ length: 2345 }, (_, n) => task(n)))
+    const report = await runBackup(NOW)
+    const snapshot = snapshots.get(`backups/${A}/2026-09-14.json`)!
+    expect(Object.keys(snapshot)).toEqual(['exportedAt', 'userId', 'items'])
+    expect(snapshot).toMatchObject({ exportedAt: NOW.toISOString(), userId: A })
+    // A's live piece and note, and every one of the 2,345 tasks, once each
+    expect(snapshot.items).toHaveLength(2347)
+    expect(new Set(snapshot.items.map(i => i.id)).size).toBe(2347)
+    expect(report.users.find(u => u.userId === A)?.items).toBe(2347)
+    // 2,349 live rows across both accounts: 1,000, 1,000 and 349
+    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts?select=id,data,user_id&deleted=is.false'))).toHaveLength(3)
+  })
+
+  it('writes no snapshot at all when the read cannot be finished, rather than a short one', async () => {
+    posts.push(...Array.from({ length: 1500 }, (_, n) => task(n)))
+    noCount = true
+    await expect(runBackup(NOW)).rejects.toThrow('posts: the server did not say how many rows there are')
+    expect(snapshots.size).toBe(0)
   })
 })

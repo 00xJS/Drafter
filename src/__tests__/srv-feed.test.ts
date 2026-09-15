@@ -40,12 +40,29 @@ const stored = [
   { user_id: PEER, data: { kind: 'habit', id: 'peer-habit', name: 'Peer habit', days: [], done: [], createdAt: at, updatedAt: at } },
 ]
 
+type StoredRow = { user_id: string; data: { id: string } & Record<string, unknown> }
+
+/** PostgREST's max_rows on Supabase: a page is never longer, whatever limit was asked for. */
+const MAX_ROWS = 1000
+
+/** One page of `rows` as PostgREST answers restAll: after the id it carried on from, in id order, at most MAX_ROWS, and how many were left. */
+function pageOf(path: string, rows: StoredRow[]) {
+  const q = new URLSearchParams(path.slice(path.indexOf('?') + 1))
+  const after = q.get('id')?.replace(/^gt\./, '') ?? null
+  const left = rows.filter(r => after === null || r.data.id > after).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
+  const page = left.slice(0, Math.min(Number(q.get('limit')), MAX_ROWS)).map(r => ({ id: r.data.id, data: r.data, user_id: r.user_id }))
+  return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` } })
+}
+
 let requests: { url: string; headers: Headers }[]
+/** What the posts table holds. */
+let rows: StoredRow[]
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   requests = []
+  rows = [...stored]
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -58,7 +75,7 @@ beforeEach(() => {
       }
       if (path === `household_members?user_id=eq.${ME}&select=household_id`) return Response.json([{ household_id: 'home' }])
       if (path === 'household_members?household_id=eq.home&select=user_id') return Response.json([{ user_id: ME }, { user_id: PEER }])
-      if (path.startsWith('posts?select=data,user_id&deleted=is.false&user_id=in.')) return Response.json(stored)
+      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&user_id=in.')) return pageOf(path, rows)
       throw new Error(`unexpected read ${path}`)
     }),
   )
@@ -93,6 +110,19 @@ describe('GET /api/feed.ics', () => {
     const res = await fetchFeed('x'.repeat(32))
     expect(res.status).toBe(404)
     expect(requests.some(r => r.url.includes('/rest/v1/posts?'))).toBe(false)
+  })
+
+  // one request stops at max_rows, and the feed used to make only one: past a
+  // thousand records the calendar quietly lost whatever sorted after the cut
+  it('reads every row, a page at a time, so a household past max_rows still gets its whole calendar', async () => {
+    rows = [...stored, ...Array.from({ length: 1500 }, (_, i) => ({ user_id: ME, data: task(`bulk-${String(i).padStart(4, '0')}`, `Chore ${i}`) }))]
+    const res = await fetchFeed()
+    expect(res.status).toBe(200)
+    const ics = await res.text()
+    expect([...ics.matchAll(/^UID:task-bulk-\d+@drafter/gm)]).toHaveLength(1500)
+    expect(ics).toContain('UID:task-assigned@drafter')
+    expect(ics).not.toMatch(/Peer chore|Peer diary entry|Peer habit/)
+    expect(requests.filter(r => r.url.includes('/rest/v1/posts?'))).toHaveLength(2)
   })
 })
 
