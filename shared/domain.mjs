@@ -2,10 +2,7 @@
 // Dependency-free ESM so the MCP server stays zero-install.
 
 export const PLATFORMS = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
-export const METRIC_KEYS = ['likes', 'comments', 'shares', 'impressions']
 
-/** Legacy (pre-v3) post statuses — still accepted on input, converted on read. */
-export const POST_STATUSES = ['idea', 'draft', 'scheduled', 'posted', 'canceled']
 export const TASK_STATUSES = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
 export const PROJECT_STATUSES = ['active', 'paused', 'done', 'archived']
 export const PRIORITIES = ['low', 'normal', 'high', 'urgent']
@@ -13,32 +10,6 @@ export const RECURRENCE_FREQS = ['daily', 'weekly', 'biweekly', 'monthly', 'quar
 
 /** The project every migrated social post lands in (deterministic so all devices agree). */
 export const SOCIAL_PROJECT_ID = 'project-social'
-
-/** likes + comments + shares across every platform of a post/task. */
-export function engagement(post) {
-  let sum = 0
-  for (const m of Object.values(post.metrics ?? {})) {
-    if (!m) continue
-    sum += (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0)
-  }
-  return sum
-}
-
-export function impressions(post) {
-  let sum = 0
-  for (const m of Object.values(post.metrics ?? {})) sum += m?.impressions ?? 0
-  return sum
-}
-
-/** Keep only known metric fields with finite non-negative numeric values. */
-export function cleanMetrics(raw) {
-  const out = {}
-  for (const key of METRIC_KEYS) {
-    const n = Number(raw?.[key])
-    if (Number.isFinite(n) && n >= 0) out[key] = Math.round(n)
-  }
-  return out
-}
 
 /**
  * A stamp guaranteed strictly newer than the previous one, so an edit always

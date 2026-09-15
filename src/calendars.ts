@@ -883,11 +883,6 @@ async function pullGoogle(): Promise<GooglePull> {
   return r
 }
 
-/** Ask Google which mirrored tasks were moved there since the last pull. */
-export async function pullGoogleChanges(): Promise<GoogleChange[]> {
-  return (await pullGoogle()).changes
-}
-
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 
 /** A mirrored task Google or Outlook deleted, to mark done; Undo puts `prevStatus` back. */

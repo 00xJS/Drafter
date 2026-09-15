@@ -507,34 +507,6 @@
 .notes-emoji button:hover {
   background: var(--surface-2);
 }
-.notes-body {
-  flex: 1;
-  min-height: 320px;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-.notes-body.split {
-  grid-template-columns: 1fr 1fr;
-}
-.notes-input {
-  width: 100%;
-  height: 100%;
-  min-height: 320px;
-  resize: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8125rem;
-  line-height: 1.55;
-  padding: 12px;
-}
-.notes-preview {
-  overflow: auto;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-  min-height: 320px;
-}
 .notes-foot {
   display: flex;
   color: var(--muted);
@@ -627,9 +599,6 @@
 }
 .notes-page .notes {
   flex: 1;
-}
-.notes-page .notes-body {
-  min-height: calc(100vh - 290px);
 }
 .notes-page-head {
   display: flex;

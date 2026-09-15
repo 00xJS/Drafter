@@ -644,8 +644,8 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   // listener and overwrite the offset we are trying to keep.
   useLayoutEffect(() => {
     // A past day owns the scroll (the effect below scrolls to it). Today's key
-    // does not: every phone route into the journal — the More sheet's row,
-    // Today's card, the Review▸Journal segment, the quick action — passes it
+    // does not: every phone route into the journal — Home's Journal segment,
+    // Today's card, the palette's Journal, the quick action — passes it
     // just to mean "the journal", and honouring that as a target would make the
     // restore unreachable on the one device it was written for. So the restore
     // wins whenever nothing older was asked for, and today's card keeps the

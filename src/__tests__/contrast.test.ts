@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, graphicInk, heatStyle, inkOn, mixHex, ON_DEEP_USER, ON_USER, parseHex, readableInk } from '../contrast'
+import { contrast, graphicInk, heatStyle, mixHex, ON_DEEP_USER, ON_USER, parseHex, readableInk } from '../contrast'
 import { THEME_HEX, type Theme } from '../theme'
 import { PROJECT_COLORS } from '../types'
 
@@ -36,16 +36,9 @@ describe('contrast', () => {
   })
 })
 
-describe('inkOn: text drawn on a user colour', () => {
-  it('is the dark ink on every palette colour', () => {
-    for (const c of PROJECT_COLORS) {
-      expect(inkOn(c), c).toBe('var(--on-user-color)')
-      expect(contrast(ON_USER, c), c).toBeGreaterThanOrEqual(4.5)
-    }
-  })
-
-  it('is white on a colour too deep for it, such as the MCP project default', () => {
-    expect(inkOn('#4f46e5')).toBe('var(--on-deep-user-color)')
+describe('--on-user-color: text drawn on a user colour', () => {
+  it('reads at 4.5:1 on every palette colour', () => {
+    for (const c of PROJECT_COLORS) expect(contrast(ON_USER, c), c).toBeGreaterThanOrEqual(4.5)
   })
 })
 

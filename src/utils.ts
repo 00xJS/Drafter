@@ -68,13 +68,3 @@ export function humanizeDuration(ms: number): string {
 export function timeAgo(iso: string): string {
   return `${humanizeDuration(Date.now() - new Date(iso).getTime())} ago`
 }
-
-export function timeUntil(iso: string): string {
-  return `in ${humanizeDuration(new Date(iso).getTime() - Date.now())}`
-}
-
-export function fmtNum(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'k'
-  return String(n)
-}

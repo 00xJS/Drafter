@@ -50,11 +50,6 @@ export function mixHex(a: string, b: string, t: number): string {
 
 const betterInk = (ground: string) => (contrast(ON_DEEP_USER, ground) > contrast(ON_USER, ground) ? 'var(--on-deep-user-color)' : 'var(--on-user-color)')
 
-/** The ink for text on a user colour: --on-user-color, or --on-deep-user-color where white reads better. */
-export function inkOn(color: string): string {
-  return betterInk(color)
-}
-
 /** A ground other than the helper's own: 'raised' is --surface-2 (an open row, a GitHub card, a progress track). */
 export type InkGround = 'raised'
 

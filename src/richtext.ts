@@ -114,8 +114,3 @@ export function htmlToText(html: string): string {
 export function wordCountHtml(html: string): number {
   return (htmlToText(html).match(/\S+/g) ?? []).length
 }
-
-/** Ids of every inline photo in a note. */
-export function mediaIdsIn(html: string): string[] {
-  return Array.from(html.matchAll(/data-media="([^"]+)"/g), m => m[1])
-}

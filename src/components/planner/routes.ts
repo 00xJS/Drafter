@@ -82,10 +82,10 @@ export interface Toast {
 }
 
 // The two segmented views remember which half you chose — but only when you
-// chose it. Everything else (a deep link, a nudge, the More sheet) moves the
-// segment for that visit alone, so "Open review" cannot be hijacked by the
-// last time the journal was read, and the People tab cannot get pinned to
-// Places by one search result.
+// chose it. Everything else (a deep link, a nudge, the palette's Board or
+// Notes) moves the segment for that visit alone, so a template's new tasks
+// shown on the Board cannot leave Tasks opening there, and the People tab
+// cannot get pinned to Places by one search result.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)

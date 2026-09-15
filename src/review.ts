@@ -154,15 +154,6 @@ export function doneByWeek(tasks: Task[], weeks = 12, now = new Date()): number[
   return out
 }
 
-/** Active projects with no task or project edit in `days`. */
-export function stalledProjects(projects: Project[], tasks: Task[], days = 14, now = new Date()): Project[] {
-  const cutoff = now.getTime() - days * DAY_MS
-  const last = new Map<string, number>()
-  for (const p of projects) last.set(p.id, Date.parse(p.updatedAt))
-  for (const t of tasks) if (t.projectId) last.set(t.projectId, Math.max(last.get(t.projectId) ?? 0, Date.parse(t.updatedAt)))
-  return projects.filter(p => p.status === 'active' && (last.get(p.id) ?? 0) < cutoff && Date.parse(p.createdAt) < cutoff)
-}
-
 /**
  * The single most useful list on Today: what to do next, drawn from ALL open
  * work. Previously Today derived every section from tasks that had a due date,

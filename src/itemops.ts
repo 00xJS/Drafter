@@ -106,12 +106,11 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
  * Decide the outcome of one sync round.
  *
  * Cursor advances over `syncedAt` (server arrival) when the server provides it,
- * otherwise falls back to `updatedAt`. Rejected ids never clamp the cursor —
- * they are dead writes. Unconfirmed (not rejected, not returned) still hold the
- * cursor only when we have no dirty-set (legacy path); with a dirty set the
- * caller clears confirmed ids and retries the rest. Once the server reports
- * rejections, "not returned" is no longer "unconfirmed": an accepted row that
- * did not change is simply not echoed.
+ * otherwise falls back to `updatedAt`. Only what came back moves it, and
+ * nothing sent holds it back: a rejected or unconfirmed (not rejected, not
+ * returned) id stays dirty and the caller sends it again. Once the server
+ * reports rejections, "not returned" is no longer "unconfirmed": an accepted
+ * row that did not change is simply not echoed.
  *
  * `sent` is a snapshot taken before the request; anything the user changed while
  * it was in flight has a newer local copy than the version the server echoed

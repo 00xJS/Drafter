@@ -160,25 +160,6 @@ export function freeSlots(events: CalendarEvent[], dayKey: string, now: Date, o:
   return slots
 }
 
-/**
- * The suggested block for each pick, in the order picked: the first slot with
- * room, from its start, the next block beginning on the following :00 or :30.
- * A pick of 0 minutes ("No block"), or one that fits nowhere, gets none.
- */
-export function allocateBlocks(slots: { start: Date; end: Date }[], picks: { taskId: string; minutes: number }[]): { taskId: string; start: string; end: string }[] {
-  const free = slots.map(s => ({ start: s.start.getTime(), end: s.end.getTime() }))
-  const out: { taskId: string; start: string; end: string }[] = []
-  for (const p of picks) {
-    const ms = p.minutes * MINUTE_MS
-    if (!(ms > 0)) continue
-    const slot = free.find(s => s.end - s.start >= ms)
-    if (!slot) continue
-    out.push({ taskId: p.taskId, start: new Date(slot.start).toISOString(), end: new Date(slot.start + ms).toISOString() })
-    slot.start = nextHalfHour(slot.start + ms)
-  }
-  return out
-}
-
 /** Each task's time block on `dayKey`: its earliest timed entry that day whose taskId names it. */
 export function blocksOn(entries: readonly CalendarEntry[], dayKey: string): Map<string, CalendarEntry> {
   const out = new Map<string, CalendarEntry>()

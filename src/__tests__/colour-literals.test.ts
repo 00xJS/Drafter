@@ -11,10 +11,10 @@ import { describe, expect, it } from 'vitest'
  * branch that merges after it.
  *
  * What stays a literal is data, not paint: the user's own colours
- * (PROJECT_COLORS, the templates', a synced row's default), PLATFORM_META
- * (never drawn), and the two modules that mirror the palette for the contrast
- * maths (theme.ts, contrast.ts), which theme-tokens.test.ts holds equal to the
- * sheet. A mask-image is exempt too: it reads only alpha.
+ * (PROJECT_COLORS, the templates', a synced row's default), and the two modules
+ * that mirror the palette for the contrast maths (theme.ts, contrast.ts), which
+ * theme-tokens.test.ts holds equal to the sheet. A mask-image is exempt too: it
+ * reads only alpha.
  */
 
 const HINT = 'use a theme token (see src/styles/01-base.css)'
@@ -73,7 +73,7 @@ function focusInAccent(file: string, source: string): string[] {
 const EXEMPT_FILES = ['templates.ts', 'syncengine.ts', 'sync.ts', 'theme.ts', 'contrast.ts']
 /** Declarations inside an otherwise guarded module that hold data colours. */
 const EXEMPT_DECLARATIONS: Record<string, RegExp[]> = {
-  'types.ts': [/^export const PLATFORM_META\b[\s\S]*?^\}$/m, /^export const PROJECT_COLORS\b.*$/m],
+  'types.ts': [/^export const PROJECT_COLORS\b.*$/m],
   // a photo's own colour, worked out from its pixels for a name suggestion: image data, not a UI colour
   'photo.ts': [/^export function averageHex\b[\s\S]*?^\}$/m],
 }

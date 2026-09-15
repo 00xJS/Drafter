@@ -1,8 +1,6 @@
 import type { PlaceCategory } from '../shared/places.mjs'
 
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
-/** Pre-v3 post statuses; kept so legacy rows still sanitize. */
-export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'posted' | 'canceled'
 export type TaskStatus = 'wishlist' | 'todo' | 'doing' | 'blocked' | 'done' | 'canceled'
 export type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
@@ -685,70 +683,6 @@ export interface Wear extends Owned {
 
 export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear
 
-/**
- * The legacy post shape. `toPost` still projects a social task into it so
- * stored posts round-trip without rewriting the database.
- */
-export interface Post {
-  id: string
-  title: string
-  body: string
-  platforms: Platform[]
-  status: PostStatus
-  createdAt: string
-  updatedAt: string
-  scheduledFor?: string
-  postedAt?: string
-  tags: string[]
-  notes?: string
-  link?: string
-  metrics?: Partial<Record<Platform, Metrics>>
-  variants?: Partial<Record<Platform, string>>
-  mediaIds?: string[]
-  recurrence?: Recurrence
-  deletedAt?: string
-}
-
-const TASK_TO_POST_STATUS: Record<TaskStatus, PostStatus> = {
-  wishlist: 'idea',
-  todo: 'draft',
-  doing: 'draft',
-  blocked: 'draft',
-  done: 'posted',
-  canceled: 'canceled',
-}
-
-/** Social view of a task, or null when the task is not a post. */
-export function toPost(t: Task): Post | null {
-  if (!t.social) return null
-  const status = t.status === 'todo' && t.dueAt ? 'scheduled' : TASK_TO_POST_STATUS[t.status]
-  return {
-    id: t.id,
-    title: t.title,
-    body: t.description,
-    platforms: t.social.platforms,
-    status,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt,
-    scheduledFor: t.dueAt,
-    postedAt: t.completedAt,
-    tags: t.tags,
-    notes: t.notes,
-    link: t.link,
-    metrics: t.social.metrics,
-    variants: t.social.variants,
-    mediaIds: t.mediaIds,
-    recurrence: t.recurrence,
-    deletedAt: t.deletedAt,
-  }
-}
-
-/** Effective text for a platform: its variant if set, else the description. */
-export function bodyFor(t: { description: string; social?: Social }, pl: Platform): string {
-  const v = t.social?.variants?.[pl]
-  return v && v.trim() ? v : t.description
-}
-
 export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
   daily: 'Daily',
   weekly: 'Weekly',
@@ -759,16 +693,6 @@ export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
 }
 
 export const PLATFORMS: Platform[] = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
-
-export const PLATFORM_META: Record<Platform, { label: string; short: string; color: string; charLimit: number }> = {
-  x: { label: 'X (Twitter)', short: 'X', color: '#52525b', charLimit: 280 },
-  instagram: { label: 'Instagram', short: 'IG', color: '#db2777', charLimit: 2200 },
-  threads: { label: 'Threads', short: 'TH', color: '#6b7280', charLimit: 500 },
-  linkedin: { label: 'LinkedIn', short: 'LI', color: '#0a66c2', charLimit: 3000 },
-  facebook: { label: 'Facebook', short: 'FB', color: '#1877f2', charLimit: 63206 },
-  tiktok: { label: 'TikTok', short: 'TT', color: '#475569', charLimit: 2200 },
-  youtube: { label: 'YouTube', short: 'YT', color: '#dc2626', charLimit: 5000 },
-}
 
 export const TASK_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
 
@@ -815,4 +739,4 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; color: 
 
 export const PROJECT_COLORS = ['#f97316', '#fbbf24', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#f87171', '#94a3b8']
 
-export { engagement, impressions, SOCIAL_PROJECT_ID } from '../shared/domain.mjs'
+export { SOCIAL_PROJECT_ID } from '../shared/domain.mjs'

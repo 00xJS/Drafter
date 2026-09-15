@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { newerStamp } from '../itemops'
-import { mediaIdsIn, sanitizeHtml } from '../richtext'
+import { sanitizeHtml } from '../richtext'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, sanitizeNote } from '../schema'
 import { sortNotes } from '../store'
 import { purgeTombstone } from '../sync'
@@ -40,7 +40,7 @@ describe('sanitizeNote', () => {
     expect(migrateStored({ version: 3, items: [full] })).toEqual([full])
     expect(sanitizeItem(JSON.parse(JSON.stringify(sanitizeItem(full))))).toEqual(full)
     // photos are referenced by media id, as on a project pad
-    expect(mediaIdsIn(sanitizeNote(full)!.body)).toEqual(['m-swatch'])
+    expect(sanitizeNote(full)!.body).toContain('data-media="m-swatch"')
   })
 
   it('is a kind the server accepts, with a sanitizer of its own (not a blank task, not dropped as unknown)', () => {

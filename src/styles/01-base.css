@@ -93,7 +93,7 @@
   --dot-fallback: #5b6474;
   /* Person, place, project and habit colours are the user's, the same in both
      themes, so the ink drawn on them is too: dark on every PROJECT_COLORS entry,
-     white on a colour too deep for it (inkOn in src/contrast.ts chooses). The
+     white on a colour too deep for it (betterInk in src/contrast.ts chooses). The
      ring gives a pale dot or swatch an edge on white; it is clear in dark. */
   --on-user-color: #0f1115;
   --on-deep-user-color: #ffffff;

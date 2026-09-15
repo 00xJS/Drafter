@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   FocusTask,
   MAX_FOCUS,
-  allocateBlocks,
   focusCandidates,
   freeSlots,
   leftovers,
@@ -145,24 +144,6 @@ describe('freeSlots', () => {
     expect(freeSlots([], TODAY, new Date(2026, 8, 14, 22, 0))).toEqual([])
     // a gap too short to use — or gone once its start is rounded to the half hour — is not offered
     expect(freeSlots([ev('a', at(14, 8, 10), at(14, 9, 5)), ev('b', at(14, 9, 25), at(14, 21, 30))], TODAY, now, { bufferMin: 0 })).toEqual([])
-  })
-})
-
-describe('allocateBlocks', () => {
-  it('fills the first slot with room, in the order picked; no block for 0 minutes or no room', () => {
-    const slots = freeSlots([{ id: 'm', sourceId: 's', title: 'm', start: at(14, 10), end: at(14, 11), allDay: false }], TODAY, now)
-    const blocks = allocateBlocks(slots, [
-      { taskId: 'a', minutes: 60 },
-      { taskId: 'b', minutes: 90 },
-      { taskId: 'c', minutes: 0 },
-      { taskId: 'd', minutes: 30 },
-      { taskId: 'e', minutes: 900 },
-    ])
-    expect(blocks.map(b => [b.taskId, hm(new Date(b.start)), hm(new Date(b.end))])).toEqual([
-      ['a', '08:00', '09:00'],
-      ['b', '11:30', '13:00'],
-      ['d', '09:00', '09:30'],
-    ])
   })
 })
 

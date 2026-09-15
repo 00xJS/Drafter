@@ -1,4 +1,4 @@
-import { BILL_KIND_META, Bill, OPEN_STATUSES, RecurrenceFreq, Task } from './types'
+import { Bill, OPEN_STATUSES, RecurrenceFreq, Task } from './types'
 
 // Household payments: the rules behind the Bills view and the calendar's money
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
@@ -10,7 +10,6 @@ const fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: CURR
 export const formatMoney = (n: number | undefined): string => (n === undefined || !Number.isFinite(n) ? '' : fmt.format(n))
 
 export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt
-export const billGlyph = (t: Task): string => (t.bill ? BILL_KIND_META[t.bill.kind].emoji : '')
 
 /**
  * Marking a bill done with nothing typed under Paid records the amount due as
