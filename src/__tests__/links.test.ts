@@ -216,8 +216,9 @@ describe('Home Screen quick actions', () => {
 
   it('lands each route where its name says, through the router', () => {
     const router = read('../components/planner/useDeepLinks.ts')
-    // ?view=wardrobe and ?view=today: the Home segment LEGACY_VIEW_TO_HOME names
-    expect(router).toMatch(/LEGACY_VIEW_TO_HOME\[parsed\.view\]\) \{\s*setHomeTab\(LEGACY_VIEW_TO_HOME\[parsed\.view\]\)\s*setView\('home'\)/)
+    // ?view=wardrobe and ?view=today: the Home segment LEGACY_VIEW_TO_HOME names, read by its own keys
+    expect(router).toMatch(/const homeTab = viewIn\(LEGACY_VIEW_TO_HOME, parsed\.view\)/)
+    expect(router).toMatch(/\} else if \(homeTab\) \{\s*setHomeTab\(homeTab\)\s*setView\('home'\)/)
     // ?plan=day with no view: Home → Today, and the day's planning sheet over it
     expect(router).toMatch(/if \(!parsed\.view\) \{\s*setHomeTab\(parsed\.plan === 'week' \? 'week' : 'today'\)\s*setView\('home'\)/)
     expect(router).toContain("openSheet(parsed.plan === 'day' ? { kind: 'day' }")

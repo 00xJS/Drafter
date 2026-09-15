@@ -361,7 +361,7 @@ describe('the Stats view', () => {
 
     expect([...out.matchAll(/class="podium-piece" aria-label="([^"]+)"/g)].map(m => m[1])).toEqual(['First: Chicken curry, 5 days', 'Second: Rice, 3 days', 'Third: Lasagne, 2 days'])
     expect(out).toContain('<span class="kitchen-dish podium-photo" aria-hidden="true">🍛</span>')
-    const bars = card(out, 'Most cooked, in days')
+    const bars = card(out, 'Most cooked')
     expect([...bars.matchAll(/<span class="stats-hbar-name">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Chicken curry', 'Rice', 'Lasagne'])
     expect([...bars.matchAll(/<span class="hbar-value">(\d+)<\/span>/g)].map(m => m[1])).toEqual(['5', '3', '2'])
 
@@ -387,7 +387,8 @@ describe('the Stats view', () => {
     expect(year).toContain('Bought<strong>2</strong>')
     expect(year).toContain('<p class="stats-month-total">9 home-cooked days in 2026 <span class="badge"')
     expect(year).toContain('<tr><td>Sep</td><td class="num">9</td><td class="num">1</td><td class="num">2</td><td class="num">8</td></tr>')
-    expect(year).toContain('aria-label="Next year" disabled=""')
+    // ‹ year › steps on past this year, as the wardrobe's, People's and Places' do
+    expect(year).not.toContain('aria-label="Next year" disabled=""')
 
     const shares = card(out, 'Lunch and dinner')
     expect(shares).toContain('<strong>Dinner</strong><small class="muted">10 dinners · 70% cooked</small>')
@@ -533,7 +534,7 @@ describe('Kitchen’s fourth segment', () => {
     expect(segments(out)).toEqual(['Recipes', 'This week', 'Grocery', '[Stats]'])
     // the row a phone narrows and caps, as it does Home's four
     expect(out).toContain('<div class="people-tab-seg kitchen-seg"><span class="segmented">')
-    expect(out).toContain('<h3>Most cooked, in days</h3>')
+    expect(out).toContain('<h3>Most cooked</h3>')
     expect(out).toContain('Each day’s dinner · 7 dinners cooked at home')
   })
 

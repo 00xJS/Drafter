@@ -90,6 +90,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               // the podium, the bars and the lists open a person's card on the list
               onOpenPerson={person => openPerson(person.id)}
               onOpenDay={openCalendarDay}
+              // with Mine on in a household the Calendar a day opens shows only your tasks, while these count everyone's visits
+              mineOnCalendar={inHousehold && mineOnly}
             />
           ) : (
             <People

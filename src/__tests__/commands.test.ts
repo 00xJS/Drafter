@@ -20,6 +20,7 @@ interface ShellState {
   rememberedPeopleView: InnerView
   rememberedPlacesView: InnerView
   rememberedCal: CalendarMode
+  rememberedKitchen: KitchenTab
   journalDate: string | null
   /** the one-shot way into Home → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
@@ -46,6 +47,7 @@ const STARTS: ShellState[] = [
     rememberedPeopleView: 'list',
     rememberedPlacesView: 'stats',
     rememberedCal: 'timeline',
+    rememberedKitchen: 'grocery',
     journalDate: null,
     wardrobe: null,
     kitchenTab: null,
@@ -66,6 +68,7 @@ const STARTS: ShellState[] = [
     rememberedPeopleView: 'stats',
     rememberedPlacesView: 'list',
     rememberedCal: 'month',
+    rememberedKitchen: 'week',
     journalDate: null,
     wardrobe: null,
     kitchenTab: null,
@@ -94,6 +97,7 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       if (v === 'home') s.homeTab = 'today'
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
       if (v === 'calendar') s.calMode = s.rememberedCal
+      if (v === 'kitchen') s.kitchenTab = s.rememberedKitchen
       if (v === 'people') {
         s.peopleTab = s.rememberedPeople
         s.peopleView = s.rememberedPeopleView
@@ -233,7 +237,12 @@ describe('the palette’s own commands', () => {
     for (const start of STARTS) {
       const s = run('go-kitchen-stats', start)
       expect(s).toMatchObject({ homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, rememberedPeople: start.rememberedPeople, wardrobe: null, settingsOpen: false })
-      expect(run('go-kitchen', start).kitchenTab).toBeNull()
+      // the plain Kitchen opens where it was last left, as a tab tap does, even straight after Kitchen stats
+      expect(run('go-kitchen', start).kitchenTab).toBe(start.rememberedKitchen)
+      const { s: after, commands: cmds } = shell(start)
+      cmds.find(c => c.id === 'go-kitchen-stats')!.run()
+      cmds.find(c => c.id === 'go-kitchen')!.run()
+      expect(after).toMatchObject({ view: 'kitchen', kitchenTab: start.rememberedKitchen })
     }
   })
 

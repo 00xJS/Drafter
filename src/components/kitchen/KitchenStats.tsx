@@ -237,8 +237,8 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
       )}
 
       <RankedBars
-        title="Most cooked, in days"
-        sub="As the main or a side: lunch and dinner on one day count once, where a recipe’s times count each meal"
+        title="Most cooked"
+        sub="Days cooked, as the main or a side: lunch and dinner on one day count once, where a recipe’s times count each meal"
         empty="Cook from your recipes and the ones you cook most show here."
         rank={window => mostCooked(ix, window).map(ranked)}
         picture={r => <Dish recipe={r.recipe} className="thumb-28" />}
@@ -265,7 +265,7 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
         className="year-report kitchen-months"
         title="Meals by month"
         sub="Cooked at home, eaten out at a place, or bought with no place named · the trend is home-cooked days, the last 90 against the 90 before"
-        aside={<Stepper label={String(year)} unit="year" canNext={year < thisYear} onStep={delta => setYear(y => y + delta)} />}
+        aside={<Stepper label={String(year)} unit="year" onStep={delta => setYear(y => y + delta)} />}
       >
         <MealMonthsChart months={months} current={year === thisYear ? Number(ix.dayKey.slice(5, 7)) - 1 : -1} />
         <WayKey counts={{ cooked: total(months.cooked), out: total(months.out), bought: total(months.bought) }} />

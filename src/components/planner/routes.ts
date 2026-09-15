@@ -39,6 +39,10 @@ export const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', 
 /** …and the former Today / Review views land on the matching Home segment.
  *  The wardrobe was never a view; `?view=wardrobe` is simply its link. */
 export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week', wardrobe: 'wardrobe' }
+/** What a link's view names in one of these tables, or null: a table's own
+ *  names only, so `?view=constructor` or `?view=__proto__` names nothing. */
+export const viewIn = <T>(table: Record<string, T>, view: string | undefined): T | null =>
+  view && Object.prototype.hasOwnProperty.call(table, view) ? table[view] : null
 
 /** An inbound link, held as parsed pieces so a replay keeps its provenance. */
 export type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
@@ -137,8 +141,7 @@ export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('pe
  *  on its Stats, for that visit. */
 export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people', 'places-stats': 'places' }
 /** The segment a link's view opens on its Stats, or null. Its own names only, so `?view=constructor` names none. */
-export const peopleTabOfStatsView = (view: string | undefined): PeopleTab | null =>
-  view && Object.prototype.hasOwnProperty.call(STATS_VIEW_TO_PEOPLE, view) ? STATS_VIEW_TO_PEOPLE[view] : null
+export const peopleTabOfStatsView = (view: string | undefined): PeopleTab | null => viewIn(STATS_VIEW_TO_PEOPLE, view)
 
 /** Kitchen's four segments: the recipes, the week's meals, the grocery list and
  *  the figures. Kitchen remembers the one chosen by its buttons, as Tasks does. */
@@ -162,5 +165,4 @@ export const storedKitchenTab = (): KitchenTab => {
  *  opens Kitchen on Stats, for that visit only. */
 export const VIEW_TO_KITCHEN: Record<string, KitchenTab> = { 'kitchen-stats': 'stats' }
 /** The Kitchen segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
-export const kitchenTabOfView = (view: string | undefined): KitchenTab | null =>
-  view && Object.prototype.hasOwnProperty.call(VIEW_TO_KITCHEN, view) ? VIEW_TO_KITCHEN[view] : null
+export const kitchenTabOfView = (view: string | undefined): KitchenTab | null => viewIn(VIEW_TO_KITCHEN, view)

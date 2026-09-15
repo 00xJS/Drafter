@@ -498,8 +498,9 @@
 .people-all-time .stat-tile {
   box-shadow: none;
 }
-/* a face: a person's emoji or initial on a tint of their colour, drawn to a
-   fixed circle, not text; its ink comes from readableInk, inline */
+/* a face (PersonFace): a person's emoji or initial on a tint of their colour,
+   drawn to a fixed circle, not text; its ink comes from readableInk, inline.
+   Places → Stats draws its people with it too */
 .stats-face {
   flex: none;
   display: inline-flex;

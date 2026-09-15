@@ -22,6 +22,7 @@ import { MONTHS } from '../stats'
 import { useTheme } from '../theme'
 import { PLACE_CATEGORY_META, type Meal, type Person, type Place, type Task } from '../types'
 import { dateKey } from '../utils'
+import { PersonFace } from './PersonFace'
 import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from './stats'
 
 interface Props {
@@ -64,15 +65,6 @@ function PlaceMark({ place, className }: { place: Place; className: string }) {
   return (
     <span className={`place-mark ${className}`} style={{ background: readableInk(place.color, theme) }} aria-hidden="true">
       {placeEmoji(place)}
-    </span>
-  )
-}
-
-/** A person as their row on People draws them: their emoji or initial on their own colour. */
-function PersonMark({ person }: { person: Person }) {
-  return (
-    <span className="person-avatar small" style={{ background: person.color }} aria-hidden="true">
-      {person.emoji ?? person.name.slice(0, 1).toUpperCase()}
     </span>
   )
 }
@@ -156,7 +148,7 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
     return (
       <div className="place-stats">
         <div className="chart-card">
-          <p className="empty">Add the places you go on the list — restaurants, parks, venues — and log an outing: how often you go, where, and who with shows here.</p>
+          <p className="empty">Add the places you go on the List — restaurants, parks, venues — and log an outing: how often you go, where and who with show here.</p>
         </div>
       </div>
     )
@@ -167,7 +159,7 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
     const outings = outingsByMonth(stats, y, now).months[m - 1]
     const prefix = `${y}-${String(m).padStart(2, '0')}`
     const out = [...days.keys()].filter(k => k.startsWith(prefix)).length
-    const line = outings ? `Where you went each day · ${countOf(outings, 'outing')} on ${countOf(out, 'day')}` : 'Where you went each day · no outings'
+    const line = outings ? `Each day’s places · ${countOf(outings, 'outing')} on ${countOf(out, 'day')}` : 'Each day’s places · no outings'
     // places are the household's, so these are everyone's outings, while the Calendar a day opens follows Mine
     return mineOnCalendar ? `${line} · counting everyone, though Mine keeps the Calendar to your tasks` : line
   }
@@ -216,7 +208,7 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
       <RankedBars
         title="Most visited"
         sub="Outings: a done task there or a meal eaten out there, two in one day counted as two"
-        empty="Nothing in this window yet: log an outing, or eat out somewhere you saved."
+        empty="Log an outing, or eat out somewhere you saved, and your most visited show here."
         rank={span => mostVisited(stats, span, now)}
         // a pale colour is moved just far enough to stand out on the theme's card
         color={r => r.place.color}
@@ -270,7 +262,7 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
         <RankedBars
           title="By kind"
           sub="Each kind of place's share of your outings"
-          empty="Nothing in this window yet."
+          empty="Log an outing and each kind’s share shows here."
           rank={span => outingsByKind(stats, span, now)}
           picture={r => (
             <span className="place-kind-emoji" aria-hidden="true">
@@ -287,7 +279,8 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
         empty="Tick who was there when you log an outing, and who you go with shows here."
         rank={span => companyOnOutings(stats, people, span, now)}
         color={r => r.person.color}
-        picture={r => <PersonMark person={r.person} />}
+        // a face, as People → Stats draws each person: their colour read through readableInk
+        picture={r => <PersonFace person={r.person} theme={theme} className="face-28" />}
         onOpen={onOpenPerson ? r => onOpenPerson(r.person) : undefined}
       />
 

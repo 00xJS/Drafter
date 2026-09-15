@@ -150,10 +150,10 @@ describe('with people, and nobody seen yet', () => {
   it('says each card is empty, stands nobody on the podium, and lists who was added a fortnight ago', () => {
     const out = page()
     expect(out).not.toContain('Top three')
-    expect(cardOf(out, 'Most seen')).toContain('<p class="empty">Nobody was seen in this time.</p>')
+    expect(cardOf(out, 'Most seen')).toContain('<p class="empty">Log a visit, or finish a task with someone on it, and your most seen show here.</p>')
     expect(cardOf(out, 'Not seen lately')).toContain('<p class="empty">Nobody is past their rhythm.</p>')
     expect(cardOf(out, 'Often together')).toContain('<p class="empty">Two people seen on the same day, twice or more, show here.</p>')
-    expect(cardOf(out, 'Groups')).toContain('<p class="empty">Nobody was seen in this time.</p>')
+    expect(cardOf(out, 'Groups')).toContain('<p class="empty">Log a visit and each group’s share shows here.</p>')
     // added in January and in August; Newbie, three days ago, not yet
     expect(namesIn(cardOf(out, 'Never seen'))).toEqual(['Ben', 'Dad', 'Gran', 'Jo', 'Mum', 'Sam', 'Kit'])
     expect(cardOf(out, 'Who you saw')).toContain('<p class="chart-sub">Each day’s people · 0 days with someone</p>')
@@ -412,10 +412,12 @@ describe('what People → Stats is handed', () => {
       expect(element('PeopleStats'), prop).toContain(prop)
       expect(element('People'), prop).toContain(prop)
     }
-    // Mine / Everyone narrows no count: nothing on the tab is handed filteredTasks, and neither People view reads Mine
+    // Mine / Everyone narrows no count: nothing on the tab is handed filteredTasks and the list never reads Mine;
+    // Stats reads it only to say the Calendar a day opens follows it, as Places → Stats does
     expect(screen).not.toMatch(/filteredTasks/)
-    expect(element('PeopleStats')).not.toMatch(/mineOnly/)
     expect(element('People')).not.toMatch(/mineOnly/)
+    expect(element('PeopleStats').match(/mineOnly/g)).toHaveLength(1)
+    expect(element('PeopleStats')).toContain('mineOnCalendar={inHousehold && mineOnly}')
   })
 
   it('is nothing personal: no journal, habits, routines or wardrobe', () => {
@@ -681,5 +683,12 @@ describe('its styles', () => {
     expect(css).toMatch(/\.people-controls \{[^}]*flex-wrap: wrap/)
     // a group's days stay whole beside its name, so its bar ends with the share alone
     expect(block).toMatch(/\.people-group-days \{[^}]*flex: none;[^}]*white-space: nowrap/)
+  })
+})
+
+describe('with Mine on in a household', () => {
+  it('says the month of faces counts everyone, though the Calendar a day opens shows only your tasks, as Places → Stats does', () => {
+    expect(stats()).not.toContain('Mine keeps the Calendar')
+    expect(cardOf(stats({ mineOnCalendar: true }), 'Who you saw')).toMatch(/with someone · counting everyone, though Mine keeps the Calendar to your tasks<\/p>/)
   })
 })

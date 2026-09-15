@@ -1,5 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react'
-import { readableInk, type InkGround } from '../contrast'
+import { useMemo, useState } from 'react'
 import { daysAgo, shortDay } from '../kitchen'
 import { countOf, type PersonStats } from '../people'
 import {
@@ -27,6 +26,7 @@ import { daysBetween, type DayWindow } from '../stats'
 import { useTheme, type Theme } from '../theme'
 import { PERSON_GROUPS, PERSON_GROUP_META, type CalendarEntry, type Person, type Task } from '../types'
 import { dateKey } from '../utils'
+import { PersonFace } from './PersonFace'
 import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable, markInk } from './stats'
 
 interface Props {
@@ -41,6 +41,12 @@ interface Props {
   onOpenPerson(person: Person): void
   /** Open a day on the Calendar, its day sheet up. Without it the month's days are only pictures. */
   onOpenDay?(day: string): void
+  /**
+   * Mine is on in a household. These figures still count everyone's visits,
+   * as the list does, but the Calendar a day opens shows only your tasks, so
+   * the month says so, as Places → Stats does.
+   */
+  mineOnCalendar?: boolean
   /** The clock the figures are read from; the tests hand one in. */
   now?: Date
 }
@@ -59,28 +65,6 @@ const STREAK_WORDS = {
 const FACES_A_DAY = 3
 /** The Groups card's longest bar, in percent of its track: short of the kit's 85, so "100%" still fits beside it at 375pt and no bar is squeezed. */
 const GROUP_BAR_MAX = 75
-
-/**
- * A person's emoji, or their initial, on a tint of their own colour, written
- * in that colour moved just far enough to read on it (readableInk). The tint
- * is laid over the ground it sits on — the card, or with `ground` 'raised' a
- * month's day cell (--surface-2), the ground its ink is worked out for — so
- * the face is opaque, and a pair's second face covers the first's edge rather
- * than showing it through. The name beside it, or the day's label, says who,
- * so a reader skips it.
- */
-function Face({ person, theme, className, ground }: { person: Person; theme: Theme; className: string; ground?: InkGround }) {
-  const tint = `${person.color}22`
-  const style: CSSProperties = {
-    background: `linear-gradient(${tint}, ${tint}), ${ground === 'raised' ? 'var(--surface-2)' : 'var(--surface)'}`,
-    color: readableInk(person.color, theme, { tint: true, ground }),
-  }
-  return (
-    <span className={`stats-face ${className}`} style={style} aria-hidden="true">
-      {person.emoji || person.name.slice(0, 1).toUpperCase()}
-    </span>
-  )
-}
 
 /** A person in a list card: their face, name and a line, opening their card, with Saw them at the end. */
 function PersonLine({ stats, line, theme, onOpen, onSaw }: { stats: PersonStats; line: string; theme: Theme; onOpen(p: Person): void; onSaw(p: Person): void }) {
@@ -104,7 +88,7 @@ function PersonLine({ stats, line, theme, onOpen, onSaw }: { stats: PersonStats;
   }
   return (
     <ListRow
-      picture={<Face person={person} theme={theme} className="face-40" />}
+      picture={<PersonFace person={person} theme={theme} className="face-40" />}
       name={person.name}
       line={line}
       onOpen={() => onOpen(person)}
@@ -145,7 +129,7 @@ function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: rea
   return (
     <ChartCard title="Groups" sub="Of the days you saw anyone, the share with each group: a day with family and friends counts for both" aside={<WindowSwitch value={span} onChange={setSpan} />}>
       {days === 0 ? (
-        <p className="empty">Nobody was seen in this time.</p>
+        <p className="empty">Log a visit and each group’s share shows here.</p>
       ) : (
         <div className="hbars stats-hbars">
           {groups.map(g => (
@@ -178,7 +162,7 @@ function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: rea
  * Counted by peoplestats.ts off what the list reads, under the list's group
  * chips; drawn with the Stats kit.
  */
-export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpenPerson, onOpenDay, now: clock }: Props) {
+export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpenPerson, onOpenDay, mineOnCalendar = false, now: clock }: Props) {
   const theme = useTheme()
   // read at one instant, and again when the records change, as the list's figures are
   const { now, seen, all } = useMemo(() => {
@@ -230,18 +214,18 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
 
           {podium.length > 0 && (
             <ChartCard title="Top three" sub="Your most seen of all time, in days">
-              <Podium top={podium} picture={r => <Face person={r.person} theme={theme} className="podium-face" />} onOpen={r => onOpenPerson(r.person)} />
+              <Podium top={podium} picture={r => <PersonFace person={r.person} theme={theme} className="podium-face" />} onOpen={r => onOpenPerson(r.person)} />
             </ChartCard>
           )}
 
           <RankedBars
             title="Most seen"
             sub="Days seen: two get-togethers on one day count once"
-            empty="Nobody was seen in this time."
+            empty="Log a visit, or finish a task with someone on it, and your most seen show here."
             rank={span => mostSeen(shown, span, now)}
             // a pale colour is moved just far enough to show as a bar on the theme's card
             color={r => r.person.color}
-            picture={r => <Face person={r.person} theme={theme} className="face-28" />}
+            picture={r => <PersonFace person={r.person} theme={theme} className="face-28" />}
             onOpen={r => onOpenPerson(r.person)}
           />
 
@@ -273,7 +257,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
           <MonthCalendar
             title="Who you saw"
             today={todayKey}
-            sub={(y, m) => `Each day’s people · ${countOf(daysInMonth(byDay, y, m, todayKey), 'day')} with someone`}
+            // people are the household's, so these are everyone's visits, while the Calendar a day opens follows Mine
+            sub={(y, m) => `Each day’s people · ${countOf(daysInMonth(byDay, y, m, todayKey), 'day')} with someone${mineOnCalendar ? ' · counting everyone, though Mine keeps the Calendar to your tasks' : ''}`}
             day={key => {
               const on = key <= todayKey ? byDay.get(key) : undefined
               if (!on) return { what: 'nobody seen' }
@@ -284,7 +269,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
                   <span className="people-cal-faces">
                     {on.slice(0, FACES_A_DAY).map(p => (
                       // on the day cell's --surface-2, the ground their ink is worked out for
-                      <Face key={p.id} person={p} theme={theme} className="people-cal-face" ground="raised" />
+                      <PersonFace key={p.id} person={p} theme={theme} className="people-cal-face" ground="raised" />
                     ))}
                     {on.length > FACES_A_DAY && (
                       <span className="people-cal-more" aria-hidden="true">
@@ -349,8 +334,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
                 key={p.key}
                 picture={
                   <span className="people-pair">
-                    <Face person={p.a} theme={theme} className="face-28" />
-                    <Face person={p.b} theme={theme} className="face-28" />
+                    <PersonFace person={p.a} theme={theme} className="face-28" />
+                    <PersonFace person={p.b} theme={theme} className="face-28" />
                   </span>
                 }
                 name={`${p.a.name} and ${p.b.name}`}
@@ -367,7 +352,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
             row={o => (
               <ListRow
                 key={`${o.person.id}-${o.kind}`}
-                picture={<Face person={o.person} theme={theme} className="face-40" />}
+                picture={<PersonFace person={o.person} theme={theme} className="face-40" />}
                 name={o.person.name}
                 line={occasionLine(o, todayKey)}
                 onOpen={() => onOpenPerson(o.person)}

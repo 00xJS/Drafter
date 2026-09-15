@@ -143,9 +143,10 @@ const LAZY_ONLY = [
   // the wardrobe's screens and its photo pipeline: only Today's card and its thumbnails ride in the Planner chunk
   ...['wardrobe/OutfitComposer', 'wardrobe/SnapRow', 'wardrobe/SavedOutfits', 'wardrobe/Clothes', 'wardrobe/GarmentSheet', 'wardrobe/PieceDetails', 'wardrobe/WardrobeStats'].map(component),
   resolve(SRC, 'components', 'wardrobe', 'composer.ts'),
-  // People → Stats' and Places → Stats' counting travels with its view
+  // People → Stats' and Places → Stats' counting travels with its view, and the face both draw a person with
   resolve(SRC, 'peoplestats.ts'),
   resolve(SRC, 'placestats.ts'),
+  component('PersonFace'),
   resolve(SRC, 'markdown.ts'),
   resolve(SRC, 'photo.ts'),
 ]

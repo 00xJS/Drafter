@@ -435,7 +435,7 @@ describe('Places → Stats, drawn', () => {
 
   it('with nothing saved, says what to do and draws no figures', () => {
     const page = view({ places: [] })
-    expect(page).toContain('Add the places you go on the list')
+    expect(page).toContain('Add the places you go on the List')
     expect(page).not.toContain('kpi-row')
     expect(page).not.toContain('chart-head')
     expect(page).not.toContain('board-count')
@@ -445,10 +445,10 @@ describe('Places → Stats, drawn', () => {
     const page = view({ tasks: [], meals: [] })
     expect(page).toContain('<div class="stat-label">Places</div><div class="stat-value">6</div>')
     expect(page).toContain('<div class="stat-label">Outings this year</div><div class="stat-value">0</div>')
-    expect(page).toContain('Where you went each day · no outings')
+    expect(page).toContain('Each day’s places · no outings')
     expect(page).not.toContain('place-dots')
     expect(page).not.toContain('Top three')
-    expect(page).toContain('Nothing in this window yet: log an outing')
+    expect(page).toContain('Log an outing, or eat out somewhere you saved, and your most visited show here.')
     expect(page).toContain('Nowhere has gone past its rhythm.')
     expect(page).not.toContain('Usually with')
     expect(page).toContain('Plan a meal in Kitchen as eaten out')
@@ -487,7 +487,7 @@ describe('Places → Stats, drawn', () => {
   it('draws the month in places: each day’s places named in full, opening the Calendar', () => {
     const page = view()
     expect(page).toContain('<h3>Where you went</h3>')
-    expect(page).toContain('Where you went each day · 4 outings on 3 days')
+    expect(page).toContain('Each day’s places · 4 outings on 3 days')
     expect(page).toContain('aria-label="Tue 1 Sep: Hyde Park"')
     expect(page).toContain('aria-label="Sat 12 Sep: Pret"')
     expect(page).toContain('aria-label="Sun 13 Sep: Hyde Park"')
@@ -500,7 +500,7 @@ describe('Places → Stats, drawn', () => {
 
   it('says, with Mine on in a household, that the month counts everyone though the Calendar it opens shows only your tasks', () => {
     expect(view()).not.toContain('Mine keeps the Calendar')
-    expect(view({ mineOnCalendar: true })).toContain('Where you went each day · 4 outings on 3 days · counting everyone, though Mine keeps the Calendar to your tasks')
+    expect(view({ mineOnCalendar: true })).toContain('Each day’s places · 4 outings on 3 days · counting everyone, though Mine keeps the Calendar to your tasks')
   })
 
   it('shows three of a busy day’s places as emoji, then "+n"', () => {

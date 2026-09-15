@@ -23,6 +23,7 @@ import {
   storedInnerViews,
   storedPeopleTab,
   storedTasksTab,
+  viewIn,
 } from '../components/planner/routes'
 
 /*
@@ -92,6 +93,13 @@ describe('old links still land on a segment', () => {
     expect(peopleTabOfStatsView('people-stats')).toBe('people')
     expect(peopleTabOfStatsView('places-stats')).toBe('places')
     for (const name of [undefined, '', 'people', 'stats', 'constructor', 'toString', '__proto__']) expect(peopleTabOfStatsView(name)).toBeNull()
+  })
+
+  it('reads every link table by its own names, so an inherited one names nothing', () => {
+    expect(viewIn(LEGACY_VIEW_TO_TASKS, 'board')).toBe('board')
+    expect(viewIn(LEGACY_VIEW_TO_HOME, 'review')).toBe('week')
+    for (const table of [LEGACY_VIEW_TO_TASKS, LEGACY_VIEW_TO_HOME, STATS_VIEW_TO_PEOPLE, VIEW_TO_KITCHEN] as Record<string, unknown>[])
+      for (const name of [undefined, '', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(viewIn(table, name), String(name)).toBeNull()
   })
 
   it('never shadows a live view with a legacy name', () => {

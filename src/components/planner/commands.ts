@@ -78,7 +78,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // a segment's figures, for this visit: the next tab tap opens the view last chosen
     { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
     { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openStats('places') },
-    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
+    // where you last left it, as a tab tap opens it, not the Stats a Kitchen stats left for its visit
+    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => goView('kitchen') },
     // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
     { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },

@@ -131,6 +131,16 @@ describe('a Stats view has a link, as the wardrobe has ?view=wardrobe', () => {
   })
 })
 
+describe('a view name is read from its own tables only', () => {
+  it('opens nothing for a name every object inherits', () => {
+    for (const raw of ['/?view=constructor', '/?view=toString', 'drafter://open?view=__proto__']) {
+      const { apply, calls } = links()
+      apply(raw)
+      expect(calls, raw).toEqual([])
+    }
+  })
+})
+
 describe('Today is handed the routines (B4)', () => {
   const home = readFileSync(fileURLToPath(new URL('../components/planner/HomeScreen.tsx', import.meta.url)), 'utf8')
 
