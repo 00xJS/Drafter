@@ -167,8 +167,8 @@ function GroupsCard({ shown, seen, now }: { shown: readonly PersonStats[]; seen:
  * seen on the same days, and the birthdays and anniversaries coming up.
  * Counted by peoplestats.ts off what the list reads, under the list's group
  * chip and find box, so every figure counts only the people the list shows;
- * while they narrow it, a line at the head says so, with Show all. Drawn with
- * the Stats kit.
+ * while they narrow it, a line under the chips says so, with Show all. Drawn
+ * with the Stats kit.
  */
 export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, mineOnCalendar = false, now: clock }: Props) {
   const theme = useTheme()
@@ -205,7 +205,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
   const months = daysByMonth(together, year, now)
   const who = group === 'all' ? 'people' : PERSON_GROUP_META[group].toLowerCase()
   const groupsWithPeople = PERSON_GROUPS.filter(g => shown.some(s => s.person.group === g)).length
-  // what narrows the figures, as the line at the head and the empty state say it
+  // what narrows the figures, as the line heading them and the empty state say it
   const chip = group === 'all' ? '' : PERSON_GROUP_META[group]
   const matching = typed && `matching “${typed}”`
   const narrowedBy = chip || typed ? [`Stats for ${shown.length} of ${people.length} ${people.length === 1 ? 'person' : 'people'}`, chip, matching].filter(Boolean).join(' · ') : ''
@@ -213,7 +213,6 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
 
   return (
     <div className="people-stats">
-      {narrowedBy && shown.length > 0 && <Narrowed words={narrowedBy} onShowAll={showAll} />}
       {/* the list's chips: one pressed here is pressed there, and what is typed stays */}
       {groupChips(all, group, g => onFilter({ ...filter, group: g }))}
 
@@ -221,6 +220,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
         <Narrowed empty words={typed ? `Nobody matches “${typed}”${chip ? ` in ${chip}` : ''}.` : 'Nobody is in this group yet.'} onShowAll={showAll} />
       ) : (
         <>
+          {/* under the chips, heading the figures where the empty state sits, so a chip pressed never moves */}
+          {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
           <div className="kpi-row people-tiles">
             {/* on a phone's two columns this one spans its row, so the six below pair up */}
             <StatTile className="kpi-wide" label="People" value={String(tiles.people)} sub={[chip ? `in ${chip}` : 'on your list', matching].filter(Boolean).join(', ')} />

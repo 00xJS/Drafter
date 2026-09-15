@@ -21,10 +21,11 @@ import { plannerSource, sheetSource } from './source'
 // People and Places: what the list's find box and chip hold narrows its
 // Stats too. The People tab holds both for the visit, so Stats counts only
 // the rows the list shows — every figure the same as Stats over just those
-// people or places — says so in a line at its head with Show all, and keeps
-// them through List → Stats → List, while a card opened from search still
-// clears them before the list draws it. vitest runs in node, so the tab is
-// called inside a server render over the shell's own navigation, as
+// people or places — says so in a line under its chips with Show all, and
+// keeps them through List → Stats → List and through a row opened on Stats,
+// while a card opened from search that they would hide still clears them
+// before the list draws it. vitest runs in node, so the tab is called inside
+// a server render over the shell's own navigation, as
 // people-stats-view.test.tsx walks the shell.
 
 const NOW = new Date(2026, 8, 14, 12, 0) // Monday 14 September 2026, local noon
@@ -326,11 +327,13 @@ describe('Places → Stats counts only the places the list shows', () => {
   })
 })
 
-describe('the line at the head of People → Stats', () => {
-  it('names the chip and the find with how many of everyone it counts, before the chips', () => {
+describe('the line under People → Stats’ chips', () => {
+  it('names the chip and the find with how many of everyone it counts, heading the figures', () => {
     const out = html(<PeopleStats {...peopleStats({ group: 'friends', q: ' m ' })} />)
     expect(out).toContain('<p class="stats-narrowed"><span>Stats for 1 of 7 people · Friends · matching “m”</span> <button type="button" class="btn subtle">Show all</button></p>')
-    expect(out.indexOf('class="stats-narrowed"')).toBeLessThan(out.indexOf('aria-label="Which people"'))
+    // under the chips, so one pressed never moves as the line comes and goes, and over the tiles
+    expect(out.indexOf('class="stats-narrowed"')).toBeGreaterThan(out.indexOf('aria-label="Which people"'))
+    expect(out.indexOf('class="stats-narrowed"')).toBeLessThan(out.indexOf('class="kpi-row'))
     // the People tile says whom it counts
     expect(out).toContain('<div class="stat-label">People</div><div class="stat-value">1</div><div class="stat-sub">in Friends, matching “m”</div>')
     expect(html(<PeopleStats {...peopleStats({ group: 'all', q: 'm' })} />)).toContain('<span>Stats for 3 of 7 people · matching “m”</span>')
@@ -372,11 +375,12 @@ describe('the line at the head of People → Stats', () => {
   })
 })
 
-describe('the line at the head of Places → Stats', () => {
-  it('names the chip and the find with how many of every place it counts, before the chips', () => {
+describe('the line under Places → Stats’ chips', () => {
+  it('names the chip and the find with how many of every place it counts, heading the figures', () => {
     const out = html(<PlacesStats {...placesStats({ category: 'restaurant', q: 'nop' })} />)
     expect(out).toContain('<p class="stats-narrowed"><span>Stats for 1 of 6 places · Restaurant · matching “nop”</span> <button type="button" class="btn subtle">Show all</button></p>')
-    expect(out.indexOf('class="stats-narrowed"')).toBeLessThan(out.indexOf('aria-label="Kind of place"'))
+    expect(out.indexOf('class="stats-narrowed"')).toBeGreaterThan(out.indexOf('aria-label="Kind of place"'))
+    expect(out.indexOf('class="stats-narrowed"')).toBeLessThan(out.indexOf('class="kpi-row'))
     expect(out).toContain('<div class="stat-label">Places</div><div class="stat-value">1</div><div class="stat-sub">saved, restaurant only, matching “nop”</div>')
     const found = html(<PlacesStats {...placesStats({ category: 'all', q: 'park' })} />)
     expect(found).toContain('<span>Stats for 3 of 6 places · matching “park”</span>')
@@ -481,8 +485,8 @@ const handed = (tree: ReactNode, type: unknown) => elements(tree).find(e => e.ty
  * The People tab in a shell of its own, over the real navigation and a
  * storage that keeps nothing. Each step runs on a render and the next render
  * shows where it left the tab, as people-stats-view.test.tsx's journey does.
- * A card opened clears the filter as it arrives, which costs one render more,
- * so it is always the last step. Returns every tree the tab drew, and what the
+ * A card opened is weighed against the filter as it arrives, which costs one
+ * render more, so it is always the last step. Returns every tree the tab drew, and what the
  * render React kept put on the page: what the view it drew was handed.
  */
 function onTheTab(steps: ((tree: ReactNode, nav: Nav) => void)[]) {
@@ -571,6 +575,37 @@ describe('the People tab holds them for the visit', () => {
     expect(handed(back.trees[back.trees.length - 1], lazy.People)!.filter).toEqual(friends)
   })
 
+  it('keeps People’s when a row on Stats opens a card, as every row there is one the list shows', () => {
+    const friendsSa: PersonFilter = { group: 'friends', q: 'sa' }
+    const { trees, page } = onTheTab([
+      tree => handed(tree, lazy.People)!.onFilter(friendsSa),
+      (_, nav) => nav.setInnerView('people', 'stats'),
+      // Sam from the podium, a bar or a list: Friends and “sa” leave him
+      tree => handed(tree, lazy.PeopleStats)!.onOpenPerson(PEOPLE.find(x => x.id === 'sam')),
+    ])
+    expect(handed(trees[trees.length - 1], lazy.People)).toMatchObject({ filter: friendsSa, openId: 'sam' })
+    // the first paint: the card open, under the find and the chip as they were
+    expect(page).toBe('<output>{"filter":{"group":"friends","q":"sa"},"open":"sam"}</output>')
+  })
+
+  it('keeps Places’ when a row on Stats opens it', () => {
+    const restaurantsNop: PlaceFilter = { category: 'restaurant', q: 'nop' }
+    const { trees, page } = onTheTab([
+      (_, nav) => nav.setPeopleTab('places'),
+      tree => handed(tree, lazy.Places)!.onFilter(restaurantsNop),
+      (_, nav) => nav.setInnerView('places', 'stats'),
+      // Nopi from the podium: the one place Restaurant and “nop” leave
+      tree => handed(tree, lazy.PlacesStats)!.onOpenPlace(PLACES.find(x => x.id === 'nopi')),
+    ])
+    expect(handed(trees[trees.length - 1], lazy.Places)).toMatchObject({ filter: restaurantsNop, openId: 'nopi' })
+    expect(page).toBe('<output>{"filter":{"category":"restaurant","q":"nop"},"open":"nopi"}</output>')
+  })
+
+  it('clears them for a card not in the store yet, so nothing hides it when it lands', () => {
+    const { trees } = onTheTab([tree => handed(tree, lazy.People)!.onFilter({ group: 'friends', q: 'sa' }), (_, nav) => nav.openPerson('new')])
+    expect(handed(trees[trees.length - 1], lazy.People)).toMatchObject({ filter: NO_PERSON_FILTER, openId: 'new' })
+  })
+
   it('saves nothing, and drops them when the tab is left: it is drawn only while it is the view', () => {
     const screen = source('components/planner/PeopleScreen.tsx')
     expect(screen).not.toMatch(/localStorage|sessionStorage/)
@@ -582,7 +617,10 @@ describe('the People tab holds them for the visit', () => {
 
 describe('the line’s styles', () => {
   const css = sheetSource()
-  const rules = [...css.matchAll(/\.stats-narrowed[^{]*\{[^}]*\}/g)].map(m => m[0]).join('\n')
+  const found = [...css.matchAll(/\.stats-narrowed[^{]*\{[^}]*\}/g)].map(m => m[0])
+  const rules = found.join('\n')
+  /** What the line's rule for exactly `selector` sets `prop` to. */
+  const set = (selector: string, prop: string) => new RegExp(`[{;\\s]${prop}: ([^;]+);`).exec(found.find(r => r.startsWith(`${selector} {`)) ?? '')?.[1]
 
   it('wraps at 375pt, breaks a long find anywhere, and keeps Show all whole', () => {
     expect(rules).toMatch(/\.stats-narrowed \{[^}]*flex-wrap: wrap/)
@@ -590,10 +628,21 @@ describe('the line’s styles', () => {
     expect(rules).toMatch(/\.stats-narrowed > \.btn \{[^}]*flex: none/)
   })
 
+  it('marks Show all as the way out, as .mine-note does: the accent’s text at 600, and a hover off the line’s own ground', () => {
+    expect(set('.stats-narrowed > .btn', 'color')).toBe('var(--accent-text)')
+    expect(set('.stats-narrowed', 'color')).toBe('var(--text-2)')
+    expect(set('.stats-narrowed > .btn', 'font-weight')).toBe('600')
+    expect(set('.stats-narrowed > .btn:hover', 'background')).toBe('var(--surface)')
+    expect(set('.stats-narrowed', 'background')).toBe('var(--surface-2)')
+    // .btn.subtle's are just as specific, so these win by coming after them
+    expect(css.indexOf('.stats-narrowed > .btn {')).toBeGreaterThan(css.indexOf('.btn.subtle {'))
+    expect(css.indexOf('.stats-narrowed > .btn:hover {')).toBeGreaterThan(css.indexOf('.btn.subtle:hover {'))
+  })
+
   it('colours with tokens alone, each defined for light and dark', () => {
     expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
     const tokens = [...rules.matchAll(/var\((--[\w-]+)\)/g)].map(m => m[1])
-    expect(tokens).toEqual(expect.arrayContaining(['--surface-2', '--text-2']))
+    expect(tokens).toEqual(expect.arrayContaining(['--surface-2', '--text-2', '--accent-text', '--surface']))
     const base = source('styles/01-base.css')
     const darkAt = base.indexOf(":root[data-theme='dark'] {")
     const light = base.slice(0, darkAt)

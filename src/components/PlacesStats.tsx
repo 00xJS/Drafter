@@ -92,8 +92,8 @@ function PlaceListRow({ place, line, onOpen, onPlan }: { place: Place; line: str
 
 /**
  * People → Places → Stats: where you go, counted in outings — the list's kind
- * chips, narrowing everything under them as its find box does (a line at the
- * head says so, with Show all); the tiles; the month in places; the
+ * chips, narrowing everything under them as its find box does (a line under
+ * them says so, with Show all); the tiles; the month in places; the
  * podium of the three most visited of all time; the most visited over 30 days,
  * 12 months or all time; where you have not been back and where you have never
  * been; the year by month with the year in places under it; each kind's share
@@ -148,7 +148,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
       </div>
     )
 
-  // what narrows the figures, as the line at the head and the empty state say it
+  // what narrows the figures, as the line heading them and the empty state say it
   const label = kind === 'all' ? '' : PLACE_CATEGORY_META[kind].label
   const matching = typed && `matching “${typed}”`
   const narrowedBy = label || typed ? [`Stats for ${shown.length} of ${countOf(places.length, 'place')}`, label, matching].filter(Boolean).join(' · ') : ''
@@ -190,8 +190,9 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
 
   return (
     <div className="place-stats">
-      {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
       {kindRow}
+      {/* under the chips, heading the figures where the empty state sits, so a chip pressed never moves */}
+      {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
 
       <div className="kpi-row people-kpis">
         <StatTile label="Places" value={String(tiles.places)} sub={['saved', label ? `${label.toLowerCase()} only` : !typed && 'every kind', matching].filter(Boolean).join(', ')} />

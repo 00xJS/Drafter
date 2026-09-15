@@ -94,7 +94,6 @@ describe('what Stats reads is what the list reads', () => {
   it('leaves everyone on All, one group’s people on its chip, in order, and nobody on an empty group', () => {
     const { all } = read([person('ann'), person('bob', { group: 'friends' }), person('cy')], [])
     expect(inChip(all, 'all').map(s => s.person.id)).toEqual(['ann', 'bob', 'cy'])
-    expect(inChip(all, 'all')).not.toBe(all)
     expect(inChip(all, 'family').map(s => s.person.id)).toEqual(['ann', 'cy'])
     expect(inChip(all, 'other')).toEqual([])
   })

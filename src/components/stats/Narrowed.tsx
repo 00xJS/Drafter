@@ -1,9 +1,9 @@
 /**
  * What a Stats counts while its list's find box or chip narrows it, and the
- * way back. With something left it is one line at the head — "Stats for 3 of
- * 12 places · Restaurant · matching “sushi”" — and with nothing, the empty
- * state saying so. Either way Show all, a real button, clears the find box
- * and the chip together.
+ * way back. With something left it is one line under the chips, heading the
+ * figures — "Stats for 3 of 12 places · Restaurant · matching “sushi”" — and
+ * with nothing, the empty state saying so, in the same place. Either way Show
+ * all, a real button, clears the find box and the chip together.
  */
 export function Narrowed({ words, empty = false, onShowAll }: { words: string; empty?: boolean; onShowAll(): void }) {
   const showAll = (button: HTMLElement) => {
