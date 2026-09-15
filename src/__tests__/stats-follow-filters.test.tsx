@@ -11,22 +11,22 @@ import type { PlannerCtx } from '../components/planner/ctx'
 import * as lazy from '../components/planner/lazy'
 import { PeopleScreen } from '../components/planner/PeopleScreen'
 import { useNavigation } from '../components/planner/useNavigation'
-import { ListCard, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, StreakTiles, YearTable } from '../components/stats'
+import { ChartCard, ListCard, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, StreakTiles, YearTable } from '../components/stats'
 import { NO_PERSON_FILTER, findsPerson, personMatcher, type PersonFilter } from '../people'
 import { NO_PLACE_FILTER, kindOn, placeMatcher, type PlaceFilter } from '../places'
 import type { CalendarEntry, Meal, Person, Place, Task } from '../types'
-import { elements, press, propsOf, settled, typeInto } from './rendered'
+import { elements, press, propsOf, settled, typeInto, type El } from './rendered'
 import { plannerSource, sheetSource } from './source'
 
 // People and Places: what the list's find box and chip hold narrows its
 // Stats too. The People tab holds both for the visit, so Stats counts only
 // the rows the list shows — every figure the same as Stats over just those
-// people or places — says so in a line under its chips with Show all, and
-// keeps them through List → Stats → List and through a row opened on Stats,
-// while a card opened from search that they would hide still clears them
-// before the list draws it. vitest runs in node, so the tab is called inside
-// a server render over the shell's own navigation, as
-// people-stats-view.test.tsx walks the shell.
+// people or places, a year stepped back to included — says so in a line
+// under its chips with Show all, and keeps them through List → Stats → List
+// and through a row opened on Stats, while a card opened from search that
+// they would hide still clears them before the list draws it. vitest runs in
+// node, so the tab is called inside a server render over the shell's own
+// navigation, as people-stats-view.test.tsx walks the shell.
 
 const NOW = new Date(2026, 8, 14, 12, 0) // Monday 14 September 2026, local noon
 const STAMP = '2026-01-01T00:00:00.000Z'
@@ -101,6 +101,16 @@ const OUTINGS = [
 ]
 const eatOut = (placeId: string, date: string): Meal => ({ kind: 'meal', id: `meal~${date}~dinner`, date, slot: 'dinner', out: true, placeId, title: 'Out', createdAt: STAMP, updatedAt: STAMP })
 const MEALS = [eatOut('pret', '2026-09-05'), eatOut('nopi', '2026-09-06')]
+
+/**
+ * Last year's, handed in only where ‹ year › steps back to 2025, so every
+ * figure above stays this year's: Mum alone in March, Sam and Jo in June, Jo
+ * and Ben in November; dinner at Nopi in May, Hyde Park with Sam in August,
+ * Bella Italia in December.
+ */
+const in2025 = (m: number, d: number, h = 12) => new Date(2025, m - 1, d, h).toISOString()
+const VISITS_2025 = [done(in2025(3, 15), ['mum']), done(in2025(6, 7), ['sam', 'jo']), done(in2025(11, 22), ['jo', 'ben'])]
+const OUTINGS_2025 = [outing('nopi', in2025(5, 16, 20), ['mum']), outing('park', in2025(8, 3, 11), ['sam']), outing('bella', in2025(12, 20, 19))]
 
 type PeopleStatsProps = ComponentProps<typeof PeopleStats>
 type PlacesStatsProps = ComponentProps<typeof PlacesStats>
@@ -324,6 +334,60 @@ describe('Places → Stats counts only the places the list shows', () => {
         expect(String(rank(365).find(r => r.key === id)?.count ?? 0), `${what}: ${id}`).toBe(count365)
       }
     }
+  })
+})
+
+/** What the ‹ year › at the head of a Stats view's year card was handed. */
+function yearStepper(tree: ReactNode) {
+  const card = elements(tree).find(e => e.type === ChartCard && (e.props.aside as El | undefined)?.type === Stepper && (e.props.aside as El).props.unit === 'year')
+  if (!card) throw new Error('no year card')
+  return (card.props.aside as El).props as { label: string; canNext?: boolean; onStep(delta: -1 | 1): void }
+}
+/** A Stats view after its ‹ year › is pressed, once for each step, in one go. */
+function stepped<P>(View: (props: P) => ReactNode, props: P, ...steps: (-1 | 1)[]): ReactNode {
+  return settled(View, props, tree => {
+    const { onStep } = yearStepper(tree)
+    for (const d of steps) onStep(d)
+  })
+}
+
+describe('‹ year › steps the narrowed Stats back through the same rows', () => {
+  it('counts only whom People’s find and chip leave in a past year too, and stops again at this year', () => {
+    const filter: PersonFilter = { group: 'friends', q: 'm' }
+    const tasks = [...TASKS, ...VISITS_2025]
+    const kept = PEOPLE.filter(personMatcher(filter))
+    const back = stepped(PeopleStats, peopleStats(filter, { tasks }), -1)
+    expect(yearStepper(back)).toMatchObject({ label: '2025', canNext: true })
+    // every figure, 2025's month bars and table among them, as Stats over just Sam draws it
+    const out = figures(back)
+    expect(out).toEqual(figures(stepped(PeopleStats, peopleStats(NO_PERSON_FILTER, { people: kept, tasks }), -1)))
+    // Sam's June: Mum's March and Jo and Ben's November are not his
+    expect((out.monthBars as unknown[]).slice(0, 2)).toEqual([[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], '1 day with someone in 2025'])
+    expect(out.year).toEqual([['sam', 1, '0 0 0 0 0 1 0 0 0 0 0 0']])
+    // …while everyone's 2025 counts all three
+    expect((figures(stepped(PeopleStats, peopleStats(NO_PERSON_FILTER, { tasks }), -1)).monthBars as unknown[])[1]).toBe('3 days with someone in 2025')
+    // on twice: this year again, never next year, drawn as it first was
+    const again = stepped(PeopleStats, peopleStats(filter, { tasks }), -1, 1, 1)
+    expect(yearStepper(again)).toMatchObject({ label: '2026', canNext: false })
+    expect(figures(again)).toEqual(figures(settled(PeopleStats, peopleStats(filter, { tasks }))))
+  })
+
+  it('counts only the places Places’ chip leaves in a past year too, and stops again at this year', () => {
+    const filter: PlaceFilter = { category: 'restaurant', q: '' }
+    const tasks = [...OUTINGS, ...OUTINGS_2025]
+    const kept = PLACES.filter(placeMatcher(PLACES, filter))
+    const back = stepped(PlacesStats, placesStats(filter, { tasks }), -1)
+    expect(yearStepper(back)).toMatchObject({ label: '2025', canNext: true })
+    // By kind compares the kinds, so under a kind's chip it is not drawn at all
+    const out = figures(back, ['By kind'])
+    expect(out).toEqual(figures(stepped(PlacesStats, placesStats(NO_PLACE_FILTER, { places: kept, tasks }), -1), ['By kind']))
+    // Nopi's May and Bella Italia's December: Hyde Park's August is not a restaurant's
+    expect((out.monthBars as unknown[]).slice(0, 2)).toEqual([[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1], '2 outings in 2025'])
+    expect(out.year).toEqual([['bella', 1, '0 0 0 0 0 0 0 0 0 0 0 1'], ['nopi', 1, '0 0 0 0 1 0 0 0 0 0 0 0']])
+    expect((figures(stepped(PlacesStats, placesStats(NO_PLACE_FILTER, { tasks }), -1)).monthBars as unknown[])[1]).toBe('3 outings in 2025')
+    const again = stepped(PlacesStats, placesStats(filter, { tasks }), -1, 1, 1)
+    expect(yearStepper(again)).toMatchObject({ label: '2026', canNext: false })
+    expect(figures(again)).toEqual(figures(settled(PlacesStats, placesStats(filter, { tasks }))))
   })
 })
 
