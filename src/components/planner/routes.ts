@@ -101,3 +101,26 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
+
+/** People's and Places' own switch: the list, or its figures. Each segment
+ *  remembers its own, chosen on its buttons; a link, the palette or a search
+ *  result moves it for that visit alone, as it moves the segments. */
+export type InnerView = 'list' | 'stats'
+export const INNER_VIEWS: { key: InnerView; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'stats', label: 'Stats' },
+]
+export type InnerViews = Record<PeopleTab, InnerView>
+export const INNER_VIEW_KEYS: Record<PeopleTab, string> = { people: 'drafter:people-view', places: 'drafter:places-view' }
+export const storedInnerView = (tab: PeopleTab): InnerView => {
+  try {
+    return localStorage.getItem(INNER_VIEW_KEYS[tab]) === 'stats' ? 'stats' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('people'), places: storedInnerView('places') })
+
+/** A Stats view's own link: `?view=people-stats` opens People → People on its
+ *  Stats for that visit, as `?view=wardrobe` opens Home → Wardrobe. */
+export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people' }

@@ -466,6 +466,121 @@
   color: var(--muted);
 }
 
+/* ----- People → Stats (PeopleStats): the Stats kit's cards, each person a face.
+   List · Stats keeps the small-button shape, as the wardrobe's Outfit · Clothes
+   · Stats does: the native track is scoped to the tab-level switchers. */
+.list-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.list-stats-seg {
+  flex-wrap: nowrap;
+}
+.people-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* the column's gap spaces the chips and the cards */
+.people-stats > .people-controls,
+.people-stats > .chart-card {
+  margin: 0;
+}
+.people-tiles .stat-value {
+  font-size: 1.5rem;
+}
+.people-stats .year-report .table-scroll {
+  margin-top: 10px;
+}
+/* the all-time tiles lie flat in their card */
+.people-all-time .stat-tile {
+  box-shadow: none;
+}
+/* a face: a person's emoji or initial on a tint of their colour, drawn to a
+   fixed circle, not text; its ink comes from readableInk, inline */
+.stats-face {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 1;
+}
+.face-28 {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+.face-40 {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+.podium-face {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+}
+.rank-2 .podium-face,
+.rank-3 .podium-face {
+  width: 46px;
+  height: 46px;
+  font-size: 21px;
+}
+/* a pair seen on the same days: two faces, the second over the first's edge */
+.people-pair {
+  flex: none;
+  display: inline-flex;
+}
+.people-pair .stats-face + .stats-face {
+  margin-left: -8px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+/* a day's faces under its date chip: up to three, then +n */
+.people-cal-faces {
+  position: absolute;
+  inset: 18px 2px 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+.people-cal-face {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+}
+.people-cal-more {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--text-2);
+}
+@media (max-width: 640px) {
+  .list-stats-bar {
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  /* about 43pt a day at 375pt: two faces a line, clear of the date chip */
+  .people-cal-faces {
+    inset: 16px 1px 1px;
+    gap: 1px;
+  }
+  .people-cal-face {
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+  }
+  .people-cal-more {
+    font-size: 8px;
+    line-height: 14px;
+  }
+}
+
 /* Week review: days seen per person, the events under them when some shared a day */
 .seen-count {
   display: flex;

@@ -14,6 +14,8 @@ export interface PaletteNav {
   goTasksTab(tab: TasksTab): void
   setPeopleTab(tab: PeopleTab): void
   openWardrobe(o?: WardrobeOpen): void
+  /** A segment of People on its Stats, for this visit only. */
+  openStats(tab: PeopleTab): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -34,7 +36,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe, openStats } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   return [
@@ -62,6 +64,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => setView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
+    // a segment's figures, for this visit: the next tab tap opens the view last chosen
+    { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]

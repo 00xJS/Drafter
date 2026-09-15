@@ -3,12 +3,16 @@ import type { GarmentType, Recipe } from '../../types'
 import {
   CAL_MODE_KEY,
   CALENDAR_MODES,
+  INNER_VIEW_KEYS,
   PEOPLE_TAB_KEY,
   TASKS_TAB_KEY,
+  storedInnerViews,
   storedPeopleTab,
   storedTasksTab,
   type CalendarMode,
   type HomeTab,
+  type InnerView,
+  type InnerViews,
   type PeopleTab,
   type TasksTab,
   type View,
@@ -58,6 +62,10 @@ export function useNavigation() {
   const [peopleTab, showPeopleTab] = useState<PeopleTab>(storedPeopleTab)
   /** Move the People segment for this visit only. */
   const goPeopleTab = (tab: PeopleTab) => startTransition(() => showPeopleTab(tab))
+  /** People's and Places' List · Stats: each segment's own, as last chosen. */
+  const [innerViews, showInnerViews] = useState<InnerViews>(storedInnerViews)
+  /** Move a segment's List · Stats for this visit only. */
+  const goInnerView = (tab: PeopleTab, v: InnerView) => startTransition(() => showInnerViews(cur => (cur[tab] === v ? cur : { ...cur, [tab]: v })))
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
@@ -79,6 +87,15 @@ export function useNavigation() {
       /* ignore */
     }
   }
+  /** Remember a segment's List · Stats: its own switch, and nothing else. */
+  const setInnerView = (tab: PeopleTab, v: InnerView) => {
+    goInnerView(tab, v)
+    try {
+      localStorage.setItem(INNER_VIEW_KEYS[tab], v)
+    } catch {
+      /* ignore */
+    }
+  }
   /**
    * Go to a view from a tab bar. A tab tap is the one move that means "wherever
    * I left this", so the segmented views re-read the remembered half rather than
@@ -87,7 +104,10 @@ export function useNavigation() {
   const goView = (v: View) => {
     if (v === 'home') setHomeTab('today')
     if (v === 'tasks') goTasksTab(storedTasksTab())
-    if (v === 'people') goPeopleTab(storedPeopleTab())
+    if (v === 'people') {
+      goPeopleTab(storedPeopleTab())
+      startTransition(() => showInnerViews(storedInnerViews()))
+    }
     setView(v)
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
@@ -98,12 +118,22 @@ export function useNavigation() {
     if (id) setPlaceOpenId(id)
     goPeopleTab('places')
     setView('people')
+    // the row is on the list, whichever view the segment was left on
+    goInnerView('places', 'list')
   }
   /** A person's card to open (from search, Ask or a reminder); consumed by the People view. */
   const [personOpenId, setPersonOpenId] = useState<string | null>(null)
   const openPerson = (id?: string) => {
     if (id) setPersonOpenId(id)
     goPeopleTab('people')
+    setView('people')
+    // the card is on the list, whichever view the segment was left on
+    goInnerView('people', 'list')
+  }
+  /** A segment's Stats (the palette, ?view=people-stats), for this visit only: a tab tap opens the view last chosen. */
+  const openStats = (tab: PeopleTab) => {
+    goPeopleTab(tab)
+    goInnerView(tab, 'stats')
     setView('people')
   }
   const openJournal = (date?: string) => {
@@ -129,6 +159,14 @@ export function useNavigation() {
     setHomeTab('wardrobe')
     setView('home')
   }
+  /** A day for the Calendar to open, its day sheet up (People → Stats' month); consumed by the view. */
+  const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
+  const openCalendarDay = (day: string) => {
+    setCalendarOpenDay(day)
+    // the Timeline has no day to open; the month has
+    if (calMode === 'timeline') setCalMode('month')
+    setView('calendar')
+  }
 
   useEffect(() => {
     try {
@@ -149,6 +187,10 @@ export function useNavigation() {
     setNotesProjectId,
     peopleTab,
     goPeopleTab,
+    innerViews,
+    goInnerView,
+    setInnerView,
+    openStats,
     homeTab,
     setHomeTab,
     setTasksTab,
@@ -171,5 +213,8 @@ export function useNavigation() {
     wardrobeOpen,
     setWardrobeOpen,
     openWardrobe,
+    calendarOpenDay,
+    setCalendarOpenDay,
+    openCalendarDay,
   }
 }

@@ -3,15 +3,20 @@ import {
   CALENDAR_MODES,
   COMPACT_TABS,
   HOME_TABS,
+  INNER_VIEWS,
+  INNER_VIEW_KEYS,
   LEGACY_VIEW_TO_HOME,
   LEGACY_VIEW_TO_TASKS,
   PEOPLE_TAB_KEY,
+  STATS_VIEW_TO_PEOPLE,
   TASKS_TAB_KEY,
   TASKS_TABS,
   VIEW_ICONS,
   VIEW_LABELS,
   VIEWS,
   WARDROBE_TABS,
+  storedInnerView,
+  storedInnerViews,
   storedPeopleTab,
   storedTasksTab,
 } from '../components/planner/routes'
@@ -65,8 +70,48 @@ describe('old links still land on a segment', () => {
   })
 
   it('never shadows a live view with a legacy name', () => {
-    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME)]
+    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE)]
     for (const name of legacy) expect(VIEWS as string[]).not.toContain(name)
+    expect(new Set(legacy).size).toBe(legacy.length)
+  })
+
+  it('sends ?view=people-stats to People → People on its Stats', () => {
+    expect(STATS_VIEW_TO_PEOPLE).toEqual({ 'people-stats': 'people' })
+  })
+})
+
+describe('People’s own List · Stats', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('offers the list first, then the figures', () => {
+    expect(INNER_VIEWS.map(v => [v.key, v.label])).toEqual([
+      ['list', 'List'],
+      ['stats', 'Stats'],
+    ])
+  })
+
+  it('remembers each segment’s choice under its own key, and opens on the list otherwise', () => {
+    expect(INNER_VIEW_KEYS).toEqual({ people: 'drafter:people-view', places: 'drafter:places-view' })
+    expect(new Set(Object.values(INNER_VIEW_KEYS)).size).toBe(2)
+    expect(Object.values(INNER_VIEW_KEYS)).not.toContain(PEOPLE_TAB_KEY)
+    const values: Record<string, string> = { 'drafter:people-view': 'stats' }
+    vi.stubGlobal('localStorage', { getItem: (k: string) => values[k] ?? null })
+    expect(storedInnerView('people')).toBe('stats')
+    expect(storedInnerView('places')).toBe('list')
+    expect(storedInnerViews()).toEqual({ people: 'stats', places: 'list' })
+    values['drafter:people-view'] = 'board'
+    expect(storedInnerView('people')).toBe('list')
+  })
+
+  it('opens on the list when storage cannot be read', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    expect(storedInnerViews()).toEqual({ people: 'list', places: 'list' })
   })
 })
 
