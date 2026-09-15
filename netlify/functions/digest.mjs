@@ -34,6 +34,7 @@ import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/re
 import { SYNC_KINDS } from '../../shared/kinds.mjs'
 import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
+import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
@@ -72,27 +73,6 @@ async function rest(path, init = {}) {
   if (!res.ok) throw new Error(`${path.split('?')[0]}: ${res.status}`)
   const text = await res.text()
   return text ? JSON.parse(text) : null
-}
-
-/**
- * Every row a select matches, a page at a time, as admin.mjs reads them.
- * PostgREST answers at most max_rows (1000) rows a request, and in no fixed
- * order unless asked, so `path` carries its own `order`.
- */
-async function fetchAll(path, pageSize = 1000) {
-  const out = []
-  for (let from = 0; from < 200_000; from += pageSize) {
-    // a range that starts past the last row answers 416 rather than an empty
-    // page — on any page but the first that just means we have them all
-    const page = await rest(path, { headers: { 'range-unit': 'items', range: `${from}-${from + pageSize - 1}` } }).catch(e => {
-      if (from === 0) throw e
-      return null
-    })
-    const list = Array.isArray(page) ? page : []
-    out.push(...list)
-    if (list.length < pageSize) break
-  }
-  return out
 }
 
 /** `promise`'s value, or `fallback` once `ms` has passed. Nothing is cancelled; a late answer is not waited for. */
@@ -409,9 +389,12 @@ export default async () => {
   const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftDue(u, now))
   if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
-  // keep row ownership so each recipient only ever sees their own scope; paged,
-  // as one request stops at PostgREST's max_rows
-  const rows = await fetchAll('posts?select=data,user_id&deleted=is.false&order=id.asc')
+  // keep row ownership so each recipient only ever sees their own scope. Read a
+  // page at a time (restAll, as the nightly backup reads them): one request
+  // stops at PostgREST's max_rows, and a read that can't be finished fails the
+  // run, to be tried again the next hour, rather than send a digest or draft
+  // Sunday's review from part of the records
+  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll('posts?select=id,data,user_id&deleted=is.false'))
   const peers = await buildPeerMap()
   let sent = 0
   let drafted = 0

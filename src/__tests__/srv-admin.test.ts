@@ -235,20 +235,42 @@ describe('Today’s sync alarm reads the check as Admin → Data does', () => {
   })
 })
 
+/** PostgREST's max_rows on Supabase: a page is never longer, whatever limit was asked for. */
+const MAX_ROWS = 1000
+
+/**
+ * One page of `rows` as PostgREST answers restAll: the rows after the id it
+ * carried on from, in id order, at most MAX_ROWS, and how many were left.
+ */
+function pageOf<T extends { id: string }>(url: string, rows: T[]) {
+  const q = new URL(`https://x${url}`).searchParams
+  const after = q.get('id')?.replace(/^gt\./, '') ?? null
+  const left = rows.filter(r => after === null || r.id > after).sort((a, b) => (a.id < b.id ? -1 : 1))
+  const page = left.slice(0, Math.min(Number(q.get('limit')), MAX_ROWS))
+  return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` } })
+}
+
+/** Where a restAll read carried on from: null for its first page. */
+const carriedOn = (url: string) => new URL(`https://x${url}`).searchParams.get('id')?.replace(/^gt\./, '') ?? null
+
 // The owner's digest, as Admin runs it, read every record in one request, and
 // PostgREST answers at most max_rows (1000) a request: past that the digest it
-// showed or sent was cut short. It now pages as the scheduled run does.
+// showed or sent was cut short. It now reads a page at a time as the scheduled
+// run does (restAll), and a page it can't read is an error: the offset pager it
+// had first took any failure after the first page for the end of the records.
 describe('Admin → the digest it runs reads every record, past a thousand', () => {
-  const MAX_ROWS = 1000
-  let ranges: string[]
-  let rows: { user_id: string; data: Record<string, unknown> }[]
+  /** Where each page of the read carried on from. */
+  let pages: (string | null)[]
+  let rows: { id: string; user_id: string; data: Record<string, unknown> }[]
+  let laterPagesFail: boolean
 
   beforeEach(() => {
-    ranges = []
+    pages = []
+    laterPagesFail = false
     rows = Array.from({ length: 1500 }, (_, i) => {
       const id = `t-${String(i).padStart(4, '0')}`
       const at = '2020-01-01T00:00:00.000Z'
-      return { user_id: OWNER, data: { kind: 'task', id, title: `Chore ${i}`, description: '', status: 'todo', priority: 'normal', tags: [], dueAt: '2020-01-01T09:00:00.000Z', createdAt: at, updatedAt: at } }
+      return { id, user_id: OWNER, data: { kind: 'task', id, title: `Chore ${i}`, description: '', status: 'todo', priority: 'normal', tags: [], dueAt: '2020-01-01T09:00:00.000Z', createdAt: at, updatedAt: at } }
     })
     vi.stubGlobal(
       'fetch',
@@ -259,12 +281,11 @@ describe('Admin → the digest it runs reads every record, past a thousand', () 
         if (url.startsWith(`/rest/v1/user_settings?user_id=eq.${OWNER}&`)) return Response.json([{ user_id: OWNER, timezone: 'UTC' }])
         if (url === '/rest/v1/household_members?select=household_id,user_id') return Response.json([])
         if (url === '/rest/v1/rpc/owner_user_id') return Response.json(OWNER)
-        if (url === '/rest/v1/posts?select=data,user_id&deleted=is.false&order=id.asc') {
-          const range = new Headers(init?.headers).get('range') ?? ''
-          ranges.push(range)
-          const [from, to] = range.split('-').map(Number)
-          if (from >= rows.length) return new Response(null, { status: 416 })
-          return Response.json(rows.slice(from, Math.min(to + 1, from + MAX_ROWS)))
+        if (url.startsWith('/rest/v1/posts?select=id,data,user_id&deleted=is.false&')) {
+          const after = carriedOn(url)
+          pages.push(after)
+          if (after !== null && laterPagesFail) return Response.json({ message: 'canceling statement due to statement timeout' }, { status: 500 })
+          return pageOf(url, rows)
         }
         throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`)
       }),
@@ -277,7 +298,69 @@ describe('Admin → the digest it runs reads every record, past a thousand', () 
     const body = await res.json()
     expect(body.counts.overdue).toBe(1500)
     expect(body.lines).toContainEqual(expect.stringMatching(/^1500 overdue: /))
-    expect(ranges).toEqual(['0-999', '1000-1999'])
+    expect(pages).toEqual([null, 't-0999'])
+  })
+
+  it('answers an error, never a digest of the first thousand, when a later page cannot be read', async () => {
+    laterPagesFail = true
+    const res = await act('runDigest')
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: expect.stringMatching(/^posts: 500 .*statement timeout/) })
+    expect(pages).toEqual([null, 't-0999'])
+  })
+})
+
+// Admin → Data answers "is my data still there?": a count cut short would say
+// no when the answer is yes. It reads every row a page at a time, and a page
+// it can't read is an error rather than a short count.
+describe('Admin → Data counts every record, past a thousand, or says it could not', () => {
+  let rows: { id: string; user_id: string; deleted: boolean; synced_at: string; kind: string; purged: string | null }[]
+  let laterPagesFail: boolean
+
+  beforeEach(() => {
+    laterPagesFail = false
+    rows = Array.from({ length: 1500 }, (_, i) => ({
+      id: `r-${String(i).padStart(4, '0')}`,
+      user_id: OWNER,
+      deleted: i % 10 === 0,
+      synced_at: '2026-09-14T08:00:00.000Z',
+      kind: 'task',
+      purged: null,
+    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace(SUPABASE, '')
+        const method = init?.method ?? 'GET'
+        if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: signedIn })
+        if (url.startsWith('/rest/v1/app_config?key=eq.owner_email')) return Response.json([{ value: 'owner@example.test' }])
+        if (url.startsWith('/auth/v1/admin/users?')) return Response.json({ users: [{ id: OWNER, email: 'owner@example.test' }] })
+        // posts_history, households and household_members, counted without their rows
+        if (method === 'HEAD') return new Response(null, { headers: { 'content-range': '0-0/3' } })
+        if (url.startsWith('/rest/v1/app_config?key=eq.sync_canary')) return Response.json([])
+        if (url.startsWith('/rest/v1/posts?select=id,user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged&')) {
+          if (carriedOn(url) !== null && laterPagesFail) return Response.json({ message: 'canceling statement due to statement timeout' }, { status: 500 })
+          return pageOf(url, rows)
+        }
+        throw new Error(`unexpected ${method} ${url}`)
+      }),
+    )
+  })
+
+  it('counts all 1,500, a thousand a request', async () => {
+    const res = await act('dataStats')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ total: 1500, live: 1350, tombstones: 150, historyRows: 3 })
+    expect(body.kinds.task).toBe(1350)
+    expect(body.users).toEqual([{ userId: OWNER, email: 'owner@example.test', live: 1350, deleted: 150 }])
+  })
+
+  it('answers an error, never the first thousand’s counts, when a later page cannot be read', async () => {
+    laterPagesFail = true
+    const res = await act('dataStats')
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toMatch(/^posts: 500 .*statement timeout/)
   })
 })
 

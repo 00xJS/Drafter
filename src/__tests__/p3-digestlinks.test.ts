@@ -58,7 +58,10 @@ beforeEach(() => {
       if (path === 'rpc/sync_canary') return Response.json({ ok: true, checked: 14, failures: [] })
       if (path.startsWith('app_config?key=eq.sync_canary')) return Response.json([])
       if (path === 'app_config?on_conflict=key' && method === 'POST') return new Response(null, { status: 201 })
-      if (path === 'posts?select=data,user_id&deleted=is.false&order=id.asc') return Response.json(rows)
+      // the run's read of every record, one page of it as PostgREST answers restAll
+      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) {
+        return new Response(JSON.stringify(rows.map(r => ({ id: r.data.id, ...r }))), { headers: { 'content-range': rows.length ? `0-${rows.length - 1}/${rows.length}` : '*/0' } })
+      }
       if (path === 'household_members?select=household_id,user_id') return Response.json([])
       if (path.startsWith('user_settings?user_id=eq.') && method === 'PATCH') return new Response(null, { status: 204 })
       if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })

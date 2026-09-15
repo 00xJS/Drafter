@@ -82,9 +82,12 @@ let authPages: string[]
 let authHangs: boolean
 /** How long each page of the run's read of every record takes, on the run's clock. */
 let postsPageMs: number
+/** Every page of that read after the first fails, as a server under strain can. */
+let laterPagesFail: boolean
 /** PostgREST's max_rows (supabase/config.toml): no request answers more. */
 const MAX_ROWS = 1000
-const ALL_LIVE = 'posts?select=data,user_id&deleted=is.false&order=id.asc'
+/** The run's read of every record, a page at a time (restAll): each page adds where it carries on from, the order and the limit. */
+const ALL_LIVE = 'posts?select=id,data,user_id&deleted=is.false&'
 const WEEK_REVIEWS = 'posts?select=data,user_id&kind=eq.review&data->>key=eq.'
 
 beforeEach(() => {
@@ -113,6 +116,7 @@ beforeEach(() => {
   authPages = []
   authHangs = false
   postsPageMs = 0
+  laterPagesFail = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -142,15 +146,16 @@ beforeEach(() => {
       if (path === 'rpc/sync_canary') return Response.json({ ok: true, checked: 15, failures: [] })
       if (path.startsWith('app_config?key=eq.sync_canary')) return Response.json([])
       if (path === 'app_config?on_conflict=key' && method === 'POST') return new Response(null, { status: 201 })
-      if (path === ALL_LIVE && method === 'GET') {
+      if (path.startsWith(ALL_LIVE) && method === 'GET') {
         if (postsPageMs) vi.setSystemTime(Date.now() + postsPageMs)
-        // as PostgREST does: in id order when asked, one Range at a time, never more than max_rows
-        const live = rows.filter(r => !r.data.deletedAt && !bulkMisses.has(r.data.id)).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
-        const range = /^(\d+)-(\d+)$/.exec(new Headers(init?.headers).get('range') ?? '')
-        const from = range ? Number(range[1]) : 0
-        const to = Math.min(range ? Number(range[2]) : Infinity, from + MAX_ROWS - 1)
-        if (from > 0 && from >= live.length) return new Response('range not satisfiable', { status: 416 })
-        return Response.json(structuredClone(live.slice(from, to + 1)))
+        // as PostgREST answers restAll: the rows after the id it carried on
+        // from, in id order, never more than max_rows, and how many were left
+        const q = new URLSearchParams(path.slice(path.indexOf('?') + 1))
+        const after = q.get('id')?.replace(/^gt\./, '') ?? null
+        if (after !== null && laterPagesFail) return new Response('{"message":"canceling statement due to statement timeout"}', { status: 500 })
+        const live = rows.filter(r => !r.data.deletedAt && !bulkMisses.has(r.data.id) && (after === null || r.data.id > after)).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
+        const page = live.slice(0, Math.min(Number(q.get('limit')), MAX_ROWS)).map(r => ({ id: r.data.id, ...structuredClone(r) }))
+        return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${live.length}` : `*/${live.length}` } })
       }
       if (path.startsWith(WEEK_REVIEWS) && method === 'GET') {
         const key = decodeURIComponent(path.slice(WEEK_REVIEWS.length))
@@ -389,6 +394,20 @@ describe('Sunday’s draft, however the run’s read of every record was cut', (
     await runAt('2026-09-13T08:00:00Z')
     expect(ai.prompts).toHaveLength(1)
     expect(ai.prompts[0]).toContain('Completed:\n- Fixed the fence')
+  })
+
+  it('sends and drafts nothing from part of the records: a page it cannot read fails the run, and the next hour reads them whole', async () => {
+    settings = [withPush(OWNER)]
+    rows = [...Array.from({ length: 1100 }, (_, i) => taskRow(OWNER, `t${String(i).padStart(4, '0')}`, `Task ${i}`)), doneLastWeek(OWNER, 'zz-fence', 'Fixed the fence')]
+    laterPagesFail = true
+    vi.setSystemTime(new Date('2026-09-13T08:00:00Z'))
+    await expect(runDigest()).rejects.toThrow(/^posts: 500 /)
+    expect([ai.prompts, drafts(), pushes]).toEqual([[], [], []])
+    laterPagesFail = false
+    await runAt('2026-09-13T09:00:00Z')
+    expect(ai.prompts).toHaveLength(1)
+    expect(ai.prompts[0]).toContain('Completed:\n- Fixed the fence')
+    expect(pushes).toHaveLength(1)
   })
 
   it('never twice when that read misses the week’s review: its rows, read again from the table, stop it', async () => {

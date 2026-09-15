@@ -15,7 +15,7 @@ import { googleConfigured, missingGoogleEnv } from './lib/google.mjs'
 import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
 import { complete, completeNvidia, nvidiaKeyOrder, resolveProvider } from './lib/ai.mjs'
-import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, runBackup, signSnapshotUrl } from './lib/backup.mjs'
+import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, restAll, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
@@ -55,23 +55,6 @@ async function count(path) {
 /** Admin → Data's view of the latest sync canary: the stored record and one sentence about it. */
 function syncCheck(record) {
   return { sentence: canarySentence(record, new Date()), record: record ?? null }
-}
-
-/** Page through a select with Range so a big table can't be silently truncated. */
-async function fetchAll(path, pageSize = 1000) {
-  const out = []
-  for (let from = 0; from < 200_000; from += pageSize) {
-    // a range that starts past the last row answers 416 rather than an empty
-    // page — on any page but the first that just means we have them all
-    const page = await rest(path, { headers: { 'range-unit': 'items', range: `${from}-${from + pageSize - 1}` } }).catch(e => {
-      if (from === 0) throw e
-      return null
-    })
-    const list = Array.isArray(page) ? page : []
-    out.push(...list)
-    if (list.length < pageSize) break
-  }
-  return out
 }
 
 async function authAdmin(path, init = {}) {
@@ -178,18 +161,19 @@ function integrationStatus(origin) {
 
 /**
  * The owner's own digest, computed exactly as the scheduled run would see it:
- * the same paged read (one request stops at max_rows), so an account past a
- * thousand records is not cut short.
+ * the same read, a page at a time (restAll), so an account past a thousand
+ * records is not cut short, and a page that can't be read is an error rather
+ * than a digest of part of the records.
  */
 async function ownerDigest(userId) {
   const settings = (await settingsGet(userId)) ?? {}
   const timezone = settings.timezone || 'UTC'
   const [rows, peers, ownerId] = await Promise.all([
-    fetchAll('posts?select=data,user_id&deleted=is.false&order=id.asc'),
+    restAll('posts?select=id,data,user_id&deleted=is.false'),
     buildPeerMap().catch(() => new Map()),
     rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
   ])
-  const items = visibleItemsFor(rows, userId, peers.get(userId), ownerId)
+  const items = visibleItemsFor(/** @type {{ user_id: string | null, data: unknown }[]} */ (rows), userId, peers.get(userId), ownerId)
   return { settings, timezone, digest: buildDigest(items, timezone, new Date(), settings.nudged ?? {}) }
 }
 
@@ -229,7 +213,8 @@ const handler = async req => {
     }
 
     if (action === 'dataStats') {
-      const rows = await fetchAll('posts?select=user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged&order=id.asc')
+      // every row, a page at a time: a read it can't finish is an error, never a short count
+      const rows = await restAll('posts?select=id,user_id,deleted,synced_at,kind:data->>kind,purged:data->>purged')
       const users = await listUsers().catch(() => [])
       const emails = Object.fromEntries(users.map(u => [u.id, u.email]))
       const [historyRows, households, householdMembers, canary] = await Promise.all([
