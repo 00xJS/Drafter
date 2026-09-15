@@ -387,8 +387,8 @@ describe('the Stats view', () => {
     expect(year).toContain('Bought<strong>2</strong>')
     expect(year).toContain('<p class="stats-month-total">9 home-cooked days in 2026 <span class="badge"')
     expect(year).toContain('<tr><td>Sep</td><td class="num">9</td><td class="num">1</td><td class="num">2</td><td class="num">8</td></tr>')
-    // ‹ year › steps on past this year, as the wardrobe's, People's and Places' do
-    expect(year).not.toContain('aria-label="Next year" disabled=""')
+    // ‹ year › stops at this year, as far as there are meals, as the wardrobe's, People's and Places' do
+    expect(year).toContain('aria-label="Next year" disabled=""')
 
     const shares = card(out, 'Lunch and dinner')
     expect(shares).toContain('<strong>Dinner</strong><small class="muted">10 dinners · 70% cooked</small>')
