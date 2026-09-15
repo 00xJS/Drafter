@@ -4,12 +4,15 @@ import {
   CAL_MODE_KEY,
   CALENDAR_MODES,
   PEOPLE_TAB_KEY,
+  PLACES_VIEW_KEY,
   TASKS_TAB_KEY,
   storedPeopleTab,
+  storedPlacesView,
   storedTasksTab,
   type CalendarMode,
   type HomeTab,
   type PeopleTab,
+  type PlacesView,
   type TasksTab,
   type View,
   type WardrobeTab,
@@ -58,6 +61,9 @@ export function useNavigation() {
   const [peopleTab, showPeopleTab] = useState<PeopleTab>(storedPeopleTab)
   /** Move the People segment for this visit only. */
   const goPeopleTab = (tab: PeopleTab) => startTransition(() => showPeopleTab(tab))
+  const [placesView, showPlacesView] = useState<PlacesView>(storedPlacesView)
+  /** Move Places' List · Stats for this visit only. */
+  const goPlacesView = (v: PlacesView) => startTransition(() => showPlacesView(v))
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
@@ -79,6 +85,15 @@ export function useNavigation() {
       /* ignore */
     }
   }
+  /** …and Places' List · Stats: its switch, and nothing else. */
+  const setPlacesView = (v: PlacesView) => {
+    goPlacesView(v)
+    try {
+      localStorage.setItem(PLACES_VIEW_KEY, v)
+    } catch {
+      /* ignore */
+    }
+  }
   /**
    * Go to a view from a tab bar. A tab tap is the one move that means "wherever
    * I left this", so the segmented views re-read the remembered half rather than
@@ -87,7 +102,10 @@ export function useNavigation() {
   const goView = (v: View) => {
     if (v === 'home') setHomeTab('today')
     if (v === 'tasks') goTasksTab(storedTasksTab())
-    if (v === 'people') goPeopleTab(storedPeopleTab())
+    if (v === 'people') {
+      goPeopleTab(storedPeopleTab())
+      goPlacesView(storedPlacesView())
+    }
     setView(v)
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
@@ -97,6 +115,14 @@ export function useNavigation() {
   const openPlace = (id?: string) => {
     if (id) setPlaceOpenId(id)
     goPeopleTab('places')
+    // the row it opens is on the list, whichever half was showing
+    if (id) goPlacesView('list')
+    setView('people')
+  }
+  /** Places → Stats, for this visit: the palette's Places stats and ?view=places-stats. */
+  const openPlacesStats = () => {
+    goPeopleTab('places')
+    goPlacesView('stats')
     setView('people')
   }
   /** A person's card to open (from search, Ask or a reminder); consumed by the People view. */
@@ -129,6 +155,14 @@ export function useNavigation() {
     setHomeTab('wardrobe')
     setView('home')
   }
+  /** A day for the Calendar to open, its sheet up (Places → Stats's month calendar); consumed by the view. */
+  const [calendarDay, setCalendarDay] = useState<string | null>(null)
+  const openCalendarDay = (day: string) => {
+    setCalendarDay(day)
+    // the Timeline has no days to open; the month grid has
+    if (calMode === 'timeline') setCalMode('month')
+    setView('calendar')
+  }
 
   useEffect(() => {
     try {
@@ -149,16 +183,20 @@ export function useNavigation() {
     setNotesProjectId,
     peopleTab,
     goPeopleTab,
+    placesView,
+    goPlacesView,
     homeTab,
     setHomeTab,
     setTasksTab,
     setPeopleTab,
+    setPlacesView,
     goView,
     journalOpenDate,
     setJournalOpenDate,
     placeOpenId,
     setPlaceOpenId,
     openPlace,
+    openPlacesStats,
     personOpenId,
     setPersonOpenId,
     openPerson,
@@ -171,5 +209,8 @@ export function useNavigation() {
     wardrobeOpen,
     setWardrobeOpen,
     openWardrobe,
+    calendarDay,
+    setCalendarDay,
+    openCalendarDay,
   }
 }

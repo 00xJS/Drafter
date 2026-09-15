@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
-import { VIEWS, type HomeTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
+import { VIEWS, type HomeTab, type PeopleTab, type PlacesView, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
@@ -10,9 +10,12 @@ interface ShellState {
   homeTab: HomeTab
   tasksTab: TasksTab
   peopleTab: PeopleTab
+  /** Places' own List · Stats */
+  placesView: PlacesView
   /** what a tab tap re-reads: the segment last chosen on purpose */
   rememberedTasks: TasksTab
   rememberedPeople: PeopleTab
+  rememberedPlaces: PlacesView
   journalDate: string | null
   /** the one-shot way into Home → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
@@ -24,8 +27,8 @@ interface ShellState {
 
 /** Two starting points that disagree on every field, so no landing is true by accident. */
 const STARTS: ShellState[] = [
-  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
-  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
+  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', placesView: 'list', rememberedTasks: 'bills', rememberedPeople: 'places', rememberedPlaces: 'list', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
+  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', placesView: 'stats', rememberedTasks: 'board', rememberedPeople: 'people', rememberedPlaces: 'stats', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
 ]
 
 /** 2pm: between the morning's quick action and the evening's, so the palette's other rows are pinned on their own. */
@@ -38,7 +41,10 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     goView: v => {
       if (v === 'home') s.homeTab = 'today'
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
-      if (v === 'people') s.peopleTab = s.rememberedPeople
+      if (v === 'people') {
+        s.peopleTab = s.rememberedPeople
+        s.placesView = s.rememberedPlaces
+      }
       s.view = v
     },
     setHomeTab: tab => {
@@ -58,6 +64,11 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     setPeopleTab: tab => {
       s.peopleTab = tab
       s.rememberedPeople = tab
+    },
+    openPlacesStats: () => {
+      s.peopleTab = 'places'
+      s.placesView = 'stats'
+      s.view = 'people'
     },
     openWardrobe: (o = {}) => {
       s.wardrobe = o
@@ -141,6 +152,7 @@ describe('the palette’s own commands', () => {
     ['go-calendar', { view: 'calendar' }],
     ['go-people', { view: 'people', peopleTab: 'people' }],
     ['go-places', { view: 'people', peopleTab: 'places' }],
+    ['go-places-stats', { view: 'people', peopleTab: 'places', placesView: 'stats' }],
     ['go-kitchen', { view: 'kitchen' }],
   ]
 
@@ -163,6 +175,18 @@ describe('the palette’s own commands', () => {
       expect(run('go-board', start).rememberedTasks).toBe(start.rememberedTasks)
       expect(run('go-places', start).rememberedPeople).toBe('places')
       expect(run('go-people', start).rememberedPeople).toBe('people')
+    }
+  })
+
+  it('opens Places stats for the visit only, found by typing "stats"', () => {
+    const stats = commands.find(c => c.id === 'go-places-stats')!
+    expect(stats).toMatchObject({ label: 'Places stats', icon: 'people' })
+    expect(stats.quick).toBeFalsy()
+    for (const word of ['insights', 'outings', 'visited']) expect(stats.keywords).toContain(word)
+    for (const start of STARTS) {
+      const s = run('go-places-stats', start)
+      // neither the segment nor the switch is remembered from here
+      expect(s).toMatchObject({ rememberedPeople: start.rememberedPeople, rememberedPlaces: start.rememberedPlaces, tasksTab: start.tasksTab })
     }
   })
 })

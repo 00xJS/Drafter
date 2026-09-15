@@ -78,6 +78,9 @@ interface Props {
   wears?: Wear[]
   /** Home → Wardrobe on a day. Without it no look is shown. */
   onOpenWardrobe?(o: WardrobeOpen): void
+  /** A day to open on arrival (Places → Stats's month calendar): the grid moves to it and its sheet opens. Used once. */
+  openDay?: string | null
+  onOpenDayConsumed?(): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -132,6 +135,8 @@ export function Calendar({
   garments,
   wears,
   onOpenWardrobe,
+  openDay,
+  onOpenDayConsumed,
 }: Props) {
   // one anchor day drives both grids: its month, or the week around it
   const [cursor, setCursor] = useState(() => dayStart(new Date()))
@@ -139,6 +144,16 @@ export function Calendar({
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
   const [addFor, setAddFor] = useState<string | null>(null)
+  // a day handed in (Places → Stats) moves the grid to it and opens its sheet, once
+  useEffect(() => {
+    if (!openDay || !/^\d{4}-\d{2}-\d{2}$/.test(openDay)) return
+    const [y, m, d] = openDay.split('-').map(Number)
+    const day = new Date(y, m - 1, d)
+    setCursor(day)
+    setSheetDay(day)
+    onOpenDayConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDay])
   // a pill written in a feed's or a project's colour moves only as far as it takes to read in this theme
   const theme = useTheme()
 

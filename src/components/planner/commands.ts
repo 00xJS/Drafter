@@ -13,6 +13,8 @@ export interface PaletteNav {
   openJournal(date?: string): void
   goTasksTab(tab: TasksTab): void
   setPeopleTab(tab: PeopleTab): void
+  /** People → Places on its Stats, for this visit. */
+  openPlacesStats(): void
   openWardrobe(o?: WardrobeOpen): void
 }
 
@@ -34,7 +36,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openPlacesStats, openWardrobe } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   return [
@@ -62,6 +64,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => setView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
+    // the figures: Places' own Stats, for this visit, as ?view=places-stats opens it
+    { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openPlacesStats() },
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]

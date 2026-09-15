@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, VIEW_TO_PLACES, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -24,6 +24,7 @@ interface Deps {
   openSheet: Overlays['openSheet']
   goTasksTab: Nav['goTasksTab']
   goPeopleTab: Nav['goPeopleTab']
+  goPlacesView: Nav['goPlacesView']
   setHomeTab: Nav['setHomeTab']
   setView: Nav['setView']
   openJournal: Nav['openJournal']
@@ -49,6 +50,7 @@ export function useDeepLinks({
   openSheet,
   goTasksTab,
   goPeopleTab,
+  goPlacesView,
   setHomeTab,
   setView,
   openJournal,
@@ -105,6 +107,11 @@ export function useDeepLinks({
     } else if (parsed.view && LEGACY_VIEW_TO_HOME[parsed.view]) {
       setHomeTab(LEGACY_VIEW_TO_HOME[parsed.view])
       setView('home')
+    } else if (parsed.view && VIEW_TO_PLACES[parsed.view]) {
+      // a Stats view: People → Places on it, for this visit
+      goPeopleTab('places')
+      goPlacesView(VIEW_TO_PLACES[parsed.view])
+      setView('people')
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

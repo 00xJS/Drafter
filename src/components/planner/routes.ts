@@ -9,6 +9,13 @@ export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen']
 export type CalendarMode = 'month' | 'week' | 'timeline'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 export type PeopleTab = 'people' | 'places'
+/** People → Places' own switch: the list, and its figures. Remembered like the
+ *  segments are: only when chosen on the switch itself. */
+export type PlacesView = 'list' | 'stats'
+export const PLACES_VIEWS: { key: PlacesView; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'stats', label: 'Stats' },
+]
 /** Home's four segments: today's dashboard, the weekly look-back, the journal, and what you wear. */
 export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe'
 export const HOME_TABS: { key: HomeTab; label: string }[] = [
@@ -39,6 +46,9 @@ export const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', 
 /** …and the former Today / Review views land on the matching Home segment.
  *  The wardrobe was never a view; `?view=wardrobe` is simply its link. */
 export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week', wardrobe: 'wardrobe' }
+/** A Stats view a link can name, as `?view=wardrobe` names the wardrobe:
+ *  `?view=places-stats` opens People → Places on its Stats, for that visit. */
+export const VIEW_TO_PLACES: Record<string, PlacesView> = { 'places-stats': 'stats' }
 
 /** An inbound link, held as parsed pieces so a replay keeps its provenance. */
 export type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
@@ -73,6 +83,7 @@ export const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
 export const CAL_MODE_KEY = 'drafter:calendar-mode'
 export const TASKS_TAB_KEY = 'drafter:tasks-tab'
 export const PEOPLE_TAB_KEY = 'drafter:people-tab'
+export const PLACES_VIEW_KEY = 'drafter:places-view'
 
 export interface Toast {
   msg: string
@@ -99,5 +110,13 @@ export const storedPeopleTab = (): PeopleTab => {
     return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
   } catch {
     return 'people'
+  }
+}
+/** Places' List · Stats, by the same rule: its switch remembers, a link or the palette does not. */
+export const storedPlacesView = (): PlacesView => {
+  try {
+    return localStorage.getItem(PLACES_VIEW_KEY) === 'stats' ? 'stats' : 'list'
+  } catch {
+    return 'list'
   }
 }

@@ -15,6 +15,8 @@ export const Bills = preloadable(() => import('../Bills').then(m => m.Bills), 'B
 export const NotesView = preloadable(() => import('../NotesView').then(m => m.NotesView), 'NotesView')
 export const People = preloadable(() => import('../People').then(m => m.People), 'People')
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
+// Places → Stats, and the counting only it reads (placestats.ts), in a chunk of their own
+export const PlacesStats = preloadable(() => import('../PlacesStats').then(m => m.PlacesStats), 'PlacesStats')
 export const Kitchen = preloadable(() => import('../Kitchen').then(m => m.Kitchen), 'Kitchen')
 export const Review = preloadable(() => import('../Review').then(m => m.Review), 'Review')
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
@@ -41,13 +43,13 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   home: [Review.preload, Wardrobe.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
-  people: [People.preload, Places.preload],
+  people: [People.preload, Places.preload, PlacesStats.preload],
   kitchen: [Kitchen.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PlacesStats, Kitchen, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

@@ -174,8 +174,17 @@ export function favourites(places: Place[], tasks: Task[], people: Person[] = []
 export function lapsed(places: Place[], tasks: Task[], people: Person[] = [], now: Date = new Date(), meals: Meal[] = []): PlaceStats[] {
   return places
     .map(p => placeStats(p, tasks, people, now, meals))
-    .filter(s => s.visits.length >= 2 && s.daysSince !== undefined && s.daysSince > Math.max(LAPSED_AFTER_DAYS, s.avgGapDays ? 2 * s.avgGapDays : 0))
+    .filter(driftedFrom)
     .sort((a, b) => b.visits.length - a.visits.length)
+}
+
+/**
+ * lapsed()'s rule for one place: two or more outings, and longer since the
+ * last than both LAPSED_AFTER_DAYS and twice your usual gap there. Places →
+ * Stats's "Not been back" reads it for a place with no rhythm of its own.
+ */
+export function driftedFrom(s: PlaceStats): boolean {
+  return s.visits.length >= 2 && s.daysSince !== undefined && s.daysSince > Math.max(LAPSED_AFTER_DAYS, s.avgGapDays ? 2 * s.avgGapDays : 0)
 }
 
 /**
@@ -303,9 +312,10 @@ export function placeYearReport(places: Place[], tasks: Task[], meals: Meal[], y
  * task keeps its own. A meal records a day, not an instant, so it goes at local
  * midday on its own date: outingsAt dates it midday UTC, which east of UTC+11
  * (all of New Zealand) is already the next day, and would put the takeaway
- * eaten on 31 December in the next year's table.
+ * eaten on 31 December in the next year's table. Places → Stats files by it
+ * too, wherever it counts by the calendar: a year, a month, a day.
  */
-function filedAt(v: Outing): string {
+export function filedAt(v: Outing): string {
   if (v.kind !== 'meal') return v.at
   const [y, m, d] = v.meal.date.split('-').map(Number)
   return new Date(y, m - 1, d, 12).toISOString()
