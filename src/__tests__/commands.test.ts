@@ -1,9 +1,13 @@
+import { createElement, type ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Search } from '../components/Search'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
 import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
+import { elements, textOf, typeInto, type El } from './rendered'
 
 interface ShellState {
   view: View
@@ -365,6 +369,76 @@ describe('the wardrobe in the palette', () => {
         expect(s.sheets).toEqual([])
         expect(s.newTasks).toEqual([])
       }
+    }
+  })
+})
+
+describe('the Kitchen’s and the Wardrobe’s stats, typed into Search', () => {
+  const noop = () => {}
+  /** The field: what is typed there is the query, and ↓ and Enter move to a row and open it. */
+  const field = (tree: ReactNode) => elements(tree).find(e => e.type === 'input' && e.props.role === 'combobox')!
+  const keyDown = (tree: ReactNode, key: string) => (field(tree).props.onKeyDown as (e: { key: string; shiftKey: boolean; preventDefault(): void }) => void)({ key, shiftKey: false, preventDefault: noop })
+  /** The result rows, in order. */
+  const rows = (tree: ReactNode): El[] => elements(tree).filter(e => e.type === 'li' && e.props.role === 'option')
+
+  /**
+   * Search over the palette's own commands, built on the stand-in shell from
+   * `start`, with nothing else in it to find. vitest runs in node with no DOM,
+   * so it is called inside a server render and walked a render at a time, as
+   * rendered.tsx walks a component: each step runs on one render, and the next
+   * shows what it did. Returns where the shell ended up and every tree drawn.
+   */
+  function palette(start: ShellState, steps: ((tree: ReactNode) => void)[]) {
+    const { s, commands: cmds } = shell(start)
+    const onCreateTask = vi.fn()
+    const onClose = vi.fn()
+    const trees: ReactNode[] = []
+    function Probe() {
+      const tree = Search({ tasks: [], projects: [], people: [], commands: cmds, onOpenTask: noop, onOpenProject: noop, onOpenPerson: noop, onCreateTask, onClose })
+      trees.push(tree)
+      steps[trees.length - 1]?.(tree)
+      return null
+    }
+    renderToStaticMarkup(createElement(Probe))
+    return { s, trees, onCreateTask, onClose }
+  }
+
+  const wardrobe = { view: 'home', homeTab: 'wardrobe', wardrobe: { tab: 'stats' } } as const
+  const kitchen = { view: 'kitchen', kitchenTab: 'stats' } as const
+  const typed: [string, string, string, Partial<ShellState>][] = [
+    ['wardrobe stats', 'Wardrobe stats', 'go-wardrobe-stats', wardrobe],
+    ['cost per wear', 'Wardrobe stats', 'go-wardrobe-stats', wardrobe],
+    ['kitchen stats', 'Kitchen stats', 'go-kitchen-stats', kitchen],
+    ['eaten out', 'Kitchen stats', 'go-kitchen-stats', kitchen],
+  ]
+
+  it.each(typed)('“%s” shows the %s row, and Enter or a tap on it lands there from anywhere', (words, label, id, where) => {
+    for (const start of STARTS) {
+      const { s, trees, onCreateTask, onClose } = palette(start, [
+        tree => typeInto(tree, p => p.role === 'combobox', words),
+        // the words head the list as a task to create, so ↓ goes down to the row
+        tree => {
+          const at = rows(tree).findIndex(r => r.key === id)
+          for (let i = 0; i < at; i++) keyDown(tree, 'ArrowDown')
+        },
+        tree => keyDown(tree, 'Enter'),
+      ])
+      expect(trees, words).toHaveLength(3)
+      // the one command the words find, under the task they would create, named as the palette names it
+      const shown = rows(trees[1])
+      expect(shown.map(r => r.key), words).toEqual(['create', id])
+      expect(textOf(shown[1].props.children), words).toBe(label)
+      // ↓ made it the row Enter opens
+      expect(field(trees[2]).props['aria-activedescendant'], words).toBe(rows(trees[2])[1].props.id)
+      expect(s, words).toMatchObject(where)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onCreateTask).not.toHaveBeenCalled()
+
+      // a tap on the row, with no key at all
+      const tap = palette(start, [tree => typeInto(tree, p => p.role === 'combobox', words)])
+      ;(rows(tap.trees[1]).find(r => r.key === id)!.props.onClick as () => void)()
+      expect(tap.s, words).toMatchObject(where)
+      expect(tap.onCreateTask).not.toHaveBeenCalled()
     }
   })
 })
