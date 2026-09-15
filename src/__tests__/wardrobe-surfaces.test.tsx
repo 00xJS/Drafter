@@ -392,7 +392,7 @@ describe('Ask draws on what you wear', () => {
     expect(looks[0].links).toEqual(expect.arrayContaining(['id-tee', 'id-jeans']))
   })
 
-  it('says what a piece is worn for, tells a question about clothes the rest are for both, and never sends a photo of either side', () => {
+  it('says what a piece is worn for, tells a question about clothes the rest are for any time, and never sends a photo of either side', () => {
     const photo = (tail: string) => `personal/00000000-0000-0000-0000-00000000000a/${tail}`
     const marked = src({
       garments: garments.map(g =>
@@ -405,21 +405,22 @@ describe('Ask draws on what you wear', () => {
     })
     const docs = buildCorpus(marked, { now, includeJournal: false, includeAmounts: false })
     expect(docs.find(d => d.title === 'Navy tee')!.text).toBe('top · for work · worn on 2 days · last worn 2026-09-12 · first worn 2026-09-08')
-    expect(docs.find(d => d.title === 'Black jeans')!.text).toMatch(/^bottom · for personal time · worn on 3 days/)
-    // marked for neither: for both, and said by the fact below, not on every line
-    expect(docs.find(d => d.title === 'Grey mac')!.text).not.toMatch(/for work|for personal/)
+    // stored as 'personal', said as days off
+    expect(docs.find(d => d.title === 'Black jeans')!.text).toMatch(/^bottom · for days off · worn on 3 days/)
+    // marked for neither: for any time, and said by the fact below, not on every line
+    expect(docs.find(d => d.title === 'Grey mac')!.text).not.toMatch(/for work|for days off|for personal|anytime|any time/)
     const q = 'What have I not worn lately?'
     const prep = prepareAsk(q, marked, { now, tz: 'Europe/London', includeJournal: true })
-    expect(prep.facts).toContain('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
+    expect(prep.facts).toContain('A piece marked for work, or for days off, is for that alone; a piece marked for neither is for any time.')
     const { system, prompt } = buildAskPrompt(q, prep.docs, prep.facts)
     for (const sent of [JSON.stringify(buildCorpus(marked, { now, includeJournal: true, includeAmounts: true })), JSON.stringify(prep.docs), system, prompt]) {
       expect(sent).not.toMatch(/f1f1f1f1|f2f2f2f2|b1b1b1b1|b2b2b2b2|photoId|thumbId|backPhotoId|backThumbId|showBack/)
     }
-    // a question that only names a piece is told too: its line may say nothing, and that means both
+    // a question that only names a piece is told too: its line may say nothing, and that means any time
     const named = parseQuestion('Tell me about my navy tee', marked, now)
     expect(named.intents.has('wardrobe')).toBe(false)
     expect(named.garmentIds).toEqual(['id-tee'])
-    expect(factsFor(named, marked, now, 'Europe/London')).toContain('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
+    expect(factsFor(named, marked, now, 'Europe/London')).toContain('A piece marked for work, or for days off, is for that alone; a piece marked for neither is for any time.')
     // a wardrobe with nothing marked needs no word about it
     expect(factsFor(parseQuestion(q, src(), now), src(), now, 'Europe/London').join(' ')).not.toContain('marked for neither')
   })

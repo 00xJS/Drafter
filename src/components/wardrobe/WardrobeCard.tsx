@@ -115,7 +115,7 @@ function LookNote({ look, onSave }: { look: Wear; onSave(note: string): void }) 
  * is cold or wet, it offers a coat. Hidden until the wardrobe can dress you (a
  * top and a bottom, or a one-piece), so nobody without one is asked. The one
  * tap is the only thing in the wardrobe that buzzes. On a work day the looks
- * whose pieces are all for work, or for both, come first.
+ * whose pieces are all for work, or for any time, come first.
  */
 export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now = new Date(), forecast: given, workDay = false }: Props) {
   const byId = useMemo(() => liveById(garments), [garments])

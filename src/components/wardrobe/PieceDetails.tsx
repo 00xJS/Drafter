@@ -5,14 +5,14 @@ import { OCCASION_META, SEASONS, SEASON_META, type Garment, type Occasion } from
 import { priceOf, withDetails, wornWith, type WearIndex } from '../../wardrobe'
 import { GarmentPhoto } from './GarmentPhoto'
 
-/** "Wear it for"'s three answers, in the order it says them: work, personal, or both — which is marking neither. */
+/** "Wear it for"'s three answers, in the order it says them: work, days off, or anytime — which is marking neither. */
 const WEAR_FOR: { value?: Occasion; label: string }[] = [
   { value: 'work', label: OCCASION_META.work.label },
   { value: 'personal', label: OCCASION_META.personal.label },
-  { label: 'Both' },
+  { label: 'Anytime' },
 ]
 
-/** "Wear it for: Work · Personal · Both", Both by default: the piece sheet's, and Add clothing's. */
+/** "Wear it for: Work · Days off · Anytime", Anytime by default: the piece sheet's, and Add clothing's. */
 export function OccasionChoice({ value, onChange }: { value?: Occasion; onChange(o: Occasion | undefined): void }) {
   return (
     <span className="segmented garment-occasion" role="radiogroup" aria-label="Wear it for">

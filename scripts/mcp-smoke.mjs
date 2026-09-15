@@ -918,7 +918,7 @@ async function main() {
         occasion: 'work',
       }),
       piece('jeans', 'Blue jeans', 'bottom'),
-      piece('dress', 'Green dress', 'onepiece'),
+      piece('dress', 'Green dress', 'onepiece', { occasion: 'personal' }),
       piece('band', 'Old band tee', 'top', { archivedAt: wardrobeStamp }),
       piece('linen', 'Linen shirt', 'top'),
       { kind: 'outfit', id: 'weekday', name: 'Weekday', garmentIds: ['tee', 'jeans'], createdAt: wardrobeStamp, updatedAt: wardrobeStamp },
@@ -936,7 +936,8 @@ async function main() {
     eq(clothes.garments.find(g => g.id === 'band')?.retired, true, 'a retired piece says so')
     eq(clothes.garments.find(g => g.id === 'linen')?.daysWorn, 0, 'a plan never confirmed counts in no figure')
     eq(tee?.occasion, 'work', 'list_garments says what a piece is worn for')
-    eq(clothes.garments.find(g => g.id === 'jeans')?.occasion, 'both', 'and a piece marked for neither is for both')
+    eq(clothes.garments.find(g => g.id === 'dress')?.occasion, 'days off', "a piece stored as 'personal' reads as days off")
+    eq(clothes.garments.find(g => g.id === 'jeans')?.occasion, 'anytime', 'and a piece marked for neither is for any time')
     ok(!/smoke-(back-)?(photo|thumb)-of-tee|photoId|thumbId|backPhotoId|backThumbId|showBack/.test(JSON.stringify(clothes)), 'no photo, front or back, leaves through list_garments')
     const stats = await call('get_wardrobe_stats', { window: 'all' })
     eq(stats.mostWorn.pieces.map(p => p.id).join(','), 'jeans,tee,dress', "get_wardrobe_stats ranks the most worn by the app's rule")

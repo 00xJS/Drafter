@@ -22,7 +22,7 @@ interface Props {
  * The saved outfits under the composer, the favourites and then the most worn
  * lately first: a tap puts one in the rows — whatever the day is dressed for —
  * and "…" wears it today, stars it, renames it or deletes it. One whose pieces
- * are for work, or for personal time, says so (outfitOccasion).
+ * are for work, or for days off, says so (outfitOccasion).
  */
 export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFavourite, onDelete }: Props) {
   const list = useMemo(() => savedOrder(outfits, ix, byId), [outfits, ix, byId])

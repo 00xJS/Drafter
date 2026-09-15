@@ -116,7 +116,7 @@ export function starred<T extends Garment | Outfit>(x: T, on: boolean): T {
  * A piece's details changed, stamped: a price in whole units (null, or a price
  * of nothing, clears it, as priceOf reads none), tags as a sync keeps them
  * (schema.ts garmentTags), seasons in the year's order — none is any season —
- * and what it is worn for (null is both). Only what is given changes.
+ * and what it is worn for (null is anytime). Only what is given changes.
  */
 export function withDetails(g: Garment, d: { price?: number | null; tags?: readonly string[]; seasons?: readonly Season[]; occasion?: Occasion | null }): Garment {
   const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
@@ -273,9 +273,9 @@ export function seasonOf(day: string): Season {
 /** For this season: marked for it, or marked for none, which is a piece for any season. */
 export const inSeason = (g: Garment, season: Season): boolean => !g.seasons?.length || g.seasons.includes(season)
 
-// ---- work and personal -------------------------------------------------------------
+// ---- work and days off -------------------------------------------------------------
 
-/** What a day is dressed for: work on a work day, personal on a day off. */
+/** What a day is dressed for: work on a work day, 'personal' (read as Days off) on a day off. */
 export type DayOccasion = Occasion
 
 /**
@@ -291,13 +291,13 @@ export const otherOccasion = (o: DayOccasion): DayOccasion => (o === 'work' ? 'p
 /** The day's words, beside its date: "Work day" or "Day off". */
 export const DAY_OCCASION_LABEL: Record<DayOccasion, string> = { work: 'Work day', personal: 'Day off' }
 
-/** For this occasion: marked for it, or for neither, which is a piece for both. */
+/** For this occasion: marked for it, or for neither, which is a piece for any time. */
 export const fitsOccasion = (g: Garment, o: DayOccasion): boolean => !g.occasion || g.occasion === o
 
 /**
  * A saved outfit's or a look's occasion, from its pieces: work when one is
- * for work and none is personal, personal the other way round; none when they
- * are mixed, or every piece is for both.
+ * for work and none is for days off, days off the other way round; none when
+ * they are mixed, or every piece is for any time.
  */
 export function outfitOccasion(ids: readonly string[], byId: ReadonlyMap<string, Garment>): Occasion | undefined {
   const marks = new Set(ids.map(id => byId.get(id)?.occasion).filter((o): o is Occasion => !!o))
@@ -309,8 +309,8 @@ export type ClothesShow = 'all' | 'favourites' | GarmentType
 
 /**
  * Whether a piece passes Clothes' filters: what to show, a season (a piece
- * for any season passes every one), an occasion (For work is the work pieces
- * and those for both) and a tag.
+ * for any season passes every one), an occasion (Work is the work pieces and
+ * those for any time, Days off likewise) and a tag.
  */
 export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season | null; occasion?: Occasion | null; tag?: string | null }): boolean {
   if (f.show === 'favourites' ? !g.favourite : f.show !== 'all' && g.type !== f.show) return false

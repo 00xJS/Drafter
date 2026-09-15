@@ -107,7 +107,7 @@
     animation: none;
   }
 }
-/* a piece for work, or for personal time: one small badge on a card and on a saved outfit */
+/* a piece for work, or for days off (.personal, its stored value): one small badge on a card and on a saved outfit */
 .occasion-badge {
   flex: none;
   padding: 1px 7px;
@@ -351,7 +351,7 @@
   background: var(--surface-2);
   color: var(--muted);
 }
-/* a small card (Outerwear, Shoes) has room for a Work or Personal badge or
+/* a small card (Outerwear, Shoes) has room for a Work or Days off badge or
    "3 weeks ago", not both: the badge keeps the line, whole */
 .snap.small .snap-line:has(.occasion-badge) .snap-worn {
   display: none;

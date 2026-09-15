@@ -422,8 +422,8 @@ function summarizeGarment(g, ix, clock) {
     ...pieceOf(g),
     color: g.color ?? null,
     notes: g.notes ?? null,
-    // unmarked is for both, the app's default
-    occasion: g.occasion === 'work' || g.occasion === 'personal' ? g.occasion : 'both',
+    // in the app's words: 'personal' is stored for Days off, and unmarked is Anytime, the default
+    occasion: g.occasion === 'work' ? 'work' : g.occasion === 'personal' ? 'days off' : 'anytime',
     retired: !!g.archivedAt,
     addedOn: clock.dayKeyOf(g.createdAt),
     lastWorn: days[0] ?? null,
@@ -1296,7 +1296,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'Every piece of clothing in Home → Wardrobe: its name, type (top, bottom, onepiece, outerwear, shoes or accessory), colour and notes, what it is worn for (occasion: work, personal, or both — unmarked pieces are for both), whether it is retired (given away or worn out: kept for its history, out of the day\'s choices), and how it has been worn — lastWorn (YYYY-MM-DD, or null) and daysWorn, all time and in the last 30 and 365 days — counted as the app counts them: distinct days with a look holding it, up to the user\'s today. Photos never leave Drafter. type narrows the list.',
+      'Every piece of clothing in Home → Wardrobe: its name, type (top, bottom, onepiece, outerwear, shoes or accessory), colour and notes, what it is worn for (occasion: work, days off, or anytime — unmarked pieces are for any time), whether it is retired (given away or worn out: kept for its history, out of the day\'s choices), and how it has been worn — lastWorn (YYYY-MM-DD, or null) and daysWorn, all time and in the last 30 and 365 days — counted as the app counts them: distinct days with a look holding it, up to the user\'s today. Photos never leave Drafter. type narrows the list.',
     inputSchema: { type: 'object', properties: { type: { type: 'string', enum: GARMENT_TYPES } } },
     async run({ type } = {}, { db, clock }) {
       if (type !== undefined) oneOf(type, GARMENT_TYPES, 'type')

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { GARMENT_TYPES, GARMENT_TYPE_META, SEASONS, SEASON_META, type Garment, type GarmentType, type Occasion, type Season } from '../../types'
+import { GARMENT_TYPES, GARMENT_TYPE_META, OCCASIONS, OCCASION_META, SEASONS, SEASON_META, type Garment, type GarmentType, type Occasion, type Season } from '../../types'
 import { CLOTHES_SORTS, clothesMatch, clothesOrder, tagsOf, wornShort, type ClothesShow, type ClothesSort, type WearIndex } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { FavouriteMark, GarmentView, hasBack } from './GarmentPhoto'
@@ -83,11 +83,15 @@ export function Clothes({ garments, ix, onAdd, onOpen }: Props) {
             </option>
           ))}
         </select>
-        {/* a piece for both is for work and for personal time, so it stays under either */}
+        {/* Anytime, the default, is every piece; Work or Days off is the pieces marked
+            for it and those for any time, which stay under either */}
         <select className="clothes-season" aria-label="Occasion" value={occasion} onChange={e => setOccasion(e.target.value as Occasion | '')}>
-          <option value="">Any occasion</option>
-          <option value="work">For work</option>
-          <option value="personal">For personal</option>
+          <option value="">Anytime</option>
+          {OCCASIONS.map(o => (
+            <option key={o} value={o}>
+              {OCCASION_META[o].label}
+            </option>
+          ))}
         </select>
         <label className="clothes-sort">
           <span>Sort</span>

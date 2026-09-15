@@ -90,7 +90,7 @@ interface Props {
  *
  * Beside the date, the day is a Work day (a work-day entry of yours is on the
  * calendar) or a Day off; a tap turns it the other way for this visit and
- * saves nothing. The pieces for it, or for both, lead each row, and those for
+ * saves nothing. The pieces for it, or for any time, lead each row, and those for
  * the other occasion follow, quieter; Surprise me and the coat keep to it.
  */
 export function OutfitComposer(props: Props) {

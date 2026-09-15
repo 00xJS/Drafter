@@ -18,7 +18,7 @@ import type { CalendarEntry, Garment, GarmentType, Outfit, Wear } from '../types
 import { dayOccasion, liveById, wearIndex } from '../wardrobe'
 import { button, elements, press, propsOf, settled } from './rendered'
 
-// Work and personal pieces, and a composer that knows a work day: the day's
+// Work and days-off pieces, and a composer that knows a work day: the day's
 // occasion from your own work-day entries, flipped for the view alone; the
 // rows, their badges and quieter cards; Surprise me's pool; a saved outfit's
 // badge; Clothes' filter; Today's one-tap looks; and Wear it for.
@@ -165,7 +165,7 @@ describe('the day’s occasion', () => {
 })
 
 describe('the composer’s rows', () => {
-  it('lead with the pieces for the day, or for both, in their usual order, and keep the others after them', () => {
+  it('lead with the pieces for the day, or for any time, in their usual order, and keep the others after them', () => {
     expect(rowsOf(wardrobe, frozen, [], 'work').top.map(g => g.id)).toEqual(['shirt', 'suit', 'gym-top'])
     expect(rowsOf(wardrobe, frozen, [], 'personal').top.map(g => g.id)).toEqual(['gym-top', 'shirt', 'suit'])
     expect(rowsOf(wardrobe, frozen, [], 'work').bottom.map(g => g.id)).toEqual(['jeans', 'slacks', 'joggers'])
@@ -176,10 +176,14 @@ describe('the composer’s rows', () => {
     expect(rowsOf([...wardrobe, oldGym], frozen, [oldGym], 'work').top.map(g => g.id)).toEqual(['old-gym', 'shirt', 'suit', 'gym-top'])
   })
 
-  it('badge a piece marked Work or Personal, and draw one for the other occasion quieter, never hidden', () => {
+  it('badge a piece marked Work or Days off, none for Anytime, and draw one for the other occasion quieter, never hidden', () => {
     const html = composer()
     expect(html.match(/<span class="badge occasion-badge work">Work<\/span>/g)).toHaveLength(2)
-    expect(html.match(/<span class="badge occasion-badge personal">Personal<\/span>/g)).toHaveLength(2)
+    // stored as 'personal', read as Days off
+    expect(html.match(/<span class="badge occasion-badge personal">Days off<\/span>/g)).toHaveLength(2)
+    // the shirt and the jeans are for any time: no badge of their own
+    expect(html.match(/occasion-badge/g)).toHaveLength(4)
+    expect(html).not.toMatch(/>(Personal|Both|Anytime)<\/span>/)
     // on a work day the gym top and the joggers are quieter, and still in their rows
     expect(html.match(/class="snap-cell side off"/g)).toHaveLength(2)
     expect(html).toContain('>gym-top</span>')
@@ -207,7 +211,7 @@ describe('the composer’s rows', () => {
 })
 
 describe('Surprise me', () => {
-  it('draws from the pieces that fit the day, for it or for both, and then the season', () => {
+  it('draws from the pieces that fit the day, for it or for any time, and then the season', () => {
     const rows = rowsOf(wardrobe, frozen, [], 'work')
     expect(surprisePool(rows.top, 'autumn', 'work').map(g => g.id)).toEqual(['shirt', 'suit'])
     expect(surprisePool(rows.top, 'autumn', 'personal').map(g => g.id)).toEqual(['shirt', 'gym-top'])
@@ -240,7 +244,7 @@ describe('Surprise me', () => {
 })
 
 describe('a saved outfit', () => {
-  it('is badged Work or Personal from its pieces, and not when they are mixed or all for both', () => {
+  it('is badged Work or Days off from its pieces, and not when they are mixed or all for any time', () => {
     const html = renderToStaticMarkup(
       <SavedOutfits
         outfits={[outfit('o-work', ['suit', 'jeans'], 'Office'), outfit('o-gym', ['gym-top', 'joggers'], 'Gym'), outfit('o-mixed', ['suit', 'joggers'], 'Mixed'), outfit('o-plain', ['shirt', 'jeans'], 'Plain')]}
@@ -258,20 +262,26 @@ describe('a saved outfit', () => {
       return html.slice(from, html.indexOf('</li>', from))
     }
     expect(tile('Office')).toContain('<span class="badge occasion-badge work">Work</span>')
-    expect(tile('Gym')).toContain('<span class="badge occasion-badge personal">Personal</span>')
+    expect(tile('Gym')).toContain('<span class="badge occasion-badge personal">Days off</span>')
     expect(tile('Mixed')).not.toContain('occasion-badge')
     expect(tile('Plain')).not.toContain('occasion-badge')
   })
 })
 
 describe('Clothes', () => {
-  it('filters by occasion beside the season: For work is the work pieces and those for both', () => {
+  it('filters by occasion beside the season: Anytime is every piece, Work or Days off the pieces for it and those for any time', () => {
     const props = { garments: wardrobe, ix: wearIndex([], TODAY), onAdd: noop, onOpen: noop }
     const html = renderToStaticMarkup(<Clothes {...props} />)
     expect(html).toContain('<select class="clothes-season" aria-label="Occasion">')
-    // the no-filter option reads as the season's does, never as the pieces for both
-    for (const label of ['Any occasion', 'For work', 'For personal']) expect(html).toContain(`>${label}</option>`)
-    expect(html).not.toContain('Work and personal')
+    // exactly three options, Anytime first and chosen; Days off is the stored 'personal'
+    const select = html.match(/<select class="clothes-season" aria-label="Occasion">([\s\S]*?)<\/select>/)![1]
+    expect([...select.matchAll(/<option value="([^"]*)"[^>]*>([^<]+)<\/option>/g)].map(m => [m[1], m[2]])).toEqual([
+      ['', 'Anytime'],
+      ['work', 'Work'],
+      ['personal', 'Days off'],
+    ])
+    expect(select).toContain('<option value="" selected="">Anytime</option>')
+    for (const old of ['Any occasion', 'For work', 'For personal', 'Personal', 'Both']) expect(html).not.toContain(`>${old}</option>`)
     expect(html.indexOf('aria-label="Occasion"')).toBeGreaterThan(html.indexOf('aria-label="Season"'))
     const shownFor = (value: string) => {
       const tree = settled(Clothes, props, t => {
@@ -325,15 +335,18 @@ describe('Wear it for', () => {
   const choice = (html: string) => html.match(/<span class="segmented garment-occasion" role="radiogroup" aria-label="Wear it for">([\s\S]*?)<\/span>/)?.[1] ?? ''
   const checked = (html: string) => [...choice(html).matchAll(/aria-checked="true" class="seg on">([^<]+)</g)].map(m => m[1])
 
-  it('is Work · Personal · Both on the piece sheet, Both for a piece marked for neither', () => {
-    expect(choice(sheet({ kind: 'edit', id: 'suit' })).match(/>(Work|Personal|Both)</g)).toEqual(['>Work<', '>Personal<', '>Both<'])
+  it('is Work · Days off · Anytime on the piece sheet, Anytime for a piece marked for neither', () => {
+    const words = (html: string) => [...choice(html).matchAll(/class="seg(?: on)?">([^<]+)</g)].map(m => m[1])
+    expect(words(sheet({ kind: 'edit', id: 'suit' }))).toEqual(['Work', 'Days off', 'Anytime'])
     expect(checked(sheet({ kind: 'edit', id: 'suit' }))).toEqual(['Work'])
-    expect(checked(sheet({ kind: 'edit', id: 'gym-top' }))).toEqual(['Personal'])
-    expect(checked(sheet({ kind: 'edit', id: 'shirt' }))).toEqual(['Both'])
+    // stored as 'personal', read as Days off
+    expect(checked(sheet({ kind: 'edit', id: 'gym-top' }))).toEqual(['Days off'])
+    expect(checked(sheet({ kind: 'edit', id: 'shirt' }))).toEqual(['Anytime'])
   })
 
-  it('is offered when adding clothing, Both to start', () => {
-    expect(checked(sheet({ kind: 'add' }))).toEqual(['Both'])
+  it('is offered when adding clothing, Anytime to start', () => {
+    expect(checked(sheet({ kind: 'add' }))).toEqual(['Anytime'])
+    expect(choice(sheet({ kind: 'add' }))).not.toMatch(/Personal|Both/)
   })
 
   it('merges as a plain value: set on one device beside another field on the other, both stay; set two ways, a conflict', () => {
@@ -344,7 +357,7 @@ describe('Wear it for', () => {
     expect(mergeRecord(base, { ...base, occasion: 'work' }, { ...base, occasion: 'personal' }).conflicts.map(c => c.path)).toEqual([['occasion']])
   })
 
-  it('marks the piece as it is tapped, stamped; Both takes the mark off, and the one it has writes nothing', () => {
+  it('marks the piece as it is tapped, stamped; Anytime takes the mark off, and the one it has writes nothing', () => {
     const onEdit = vi.fn<(change: (cur: Garment) => Garment) => void>()
     const details = (garment: Garment) => ({ garment, ix: wearIndex([], TODAY), byId: liveById(wardrobe), onEdit, onOpenPiece: noop, keep: { current: noop } })
     propsOf(settled(PieceDetails, details(shirt)), OccasionChoice).onChange('work')

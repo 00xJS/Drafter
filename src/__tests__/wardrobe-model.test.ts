@@ -256,7 +256,7 @@ describe('a back photo, and what a piece is worn for', () => {
     for (const v of ['true', 1, false, null]) expect(sanitizeGarment({ ...base, backPhotoId: BACK, showBack: v })?.showBack, String(v)).toBeUndefined()
   })
 
-  it('keeps what a piece is worn for only as work or personal; anything else is both, which is no field at all', () => {
+  it('keeps what a piece is worn for only as work or personal (Days off, as stored); anything else is anytime, which is no field at all', () => {
     expect(sanitizeGarment({ ...base, occasion: 'work' })?.occasion).toBe('work')
     expect(sanitizeGarment({ ...base, occasion: 'personal' })?.occasion).toBe('personal')
     for (const v of ['both', 'Work', 'gym', 1, null, undefined]) expect(sanitizeGarment({ ...base, occasion: v })?.occasion, String(v)).toBeUndefined()

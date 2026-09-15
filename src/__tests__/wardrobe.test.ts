@@ -1065,13 +1065,13 @@ describe('a back photo: what a write lets go of, and what its Undo brings back',
   })
 })
 
-describe('work and personal', () => {
+describe('work and days off', () => {
   const suit = piece('suit', 'top', { occasion: 'work' })
   const gymTop = piece('gym-top', 'top', { occasion: 'personal' })
   const slacks = piece('slacks', 'bottom', { occasion: 'work' })
   const joggers = piece('joggers', 'bottom', { occasion: 'personal' })
 
-  it('withDetails marks a piece for work or for personal time, stamped, and null makes it for both again', () => {
+  it('withDetails marks a piece for work or for days off, stamped, and null makes it for any time again', () => {
     const w = withDetails(tee, { occasion: 'work' })
     expect(w.occasion).toBe('work')
     expect(w.updatedAt > tee.updatedAt).toBe(true)
@@ -1081,7 +1081,7 @@ describe('work and personal', () => {
     expect(withDetails(w, { price: 12 }).occasion).toBe('work')
   })
 
-  it('a piece for both fits any day; one marked fits its own', () => {
+  it('a piece for any time fits any day; one marked fits its own', () => {
     expect(fitsOccasion(tee, 'work') && fitsOccasion(tee, 'personal')).toBe(true)
     expect([fitsOccasion(suit, 'work'), fitsOccasion(suit, 'personal')]).toEqual([true, false])
     expect([fitsOccasion(gymTop, 'work'), fitsOccasion(gymTop, 'personal')]).toEqual([false, true])
@@ -1097,7 +1097,7 @@ describe('work and personal', () => {
     expect(DAY_OCCASION_LABEL).toEqual({ work: 'Work day', personal: 'Day off' })
   })
 
-  it('badges a saved outfit from its pieces: Work or Personal when they agree, nothing when mixed or all for both', () => {
+  it('badges a saved outfit from its pieces: Work or Days off when they agree, nothing when mixed or all for any time', () => {
     const byId = liveById([suit, gymTop, slacks, joggers, tee, jeans])
     expect(outfitOccasion(['suit', 'slacks'], byId)).toBe('work')
     expect(outfitOccasion(['suit', 'jeans'], byId)).toBe('work')
@@ -1109,7 +1109,7 @@ describe('work and personal', () => {
     expect(outfitOccasion(['ghost', 'jeans'], byId)).toBeUndefined()
   })
 
-  it('clothesMatch: For work is the work pieces and those for both, For personal the personal ones and those for both', () => {
+  it('clothesMatch: Work is the work pieces and those for any time, Days off the days-off ones and those for any time', () => {
     const all = [suit, gymTop, tee]
     const ids = (occasion: 'work' | 'personal' | null) => all.filter(g => clothesMatch(g, { show: 'all', occasion })).map(g => g.id)
     expect(ids(null)).toEqual(['suit', 'gym-top', 'tee'])
@@ -1127,7 +1127,7 @@ describe('work and personal', () => {
     expect(outerwearFor([mac, wool], ix, wetCold)?.id).toBe('mac')
     expect(outerwearFor([mac, wool], ix, wetCold, undefined, 'work')?.id).toBe('wool')
     expect(outerwearFor([mac, wool], ix, wetCold, undefined, 'personal')?.id).toBe('mac')
-    // one for both fits either day
+    // one for any time fits either day
     expect(outerwearFor([mac, parka], ix, { cold: true, wet: false }, undefined, 'work')?.id).toBe('parka')
     expect(outerwearFor([mac], ix, wetCold, undefined, 'work')?.id).toBe('mac')
   })

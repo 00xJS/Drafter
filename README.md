@@ -52,7 +52,7 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 
 Home's fourth segment.
 
-- **Add clothing** from photos, each cut out onto white on the device and checked by you (Looks good, Use original or Retake). A piece can have a back photo and be marked for Work, Personal or Both.
+- **Add clothing** from photos, each cut out onto white on the device and checked by you (Looks good, Use original or Retake). A piece can have a back photo and be marked for Work, Days off or Anytime.
 - **Outfit** dresses a day by swiping through tops, bottoms, outerwear and shoes, and knows a work day from a day off. **Surprise me** deals a look, **Wearing this** logs it, and you can plan up to a year ahead (a plan counts only once it's worn).
 - Saved outfits, a **Clothes** list you can filter, and **Stats**: your streak, a photo calendar, most worn, not worn in 60 days, never worn, your uniform and cost per wear.
 - Today asks **What are you wearing?** with one-tap looks, and offers your coat when it's cold or wet.

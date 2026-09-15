@@ -49,7 +49,7 @@ export function heldPieces(look: Wear | undefined, garments: readonly Garment[],
  * since goes on the end of its row, and one retired or deleted since drops
  * out. They never re-sort under a thumb during a visit. The day's held pieces
  * lead their rows. With the day's `occasion`, the pieces that fit it (marked
- * for it, or for both) come next, in that same order, and the ones for the
+ * for it, or for any time) come next, in that same order, and the ones for the
  * other occasion after them: still there, never hidden.
  */
 export function rowsOf(garments: readonly Garment[], frozen: readonly string[], held: readonly Garment[] = [], occasion?: DayOccasion): Rows {
@@ -141,7 +141,7 @@ export function chosenIn(sel: Selection, rows: Rows, asked: readonly Optional[])
 /**
  * What Surprise me draws a row from: the pieces dealt to it (not one only
  * held for the day, retired or in Trash) that fit the day's `occasion` — for
- * it, or for both — and of those the ones in `season`. A row with none for
+ * it, or for any time — and of those the ones in `season`. A row with none for
  * the day draws nothing, so Surprise me leaves it where it is; one with none
  * in season keeps the day's pieces, as a season is a lean, not a rule.
  */

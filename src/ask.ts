@@ -105,8 +105,8 @@ export interface ParsedQuestion {
 const DAY_MS = 86_400_000
 /** Free text (a description, notes, a journal body) one record may carry. */
 const BODY_MAX = 400
-/** What a piece's line says it is worn for; a piece marked for neither is for both, and says nothing. */
-const OCCASION_WORDS: Record<Occasion, string> = { work: 'for work', personal: 'for personal time' }
+/** What a piece's line says it is worn for ('personal' is stored for days off); a piece marked for neither is for any time, and says nothing. */
+const OCCASION_WORDS: Record<Occasion, string> = { work: 'for work', personal: 'for days off' }
 
 /** P is taken by people, so a project is a G; a piece of clothing is a C, and a look (a day's wear) a W. */
 const REF_PREFIX: Record<AskKind, string> = { task: 'T', bill: 'B', project: 'G', person: 'P', place: 'L', recipe: 'R', meal: 'M', event: 'E', journal: 'J', garment: 'C', wear: 'W' }
@@ -828,8 +828,8 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
           : `${g.name}: not worn yet${retiredNote}.`,
       )
     }
-    // a piece's line says "for work" or "for personal time" only when it is marked: the rest are for both
-    if ([...pieces.values()].some(g => g.occasion)) facts.push('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
+    // a piece's line says "for work" or "for days off" only when it is marked: the rest are for any time
+    if ([...pieces.values()].some(g => g.occasion)) facts.push('A piece marked for work, or for days off, is for that alone; a piece marked for neither is for any time.')
     if (pq.intents.has('wardrobe')) {
       const garments = src.garments ?? []
       const top = mostWorn(garments, worn, 30, 5)

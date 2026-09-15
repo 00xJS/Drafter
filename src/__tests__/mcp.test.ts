@@ -327,7 +327,7 @@ function household(): Row[] {
       createdAt: added,
     }),
     at(OWNER, { kind: 'garment', id: 'jeans', name: 'Blue jeans', type: 'bottom', createdAt: added }),
-    at(OWNER, { kind: 'garment', id: 'dress', name: 'Green dress', type: 'onepiece', createdAt: added }),
+    at(OWNER, { kind: 'garment', id: 'dress', name: 'Green dress', type: 'onepiece', occasion: 'personal', createdAt: added }),
     at(OWNER, { kind: 'garment', id: 'band', name: 'Old band tee', type: 'top', archivedAt: STAMP, createdAt: added }),
     at(OWNER, { kind: 'garment', id: 'scarf', name: 'Wool scarf', type: 'accessory', archivedAt: STAMP, createdAt: added }),
     at(OWNER, { kind: 'garment', id: 'linen', name: 'Linen shirt', type: 'top', createdAt: added }),
@@ -967,9 +967,12 @@ describe('the wardrobe over MCP', () => {
       daysWornLast365Days: 1,
     })
     expect(out.garments.find(g => g.id === 'band')).toMatchObject({ retired: true, lastWorn: null, daysWorn: 0 })
-    // a piece marked for neither work nor personal time is for both, and says so
-    expect(out.garments.find(g => g.id === 'jeans')).toMatchObject({ occasion: 'both' })
-    expect(out.garments.every(g => ['work', 'personal', 'both'].includes(g.occasion as string))).toBe(true)
+    // in the app's words: the stored 'personal' is days off, and a piece marked for neither is for any time
+    expect(out.garments.find(g => g.id === 'dress')).toMatchObject({ occasion: 'days off' })
+    expect(out.garments.find(g => g.id === 'jeans')).toMatchObject({ occasion: 'anytime' })
+    expect(out.garments.every(g => ['work', 'days off', 'anytime'].includes(g.occasion as string))).toBe(true)
+    expect(tool('list_garments').description).toContain('occasion: work, days off, or anytime')
+    expect(tool('list_garments').description).not.toMatch(/personal|both/)
     serveHousehold(household())
     expect(ids(((await tool('list_garments').run({ type: 'top' }, ctxFor())) as { garments: Piece[] }).garments)).toEqual(['linen', 'tee', 'band'])
     await expect(tool('list_garments').run({ type: 'hat' }, ctxFor())).rejects.toThrow(/Invalid type "hat"/)
