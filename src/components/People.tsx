@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, seenTasks } from '../people'
+import { PersonFilter, PersonStats, SEEN_META, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -37,9 +37,15 @@ interface Props {
   /** A person whose card opens on arrival (from search); consumed once. */
   openId?: string | null
   onOpenConsumed?(): void
+  /**
+   * The group chip and find box. The People tab holds them rather than the
+   * list, so People → Stats counts the rows they leave and List → Stats →
+   * List keeps them.
+   */
+  filter: PersonFilter
+  onFilter(filter: PersonFilter): void
 }
 
-type GroupFilter = 'all' | PersonGroup
 type SortKey = 'attention' | 'az' | 'za' | 'never' | 'recent' | 'least'
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -431,22 +437,19 @@ export function PersonRow({
 
 const NO_ENTRIES: CalendarEntry[] = []
 
-export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry, openId: wantOpen, onOpenConsumed }: Props) {
+export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry, openId: wantOpen, onOpenConsumed, filter, onFilter }: Props) {
   const [editing, setEditing] = useState<{ person?: Person } | null>(null)
   const [logging, setLogging] = useState<Person | null>(null)
-  const [group, setGroup] = useState<GroupFilter>('all')
   const [sort, setSort] = useState<SortKey>('attention')
-  const [q, setQ] = useState('')
   // a card asked for opens with the first paint when People mounts for it,
   // and through the effect below when People is already on screen
   const [openId, setOpenId] = useState<string | null>(() => wantOpen ?? null)
 
   useEffect(() => {
     if (!wantOpen) return
+    // the People tab clears the find box and the group chip as the card is
+    // asked for, before this draws, so neither hides it
     setOpenId(wantOpen)
-    // the find box or a group filter must not hide the card asked for
-    setQ('')
-    setGroup('all')
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
     onOpenConsumed?.()
@@ -469,10 +472,9 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   }
 
   const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    const list = allStats
-      .filter(s => group === 'all' || s.person.group === group)
-      .filter(s => !needle || s.person.name.toLowerCase().includes(needle) || (s.person.notes ?? '').toLowerCase().includes(needle))
+    // People → Stats counts by this same rule, so its figures and these rows agree
+    const matches = personMatcher(filter)
+    const list = allStats.filter(s => matches(s.person))
     const byName = (a: PersonStats, b: PersonStats) => a.person.name.localeCompare(b.person.name)
     const sorted = [...list]
     if (sort === 'az') sorted.sort(byName)
@@ -488,7 +490,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
       })
     else sorted.sort(compareStats)
     return sorted
-  }, [allStats, group, sort, q])
+  }, [allStats, filter, sort])
 
   // The tiles that counted days together, occasions, people seen and who is
   // due, and the year with people, are on People → Stats (PeopleStats), so
@@ -516,16 +518,16 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
         <>
           <div className="people-controls">
             <span className="segmented">
-              <button className={group === 'all' ? 'seg on' : 'seg'} onClick={() => setGroup('all')}>
+              <button className={filter.group === 'all' ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, group: 'all' })}>
                 All <span className="board-count">{allStats.length}</span>
               </button>
               {PERSON_GROUPS.map(g => (
-                <button key={g} className={group === g ? 'seg on' : 'seg'} onClick={() => setGroup(g)}>
+                <button key={g} className={filter.group === g ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, group: g })}>
                   {PERSON_GROUP_META[g]} <span className="board-count">{allStats.filter(s => s.person.group === g).length}</span>
                 </button>
               ))}
             </span>
-            <input className="search people-search" placeholder="Find a person…" value={q} onChange={e => setQ(e.target.value)} />
+            <input className="search people-search" placeholder="Find a person…" value={filter.q} onChange={e => onFilter({ ...filter, q: e.target.value })} />
             <label className="people-sort">
               Sort
               <select value={sort} onChange={e => setSort(e.target.value as SortKey)}>

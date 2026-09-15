@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { compareStats, personStats, seenTasks, upcomingOccasions, visitDays, yearReport } from '../people'
+import { compareStats, personMatcher, personStats, seenTasks, upcomingOccasions, visitDays, yearReport, type PersonFilter, type PersonStats } from '../people'
 import {
   COMING_UP_DAYS,
   NEVER_SEEN_DAYS,
@@ -12,7 +12,6 @@ import {
   daysSeenIn,
   getTogethers,
   groupShares,
-  inGroup,
   mostSeen,
   namesOf,
   neverSeen,
@@ -60,6 +59,8 @@ const done = (when: string, peopleIds: string[], over: Partial<Task> = {}): Task
 })
 /** An event of your own with people on it. */
 const event = (id: string, start: string, peopleIds: string[]): CalendarEntry => ({ kind: 'event', id, title: 'Lunch', start, end: start, allDay: false, peopleIds, createdAt: STAMP, updatedAt: STAMP })
+/** The people a group chip leaves, by the list's own rule (personMatcher), as Stats reads them. */
+const inChip = (all: readonly PersonStats[], group: PersonFilter['group']) => all.filter(s => personMatcher({ group, q: '' })(s.person))
 /** What the list reads, at NOW. */
 const read = (people: Person[], tasks: Task[], entries?: CalendarEntry[]) => peopleSeen(people, tasks, entries, NOW)
 const source = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8')
@@ -92,10 +93,9 @@ describe('what Stats reads is what the list reads', () => {
 
   it('leaves everyone on All, one group’s people on its chip, in order, and nobody on an empty group', () => {
     const { all } = read([person('ann'), person('bob', { group: 'friends' }), person('cy')], [])
-    expect(inGroup(all, 'all').map(s => s.person.id)).toEqual(['ann', 'bob', 'cy'])
-    expect(inGroup(all, 'all')).not.toBe(all)
-    expect(inGroup(all, 'family').map(s => s.person.id)).toEqual(['ann', 'cy'])
-    expect(inGroup(all, 'other')).toEqual([])
+    expect(inChip(all, 'all').map(s => s.person.id)).toEqual(['ann', 'bob', 'cy'])
+    expect(inChip(all, 'family').map(s => s.person.id)).toEqual(['ann', 'cy'])
+    expect(inChip(all, 'other')).toEqual([])
   })
 })
 
@@ -125,7 +125,7 @@ describe('the tiles the list carried, counted as it counted them', () => {
   it('leaves out what is not done, and whoever the chip leaves off', () => {
     const tasks = [done(at(9, 12), ['mum', 'sam']), done(at(9, 13), ['mum'], { status: 'todo' }), done(at(9, 13), ['mum'], { completedAt: undefined }), done(at(9, 13), [])]
     const { seen, all } = read([person('mum'), person('sam', { group: 'friends' })], tasks)
-    const friends = inGroup(all, 'friends')
+    const friends = inChip(all, 'friends')
     expect(getTogethers(friends, seen)).toEqual([{ id: tasks[0].id, at: tasks[0].completedAt, peopleIds: ['sam'] }])
     expect(togetherCounts(friends, getTogethers(friends, seen))).toMatchObject({ days: 1, occasions: 1, personVisits: 1 })
   })
@@ -390,7 +390,7 @@ describe('coming up', () => {
       ['dad', 'anniversary', 30],
     ])
     expect(soon).toEqual(upcomingOccasions(people, 30, NOW))
-    expect(comingUp(inGroup(all, 'friends'), NOW)).toEqual([])
+    expect(comingUp(inChip(all, 'friends'), NOW)).toEqual([])
   })
 
   it('says what, and when', () => {

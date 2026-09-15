@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { ComponentProps, ReactElement, ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlacesStats } from '../components/PlacesStats'
@@ -8,7 +8,7 @@ import { CAL_MODE_KEY } from '../components/planner/routes'
 import { useNavigation } from '../components/planner/useNavigation'
 import { ChartCard, ListCard, MonthCalendar, Podium, RankedBars, StatTile, YearTable } from '../components/stats'
 import { graphicInk, readableInk } from '../contrast'
-import { companionsAt, lapsed, placeStats, placeYearReport, placesWith, type PlaceStats } from '../places'
+import { NO_PLACE_FILTER, companionsAt, lapsed, placeMatcher, placeStats, placeYearReport, placesWith, type PlaceStats } from '../places'
 import {
   companyOnOutings,
   dueBack,
@@ -21,7 +21,6 @@ import {
   outingsByMonth,
   outingsWithin,
   placesByDay,
-  placesOfKind,
   placesTiles,
   usualCompany,
 } from '../placestats'
@@ -108,6 +107,12 @@ const rows = (places = PLACES, tasks = TASKS, meals = MEALS): PlaceStats[] => pl
 const ids = (list: readonly { place: Place }[]) => list.map(r => r.place.id)
 const counts = (list: readonly { key: string; count: number }[]) => list.map(r => [r.key, r.count])
 
+/** Places → Stats with its chip and find box held, as the People tab holds them, so a chip pressed narrows the next render. */
+function Held(props: ComponentProps<typeof PlacesStats>) {
+  const [filter, onFilter] = useState(props.filter)
+  return PlacesStats({ ...props, filter, onFilter })
+}
+
 /** A localStorage holding `init`, as a device that has chosen before; what is saved lands in the map returned. */
 function storage(init: Record<string, string>): Map<string, string> {
   const saved = new Map(Object.entries(init))
@@ -170,7 +175,7 @@ describe('the kind chips', () => {
 
   it('narrow every figure to one kind, as the list’s chips narrowed its tiles and its table', () => {
     for (const { kind } of kindChips(PLACES)) {
-      const ofKind = placesOfKind(PLACES, kind)
+      const ofKind = PLACES.filter(placeMatcher(PLACES, { category: kind, q: '' }))
       expect(ofKind.every(p => p.category === kind), kind).toBe(true)
       const report = placeYearReport(ofKind, TASKS, MEALS, 2026, NOW)
       const tiles = placesTiles(rows(ofKind), NOW)
@@ -179,7 +184,7 @@ describe('the kind chips', () => {
       expect(tiles.outingsThisMonth, kind).toBe(report.reduce((n, r) => n + r.months[8], 0))
       expect(tiles.beenAWhile, kind).toBe(rows().filter(s => s.place.category === kind && dueBack(s)).length)
     }
-    expect(placesOfKind(PLACES, 'all')).toEqual(PLACES)
+    expect(PLACES.filter(placeMatcher(PLACES, NO_PLACE_FILTER))).toEqual(PLACES)
   })
 })
 
@@ -425,7 +430,7 @@ describe('Mine / Everyone narrows neither the list nor its Stats: places are the
 
 describe('Places → Stats, drawn', () => {
   const view = (over: Partial<ComponentProps<typeof PlacesStats>> = {}) =>
-    html(<PlacesStats places={PLACES} people={PEOPLE} tasks={TASKS} meals={MEALS} onOpenPlace={noop} onPlan={noop} onOpenPerson={noop} onOpenDay={noop} now={NOW} {...over} />)
+    html(<PlacesStats places={PLACES} people={PEOPLE} tasks={TASKS} meals={MEALS} filter={NO_PLACE_FILTER} onFilter={noop} onOpenPlace={noop} onPlan={noop} onOpenPerson={noop} onOpenDay={noop} now={NOW} {...over} />)
   /** The card whose heading is `title`, to the end of its section. */
   const card = (page: string, title: string) => {
     const from = page.indexOf(`<h3>${title}</h3>`)
@@ -581,6 +586,8 @@ describe('what a press does', () => {
       people: PEOPLE,
       tasks: TASKS,
       meals: MEALS,
+      filter: NO_PLACE_FILTER,
+      onFilter: noop,
       now: NOW,
       onOpenPlace: p => void calls.push(`place ${p.id}`),
       onPlan: p => void calls.push(`plan ${p.id}`),
@@ -632,10 +639,10 @@ describe('what a press does', () => {
 
   it('narrows every card under a kind chip to that kind, as the list’s tiles and table were, and keeps By kind to All', () => {
     const { props } = setup()
-    const tree = settled(PlacesStats, props, t => press(t, 'Restaurant 2'))
+    const tree = settled(Held, props, t => press(t, 'Restaurant 2'))
     const all = elements(tree)
     const tile = (label: string) => all.find(e => e.type === StatTile && e.props.label === label)?.props.value
-    const restaurants = placesOfKind(PLACES, 'restaurant')
+    const restaurants = PLACES.filter(p => p.category === 'restaurant')
     const stats = rows(restaurants)
     const report = placeYearReport(restaurants, TASKS, MEALS, 2026, NOW)
     expect(button(tree, 'Restaurant 2').props['aria-pressed']).toBe(true)

@@ -118,6 +118,40 @@
   color: var(--muted);
 }
 
+/* Narrowed: the line under a Stats' chips, heading the figures its list's
+   find box or chip narrows, then Show all. Under the chips rather than over
+   them, a chip pressed never moves as the line comes and goes. The words
+   wrap, and a long find breaks anywhere, so 375pt never scrolls sideways;
+   Show all keeps to the end of the row. */
+.stats-narrowed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.stats-narrowed > span {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Show all is the way out, so it reads as one, as .mine-note's way off does:
+   the accent's text colour at 600. .btn.subtle alone would give it the
+   line's own --text-2, and a hover of --surface-2, the line's own ground. */
+.stats-narrowed > .btn {
+  flex: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.stats-narrowed > .btn:hover {
+  background: var(--surface);
+}
+
 .chart-plot {
   position: relative;
 }

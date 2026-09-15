@@ -13,6 +13,7 @@
  * - MonthBars: a year by month, with its total and a TrendBadge.
  * - ListCard and ListRow: a titled list, such as "not lately" or "never".
  * - YearTable: the heat table, scrolling inside .table-scroll.
+ * - Narrowed: the line saying what a list's find box or chip leaves Stats counting, with Show all; with nothing left, the empty state.
  * - markInk: a row's own colour as a mark (graphicInk); a year table's cells take heatStyle.
  *
  * Every colour is a theme token, or a user's colour through src/contrast.ts.
@@ -32,4 +33,5 @@ export { MonthCalendar, type MonthDay } from './MonthCalendar'
 export { MonthBars } from './MonthBars'
 export { ListCard, ListRow } from './ListCard'
 export { YearTable, type YearRow } from './YearTable'
+export { Narrowed } from './Narrowed'
 export { markInk } from './ink'

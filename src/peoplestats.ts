@@ -11,10 +11,11 @@ import { dateKey } from './utils'
 // an event of your own once it has happened) and personStats — so a number
 // here and the same number on a row can never disagree: days seen, never
 // events unless it says events; the rows' 30- and 90-day windows, back from
-// now; the list's group chips. Mine / Everyone narrows Home, the Calendar and
-// Tasks, never whom you have seen, so it narrows nothing here either, as it
-// narrows nothing on the list or in Today's nudges. Nothing personal is read:
-// no journal, habits or wardrobe reach these figures.
+// now; the people the list's group chip and find box leave (personMatcher).
+// Mine / Everyone narrows Home, the Calendar and Tasks, never whom you have
+// seen, so it narrows nothing here either, as it narrows nothing on the list
+// or in Today's nudges. Nothing personal is read: no journal, habits or
+// wardrobe reach these figures.
 
 /** The group chips: everyone, or one group's people, as on the list. */
 export type GroupFilter = 'all' | PersonGroup
@@ -24,9 +25,6 @@ export function peopleSeen(people: readonly Person[], tasks: Task[], entries: Ca
   const seen = seenTasks(tasks, entries, now)
   return { seen, all: people.map(p => personStats(p, seen, now)) }
 }
-
-/** The people a chip leaves on screen: everyone, or that group's, in the order given. */
-export const inGroup = (all: readonly PersonStats[], group: GroupFilter): PersonStats[] => (group === 'all' ? [...all] : all.filter(s => s.person.group === group))
 
 /** One get-together: a done task with any of these people on it, and which of them it had. */
 export interface GetTogether {
@@ -171,17 +169,18 @@ export interface GroupShare {
 }
 
 /**
- * Of the days you saw anyone in the window, the share with someone from each
- * group, over everyone whatever the chip: a day with family and friends
- * counts for both, so the shares can add up past 100%. A group with nobody in
- * it is left out; the rest keep the list's order, Family first.
+ * Of the days you saw any of these people in the window, the share with
+ * someone from each group; Stats hands it everyone the list shows under All.
+ * A day with family and friends counts for both, so the shares can add up
+ * past 100%. A group with nobody in it is left out; the rest keep the list's
+ * order, Family first.
  */
-export function groupShares(all: readonly PersonStats[], seen: readonly Task[], window: DayWindow, now: Date = new Date()): { days: number; groups: GroupShare[] } {
-  const together = within(getTogethers(all, seen), window, now)
+export function groupShares(shown: readonly PersonStats[], seen: readonly Task[], window: DayWindow, now: Date = new Date()): { days: number; groups: GroupShare[] } {
+  const together = within(getTogethers(shown, seen), window, now)
   const days = visitDays(together).length
-  const groupOf = new Map(all.map(s => [s.person.id, s.person.group]))
+  const groupOf = new Map(shown.map(s => [s.person.id, s.person.group]))
   const groups = PERSON_GROUPS.flatMap(group => {
-    const people = all.filter(s => s.person.group === group).length
+    const people = shown.filter(s => s.person.group === group).length
     if (!people) return []
     const n = visitDays(together.filter(t => t.peopleIds.some(id => groupOf.get(id) === group))).length
     return [{ group, people, days: n, share: days ? n / days : 0 }]

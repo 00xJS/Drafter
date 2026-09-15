@@ -1,4 +1,4 @@
-import { CalendarEntry, Person, Task } from './types'
+import { CalendarEntry, Person, PersonGroup, Task } from './types'
 import { monthsAndTrend } from './stats'
 import { startOfDay } from './taskutils'
 import { dateKey } from './utils'
@@ -200,6 +200,31 @@ export function compareStats(a: PersonStats, b: PersonStats): number {
   const rank: Record<SeenStatus, number> = { overdue: 0, due: 1, never: 2, ok: 3 }
   if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status]
   return (b.daysSince ?? 0) - (a.daysSince ?? 0)
+}
+
+/** People's find box: the lower-cased query in a person's name or notes, as findsPlace is Places'. */
+export function findsPerson(p: Person, needle: string): boolean {
+  if (!needle) return true
+  return p.name.toLowerCase().includes(needle) || (p.notes ?? '').toLowerCase().includes(needle)
+}
+
+/** What the People list's group chip and find box are set to: a group, or 'all', and what is typed. */
+export interface PersonFilter {
+  group: 'all' | PersonGroup
+  q: string
+}
+
+/** The list as it opens: everyone, nothing typed. */
+export const NO_PERSON_FILTER: PersonFilter = { group: 'all', q: '' }
+
+/**
+ * The People list's rule for whom it shows: in the group whose chip is on,
+ * with what is typed in the find box (findsPerson). People → Stats counts only
+ * the people it keeps, so every figure there agrees with the rows.
+ */
+export function personMatcher(filter: PersonFilter): (p: Person) => boolean {
+  const needle = filter.q.trim().toLowerCase()
+  return p => (filter.group === 'all' || p.group === filter.group) && findsPerson(p, needle)
 }
 
 export interface Occasion {

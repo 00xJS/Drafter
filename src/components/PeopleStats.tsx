@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { daysAgo, shortDay } from '../kitchen'
-import { countOf, type PersonStats } from '../people'
+import { countOf, NO_PERSON_FILTER, personMatcher, type PersonFilter, type PersonStats } from '../people'
 import {
   COMING_UP_DAYS,
   comingUp,
@@ -8,7 +8,6 @@ import {
   daysInMonth,
   getTogethers,
   groupShares,
-  inGroup,
   mostSeen,
   namesOf,
   neverSeen,
@@ -27,7 +26,7 @@ import { useTheme, type Theme } from '../theme'
 import { PERSON_GROUPS, PERSON_GROUP_META, type CalendarEntry, type Person, type Task } from '../types'
 import { dateKey } from '../utils'
 import { PersonFace } from './PersonFace'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable, markInk } from './stats'
+import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable, markInk } from './stats'
 
 interface Props {
   people: Person[]
@@ -35,6 +34,13 @@ interface Props {
   tasks: Task[]
   /** Your own calendar entries: one that has happened with people on it counts as seeing them, as on the list. */
   entries?: CalendarEntry[]
+  /**
+   * The list's group chip and find box, held by the People tab: every figure
+   * counts only the people they leave, as the list shows only them.
+   */
+  filter: PersonFilter
+  /** Set them: a chip here is the list's chip, and Show all clears both. */
+  onFilter(filter: PersonFilter): void
   /** Saw them: a visit logged now, with Undo, as Today's people nudges log one. */
   onSaw(person: Person): void
   /** Open a person's card on the list. */
@@ -119,13 +125,13 @@ function groupChips(all: readonly PersonStats[], group: GroupFilter, onGroup: (g
 }
 
 /**
- * Each group's share of the days you saw anyone, over 30 days, 12 months or
- * all time, opening on 30 days as Most seen does. The days sit by the group's
- * name, so the bar ends with the share alone.
+ * Each group's share of the days you saw any of the people the list shows,
+ * over 30 days, 12 months or all time, opening on 30 days as Most seen does.
+ * The days sit by the group's name, so the bar ends with the share alone.
  */
-function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: readonly Task[]; now: Date }) {
+function GroupsCard({ shown, seen, now }: { shown: readonly PersonStats[]; seen: readonly Task[]; now: Date }) {
   const [span, setSpan] = useState<DayWindow>(30)
-  const { days, groups } = groupShares(all, seen, span, now)
+  const { days, groups } = groupShares(shown, seen, span, now)
   return (
     <ChartCard title="Groups" sub="Of the days you saw anyone, the share with each group: a day with family and friends counts for both" aside={<WindowSwitch value={span} onChange={setSpan} />}>
       {days === 0 ? (
@@ -160,9 +166,11 @@ function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: rea
  * people beneath, the all-time get-togethers, each group's share, the pairs
  * seen on the same days, and the birthdays and anniversaries coming up.
  * Counted by peoplestats.ts off what the list reads, under the list's group
- * chips; drawn with the Stats kit.
+ * chip and find box, so every figure counts only the people the list shows;
+ * while they narrow it, a line under the chips says so, with Show all. Drawn
+ * with the Stats kit.
  */
-export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpenPerson, onOpenDay, mineOnCalendar = false, now: clock }: Props) {
+export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, mineOnCalendar = false, now: clock }: Props) {
   const theme = useTheme()
   // read at one instant, and again when the records change, as the list's figures are
   const { now, seen, all } = useMemo(() => {
@@ -171,9 +179,14 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
   }, [people, tasks, entries, clock])
   const todayKey = dateKey(now)
   const thisYear = now.getFullYear()
-  const [group, setGroup] = useState<GroupFilter>('all')
+  const { group } = filter
+  const typed = filter.q.trim()
   const [year, setYear] = useState(thisYear)
-  const shown = useMemo(() => inGroup(all, group), [all, group])
+  // whom the list shows, by its own rule: every figure below counts them and nobody else
+  const shown = useMemo(() => {
+    const matches = personMatcher(filter)
+    return all.filter(s => matches(s.person))
+  }, [all, filter])
   const together = useMemo(() => getTogethers(shown, seen), [shown, seen])
   const byDay = useMemo(() => whoByDay(shown), [shown])
 
@@ -191,19 +204,27 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
   const podium = mostSeen(shown, 'all', now, 3)
   const months = daysByMonth(together, year, now)
   const who = group === 'all' ? 'people' : PERSON_GROUP_META[group].toLowerCase()
-  const groupsWithPeople = PERSON_GROUPS.filter(g => all.some(s => s.person.group === g)).length
+  const groupsWithPeople = PERSON_GROUPS.filter(g => shown.some(s => s.person.group === g)).length
+  // what narrows the figures, as the line heading them and the empty state say it
+  const chip = group === 'all' ? '' : PERSON_GROUP_META[group]
+  const matching = typed && `matching “${typed}”`
+  const narrowedBy = chip || typed ? [`Stats for ${shown.length} of ${people.length} ${people.length === 1 ? 'person' : 'people'}`, chip, matching].filter(Boolean).join(' · ') : ''
+  const showAll = () => onFilter(NO_PERSON_FILTER)
 
   return (
     <div className="people-stats">
-      {groupChips(all, group, setGroup)}
+      {/* the list's chips: one pressed here is pressed there, and what is typed stays */}
+      {groupChips(all, group, g => onFilter({ ...filter, group: g }))}
 
       {shown.length === 0 ? (
-        <p className="empty">Nobody is in this group yet.</p>
+        <Narrowed empty words={typed ? `Nobody matches “${typed}”${chip ? ` in ${chip}` : ''}.` : 'Nobody is in this group yet.'} onShowAll={showAll} />
       ) : (
         <>
+          {/* under the chips, heading the figures where the empty state sits, so a chip pressed never moves */}
+          {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
           <div className="kpi-row people-tiles">
             {/* on a phone's two columns this one spans its row, so the six below pair up */}
-            <StatTile className="kpi-wide" label="People" value={String(tiles.people)} sub={group === 'all' ? 'on your list' : `in ${PERSON_GROUP_META[group]}`} />
+            <StatTile className="kpi-wide" label="People" value={String(tiles.people)} sub={[chip ? `in ${chip}` : 'on your list', matching].filter(Boolean).join(', ')} />
             <StatTile label="This month" value={`${tiles.thisMonth.days} of ${tiles.thisMonth.of}`} sub="days with someone so far" />
             <StatTile label="Seen lately" value={`${tiles.seenLately} of ${tiles.people}`} sub="seen in the last 90 days" />
             <StatTile label="Overdue" value={String(counts.attention.overdue)} sub="past your target rhythm" warn={counts.attention.overdue > 0} />
@@ -321,8 +342,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
             </div>
           </ChartCard>
 
-          {/* a comparison of the groups: on All, once two of them have someone in */}
-          {group === 'all' && groupsWithPeople > 1 && <GroupsCard all={all} seen={seen} now={now} />}
+          {/* a comparison of the groups: on All, once two of them have someone the list shows */}
+          {group === 'all' && groupsWithPeople > 1 && <GroupsCard shown={shown} seen={seen} now={now} />}
 
           <ListCard
             title="Often together"

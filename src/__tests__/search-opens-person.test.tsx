@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { People } from '../components/People'
+import { NO_PERSON_FILTER } from '../people'
 import type { Person } from '../types'
 
 // Picking a person in Cmd/Ctrl+K opens People on its People segment with that
@@ -19,7 +20,7 @@ const person = (id: string, name: string): Person => ({ kind: 'person', id, name
 const PEOPLE = [person('mum', 'Mum'), person('sam', 'Sam')]
 
 const render = (openId?: string) =>
-  renderToStaticMarkup(<People people={PEOPLE} tasks={[]} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} openId={openId} />)
+  renderToStaticMarkup(<People people={PEOPLE} tasks={[]} filter={NO_PERSON_FILTER} onFilter={noop} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} openId={openId} />)
 
 /** Each card as [id, aria-expanded], in list order. */
 const cards = (html: string) => [...html.matchAll(/<li id="person-([^"]+)" class="person-row(?: open)?"><button class="person-summary" aria-expanded="(true|false)"/g)].map(m => [m[1], m[2]])
