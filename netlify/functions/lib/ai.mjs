@@ -4,8 +4,9 @@
 // out rate limits (the free tier is about 40 requests a minute per key). Work
 // the server starts by itself (`background`) tries it first, so the owner's
 // own requests keep the main key's quota; a 429 or a 5xx from the key tried
-// first is tried once on the other, and only then does the Anthropic fallback
-// apply. With the second key unset, all of it is exactly as it was.
+// first is tried once on the other, on the same model, and only then does the
+// Anthropic fallback apply. With the second key unset, all of it is exactly as
+// it was.
 // JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
 // instruction instead (current Claude models accept no temperature at all).
 
@@ -20,7 +21,12 @@ const NVIDIA_FALLBACK_MODELS = [
 ]
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
 
-let resolvedNvidiaModel = null
+/**
+ * The model each NVIDIA key last answered with, by key name: a key whose
+ * account cannot serve a model walks on to the next, and that never moves the
+ * other key off the one it serves.
+ */
+const resolvedNvidiaModels = new Map()
 
 /** The main NVIDIA key and the optional second one, by the names they have on the host. */
 const NVIDIA_KEYS = /** @type {const} */ (['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2'])
@@ -95,13 +101,16 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
 
 /**
  * One NVIDIA completion on one key (`keyName`: the first in nvidiaKeyOrder
- * unless given), trying the models in turn while the model is the trouble.
- * A failure carries the status NVIDIA answered (`upstream`), so complete() can
- * tell a rate limit or an outage, which the other key may ride out, from
- * anything else.
- * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2' }} input
+ * unless given), trying the models in turn while the model is the trouble, or
+ * only `model` when one is given. Answers the completion and the model NVIDIA
+ * answered for (null when none would), so a retry on the other key can ask the
+ * same one. A failure carries the status NVIDIA answered (`upstream`), so
+ * complete() can tell a rate limit or an outage, which the other key may ride
+ * out, from anything else.
+ * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2', model?: string | null }} input
+ * @returns {Promise<{ model: string | null, result: import('./ai.mjs').Completion }>}
  */
-export async function completeNvidia({ system, prompt, maxTokens, json = false, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0] }) {
+async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null }) {
   // one of the two NVIDIA names, never another variable
   const apiKey = NVIDIA_KEYS.includes(keyName) ? process.env[keyName] : undefined
   const messages = []
@@ -113,13 +122,13 @@ export async function completeNvidia({ system, prompt, maxTokens, json = false, 
   const budget = json ? Math.max(maxTokens ?? 0, 2048) : maxTokens
 
   const configured = process.env.NVIDIA_MODEL?.trim()
-  const candidates = [...new Set([resolvedNvidiaModel, configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
+  const candidates = only ? [only] : [...new Set([resolvedNvidiaModels.get(keyName), configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
 
   const tried = []
   for (const model of candidates) {
     const attempt = await callNvidia(model, messages, budget, { json, temperature, apiKey })
     if (attempt.ok) {
-      resolvedNvidiaModel = model
+      resolvedNvidiaModels.set(keyName, model)
       const choice = attempt.data?.choices?.[0]
       const content = choice?.message?.content
       const text =
@@ -128,23 +137,35 @@ export async function completeNvidia({ system, prompt, maxTokens, json = false, 
           : Array.isArray(content)
             ? content.filter(part => part?.type === 'text').map(part => part.text).join('')
             : ''
-      return { text: stripThinking(text), provider: 'nvidia' }
+      return { model, result: { text: stripThinking(text), provider: 'nvidia' } }
     }
     if (attempt.status === 404 || attempt.status === 400) {
       tried.push(`${model} (${attempt.status})`)
-      if (resolvedNvidiaModel === model) resolvedNvidiaModel = null
+      if (resolvedNvidiaModels.get(keyName) === model) resolvedNvidiaModels.delete(keyName)
       continue
     }
     if (attempt.status === 429)
-      return { status: 429, upstream: 429, error: 'NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.' }
+      return { model, result: { status: 429, upstream: 429, error: 'NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.' } }
     if (attempt.status === 401 || attempt.status === 403)
-      return { status: 502, upstream: attempt.status, error: `NVIDIA rejected the API key — check ${keyName} on the host.` }
-    return { status: 502, upstream: attempt.status, error: `NVIDIA API error (HTTP ${attempt.status})${attempt.message ? `: ${attempt.message}` : ''}` }
+      return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA rejected the API key — check ${keyName} on the host.` } }
+    return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA API error (HTTP ${attempt.status})${attempt.message ? `: ${attempt.message}` : ''}` } }
   }
   return {
-    status: 502,
-    error: `No NVIDIA model was available for this key. Tried: ${tried.join(', ')}. Set NVIDIA_MODEL on the host to one your account can serve (list them at ${NVIDIA_BASE_URL}/models).`,
+    model: null,
+    result: {
+      status: 502,
+      error: `No NVIDIA model was available for this key. Tried: ${tried.join(', ')}. Set NVIDIA_MODEL on the host to one your account can serve (list them at ${NVIDIA_BASE_URL}/models).`,
+    },
   }
+}
+
+/**
+ * One NVIDIA completion on one key: nvidiaOnKey's answer alone. Admin → Test
+ * AI asks each key through it, by name.
+ * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2' }} input
+ */
+export async function completeNvidia(input) {
+  return (await nvidiaOnKey(input)).result
 }
 
 // Models that take output_config.effort (older ones answer it with a 400).
@@ -198,21 +219,30 @@ export async function completeAnthropic({ system, prompt, maxTokens, json = fals
   return { text, provider: 'anthropic' }
 }
 
+/**
+ * A throw, answered as a 502.
+ * @returns {import('./ai.mjs').Completion}
+ */
+const thrown = err => ({ status: 502, error: err instanceof Error ? err.message : String(err) })
+
 /** One provider's completion, with anything it throws answered as a 502. */
 async function attempt(run, input) {
   try {
     return await run(input)
   } catch (err) {
-    return { status: 502, error: err instanceof Error ? err.message : String(err) }
+    return thrown(err)
   }
 }
+
+/** What the other NVIDIA key may ride out: this key's rate limit, or NVIDIA failing. */
+const rideable = r => r.upstream === 429 || (r.upstream ?? 0) >= 500
 
 /**
  * Complete a prompt. Prefers NVIDIA when available; on 429/502 retries once via
  * Anthropic when that key is set. `json: true` asks for JSON-shaped output.
  * With a second NVIDIA key, `background: true` (work the server starts by
  * itself) tries that key first, and a 429 or a 5xx from the key tried first is
- * tried once on the other before the Anthropic fallback.
+ * tried once on the other, on the same model, before the Anthropic fallback.
  */
 export async function complete({ system = '', prompt, maxTokens = 2048, json = false, background = false }) {
   const primary = resolveProvider()
@@ -227,9 +257,21 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
   let result
   if (primary === 'nvidia') {
     const [first, other] = nvidiaKeyOrder({ background })
-    result = await attempt(completeNvidia, { ...input, keyName: first })
-    // once, and only for what the other key can ride out: this key's rate limit, or NVIDIA failing
-    if (other && (result.upstream === 429 || (result.upstream ?? 0) >= 500)) result = await attempt(completeNvidia, { ...input, keyName: other })
+    const tried = await nvidiaOnKey({ ...input, keyName: first }).catch(err => ({ model: null, result: thrown(err) }))
+    result = tried.result
+    // with two keys, one may go first only for work nobody watches (Sunday's
+    // draft, email-in), so a key NVIDIA rejects is named in the log
+    if (other && (result.upstream === 401 || result.upstream === 403)) console.error(`ai: ${result.error}`)
+    // once, and only for what the other key can ride out, asking the model the first key asked
+    if (other && rideable(result)) {
+      const retry = (await nvidiaOnKey({ ...input, keyName: other, model: tried.model }).catch(err => ({ model: null, result: thrown(err) }))).result
+      // the other key's answer, or its own rate limit or outage. Anything else
+      // (NVIDIA rejects that key, its account can't serve the model, no answer
+      // at all) is that key's trouble: the first key's answer stands, so a
+      // busy key still reads as busy, and the log says which key it was
+      if (!retry.error || rideable(retry)) result = retry
+      else console.error(`ai: ${other} could not take over from ${first}: ${retry.error}`)
+    }
   } else {
     result = await attempt(completeAnthropic, input)
   }

@@ -313,3 +313,72 @@ describe('Admin → status counts either NVIDIA key, and names neither', () => {
     expect((await aiStatus()).ai).toEqual({ configured: false, missing: ['NVIDIA_API_KEY or ANTHROPIC_API_KEY'], nvidia: false, nvidiaKeys: 0, anthropic: false })
   })
 })
+
+// The second key goes first only for work nobody watches (Sunday's draft,
+// email-in's triage), and a test the main key answers never shows that key is
+// rejected. So with two, Test AI asks each key on its own as well, and says
+// which one failed, by name.
+describe('Admin → Test AI asks each NVIDIA key on its own', () => {
+  const MAIN = 'nvapi-main-secret'
+  const SECOND = 'nvapi-second-secret'
+  /** Each NVIDIA call, by the key it carried. */
+  let nvidia: string[]
+  /** Keys NVIDIA answers 401. */
+  let rejected: Set<string>
+
+  beforeEach(() => {
+    for (const key of ['ANTHROPIC_API_KEY', 'AI_PROVIDER', 'NVIDIA_MODEL']) vi.stubEnv(key, '')
+    vi.stubEnv('NVIDIA_API_KEY', MAIN)
+    vi.stubEnv('NVIDIA_API_KEY_2', SECOND)
+    nvidia = []
+    rejected = new Set()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace(SUPABASE, '')
+        if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: signedIn })
+        if (url.startsWith('/rest/v1/app_config?key=eq.owner_email')) return Response.json([{ value: 'owner@example.test' }])
+        if (url === 'https://integrate.api.nvidia.com/v1/chat/completions') {
+          const key = (new Headers(init?.headers).get('authorization') ?? '').replace(/^Bearer /, '')
+          nvidia.push(key === MAIN ? 'main' : key === SECOND ? 'second' : 'neither')
+          if (rejected.has(key)) return Response.json({ error: { message: 'Unauthorized' } }, { status: 401 })
+          return Response.json({ choices: [{ message: { content: 'ok' } }] })
+        }
+        throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`)
+      }),
+    )
+  })
+
+  it('asks once with one key, as before', async () => {
+    vi.stubEnv('NVIDIA_API_KEY_2', '')
+    expect(await (await act('testAi')).json()).toEqual({ ok: true, provider: 'nvidia', latencyMs: expect.any(Number), sample: 'ok', error: null })
+    expect(nvidia).toEqual(['main'])
+  })
+
+  it('with two, asks each as well, and passes when both answer', async () => {
+    const body = await (await act('testAi')).json()
+    expect(body.ok).toBe(true)
+    expect(body.keys).toEqual([
+      { name: 'NVIDIA_API_KEY', ok: true, latencyMs: expect.any(Number), error: null },
+      { name: 'NVIDIA_API_KEY_2', ok: true, latencyMs: expect.any(Number), error: null },
+    ])
+    expect(nvidia.sort()).toEqual(['main', 'main', 'second'])
+  })
+
+  it('fails on a second key NVIDIA rejects, though the main key answered, and names it, never its value', async () => {
+    rejected.add(SECOND)
+    const text = await (await act('testAi')).text()
+    expect(JSON.parse(text)).toEqual({
+      ok: false,
+      provider: 'nvidia',
+      latencyMs: expect.any(Number),
+      sample: 'ok',
+      error: null,
+      keys: [
+        { name: 'NVIDIA_API_KEY', ok: true, latencyMs: expect.any(Number), error: null },
+        { name: 'NVIDIA_API_KEY_2', ok: false, latencyMs: expect.any(Number), error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY_2 on the host.' },
+      ],
+    })
+    expect(text).not.toMatch(/nvapi-(main|second)-secret/)
+  })
+})

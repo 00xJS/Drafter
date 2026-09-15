@@ -592,7 +592,8 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
                 <p className="field-hint">
                   The ✨ features (break a task into steps, suggest tags, refine a description) run through the site's server-side proxy — configure{' '}
                   <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify), and optionally a second NVIDIA
-                  key, <code>NVIDIA_API_KEY_2</code>, which scheduled work uses first. No key is ever stored in the browser.
+                  key, <code>NVIDIA_API_KEY_2</code>, which scheduled work uses first; with two, Test AI asks each key on its own as well. No key is ever stored in the
+                  browser.
                   {status.ai.configured && (
                     <>
                       {' '}
@@ -608,11 +609,19 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
                   </button>
                 </div>
                 {aiTest && (
-                  <TestLine
-                    ok={aiTest.ok}
-                    detail={[aiTest.provider, `${aiTest.latencyMs} ms`, aiTest.sample && `replied “${aiTest.sample}”`].filter(Boolean).join(' · ')}
-                    error={aiTest.error}
-                  />
+                  <>
+                    <TestLine
+                      ok={aiTest.ok}
+                      detail={[aiTest.provider, `${aiTest.latencyMs} ms`, aiTest.sample && `replied “${aiTest.sample}”`].filter(Boolean).join(' · ')}
+                      error={aiTest.error}
+                    />
+                    {aiTest.keys?.map(k => (
+                      <p key={k.name} className="field-hint">
+                        <span className={k.ok ? 'sync-ok' : 'warn'}>{k.ok ? 'OK' : 'Failed'}</span> <code>{k.name}</code> · {k.latencyMs} ms
+                        {k.error && <> — {k.error}</>}
+                      </p>
+                    ))}
+                  </>
                 )}
               </HealthCard>
 

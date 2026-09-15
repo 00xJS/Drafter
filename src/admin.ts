@@ -79,6 +79,8 @@ export interface AiTest {
   latencyMs: number
   sample: string
   error: string | null
+  /** With two NVIDIA keys, each one asked on its own as well, by its name (never its value). */
+  keys?: { name: string; ok: boolean; latencyMs: number; error: string | null }[]
 }
 
 export interface PushTest {

@@ -14,7 +14,7 @@ import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './li
 import { googleConfigured, missingGoogleEnv } from './lib/google.mjs'
 import { microsoftConfigured, missingMicrosoftEnv } from './lib/microsoft.mjs'
 import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
-import { complete, nvidiaKeyOrder } from './lib/ai.mjs'
+import { complete, completeNvidia, nvidiaKeyOrder, resolveProvider } from './lib/ai.mjs'
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
@@ -393,14 +393,29 @@ const handler = async req => {
 
     // ---- live integration tests: always 200 so the panel can show the result inline
     if (action === 'testAi') {
-      const started = Date.now()
-      const r = await complete({ prompt: 'Reply with the single word: ok', maxTokens: 16 }).catch(e => /** @type {import('./lib/ai.mjs').Completion} */ ({ error: e?.message ?? 'AI call threw' }))
+      const prompt = 'Reply with the single word: ok'
+      /** @param {() => Promise<import('./lib/ai.mjs').Completion>} run */
+      const timed = async run => {
+        const started = Date.now()
+        const r = await run().catch(e => /** @type {import('./lib/ai.mjs').Completion} */ ({ error: e?.message ?? 'AI call threw' }))
+        return { r, latencyMs: Date.now() - started }
+      }
+      // With two NVIDIA keys each is asked on its own as well: one goes first
+      // only for work nobody watches (Sunday's draft, email-in), and a request
+      // the other key answers would never show that one is rejected. By name,
+      // never by value.
+      const each = resolveProvider() === 'nvidia' && nvidiaKeyOrder().length > 1 ? nvidiaKeyOrder() : []
+      const [all, ...keys] = await Promise.all([
+        timed(() => complete({ prompt, maxTokens: 16 })),
+        ...each.map(keyName => timed(() => completeNvidia({ prompt, maxTokens: 16, keyName }))),
+      ])
       return Response.json({
-        ok: !r.error,
-        provider: r.provider ?? null,
-        latencyMs: Date.now() - started,
-        sample: String(r.text ?? '').slice(0, 80),
-        error: r.error ?? null,
+        ok: !all.r.error && keys.every(k => !k.r.error),
+        provider: all.r.provider ?? null,
+        latencyMs: all.latencyMs,
+        sample: String(all.r.text ?? '').slice(0, 80),
+        error: all.r.error ?? null,
+        ...(each.length ? { keys: each.map((name, i) => ({ name, ok: !keys[i].r.error, latencyMs: keys[i].latencyMs, error: keys[i].r.error ?? null })) } : {}),
       })
     }
 
