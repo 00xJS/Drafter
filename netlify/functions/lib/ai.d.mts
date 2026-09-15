@@ -3,20 +3,15 @@ export interface CompletionInput {
   prompt: string
   maxTokens?: number
   json?: boolean
-  /** Anthropic alone, never NVIDIA: Ask Drafter with the journal in it. */
-  claudeOnly?: boolean
 }
 
 /**
  * An answer, or why there is none. Each side names the other's fields as
  * absent, so the functions (plain JavaScript) can test `.error` and read `.text`.
- * `code` is CLAUDE_ONLY when a claudeOnly request could not be answered.
  */
 export type Completion =
-  | { text: string; provider: 'nvidia' | 'anthropic'; status?: undefined; error?: undefined; code?: undefined }
-  | { status: number; error: string; code?: string; text?: undefined; provider?: undefined }
-
-export declare const CLAUDE_ONLY: 'claude_only'
+  | { text: string; provider: 'nvidia' | 'anthropic'; status?: undefined; error?: undefined }
+  | { status: number; error: string; text?: undefined; provider?: undefined }
 
 export function resolveProvider(): 'nvidia' | 'anthropic' | null
 

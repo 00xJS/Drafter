@@ -1,7 +1,5 @@
 // Shared AI completion used by /api/ai and (later) digest / inbound / MCP.
-// NVIDIA first when keyed; Anthropic as runtime fallback on 429/502. A request
-// marked claudeOnly (Ask Drafter with the journal in it) goes to Anthropic
-// alone: never to NVIDIA, first or as a fallback.
+// NVIDIA first when keyed; Anthropic as runtime fallback on 429/502.
 // JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
 // instruction instead (current Claude models accept no temperature at all).
 
@@ -162,31 +160,11 @@ export async function completeAnthropic({ system, prompt, maxTokens, json = fals
   return { text, provider: 'anthropic' }
 }
 
-/** The code a claudeOnly request answers with when Claude cannot take it. */
-export const CLAUDE_ONLY = 'claude_only'
-
-/**
- * A request that may go to Claude and nowhere else, whatever AI_PROVIDER says:
- * without the key, or when Claude fails, the answer is an error, never NVIDIA.
- */
-async function completeClaudeOnly({ system, prompt, maxTokens, json }) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { status: 501, code: CLAUDE_ONLY, error: 'This request goes to Claude only, and Claude is not set up on this site: set ANTHROPIC_API_KEY in the host environment.' }
-  }
-  try {
-    return await completeAnthropic({ system, prompt, maxTokens, json })
-  } catch (err) {
-    return { status: 502, code: CLAUDE_ONLY, error: `This request goes to Claude only, and Claude could not answer: ${err instanceof Error ? err.message : String(err)}` }
-  }
-}
-
 /**
  * Complete a prompt. Prefers NVIDIA when available; on 429/502 retries once via
  * Anthropic when that key is set. `json: true` asks for JSON-shaped output.
- * `claudeOnly: true` sends it to Anthropic alone (completeClaudeOnly).
  */
-export async function complete({ system = '', prompt, maxTokens = 2048, json = false, claudeOnly = false }) {
-  if (claudeOnly) return completeClaudeOnly({ system, prompt, maxTokens, json })
+export async function complete({ system = '', prompt, maxTokens = 2048, json = false }) {
   const primary = resolveProvider()
   if (!primary) {
     return {
