@@ -35,6 +35,12 @@ function safeHref(url: string): string | null {
   return /^(https?:\/\/|mailto:)/i.test(u) ? u : null
 }
 
+/** The attributes a tag keeps in the subset, or null for a tag outside it. Its
+ *  own keys only, so an element named "constructor" is not in the subset. */
+export function allowedAttributes(tag: string): readonly string[] | null {
+  return Object.prototype.hasOwnProperty.call(ALLOWED, tag) ? ALLOWED[tag] : null
+}
+
 /** Reduce arbitrary HTML to the allowed subset. Runs in the browser (uses DOMParser). */
 export function sanitizeHtml(html: string): string {
   if (typeof DOMParser === 'undefined') return html
@@ -53,7 +59,8 @@ export function sanitizeHtml(html: string): string {
         continue
       }
       walk(el)
-      if (!(tag in ALLOWED)) {
+      const keep = allowedAttributes(tag)
+      if (!keep) {
         // unwrap unknown tags (span, font, table…) keeping their content; block-ish ones become paragraphs
         const replacement = /^(section|article|header|footer|table|tr|td|th|tbody|thead)$/.test(tag) ? doc.createElement('p') : null
         if (replacement) {
