@@ -480,11 +480,14 @@ describe('the piece sheet', () => {
     expect(onEdit.mock.calls[0][0](synced)).toMatchObject({ price: 45, tags: ['gym'] })
   })
 
-  it('reads a typed price as whole units of the currency, and nothing that is not a price', () => {
+  it('reads a typed price as whole units of the currency, nothing at all as no price, and nothing that is not a price', () => {
     expect(readPrice('40')).toBe(40)
     expect(readPrice(' £1,250 ')).toBe(1250)
     expect(readPrice('39.60')).toBe(40)
     expect(readPrice('')).toBeNull()
+    // no cost line, Stats row or Ask figure reads a price of nothing, so the field keeps none
+    expect(readPrice('0')).toBeNull()
+    expect(readPrice('£0.40')).toBeNull()
     expect(readPrice('cheap')).toBeUndefined()
     expect(readPrice('-5')).toBeUndefined()
   })

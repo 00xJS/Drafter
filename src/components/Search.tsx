@@ -5,7 +5,7 @@ import { relativeDayLabel } from '../journal'
 import { looksLikeQuestion } from '../ask'
 import { dueLabel } from '../taskutils'
 import { excerpt } from '../utils'
-import { garmentTags, liveById, orderPieces, outfitLabel } from '../wardrobe'
+import { liveById, orderPieces, outfitLabel, pieceTags } from '../wardrobe'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
@@ -149,7 +149,7 @@ export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: str
   const out: WardrobeHit[] = []
   for (const g of pieces ? garments : []) {
     if (g.deletedAt) continue
-    const tags = garmentTags(g)
+    const tags = pieceTags(g)
     const s = score(g.name, needle, 12) + score(tags.join(' '), needle, 6)
     if (s <= 0) continue
     const tag = score(g.name, needle, 1) ? undefined : tags.find(t => t.toLowerCase().includes(needle))

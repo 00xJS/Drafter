@@ -19,6 +19,10 @@ export declare function marked(w: Wear, as?: { planned?: boolean; note?: string 
 
 export declare function liveById(garments: readonly Garment[]): Map<string, Garment>
 export declare function orderPieces(ids: readonly string[], byId: ReadonlyMap<string, Garment>): string[]
+/** A top, a bottom or a one-piece: what a look's core is made of. */
+export declare function isCoreType(type: GarmentType): boolean
+/** A type's place in a row of pieces, top to toe. */
+export declare function slotOf(type: GarmentType): number
 
 /** A log: the look to write, and what its Undo puts back — that look as it was, stamped newer again, or the new one to remove. */
 export interface LookLog {

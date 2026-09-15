@@ -15,11 +15,11 @@ import type { Garment, GarmentType, Outfit, Recipe, Wear } from '../types'
 import {
   coreKey,
   wardrobeCosts,
-  garmentTags,
   isPlanned,
   liveById,
   lookCalendar,
   lookOn,
+  pieceTags,
   wearIndex,
   wearStreaks,
   wornBetween,
@@ -91,9 +91,9 @@ describe('one check for a planned look', () => {
 
 describe('a piece’s tags', () => {
   it('reads them when a row carries them, trimmed and each once; none otherwise', () => {
-    expect(garmentTags(piece('a', 'top'))).toEqual([])
-    expect(garmentTags(withExtra(piece('a', 'top'), { tags: [' linen ', 'summer', 'linen', 3, ''] }))).toEqual(['linen', 'summer'])
-    expect(garmentTags(withExtra(piece('a', 'top'), { tags: 'linen' }))).toEqual([])
+    expect(pieceTags(piece('a', 'top'))).toEqual([])
+    expect(pieceTags(withExtra(piece('a', 'top'), { tags: [' linen ', 'summer', 'linen', 3, ''] }))).toEqual(['linen', 'summer'])
+    expect(pieceTags(withExtra(piece('a', 'top'), { tags: 'linen' }))).toEqual([])
   })
 })
 

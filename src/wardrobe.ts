@@ -1,13 +1,13 @@
-import { CORE_TYPES, GARMENT_TYPES, GARMENT_TYPE_META, Garment, GarmentType, Outfit, SEASONS, Season, Wear } from './types'
+import { GARMENT_TYPE_META, Garment, GarmentType, Outfit, SEASONS, Season, Wear } from './types'
 import { formatMoney } from './bills'
 import { daysAgo, daysBetween } from './kitchen'
 import { countOf, monthsAndTrend, visitSummary } from './people'
-import { garmentTags as tidyTags } from './schema'
+import { garmentTags } from './schema'
 import { uid } from './utils'
 import { describeCode, type Forecast } from './weather'
 import { newerStamp } from '../shared/domain.mjs'
 import { shiftDayKey } from '../shared/journal.mjs'
-import { NOT_WORN_DAYS, cleanIds, coreKey, daysWithin, isPlanned, liveById, looksOn, marked, orderPieces, outfitDays, outfitLabel, pieceKey, wearable } from '../shared/wardrobe.mjs'
+import { NOT_WORN_DAYS, cleanIds, coreKey, daysWithin, isCoreType, isPlanned, liveById, looksOn, marked, orderPieces, outfitDays, outfitLabel, pieceKey, slotOf, wearable } from '../shared/wardrobe.mjs'
 import type { WearIndex } from '../shared/wardrobe.mjs'
 
 // The wardrobe's rules and figures: pure, no DOM, worked out once per screen
@@ -81,18 +81,20 @@ export function starred<T extends Garment | Outfit>(x: T, on: boolean): T {
 }
 
 /**
- * A piece's details changed, stamped: a price in whole units (null clears it),
- * tags as a sync keeps them (schema.ts garmentTags), seasons in the year's order — none
- * is any season. Only what is given changes.
+ * A piece's details changed, stamped: a price in whole units (null, or a price
+ * of nothing, clears it, as priceOf reads none), tags as a sync keeps them
+ * (schema.ts garmentTags), seasons in the year's order — none is any season.
+ * Only what is given changes.
  */
 export function withDetails(g: Garment, d: { price?: number | null; tags?: readonly string[]; seasons?: readonly Season[] }): Garment {
   const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
   if (d.price !== undefined) {
-    if (d.price === null || !Number.isFinite(d.price) || d.price < 0) delete next.price
-    else next.price = Math.round(d.price)
+    const whole = d.price === null ? NaN : Math.round(d.price)
+    if (Number.isFinite(whole) && whole > 0) next.price = whole
+    else delete next.price
   }
   if (d.tags !== undefined) {
-    const tags = tidyTags(d.tags)
+    const tags = garmentTags(d.tags)
     if (tags) next.tags = tags
     else delete next.tags
   }
@@ -247,10 +249,10 @@ export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season
 
 /**
  * A piece's tags, each once, as the palette and Ask find a piece by them. A
- * synced row's are tidied already (schema.ts garmentTags); one handed in as it
- * came is read with care all the same.
+ * synced row's are tidied already (schema.ts garmentTags, the sanitizer); one
+ * handed in as it came is read with care all the same.
  */
-export function garmentTags(g: Garment): string[] {
+export function pieceTags(g: Garment): string[] {
   const tags: unknown = g.tags
   return Array.isArray(tags) ? [...new Set(tags.filter((t): t is string => typeof t === 'string').map(t => t.trim()).filter(Boolean))] : []
 }
@@ -602,16 +604,14 @@ export function lookCalendar(ix: WearIndex, year: number, month: number): LookCe
   return cells
 }
 
-/** Core types, and each type's place in a row, as the shared rules keep them. */
-const CORE = new Set<GarmentType>(CORE_TYPES)
-const slot = (type: GarmentType) => GARMENT_TYPES.indexOf(type)
-
 /**
  * Your uniform: the combination you repeat most (repeatedOutfits' first — the
  * same top and bottom, or one-piece), with the share of your logged days it
  * was worn on and what usually goes with it: the shoes, outerwear and
  * accessories worn on at least half of its days, the most often first, three
- * at most. Null until some combination has been worn on two days.
+ * at most. Null until some combination has been worn on two days. The core and
+ * a row's order are the shared rules' own (isCoreType, slotOf), so what goes
+ * with it never disagrees with coreKey.
  */
 export function yourUniform(
   ix: WearIndex,
@@ -623,13 +623,13 @@ export function yourUniform(
   const withIt = new Map<string, number>()
   for (const day of ix.logged) {
     const looks = (ix.looks.get(day) ?? []).filter(w => coreKey(w.garmentIds, byId) === top.key)
-    const extras = new Set(looks.flatMap(w => w.garmentIds).filter(id => byId.has(id) && !CORE.has(byId.get(id)!.type)))
+    const extras = new Set(looks.flatMap(w => w.garmentIds).filter(id => byId.has(id) && !isCoreType(byId.get(id)!.type)))
     for (const id of extras) withIt.set(id, (withIt.get(id) ?? 0) + 1)
   }
   const usually = [...withIt]
     .filter(([, n]) => n * 2 >= top.days)
     .map(([id, n]) => ({ g: byId.get(id)!, n }))
-    .sort((a, b) => b.n - a.n || slot(a.g.type) - slot(b.g.type) || a.g.name.localeCompare(b.g.name))
+    .sort((a, b) => b.n - a.n || slotOf(a.g.type) - slotOf(b.g.type) || a.g.name.localeCompare(b.g.name))
     .slice(0, 3)
     .map(r => r.g)
   return { ...top, share: top.days / ix.logged.length, usually }

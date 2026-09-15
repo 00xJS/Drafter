@@ -27,7 +27,7 @@ import { matchPlace, normalisePlaceText, outingsAt } from './places'
 import { htmlToText } from './richtext'
 import { hasDueTime } from './taskutils'
 import { dateKey, excerpt } from './utils'
-import { NOT_WORN_DAYS, garmentTags, liveById, mostWorn, neverWorn, notWornLately, orderPieces, outfitLabel, priceOf, repeatedOutfits, wearIndex } from './wardrobe'
+import { NOT_WORN_DAYS, liveById, mostWorn, neverWorn, notWornLately, orderPieces, outfitLabel, pieceTags, priceOf, repeatedOutfits, wearIndex } from './wardrobe'
 import { mealLabel, mealSides } from '../shared/kitchen.mjs'
 import { mealHistory } from '../shared/weekplan.mjs'
 import { isDayKey, weekStartKey } from '../shared/weeks.mjs'
@@ -383,8 +383,9 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
     }
   }
 
-  // What you wear is yours alone, as the journal is, but it is nothing you
-  // wrote — a piece's notes never leave the device — so no chip holds it back.
+  // What you wear is yours alone, as the journal is, but what goes is a
+  // piece's name, type and tags and the days it was worn — never its notes or
+  // a look's note, which stay on the device — so no chip holds it back.
   // Every piece — retired ones too, as they keep their history — and 90 days
   // of looks, one record a day. A price goes only with a question about money,
   // as every amount does, and only one the Stats' cost per wear would use.
@@ -392,7 +393,7 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
   const pieces = liveById(src.garments ?? [])
   for (const g of pieces.values()) {
     const days = worn.days.get(g.id) ?? []
-    const tags = garmentTags(g)
+    const tags = pieceTags(g)
     const price = priceOf(g)
     docs.push({
       kind: 'garment',

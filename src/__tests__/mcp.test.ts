@@ -1061,7 +1061,7 @@ describe('the wardrobe over MCP', () => {
     expect(sent[0].id).toMatch(new RegExp(`^wear~${daysAgo(1)}~`))
   })
 
-  it('counts a look planned for today in no figure, and log_outfit on its day confirms it with what was worn', async () => {
+  it('counts a look planned for today in no figure, and log_outfit leaves it a plan, with a look of its own beside it', async () => {
     const plan = { kind: 'wear', id: `wear~${today}~plan000000`, date: today, garmentIds: ['linen', 'jeans'], planned: true, createdAt: STAMP, updatedAt: STAMP }
     const withPlan = (): Row[] => [...household(), { user_id: OWNER, data: plan }]
     serveHousehold(withPlan())
@@ -1072,11 +1072,21 @@ describe('the wardrobe over MCP', () => {
     const stats = (await tool('get_wardrobe_stats').run({ window: 'all' }, ctxFor())) as Record<string, any>
     expect(ids(stats.neverWorn.pieces)).toEqual(['linen'])
     expect(stats.daysLoggedThisMonth).toBe([daysAgo(3), daysAgo(70)].filter(d => d.startsWith(today.slice(0, 7))).length)
-    // the composer's Wearing this: the day's latest look takes what was worn, and is a plan no longer
-    const sent = serveHousehold(withPlan())
-    await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())
-    expect(sent[0]).toMatchObject({ id: plan.id, garmentIds: ['tee', 'jeans'] })
+    // an assistant never sees the plan's pieces, so it is left as it was, as a piece's Wear today leaves it
+    let sent = serveHousehold(withPlan())
+    const out = (await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())) as Record<string, any>
+    expect(sent).toHaveLength(1)
+    expect(sent[0].id).not.toBe(plan.id)
+    expect(sent[0]).toMatchObject({ kind: 'wear', date: today, garmentIds: ['tee', 'jeans'] })
     expect('planned' in sent[0]).toBe(false)
+    expect(out).toMatchObject({ logged: 'new look', looksThatDay: 1 })
+    // the look beside it is the day's latest now, so a later log, here a saved outfit, changes that one
+    const worn = sent[0]
+    sent = serveHousehold([...withPlan(), { user_id: OWNER, data: worn }])
+    const again = (await tool('log_outfit').run({ outfitId: 'weekday' }, ctxFor())) as Record<string, any>
+    expect(sent).toHaveLength(1)
+    expect(sent[0].id).toBe(worn.id)
+    expect(again).toMatchObject({ logged: 'look updated', looksThatDay: 1 })
   })
 
   it('refuses what the app would not write, and writes nothing', async () => {

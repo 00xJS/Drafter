@@ -85,7 +85,7 @@ const STAYED = [
   'outerwearFor',
   'hasOuterwear',
   // the wardrobe in the palette, Ask, the Calendar, the Week review and Stats
-  'garmentTags',
+  'pieceTags',
   'lookOn',
   'wearStreaks',
   'lookCalendar',

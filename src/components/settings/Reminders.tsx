@@ -346,7 +346,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
                 />
                 <span className="cal-source-name">Hide details on the lock screen</span>
               </label>
-              <small className="field-hint">Reminders say “Something is due” or “An occasion today” instead of a task title or a person's name. Tapping one still opens the right thing.</small>
+              <small className="field-hint">Reminders say “Something is due”, “Something on your calendar”, “An occasion today” or “Somewhere to revisit” instead of a task title, an event, a person's name or a place. Tapping one still opens the right thing.</small>
             </p>
           )}
           <PlanDayReminder
@@ -383,7 +383,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
       ) : (
         <>
           <h4>While the app is open</h4>
-          <p className="field-hint">Browser notifications on this device when a task's due time arrives, and as each of your own events starts (9am on the first day of an all-day one; not work days or a household member's events).</p>
+          <p className="field-hint">Browser notifications on this device when a task's due time arrives, and as each of your own events starts (9am on the first day of an all-day one; not work days, a household member's events or a subscribed calendar's), unless it is already over.</p>
           <p>
             {notif === 'granted'
               ? 'Notifications are on.'

@@ -88,7 +88,10 @@ export function marked(w, as = {}) {
 // ---- identity --------------------------------------------------------------------
 
 const CORE = new Set(CORE_TYPES)
-const slot = type => GARMENT_TYPES.indexOf(type)
+/** A top, a bottom or a one-piece (CORE_TYPES): what a look's core is made of. */
+export const isCoreType = type => CORE.has(type)
+/** A type's place in a row of pieces, top to toe (GARMENT_TYPES). */
+export const slotOf = type => GARMENT_TYPES.indexOf(type)
 /** A top and a bottom, or a one-piece: enough to be dressed. */
 const dresses = types => types.has('onepiece') || (types.has('top') && types.has('bottom'))
 
@@ -99,7 +102,7 @@ export function liveById(garments) {
 
 /** Pieces in slot order (GARMENT_TYPES), stable within a slot; unknown ids dropped. */
 export function orderPieces(ids, byId) {
-  return [...new Set(ids)].filter(id => byId.has(id)).sort((a, b) => slot(byId.get(a).type) - slot(byId.get(b).type))
+  return [...new Set(ids)].filter(id => byId.has(id)).sort((a, b) => slotOf(byId.get(a).type) - slotOf(byId.get(b).type))
 }
 
 /**
@@ -128,8 +131,9 @@ function displaces(g, other) {
  *
  * A log is a look worn unless `planned` makes it a plan (a day still to
  * come), so logging a day whose latest look was a plan confirms that plan: a
- * caller that does not show the plan's pieces logs `another` beside it
- * instead. `note`, when given, is the look's note; '' clears it.
+ * caller that does not show the plan's pieces (a piece's Wear today, an
+ * assistant's log_outfit) logs `another` beside it instead. `note`, when
+ * given, is the look's note; '' clears it.
  */
 export function logLook(wears, day, pieces, records, opts = {}) {
   const as = { planned: opts.planned ?? false, note: opts.note }

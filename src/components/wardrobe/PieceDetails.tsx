@@ -2,7 +2,7 @@ import { useRef, useState, type MutableRefObject } from 'react'
 import { countOf } from '../../people'
 import { garmentTags } from '../../schema'
 import { SEASONS, SEASON_META, type Garment } from '../../types'
-import { withDetails, wornWith, type WearIndex } from '../../wardrobe'
+import { priceOf, withDetails, wornWith, type WearIndex } from '../../wardrobe'
 import { GarmentPhoto } from './GarmentPhoto'
 
 interface Props {
@@ -21,15 +21,20 @@ interface Props {
   keep: MutableRefObject<() => void>
 }
 
-const priceText = (g: Garment) => (g.price === undefined ? '' : String(g.price))
+const priceText = (g: Garment) => String(priceOf(g) ?? '')
 const tagsText = (g: Garment) => (g.tags ?? []).join(', ')
 
-/** A price as typed: whole units ("£40", "39.99" is 40), null for an empty field, undefined for anything that is not a price. */
+/**
+ * A price as typed: whole units ("£40", "39.99" is 40), null for an empty
+ * field or for nothing at all ("0" is no price, as priceOf reads one),
+ * undefined for anything that is not a price.
+ */
 export function readPrice(text: string): number | null | undefined {
   const bare = text.replace(/[,\s£$€]/g, '')
   if (bare === '') return null
   const n = Number(bare)
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined
+  if (!Number.isFinite(n) || n < 0) return undefined
+  return Math.round(n) > 0 ? Math.round(n) : null
 }
 
 /**

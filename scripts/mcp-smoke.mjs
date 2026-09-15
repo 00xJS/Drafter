@@ -915,6 +915,8 @@ async function main() {
       { kind: 'outfit', id: 'weekday', name: 'Weekday', garmentIds: ['tee', 'jeans'], createdAt: wardrobeStamp, updatedAt: wardrobeStamp },
       look(dayFromToday(-3), 'smoke00003', ['tee', 'jeans']),
       look(dayFromToday(-70), 'smoke00070', ['dress']),
+      // yesterday's plan, never confirmed: it counts in no figure
+      { ...look(dayFromToday(-1), 'smokeplan1', ['linen', 'jeans']), planned: true },
     ])
     eq(row('tee')?.user_id, OWNER, "the seeded wardrobe is the owner's")
     const clothes = await call('list_garments', {})
@@ -923,6 +925,7 @@ async function main() {
     eq(tee?.lastWorn, dayFromToday(-3), "list_garments gives a piece's last worn day")
     eq(tee?.daysWorn, 1, 'and how many days it was worn')
     eq(clothes.garments.find(g => g.id === 'band')?.retired, true, 'a retired piece says so')
+    eq(clothes.garments.find(g => g.id === 'linen')?.daysWorn, 0, 'a plan never confirmed counts in no figure')
     ok(!/smoke-(photo|thumb)-of-tee/.test(JSON.stringify(clothes)), 'no photo leaves through list_garments')
     const stats = await call('get_wardrobe_stats', { window: 'all' })
     eq(stats.mostWorn.pieces.map(p => p.id).join(','), 'jeans,tee,dress', "get_wardrobe_stats ranks the most worn by the app's rule")
@@ -947,7 +950,16 @@ async function main() {
     eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear' and data ->> 'date' = ${lit(today)}`), 2, 'two looks stored for today')
     ok(/Old band tee is retired/.test(await callFails('log_outfit', { garmentIds: ['band', 'jeans'] })), 'a retired piece is refused, as the composer never offers one')
     ok(/has not happened yet/.test(await callFails('log_outfit', { garmentIds: ['tee', 'jeans'], date: dayFromToday(1) })), 'and so is a day ahead')
-    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear'`), 4, 'nothing was written for either')
+    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear'`), 5, 'nothing was written for either')
+    const planDay = dayFromToday(-1)
+    const planId = `wear~${planDay}~smokeplan1`
+    const planBefore = JSON.stringify(row(planId))
+    const besidePlan = await call('log_outfit', { garmentIds: ['tee', 'jeans'], date: planDay })
+    eq(besidePlan.logged, 'new look', 'on a day whose latest look is a plan, log_outfit logs a look of its own beside it')
+    eq(besidePlan.looksThatDay, 1, 'and the plan beside it is no look worn')
+    eq(JSON.stringify(row(planId)), planBefore, 'the plan is left as it was')
+    ok(row(planId)?.data.planned === true, 'a plan still')
+    eq((await call('list_garments', {})).garments.find(g => g.id === 'linen')?.daysWorn, 0, 'so the linen shirt in it is still never worn')
 
     // ------------------------------- a household peer's personal rows stay theirs
     // The database's policies keep a peer's personal rows from the owner, and

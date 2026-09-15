@@ -878,6 +878,9 @@ describe('favourites, seasons, tags and a price', () => {
     // only what is given changes
     expect(withDetails(g, { price: 12 })).toMatchObject({ price: 12, tags: ['work', 'gym'], seasons: ['spring', 'winter'] })
     expect('price' in withDetails(g, { price: -5 })).toBe(false)
+    // a price of nothing is none, as priceOf reads one
+    expect('price' in withDetails(g, { price: 0 })).toBe(false)
+    expect('price' in withDetails(g, { price: 0.4 })).toBe(false)
   })
 
   it('seasonOf reads the month; a piece marked for none is for any season', () => {
