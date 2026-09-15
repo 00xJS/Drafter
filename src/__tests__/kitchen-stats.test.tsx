@@ -1,15 +1,16 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ReactElement, ReactNode } from 'react'
+import { useState, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { weekKeyOf, weekKeyStart, weekStartKey } from '../../shared/weeks.mjs'
 import { Kitchen } from '../components/Kitchen'
 import { KitchenStats as StatsView } from '../components/kitchen/KitchenStats'
 import { KitchenStats } from '../components/planner/lazy'
-import { KITCHEN_TABS, KITCHEN_TAB_KEY, VIEWS, VIEW_TO_KITCHEN, kitchenTabOfView, storedKitchenTab } from '../components/planner/routes'
+import { KITCHEN_TABS, KITCHEN_TAB_KEY, VIEWS, VIEW_TO_KITCHEN, kitchenTabOfView, storedKitchenTab, type KitchenTab } from '../components/planner/routes'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
+import { useNavigation } from '../components/planner/useNavigation'
 import { ChartCard, ListCard, MonthCalendar, Podium } from '../components/stats'
 import { cookedIndex, cookedLine, notLately } from '../kitchen'
 import {
@@ -29,7 +30,7 @@ import {
 } from '../kitchenstats'
 import { placeStats } from '../places'
 import type { GroceryLine, GroceryList, Meal, Place, Recipe } from '../types'
-import { elements, propsOf, settled, textOf, type El } from './rendered'
+import { elements, press, propsOf, settled, textOf, type El } from './rendered'
 import { sheetSource } from './source'
 
 // Kitchen → Stats: every figure worked out by the Kitchen's own rules, so it
@@ -209,6 +210,26 @@ describe('the kitchen, counted by its own rules', () => {
     expect(goesWith(ix, 5, 1)[0].sides.map(s => s.name)).toEqual(['Rice'])
   })
 
+  it('counts a side typed as a saved recipe is named as that recipe, and ranks two recipes of one name by id', () => {
+    // recipeByName's rule: case and spaces aside, " RICE " is the saved Rice
+    const typed = kitchenIndex(RECIPES, [...MEALS, cook('2026-09-03', 'dinner', curry, { sides: [{ title: ' RICE ' }, { title: 'chicken  CURRY' }] })], PLACES, NOW)
+    expect(goesWith(typed)).toEqual([
+      {
+        main: curry,
+        meals: 6,
+        sides: [
+          { key: 'r:rice', name: 'Rice', count: 4 },
+          { key: 't:naan', name: 'naan', count: 1 },
+        ],
+      },
+    ])
+    // two Soups cooked last on one day: by id, whichever order the store has them in
+    const [b, a] = [recipe('b-soup', 'Soup'), recipe('a-soup', 'Soup')]
+    const soups = (list: Recipe[]) => mostCooked(kitchenIndex(list, [cook('2026-09-12', 'dinner', b), cook('2026-09-12', 'lunch', a)], [], NOW), 'all').map(r => r.recipe.id)
+    expect(soups([b, a])).toEqual(['a-soup', 'b-soup'])
+    expect(soups([a, b])).toEqual(['a-soup', 'b-soup'])
+  })
+
   it('ranks the grocery items on the most weekly lists, never one taken off or already had, and no week to come', () => {
     const rank = (window: 30 | 365 | 'all') => mostBought(GROCERIES, TODAY, window).map(r => [r.name, r.count])
     expect(rank(30)).toEqual([['Milk', 2], ['Onions', 2], ['Eggs', 1]])
@@ -266,11 +287,22 @@ describe('weekKeyStart', () => {
   it('finds the Sunday a week key starts on: weekKeyOf, backwards', () => {
     expect(weekKeyStart('2026-W37')).toBe('2026-09-13')
     expect(weekKeyStart('2026-W30')).toBe('2026-07-26')
-    for (let t = Date.UTC(2025, 11, 20); t <= Date.UTC(2027, 0, 10); t += 86_400_000) {
-      const day = new Date(t).toISOString().slice(0, 10)
-      expect(weekKeyStart(weekKeyOf(day)!), day).toBe(weekStartKey(day))
+    // a year that starts on a Sunday, and the 53rd week it ends with
+    expect(weekKeyStart('2023-W01')).toBe('2023-01-01')
+    expect(weekKeyStart('2023-W53')).toBe('2023-12-31')
+    expect(weekKeyStart('2034-W01')).toBe('2034-01-01')
+    // across New Years that start on a Thursday and a Friday, a Sunday, and after a 53-week year
+    for (const [from, to] of [
+      [Date.UTC(2025, 11, 20), Date.UTC(2027, 0, 10)],
+      [Date.UTC(2022, 11, 20), Date.UTC(2024, 0, 20)],
+      [Date.UTC(2033, 11, 20), Date.UTC(2034, 0, 20)],
+    ]) {
+      for (let t = from; t <= to; t += 86_400_000) {
+        const day = new Date(t).toISOString().slice(0, 10)
+        expect(weekKeyStart(weekKeyOf(day)!), day).toBe(weekStartKey(day))
+      }
     }
-    for (const junk of ['2026-W00', '2026-W54', '2026-37', 'W37', '']) expect(weekKeyStart(junk), junk).toBeNull()
+    for (const junk of ['2026-W00', '2026-W53', '2026-W54', '2023-W54', '2026-37', 'W37', '']) expect(weekKeyStart(junk), junk).toBeNull()
   })
 })
 
@@ -314,7 +346,7 @@ describe('the Stats view', () => {
     expect(out).toContain('<div class="stat-label">Recipes</div><div class="stat-value">7</div><div class="stat-sub">3 not lately</div>')
     expect(out).toContain('<div class="stat-label">New recipes</div><div class="stat-value">4</div><div class="stat-sub">first cooked in 2026</div>')
     expect(out).toContain('<div class="stat-label">Cooked at home</div><div class="stat-value">8 of 14</div>')
-    expect(out).toContain('<div class="stat-label">Eaten out</div><div class="stat-value">1</div><div class="stat-sub">meals this month · 2 bought</div>')
+    expect(out).toContain('<div class="stat-label">Eaten out</div><div class="stat-value">1</div><div class="stat-sub">at a place this month · 2 bought, no place</div>')
     expect(out).toContain('<div class="stat-value">3 dinners</div><div class="stat-sub">cooked at home in a row, tonight too</div>')
     expect(out).toContain('<div class="stat-label">Best streak</div><div class="stat-value">4 dinners</div><div class="stat-sub">cooked at home in a row</div>')
 
@@ -329,7 +361,7 @@ describe('the Stats view', () => {
 
     expect([...out.matchAll(/class="podium-piece" aria-label="([^"]+)"/g)].map(m => m[1])).toEqual(['First: Chicken curry, 5 days', 'Second: Rice, 3 days', 'Third: Lasagne, 2 days'])
     expect(out).toContain('<span class="kitchen-dish podium-photo" aria-hidden="true">🍛</span>')
-    const bars = card(out, 'Most cooked')
+    const bars = card(out, 'Most cooked, in days')
     expect([...bars.matchAll(/<span class="stats-hbar-name">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Chicken curry', 'Rice', 'Lasagne'])
     expect([...bars.matchAll(/<span class="hbar-value">(\d+)<\/span>/g)].map(m => m[1])).toEqual(['5', '3', '2'])
 
@@ -400,6 +432,37 @@ describe('the Stats view', () => {
     propsOf(tree, MonthCalendar).onOpen!('2026-09-11')
     expect(onGoDay).toHaveBeenCalledWith('2026-09-11')
   })
+
+  it('draws tonight’s dinner out as a plan until its outing comes, as the tiles and the place’s card count it', () => {
+    const tz = process.env.TZ
+    process.env.TZ = 'Pacific/Auckland'
+    try {
+      // 7pm on Monday 14 September in New Zealand: midday UTC on the 14th is midnight here
+      const evening = new Date(2026, 8, 14, 19, 0)
+      const tonight = meal(TODAY, 'dinner', { out: true, placeId: 'cafe', title: 'Café Nero' })
+      const meals = [...MEALS.filter(m => m.date !== TODAY), tonight]
+      const early = kitchenIndex(RECIPES, meals, PLACES, evening)
+      expect(early.dayKey).toBe(TODAY)
+      expect(early.ways.has(tonight.id)).toBe(false)
+      expect(dinnerDays(early).get(TODAY)).toMatchObject({ way: undefined, place: cafe })
+      expect(kitchenTiles(early)).toMatchObject({ eatenOut: 1, bought: 2 })
+      expect(placeStats(cafe, [], [], evening, [tonight]).eatenOut).toBe(0)
+      expect(slotShares(early, 'dinner', 30).out).toBe(1)
+      const out = html(<StatsView {...full} meals={meals} now={evening} />)
+      expect(out).toContain('<li class="photo-cal-cell dinner-planned today"><button type="button" class="photo-cal-day" aria-label="Mon 14 Sep: eating out at Café Nero, still to come"><span class="kitchen-cal-dish" aria-hidden="true">☕</span>')
+      // two cooked before a night out: tonight asks for no cooking
+      expect(out).toContain('<div class="stat-label">Streak</div><div class="stat-value">2 dinners</div><div class="stat-sub">eating out tonight</div>')
+      // half past midnight, it is an outing: on the calendar, in the tiles and on the card alike
+      const late = new Date(2026, 8, 15, 0, 30)
+      const after = kitchenIndex(RECIPES, meals, PLACES, late)
+      expect(dinnerDays(after).get(TODAY)?.way).toBe('out')
+      expect(kitchenTiles(after).eatenOut).toBe(2)
+      expect(placeStats(cafe, [], [], late, [tonight]).eatenOut).toBe(1)
+    } finally {
+      if (tz === undefined) delete process.env.TZ
+      else process.env.TZ = tz
+    }
+  })
 })
 
 function fakeStorage(seed: Record<string, string> = {}) {
@@ -409,6 +472,25 @@ function fakeStorage(seed: Record<string, string> = {}) {
     setItem: vi.fn((k: string, v: string) => void map.set(k, String(v))),
     removeItem: (k: string) => void map.delete(k),
   }
+}
+
+/**
+ * `settled`, pressed more than once: each act runs on the tree the one before
+ * it left, inside the same server render, and the last tree comes back.
+ */
+function afterActs<P>(Component: (props: P) => ReactNode, props: P, acts: ((tree: ReactNode) => void)[]): ReactNode {
+  let last: ReactNode = null
+  function Probe() {
+    const [step, setStep] = useState(0)
+    last = Component(props)
+    if (step < acts.length) {
+      acts[step](last)
+      setStep(step + 1)
+    }
+    return null
+  }
+  renderToStaticMarkup(<Probe />)
+  return last
 }
 
 describe('Kitchen’s fourth segment', () => {
@@ -425,6 +507,14 @@ describe('Kitchen’s fourth segment', () => {
     onCreateRecipe: (name: string) => recipe('new', name),
   }
   const segments = (out: string) => [...out.matchAll(/<button class="seg( on)?">([^<]+)<\/button>/g)].map(m => (m[1] ? `[${m[2]}]` : m[2]))
+  /** The segment on in a tree Kitchen returned: its row's buttons only, not the Recipes list's All / Not lately. */
+  const on = (tree: ReactNode) =>
+    elements(tree)
+      .filter(e => e.type === 'button' && e.props.className === 'seg on')
+      .map(e => textOf(e.props.children))
+      .filter(label => KITCHEN_TABS.some(t => t.label === label))
+  /** This week's plan in a tree Kitchen returned. */
+  const plan = (tree: ReactNode) => elements(tree).find(e => (e.props as { week?: unknown }).week)!
   beforeAll(async () => {
     await KitchenStats.preload()
   })
@@ -441,7 +531,9 @@ describe('Kitchen’s fourth segment', () => {
     vi.stubGlobal('localStorage', fakeStorage({ [KITCHEN_TAB_KEY]: 'stats' }))
     const out = html(<Kitchen {...props} />)
     expect(segments(out)).toEqual(['Recipes', 'This week', 'Grocery', '[Stats]'])
-    expect(out).toContain('<h3>Most cooked</h3>')
+    // the row a phone narrows and caps, as it does Home's four
+    expect(out).toContain('<div class="people-tab-seg kitchen-seg"><span class="segmented">')
+    expect(out).toContain('<h3>Most cooked, in days</h3>')
     expect(out).toContain('Each day’s dinner · 7 dinners cooked at home')
   })
 
@@ -452,14 +544,60 @@ describe('Kitchen’s fourth segment', () => {
     expect(storage.setItem).not.toHaveBeenCalled()
   })
 
+  it('remembers the segment chosen with its button, Stats as the other three', () => {
+    for (const [label, key] of [['Stats', 'stats'], ['Grocery', 'grocery'], ['Recipes', 'recipes']] as const) {
+      const storage = fakeStorage({ [KITCHEN_TAB_KEY]: key === 'recipes' ? 'week' : 'recipes' })
+      vi.stubGlobal('localStorage', storage)
+      const tree = settled(Kitchen, props, t => press(t, label))
+      expect(storage.setItem, label).toHaveBeenCalledWith(KITCHEN_TAB_KEY, key)
+      expect(on(tree)).toEqual([label])
+      // and opens there next time
+      expect(segments(html(<Kitchen {...props} />))).toContain(`[${label}]`)
+    }
+  })
+
+  it('moves to the segment a way in names while Kitchen is on screen, writing nothing, and lets the hand-off go', () => {
+    const storage = fakeStorage({ [KITCHEN_TAB_KEY]: 'recipes' })
+    vi.stubGlobal('localStorage', storage)
+    const trees: ReactNode[] = []
+    // Kitchen on screen on Recipes; then the palette's Kitchen stats hands it Stats
+    function Shell() {
+      const [openTab, setOpenTab] = useState<KitchenTab | null>(null)
+      trees.push(Kitchen({ ...props, openTab, onOpenTabConsumed: noop }))
+      if (trees.length === 1) setOpenTab('stats')
+      return null
+    }
+    renderToStaticMarkup(<Shell />)
+    expect(on(trees[0])).toEqual(['Recipes'])
+    expect(on(trees[trees.length - 1])).toEqual(['Stats'])
+    expect(storage.setItem).not.toHaveBeenCalled()
+    // seen, it is let go of: Kitchen tells the shell, which clears it, so the same way in works twice
+    const kitchen = readFileSync(fileURLToPath(new URL('../components/Kitchen.tsx', import.meta.url)), 'utf8')
+    expect(kitchen).toMatch(/useEffect\(\(\) => \{\s*if \(openTab\) onOpenTabConsumed\?\.\(\)[^}]*\}, \[openTab\]\)/)
+    const screen = readFileSync(fileURLToPath(new URL('../components/planner/KitchenScreen.tsx', import.meta.url)), 'utf8')
+    expect(screen).toContain('onOpenTabConsumed={() => setKitchenOpen(null)}')
+  })
+
   it('opens This week on a day of the dinner calendar, for this visit only', () => {
     const storage = fakeStorage({ [KITCHEN_TAB_KEY]: 'stats' })
     vi.stubGlobal('localStorage', storage)
     const tree = settled(Kitchen, props, t => propsOf(t, KitchenStats).onGoDay('2026-09-01'))
-    expect(elements(tree).filter(e => e.type === 'button' && e.props.className === 'seg on').map(e => textOf(e.props.children))).toEqual(['This week'])
-    const week = elements(tree).find(e => (e.props as { week?: { key: string } }).week)!.props.week as { key: string }
+    expect(on(tree)).toEqual(['This week'])
+    const week = plan(tree).props.week as { key: string }
     expect(week.key).toBe(weekKeyOf('2026-09-01'))
     expect(storage.setItem).not.toHaveBeenCalled()
+    // that day, not the top of its week: scrolled to by its id, and framed
+    expect(plan(tree).props.focusDay).toBe('2026-09-01')
+    const out = html(tree)
+    expect(out).toContain('<li id="meal-day-2026-09-01" class="meal-day picked">')
+    expect(out.match(/<li id="meal-day-[^"]+" class="meal-day[^"]*"/g)).toHaveLength(7)
+    expect(out.match(/ picked"/g)).toHaveLength(1)
+    // moving off the week, or off the segment, lets it go
+    const goDay = (t: ReactNode) => propsOf(t, KitchenStats).onGoDay('2026-09-01')
+    const shifted = afterActs(Kitchen, props, [goDay, t => (plan(t).props.onShift as (d: number) => void)(1)])
+    expect(plan(shifted).props.focusDay).toBeNull()
+    const again = afterActs(Kitchen, props, [goDay, t => press(t, 'Recipes'), t => press(t, 'This week')])
+    expect(plan(again).props.focusDay).toBeNull()
   })
 
   it('hands Stats the Kitchen’s own lists, the ones KitchenScreen takes from the store, and nothing else', () => {
@@ -540,6 +678,23 @@ describe('the ways to it', () => {
     apply('/?view=kitchen')
     expect(calls).toEqual(['view ["kitchen"]'])
   })
+
+  it('goes back to the segment last chosen when the Kitchen tab is tapped after a way in moved it', () => {
+    vi.stubGlobal('localStorage', fakeStorage({ [KITCHEN_TAB_KEY]: 'recipes' }))
+    const handed: (KitchenTab | null)[] = []
+    // the shell's own navigation: Kitchen stats from the palette, then a tap on the Kitchen tab
+    function Shell() {
+      const nav = useNavigation()
+      const [step, setStep] = useState(0)
+      handed.push(nav.kitchenOpen)
+      if (step === 0) nav.openKitchen('stats')
+      if (step === 1) nav.goView('kitchen')
+      if (step < 2) setStep(step + 1)
+      return null
+    }
+    renderToStaticMarkup(<Shell />)
+    expect(handed).toEqual([null, 'stats', 'recipes'])
+  })
 })
 
 describe('its chunk and its styles', () => {
@@ -578,5 +733,30 @@ describe('its chunk and its styles', () => {
     expect(css).toMatch(/\.kitchen-way-out \{\s*fill: var\(--cal-meal-out\);\s*background: var\(--cal-meal-out\);/)
     expect(css).toMatch(/\.kitchen-way-bought \{\s*fill: var\(--tone-rose\);\s*background: var\(--tone-rose\);/)
     expect(css).toMatch(/@media \(pointer: coarse\) \{\s*\.kitchen-by-month summary \{[^}]*min-height: 44px/)
+    // a keyboard sees the app's own ring on it, as on a button
+    expect(css).toMatch(/\.kitchen-by-month summary:focus-visible \{\s*outline: 2px solid var\(--focus-ring\);/)
+    // tonight's dinner out, not counted yet: dashed like a day to come, and given no bar
+    expect(css).toMatch(/\.photo-cal-cell\.dinner-planned \.photo-cal-day \{\s*border-style: dashed;\s*\}/)
+    expect(css).not.toMatch(/dinner-planned \.photo-cal-day::after/)
+  })
+
+  it('narrows the thumbs and caps the labels of Kitchen’s four segments on a phone, as Home’s are', () => {
+    const bare = sheetSource().replace(/\/\*[\s\S]*?\*\//g, '')
+    const body = (at: number) => {
+      const open = bare.indexOf('{', at)
+      let depth = 0
+      for (let i = open; i < bare.length; i++) {
+        if (bare[i] === '{') depth++
+        else if (bare[i] === '}' && --depth === 0) return bare.slice(open + 1, i)
+      }
+      return ''
+    }
+    const narrow = [...bare.matchAll(/@media\s*\(max-width:\s*640px\)/g)].map(m => body(m.index))
+    // the native track's 10px sides are 6px here, outranking the shared rule as Home's does
+    expect(narrow.some(b => /(^|\})\s*\.native \.people-tab-seg\.kitchen-seg \.segmented \.seg \{\s*padding-inline: 6px;\s*\}/.test(b))).toBe(true)
+    // the labels grow with Dynamic Type only so far, and the desktop row keeps its size
+    expect(narrow.some(b => /(^|\})\s*\.kitchen-seg \.seg \{\s*font-size: calc\(13px \* min\(1\.15, var\(--type-scale\)\)\);\s*\}/.test(b))).toBe(true)
+    expect(bare.match(/\.kitchen-seg \.seg\s*\{/g)).toHaveLength(1)
+    expect(bare.match(/\.kitchen-seg \.segmented \.seg\s*\{/g)).toHaveLength(1)
   })
 })

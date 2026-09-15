@@ -143,9 +143,14 @@
 }
 /* Home holds four segments since the wardrobe joined it: at 375pt the
    thumb's 10px sides pressed "Wardrobe" against its neighbours, so a phone's
-   take 6px. The label's own cap lives in 18-wardrobe.css. */
+   take 6px. Kitchen's four (Recipes · This week · Grocery · Stats) take the
+   same, "This week" being longer still. The labels' own caps live in
+   18-wardrobe.css and 14-kitchen-today.css. */
 @media (max-width: 640px) {
   .native .people-tab-seg.home-seg .segmented .seg {
+    padding-inline: 6px;
+  }
+  .native .people-tab-seg.kitchen-seg .segmented .seg {
     padding-inline: 6px;
   }
 }

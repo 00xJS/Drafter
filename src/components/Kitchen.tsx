@@ -94,6 +94,9 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     }
   })
   const [anchor, setAnchor] = useState(() => new Date())
+  // a day opened from Stats' dinner calendar: This week scrolls to it and
+  // frames it until you move off the week or the segment
+  const [focusDay, setFocusDay] = useState<string | null>(null)
   // the recipe form, and where Save and Cancel go back to: the list, cook mode
   // on the recipe, or the side open over its main. Cook mode stays set while
   // its recipe is edited, so it comes back with its meal's sides and its ticks.
@@ -123,6 +126,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
 
   const setTab = (s: KitchenTab) => {
     setSeg(s)
+    setFocusDay(null)
     try {
       localStorage.setItem(KITCHEN_TAB_KEY, s)
     } catch {
@@ -198,23 +202,34 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRecipe])
 
-  // a way in (the palette, a link) moves the segment for this visit only: the
-  // one last chosen with its button stays remembered
+  // A way in (the palette, a link, a tap on the Kitchen tab) moves the segment
+  // for this visit only: the one last chosen with its button stays remembered.
+  // It moves as Kitchen renders, so the segment it leaves never shows first,
+  // even when Kitchen is already on screen; the hand-off is let go of once seen.
+  const [seenOpenTab, setSeenOpenTab] = useState(openTab)
+  if (openTab !== seenOpenTab) {
+    setSeenOpenTab(openTab)
+    if (openTab) {
+      setSeg(openTab)
+      setFocusDay(null)
+    }
+  }
   useEffect(() => {
-    if (!openTab) return
-    setSeg(openTab)
-    onOpenTabConsumed?.()
+    if (openTab) onOpenTabConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTab])
-  /** Stats' dinner calendar: that day's week on This week, for this visit only. */
+  /** Stats' dinner calendar: that day on This week, scrolled to and framed, for this visit only. */
   const goDay = (day: string) => {
     setAnchor(new Date(`${day}T12:00:00`))
+    setFocusDay(day)
     setSeg('week')
   }
 
   return (
     <div className="kitchen">
-      <div className="people-tab-seg">
+      {/* four segments on one row: a phone narrows their thumbs and caps their
+          labels (.kitchen-seg), as Home's four are */}
+      <div className="people-tab-seg kitchen-seg">
         <span className="segmented">
           {KITCHEN_TABS.map(t => (
             <button key={t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
@@ -315,7 +330,11 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           places={places}
           cooked={cooked}
           visited={visited}
-          onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
+          focusDay={focusDay}
+          onShift={d => {
+            setFocusDay(null)
+            setAnchor(a => shiftRange(weekRange(a), d).start)
+          }}
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
           onCreatePlace={onCreatePlace}
@@ -431,6 +450,7 @@ function WeekPlan({
   places,
   cooked,
   visited,
+  focusDay,
   onShift,
   onSaveMeal,
   onClearMeal,
@@ -447,6 +467,8 @@ function WeekPlan({
   cooked: CookedIndex
   /** When each place was last gone to, beside it under Eat out. */
   visited: VisitIndex
+  /** A day opened from Stats' dinner calendar: scrolled to and framed. */
+  focusDay?: string | null
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
@@ -464,6 +486,12 @@ function WeekPlan({
   const today = dateKey(new Date())
   // dinners still to plan from today on: a past night is not worth proposing
   const emptyDinners = days.map(dateKey).filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
+  // a day opened from Stats lands on screen, clear of the sticky bar (its scroll margin), not at the week's top
+  useEffect(() => {
+    if (!focusDay) return
+    const t = window.setTimeout(() => document.getElementById(`meal-day-${focusDay}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+    return () => window.clearTimeout(t)
+  }, [focusDay])
   return (
     <>
       <div className="people-toolbar">
@@ -494,7 +522,7 @@ function WeekPlan({
         {days.map(d => {
           const key = dateKey(d)
           return (
-            <li key={key} className={'meal-day' + (key === today ? ' today' : '')}>
+            <li key={key} id={`meal-day-${key}`} className={'meal-day' + (key === today ? ' today' : '') + (key === focusDay ? ' picked' : '')}>
               <div className="meal-day-head">
                 <strong>{d.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                 <span>{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>

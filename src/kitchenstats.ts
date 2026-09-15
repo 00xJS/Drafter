@@ -71,10 +71,19 @@ export function kitchenIndex(recipes: readonly Recipe[], meals: readonly Meal[],
       days.set(id, set)
     }
   }
-  // eaten out: each place's own outings, the meals among them, as its card counts them
-  const out = new Set<string>()
-  for (const p of livePlaces) for (const o of outingsAt(p.id, [], liveMeals, now)) if (o.kind === 'meal') out.add(o.meal.id)
+  // eaten out: each place's own outings, the meals among them, as its card
+  // counts them. The meals out are sorted to their places in one pass, so a
+  // place is asked about its own meals only, never every meal there is.
   const placeById = new Map(livePlaces.map(p => [p.id, p]))
+  const outBy = new Map<string, Meal[]>()
+  for (const m of liveMeals) {
+    if (!m.out || !m.placeId || !placeById.has(m.placeId)) continue
+    const at = outBy.get(m.placeId) ?? []
+    at.push(m)
+    outBy.set(m.placeId, at)
+  }
+  const out = new Set<string>()
+  for (const [id, at] of outBy) for (const o of outingsAt(id, [], at, now)) if (o.kind === 'meal') out.add(o.meal.id)
   const ways = new Map<string, MealWay>()
   for (const m of liveMeals) {
     if (out.has(m.id)) ways.set(m.id, 'out')
@@ -153,13 +162,22 @@ export interface CookedRow {
   last: string
 }
 
-/** The recipes cooked on the most days in the window, most first; a tie goes to the one cooked last, then A–Z (topN). */
+/**
+ * The recipes cooked on the most days in the window, most first; a tie goes to
+ * the one cooked last, then A–Z (topN), and two of one name cooked last on one
+ * day go by their ids, so the order never rests on the store's.
+ */
 export function mostCooked(ix: KitchenIndex, window: DayWindow, n = 10): CookedRow[] {
   const rows = ix.recipes.map(recipe => {
     const days = ix.days.get(recipe.id) ?? []
     return { recipe, count: daysWithin(days, ix.dayKey, window), last: days[0] ?? '' }
   })
-  return topN(rows, n, { count: r => r.count, name: r => r.recipe.name, tie: (a, b) => b.last.localeCompare(a.last) })
+  const sameName = (a: CookedRow, b: CookedRow) => a.recipe.name.localeCompare(b.recipe.name) === 0
+  return topN(rows, n, {
+    count: r => r.count,
+    name: r => r.recipe.name,
+    tie: (a, b) => b.last.localeCompare(a.last) || (sameName(a, b) ? a.recipe.id.localeCompare(b.recipe.id) : 0),
+  })
 }
 
 /** Not lately's cooked half: cooked before, not in a month, and not planned, the longest ago first (notLately). */
@@ -191,23 +209,29 @@ export function dishMark(name: string, emoji?: string): string {
 
 // ---- the days --------------------------------------------------------------------
 
-/** A day's dinner as the calendar draws it: the meal, how it was had, and the place it was eaten at. */
+/**
+ * A day's dinner as the calendar draws it: the meal, how it was had, and the
+ * place it was eaten at. With no `way` it is a dinner out whose outing has not
+ * come yet (outingsAt's midday UTC, which east of UTC+11 is after midnight
+ * here): a plan until then, as the tiles, the shares and the place's card have it.
+ */
 export interface DayDinner {
   meal: Meal
-  way: MealWay
+  way?: MealWay
   place?: Place
 }
 
 /**
- * The dinner on each day up to today, drawn as it was had: cooked, out at a
- * saved place, or bought. A day still to come shows none: its dinner is a plan.
+ * The dinner on each day up to today, drawn as it was had (ix.ways): cooked,
+ * out at a saved place, or bought. A day still to come shows none: its dinner
+ * is a plan.
  */
 export function dinnerDays(ix: KitchenIndex): ReadonlyMap<string, DayDinner> {
   const days = new Map<string, DayDinner>()
   for (const m of ix.meals) {
     if (m.slot !== 'dinner' || m.date > ix.dayKey) continue
     const place = m.out && m.placeId ? ix.places.get(m.placeId) : undefined
-    days.set(m.date, { meal: m, way: !m.out ? 'cooked' : place ? 'out' : 'bought', place })
+    days.set(m.date, { meal: m, way: ix.ways.get(m.id), place })
   }
   return days
 }
@@ -280,9 +304,14 @@ const dishKey = (title: string) => title.trim().toLowerCase().replace(/\s+/g, ' 
  * The sides most often served with the mains cooked most (Meal.sides): the
  * `n` mains cooked as the main of the most meals that ever had a side, each
  * with its `per` sides most often, by how many of its meals had them. A saved
- * side goes by its recipe's name today, a typed one by its latest spelling.
+ * side goes by its recipe's name today, a typed one by its latest spelling —
+ * unless it is typed as a saved recipe is named (recipeByName's rule: case
+ * and spaces aside), when it is that recipe, so "rice" and Rice are one side.
  */
 export function goesWith(ix: KitchenIndex, n = 5, per = 3): Pairing[] {
+  // recipeByName, once: the first live recipe of each name, in the store's order
+  const named = new Map<string, Recipe>()
+  for (const r of ix.recipes) if (!named.has(dishKey(r.name))) named.set(dishKey(r.name), r)
   const mains = new Map<string, { meals: number; sides: Map<string, PairedSide & { at: string }> }>()
   for (const m of ix.meals) {
     if (ix.ways.get(m.id) !== 'cooked' || !m.recipeId || !ix.recipeById.has(m.recipeId)) continue
@@ -290,11 +319,12 @@ export function goesWith(ix: KitchenIndex, n = 5, per = 3): Pairing[] {
     main.meals++
     const seen = new Set<string>()
     for (const s of mealSides(m)) {
-      if (s.recipeId === m.recipeId) continue
-      const key = s.recipeId ? `r:${s.recipeId}` : `t:${dishKey(s.title)}`
+      const recipeId = s.recipeId || named.get(dishKey(s.title))?.id
+      if (recipeId === m.recipeId) continue
+      const key = recipeId ? `r:${recipeId}` : `t:${dishKey(s.title)}`
       if (seen.has(key)) continue
       seen.add(key)
-      const name = (s.recipeId && ix.recipeById.get(s.recipeId)?.name) || s.title.trim()
+      const name = (recipeId && ix.recipeById.get(recipeId)?.name) || s.title.trim()
       const cur = main.sides.get(key)
       if (!cur) main.sides.set(key, { key, name, count: 1, at: m.date })
       else {

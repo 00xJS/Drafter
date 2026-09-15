@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NOT_LATELY_DAYS, cookedLine, daysAgo, daysBetween, mealLabel } from '../../kitchen'
 import {
   MEAL_WAYS,
@@ -52,6 +52,8 @@ const DINNERS: Partial<StreakWords> = {
   none: 'cook a dinner at home to start one',
   best: 'cooked at home in a row',
 }
+/** …and when tonight's dinner is out already, which no cooking tonight will change. */
+const DINNERS_OUT: Partial<StreakWords> = { ...DINNERS, waiting: 'eating out tonight' }
 
 /** "2 lunches", "1 dinner". */
 const slotCount = (n: number, slot: MealSlot) => `${n} ${slot}${n === 1 ? '' : slot === 'lunch' ? 'es' : 's'}`
@@ -71,13 +73,18 @@ function RecipeRow({ recipe, line, onOpen }: { recipe: Recipe; line: string; onO
   return <ListRow picture={<Dish recipe={recipe} className="thumb-40" />} name={recipe.name} line={line} onOpen={() => onOpen(recipe)} />
 }
 
-/** A day's dinner under its date: its dish, the place it was eaten at, or 🥡 when it was bought. */
+/**
+ * A day's dinner under its date: its dish, the place it was eaten at, or 🥡
+ * when it was bought. A dinner out whose outing has not come yet here shows
+ * its place with no bar, a plan until the tiles and the place's card count it.
+ */
 function dinnerCell({ meal, way, place }: DayDinner, ix: KitchenIndex): MonthDay {
   const mark = (text: string) => (
     <span className="kitchen-cal-dish" aria-hidden="true">
       {text}
     </span>
   )
+  if (!way) return { what: place ? `eating out at ${place.name}, still to come` : 'eating out, still to come', content: place && mark(placeEmoji(place)), className: 'dinner-planned' }
   if (way === 'out' && place) return { what: `eaten out at ${place.name}`, content: mark(placeEmoji(place)), className: 'dinner-out' }
   if (way === 'bought') return { what: meal.title && meal.title !== 'Eating out' ? `bought: ${meal.title}` : 'bought, no place named', content: mark('🥡'), className: 'dinner-bought' }
   const recipe = meal.recipeId ? ix.recipeById.get(meal.recipeId) : undefined
@@ -171,16 +178,32 @@ function ShareRow({ slot, shares }: { slot: MealSlot; shares: Shares }) {
  * cooked most; and what is on the grocery list most weeks. Drawn with the
  * Stats kit (components/stats), as the wardrobe's is, in its own chunk.
  */
-export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, onGoDay, now = new Date() }: Props) {
-  const ix = kitchenIndex(recipes, meals, places, now)
-  const thisYear = Number(ix.dayKey.slice(0, 4))
+export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, onGoDay, now }: Props) {
+  const clock = now ?? new Date()
+  const dayKey = dateKey(clock)
+  // Worked out when the lists change or the day does, as the Recipes list's
+  // own index is, and never again for a press of a switch or a stepper: the
+  // index reads each meal once, and everything below reads the index.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ix = useMemo(() => kitchenIndex(recipes, meals, places, clock), [recipes, meals, places, dayKey])
+  const thisYear = Number(dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
   const [span, setSpan] = useState<DayWindow>(30)
-  const tiles = kitchenTiles(ix)
-  const streaks = dinnerStreaks(ix)
-  const podium = mostCooked(ix, 'all', 3).map(ranked)
-  const dinners = dinnerDays(ix)
-  const months = mealMonths(ix, year)
+  const { tiles, streaks, podium, dinners, lately, never, pairs } = useMemo(
+    () => ({
+      tiles: kitchenTiles(ix),
+      streaks: dinnerStreaks(ix),
+      podium: mostCooked(ix, 'all', 3).map(ranked),
+      dinners: dinnerDays(ix),
+      lately: notCookedLately(ix),
+      never: neverCooked(ix),
+      pairs: goesWith(ix),
+    }),
+    [ix],
+  )
+  const months = useMemo(() => mealMonths(ix, year), [ix, year])
+  // tonight's dinner out already: the streak's line says so rather than ask for a cook
+  const outTonight = !!dinners.get(dayKey)?.meal.out
 
   return (
     <div className="kitchen-stats">
@@ -188,8 +211,8 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
         <StatTile label="Recipes" value={String(tiles.recipes)} sub={`${tiles.notLately} not lately`} />
         <StatTile label="New recipes" value={String(tiles.newThisYear)} sub={`first cooked in ${thisYear}`} />
         <StatTile label="Cooked at home" value={`${tiles.cookedDays} of ${tiles.daysThisMonth}`} sub="days this month so far" />
-        <StatTile label="Eaten out" value={String(tiles.eatenOut)} sub={tiles.bought > 0 ? `meals this month · ${tiles.bought} bought` : 'meals this month'} />
-        <StreakTiles current={streaks.current} best={streaks.best} today={streaks.today} noun="dinner" words={DINNERS} />
+        <StatTile label="Eaten out" value={String(tiles.eatenOut)} sub={tiles.bought > 0 ? `at a place this month · ${tiles.bought} bought, no place` : 'at a place this month'} />
+        <StreakTiles current={streaks.current} best={streaks.best} today={streaks.today} noun="dinner" words={outTonight ? DINNERS_OUT : DINNERS} />
       </div>
 
       <MonthCalendar
@@ -214,8 +237,8 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
       )}
 
       <RankedBars
-        title="Most cooked"
-        sub="Days cooked, as the main or a side: lunch and dinner on one day count once"
+        title="Most cooked, in days"
+        sub="As the main or a side: lunch and dinner on one day count once, where a recipe’s times count each meal"
         empty="Cook from your recipes and the ones you cook most show here."
         rank={window => mostCooked(ix, window).map(ranked)}
         picture={r => <Dish recipe={r.recipe} className="thumb-28" />}
@@ -225,7 +248,7 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
       <ListCard
         title="Not cooked lately"
         sub={`Cooked before, but not in ${NOT_LATELY_DAYS} days or more, and not planned`}
-        items={notCookedLately(ix)}
+        items={lately}
         empty="Everything you’ve cooked was had this month, or is on the plan."
         row={r => <RecipeRow key={r.id} recipe={r} line={cookedLine(ix.cooked, r.id)} onOpen={onOpenRecipe} />}
       />
@@ -233,7 +256,7 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
       <ListCard
         title="Never cooked"
         sub="Saved, not cooked yet, and not planned"
-        items={neverCooked(ix)}
+        items={never}
         empty="Every recipe has been cooked, or is on the plan."
         row={r => <RecipeRow key={r.id} recipe={r} line={`Added ${daysAgo(daysBetween(dateKey(r.createdAt), ix.dayKey))}`} onOpen={onOpenRecipe} />}
       />
@@ -294,7 +317,7 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
       <ListCard
         title="Goes with"
         sub="The sides most often served with the mains you cook most"
-        items={goesWith(ix)}
+        items={pairs}
         empty="Add sides to a cooked dinner and what goes with what shows here."
         row={p => (
           <ListRow

@@ -164,6 +164,15 @@
 .meal-day.today {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
+/* a day opened from Stats' dinner calendar: scrolled to clear of the sticky
+   .topbar, as the journal's days are, and framed for the visit */
+.meal-week > .meal-day {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.meal-day.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .meal-day-head {
   display: flex;
   justify-content: space-between;
@@ -727,6 +736,11 @@
 .photo-cal-cell.dinner-bought .photo-cal-day::after {
   background: var(--tone-rose);
 }
+/* tonight's dinner out before its outing counts here (outingsAt's midday
+   UTC): a plan, dashed as a day to come is, and with no bar */
+.photo-cal-cell.dinner-planned .photo-cal-day {
+  border-style: dashed;
+}
 /* the three ways a meal is had, as a mark (a chart's column, a share bar's part) or a key's swatch */
 .kitchen-way-cooked {
   fill: var(--viz-series-1);
@@ -774,6 +788,12 @@
   font-size: 0.8125rem;
   cursor: pointer;
 }
+/* the base sheet rings a focused field or button, not a summary */
+.kitchen-by-month summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
 .kitchen-by-month td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -813,6 +833,14 @@
   color: var(--text-2);
 }
 
+/* Kitchen holds four segments since Stats joined it: on a phone their labels
+   grow with Dynamic Type only so far, as Home's do, or "This week" wraps and
+   crowds Grocery on a 375pt row (19-native-shell.css narrows the thumbs) */
+@media (max-width: 640px) {
+  .kitchen-seg .seg {
+    font-size: calc(13px * min(1.15, var(--type-scale)));
+  }
+}
 @media (pointer: coarse) {
   .kitchen-by-month summary {
     display: flex;

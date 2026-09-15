@@ -5,6 +5,7 @@ import {
   CALENDAR_MODES,
   PEOPLE_TAB_KEY,
   TASKS_TAB_KEY,
+  storedKitchenTab,
   storedPeopleTab,
   storedTasksTab,
   type CalendarMode,
@@ -84,11 +85,14 @@ export function useNavigation() {
    * Go to a view from a tab bar. A tab tap is the one move that means "wherever
    * I left this", so the segmented views re-read the remembered half rather than
    * keeping whatever a link last set — except Home, which always opens on the day.
+   * Kitchen keeps its segment itself, so it is handed the remembered one, as a
+   * link hands it Stats: a tap on the tab after Kitchen stats goes back to it.
    */
   const goView = (v: View) => {
     if (v === 'home') setHomeTab('today')
     if (v === 'tasks') goTasksTab(storedTasksTab())
     if (v === 'people') goPeopleTab(storedPeopleTab())
+    if (v === 'kitchen') setKitchenOpen(storedKitchenTab())
     setView(v)
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
