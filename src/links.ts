@@ -57,7 +57,8 @@ const OAUTH_HINTS: Record<string, string> = {
 /** Map an OAuth failure code to a short, known toast fragment (never echo arbitrary attacker text). */
 export function oauthReasonLabel(raw: string | null | undefined): string {
   const key = (raw ?? 'unknown').toLowerCase().replace(/\s+/g, '_')
-  if (OAUTH_HINTS[key]) return OAUTH_HINTS[key]
+  // a hint of its own only: ?reason=constructor must not hand back what every object inherits
+  if (Object.prototype.hasOwnProperty.call(OAUTH_HINTS, key)) return OAUTH_HINTS[key]
   if (OAUTH_REASONS.has(key)) return key.replace(/_/g, ' ')
   if (/^[a-z0-9_]{1,40}$/i.test(key)) return key.replace(/_/g, ' ')
   return 'unknown error'

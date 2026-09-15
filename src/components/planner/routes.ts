@@ -136,9 +136,9 @@ export const storedInnerView = (tab: PeopleTab): InnerView => {
 }
 export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('people'), places: storedInnerView('places') })
 
-/** A Stats view's own link, as `?view=wardrobe` opens Home → Wardrobe:
- *  `?view=people-stats` and `?view=places-stats` open that segment of People
- *  on its Stats, for that visit. */
+/** A Stats view's own link, as `?view=kitchen-stats` and `?view=wardrobe-stats`
+ *  open Kitchen and Home → Wardrobe on theirs: `?view=people-stats` and
+ *  `?view=places-stats` open that segment of People on its Stats, for that visit. */
 export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people', 'places-stats': 'places' }
 /** The segment a link's view opens on its Stats, or null. Its own names only, so `?view=constructor` names none. */
 export const peopleTabOfStatsView = (view: string | undefined): PeopleTab | null => viewIn(STATS_VIEW_TO_PEOPLE, view)
@@ -161,8 +161,15 @@ export const storedKitchenTab = (): KitchenTab => {
     return 'recipes'
   }
 }
-/** Links to a Kitchen segment, as `?view=wardrobe` is one to Home's: `?view=kitchen-stats`
+/** Links to a Kitchen segment, as `?view=wardrobe-stats` is one to the Wardrobe's: `?view=kitchen-stats`
  *  opens Kitchen on Stats, for that visit only. */
 export const VIEW_TO_KITCHEN: Record<string, KitchenTab> = { 'kitchen-stats': 'stats' }
 /** The Kitchen segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
 export const kitchenTabOfView = (view: string | undefined): KitchenTab | null => viewIn(VIEW_TO_KITCHEN, view)
+
+/** Links to one of Home → Wardrobe's own views, as `?view=kitchen-stats` is one to Kitchen's:
+ *  `?view=wardrobe-stats` opens the Wardrobe on Stats, for that visit only. `?view=wardrobe`
+ *  names none of them, so it still opens on today's composer. */
+export const VIEW_TO_WARDROBE: Record<string, WardrobeTab> = { 'wardrobe-stats': 'stats' }
+/** The Wardrobe view a link's view names, or null. Its own names only, so `?view=constructor` names none. */
+export const wardrobeTabOfView = (view: string | undefined): WardrobeTab | null => viewIn(VIEW_TO_WARDROBE, view)

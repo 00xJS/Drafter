@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, viewIn, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -31,6 +31,7 @@ interface Deps {
   openPerson: Nav['openPerson']
   openStats: Nav['openStats']
   openKitchen: Nav['openKitchen']
+  openWardrobe: Nav['openWardrobe']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -58,6 +59,7 @@ export function useDeepLinks({
   openPerson,
   openStats,
   openKitchen,
+  openWardrobe,
   changeStatus,
   defer,
 }: Deps) {
@@ -104,12 +106,14 @@ export function useDeepLinks({
     // still resolve: board / bills / notes open the Tasks tab on that segment,
     // and the former today / review views open Home on the day or the week.
     // people-stats and places-stats open that segment of People on its Stats,
-    // and kitchen-stats opens Kitchen on Stats, for this visit only. Each name
-    // is read from its own table's keys, so ?view=constructor lands nowhere.
+    // kitchen-stats opens Kitchen on Stats, and wardrobe-stats opens Home →
+    // Wardrobe on Stats, for this visit only. Each name is read from its own
+    // table's keys, so ?view=constructor lands nowhere.
     const tasksTab = viewIn(LEGACY_VIEW_TO_TASKS, parsed.view)
     const homeTab = viewIn(LEGACY_VIEW_TO_HOME, parsed.view)
     const statsTab = peopleTabOfStatsView(parsed.view)
     const kitchenTab = kitchenTabOfView(parsed.view)
+    const wardrobeTab = wardrobeTabOfView(parsed.view)
     if (tasksTab) {
       goTasksTab(tasksTab)
       setView('tasks')
@@ -121,6 +125,9 @@ export function useDeepLinks({
       openStats(statsTab)
     } else if (kitchenTab) {
       openKitchen(kitchenTab)
+    } else if (wardrobeTab) {
+      // handed to the Wardrobe as a way in, so it moves there even when it is already on screen
+      openWardrobe({ tab: wardrobeTab })
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

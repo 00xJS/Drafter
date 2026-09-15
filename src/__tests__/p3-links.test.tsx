@@ -48,6 +48,7 @@ function links() {
     setView: log('view'),
     openJournal: log('journal'),
     openPlace: log('place'),
+    openWardrobe: log('wardrobe'),
     changeStatus: log('changeStatus'),
     defer: log('defer'),
   } as unknown as Parameters<typeof useDeepLinks>[0]
@@ -121,6 +122,26 @@ describe('a Stats view has a link, as the wardrobe has ?view=wardrobe', () => {
       const { apply, calls } = links()
       apply(raw)
       expect(calls, raw).toEqual(['stats ["places"]'])
+    }
+  })
+
+  it('?view=wardrobe-stats hands Home → Wardrobe its Stats, for the visit, and writes nothing', () => {
+    for (const [raw, fromNotification] of [
+      ['/?view=wardrobe-stats', false],
+      ['drafter://open?view=wardrobe-stats', false],
+      ['/?view=wardrobe-stats', true],
+    ] as const) {
+      const { apply, calls } = links()
+      apply(raw, '', fromNotification)
+      expect(calls, raw).toEqual(['wardrobe [{"tab":"stats"}]'])
+    }
+  })
+
+  it('leaves ?view=wardrobe naming no view of the Wardrobe’s, so it opens on today’s composer as before', () => {
+    for (const raw of ['/?view=wardrobe', 'drafter://open?view=wardrobe']) {
+      const { apply, calls } = links()
+      apply(raw)
+      expect(calls, raw).toEqual(['homeTab ["wardrobe"]', 'view ["home"]'])
     }
   })
 

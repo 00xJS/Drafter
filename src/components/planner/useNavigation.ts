@@ -23,7 +23,8 @@ import {
 
 /**
  * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette
- * and its search, a piece's worn days, the Calendar, the Week review and Ask:
+ * and its search, a link (?view=wardrobe-stats), a piece's worn days, the
+ * Calendar, the Week review and Ask:
  * which view, which day, whether to open the piece sheet to add one (of a
  * type) or on one, and a saved outfit to put in the composer's rows. Consumed
  * once by the segment, like journalOpenDate, so no entry point pins it.
@@ -168,7 +169,8 @@ export function useNavigation() {
     goTasksTab('notes')
     setView('tasks')
   }
-  /** Where to land in the wardrobe (the Today card, the palette); consumed by the segment. */
+  /** Where to land in the wardrobe (the Today card, the palette's Wardrobe stats, ?view=wardrobe-stats); consumed
+   *  by the segment, which moves to it even when it is already on screen. */
   const [wardrobeOpen, setWardrobeOpen] = useState<WardrobeOpen | null>(null)
   const openWardrobe = (o: WardrobeOpen = {}) => {
     setWardrobeOpen(o)
