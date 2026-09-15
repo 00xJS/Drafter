@@ -27,7 +27,7 @@ import { matchPlace, normalisePlaceText, outingsAt } from './places'
 import { htmlToText } from './richtext'
 import { hasDueTime } from './taskutils'
 import { dateKey, excerpt } from './utils'
-import { NOT_WORN_DAYS, liveById, mostWorn, neverWorn, notWornLately, orderPieces, outfitLabel, pieceTags, priceOf, repeatedOutfits, wearIndex } from './wardrobe'
+import { NOT_WORN_DAYS, costPerWear, liveById, mostWorn, neverWorn, notWornLately, orderPieces, outfitLabel, pieceTags, priceOf, repeatedOutfits, wearIndex } from './wardrobe'
 import { mealLabel, mealSides } from '../shared/kitchen.mjs'
 import { mealHistory } from '../shared/weekplan.mjs'
 import { isDayKey, weekStartKey } from '../shared/weeks.mjs'
@@ -407,7 +407,7 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
         days.length > 1 && `first worn ${days[days.length - 1]}`,
         tags.length > 0 && `tags: ${tags.join(', ')}`,
         money('price', price),
-        days.length > 0 && price !== undefined && money('cost per wear', price / days.length),
+        money('cost per wear', costPerWear(g, worn) ?? undefined),
       ),
       links: [g.id],
     })

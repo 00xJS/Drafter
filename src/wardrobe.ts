@@ -248,14 +248,11 @@ export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season
 }
 
 /**
- * A piece's tags, each once, as the palette and Ask find a piece by them. A
- * synced row's are tidied already (schema.ts garmentTags, the sanitizer); one
- * handed in as it came is read with care all the same.
+ * A piece's tags, as the palette and Ask find a piece by them: the sanitizer's
+ * own reading (schema.ts garmentTags), so a row handed in as it came reads as
+ * a sync would keep it, and none is an empty list.
  */
-export function pieceTags(g: Garment): string[] {
-  const tags: unknown = g.tags
-  return Array.isArray(tags) ? [...new Set(tags.filter((t): t is string => typeof t === 'string').map(t => t.trim()).filter(Boolean))] : []
-}
+export const pieceTags = (g: Garment): string[] => garmentTags(g.tags) ?? []
 
 /** The tags these pieces carry, the most used first, then A–Z. */
 export function tagsOf(garments: readonly Garment[]): { tag: string; count: number }[] {

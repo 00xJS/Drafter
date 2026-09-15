@@ -11,9 +11,11 @@ import { wardrobeHits } from '../components/Search'
 import { OutfitComposer } from '../components/wardrobe/OutfitComposer'
 import { Wardrobe } from '../components/wardrobe/Wardrobe'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
+import { garmentTags } from '../schema'
 import type { Garment, GarmentType, Outfit, Recipe, Wear } from '../types'
 import {
   coreKey,
+  costPerWear,
   wardrobeCosts,
   isPlanned,
   liveById,
@@ -94,6 +96,12 @@ describe('a piece’s tags', () => {
     expect(pieceTags(piece('a', 'top'))).toEqual([])
     expect(pieceTags(withExtra(piece('a', 'top'), { tags: [' linen ', 'summer', 'linen', 3, ''] }))).toEqual(['linen', 'summer'])
     expect(pieceTags(withExtra(piece('a', 'top'), { tags: 'linen' }))).toEqual([])
+  })
+
+  it('reads them as the sanitizer keeps them, through the sanitizer itself', () => {
+    const raw = ['Linen', ' linen ', 'x'.repeat(40), ...Array.from({ length: 14 }, (_, i) => `t${i}`)]
+    expect(pieceTags(withExtra(piece('a', 'top'), { tags: raw }))).toEqual(garmentTags(raw))
+    expect(read('../wardrobe.ts')).toMatch(/export const pieceTags = \(g: Garment\): string\[\] => garmentTags\(g\.tags\) \?\? \[\]/)
   })
 })
 
@@ -390,6 +398,11 @@ describe('Ask draws on what you wear', () => {
     const money = buildCorpus(src(), { now, includeJournal: false, includeAmounts: true }).find(d => d.title === 'Navy tee')!
     expect(money.text).toContain(`price ${formatMoney(20)}`)
     expect(money.text).toContain(`cost per wear ${formatMoney(10)}`)
+    // the piece sheet's and the Stats' own figure, the planned look left out: one meaning, one function
+    const tee = garments.find(g => g.id === 'id-tee')!
+    expect(costPerWear(tee, wearIndex(src().wears ?? [], '2026-09-14'))).toBe(10)
+    expect(read('../ask.ts')).toMatch(/money\('cost per wear', costPerWear\(g, worn\) \?\? undefined\)/)
+    expect(read('../ask.ts')).not.toMatch(/price \/ days/)
     // a price the Stats' cost per wear would not use is no price here either
     for (const price of [0, -5, Number.NaN]) {
       const odd = src({ garments: garments.map(g => (g.id === 'id-tee' ? { ...g, price } : g)) })

@@ -116,11 +116,15 @@ describe('wired into the build and the host', () => {
   it('answers a file missing from /assets with a 404, and every other path with the app page as before', () => {
     const rules = redirectRules(netlify)
     const assets = rules.findIndex(r => r.from === '/assets/*')
+    const cutout = rules.findIndex(r => r.from === '/cutout/*')
     const pages = rules.findIndex(r => r.from === '/*')
     // no force: a file that exists is served, and only a miss reaches the rule
     expect(rules[assets]).toEqual({ from: '/assets/*', to: '/404.html', status: '404' })
+    expect(rules[cutout]).toEqual({ from: '/cutout/*', to: '/cutout/not-found', status: '404' })
     expect(rules[pages]).toEqual({ from: '/*', to: '/index.html', status: '200' })
-    expect(assets).toBeLessThan(pages)
+    // the two 404s, /assets/* first, both ahead of the page fallback
+    expect(assets).toBeLessThan(cutout)
+    expect(cutout).toBeLessThan(pages)
     expect(pages, 'the page fallback stays the last rule').toBe(rules.length - 1)
     // the functions still come first, and nothing else sends /assets anywhere
     expect(rules.slice(0, assets).every(r => r.to.startsWith('/.netlify/functions/'))).toBe(true)
