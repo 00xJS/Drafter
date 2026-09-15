@@ -31,6 +31,19 @@ describe('parseLink', () => {
     expect(oauthReasonLabel('state_mismatch')).toBe('state mismatch')
   })
 
+  it('reads a hint by its own codes only, so a reason every object inherits is shown as the words it is', () => {
+    // before, ?reason=constructor handed back Object itself, and the toast showed its source
+    for (const reason of ['constructor', 'CONSTRUCTOR', '__proto__']) {
+      const label = oauthReasonLabel(reason)
+      expect(typeof label, reason).toBe('string')
+      expect(label, reason).not.toMatch(/function|native code|\[object/)
+    }
+    expect(oauthReasonLabel('constructor')).toBe('constructor')
+    expect(parseLink(new URLSearchParams('google=error&reason=constructor')).oauth?.reason).toBe('constructor')
+    // the hints themselves still answer
+    expect(oauthReasonLabel('access_denied')).toMatch(/refused or the sign-in was cancelled/)
+  })
+
   it('scopes drafter://oauth host to OAuth only', () => {
     const p = parseLink(new URLSearchParams('title=Nope&google=connected'), { host: 'oauth' })
     expect(p.oauth?.ok).toBe(true)
