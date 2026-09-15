@@ -8,11 +8,12 @@ import { dateKey } from './utils'
 // there and a past meal eaten out there are one outing each, a meal still to
 // come is none, and a figure here agrees with the same figure on a row. The
 // view hands in the tasks and meals the list is handed, so Mine / Everyone
-// narrows neither: places are the household's. Its kind chips narrow the
-// places before anything is counted, as the list's chips narrow its rows
-// (placesOfKind). What counts by the calendar — this year, this month, a
-// year's months, a day — files a meal on its own date (filedAt), as the year
-// table always has; the ranked windows count the last 30 days and 12 months in
+// narrows neither: places are the household's. The list's kind chip and find
+// box narrow the places before anything is counted, by the list's own rule
+// (placeMatcher), so each figure counts only the rows the list shows. What
+// counts by the calendar — this year, this month, a year's months, a day —
+// files a meal on its own date (filedAt), as the year table always has; the
+// ranked windows count the last 30 days and 12 months in
 // instants, as a row's "12mo" does. A tie never falls to the order the store
 // holds things in: it ends on the name, then the id. Pure: no DOM, and the
 // clock is handed in. Only the Stats view reads this module, so it loads with
@@ -42,20 +43,12 @@ export const dueBack = (s: PlaceStats) => s.status === 'due' || s.status === 'ov
 
 // ---- the kind chips ----------------------------------------------------------------
 
-/** What the kind chips show: every place, or one kind of them. */
-export type KindFilter = PlaceCategory | 'all'
-
 /** A chip for each kind you have places of, in the kinds' own order, with how many: the list's chips and their badges. */
 export function kindChips(places: readonly Place[]): { kind: PlaceCategory; count: number }[] {
   return PLACE_CATEGORIES.flatMap(kind => {
     const count = places.filter(p => p.category === kind).length
     return count ? [{ kind, count }] : []
   })
-}
-
-/** The places a chip keeps, as the list's chips narrow its rows: every one under All. */
-export function placesOfKind(places: readonly Place[], kind: KindFilter): Place[] {
-  return kind === 'all' ? [...places] : places.filter(p => p.category === kind)
 }
 
 // ---- the tiles ---------------------------------------------------------------------

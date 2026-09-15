@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { NO_PERSON_FILTER, type PersonFilter } from '../../people'
+import { NO_PLACE_FILTER, type PlaceFilter } from '../../places'
 import type { PlannerCtx } from './ctx'
 import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
@@ -6,6 +9,21 @@ import { ListStatsSwitch } from './ListStatsSwitch'
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, inHousehold, mineOnly } = p
+  // Each list's find box and chip, held here rather than in the list, so its
+  // Stats counts only the rows they leave and List → Stats → List keeps them.
+  // For this visit only: nothing is saved, and leaving the tab clears them,
+  // as it cleared the list's own.
+  const [peopleFilter, setPeopleFilter] = useState<PersonFilter>(NO_PERSON_FILTER)
+  const [placeFilter, setPlaceFilter] = useState<PlaceFilter>(NO_PLACE_FILTER)
+  // A card or a row asked for (from search, Ask, a reminder or a link) is
+  // never hidden by them: they clear as it arrives, before the list draws, so
+  // it opens with the first paint whichever half was showing.
+  const [asked, setAsked] = useState({ person: personOpenId, place: placeOpenId })
+  if (asked.person !== personOpenId || asked.place !== placeOpenId) {
+    setAsked({ person: personOpenId, place: placeOpenId })
+    if (personOpenId) setPeopleFilter(NO_PERSON_FILTER)
+    if (placeOpenId) setPlaceFilter(NO_PLACE_FILTER)
+  }
   return (
     <>
       <div className="people-tab-seg">
@@ -41,6 +59,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               people={store.people}
               tasks={store.tasks}
               meals={store.meals}
+              // the list's kind chip and find box: every figure counts only the places they leave
+              filter={placeFilter}
+              onFilter={setPlaceFilter}
               onOpenPlace={place => openPlace(place.id)}
               onPlan={planAt}
               onOpenPerson={person => openPerson(person.id)}
@@ -54,6 +75,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               people={store.people}
               tasks={store.tasks}
               meals={store.meals}
+              filter={placeFilter}
+              onFilter={setPlaceFilter}
               onSave={p => store.upsert(p)}
               onDelete={id => {
                 store.remove(id)
@@ -85,6 +108,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               people={store.people}
               tasks={store.tasks}
               entries={store.events}
+              // the list's group chip and find box: every figure counts only the people they leave
+              filter={peopleFilter}
+              onFilter={setPeopleFilter}
               // Today's Saw them: a visit logged now, with Undo
               onSaw={sawThem}
               // the podium, the bars and the lists open a person's card on the list
@@ -100,6 +126,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               tasks={store.tasks}
               entries={store.events}
               journal={store.journal}
+              filter={peopleFilter}
+              onFilter={setPeopleFilter}
               onOpenJournal={date => openJournal(date)}
               onSave={p => store.upsert(p)}
               onDelete={id => {

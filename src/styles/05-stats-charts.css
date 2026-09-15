@@ -118,6 +118,30 @@
   color: var(--muted);
 }
 
+/* Narrowed: the line at the head of a Stats its list's find box or chip
+   narrows, then Show all. The words wrap, and a long find breaks anywhere,
+   so 375pt never scrolls sideways; Show all keeps to the end of the row. */
+.stats-narrowed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+.stats-narrowed > span {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stats-narrowed > .btn {
+  flex: none;
+}
+
 .chart-plot {
   position: relative;
 }

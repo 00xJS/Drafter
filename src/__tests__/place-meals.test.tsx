@@ -5,6 +5,7 @@ import { buildDigest } from '../../shared/digest.mjs'
 import { Places } from '../components/Places'
 import { PlacesStats } from '../components/PlacesStats'
 import { Today } from '../components/Today'
+import { NO_PLACE_FILTER } from '../places'
 import { buildLocalReminders } from '../reminders'
 import type { Meal, Place, Task } from '../types'
 
@@ -132,10 +133,10 @@ describe('a takeaway last night means it has not been a while', () => {
 describe('Places and its Stats count meals eaten out, as its rows do', () => {
   const page = (over: Partial<ComponentProps<typeof Places>> = {}) =>
     renderToStaticMarkup(
-      <Places places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} onSave={noop} onDelete={noop} onLogOuting={noop} onPlan={noop} onOpenTask={noop} {...over} />,
+      <Places places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} filter={NO_PLACE_FILTER} onFilter={noop} onSave={noop} onDelete={noop} onLogOuting={noop} onPlan={noop} onOpenTask={noop} {...over} />,
     )
   const stats = (over: Partial<ComponentProps<typeof PlacesStats>> = {}) =>
-    renderToStaticMarkup(<PlacesStats places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} onOpenPlace={noop} onPlan={noop} now={NOW} {...over} />)
+    renderToStaticMarkup(<PlacesStats places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} filter={NO_PLACE_FILTER} onFilter={noop} onOpenPlace={noop} onPlan={noop} now={NOW} {...over} />)
 
   it('Outings this year counts the takeaway beside the logged dinner, and not next Friday', () => {
     // the row counts the last 12 months, as its 12mo figure does; the Stats tile counts the calendar year

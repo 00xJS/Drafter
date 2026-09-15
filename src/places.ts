@@ -51,6 +51,31 @@ export function findsPlace(p: Place, needle: string): boolean {
   return [p.name, ...(p.aliases ?? []), p.address ?? '', p.notes ?? ''].some(s => s.toLowerCase().includes(needle))
 }
 
+/** What the Places list's kind chip and find box are set to: a kind of place, or 'all', and what is typed. */
+export interface PlaceFilter {
+  category: 'all' | PlaceCategory
+  q: string
+}
+
+/** The list as it opens: every kind, nothing typed. */
+export const NO_PLACE_FILTER: PlaceFilter = { category: 'all', q: '' }
+
+/** The kind chip that is on: the one chosen, or All once no place of that kind is left, as its chip has gone with it. */
+export function kindOn(places: readonly Place[], category: PlaceFilter['category']): PlaceFilter['category'] {
+  return category !== 'all' && places.some(p => p.category === category) ? category : 'all'
+}
+
+/**
+ * The Places list's rule for which places it shows: of the kind whose chip is
+ * on (kindOn), with what is typed in the find box (findsPlace). Places → Stats
+ * counts only the places it keeps, so every figure there agrees with the rows.
+ */
+export function placeMatcher(places: readonly Place[], filter: PlaceFilter): (p: Place) => boolean {
+  const kind = kindOn(places, filter.category)
+  const needle = filter.q.trim().toLowerCase()
+  return p => (kind === 'all' || p.category === kind) && findsPlace(p, needle)
+}
+
 /**
  * A place's name as the key for "is this the same place": its letters, digits
  * and symbols in any script, in order, with case, accents, punctuation and

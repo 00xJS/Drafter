@@ -14,12 +14,14 @@ import {
 import { newerStamp } from '../itemops'
 import { isNative } from '../native'
 import {
+  PlaceFilter,
   PlaceStats,
   favourites,
-  findsPlace,
+  kindOn,
   lapsed,
   mapsUrl,
   placeAliasesFromText,
+  placeMatcher,
   placeStats,
   placesWith,
   prefersAppleMaps,
@@ -49,9 +51,15 @@ interface Props {
   onOpenConsumed?(): void
   /** Turn an outing idea into a task. */
   onNewTask?(preset: Partial<Task>): void
+  /**
+   * The kind chip and find box. The People tab holds them rather than the
+   * list, so Places → Stats counts the rows they leave and List → Stats →
+   * List keeps them.
+   */
+  filter: PlaceFilter
+  onFilter(filter: PlaceFilter): void
 }
 
-type CategoryFilter = 'all' | PlaceCategory
 type SortKey = 'attention' | 'recent' | 'most' | 'az' | 'za' | 'longest'
 
 // Same wording as the People sort, with "been" instead of "seen".
@@ -441,14 +449,14 @@ export function outingIdeaTask(idea: OutingIdea, place: Place | undefined, peopl
 /** "Mum", "Mum and Sam", "Mum, Sam and Jo". */
 const namesOf = (ps: Person[]) => (ps.length < 2 ? (ps[0]?.name ?? '') : `${ps.slice(0, -1).map(p => p.name).join(', ')} and ${ps[ps.length - 1].name}`)
 
-export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, meals }: Props) {
+export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, meals, filter, onFilter }: Props) {
   const [editing, setEditing] = useState<{ place?: Place } | null>(null)
   const [logging, setLogging] = useState<Place | null>(null)
-  const [category, setCategory] = useState<CategoryFilter>('all')
+  // the kind chip that is on: once a kind's last place has gone, All, as on Stats
+  const category = kindOn(places, filter.category)
   // "Needs attention" only earns the default once at least one place has a rhythm.
   const [sortChoice, setSortChoice] = useState<SortKey | null>(null)
   const sort: SortKey = sortChoice ?? (places.some(p => p.cadenceDays) ? 'attention' : 'recent')
-  const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
@@ -461,9 +469,9 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
 
   useEffect(() => {
     if (!wantOpen) return
+    // the People tab clears the find box and the chip as the row is asked
+    // for, before this draws, so neither hides it
     setOpenId(wantOpen)
-    setQ('')
-    setCategory('all')
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
     onOpenConsumed?.()
@@ -502,10 +510,9 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   }
 
   const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    const list = allStats
-      .filter(s => category === 'all' || s.place.category === category)
-      .filter(s => findsPlace(s.place, needle))
+    // Places → Stats counts by this same rule, so its figures and these rows agree
+    const matches = placeMatcher(places, filter)
+    const list = allStats.filter(s => matches(s.place))
     const sorted = [...list]
     if (sort === 'attention')
       sorted.sort(
@@ -521,7 +528,7 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
       sorted.sort((a, b) => (a.lastAt ?? '').localeCompare(b.lastAt ?? '') || a.place.name.localeCompare(b.place.name))
     else sorted.sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? '') || a.place.name.localeCompare(b.place.name))
     return sorted
-  }, [allStats, category, sort, q])
+  }, [allStats, places, filter, sort])
 
   // The tiles and the year in places moved to Places → Stats (PlacesStats),
   // which counts from these same rows, so the list keeps to the places.
@@ -631,20 +638,20 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
         <>
           <div className="people-controls">
             <span className="segmented" style={{ flexWrap: 'wrap' }}>
-              <button className={category === 'all' ? 'seg on' : 'seg'} onClick={() => setCategory('all')}>
+              <button className={category === 'all' ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, category: 'all' })}>
                 All <span className="board-count">{allStats.length}</span>
               </button>
               {PLACE_CATEGORIES.map(c => {
                 const n = allStats.filter(s => s.place.category === c).length
                 if (n === 0) return null
                 return (
-                  <button key={c} className={category === c ? 'seg on' : 'seg'} onClick={() => setCategory(c)}>
+                  <button key={c} className={category === c ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, category: c })}>
                     {PLACE_CATEGORY_META[c].label} <span className="board-count">{n}</span>
                   </button>
                 )
               })}
             </span>
-            <input className="search people-search" placeholder="Find a place…" value={q} onChange={e => setQ(e.target.value)} />
+            <input className="search people-search" placeholder="Find a place…" value={filter.q} onChange={e => onFilter({ ...filter, q: e.target.value })} />
             <label className="people-sort">
               Sort
               <select value={sort} onChange={e => setSortChoice(e.target.value as SortKey)}>

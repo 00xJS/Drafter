@@ -12,6 +12,7 @@ import { useDeepLinks } from '../components/planner/useDeepLinks'
 import { useNavigation } from '../components/planner/useNavigation'
 import { ListCard, MonthCalendar } from '../components/stats'
 import { contrast, graphicInk, mixHex, readableInk } from '../contrast'
+import { NO_PERSON_FILTER } from '../people'
 import { THEME_HEX, type Theme } from '../theme'
 import { PROJECT_COLORS, type CalendarEntry, type Person, type Place, type Recipe, type Task } from '../types'
 import { elements, press, propsOf, settled, type El } from './rendered'
@@ -79,9 +80,14 @@ const TASKS = [
 const ENTRIES: CalendarEntry[] = [{ kind: 'event', id: 'lunch', title: 'Lunch', start: at(9, 9, 13), end: at(9, 9, 14), allDay: false, peopleIds: ['sam'], createdAt: STAMP, updatedAt: STAMP }]
 
 type StatsProps = ComponentProps<typeof PeopleStats>
-const PROPS: StatsProps = { people: PEOPLE, tasks: TASKS, entries: ENTRIES, onSaw: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }
+const PROPS: StatsProps = { people: PEOPLE, tasks: TASKS, entries: ENTRIES, filter: NO_PERSON_FILTER, onFilter: noop, onSaw: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }
 const stats = (over: Partial<StatsProps> = {}) => html(<PeopleStats {...PROPS} {...over} />)
-const list = () => html(<People people={PEOPLE} tasks={TASKS} entries={ENTRIES} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} />)
+const list = () => html(<People people={PEOPLE} tasks={TASKS} entries={ENTRIES} filter={NO_PERSON_FILTER} onFilter={noop} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} />)
+/** People → Stats with its chip and find box held, as the People tab holds them, so a chip pressed narrows the next render. */
+function Held(props: StatsProps) {
+  const [filter, onFilter] = useState(props.filter)
+  return PeopleStats({ ...props, filter, onFilter })
+}
 
 /** The card titled `title`, head to foot. */
 function cardOf(page: string, title: string): string {
@@ -312,7 +318,7 @@ describe('with a household’s visits', () => {
   })
 
   it('narrows every figure to a group with the list’s own chips, and says whose year it is', () => {
-    const out = html(settled(PeopleStats, PROPS, tree => press(tree, 'Friends 3')))
+    const out = html(settled(Held, PROPS, tree => press(tree, 'Friends 3')))
     expect(out).toContain('<button type="button" aria-pressed="true" class="seg on">Friends <span class="board-count">3</span></button>')
     expect(out).toContain('<div class="stat-label">People</div><div class="stat-value">3</div><div class="stat-sub">in Friends</div>')
     expect(out).toContain(tile('This month', '2 of 14'))

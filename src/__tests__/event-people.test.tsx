@@ -13,7 +13,7 @@ import { PeopleStats } from '../components/PeopleStats'
 import { Today } from '../components/Today'
 import { PeoplePlace } from '../components/taskeditor/PeoplePlace'
 import { blocksOn } from '../focus'
-import { eventVisits, personStats, seenTasks, yearReport } from '../people'
+import { NO_PERSON_FILTER, eventVisits, personStats, seenTasks, yearReport } from '../people'
 import { buildReview, weekRange } from '../review'
 import { newPerson } from '../taskform'
 import type { CalendarEntry, Person, Task } from '../types'
@@ -188,10 +188,10 @@ describe('a past event of your own counts toward the People figures', () => {
   })
 
   const page = (over: Partial<ComponentProps<typeof People>> = {}) =>
-    renderToStaticMarkup(<People people={[mum]} tasks={[]} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} {...over} />)
+    renderToStaticMarkup(<People people={[mum]} tasks={[]} filter={NO_PERSON_FILTER} onFilter={noop} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} {...over} />)
 
   const stats = (over: Partial<ComponentProps<typeof PeopleStats>> = {}) =>
-    renderToStaticMarkup(<PeopleStats people={[mum]} tasks={[]} onSaw={noop} onOpenPerson={noop} now={NOW} {...over} />)
+    renderToStaticMarkup(<PeopleStats people={[mum]} tasks={[]} filter={NO_PERSON_FILTER} onFilter={noop} onSaw={noop} onOpenPerson={noop} now={NOW} {...over} />)
 
   it('reads on the People page exactly as the same event from another calendar does once logged', () => {
     const mine = page({ entries: [lunch] })

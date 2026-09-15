@@ -2,28 +2,14 @@ import { useMemo, useState } from 'react'
 import { readableInk } from '../contrast'
 import { daysAgo, daysBetween, shortDay } from '../kitchen'
 import { countOf } from '../people'
-import { placeEmoji, placeStats, placeYearReport } from '../places'
-import {
-  companyOnOutings,
-  kindChips,
-  mealsOut,
-  mostVisited,
-  neverBeen,
-  notBeenBack,
-  outingsByKind,
-  outingsByMonth,
-  placesByDay,
-  placesOfKind,
-  placesTiles,
-  usualCompany,
-  type KindFilter,
-} from '../placestats'
+import { NO_PLACE_FILTER, kindOn, placeEmoji, placeMatcher, placeStats, placeYearReport, type PlaceFilter } from '../places'
+import { companyOnOutings, kindChips, mealsOut, mostVisited, neverBeen, notBeenBack, outingsByKind, outingsByMonth, placesByDay, placesTiles, usualCompany } from '../placestats'
 import { MONTHS } from '../stats'
 import { useTheme } from '../theme'
 import { PLACE_CATEGORY_META, type Meal, type Person, type Place, type Task } from '../types'
 import { dateKey } from '../utils'
 import { PersonFace } from './PersonFace'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from './stats'
+import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from './stats'
 
 interface Props {
   places: Place[]
@@ -32,6 +18,13 @@ interface Props {
   tasks: Task[]
   /** Meals eaten out at a place count as outings there, as they do on the list. */
   meals: Meal[]
+  /**
+   * The list's kind chip and find box, held by the People tab: every figure
+   * counts only the places they leave, as the list shows only them.
+   */
+  filter: PlaceFilter
+  /** Set them: a chip here is the list's chip, and Show all clears both. */
+  onFilter(filter: PlaceFilter): void
   /** Places → List with this place's row open: the podium, the bars and the lists open it. */
   onOpenPlace(place: Place): void
   /** A trip there, as the row's Plan a trip plans one. */
@@ -99,7 +92,8 @@ function PlaceListRow({ place, line, onOpen, onPlan }: { place: Place; line: str
 
 /**
  * People → Places → Stats: where you go, counted in outings — the list's kind
- * chips, narrowing everything under them; the tiles; the month in places; the
+ * chips, narrowing everything under them as its find box does (a line at the
+ * head says so, with Show all); the tiles; the month in places; the
  * podium of the three most visited of all time; the most visited over 30 days,
  * 12 months or all time; where you have not been back and where you have never
  * been; the year by month with the year in places under it; each kind's share
@@ -107,7 +101,7 @@ function PlaceListRow({ place, line, onOpen, onPlan }: { place: Place; line: str
  * off the rows' own stats (src/placestats.ts), so it agrees with the list, and
  * drawn with the Stats kit (components/stats).
  */
-export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan, onOpenPerson, onOpenDay, mineOnCalendar = false, now: handed }: Props) {
+export function PlacesStats({ places, people, tasks, meals, filter, onFilter, onOpenPlace, onPlan, onOpenPerson, onOpenDay, mineOnCalendar = false, now: handed }: Props) {
   const theme = useTheme()
   // One clock for the day. PeopleScreen re-renders with every Planner render
   // (a sync, a toast, a record changed on another device), so each figure is
@@ -118,13 +112,14 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
   const now = useMemo(() => handed ?? new Date(), [handed, today])
   const thisYear = now.getFullYear()
   const [year, setYear] = useState(thisYear)
-  // The list's kind chips, narrowing every figure as they narrowed its tiles
-  // and its table. Not remembered, as the list's are not; a kind whose last
+  // The list's kind chips and find box, which the People tab holds for both:
+  // every figure counts only the places the list shows, by its own rule
+  // (placeMatcher). Not remembered, as the list's are not; a kind whose last
   // place has gone falls back to All.
-  const [chosen, setChosen] = useState<KindFilter>('all')
   const chips = useMemo(() => kindChips(places), [places])
-  const kind: KindFilter = chosen !== 'all' && chips.some(c => c.kind === chosen) ? chosen : 'all'
-  const shown = useMemo(() => placesOfKind(places, kind), [places, kind])
+  const kind = kindOn(places, filter.category)
+  const typed = filter.q.trim()
+  const shown = useMemo(() => places.filter(placeMatcher(places, filter)), [places, filter])
   const stats = useMemo(() => shown.map(p => placeStats(p, tasks, people, now, meals)), [shown, tasks, people, now, meals])
   const figures = useMemo(
     () => ({
@@ -153,6 +148,35 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
       </div>
     )
 
+  // what narrows the figures, as the line at the head and the empty state say it
+  const label = kind === 'all' ? '' : PLACE_CATEGORY_META[kind].label
+  const matching = typed && `matching “${typed}”`
+  const narrowedBy = label || typed ? [`Stats for ${shown.length} of ${countOf(places.length, 'place')}`, label, matching].filter(Boolean).join(' · ') : ''
+  const showAll = () => onFilter(NO_PLACE_FILTER)
+  // the list's chips: one pressed here is pressed there, and what is typed stays
+  const kindRow = (
+    <div className="people-controls">
+      <span className="segmented" role="group" aria-label="Kind of place">
+        <button type="button" aria-pressed={kind === 'all'} className={kind === 'all' ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, category: 'all' })}>
+          All <span className="board-count">{places.length}</span>
+        </button>
+        {chips.map(c => (
+          <button key={c.kind} type="button" aria-pressed={kind === c.kind} className={kind === c.kind ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, category: c.kind })}>
+            {PLACE_CATEGORY_META[c.kind].label} <span className="board-count">{c.count}</span>
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+
+  if (shown.length === 0)
+    return (
+      <div className="place-stats">
+        {kindRow}
+        <Narrowed empty words={`Nothing matches${typed ? ` “${typed}”` : ''}${label ? ` in ${label}` : ''}.`} onShowAll={showAll} />
+      </div>
+    )
+
   const { tiles, podium, back, never, days, usual, eaten } = figures
   /** A month of the calendar in words: its outings, as the year's bars count them, on how many days. */
   const monthLine = (y: number, m: number) => {
@@ -166,21 +190,11 @@ export function PlacesStats({ places, people, tasks, meals, onOpenPlace, onPlan,
 
   return (
     <div className="place-stats">
-      <div className="people-controls">
-        <span className="segmented" role="group" aria-label="Kind of place">
-          <button type="button" aria-pressed={kind === 'all'} className={kind === 'all' ? 'seg on' : 'seg'} onClick={() => setChosen('all')}>
-            All <span className="board-count">{places.length}</span>
-          </button>
-          {chips.map(c => (
-            <button key={c.kind} type="button" aria-pressed={kind === c.kind} className={kind === c.kind ? 'seg on' : 'seg'} onClick={() => setChosen(c.kind)}>
-              {PLACE_CATEGORY_META[c.kind].label} <span className="board-count">{c.count}</span>
-            </button>
-          ))}
-        </span>
-      </div>
+      {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
+      {kindRow}
 
       <div className="kpi-row people-kpis">
-        <StatTile label="Places" value={String(tiles.places)} sub={kind === 'all' ? 'saved, every kind' : `saved, ${PLACE_CATEGORY_META[kind].label.toLowerCase()} only`} />
+        <StatTile label="Places" value={String(tiles.places)} sub={['saved', label ? `${label.toLowerCase()} only` : !typed && 'every kind', matching].filter(Boolean).join(', ')} />
         <StatTile label="Outings this year" value={String(tiles.outingsThisYear)} sub="a meal eaten out there included" />
         <StatTile label="Outings this month" value={String(tiles.outingsThisMonth)} sub={`in ${MONTHS[now.getMonth()]} so far`} />
         <StatTile label="Been a while" value={String(tiles.beenAWhile)} sub="due or overdue a return" />

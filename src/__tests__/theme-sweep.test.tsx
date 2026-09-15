@@ -7,6 +7,7 @@ import { PlacesStats } from '../components/PlacesStats'
 import { Roadmap } from '../components/Roadmap'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { graphicInk, heatStyle, readableInk } from '../contrast'
+import { NO_PLACE_FILTER } from '../places'
 import type { CalendarEvent, CalendarSource, Garment, Place, Project, Recipe, Task, Wear } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
 import { sheetSource } from './source'
@@ -168,7 +169,7 @@ describe('the year in places gives a deep colour’s busiest cells their own ink
   const tasks = [outing('jul', 6, 4), ...[3, 10, 17, 24].map(d => outing(`aug-${d}`, 7, d))]
   const table = () => {
     // on Places → Stats since the list keeps to the places
-    const html = renderToStaticMarkup(<PlacesStats places={[indigo]} people={[]} tasks={tasks} meals={[]} onOpenPlace={noop} onPlan={noop} />)
+    const html = renderToStaticMarkup(<PlacesStats places={[indigo]} people={[]} tasks={tasks} meals={[]} filter={NO_PLACE_FILTER} onFilter={noop} onOpenPlace={noop} onPlan={noop} />)
     return html.slice(html.indexOf('class="year-table"'))
   }
   const css = (s: { background: string; color?: string }) => `background:${s.background}${s.color ? `;color:${s.color}` : ''}`
