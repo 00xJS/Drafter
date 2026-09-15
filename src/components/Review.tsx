@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEntry, Garment, Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus, Wear } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
+import { formatMoney } from '../bills'
 import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, localDayKey, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
 import { habitsConsistency } from '../habits'
@@ -524,8 +525,8 @@ export function Review({
               </div>
             </header>
             <p className="review-costs">
-              <strong>{data.costs.actual.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong> spent
-              {data.costs.estimate > 0 && <small className="muted"> vs {data.costs.estimate.toLocaleString(undefined, { maximumFractionDigits: 0 })} estimated</small>}
+              <strong>{formatMoney(data.costs.actual)}</strong> spent
+              {data.costs.estimate > 0 && <small className="muted"> vs {formatMoney(data.costs.estimate)} estimated</small>}
             </p>
           </section>
         )}

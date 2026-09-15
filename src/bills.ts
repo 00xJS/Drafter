@@ -4,9 +4,13 @@ import { Bill, OPEN_STATUSES, RecurrenceFreq, Task } from './types'
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
 // and what was paid is actualCost — so everything here is a view over tasks.
 
-/** Every figure in the app is stored as a plain number; this is the one place it gets a currency. */
-export const CURRENCY = 'GBP'
-const fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: CURRENCY })
+/**
+ * Every figure in the app is stored as a plain number; this is the one place
+ * it gets a currency: US dollars, written the en-US way ("$1,234.56") on
+ * every device, whatever its language.
+ */
+export const CURRENCY = 'USD'
+const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })
 export const formatMoney = (n: number | undefined): string => (n === undefined || !Number.isFinite(n) ? '' : fmt.format(n))
 
 export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt

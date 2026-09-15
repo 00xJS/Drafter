@@ -710,6 +710,9 @@ describe('notes, focus and the week plan over MCP', () => {
     expect(plan.dinners).toEqual([expect.objectContaining({ date: '2026-10-04', recipeId: 'pasta', title: 'Pasta', isNew: false, why: expect.stringMatching(/^Cooked 1× in six months/) })])
     expect(plan.summary).toBe('1 dinner to fill')
     expect(calls.some(c => c.url.includes('sync_posts'))).toBe(false)
+    // an amount goes out as the number it is stored as, and the tools say what it is in
+    expect(tool('get_week_plan_proposal').description).toContain('amount in US dollars')
+    expect(tool('get_task').description).toContain('are in US dollars')
   })
 })
 

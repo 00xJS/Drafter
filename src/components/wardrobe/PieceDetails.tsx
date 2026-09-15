@@ -45,7 +45,7 @@ const priceText = (g: Garment) => String(priceOf(g) ?? '')
 const tagsText = (g: Garment) => (g.tags ?? []).join(', ')
 
 /**
- * A price as typed: whole units ("£40", "39.99" is 40), null for an empty
+ * A price as typed: whole dollars ("$40", "39.99" is 40), null for an empty
  * field or for nothing at all ("0" is no price, as priceOf reads one),
  * undefined for anything that is not a price.
  */

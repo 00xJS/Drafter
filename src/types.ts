@@ -645,7 +645,7 @@ export interface Garment extends Owned {
   tags?: string[]
   /** The seasons it is for; none means any season. */
   seasons?: Season[]
-  /** What it cost, in whole units of the owner's currency (formatMoney shows it): the sheet's cost per wear. */
+  /** What it cost, in whole dollars (formatMoney shows it): the sheet's cost per wear. */
   price?: number
   createdAt: string
   updatedAt: string

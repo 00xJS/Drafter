@@ -8,7 +8,8 @@ import { AskSheet, aiFailureKind, askFailure } from '../components/AskSheet'
 import { Review, planWeekIsPrimary } from '../components/Review'
 import { withAskRow } from '../components/Search'
 import { WISHLIST, WeekPlanSheet, acceptedCount, acceptedPlan, initialChoices, readWeekPlanDismissed, rememberWeekPlanDismissed } from '../components/WeekPlanSheet'
-import type { JournalEntry, Place, Recipe } from '../types'
+import { defaultReviewAnchor, rangeFor } from '../review'
+import type { JournalEntry, Place, Recipe, Task } from '../types'
 
 // Ask Drafter and Plan next week, whose sheets the shell opens: what each shows
 // on first paint, before any effect and with no network, and the pure pieces
@@ -228,5 +229,15 @@ describe('Review', () => {
     expect(renderToStaticMarkup(<Review {...props} />)).not.toContain('Plan next week')
     // Friday 11 to Thursday 17 September 2026
     expect([11, 12, 13, 14, 15, 16, 17].map(d => planWeekIsPrimary(new Date(2026, 8, d)))).toEqual([true, true, true, false, false, false, false])
+  })
+
+  it('adds up the spend in dollars, through the one formatter', () => {
+    // an hour into the week the page opens on
+    const at = new Date(rangeFor('week', defaultReviewAnchor(new Date())).start.getTime() + 3_600_000).toISOString()
+    const done = (id: string, over: Partial<Task>): Task => ({ kind: 'task', id, title: id, description: '', status: 'done', priority: 'normal', tags: [], completedAt: at, createdAt: STAMP, updatedAt: at, ...over })
+    const html = renderToStaticMarkup(<Review {...props} tasks={[done('boiler', { estimateCost: 1000, actualCost: 1234.5 }), done('paint', { estimateCost: 200 })]} />).replace(/<!-- -->/g, '')
+    expect(html).toContain(`<strong>${formatMoney(1234.5)}</strong> spent`)
+    expect(html).toContain(` vs ${formatMoney(1200)} estimated`)
+    expect(formatMoney(1234.5)).toBe('$1,234.50')
   })
 })

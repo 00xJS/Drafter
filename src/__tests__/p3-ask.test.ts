@@ -280,7 +280,7 @@ describe('prepareAsk: the privacy rules in one place', () => {
 
   it('sends amounts only with a money question', () => {
     const plain = prep('When is the council tax due?')
-    expect(JSON.stringify(plain)).not.toMatch(/145|£/)
+    expect(JSON.stringify(plain)).not.toMatch(/145|\$|£/)
     const money = prep('How much is the council tax bill?')
     expect(money.docs.find(d => d.kind === 'bill')!.text).toMatch(/145/)
     expect(money.facts.some(f => /a month/.test(f))).toBe(true)

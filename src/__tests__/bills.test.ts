@@ -1,7 +1,10 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { nextOccurrence } from '../../shared/domain.mjs'
 import { sanitizeTask } from '../schema'
-import { billMonth, monthlyCost, withPaidDefault } from '../bills'
+import { CURRENCY, billMonth, formatMoney, monthlyCost, withPaidDefault } from '../bills'
 import { Task } from '../types'
 
 // A bill is a repeating task with an amount. These pin the rules that make it
@@ -27,6 +30,35 @@ const task = (over: Partial<Task> = {}): Task => ({
   ...over,
 })
 const spawn = (t: Task) => nextOccurrence(t, () => 'x') as Task
+
+describe('formatMoney: every amount in dollars', () => {
+  const ROOT = fileURLToPath(new URL('../../', import.meta.url))
+  /** The app's own code: the web app, the shared modules, the MCP server, the functions and the bot. */
+  const sources = () =>
+    ['src', 'shared', 'mcp', 'netlify/functions', 'supabase/functions'].flatMap(dir =>
+      readdirSync(join(ROOT, dir), { recursive: true, encoding: 'utf8' })
+        .filter(f => /\.(ts|tsx|mjs)$/.test(f) && !f.includes('__tests__'))
+        .map(f => ({ path: `${dir}/${f}`, text: readFileSync(join(ROOT, dir, f), 'utf8') })),
+    )
+
+  it('shows US dollars the en-US way, whatever the device’s language', () => {
+    expect(CURRENCY).toBe('USD')
+    expect(formatMoney(1234.56)).toBe('$1,234.56')
+    expect(formatMoney(40)).toBe('$40.00')
+    expect(formatMoney(0.5)).toBe('$0.50')
+    expect(formatMoney(undefined)).toBe('')
+    expect(formatMoney(Number.NaN)).toBe('')
+    // the locale is named, never the device's
+    expect(readFileSync(join(ROOT, 'src/bills.ts'), 'utf8')).toContain("new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })")
+  })
+
+  it('is the one formatter, and nothing else shows a pound sign', () => {
+    const files = sources()
+    expect(files.filter(f => /style:\s*'currency'/.test(f.text)).map(f => f.path)).toEqual(['src/bills.ts'])
+    // the typed-price parsers still take £ beside $ and € (a character class); nothing else says it
+    expect(files.filter(f => f.text.replace(/\[[^\]\n]*£[^\]\n]*\]/g, '').includes('£')).map(f => f.path)).toEqual([])
+  })
+})
 
 describe('a bill stays on its due day', () => {
   it('comes round on the due date however early it was paid', () => {

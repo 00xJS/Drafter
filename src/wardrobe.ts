@@ -563,7 +563,7 @@ export function costPerWear(g: Garment, ix: WearIndex): number | null {
   return price === undefined || days === 0 ? null : price / days
 }
 
-/** The sheet's line: "£40.00 · £8.00 a wear over 5 days", "£40.00 · not worn yet", or null with no price. */
+/** The sheet's line: "$40.00 · $8.00 a wear over 5 days", "$40.00 · not worn yet", or null with no price. */
 export function costLine(g: Garment, ix: WearIndex): string | null {
   const price = priceOf(g)
   if (price === undefined) return null

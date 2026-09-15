@@ -16,7 +16,7 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 ### Tasks
 
 - A task has a description, a status (Wishlist, To do, Doing, Done, or Blocked while it waits on another), a priority, a due date, tags, a checklist, comments, photos and files. A repeating task makes the next one when you finish it.
-- **List**, **Board** (drag between statuses), **Bills** (a month of payments, in pounds) and **Notes** (rich-text notes and the project's notepad).
+- **List**, **Board** (drag between statuses), **Bills** (a month of payments, in dollars) and **Notes** (rich-text notes and the project's notepad).
 - A template or ✨ **Draft a plan** from a one-line goal adds a set of dated tasks at once.
 - A GitHub link shows the issue or pull request's live state. With a GitHub token, finishing the task can close the issue, and a linked Projects board syncs status and due dates both ways.
 - Forwarded emails can become tasks. Deleting takes two clicks, and the Trash keeps things for 90 days.

@@ -752,7 +752,7 @@ describe('sundayDraftDue: the account’s own Sunday, from its hour', () => {
 describe('sundayLine: the review’s first sentence', () => {
   it('up to the first full stop that ends a word, bullet dropped', () => {
     expect(sundayLine(SUMMARY)).toBe('Last week: A steady week: the fence is fixed.')
-    expect(sundayLine('\n- You spent £12.50 on paint. Then more.')).toBe('Last week: You spent £12.50 on paint.')
+    expect(sundayLine('\n- You spent $12.50 on paint. Then more.')).toBe('Last week: You spent $12.50 on paint.')
     expect(firstSentence('Saw Mr. Smith and the fence is done! Next up.')).toBe('Saw Mr. Smith and the fence is done!')
     expect(firstSentence('No full stop at all')).toBe('No full stop at all')
   })

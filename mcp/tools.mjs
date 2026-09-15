@@ -556,7 +556,7 @@ export const TOOLS = [
     name: 'get_task',
     scope: 'read',
     annotations: READS,
-    description: 'Fetch one task in full (description, checklist, comments, everything) by id.',
+    description: 'Fetch one task in full (description, checklist, comments, everything) by id. Its amounts (estimateCost, a bill\'s amount due; actualCost, what was paid) are in US dollars.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     async run({ id } = {}, { db }) {
       return db.fetchItem(id, 'task')
@@ -1549,7 +1549,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'The app\'s "Plan next week" proposal for the Sunday-start week ahead (from next Sunday, or from today on a Sunday): dinners for the empty nights (favourites not had lately, one recipe never cooked, busy evenings flagged, alternatives to swap in), catch-ups with anyone due one, overdue work spread so no day has more than three due, bills falling due, and a Top 3 while last week\'s review has none. A proposal only: nothing is written. To act on it, ask the user first, then use plan_meal, create_task and update_task.',
+      'The app\'s "Plan next week" proposal for the Sunday-start week ahead (from next Sunday, or from today on a Sunday): dinners for the empty nights (favourites not had lately, one recipe never cooked, busy evenings flagged, alternatives to swap in), catch-ups with anyone due one, overdue work spread so no day has more than three due, bills falling due (amount in US dollars, or null), and a Top 3 while last week\'s review has none. A proposal only: nothing is written. To act on it, ask the user first, then use plan_meal, create_task and update_task.',
     inputSchema: { type: 'object', properties: {} },
     async run(_args, { db, clock, userId }) {
       // reviews are personal: the owner's view already leaves out anyone else's
