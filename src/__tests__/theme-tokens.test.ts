@@ -114,7 +114,7 @@ const DARK: Record<string, string> = {
   '--prio-normal': '#b3b8c4', // PRIORITY_META.normal
   '--prio-high': '#fb923c', // PRIORITY_META.high, .card.prio-border-high
   '--cal-meal-out': '#38bdf8', // MEAL_COLORS.out
-  '--cal-meal-bought': '#fda4af', // .kitchen-way-bought's var(--tone-rose); a bought meal on the Calendar was MEAL_COLOR's orange
+  '--cal-meal-bought': '#fda4af', // .kitchen-way-bought's var(--tone-rose); a bought meal on the Calendar was MEAL_OUT_COLOR's #38bdf8
   '--cal-event-local': '#a78bfa', // LOCAL_EVENT_COLOR
   '--dot-fallback': '#94a3b8', // an event whose calendar is gone
   '--dot-ring': 'transparent', // new, and invisible in dark

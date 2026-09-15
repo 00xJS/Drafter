@@ -23,7 +23,7 @@ export function ChartCard({ title, sub, aside, className, children }: { title: R
 /**
  * ‹ label ›: a month or a year stepped back and forth at a card's head. `unit`
  * names the arrows for a screen reader ("Previous year"), and `canNext` false
- * stops › at the present, so no month or year still to come is offered.
+ * stops › at the present, dimmed, so no month or year still to come is offered.
  */
 export function Stepper({ label, unit, onStep, canNext = true }: { label: string; unit: string; onStep(delta: -1 | 1): void; canNext?: boolean }) {
   return (

@@ -370,6 +370,11 @@ describe('the kit’s own styles', () => {
   it('gives a row that opens something the 44pt floor on a touch screen, as the wardrobe’s has', () => {
     expect(css).toMatch(/@media \(pointer: coarse\) \{[^@]*\.stats-list-piece,/)
   })
+
+  it('dims a stepper’s › stopped at the present, as the wardrobe’s day steps are', () => {
+    expect(css).toMatch(/\.seg:disabled \{\s*opacity: 0\.35;\s*cursor: not-allowed;\s*\}/)
+    expect(css).toMatch(/\.wardrobe-step:disabled \{\s*opacity: 0\.35;/)
+  })
 })
 
 describe('the kit stays out of the first load', () => {
