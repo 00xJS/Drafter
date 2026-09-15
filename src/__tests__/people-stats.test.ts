@@ -215,6 +215,15 @@ describe('the most seen, and the podium', () => {
     expect(mostSeen(all, 'all', NOW).map(r => r.name)).toEqual(['Bob', 'Ann', 'Cy'])
   })
 
+  it('stands two of one name in one order, by id, whichever the store holds first', () => {
+    const sams = [person('sam-b', { name: 'Sam' }), person('sam-a', { name: 'Sam' })]
+    const tasks = [done(at(9, 10), ['sam-b']), done(at(9, 11), ['sam-a'])]
+    for (const order of [sams, [...sams].reverse()]) {
+      expect(mostSeen(read(order, tasks).all, 'all', NOW).map(r => r.key)).toEqual(['sam-a', 'sam-b'])
+      expect(mostSeen(read(order, tasks).all, 'all', NOW, 1).map(r => r.key)).toEqual(['sam-a'])
+    }
+  })
+
   it('ranks one person, and nobody unseen in the window', () => {
     const { all } = read([person('mum'), person('kit')], [done(at(6, 1), ['mum'])])
     expect(mostSeen(all, 30, NOW)).toEqual([])
@@ -270,6 +279,11 @@ describe('not seen lately, and never seen', () => {
     expect(NEVER_SEEN_DAYS).toBe(14)
     expect(neverSeen(all, TODAY).map(s => s.person.id)).toEqual(['cy', 'eve', 'ann'])
     expect(neverSeen(all, TODAY).every(s => s.status === 'never')).toBe(true)
+  })
+
+  it('lists two of one name, added together, by id, whichever the store holds first', () => {
+    const sams = [person('sam-b', { name: 'Sam', createdAt: at(8, 1, 9) }), person('sam-a', { name: 'Sam', createdAt: at(8, 1, 9) })]
+    for (const order of [sams, [...sams].reverse()]) expect(neverSeen(read(order, []).all, TODAY).map(s => s.person.id)).toEqual(['sam-a', 'sam-b'])
   })
 })
 
@@ -349,6 +363,13 @@ describe('often together', () => {
     const { all } = read(['ann', 'bob', 'cy', 'dee', 'eve', 'fay'].map(id => person(id)), tasks)
     expect(oftenTogether(all).map(p => p.key)).toEqual(['cy+dee', 'eve+fay', 'ann+bob'])
     expect(oftenTogether(all, 1).map(p => p.key)).toEqual(['cy+dee'])
+  })
+
+  it('stands pairs named alike in one order, by id, whichever the store holds first', () => {
+    const people = [person('sam-b', { name: 'Sam' }), person('ann'), person('sam-a', { name: 'Sam' })]
+    const tasks = [done(at(9, 1), ['ann', 'sam-a', 'sam-b']), done(at(9, 2), ['ann', 'sam-a', 'sam-b'])]
+    for (const order of [people, [...people].reverse()])
+      expect(oftenTogether(read(order, tasks).all).map(p => p.key)).toEqual(['ann+sam-a', 'ann+sam-b', 'sam-a+sam-b'])
   })
 })
 

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { readableInk } from '../contrast'
+import { useMemo, useState, type CSSProperties } from 'react'
+import { readableInk, type InkGround } from '../contrast'
 import { daysAgo, shortDay } from '../kitchen'
 import { countOf, type PersonStats } from '../people'
 import {
@@ -27,7 +27,7 @@ import { daysBetween, type DayWindow } from '../stats'
 import { useTheme, type Theme } from '../theme'
 import { PERSON_GROUPS, PERSON_GROUP_META, type CalendarEntry, type Person, type Task } from '../types'
 import { dateKey } from '../utils'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable } from './stats'
+import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable, markInk } from './stats'
 
 interface Props {
   people: Person[]
@@ -57,15 +57,26 @@ const STREAK_WORDS = {
 }
 /** A day of the month calendar shows this many faces, then "+n". */
 const FACES_A_DAY = 3
+/** The Groups card's longest bar, in percent of its track: short of the kit's 85, so "100%" still fits beside it at 375pt and no bar is squeezed. */
+const GROUP_BAR_MAX = 75
 
 /**
  * A person's emoji, or their initial, on a tint of their own colour, written
- * in that colour moved just far enough to read on it (readableInk). The name
- * beside it, or the day's label, says who, so a reader skips it.
+ * in that colour moved just far enough to read on it (readableInk). The tint
+ * is laid over the ground it sits on — the card, or with `ground` 'raised' a
+ * month's day cell (--surface-2), the ground its ink is worked out for — so
+ * the face is opaque, and a pair's second face covers the first's edge rather
+ * than showing it through. The name beside it, or the day's label, says who,
+ * so a reader skips it.
  */
-function Face({ person, theme, className }: { person: Person; theme: Theme; className: string }) {
+function Face({ person, theme, className, ground }: { person: Person; theme: Theme; className: string; ground?: InkGround }) {
+  const tint = `${person.color}22`
+  const style: CSSProperties = {
+    background: `linear-gradient(${tint}, ${tint}), ${ground === 'raised' ? 'var(--surface-2)' : 'var(--surface)'}`,
+    color: readableInk(person.color, theme, { tint: true, ground }),
+  }
   return (
-    <span className={`stats-face ${className}`} style={{ background: `${person.color}22`, color: readableInk(person.color, theme, { tint: true }) }} aria-hidden="true">
+    <span className={`stats-face ${className}`} style={style} aria-hidden="true">
       {person.emoji || person.name.slice(0, 1).toUpperCase()}
     </span>
   )
@@ -74,6 +85,23 @@ function Face({ person, theme, className }: { person: Person; theme: Theme; clas
 /** A person in a list card: their face, name and a line, opening their card, with Saw them at the end. */
 function PersonLine({ stats, line, theme, onOpen, onSaw }: { stats: PersonStats; line: string; theme: Theme; onOpen(p: Person): void; onSaw(p: Person): void }) {
   const { person } = stats
+  const saw = (button: HTMLElement) => {
+    // Seen, they leave this card, and this button with them. A keyboard on it
+    // goes on to the next row's Saw them (or the one before), or to the card's
+    // heading when it was the last, rather than back to the top of the page.
+    // A tap left no focus here, so it moves nothing.
+    const held = typeof document !== 'undefined' && document.activeElement === button
+    const row = button.closest('li')
+    const next = (row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLElement>('.btn')
+    const head = button.closest('section')?.querySelector<HTMLElement>('h3')
+    onSaw(person)
+    if (!held) return
+    if (next) next.focus({ preventScroll: true })
+    else if (head) {
+      head.tabIndex = -1
+      head.focus({ preventScroll: true })
+    }
+  }
   return (
     <ListRow
       picture={<Face person={person} theme={theme} className="face-40" />}
@@ -81,7 +109,7 @@ function PersonLine({ stats, line, theme, onOpen, onSaw }: { stats: PersonStats;
       line={line}
       onOpen={() => onOpen(person)}
       action={
-        <button type="button" className="btn subtle" aria-label={`Saw them: ${person.name}`} onClick={() => onSaw(person)}>
+        <button type="button" className="btn subtle" aria-label={`Saw them: ${person.name}`} onClick={e => saw(e.currentTarget)}>
           Saw them
         </button>
       }
@@ -106,9 +134,13 @@ function groupChips(all: readonly PersonStats[], group: GroupFilter, onGroup: (g
   )
 }
 
-/** Each group's share of the days you saw anyone, over 30 days, 12 months or all time. */
+/**
+ * Each group's share of the days you saw anyone, over 30 days, 12 months or
+ * all time, opening on 30 days as Most seen does. The days sit by the group's
+ * name, so the bar ends with the share alone.
+ */
 function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: readonly Task[]; now: Date }) {
-  const [span, setSpan] = useState<DayWindow>('all')
+  const [span, setSpan] = useState<DayWindow>(30)
   const { days, groups } = groupShares(all, seen, span, now)
   return (
     <ChartCard title="Groups" sub="Of the days you saw anyone, the share with each group: a day with family and friends counts for both" aside={<WindowSwitch value={span} onChange={setSpan} />}>
@@ -120,12 +152,11 @@ function GroupsCard({ all, seen, now }: { all: readonly PersonStats[]; seen: rea
             <div key={g.group} className="hbar-row">
               <span className="stats-hbar-label">
                 <span className="stats-hbar-name">{PERSON_GROUP_META[g.group]}</span>
+                <small className="muted people-group-days">{countOf(g.days, 'day')}</small>
               </span>
               <span className="hbar-track">
-                {g.days > 0 && <span className="hbar-fill" style={{ width: `${Math.max(4, g.share * 85)}%` }} />}
-                <span className="hbar-value">
-                  {Math.round(g.share * 100)}% · {countOf(g.days, 'day')}
-                </span>
+                {g.days > 0 && <span className="hbar-fill" style={{ width: `${Math.max(4, g.share * GROUP_BAR_MAX)}%` }} />}
+                <span className="hbar-value">{`${Math.round(g.share * 100)}%`}</span>
               </span>
             </div>
           ))}
@@ -192,7 +223,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
             <StatTile label="This month" value={`${tiles.thisMonth.days} of ${tiles.thisMonth.of}`} sub="days with someone so far" />
             <StatTile label="Seen lately" value={`${tiles.seenLately} of ${tiles.people}`} sub="seen in the last 90 days" />
             <StatTile label="Overdue" value={String(counts.attention.overdue)} sub="past your target rhythm" warn={counts.attention.overdue > 0} />
-            <StatTile label="Due a catch-up" value={String(counts.attention.due)} />
+            {/* the list's "due" badge: Not seen lately below lists these and the overdue together */}
+            <StatTile label="Due a catch-up" value={String(counts.attention.due)} sub="past your target rhythm, not yet overdue" />
             <StreakTiles current={tiles.streak.current} best={tiles.streak.best} today={tiles.streak.today} words={STREAK_WORDS} />
           </div>
 
@@ -251,7 +283,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
                 content: (
                   <span className="people-cal-faces">
                     {on.slice(0, FACES_A_DAY).map(p => (
-                      <Face key={p.id} person={p} theme={theme} className="people-cal-face" />
+                      // on the day cell's --surface-2, the ground their ink is worked out for
+                      <Face key={p.id} person={p} theme={theme} className="people-cal-face" ground="raised" />
                     ))}
                     {on.length > FACES_A_DAY && (
                       <span className="people-cal-more" aria-hidden="true">
@@ -284,7 +317,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, onSaw, onOpen
               head="Person"
               noun="day"
               totalHead="Days"
-              color={r => r.person.color}
+              // each row's dot and cells in their colour as a mark, moved to stand out on the card, as the wardrobe's are
+              color={r => markInk(r.person.color, theme)}
               months={MONTH_LETTERS}
               extra={{ head: 'Events', className: 'year-events', cell: r => r.events }}
             />

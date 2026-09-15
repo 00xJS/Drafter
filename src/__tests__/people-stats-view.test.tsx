@@ -1,24 +1,32 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { ComponentProps, ReactElement, ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Calendar } from '../components/Calendar'
 import { People } from '../components/People'
 import { PeopleStats } from '../components/PeopleStats'
 import { ListStatsSwitch } from '../components/planner/ListStatsSwitch'
+import { CAL_MODE_KEY, INNER_VIEW_KEYS, PEOPLE_TAB_KEY, type CalendarMode, type InnerView, type PeopleTab, type View } from '../components/planner/routes'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
+import { useNavigation } from '../components/planner/useNavigation'
 import { ListCard, MonthCalendar } from '../components/stats'
-import { graphicInk, readableInk } from '../contrast'
-import type { CalendarEntry, Person, Place, Recipe, Task } from '../types'
+import { contrast, graphicInk, mixHex, readableInk } from '../contrast'
+import { THEME_HEX, type Theme } from '../theme'
+import { PROJECT_COLORS, type CalendarEntry, type Person, type Place, type Recipe, type Task } from '../types'
 import { elements, press, propsOf, settled, type El } from './rendered'
 import { sheetSource } from './source'
 
 // People → Stats, drawn on the server as the tests see every screen: with
-// nobody, with people and nothing seen, and with a household's visits; every
-// figure beside the same one on the list; the switch that reaches it, the
-// palette's link to it, and the day its month opens on the Calendar. The
-// counting itself is people-stats.test.ts's.
+// nobody, with people and nothing seen, and with a household's visits, in the
+// light theme and the dark; every figure beside the same one on the list; the
+// switch that reaches it and the shell that remembers it, the palette's link
+// to it, and the day its month opens on the Calendar. The counting itself is
+// people-stats.test.ts's.
+
+/** The theme useTheme reports: light, as its server snapshot is, unless a test turns it dark. */
+const painted = vi.hoisted(() => ({ theme: 'light' as Theme }))
+vi.mock('../theme', async importOriginal => ({ ...(await importOriginal<typeof import('../theme')>()), useTheme: () => painted.theme }))
 
 const NOW = new Date(2026, 8, 14, 12, 0) // Monday 14 September 2026, local noon
 const STAMP = '2026-01-01T00:00:00.000Z'
@@ -84,13 +92,33 @@ function cardOf(page: string, title: string): string {
 /** The names a list card lists, in order. */
 const namesIn = (card: string) => [...card.matchAll(/class="stats-list-name">([^<]+)</g)].map(m => m[1])
 const tile = (label: string, value: string) => `<div class="stat-label">${label}</div><div class="stat-value">${value}</div>`
+/** Each face drawn: its class, its colour, the ground its tint is laid over, and its ink. */
+const facesIn = (page: string) =>
+  [...page.matchAll(/class="stats-face ([\w-]+)" style="background:linear-gradient\((#[0-9a-f]{6})22, #[0-9a-f]{8}\), var\((--surface(?:-2)?)\);color:(#[0-9a-f]{6})"/g)].map(m => ({
+    className: m[1],
+    color: m[2],
+    ground: m[3],
+    ink: m[4],
+  }))
+/** Saw them's handler on one of a list card's rows. */
+function sawOn(tree: ReactNode, title: string, index: number) {
+  const card = elements(tree).find(e => e.type === ListCard && e.props.title === title)!
+  const line = (card.props.row as (item: unknown) => El)((card.props.items as unknown[])[index])
+  // the row draws a ListRow: its button opens the card, its action logs the visit
+  const row = (line.type as (props: Record<string, unknown>) => El)(line.props)
+  return { row, saw: (row.props.action as El).props.onClick as (e: { currentTarget: unknown }) => void }
+}
 
 beforeEach(() => {
   // the list reads the clock; Stats is handed it
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  painted.theme = 'light'
+})
 
 describe('with nobody on the list', () => {
   it('says what will show here, and draws nothing else', () => {
@@ -125,6 +153,7 @@ describe('with people, and nobody seen yet', () => {
     expect(cardOf(out, 'Most seen')).toContain('<p class="empty">Nobody was seen in this time.</p>')
     expect(cardOf(out, 'Not seen lately')).toContain('<p class="empty">Nobody is past their rhythm.</p>')
     expect(cardOf(out, 'Often together')).toContain('<p class="empty">Two people seen on the same day, twice or more, show here.</p>')
+    expect(cardOf(out, 'Groups')).toContain('<p class="empty">Nobody was seen in this time.</p>')
     // added in January and in August; Newbie, three days ago, not yet
     expect(namesIn(cardOf(out, 'Never seen'))).toEqual(['Ben', 'Dad', 'Gran', 'Jo', 'Mum', 'Sam', 'Kit'])
     expect(cardOf(out, 'Who you saw')).toContain('<p class="chart-sub">Each day’s people · 0 days with someone</p>')
@@ -148,6 +177,8 @@ describe('with a household’s visits', () => {
     ])
       expect(out, label).toContain(tile(label, value))
     expect(out).toContain('<div class="stat-label">Overdue</div><div class="stat-value stat-warn">1</div><div class="stat-sub">past your target rhythm</div>')
+    // due is the list's badge: past the rhythm, short of overdue, so it never reads as Not seen lately's count
+    expect(out).toContain(`${tile('Due a catch-up', '1')}<div class="stat-sub">past your target rhythm, not yet overdue</div>`)
     // today has nobody yet: the run waits for it
     expect(out).toContain('see someone today to keep it going')
   })
@@ -159,7 +190,8 @@ describe('with a household’s visits', () => {
     expect(podium).toContain('aria-label="First: Dad, 4 days"')
     const ink = readableInk('#fbbf24', 'light', { tint: true })
     expect(ink).not.toBe('#fbbf24')
-    expect(podium).toContain(`<span class="stats-face podium-face" style="background:#fbbf2422;color:${ink}" aria-hidden="true">👩</span>`)
+    // the tint laid over the card's own ground, so the face is opaque
+    expect(podium).toContain(`<span class="stats-face podium-face" style="background:linear-gradient(#fbbf2422, #fbbf2422), var(--surface);color:${ink}" aria-hidden="true">👩</span>`)
     expect(podium).toContain('aria-hidden="true">D</span>')
   })
 
@@ -184,15 +216,39 @@ describe('with a household’s visits', () => {
   it('logs a visit from Saw them, and opens a person from their name', () => {
     const onSaw = vi.fn()
     const onOpenPerson = vi.fn()
-    const tree = settled(PeopleStats, { ...PROPS, onSaw, onOpenPerson })
-    const card = elements(tree).find(e => e.type === ListCard && e.props.title === 'Not seen lately')!
-    const line = (card.props.row as (item: unknown) => El)((card.props.items as unknown[])[0])
-    // the row draws a ListRow: its button opens the card, its action logs the visit
-    const row = (line.type as (props: Record<string, unknown>) => El)(line.props)
-    ;((row.props.action as El).props.onClick as () => void)()
+    const { row, saw } = sawOn(settled(PeopleStats, { ...PROPS, onSaw, onOpenPerson }), 'Not seen lately', 0)
+    saw({ currentTarget: { closest: () => null } })
     ;(row.props.onOpen as () => void)()
     expect(onSaw).toHaveBeenCalledWith(PEOPLE[2])
     expect(onOpenPerson).toHaveBeenCalledWith(PEOPLE[2])
+  })
+
+  it('keeps a keyboard’s place when Saw them takes its row away: the next row’s Saw them, the one before, else the card’s heading', () => {
+    const onSaw = vi.fn()
+    const tree = settled(PeopleStats, { ...PROPS, onSaw })
+    const focused: string[] = []
+    const focusable = (name: string) => ({ tabIndex: 0, focus: () => void focused.push(name) })
+    const heading = focusable('heading')
+    /** A Saw them button in its row, between these rows' own Saw them, in the card. */
+    const button = (next: object | null, before: object | null) => {
+      const neighbour = (b: object | null) => b && { querySelector: () => b }
+      const li = { nextElementSibling: neighbour(next), previousElementSibling: neighbour(before) }
+      return { closest: (selector: string) => (selector === 'li' ? li : { querySelector: () => heading }) }
+    }
+    const press = (b: object, held: boolean) => {
+      vi.stubGlobal('document', { activeElement: held ? b : null })
+      sawOn(tree, 'Not seen lately', 0).saw({ currentTarget: b })
+    }
+    // a tap leaves no focus on the button, so nothing moves
+    press(button(focusable('next'), null), false)
+    expect(focused).toEqual([])
+    press(button(focusable('next'), focusable('before')), true)
+    press(button(null, focusable('before')), true)
+    press(button(null, null), true)
+    expect(focused).toEqual(['next', 'before', 'heading'])
+    // the heading takes focus without joining the tab order
+    expect(heading.tabIndex).toBe(-1)
+    expect(onSaw).toHaveBeenCalledTimes(4)
   })
 
   it('shows each day’s faces, three and then +n, and opens the day on the Calendar', () => {
@@ -202,6 +258,12 @@ describe('with a household’s visits', () => {
     expect(day).not.toBeNull()
     expect(day![1].match(/class="stats-face people-cal-face"/g)).toHaveLength(3)
     expect(day![1]).toContain('<span class="people-cal-more" aria-hidden="true">+1</span>')
+    // laid over the day cell's own ground, and written for it
+    expect(facesIn(day![1]).map(f => [f.color, f.ground])).toEqual([
+      ['#10b981', '--surface-2'],
+      ['#ef4444', '--surface-2'],
+      ['#fbbf24', '--surface-2'],
+    ])
     expect(cal).toContain('<li class="photo-cal-cell today"><button type="button" class="photo-cal-day" aria-label="Mon 14 Sep: nobody seen">')
     const onOpenDay = vi.fn()
     expect(propsOf(settled(PeopleStats, { ...PROPS, onOpenDay }), MonthCalendar).onOpen).toBe(onOpenDay)
@@ -218,12 +280,28 @@ describe('with a household’s visits', () => {
     // Sam: three days, four events
     expect(year).toMatch(/<\/span> Sam<\/td>(<td[^>]*>[^<]*<\/td>){12}<td class="num"><strong>3<\/strong><\/td><td class="num year-events">4<\/td>/)
     expect(year).toContain('7 days with someone in 2026')
+    // each row's dot a mark, moved to stand out on the card
+    const amber = graphicInk('#fbbf24', 'light')
+    expect(amber).not.toBe('#fbbf24')
+    expect(year).toContain(`<span class="pdot" style="background:${amber}"></span> Mum</td>`)
   })
 
-  it('shows each group’s share on All, the pairs seen together, and what is coming up', () => {
+  it('shows each group’s share on All, over 30 days first, the pairs seen together, and what is coming up', () => {
     const out = stats()
     const groups = cardOf(out, 'Groups')
-    for (const share of ['71% · 5 days', '57% · 4 days', '0% · 0 days']) expect(groups).toContain(share)
+    expect(groups).toContain('aria-pressed="true" class="seg on">30 days</button>')
+    // the days by the name, the share alone at the bar's end
+    for (const [name, days, share] of [
+      ['Family', '4 days', '80%'],
+      ['Friends', '2 days', '40%'],
+      ['Other', '0 days', '0%'],
+    ])
+      expect(groups, name).toMatch(new RegExp(`<span class="stats-hbar-name">${name}</span><small class="muted people-group-days">${days}</small></span><span class="hbar-track">(<span class="hbar-fill"[^>]*></span>)?<span class="hbar-value">${share}</span>`))
+    // Friends' share is half Family's, and so is its bar
+    const widths = [...groups.matchAll(/class="hbar-fill" style="width:([\d.]+)%"/g)].map(m => Number(m[1]))
+    expect(widths).toHaveLength(2)
+    expect(widths[1] / widths[0]).toBeCloseTo(0.5)
+    expect(Math.max(...widths)).toBeLessThanOrEqual(75)
     const pairs = cardOf(out, 'Often together')
     expect(namesIn(pairs)).toEqual(['Dad and Mum'])
     expect(pairs).toContain('Both seen on 3 days · last Sun 13 Sep')
@@ -246,6 +324,44 @@ describe('with a household’s visits', () => {
 
   it('carries no wardrobe class', () => {
     expect(stats()).not.toMatch(/wardrobe-/)
+  })
+})
+
+describe('in the dark theme', () => {
+  it('writes every face to read on the ground it is laid over, the month’s on the raised day cell', () => {
+    painted.theme = 'dark'
+    const out = stats()
+    const faces = facesIn(out)
+    expect(faces.length).toBeGreaterThan(20)
+    for (const f of faces) {
+      const ground = f.ground === '--surface-2' ? THEME_HEX.dark.raised : THEME_HEX.dark.surface
+      expect(contrast(f.ink, mixHex(f.color, ground, 0x22 / 255)), `${f.className} ${f.color}`).toBeGreaterThanOrEqual(4.5)
+    }
+    const month = facesIn(cardOf(out, 'Who you saw'))
+    expect(month.length).toBeGreaterThan(0)
+    expect(month.every(f => f.ground === '--surface-2')).toBe(true)
+    expect(faces.filter(f => f.className !== 'people-cal-face').every(f => f.ground === '--surface')).toBe(true)
+    // Jo's red: ink worked out for the card would fall short on the raised cell
+    const cell = mixHex('#ef4444', THEME_HEX.dark.raised, 0x22 / 255)
+    expect(contrast(readableInk('#ef4444', 'dark', { tint: true }), cell)).toBeLessThan(4.5)
+    expect(month.find(f => f.color === '#ef4444')?.ink).toBe(readableInk('#ef4444', 'dark', { tint: true, ground: 'raised' }))
+  })
+
+  it('reads on the raised day cell in every colour a person can be given, and on the card', () => {
+    for (const c of [...PROJECT_COLORS, ...PEOPLE.map(p => p.color)]) {
+      const onCell = contrast(readableInk(c, 'dark', { tint: true, ground: 'raised' }), mixHex(c, THEME_HEX.dark.raised, 0x22 / 255))
+      const onCard = contrast(readableInk(c, 'dark', { tint: true }), mixHex(c, THEME_HEX.dark.surface, 0x22 / 255))
+      expect(onCell, c).toBeGreaterThanOrEqual(4.5)
+      expect(onCard, c).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('keeps every bar and year-table dot in its own colour, which clears 3:1 on the dark card', () => {
+    painted.theme = 'dark'
+    const out = stats()
+    for (const c of ['#fbbf24', '#10b981', '#8b5cf6', '#ef4444']) expect(graphicInk(c, 'dark'), c).toBe(c)
+    expect(cardOf(out, 'Most seen')).toContain('background:#fbbf24')
+    expect(cardOf(out, 'The year with people')).toContain('<span class="pdot" style="background:#fbbf24"></span> Mum</td>')
   })
 })
 
@@ -332,15 +448,164 @@ describe('List · Stats', () => {
     expect(screen.indexOf('<ListStatsSwitch')).toBeGreaterThan(screen.indexOf('<div className="people-tab-seg">'))
     expect(screen.slice(screen.indexOf('<div className="people-tab-seg">'), screen.indexOf('<ListStatsSwitch'))).toContain('</div>')
   })
+})
 
-  it('is remembered only when chosen, re-read by a tab tap, and gives way to the list for a card', () => {
-    const nav = source('components/planner/useNavigation.ts')
-    expect(nav.match(/localStorage\.setItem\(INNER_VIEW_KEYS/g)).toHaveLength(1)
-    expect(nav).toMatch(/const setInnerView = \(tab: PeopleTab, v: InnerView\) => \{\s*goInnerView\(tab, v\)/)
-    expect(nav).toMatch(/if \(v === 'people'\) \{\s*goPeopleTab\(storedPeopleTab\(\)\)\s*startTransition\(\(\) => showInnerViews\(storedInnerViews\(\)\)\)/)
-    expect(nav).toMatch(/const openPerson = [\s\S]*?setView\('people'\)[\s\S]*?goInnerView\('people', 'list'\)\s*\}/)
-    expect(nav).toMatch(/const openPlace = [\s\S]*?setView\('people'\)[\s\S]*?goInnerView\('places', 'list'\)\s*\}/)
-    expect(nav).toMatch(/const openStats = \(tab: PeopleTab\) => \{\s*goPeopleTab\(tab\)\s*goInnerView\(tab, 'stats'\)\s*setView\('people'\)/)
+/** Where the shell stands: the tab, People's segment, each segment's List · Stats, the Calendar's mode and the day handed to it. */
+interface Where {
+  view: View
+  peopleTab: PeopleTab
+  people: InnerView
+  places: InnerView
+  calMode: CalendarMode
+  day: string | null
+}
+
+/**
+ * useNavigation in a shell of its own, over a storage that keeps what it is
+ * given and logs every write. Each step runs on a render and the next render
+ * shows where it left the shell, so `at[i + 1]` follows `steps[i]`.
+ */
+function journey(stored: Record<string, string>, steps: ((nav: ReturnType<typeof useNavigation>) => void)[]) {
+  const kept: Record<string, string> = { ...stored }
+  const writes: [string, string][] = []
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => kept[k] ?? null,
+    setItem: (k: string, v: string) => {
+      kept[k] = v
+      writes.push([k, v])
+    },
+  })
+  const at: Where[] = []
+  function Shell() {
+    const nav = useNavigation()
+    // so a step that moves nothing still hands on to the next
+    const [, tick] = useState(0)
+    at.push({ view: nav.view, peopleTab: nav.peopleTab, people: nav.innerViews.people, places: nav.innerViews.places, calMode: nav.calMode, day: nav.calendarOpenDay })
+    const step = steps[at.length - 1]
+    if (step) {
+      step(nav)
+      tick(n => n + 1)
+    }
+    return null
+  }
+  renderToString(<Shell />)
+  expect(at).toHaveLength(steps.length + 1)
+  return { at, writes }
+}
+
+describe('the shell remembers List · Stats', () => {
+  it('only from its own switch; a tab tap re-reads it, and a card opens on the list for that visit', () => {
+    const { at, writes } = journey({}, [
+      nav => nav.setInnerView('people', 'stats'),
+      nav => nav.goView('kitchen'),
+      nav => nav.goView('people'),
+      // a search result, Ask or a reminder: the card is on the list
+      nav => nav.openPerson('mum'),
+      nav => nav.goView('kitchen'),
+      nav => nav.goView('people'),
+    ])
+    expect(at[0]).toMatchObject({ view: 'home', peopleTab: 'people', people: 'list' })
+    expect(at[1].people).toBe('stats')
+    expect(at[3]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
+    expect(at[4]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'list' })
+    expect(at[6]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
+    expect(writes).toEqual([[INNER_VIEW_KEYS.people, 'stats']])
+  })
+
+  it('opens Stats for one visit from the palette or a link, and writes nothing: the next tab tap goes back to what was chosen', () => {
+    const { at, writes } = journey({ [INNER_VIEW_KEYS.people]: 'list', [PEOPLE_TAB_KEY]: 'places' }, [
+      nav => nav.openStats('people'),
+      nav => nav.goView('home'),
+      nav => nav.goView('people'),
+    ])
+    expect(at[0]).toMatchObject({ peopleTab: 'places', people: 'list' })
+    expect(at[1]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
+    expect(at[3]).toMatchObject({ view: 'people', peopleTab: 'places', people: 'list' })
+    expect(writes).toEqual([])
+  })
+
+  it('keeps each segment’s own, and opens a place on the Places list', () => {
+    const { at, writes } = journey({ [INNER_VIEW_KEYS.people]: 'stats', [INNER_VIEW_KEYS.places]: 'stats' }, [nav => nav.openPlace('cafe'), nav => nav.goView('people')])
+    expect(at[0]).toMatchObject({ people: 'stats', places: 'stats' })
+    expect(at[1]).toMatchObject({ view: 'people', peopleTab: 'places', people: 'stats', places: 'list' })
+    expect(at[2]).toMatchObject({ peopleTab: 'people', people: 'stats', places: 'stats' })
+    expect(writes).toEqual([])
+  })
+})
+
+describe('a day of the month opens on the Calendar', () => {
+  const calendar = (over: Partial<ComponentProps<typeof Calendar>> = {}) =>
+    html(
+      <Calendar
+        view="month"
+        tasks={TASKS}
+        projects={[]}
+        projectMap={new Map()}
+        people={PEOPLE}
+        meals={[]}
+        recipes={[]}
+        places={[]}
+        events={[]}
+        sourceMap={new Map()}
+        onOpen={noop}
+        onNew={noop}
+        onSaveMeal={noop}
+        onClearMeal={noop}
+        onCreatePlace={() => ({}) as Place}
+        onCreateRecipe={() => ({}) as Recipe}
+        onNewEvent={noop}
+        onEditEvent={noop}
+        onReschedule={noop}
+        onPlan={noop}
+        onAttendance={noop}
+        onOpenProject={noop}
+        onPlanOccasion={noop}
+        {...over}
+      />,
+    )
+
+  it('on that day’s month, with its day sheet up', () => {
+    const day = new Date(2026, 2, 1)
+    const out = calendar({ openDay: '2026-03-01' })
+    expect(out).toContain(`<h2>${day.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>`)
+    expect(out).toContain('role="dialog"')
+    expect(out).toContain(`>${day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2>`)
+    // without one, the month is this month and no sheet is up
+    expect(calendar()).not.toContain('role="dialog"')
+    expect(calendar({ openDay: 'not a day' })).not.toContain('role="dialog"')
+  })
+
+  it('is handed through the shell once', () => {
+    const screen = source('components/planner/CalendarScreen.tsx')
+    expect(screen).toContain('openDay={calendarOpenDay}')
+    expect(screen).toContain('onOpenDayConsumed={() => setCalendarOpenDay(null)}')
+  })
+
+  it('on the month for that visit only: the Timeline stays remembered, and the next tab tap reopens it', () => {
+    const { at, writes } = journey({ [CAL_MODE_KEY]: 'timeline' }, [
+      nav => nav.openCalendarDay('2026-09-12'),
+      nav => nav.goView('people'),
+      nav => nav.goView('calendar'),
+      // the Month / Week / Timeline buttons are what is remembered
+      nav => nav.setCalMode('week'),
+      nav => nav.goView('home'),
+      nav => nav.goView('calendar'),
+    ])
+    expect(at[0].calMode).toBe('timeline')
+    expect(at[1]).toMatchObject({ view: 'calendar', calMode: 'month', day: '2026-09-12' })
+    expect(at[3]).toMatchObject({ view: 'calendar', calMode: 'timeline' })
+    expect(at[4].calMode).toBe('week')
+    expect(at[6]).toMatchObject({ view: 'calendar', calMode: 'week' })
+    // the Calendar's own buttons and nothing else: no Kitchen, People or Tasks memory is touched
+    expect(writes).toEqual([[CAL_MODE_KEY, 'week']])
+  })
+
+  it('leaves a month or a week as it was', () => {
+    for (const mode of ['month', 'week'] as const) {
+      const { at, writes } = journey({ [CAL_MODE_KEY]: mode }, [nav => nav.openCalendarDay('2026-09-12')])
+      expect(at[1]).toMatchObject({ view: 'calendar', calMode: mode, day: '2026-09-12' })
+      expect(writes).toEqual([])
+    }
   })
 })
 
@@ -394,57 +659,6 @@ describe('?view=people-stats', () => {
   })
 })
 
-describe('a day of the month opens on the Calendar', () => {
-  const calendar = (over: Partial<ComponentProps<typeof Calendar>> = {}) =>
-    html(
-      <Calendar
-        view="month"
-        tasks={TASKS}
-        projects={[]}
-        projectMap={new Map()}
-        people={PEOPLE}
-        meals={[]}
-        recipes={[]}
-        places={[]}
-        events={[]}
-        sourceMap={new Map()}
-        onOpen={noop}
-        onNew={noop}
-        onSaveMeal={noop}
-        onClearMeal={noop}
-        onCreatePlace={() => ({}) as Place}
-        onCreateRecipe={() => ({}) as Recipe}
-        onNewEvent={noop}
-        onEditEvent={noop}
-        onReschedule={noop}
-        onPlan={noop}
-        onAttendance={noop}
-        onOpenProject={noop}
-        onPlanOccasion={noop}
-        {...over}
-      />,
-    )
-
-  it('on that day’s month, with its day sheet up', () => {
-    const day = new Date(2026, 2, 1)
-    const out = calendar({ openDay: '2026-03-01' })
-    expect(out).toContain(`<h2>${day.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>`)
-    expect(out).toContain('role="dialog"')
-    expect(out).toContain(`>${day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2>`)
-    // without one, the month is this month and no sheet is up
-    expect(calendar()).not.toContain('role="dialog"')
-    expect(calendar({ openDay: 'not a day' })).not.toContain('role="dialog"')
-  })
-
-  it('is handed through the shell once, and the Timeline gives way to the month', () => {
-    const nav = source('components/planner/useNavigation.ts')
-    expect(nav).toMatch(/const openCalendarDay = \(day: string\) => \{\s*setCalendarOpenDay\(day\)[\s\S]*?if \(calMode === 'timeline'\) setCalMode\('month'\)\s*setView\('calendar'\)/)
-    const screen = source('components/planner/CalendarScreen.tsx')
-    expect(screen).toContain('openDay={calendarOpenDay}')
-    expect(screen).toContain('onOpenDayConsumed={() => setCalendarOpenDay(null)}')
-  })
-})
-
 describe('its styles', () => {
   const css = sheetSource()
   const phone = [...css.matchAll(/@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n')
@@ -462,5 +676,7 @@ describe('its styles', () => {
     expect(css).not.toMatch(/\.people-tab-seg[^{}]*\.list-stats/)
     // the chips wrap and the table scrolls in its own box, so 375pt never scrolls sideways
     expect(css).toMatch(/\.people-controls \{[^}]*flex-wrap: wrap/)
+    // a group's days stay whole beside its name, so its bar ends with the share alone
+    expect(block).toMatch(/\.people-group-days \{[^}]*flex: none;[^}]*white-space: nowrap/)
   })
 })

@@ -560,6 +560,12 @@
   line-height: 18px;
   color: var(--text-2);
 }
+/* Groups: a group's days beside its name, kept whole (the name gives way
+   first), so its bar ends with the share alone */
+.people-group-days {
+  flex: none;
+  white-space: nowrap;
+}
 @media (max-width: 640px) {
   .list-stats-bar {
     gap: 6px;

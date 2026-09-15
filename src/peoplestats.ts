@@ -111,15 +111,16 @@ export interface SeenRow {
 
 /**
  * The most seen in a window, in days; a tie goes to more events, then to the
- * name, A–Z. Nobody unseen in the window ranks. The podium is the first three
- * of all time.
+ * name, A–Z, then to the id, so two people of one name stand in the same order
+ * on every device. Nobody unseen in the window ranks. The podium is the first
+ * three of all time.
  */
 export function mostSeen(shown: readonly PersonStats[], window: DayWindow, now: Date = new Date(), n = 10): SeenRow[] {
   const rows = shown.map(s => {
     const visits = within(s.visits, window, now)
     return { key: s.person.id, name: s.person.name, count: visitDays(visits).length, events: visits.length, person: s.person }
   })
-  return topN(rows, n, { count: r => r.count, name: r => r.name, tie: (a, b) => b.events - a.events })
+  return topN(rows, n, { count: r => r.count, name: r => r.name, tie: (a, b) => b.events - a.events || a.name.localeCompare(b.name) || a.key.localeCompare(b.key) })
 }
 
 /** Past their catch-up rhythm, overdue or due, in the list's Needs attention order: Today's people nudges, all of them. */
@@ -128,11 +129,11 @@ export const notSeenLately = (shown: readonly PersonStats[]): PersonStats[] => s
 /** How long a new person is given before they count as never seen. */
 export const NEVER_SEEN_DAYS = 14
 
-/** Added two weeks ago or more, with no day seen: the longest waiting first. */
+/** Added two weeks ago or more, with no day seen: the longest waiting first, then by name, then by id. */
 export const neverSeen = (shown: readonly PersonStats[], todayKey: string): PersonStats[] =>
   shown
     .filter(s => s.daysAll === 0 && daysBetween(dateKey(s.person.createdAt), todayKey) >= NEVER_SEEN_DAYS)
-    .sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt) || a.person.name.localeCompare(b.person.name))
+    .sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt) || a.person.name.localeCompare(b.person.name) || a.person.id.localeCompare(b.person.id))
 
 /** Who of these people you saw on each day, by its key: each person once a day, in the order given. */
 export function whoByDay(shown: readonly PersonStats[]): Map<string, Person[]> {
@@ -205,7 +206,8 @@ export const TOGETHER_MIN_DAYS = 2
 /**
  * The pairs of these people seen on the same days most often, all time — the
  * same day, not only the same get-together; each pair is named A–Z. A tie goes
- * to the latest, then to the names.
+ * to the latest, then to the names, then to the ids, so pairs named alike
+ * stand in the same order on every device.
  */
 export function oftenTogether(shown: readonly PersonStats[], n = 5): Pair[] {
   const pairs = new Map<string, Pair>()
@@ -222,7 +224,8 @@ export function oftenTogether(shown: readonly PersonStats[], n = 5): Pair[] {
         }
       }
   const often = [...pairs.values()].filter(p => p.days >= TOGETHER_MIN_DAYS)
-  return topN(often, n, { count: p => p.days, name: p => `${p.a.name} ${p.b.name}`, tie: (x, y) => y.last.localeCompare(x.last) })
+  const named = (p: Pair) => `${p.a.name} ${p.b.name}`
+  return topN(often, n, { count: p => p.days, name: named, tie: (x, y) => y.last.localeCompare(x.last) || named(x).localeCompare(named(y)) || x.key.localeCompare(y.key) })
 }
 
 /** How far ahead Coming up looks, today included. */
