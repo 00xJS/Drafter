@@ -1270,8 +1270,10 @@
   font: inherit;
   text-align: left;
 }
-.wardrobe-list-piece > span,
-.stats-list-piece > span,
+/* the text column only (it is always last); a span picture beside it, such as a
+   place's mark or a face, keeps its own size */
+.wardrobe-list-piece > span:last-child,
+.stats-list-piece > span:last-child,
 .wardrobe-repeat-text {
   flex: 1;
   min-width: 0;
