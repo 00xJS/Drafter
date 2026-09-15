@@ -953,13 +953,19 @@ async function main() {
     eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear'`), 5, 'nothing was written for either')
     const planDay = dayFromToday(-1)
     const planId = `wear~${planDay}~smokeplan1`
-    const planBefore = JSON.stringify(row(planId))
-    const besidePlan = await call('log_outfit', { garmentIds: ['tee', 'jeans'], date: planDay })
-    eq(besidePlan.logged, 'new look', 'on a day whose latest look is a plan, log_outfit logs a look of its own beside it')
-    eq(besidePlan.looksThatDay, 1, 'and the plan beside it is no look worn')
-    eq(JSON.stringify(row(planId)), planBefore, 'the plan is left as it was')
-    ok(row(planId)?.data.planned === true, 'a plan still')
-    eq((await call('list_garments', {})).garments.find(g => g.id === 'linen')?.daysWorn, 0, 'so the linen shirt in it is still never worn')
+    const planBefore = row(planId)
+    const confirmed = await call('log_outfit', { garmentIds: ['tee', 'jeans'], date: planDay })
+    eq(confirmed.logged, 'plan confirmed', 'on a day whose latest look is a plan, log_outfit records what was worn and so confirms the plan')
+    eq(confirmed.look.id, planId, "under the plan's own id")
+    eq(confirmed.looksThatDay, 1, 'one look worn that day')
+    const planAfter = row(planId)
+    ok(planAfter?.data.planned === undefined, 'a plan no longer')
+    eq(planAfter.data.garmentIds.join(','), 'tee,jeans', 'it holds the pieces worn')
+    ok(planAfter.data.updatedAt > planBefore.data.updatedAt, 'stamped newer than the copy it was made on')
+    eq(psqlJson(`select to_json(count(*)) from public.posts where kind = 'wear'`), 5, 'and no look was added beside it')
+    const afterPlan = (await call('list_garments', {})).garments
+    eq(afterPlan.find(g => g.id === 'tee')?.daysWorn, 3, 'the day counts now: the tee was worn three days ago, yesterday and today')
+    eq(afterPlan.find(g => g.id === 'linen')?.daysWorn, 0, 'and the linen shirt the plan held, not worn after all, is still never worn')
 
     // ------------------------------- a household peer's personal rows stay theirs
     // The database's policies keep a peer's personal rows from the owner, and

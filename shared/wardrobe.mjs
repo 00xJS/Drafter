@@ -130,10 +130,11 @@ function displaces(g, other) {
  * none of today's look. `now` stamps a new look, and `rand` makes its id.
  *
  * A log is a look worn unless `planned` makes it a plan (a day still to
- * come), so logging a day whose latest look was a plan confirms that plan: a
- * caller that does not show the plan's pieces (a piece's Wear today, an
- * assistant's log_outfit) logs `another` beside it instead. `note`, when
- * given, is the look's note; '' clears it.
+ * come), so logging a day whose latest look was a plan confirms that plan,
+ * as the composer's Wearing this and an assistant's log_outfit do: a caller
+ * that logs one piece and shows none of the plan (a piece's Wear today) logs
+ * `another` beside it instead. `note`, when given, is the look's note; ''
+ * clears it.
  */
 export function logLook(wears, day, pieces, records, opts = {}) {
   const as = { planned: opts.planned ?? false, note: opts.note }

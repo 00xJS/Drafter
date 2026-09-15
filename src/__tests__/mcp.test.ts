@@ -1061,7 +1061,7 @@ describe('the wardrobe over MCP', () => {
     expect(sent[0].id).toMatch(new RegExp(`^wear~${daysAgo(1)}~`))
   })
 
-  it('counts a look planned for today in no figure, and log_outfit leaves it a plan, with a look of its own beside it', async () => {
+  it('counts a look planned for today in no figure, and log_outfit on its day confirms it with what was worn', async () => {
     const plan = { kind: 'wear', id: `wear~${today}~plan000000`, date: today, garmentIds: ['linen', 'jeans'], planned: true, createdAt: STAMP, updatedAt: STAMP }
     const withPlan = (): Row[] => [...household(), { user_id: OWNER, data: plan }]
     serveHousehold(withPlan())
@@ -1072,21 +1072,52 @@ describe('the wardrobe over MCP', () => {
     const stats = (await tool('get_wardrobe_stats').run({ window: 'all' }, ctxFor())) as Record<string, any>
     expect(ids(stats.neverWorn.pieces)).toEqual(['linen'])
     expect(stats.daysLoggedThisMonth).toBe([daysAgo(3), daysAgo(70)].filter(d => d.startsWith(today.slice(0, 7))).length)
-    // an assistant never sees the plan's pieces, so it is left as it was, as a piece's Wear today leaves it
-    let sent = serveHousehold(withPlan())
+    // the composer's Wearing this and Today's Wore it: a log records what was worn, so the day's plan takes the
+    // pieces under its own id, stamped newer, and is a plan no longer; no second look is added beside it
+    const sent = serveHousehold(withPlan())
     const out = (await tool('log_outfit').run({ garmentIds: ['tee', 'jeans'] }, ctxFor())) as Record<string, any>
     expect(sent).toHaveLength(1)
-    expect(sent[0].id).not.toBe(plan.id)
-    expect(sent[0]).toMatchObject({ kind: 'wear', date: today, garmentIds: ['tee', 'jeans'] })
+    expect(sent[0]).toMatchObject({ kind: 'wear', id: plan.id, date: today, garmentIds: ['tee', 'jeans'], createdAt: STAMP })
     expect('planned' in sent[0]).toBe(false)
-    expect(out).toMatchObject({ logged: 'new look', looksThatDay: 1 })
-    // the look beside it is the day's latest now, so a later log, here a saved outfit, changes that one
-    const worn = sent[0]
-    sent = serveHousehold([...withPlan(), { user_id: OWNER, data: worn }])
-    const again = (await tool('log_outfit').run({ outfitId: 'weekday' }, ctxFor())) as Record<string, any>
+    expect(sent[0].updatedAt > STAMP).toBe(true)
+    expect(out).toMatchObject({ logged: 'plan confirmed', look: { id: plan.id, label: 'Navy tee + Blue jeans' }, looksThatDay: 1 })
+    // and it counts from then on; the linen shirt the plan held, not worn after all, still counts nowhere
+    serveHousehold([...household(), { user_id: OWNER, data: sent[0] }])
+    const after = (await tool('list_garments').run({}, ctxFor())) as { garments: (Piece & Record<string, unknown>)[] }
+    expect(after.garments.find(g => g.id === 'tee')).toMatchObject({ lastWorn: today, daysWorn: 2 })
+    expect(after.garments.find(g => g.id === 'linen')).toMatchObject({ lastWorn: null, daysWorn: 0 })
+  })
+
+  it('confirms a plan on a day gone by too; another: true leaves it a plan beside a look of its own; a planned day ahead is refused', async () => {
+    const yesterday = daysAgo(1)
+    const plan = { kind: 'wear', id: `wear~${yesterday}~plan000001`, date: yesterday, garmentIds: ['linen', 'jeans'], planned: true, createdAt: STAMP, updatedAt: STAMP }
+    const withPlan = (): Row[] => [...household(), { user_id: OWNER, data: plan }]
+    let sent = serveHousehold(withPlan())
+    const confirmed = (await tool('log_outfit').run({ outfitId: 'weekday', date: yesterday }, ctxFor())) as Record<string, any>
     expect(sent).toHaveLength(1)
-    expect(sent[0].id).toBe(worn.id)
-    expect(again).toMatchObject({ logged: 'look updated', looksThatDay: 1 })
+    expect(sent[0]).toMatchObject({ id: plan.id, date: yesterday, garmentIds: ['tee', 'jeans'] })
+    expect('planned' in sent[0]).toBe(false)
+    expect(confirmed).toMatchObject({ logged: 'plan confirmed', looksThatDay: 1 })
+    // an evening change, asked for: the plan stays as it was, and is no look worn
+    sent = serveHousehold(withPlan())
+    const beside = (await tool('log_outfit').run({ garmentIds: ['dress'], date: yesterday, another: true }, ctxFor())) as Record<string, any>
+    expect(sent).toHaveLength(1)
+    expect(sent[0].id).not.toBe(plan.id)
+    expect(sent[0]).toMatchObject({ date: yesterday, garmentIds: ['dress'] })
+    expect(beside).toMatchObject({ logged: 'new look', looksThatDay: 1 })
+    // a plan for tomorrow is still a day that has not happened
+    const tomorrow = shiftDayKey(today, 1)
+    sent = serveHousehold([...household(), { user_id: OWNER, data: { ...plan, id: `wear~${tomorrow}~plan000002`, date: tomorrow } }])
+    await expect(tool('log_outfit').run({ garmentIds: ['tee', 'jeans'], date: tomorrow }, ctxFor())).rejects.toThrow(/has not happened yet/)
+    expect(sent).toEqual([])
+  })
+
+  it('tells an assistant, in the tool’s own words, that a log confirms the day’s plan', () => {
+    const said = tool('log_outfit').description
+    expect(said).toMatch(/on a day whose latest look is a plan the user made ahead, today or a day gone by, that plan is confirmed/)
+    expect(said).toContain('the answer says "plan confirmed"')
+    expect(said).toContain('With another: true the plan is left a plan')
+    expect(said).not.toMatch(/never changed here/)
   })
 
   it('refuses what the app would not write, and writes nothing', async () => {

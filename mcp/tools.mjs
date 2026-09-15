@@ -1370,7 +1370,7 @@ export const TOOLS = [
     name: 'log_outfit',
     scope: 'write',
     annotations: EDITS,
-    description: `Record what the user wore on a day (default today; never a day ahead), as Home → Wardrobe's Wearing this does. Give garmentIds — pieces from list_garments, in use rather than retired, with a top and a bottom or a one-piece among them, at most ${MAX_PIECES} — or outfitId, a saved outfit from list_outfits that can be worn as it is. The day's latest look takes the pieces: a retired piece or one in Trash that it held stays, unless a new piece takes its place. A day with no look gets a new one; another: true adds a second look instead (an evening change). A look the user planned ahead is never changed here: on a day whose latest look is a plan, the pieces become a look of their own beside it and the plan stays a plan, as the app's Wear today leaves one. Every figure counts days, so a second look never makes a piece worn twice, and a plan counts in none; looksThatDay counts the looks worn that day.`,
+    description: `Record what the user wore on a day (default today; never a day ahead), as Home → Wardrobe's Wearing this does. Give garmentIds — pieces from list_garments, in use rather than retired, with a top and a bottom or a one-piece among them, at most ${MAX_PIECES} — or outfitId, a saved outfit from list_outfits that can be worn as it is. The day's latest look takes the pieces: a retired piece or one in Trash that it held stays, unless a new piece takes its place. A day with no look gets a new one; another: true adds a second look instead (an evening change). A log records what was worn, so on a day whose latest look is a plan the user made ahead, today or a day gone by, that plan is confirmed: it becomes the look worn, with these pieces, as the app's Wearing this and Today's Wore it confirm one, and the answer says "plan confirmed". With another: true the plan is left a plan and the pieces become a look of their own beside it. Every figure counts days, so a second look never makes a piece worn twice, and a plan counts in none until it is confirmed; looksThatDay counts the looks worn that day.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1407,19 +1407,18 @@ export const TOOLS = [
         if (!coreKey(ids, byId)) throw new Error('A look needs a top and a bottom, or a one-piece.')
         pieces = ids
       }
-      // the app's own log: a new look stamped now, or the day's latest look stamped newer than the copy read.
-      // An assistant never sees a plan's pieces, so a day whose latest look is a plan keeps it a plan and gets
-      // these pieces as a look of their own beside it, as a piece's Wear today does (logLook's rule)
+      // the app's own log, as the composer's Wearing this: a new look stamped now, or the day's latest look
+      // stamped newer than the copy read. A log records what was worn, so a day whose latest look is a plan has
+      // that plan confirmed (logLook files it as worn), unless another: true asks for a look beside it
       const looks = looksOn(wears, day)
       const latest = looks[looks.length - 1]
-      const beside = another === true || (!!latest && isPlanned(latest))
-      const { write } = logLook(wears, day, pieces, records, { another: beside, now: clock.iso(), rand: () => `${rand()}${rand()}`.slice(0, 10) })
+      const { write } = logLook(wears, day, pieces, records, { another: another === true, now: clock.iso(), rand: () => `${rand()}${rand()}`.slice(0, 10) })
       await db.writeItem(write)
       const updated = wears.some(w => w.id === write.id)
       return {
-        logged: updated ? 'look updated' : 'new look',
+        logged: updated ? (latest && isPlanned(latest) ? 'plan confirmed' : 'look updated') : 'new look',
         look: { id: write.id, date: write.date, label: outfitLabel(write.garmentIds, byId), pieces: orderPieces(write.garmentIds, byId).map(id => pieceOf(byId.get(id))) },
-        // the looks worn: a plan left beside them is none
+        // the looks worn: a plan confirmed is one, and a plan left beside them (another: true) is none
         looksThatDay: looksOn([...wears.filter(w => w.id !== write.id), write], day).filter(w => !isPlanned(w)).length,
       }
     },
