@@ -174,10 +174,13 @@ describe('the year in places gives a deep colour’s busiest cells their own ink
   const css = (s: { background: string; color?: string }) => `background:${s.background}${s.color ? `;color:${s.color}` : ''}`
 
   it('keeps the page’s text on a light cell and puts white on the deepest', () => {
-    const july = heatStyle('#4f46e5', 1, 'light')
-    const august = heatStyle('#4f46e5', 4, 'light')
+    // the place's colour drawn as a mark (graphicInk), its dot and its cells alike, as the wardrobe's table draws a piece's
+    const ink = graphicInk('#4f46e5', 'light')
+    const july = heatStyle(ink, 1, 'light')
+    const august = heatStyle(ink, 4, 'light')
     expect(july.color).toBeUndefined()
     expect(august.color).toBe('var(--on-deep-user-color)')
+    expect(table()).toContain(`class="pdot" style="background:${ink}"`)
     expect(table()).toContain(`title="1 outing" style="${css(july)}"`)
     expect(table()).toContain(`title="4 outings" style="${css(august)}"`)
   })

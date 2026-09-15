@@ -92,11 +92,12 @@ export interface Toast {
   action?: { label: string; run: () => void }
 }
 
-// The two segmented views remember which half you chose — but only when you
-// chose it. Everything else (a deep link, a nudge, the palette's Board or
-// Notes) moves the segment for that visit alone, so a template's new tasks
-// shown on the Board cannot leave Tasks opening there, and the People tab
-// cannot get pinned to Places by one search result.
+// The segmented views remember which half you chose — but only when you chose
+// it. Everything else (a deep link, a nudge, the palette's Board or Notes, a
+// day opened from Places → Stats) moves the segment for that visit alone, so a
+// template's new tasks shown on the Board cannot leave Tasks opening there, the
+// People tab cannot get pinned to Places by one search result, and one day
+// tapped in Stats cannot leave the Calendar opening on Month.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)
@@ -118,5 +119,14 @@ export const storedPlacesView = (): PlacesView => {
     return localStorage.getItem(PLACES_VIEW_KEY) === 'stats' ? 'stats' : 'list'
   } catch {
     return 'list'
+  }
+}
+/** …and the Calendar's Month · Week · Timeline: its three buttons remember, a day opened from Stats does not. */
+export const storedCalMode = (): CalendarMode => {
+  try {
+    const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
+    return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
+  } catch {
+    return 'month'
   }
 }

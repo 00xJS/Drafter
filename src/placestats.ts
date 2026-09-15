@@ -1,6 +1,6 @@
 import { driftedFrom, filedAt, type PlaceStats } from './places'
 import { monthsAndTrend, topN, type DayWindow } from './stats'
-import { PLACE_CATEGORIES, PLACE_CATEGORY_META, type Person, type Place, type PlaceCategory } from './types'
+import { MEAL_SLOTS, PLACE_CATEGORIES, PLACE_CATEGORY_META, type Person, type Place, type PlaceCategory } from './types'
 import { dateKey } from './utils'
 
 // People → Places → Stats: every figure it shows, worked out from the same
@@ -8,12 +8,15 @@ import { dateKey } from './utils'
 // there and a past meal eaten out there are one outing each, a meal still to
 // come is none, and a figure here agrees with the same figure on a row. The
 // view hands in the tasks and meals the list is handed, so Mine / Everyone
-// narrows neither: places are the household's. What counts by the calendar —
-// this year, this month, a year's months, a day — files a meal on its own date
-// (filedAt), as the year table always has; the ranked windows count the last
-// 30 days and 12 months in instants, as a row's "12mo" does. Pure: no DOM,
-// and the clock is handed in. Only the Stats view reads this module, so it
-// loads with that view's chunk.
+// narrows neither: places are the household's. Its kind chips narrow the
+// places before anything is counted, as the list's chips narrow its rows
+// (placesOfKind). What counts by the calendar — this year, this month, a
+// year's months, a day — files a meal on its own date (filedAt), as the year
+// table always has; the ranked windows count the last 30 days and 12 months in
+// instants, as a row's "12mo" does. A tie never falls to the order the store
+// holds things in: it ends on the name, then the id. Pure: no DOM, and the
+// clock is handed in. Only the Stats view reads this module, so it loads with
+// that view's chunk.
 
 const DAY_MS = 86_400_000
 
@@ -28,11 +31,32 @@ export function outingsWithin(s: PlaceStats, window: DayWindow, now: Date = new 
   return s.visits.filter(v => within(v.at, window, nowMs)).length
 }
 
-/** A tie goes to the place you went to last; one never been to comes after. */
-const latestFirst = (a: PlaceStats, b: PlaceStats) => (b.lastAt ?? '').localeCompare(a.lastAt ?? '')
+/** A to Z, then the id: two places (or people) of one name keep one order, whatever order the store holds them in. */
+const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+
+/** A tie goes to the place you went to last; one never been to comes after; then A to Z. */
+const latestFirst = (a: PlaceStats, b: PlaceStats) => (b.lastAt ?? '').localeCompare(a.lastAt ?? '') || byName(a.place, b.place)
 
 /** A rhythm you set that is due or overdue a return: the Been a while tile's rule, and Today's and the digest's. */
 export const dueBack = (s: PlaceStats) => s.status === 'due' || s.status === 'overdue'
+
+// ---- the kind chips ----------------------------------------------------------------
+
+/** What the kind chips show: every place, or one kind of them. */
+export type KindFilter = PlaceCategory | 'all'
+
+/** A chip for each kind you have places of, in the kinds' own order, with how many: the list's chips and their badges. */
+export function kindChips(places: readonly Place[]): { kind: PlaceCategory; count: number }[] {
+  return PLACE_CATEGORIES.flatMap(kind => {
+    const count = places.filter(p => p.category === kind).length
+    return count ? [{ kind, count }] : []
+  })
+}
+
+/** The places a chip keeps, as the list's chips narrow its rows: every one under All. */
+export function placesOfKind(places: readonly Place[], kind: KindFilter): Place[] {
+  return kind === 'all' ? [...places] : places.filter(p => p.category === kind)
+}
 
 // ---- the tiles ---------------------------------------------------------------------
 
@@ -78,7 +102,7 @@ export interface RankedPlace {
   place: Place
 }
 
-/** The most visited in a window, most first: the podium (all time, three) and the bars. A tie goes to the latest, then A–Z. */
+/** The most visited in a window, most first: the podium (all time, three) and the bars. A tie goes to the latest, then A to Z, then the id. */
 export function mostVisited(stats: readonly PlaceStats[], window: DayWindow, now: Date = new Date(), n = 10): RankedPlace[] {
   const count = (s: PlaceStats) => outingsWithin(s, window, now)
   return topN(stats, n, { count, name: s => s.place.name, tie: latestFirst }).map(s => ({ key: s.place.id, name: s.place.name, count: count(s), place: s.place }))
@@ -96,30 +120,35 @@ export function mostVisited(stats: readonly PlaceStats[], window: DayWindow, now
 export function notBeenBack(stats: readonly PlaceStats[]): PlaceStats[] {
   return stats
     .filter(s => s.visits.length > 0 && (s.status === 'none' ? driftedFrom(s) : dueBack(s)))
-    .sort((a, b) => (b.daysSince ?? 0) - (a.daysSince ?? 0) || a.place.name.localeCompare(b.place.name))
+    .sort((a, b) => (b.daysSince ?? 0) - (a.daysSince ?? 0) || byName(a.place, b.place))
 }
 
 /** Saved, with no outing yet: the one waiting longest first. */
 export function neverBeen(stats: readonly PlaceStats[]): PlaceStats[] {
-  return stats
-    .filter(s => s.visits.length === 0)
-    .sort((a, b) => a.place.createdAt.localeCompare(b.place.createdAt) || a.place.name.localeCompare(b.place.name))
+  return stats.filter(s => s.visits.length === 0).sort((a, b) => a.place.createdAt.localeCompare(b.place.createdAt) || byName(a.place, b.place))
 }
 
 // ---- by the calendar ---------------------------------------------------------------
 
-/** Every outing at every place, filed as the year table files it. */
-const filed = (stats: readonly PlaceStats[]) => stats.flatMap(s => s.visits.map(v => ({ place: s.place, at: filedAt(v) })))
+/** Every outing at every place, filed as the year table files it; a meal keeps its slot's place in the day (-1 for a task). */
+const filed = (stats: readonly PlaceStats[]) =>
+  stats.flatMap(s => s.visits.map(v => ({ place: s.place, at: filedAt(v), slot: v.kind === 'meal' ? MEAL_SLOTS.indexOf(v.meal.slot) : -1 })))
 
 /** Outings each month of `year`, the year's total and the trend: the year table's rows added up. */
 export function outingsByMonth(stats: readonly PlaceStats[], year: number, now: Date = new Date()): { months: number[]; total: number; trend: number } {
   return monthsAndTrend(filed(stats), year, now)
 }
 
-/** Each day's places on this device's calendar: where you went, each place once, in the order you first went there that day. */
+/**
+ * Each day's places on this device's calendar: where you went, each place
+ * once, in the order you first went there that day. Every meal files at
+ * midday, so lunch out and dinner out tie on the instant: the slot settles
+ * it, breakfast first, and then the name and the id, never the store's order.
+ */
 export function placesByDay(stats: readonly PlaceStats[]): Map<string, Place[]> {
   const out = new Map<string, Place[]>()
-  for (const { place, at } of filed(stats).sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+  const order = filed(stats).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.slot - b.slot || byName(a.place, b.place))
+  for (const { place, at } of order) {
     const key = dateKey(at)
     const went = out.get(key)
     if (!went) out.set(key, [place])
@@ -166,7 +195,7 @@ export interface RankedPerson {
  * Who is on your outings, most first: a done task at one of your places with
  * them ticked counts once for each, as the Where should we go? With row and a
  * person's "where we go" count it. A meal eaten out records the place, not
- * the company, so it names nobody.
+ * the company, so it names nobody. A tie goes A to Z, then to the id.
  */
 export function companyOnOutings(stats: readonly PlaceStats[], people: readonly Person[], window: DayWindow, now: Date = new Date(), n = 8): RankedPerson[] {
   const nowMs = now.getTime()
@@ -177,7 +206,7 @@ export function companyOnOutings(stats: readonly PlaceStats[], people: readonly 
       for (const id of new Set(v.task.peopleIds ?? [])) counts.set(id, (counts.get(id) ?? 0) + 1)
     }
   const rows = people.map(person => ({ key: person.id, name: person.name, count: counts.get(person.id) ?? 0, person }))
-  return topN(rows, n, { count: r => r.count, name: r => r.name })
+  return topN(rows, n, { count: r => r.count, name: r => r.name, tie: (a, b) => byName(a.person, b.person) })
 }
 
 /** A top place and whoever you most often go there with. */
@@ -211,12 +240,15 @@ export interface MealsOutRow {
 /**
  * The meals eaten out at your places in `year`, counted as the Outings tile
  * counts them: a meal marked as eaten out at a saved place, once its day has
- * come, filed on its own date. Most first, then the latest.
+ * come, filed on its own date. Most first, then the latest, then A to Z.
  */
 export function mealsOut(stats: readonly PlaceStats[], year: number): { rows: MealsOutRow[]; total: number } {
   const rows = stats.flatMap(s => {
     const days = s.visits.flatMap(v => (v.kind === 'meal' && new Date(filedAt(v)).getFullYear() === year ? [v.meal.date] : []))
     return days.length ? [{ key: s.place.id, name: s.place.name, count: days.length, place: s.place, last: days.reduce((a, b) => (b > a ? b : a)) }] : []
   })
-  return { rows: topN(rows, rows.length, { count: r => r.count, name: r => r.name, tie: (a, b) => b.last.localeCompare(a.last) }), total: rows.reduce((n, r) => n + r.count, 0) }
+  return {
+    rows: topN(rows, rows.length, { count: r => r.count, name: r => r.name, tie: (a, b) => b.last.localeCompare(a.last) || byName(a.place, b.place) }),
+    total: rows.reduce((n, r) => n + r.count, 0),
+  }
 }

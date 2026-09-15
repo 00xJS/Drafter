@@ -485,6 +485,7 @@
   gap: 14px;
 }
 /* the column's gap spaces the cards; the list's own margins would double it */
+.place-stats .people-controls,
 .place-stats .people-kpis,
 .place-stats .year-report {
   margin: 0;
@@ -515,15 +516,18 @@
 .rank-3 .place-mark.podium-photo {
   font-size: 1.75rem;
 }
-/* a day's places under its date: two to a row in a 375pt cell, then "+n" */
+/* a day's places under its date: two to a row in a 375pt cell, then "+n".
+   There a day is about 40.7 × 51.4px inside its border, and the date chip
+   (top 2px, 14px tall) ends at 16px: that leaves 34.4px, and two rows of 16px
+   dots with a 1px gap take 33px, so the third dot never runs under the chip. */
 .place-dots {
   position: absolute;
-  inset: 17px 1px 2px;
+  inset: 16px 1px 1px;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-end;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
 }
 .place-dot {
   width: 16px;

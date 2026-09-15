@@ -1,11 +1,11 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useState } from 'react'
 import type { GarmentType, Recipe } from '../../types'
 import {
   CAL_MODE_KEY,
-  CALENDAR_MODES,
   PEOPLE_TAB_KEY,
   PLACES_VIEW_KEY,
   TASKS_TAB_KEY,
+  storedCalMode,
   storedPeopleTab,
   storedPlacesView,
   storedTasksTab,
@@ -40,15 +40,9 @@ export type WardrobeOpen = { tab?: WardrobeTab; date?: string; add?: GarmentType
 export function useNavigation() {
   const [view, showView] = useState<View>('home')
   const setView = (v: View) => startTransition(() => showView(v))
-  const [calMode, showCalMode] = useState<CalendarMode>(() => {
-    try {
-      const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
-      return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
-    } catch {
-      return 'month'
-    }
-  })
-  const setCalMode = (mode: CalendarMode) => startTransition(() => showCalMode(mode))
+  const [calMode, showCalMode] = useState<CalendarMode>(storedCalMode)
+  /** Move the Calendar's segment for this visit only. */
+  const goCalMode = (mode: CalendarMode) => startTransition(() => showCalMode(mode))
   const [tasksTab, showTasksTab] = useState<TasksTab>(storedTasksTab)
   /** Move the Tasks segment for this visit only. */
   const goTasksTab = (tab: TasksTab) => startTransition(() => showTasksTab(tab))
@@ -85,6 +79,15 @@ export function useNavigation() {
       /* ignore */
     }
   }
+  /** …the Calendar's Month · Week · Timeline: its three buttons, and nothing else. */
+  const setCalMode = (mode: CalendarMode) => {
+    goCalMode(mode)
+    try {
+      localStorage.setItem(CAL_MODE_KEY, mode)
+    } catch {
+      /* ignore */
+    }
+  }
   /** …and Places' List · Stats: its switch, and nothing else. */
   const setPlacesView = (v: PlacesView) => {
     goPlacesView(v)
@@ -102,6 +105,7 @@ export function useNavigation() {
   const goView = (v: View) => {
     if (v === 'home') setHomeTab('today')
     if (v === 'tasks') goTasksTab(storedTasksTab())
+    if (v === 'calendar') goCalMode(storedCalMode())
     if (v === 'people') {
       goPeopleTab(storedPeopleTab())
       goPlacesView(storedPlacesView())
@@ -159,23 +163,17 @@ export function useNavigation() {
   const [calendarDay, setCalendarDay] = useState<string | null>(null)
   const openCalendarDay = (day: string) => {
     setCalendarDay(day)
-    // the Timeline has no days to open; the month grid has
-    if (calMode === 'timeline') setCalMode('month')
+    // the Timeline has no days to open; the month grid has. For this visit
+    // only: the Calendar tab and the next launch reopen on the one you chose
+    if (calMode === 'timeline') goCalMode('month')
     setView('calendar')
   }
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CAL_MODE_KEY, calMode)
-    } catch {
-      /* ignore */
-    }
-  }, [calMode])
 
   return {
     view,
     setView,
     calMode,
+    goCalMode,
     setCalMode,
     tasksTab,
     goTasksTab,

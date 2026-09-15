@@ -4,12 +4,15 @@ import type { ComponentProps, ReactElement, ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlacesStats } from '../components/PlacesStats'
-import { ListCard, MonthCalendar, Podium, RankedBars } from '../components/stats'
-import { readableInk } from '../contrast'
+import { CAL_MODE_KEY } from '../components/planner/routes'
+import { useNavigation } from '../components/planner/useNavigation'
+import { ChartCard, ListCard, MonthCalendar, Podium, RankedBars, StatTile, YearTable } from '../components/stats'
+import { graphicInk, readableInk } from '../contrast'
 import { companionsAt, lapsed, placeStats, placeYearReport, placesWith, type PlaceStats } from '../places'
 import {
   companyOnOutings,
   dueBack,
+  kindChips,
   mealsOut,
   mostVisited,
   neverBeen,
@@ -18,19 +21,22 @@ import {
   outingsByMonth,
   outingsWithin,
   placesByDay,
+  placesOfKind,
   placesTiles,
   usualCompany,
 } from '../placestats'
 import type { DayWindow } from '../stats'
-import type { Meal, Person, Place, Task } from '../types'
-import { elements, settled, type El } from './rendered'
+import { PLACE_CATEGORIES, type Meal, type Person, type Place, type Task } from '../types'
+import { button, elements, press, propsOf, rendered, settled, type El } from './rendered'
 
 // People → Places → Stats. Every figure it shows is read off the rows' own
 // stats (placeStats), so each is held here to the list's own count of the
-// same thing — with nothing, with one place, with ties, and whatever tasks the
-// list is handed (Mine / Everyone narrows neither) — and then the view is drawn
-// on the server, empty and full. vitest runs in node, so a press is a call of
-// the handler the view hands its kit; the kit's own drawing is stats-kit.test.
+// same thing — with nothing, with one place, with ties, under each kind chip,
+// and whatever tasks the list is handed (Mine / Everyone narrows neither) —
+// and then the view is drawn on the server, empty and full. vitest runs in
+// node, so a press is a call of the handler the view hands its kit; the kit's
+// own drawing is stats-kit.test. Last, the ways in from the shell, and the
+// Calendar mode a day opened from here must leave alone.
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const html = (node: ReactNode) => renderToStaticMarkup(node as ReactElement).replace(/<!-- -->/g, '')
@@ -102,11 +108,21 @@ const rows = (places = PLACES, tasks = TASKS, meals = MEALS): PlaceStats[] => pl
 const ids = (list: readonly { place: Place }[]) => list.map(r => r.place.id)
 const counts = (list: readonly { key: string; count: number }[]) => list.map(r => [r.key, r.count])
 
+/** A localStorage holding `init`, as a device that has chosen before; what is saved lands in the map returned. */
+function storage(init: Record<string, string>): Map<string, string> {
+  const saved = new Map(Object.entries(init))
+  vi.stubGlobal('localStorage', { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v) })
+  return saved
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('the tiles', () => {
   it('count the places, this year’s and this month’s outings, what is due back and what is new', () => {
@@ -138,6 +154,32 @@ describe('the tiles', () => {
     const stats = rows([pret], [], [eatOut('pret', '2025-12-31'), eatOut('pret', '2026-09-20')])
     expect(placesTiles(stats, NOW)).toMatchObject({ outingsThisYear: 0, newThisYear: 0 })
     expect(placesTiles(rows([pret], [], [eatOut('pret', '2026-01-02')]), NOW)).toMatchObject({ outingsThisYear: 1, newThisYear: 1 })
+  })
+})
+
+describe('the kind chips', () => {
+  it('offer each kind you have places of, in the kinds’ own order, with the list’s counts', () => {
+    const chips = kindChips(PLACES)
+    expect(Object.fromEntries(chips.map(c => [c.kind, c.count]))).toEqual({ restaurant: 2, outdoors: 1, fastfood: 1, cafe: 1, venue: 1 })
+    const order = chips.map(c => PLACE_CATEGORIES.indexOf(c.kind))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    // the list's badge: how many of its rows are of that kind
+    for (const c of chips) expect(c.count, c.kind).toBe(rows().filter(s => s.place.category === c.kind).length)
+    expect(kindChips([])).toEqual([])
+  })
+
+  it('narrow every figure to one kind, as the list’s chips narrowed its tiles and its table', () => {
+    for (const { kind } of kindChips(PLACES)) {
+      const ofKind = placesOfKind(PLACES, kind)
+      expect(ofKind.every(p => p.category === kind), kind).toBe(true)
+      const report = placeYearReport(ofKind, TASKS, MEALS, 2026, NOW)
+      const tiles = placesTiles(rows(ofKind), NOW)
+      expect(tiles.places, kind).toBe(ofKind.length)
+      expect(tiles.outingsThisYear, kind).toBe(report.reduce((n, r) => n + r.total, 0))
+      expect(tiles.outingsThisMonth, kind).toBe(report.reduce((n, r) => n + r.months[8], 0))
+      expect(tiles.beenAWhile, kind).toBe(rows().filter(s => s.place.category === kind && dueBack(s)).length)
+    }
+    expect(placesOfKind(PLACES, 'all')).toEqual(PLACES)
   })
 })
 
@@ -178,6 +220,40 @@ describe('Most visited and the podium', () => {
     expect(mostVisited([], 'all', NOW)).toEqual([])
     expect(mostVisited(rows([kafka], [], []), 'all', NOW)).toEqual([])
     expect(mostVisited(rows([park], [outing('park', at(2026, 9, 2))], []), 30, NOW).map(r => r.key)).toEqual(['park'])
+  })
+})
+
+describe('a tie never falls to the order the store holds things in', () => {
+  it('ranks two places of one name by their ids, whichever is saved first', () => {
+    const same = at(2026, 9, 1)
+    const two = [place('z', 'Pret'), place('a', 'Pret')]
+    const tasks = [outing('z', same), outing('a', same)]
+    for (const list of [two, [...two].reverse()]) {
+      expect(mostVisited(rows(list, tasks, []), 'all', NOW).map(r => r.key)).toEqual(['a', 'z'])
+      expect(usualCompany(rows(list, [outing('z', same, ['sam']), outing('a', same, ['sam'])], [])).map(u => u.place.id)).toEqual(['a', 'z'])
+      expect(ids(neverBeen(rows(list, [], [])))).toEqual(['a', 'z'])
+      expect(mealsOut(rows(list, [], [eatOut('z', '2026-09-05'), eatOut('a', '2026-09-05')]), 2026).rows.map(r => r.key)).toEqual(['a', 'z'])
+    }
+  })
+
+  it('ranks two people of one name by their ids', () => {
+    const sams = [person('sam-2', 'Sam', '#60a5fa'), person('sam-1', 'Sam', '#f472b6')]
+    const tasks = [outing('park', at(2026, 9, 2), ['sam-2', 'sam-1'])]
+    for (const list of [sams, [...sams].reverse()]) expect(companyOnOutings(rows([park], tasks, []), list, 'all', NOW).map(r => r.key)).toEqual(['sam-1', 'sam-2'])
+  })
+
+  it('puts a day’s lunch out before its dinner out, and two outings at one instant A to Z', () => {
+    // every meal files at midday: the slot settles it
+    const lunchAt = place('b', 'Bravo')
+    const dinnerAt = place('a', 'Alpha')
+    const meals = [eatOut('a', '2026-09-05', 'dinner'), eatOut('b', '2026-09-05', 'lunch')]
+    for (const list of [
+      [lunchAt, dinnerAt],
+      [dinnerAt, lunchAt],
+    ])
+      expect(placesByDay(rows(list, [], meals)).get('2026-09-05')!.map(p => p.id)).toEqual(['b', 'a'])
+    const same = at(2026, 9, 6, 18)
+    expect(placesByDay(rows([place('b', 'Bravo'), place('a', 'Alpha')], [outing('b', same), outing('a', same)], [])).get('2026-09-06')!.map(p => p.name)).toEqual(['Alpha', 'Bravo'])
   })
 })
 
@@ -326,6 +402,8 @@ describe('Mine / Everyone narrows neither the list nor its Stats: places are the
     const stats = screen.slice(from, screen.indexOf('/>', from))
     for (const prop of ['places={store.places}', 'people={store.people}', 'tasks={store.tasks}', 'meals={store.meals}']) expect(stats).toContain(prop)
     expect(screen).not.toContain('filteredTasks')
+    // …and says whether Mine is narrowing the Calendar its days open
+    expect(stats).toContain('mineOnCalendar={inHousehold && mineOnly}')
   })
 
   it('counts a household member’s outing beside yours, as the rows do', () => {
@@ -360,6 +438,7 @@ describe('Places → Stats, drawn', () => {
     expect(page).toContain('Add the places you go on the list')
     expect(page).not.toContain('kpi-row')
     expect(page).not.toContain('chart-head')
+    expect(page).not.toContain('board-count')
   })
 
   it('with places and no outings, has every card say what it is waiting for', () => {
@@ -379,6 +458,17 @@ describe('Places → Stats, drawn', () => {
     expect(page.match(/>Plan a trip</g)).toHaveLength(6)
   })
 
+  it('heads the figures with the list’s kind chips: All first and on, then each kind you have places of, with its count', () => {
+    const page = view()
+    expect(page).toContain(
+      '<span class="segmented" role="group" aria-label="Kind of place"><button type="button" aria-pressed="true" class="seg on">All <span class="board-count">6</span></button>',
+    )
+    expect(page).toContain('<button type="button" aria-pressed="false" class="seg">Restaurant <span class="board-count">2</span></button>')
+    // a kind with no places has no chip
+    expect(page.match(/class="board-count"/g)).toHaveLength(1 + kindChips(PLACES).length)
+    expect(page.indexOf('Kind of place')).toBeLessThan(page.indexOf('kpi-row'))
+  })
+
   it('tiles the places, this year’s and this month’s outings, what is due back and what is new', () => {
     const page = view()
     for (const [label, value] of [
@@ -389,6 +479,7 @@ describe('Places → Stats, drawn', () => {
       ['New this year', '2'],
     ])
       expect(page).toContain(`<div class="stat-label">${label}</div><div class="stat-value">${value}</div>`)
+    expect(page).toContain('saved, every kind')
     // the fifth spans the phone's 2-up row
     expect(page).toContain('<div class="stat-tile kpi-wide"><div class="stat-label">New this year</div>')
   })
@@ -405,6 +496,11 @@ describe('Places → Stats, drawn', () => {
     expect(page).toMatch(/aria-label="Next month" disabled=""/)
     // with no way to the Calendar, the days are only pictures
     expect(view({ onOpenDay: undefined })).not.toContain('<button type="button" class="photo-cal-day"')
+  })
+
+  it('says, with Mine on in a household, that the month counts everyone though the Calendar it opens shows only your tasks', () => {
+    expect(view()).not.toContain('Mine keeps the Calendar')
+    expect(view({ mineOnCalendar: true })).toContain('Where you went each day · 4 outings on 3 days · counting everyone, though Mine keeps the Calendar to your tasks')
   })
 
   it('shows three of a busy day’s places as emoji, then "+n"', () => {
@@ -462,6 +558,10 @@ describe('Places → Stats, drawn', () => {
     expect(year).toContain('<th class="num">Outings</th>')
     // a row for every place, as the table under the list had
     expect(year.match(/<tr>/g)).toHaveLength(1 + PLACES.length)
+    // a pale place's dot is its colour moved to show on the card, as the wardrobe's table draws a piece's
+    const dot = graphicInk('#fef3c7', 'light')
+    expect(dot).not.toBe('#fef3c7')
+    expect(year).toContain(`<span class="pdot" style="background:${dot}"></span> Bella Italia`)
   })
 
   it('pairs the top places with their usual company, and counts this year’s meals out', () => {
@@ -525,6 +625,50 @@ describe('what a press does', () => {
   it('leaves Who you go with to read, not press, without a way to People', () => {
     expect(setup({ onOpenPerson: undefined }).card('Who you go with').props.onOpen).toBeUndefined()
   })
+
+  /** The podium's rows and the year table's, as the view hands them to the kit, whose props are generic. */
+  const podiumTop = (t: ReactNode) => elements(t).find(e => e.type === Podium)!.props.top as readonly { key: string }[]
+  const tableRows = (t: ReactNode) => elements(t).find(e => e.type === YearTable)!.props.rows as readonly { key: string; total: number }[]
+
+  it('narrows every card under a kind chip to that kind, as the list’s tiles and table were, and keeps By kind to All', () => {
+    const { props } = setup()
+    const tree = settled(PlacesStats, props, t => press(t, 'Restaurant 2'))
+    const all = elements(tree)
+    const tile = (label: string) => all.find(e => e.type === StatTile && e.props.label === label)?.props.value
+    const restaurants = placesOfKind(PLACES, 'restaurant')
+    const stats = rows(restaurants)
+    const report = placeYearReport(restaurants, TASKS, MEALS, 2026, NOW)
+    expect(button(tree, 'Restaurant 2').props['aria-pressed']).toBe(true)
+    expect(button(tree, 'All 6').props['aria-pressed']).toBe(false)
+    expect(tile('Places')).toBe('2')
+    expect(tile('Outings this year')).toBe(String(report.reduce((n, r) => n + r.total, 0)))
+    expect(tile('Outings this month')).toBe(String(report.reduce((n, r) => n + r.months[8], 0)))
+    expect(tile('Been a while')).toBe(String(stats.filter(dueBack).length))
+    expect(tableRows(tree).map(r => r.key)).toEqual(report.map(r => r.place.id))
+    expect(podiumTop(tree).map(r => r.key)).toEqual(mostVisited(stats, 'all', NOW, 3).map(r => r.key))
+    const items = (title: string) => all.find(e => e.type === ListCard && e.props.title === title)!.props.items as PlaceStats[]
+    expect(ids(items('Not been back'))).toEqual(ids(notBeenBack(stats)))
+    expect(items('Never been')).toEqual([])
+    expect(all.some(e => e.type === RankedBars && e.props.title === 'By kind')).toBe(false)
+    expect(all.some(e => e.type === RankedBars && e.props.title === 'Most visited')).toBe(true)
+  })
+
+  it('works its figures out once and keeps them through a re-render, such as the year’s ‹', () => {
+    const { props } = setup()
+    const yearCard = (t: ReactNode) => elements(t).find(e => e.type === ChartCard && e.props.title === 'The year in places')!
+    const trees = rendered(PlacesStats, props, t => ((yearCard(t).props.aside as El).props.onStep as (delta: -1 | 1) => void)(-1))
+    expect(trees).toHaveLength(2)
+    const [first, last] = trees
+    expect((yearCard(last).props.aside as El).props.label).toBe('2025')
+    // the podium and the lists are the very ones the first render worked out…
+    expect(podiumTop(last)).toBe(podiumTop(first))
+    const items = (t: ReactNode, title: string) => elements(t).find(e => e.type === ListCard && e.props.title === title)!.props.items
+    expect(items(last, 'Not been back')).toBe(items(first, 'Not been back'))
+    expect(items(last, 'Never been')).toBe(items(first, 'Never been'))
+    // …while the table is 2025's: Bella's three and Nopi in November
+    expect(tableRows(last)).not.toBe(tableRows(first))
+    expect(tableRows(last).reduce((n, r) => n + r.total, 0)).toBe(4)
+  })
 })
 
 describe('the shell’s ways into Places → Stats', () => {
@@ -551,11 +695,64 @@ describe('the shell’s ways into Places → Stats', () => {
     expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{[^}]*if \(id\) goPlacesView\('list'\)\s*setView\('people'\)/)
   })
 
-  it('opens a day of the month on the Calendar with its sheet up, off the Timeline', () => {
+  it('opens a day of the month on the Calendar with its sheet up, off the Timeline for that visit only', () => {
     expect(screen).toContain('onOpenDay={openCalendarDay}')
-    expect(nav).toMatch(/const openCalendarDay = \(day: string\) => \{\s*setCalendarDay\(day\)[\s\S]*?if \(calMode === 'timeline'\) setCalMode\('month'\)\s*setView\('calendar'\)/)
+    expect(nav).toMatch(/const openCalendarDay = \(day: string\) => \{\s*setCalendarDay\(day\)[\s\S]*?if \(calMode === 'timeline'\) goCalMode\('month'\)\s*setView\('calendar'\)/)
     expect(calendarScreen).toContain('openDay={calendarDay}')
     expect(calendarScreen).toContain('onOpenDayConsumed={() => setCalendarDay(null)}')
     expect(calendar).toMatch(/setCursor\(day\)\s*setSheetDay\(day\)\s*onOpenDayConsumed\?\.\(\)/)
+  })
+
+  it('remembers the Calendar’s mode from its three buttons alone, as the other segments are remembered', () => {
+    expect(nav).toMatch(/const setCalMode = \(mode: CalendarMode\) => \{\s*goCalMode\(mode\)\s*try \{\s*localStorage\.setItem\(CAL_MODE_KEY, mode\)/)
+    expect(nav.match(/localStorage\.setItem\(CAL_MODE_KEY/g)).toHaveLength(1)
+    // no effect saving whatever the mode last became
+    expect(nav).not.toMatch(/\}, \[calMode\]\)/)
+    expect(nav).toMatch(/if \(v === 'calendar'\) goCalMode\(storedCalMode\(\)\)/)
+    expect(calendarScreen.match(/onClick=\{\(\) => setCalMode\('(month|week|timeline)'\)\}/g)).toHaveLength(3)
+  })
+})
+
+describe('a day opened from Stats leaves the Calendar’s remembered mode alone', () => {
+  type Nav = ReturnType<typeof useNavigation>
+  /** Holds the shell's navigation out where a test can reach it. */
+  const Hold: (props: { nav: Nav }) => null = () => null
+  function NavProbe() {
+    const nav = useNavigation()
+    return <Hold nav={nav} />
+  }
+  const navOf = (tree: ReactNode) => propsOf(tree, Hold).nav
+  /** The shell's navigation after `act`, on a device whose Calendar was left on `mode`. */
+  const after = (mode: string, act: (nav: Nav) => void) => {
+    const saved = storage({ [CAL_MODE_KEY]: mode })
+    return { nav: navOf(settled(NavProbe, {}, tree => act(navOf(tree)))), saved }
+  }
+
+  it('opens the month off the Timeline for that visit, and leaves the Timeline you chose saved', () => {
+    const { nav, saved } = after('timeline', n => n.openCalendarDay('2026-09-12'))
+    expect(nav).toMatchObject({ view: 'calendar', calMode: 'month', calendarDay: '2026-09-12' })
+    expect(saved.get(CAL_MODE_KEY)).toBe('timeline')
+  })
+
+  it('reopens on the Timeline at the next Calendar tab tap, and at the next launch', () => {
+    const { nav } = after('timeline', n => {
+      n.openCalendarDay('2026-09-12')
+      n.goView('calendar')
+    })
+    expect(nav.calMode).toBe('timeline')
+    storage({ [CAL_MODE_KEY]: 'timeline' })
+    expect(navOf(settled(NavProbe, {})).calMode).toBe('timeline')
+  })
+
+  it('leaves Week as it is, since the week has days to open too', () => {
+    const { nav, saved } = after('week', n => n.openCalendarDay('2026-09-12'))
+    expect(nav.calMode).toBe('week')
+    expect(saved.get(CAL_MODE_KEY)).toBe('week')
+  })
+
+  it('remembers a mode picked on the Calendar’s own buttons', () => {
+    const { nav, saved } = after('timeline', n => n.setCalMode('week'))
+    expect(nav.calMode).toBe('week')
+    expect(saved.get(CAL_MODE_KEY)).toBe('week')
   })
 })

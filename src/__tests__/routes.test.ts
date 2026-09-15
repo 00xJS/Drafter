@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  CAL_MODE_KEY,
   CALENDAR_MODES,
   COMPACT_TABS,
   HOME_TABS,
@@ -15,6 +16,7 @@ import {
   VIEW_TO_PLACES,
   VIEWS,
   WARDROBE_TABS,
+  storedCalMode,
   storedPeopleTab,
   storedPlacesView,
   storedTasksTab,
@@ -131,6 +133,19 @@ describe('the remembered segment', () => {
     expect(storedPlacesView()).toBe('list')
   })
 
+  it('reopens the Calendar on the mode chosen on its buttons, and on Month for anything else', () => {
+    for (const mode of CALENDAR_MODES) {
+      withStorage({ [CAL_MODE_KEY]: mode })
+      expect(storedCalMode()).toBe(mode)
+    }
+    for (const other of ['board', 'stats', '']) {
+      withStorage({ [CAL_MODE_KEY]: other })
+      expect(storedCalMode()).toBe('month')
+    }
+    withStorage({})
+    expect(storedCalMode()).toBe('month')
+  })
+
   it('falls back to the first segment when storage cannot be read', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
@@ -140,5 +155,6 @@ describe('the remembered segment', () => {
     expect(storedTasksTab()).toBe('list')
     expect(storedPeopleTab()).toBe('people')
     expect(storedPlacesView()).toBe('list')
+    expect(storedCalMode()).toBe('month')
   })
 })

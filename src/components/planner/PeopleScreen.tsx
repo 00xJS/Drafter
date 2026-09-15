@@ -5,7 +5,7 @@ import { PLACES_VIEWS } from './routes'
 /** People, with Places as its second segment, and Places' own List · Stats. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, peopleTab, setPeopleTab, placesView, setPlacesView, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
-  const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor, openCalendarDay } = p
+  const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor, openCalendarDay, inHousehold, mineOnly } = p
   return (
     <>
       <div className="people-tab-seg">
@@ -54,6 +54,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
             onPlan={planAt}
             onOpenPerson={person => openPerson(person.id)}
             onOpenDay={openCalendarDay}
+            // with Mine on in a household the Calendar a day opens shows only your tasks, while these count everyone's outings
+            mineOnCalendar={inHousehold && mineOnly}
           />
         ) : (
           <Places
