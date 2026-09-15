@@ -49,3 +49,16 @@ export function weekDayKeys(dateKey) {
   const ms = Date.UTC(p[0], p[1], p[2])
   return Array.from({ length: 7 }, (_, i) => keyOf(ms + i * DAY_MS))
 }
+
+/**
+ * The Sunday a `2026-W37` key starts on: weekKeyOf, backwards. Week n holds
+ * the one Sunday that falls n - 1 whole weeks after 1 January, so it is the
+ * first Sunday from there. Null for anything that is not a week's key.
+ */
+export function weekKeyStart(weekKey) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(String(weekKey ?? ''))
+  if (!m || Number(m[2]) < 1) return null
+  const from = Date.UTC(Number(m[1]), 0, 1) + (Number(m[2]) - 1) * 7 * DAY_MS
+  const start = keyOf(from + ((7 - new Date(from).getUTCDay()) % 7) * DAY_MS)
+  return weekKeyOf(start) === weekKey ? start : null
+}

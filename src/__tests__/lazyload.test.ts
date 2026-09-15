@@ -134,13 +134,19 @@ describe('schedulePreload: after launch, one chunk at a time', () => {
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 const component = (name: string) => resolve(SRC, 'components', `${name}.tsx`)
 /** The views and overlays planner/lazy.ts loads on demand. */
-const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Bills', 'NotesView', 'People', 'Places', 'Kitchen', 'Review', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet']
+const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Bills', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet']
 /** …and what only they use, which must travel with them. */
 const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
+  // Kitchen → Stats' counting travels with it
+  resolve(SRC, 'kitchenstats.ts'),
   // the wardrobe's screens and its photo pipeline: only Today's card and its thumbnails ride in the Planner chunk
   ...['wardrobe/OutfitComposer', 'wardrobe/SnapRow', 'wardrobe/SavedOutfits', 'wardrobe/Clothes', 'wardrobe/GarmentSheet', 'wardrobe/PieceDetails', 'wardrobe/WardrobeStats'].map(component),
   resolve(SRC, 'components', 'wardrobe', 'composer.ts'),
+  // People → Stats' and Places → Stats' counting travels with its view, and the face both draw a person with
+  resolve(SRC, 'peoplestats.ts'),
+  resolve(SRC, 'placestats.ts'),
+  component('PersonFace'),
   resolve(SRC, 'markdown.ts'),
   resolve(SRC, 'photo.ts'),
 ]

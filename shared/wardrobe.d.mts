@@ -55,7 +55,7 @@ export interface WearIndex {
   looks: ReadonlyMap<string, readonly Wear[]>
 }
 export declare function wearIndex(wears: readonly Wear[], dayKey: string): WearIndex
-export declare function daysWithin(days: readonly string[], dayKey: string, window: number): number
+export { daysWithin } from './stats.mjs'
 
 /**
  * A window in day keys. A day filed at midday would cross visitSummary's

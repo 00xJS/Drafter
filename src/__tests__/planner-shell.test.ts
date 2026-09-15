@@ -35,9 +35,19 @@ describe('the tabs and segments say where you are', () => {
 
   it('makes People / Places a tablist, like Home and Tasks', () => {
     expect(people).toMatch(/<span className="segmented" role="tablist" aria-label="People view">/)
-    expect(people.match(/role="tab"/g)).toHaveLength(2)
+    const from = people.indexOf('aria-label="People view"')
+    expect(people.slice(from, people.indexOf('</span>', from)).match(/role="tab"/g)).toHaveLength(2)
     expect(people).toMatch(/aria-selected=\{peopleTab === 'people'\}/)
     expect(people).toMatch(/aria-selected=\{peopleTab === 'places'\}/)
+  })
+
+  it('gives People and Places each their own List · Stats tablist, the wardrobe’s small switch, remembered by its buttons', () => {
+    expect(people).toContain(`<ListStatsSwitch label="People list or stats" value={innerViews.people} onChange={v => setInnerView('people', v)} />`)
+    expect(people).toContain(`<ListStatsSwitch label="Places list or stats" value={innerViews.places} onChange={v => setInnerView('places', v)} />`)
+    expect(people.match(/<ListStatsSwitch /g)).toHaveLength(2)
+    // outside .people-tab-seg, whose native track is the tab-level segments' own
+    const seg = people.indexOf('<div className="people-tab-seg">')
+    expect(people.slice(seg, people.indexOf('</div>', seg))).not.toContain('ListStatsSwitch')
   })
 
   it('leaves both tab bars without haptics', () => {

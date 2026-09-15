@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, seenTasks, visitDays, yearReport } from '../people'
+import { PersonStats, SEEN_META, compareStats, countOf, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
-import { Bars, TrendBadge } from './bits'
+import { Bars } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
-import { heatStyle } from '../contrast'
-import { useTheme } from '../theme'
 
 interface Props {
   people: Person[]
@@ -454,10 +452,6 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
     onOpenConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOpen])
-  const [year, setYear] = useState(() => new Date().getFullYear())
-  // the year table's cells choose their ink for the theme on screen
-  const theme = useTheme()
-
   // An event of your own counts as seeing the people on it once it has
   // happened, the way a subscribed calendar's does once Who was there? logs
   // them: read as the visit task that would have been logged, it reaches
@@ -496,32 +490,9 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
     return sorted
   }, [allStats, group, sort, q])
 
-  /**
-   * Three numbers that are easy to conflate: one dinner with three relatives
-   * is ONE occasion but THREE person-visits, and three get-togethers on one
-   * Saturday are THREE occasions but ONE day. Showing all three explains the
-   * gap you notice when an event involves several people, or a day several
-   * events.
-   */
-  const counts = useMemo(() => {
-    const scoped = new Set(shown.map(s => s.person.id))
-    const occasions = new Map<string, { at: string }>()
-    let personVisits = 0
-    for (const t of seen) {
-      if (t.status !== 'done' || !t.completedAt) continue
-      const involved = (t.peopleIds ?? []).filter(id => scoped.has(id))
-      if (involved.length === 0) continue
-      occasions.set(t.id, { at: t.completedAt })
-      personVisits += involved.length
-    }
-    const attention = { overdue: 0, due: 0 }
-    for (const s of shown) if (s.status === 'overdue' || s.status === 'due') attention[s.status]++
-    return { days: visitDays([...occasions.values()]).length, occasions: occasions.size, personVisits, attention }
-  }, [shown, seen])
-
-  const report = useMemo(() => yearReport(shown.map(s => s.person), seen, year), [shown, seen, year])
-  const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
-
+  // The tiles that counted days together, occasions, people seen and who is
+  // due, and the year with people, are on People → Stats (PeopleStats), so
+  // the list is the people and nothing else.
   return (
     <section className="people">
       <div className="toolbar people-toolbar">
@@ -571,34 +542,6 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
             </button>
           </div>
 
-          <div className="kpi-row people-kpis">
-            {/* on a phone's two columns this one spans its row, so the four below pair up */}
-            <div className="stat-tile kpi-wide">
-              <div className="stat-label">Days together</div>
-              <div className="stat-value">{counts.days}</div>
-              <div className="stat-sub">days you saw any of them, however many get-togethers</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Occasions</div>
-              <div className="stat-value">{counts.occasions}</div>
-              <div className="stat-sub">get-togethers logged</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">People seen</div>
-              <div className="stat-value">{counts.personVisits}</div>
-              <div className="stat-sub">counted once per person, per occasion</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Overdue</div>
-              <div className={counts.attention.overdue ? 'stat-value stat-warn' : 'stat-value'}>{counts.attention.overdue}</div>
-              <div className="stat-sub">past your target rhythm</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Due a catch-up</div>
-              <div className="stat-value">{counts.attention.due}</div>
-            </div>
-          </div>
-
           {shown.length === 0 ? (
             <p className="empty">Nobody matches.</p>
           ) : (
@@ -623,66 +566,6 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
             </ul>
           )}
 
-          <section className="chart-card year-report">
-            <header className="chart-head">
-              <div>
-                <h3>The year with {group === 'all' ? 'people' : PERSON_GROUP_META[group].toLowerCase()}</h3>
-                <p className="chart-sub">Days seen per month, however many events a day held · trend compares days seen in the last 90 days with the 90 before</p>
-              </div>
-              <span className="segmented">
-                <button className="seg" onClick={() => setYear(y => y - 1)} aria-label="Previous year">
-                  ‹
-                </button>
-                <button className="seg on">{year}</button>
-                <button className="seg" onClick={() => setYear(y => y + 1)} aria-label="Next year">
-                  ›
-                </button>
-              </span>
-            </header>
-            <div className="table-scroll">
-              <table className="year-table">
-                <thead>
-                  <tr>
-                    <th>Person</th>
-                    {MONTHS.map((m, i) => (
-                      <th key={i} className="num">
-                        {m}
-                      </th>
-                    ))}
-                    <th className="num">Days</th>
-                    <th className="num">Events</th>
-                    <th>Trend</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.map(r => (
-                    <tr key={r.person.id}>
-                      <td>
-                        <span className="pdot" style={{ background: r.person.color }} /> {r.person.name}
-                      </td>
-                      {r.months.map((n, i) => (
-                        <td
-                          key={i}
-                          className="num year-cell"
-                          title={n > 0 ? countOf(n, 'day') : undefined}
-                          style={n > 0 ? heatStyle(r.person.color, n, theme) : undefined}
-                        >
-                          {n || ''}
-                        </td>
-                      ))}
-                      <td className="num">
-                        <strong>{r.total}</strong>
-                      </td>
-                      <td className="num year-events">{r.events}</td>
-                      <td>
-                        <TrendBadge trend={r.trend} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </>
       )}
 

@@ -1,7 +1,7 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import type { HomeTab, PeopleTab, TasksTab, View } from './routes'
+import { storedInnerView, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type TasksTab, type View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
@@ -13,7 +13,13 @@ export interface PaletteNav {
   openJournal(date?: string): void
   goTasksTab(tab: TasksTab): void
   setPeopleTab(tab: PeopleTab): void
+  /** A segment of People's List · Stats, for this visit only. */
+  goInnerView(tab: PeopleTab, v: InnerView): void
   openWardrobe(o?: WardrobeOpen): void
+  /** A segment of People on its Stats, for this visit only. */
+  openStats(tab: PeopleTab): void
+  /** Kitchen, on the segment named for this visit only, or the one last chosen. */
+  openKitchen(tab?: KitchenTab): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -34,9 +40,15 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openStats, openKitchen } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
+  /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats or Places stats does not linger. */
+  const goPeople = (tab: PeopleTab) => {
+    setPeopleTab(tab)
+    goInnerView(tab, storedInnerView(tab))
+    setView('people')
+  }
   return [
     { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
     // the day's two routines open over wherever you are, as Settings does
@@ -59,10 +71,17 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
     { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
     { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
-    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => setView('calendar') },
-    { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
-    { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
-    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
+    // on the mode last chosen, as a tab tap opens it, not one a day from a Stats view left for its visit
+    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => goView('calendar') },
+    { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => goPeople('people') },
+    { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => goPeople('places') },
+    // a segment's figures, for this visit: the next tab tap opens the view last chosen
+    { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
+    { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openStats('places') },
+    // where you last left it, as a tab tap opens it, not the Stats a Kitchen stats left for its visit
+    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => goView('kitchen') },
+    // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
+    { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]
 }

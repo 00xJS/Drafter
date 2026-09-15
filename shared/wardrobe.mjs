@@ -11,6 +11,7 @@
 
 import { newerStamp } from './domain.mjs'
 import { localDayKey } from './journal.mjs'
+import { daysBetween, daysWithin, topN } from './stats.mjs'
 
 /** A piece's types in slot order, top to toe (GARMENT_TYPES in src/types.ts; wardrobe-shared.test.ts holds them equal). */
 export const GARMENT_TYPES = ['top', 'bottom', 'onepiece', 'outerwear', 'shoes', 'accessory']
@@ -20,9 +21,6 @@ export const CORE_TYPES = ['top', 'bottom', 'onepiece']
 export const MAX_PIECES = 12
 /** The longest note a look keeps (LOOK_NOTE_MAX in src/types.ts; wardrobe-shared.test.ts holds them equal). */
 export const LOOK_NOTE_MAX = 120
-
-/** Whole days from one day key to another: UTC maths on the keys, so no zone or clock change moves it (Kitchen's daysBetween). */
-const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
 
 // ---- ids and writers -------------------------------------------------------------
 
@@ -247,8 +245,8 @@ export function wearIndex(wears, dayKey) {
   return { dayKey, days, logged, looks }
 }
 
-/** Days among these inside the `window` days ending on dayKey — counted in day keys, never milliseconds. */
-export const daysWithin = (days, dayKey, window) => days.filter(d => daysBetween(d, dayKey) < window).length
+/** Days among these inside the `window` days ending on dayKey — counted in day keys, never milliseconds (shared/stats.mjs). */
+export { daysWithin }
 
 // ---- the lists -------------------------------------------------------------------
 
@@ -259,15 +257,13 @@ export const daysWithin = (days, dayKey, window) => days.filter(d => daysBetween
  * @param {number | 'all'} [window]
  */
 export function mostWorn(garments, ix, window = 30, limit = 10) {
-  return garments
+  const rows = garments
     .filter(g => !g.deletedAt)
     .map(garment => {
       const days = ix.days.get(garment.id) ?? []
-      return { garment, count: window === 'all' ? days.length : daysWithin(days, ix.dayKey, window), lastWorn: days[0] ?? '' }
+      return { garment, count: daysWithin(days, ix.dayKey, window), lastWorn: days[0] ?? '' }
     })
-    .filter(r => r.count > 0)
-    .sort((a, b) => b.count - a.count || b.lastWorn.localeCompare(a.lastWorn) || a.garment.name.localeCompare(b.garment.name))
-    .slice(0, limit)
+  return topN(rows, limit, { count: r => r.count, name: r => r.garment.name, tie: (a, b) => b.lastWorn.localeCompare(a.lastWorn) })
 }
 
 /** A piece not worn in this many days is not worn lately. Clothes rotate more slowly than dinners (Kitchen's 30). */

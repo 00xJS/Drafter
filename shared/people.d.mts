@@ -9,7 +9,7 @@ export interface Visit {
 }
 
 export declare function visitsFor(personId: string, tasks: Task[]): Visit[]
-export declare function visitDays(visits: readonly { at: string }[], dayKeyOf: (at: string) => string | null | undefined): string[]
+export { distinctDays as visitDays } from './stats.mjs'
 export declare function eventVisits(entries: CalendarEntry[], now?: Date | string | number): Task[]
 export declare function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now?: Date | string | number): Task[]
 export declare function plannedVisit(personId: string, tasks: Task[]): Task | null

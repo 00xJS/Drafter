@@ -3,6 +3,7 @@ import { formatMoney } from './bills'
 import { daysAgo, daysBetween } from './kitchen'
 import { countOf, monthsAndTrend, visitSummary } from './people'
 import { garmentTags } from './schema'
+import { dayStreaks, monthGrid, topN } from './stats'
 import { uid } from './utils'
 import { describeCode, type Forecast } from './weather'
 import { newerStamp } from '../shared/domain.mjs'
@@ -378,11 +379,8 @@ export function wardrobeYearReport(
   year: number,
   now = new Date(),
 ): { garment: Garment; months: number[]; total: number; trend: number }[] {
-  return garments
-    .filter(g => !g.deletedAt)
-    .map(garment => ({ garment, ...monthsAndTrend((ix.days.get(garment.id) ?? []).map(d => ({ at: middayOf(d) })), year, now) }))
-    .filter(r => r.total > 0)
-    .sort((a, b) => b.total - a.total || a.garment.name.localeCompare(b.garment.name))
+  const rows = garments.filter(g => !g.deletedAt).map(garment => ({ garment, ...monthsAndTrend((ix.days.get(garment.id) ?? []).map(d => ({ at: middayOf(d) })), year, now) }))
+  return topN(rows, Infinity, { count: r => r.total, name: r => r.garment.name })
 }
 
 // ---- outfits ---------------------------------------------------------------------
@@ -645,20 +643,11 @@ export function lookOn(ix: WearIndex, day: string): { look: Wear; looks: number 
 /**
  * Days logged in a row. The current run ends today, or yesterday while today
  * has no look yet — like a habit's streak, today waits rather than breaks it
- * — and the best is the longest run there has been. Two looks on a day are one day.
+ * — and the best is the longest run there has been. Two looks on a day are one
+ * day. The Stats rules' dayStreaks, over the days logged.
  */
 export function wearStreaks(ix: WearIndex): { current: number; best: number } {
-  let best = 0
-  let run = 0
-  let prev = ''
-  // oldest first, so the run left at the end is the one reaching the newest logged day
-  for (const day of [...ix.logged].reverse()) {
-    run = prev && shiftDayKey(prev, 1) === day ? run + 1 : 1
-    best = Math.max(best, run)
-    prev = day
-  }
-  const newest = ix.logged[0]
-  return { current: newest === ix.dayKey || newest === shiftDayKey(ix.dayKey, -1) ? run : 0, best }
+  return dayStreaks(ix.logged, ix.dayKey)
 }
 
 /** A cell of the month's photo calendar: a day and its latest look, or the padding around the month (day null). */
@@ -670,21 +659,14 @@ export interface LookCell {
 
 /**
  * A month as whole Sunday-to-Saturday weeks, the Calendar's grid: each day
- * with its latest look, when it has one. `month` runs 1–12. A day after
- * dayKey never has one, as the index does not hold it.
+ * with its latest look, when it has one (the Stats rules' monthGrid). `month`
+ * runs 1–12. A day after dayKey never has one, as the index does not hold it.
  */
 export function lookCalendar(ix: WearIndex, year: number, month: number): LookCell[] {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const lead = new Date(Date.UTC(year, month - 1, 1)).getUTCDay()
-  const length = new Date(Date.UTC(year, month, 0)).getUTCDate()
-  const cells: LookCell[] = Array.from({ length: lead }, () => ({ day: null, looks: 0 }))
-  for (let d = 1; d <= length; d++) {
-    const day = `${year}-${pad(month)}-${pad(d)}`
-    const on = lookOn(ix, day)
-    cells.push(on ? { day, ...on } : { day, looks: 0 })
-  }
-  while (cells.length % 7 !== 0) cells.push({ day: null, looks: 0 })
-  return cells
+  return monthGrid(year, month).map(day => {
+    const on = day ? lookOn(ix, day) : undefined
+    return on ? { day, ...on } : { day, looks: 0 }
+  })
 }
 
 /**

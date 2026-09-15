@@ -79,6 +79,9 @@ interface Props {
   wears?: Wear[]
   /** Home → Wardrobe on a day. Without it no look is shown. */
   onOpenWardrobe?(o: WardrobeOpen): void
+  /** A day (YYYY-MM-DD) to open on arrival, its day sheet up — the month calendar in People → Stats or Places → Stats; consumed once. */
+  openDay?: string | null
+  onOpenDayConsumed?(): void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -99,6 +102,11 @@ const LOCAL_EVENT_COLOR = 'var(--cal-event-local)'
 const FALLBACK_EVENT_COLOR = 'var(--dot-fallback)'
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+/** A YYYY-MM-DD key as that local day, or null for none or one that is not a day. */
+const dayOfKey = (key: string | null | undefined): Date | null => {
+  const m = key ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(key) : null
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
+}
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 /** Default time for a task created from a day: 9am, same as the rest of the app. */
 const morningOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0, 0).toISOString()
@@ -133,10 +141,24 @@ export function Calendar({
   garments,
   wears,
   onOpenWardrobe,
+  openDay,
+  onOpenDayConsumed,
 }: Props) {
-  // one anchor day drives both grids: its month, or the week around it
-  const [cursor, setCursor] = useState(() => dayStart(new Date()))
-  const [sheetDay, setSheetDay] = useState<Date | null>(null)
+  // one anchor day drives both grids: its month, or the week around it. A day
+  // asked for opens with the first paint when the Calendar mounts for it, and
+  // through the effect below when the Calendar is already on screen.
+  const [cursor, setCursor] = useState(() => dayOfKey(openDay) ?? dayStart(new Date()))
+  const [sheetDay, setSheetDay] = useState<Date | null>(() => dayOfKey(openDay))
+  useEffect(() => {
+    if (!openDay) return
+    const day = dayOfKey(openDay)
+    if (day) {
+      setCursor(day)
+      setSheetDay(day)
+    }
+    onOpenDayConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDay])
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
   const [addFor, setAddFor] = useState<string | null>(null)

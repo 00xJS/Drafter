@@ -15,7 +15,15 @@ export const Bills = preloadable(() => import('../Bills').then(m => m.Bills), 'B
 export const NotesView = preloadable(() => import('../NotesView').then(m => m.NotesView), 'NotesView')
 export const People = preloadable(() => import('../People').then(m => m.People), 'People')
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
+// People → People's Stats and People → Places' Stats, behind each segment's
+// List · Stats switch, each with the counting only it reads (peoplestats.ts,
+// placestats.ts) in a chunk of its own
+export const PeopleStats = preloadable(() => import('../PeopleStats').then(m => m.PeopleStats), 'PeopleStats')
+export const PlacesStats = preloadable(() => import('../PlacesStats').then(m => m.PlacesStats), 'PlacesStats')
 export const Kitchen = preloadable(() => import('../Kitchen').then(m => m.Kitchen), 'Kitchen')
+// Kitchen → Stats and the Stats kit it draws with: a chunk of its own, which
+// the Kitchen imports from here and a finger on the Kitchen tab warms too
+export const KitchenStats = preloadable(() => import('../kitchen/KitchenStats').then(m => m.KitchenStats), 'KitchenStats')
 export const Review = preloadable(() => import('../Review').then(m => m.Review), 'Review')
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
 // Only Today's card and the thumbnails it draws stay in the Planner chunk.
@@ -41,13 +49,13 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   home: [Review.preload, Wardrobe.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
-  people: [People.preload, Places.preload],
-  kitchen: [Kitchen.preload],
+  people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload],
+  kitchen: [Kitchen.preload, KitchenStats.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, Kitchen, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

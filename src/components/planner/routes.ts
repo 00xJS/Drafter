@@ -39,6 +39,10 @@ export const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', 
 /** …and the former Today / Review views land on the matching Home segment.
  *  The wardrobe was never a view; `?view=wardrobe` is simply its link. */
 export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week', wardrobe: 'wardrobe' }
+/** What a link's view names in one of these tables, or null: a table's own
+ *  names only, so `?view=constructor` or `?view=__proto__` names nothing. */
+export const viewIn = <T>(table: Record<string, T>, view: string | undefined): T | null =>
+  view && Object.prototype.hasOwnProperty.call(table, view) ? table[view] : null
 
 /** An inbound link, held as parsed pieces so a replay keeps its provenance. */
 export type PendingLink = { host: string; params: URLSearchParams; allowAct?: boolean }
@@ -81,11 +85,13 @@ export interface Toast {
   action?: { label: string; run: () => void }
 }
 
-// The two segmented views remember which half you chose — but only when you
+// The segmented views remember which half you chose — but only when you
 // chose it. Everything else (a deep link, a nudge, the palette's Board or
-// Notes) moves the segment for that visit alone, so a template's new tasks
-// shown on the Board cannot leave Tasks opening there, and the People tab
-// cannot get pinned to Places by one search result.
+// Notes, a day opened from People → Stats or Places → Stats) moves the
+// segment for that visit alone, so a template's new tasks shown on the Board
+// cannot leave Tasks opening there, the People tab cannot get pinned to
+// Places by one search result, and one day tapped in Stats cannot move the
+// Calendar off the Timeline.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)
@@ -101,3 +107,62 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
+/** The Calendar's Month · Week · Timeline, as last chosen on its three buttons (a day opened from Stats does not count); the month otherwise. */
+export const storedCalMode = (): CalendarMode => {
+  try {
+    const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
+    return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
+  } catch {
+    return 'month'
+  }
+}
+
+/** People's and Places' own switch: the list, or its figures. Each segment
+ *  remembers its own, chosen on its buttons; a link, the palette or a search
+ *  result moves it for that visit alone, as it moves the segments. */
+export type InnerView = 'list' | 'stats'
+export const INNER_VIEWS: { key: InnerView; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'stats', label: 'Stats' },
+]
+export type InnerViews = Record<PeopleTab, InnerView>
+export const INNER_VIEW_KEYS: Record<PeopleTab, string> = { people: 'drafter:people-view', places: 'drafter:places-view' }
+export const storedInnerView = (tab: PeopleTab): InnerView => {
+  try {
+    return localStorage.getItem(INNER_VIEW_KEYS[tab]) === 'stats' ? 'stats' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('people'), places: storedInnerView('places') })
+
+/** A Stats view's own link, as `?view=wardrobe` opens Home → Wardrobe:
+ *  `?view=people-stats` and `?view=places-stats` open that segment of People
+ *  on its Stats, for that visit. */
+export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people', 'places-stats': 'places' }
+/** The segment a link's view opens on its Stats, or null. Its own names only, so `?view=constructor` names none. */
+export const peopleTabOfStatsView = (view: string | undefined): PeopleTab | null => viewIn(STATS_VIEW_TO_PEOPLE, view)
+
+/** Kitchen's four segments: the recipes, the week's meals, the grocery list and
+ *  the figures. Kitchen remembers the one chosen by its buttons, as Tasks does. */
+export type KitchenTab = 'recipes' | 'week' | 'grocery' | 'stats'
+export const KITCHEN_TABS: { key: KitchenTab; label: string }[] = [
+  { key: 'recipes', label: 'Recipes' },
+  { key: 'week', label: 'This week' },
+  { key: 'grocery', label: 'Grocery' },
+  { key: 'stats', label: 'Stats' },
+]
+export const KITCHEN_TAB_KEY = 'drafter:kitchen-tab'
+export const storedKitchenTab = (): KitchenTab => {
+  try {
+    const saved = localStorage.getItem(KITCHEN_TAB_KEY)
+    return KITCHEN_TABS.find(t => t.key === saved)?.key ?? 'recipes'
+  } catch {
+    return 'recipes'
+  }
+}
+/** Links to a Kitchen segment, as `?view=wardrobe` is one to Home's: `?view=kitchen-stats`
+ *  opens Kitchen on Stats, for that visit only. */
+export const VIEW_TO_KITCHEN: Record<string, KitchenTab> = { 'kitchen-stats': 'stats' }
+/** The Kitchen segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
+export const kitchenTabOfView = (view: string | undefined): KitchenTab | null => viewIn(VIEW_TO_KITCHEN, view)

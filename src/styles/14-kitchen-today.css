@@ -164,6 +164,15 @@
 .meal-day.today {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
+/* a day opened from Stats' dinner calendar: scrolled to clear of the sticky
+   .topbar, as the journal's days are, and framed for the visit */
+.meal-week > .meal-day {
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.meal-day.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .meal-day-head {
   display: flex;
   justify-content: space-between;
@@ -649,6 +658,191 @@
     min-height: 44px;
   }
   .recipe-suggest-more summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* ============================================================
+   Kitchen → Stats (components/kitchen/KitchenStats.tsx)
+   ------------------------------------------------------------
+   Drawn with the Stats kit, whose cards, bars, lists, podium
+   and photo calendar are styled in 05-stats-charts.css and
+   18-wardrobe.css. These are the Kitchen's own pieces: a dish
+   drawn as its emoji or first letters, and the three ways a
+   meal is had, each in its colour — cooked in the chart's own,
+   eaten out in the calendar's blue for a night out, bought in
+   rose.
+   ============================================================ */
+.kitchen-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kitchen-tiles .stat-value {
+  font-size: 1.5rem;
+}
+/* a dish with no photo: its emoji, or its first letters, on a tile */
+.kitchen-dish {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 700;
+  line-height: 1;
+}
+.kitchen-dish.thumb-28 {
+  font-size: 0.8125rem;
+}
+.kitchen-dish.thumb-40 {
+  font-size: 1.125rem;
+}
+.kitchen-dish.podium-photo {
+  font-size: 2rem;
+}
+/* a day's dinner under its date: its dish, where it was eaten, or 🥡 */
+.kitchen-cal-dish {
+  position: absolute;
+  inset: 12px 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+/* and a bar along the day's foot in the colour the chart below keys it by */
+.photo-cal-cell.dinner-cooked .photo-cal-day::after,
+.photo-cal-cell.dinner-out .photo-cal-day::after,
+.photo-cal-cell.dinner-bought .photo-cal-day::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+}
+.photo-cal-cell.dinner-cooked .photo-cal-day::after {
+  background: var(--viz-series-1);
+}
+.photo-cal-cell.dinner-out .photo-cal-day::after {
+  background: var(--cal-meal-out);
+}
+.photo-cal-cell.dinner-bought .photo-cal-day::after {
+  background: var(--tone-rose);
+}
+/* tonight's dinner out before its outing counts here (outingsAt's midday
+   UTC): a plan, dashed as a day to come is, and with no bar */
+.photo-cal-cell.dinner-planned .photo-cal-day {
+  border-style: dashed;
+}
+/* the three ways a meal is had, as a mark (a chart's column, a share bar's part) or a key's swatch */
+.kitchen-way-cooked {
+  fill: var(--viz-series-1);
+  background: var(--viz-series-1);
+}
+.kitchen-way-out {
+  fill: var(--cal-meal-out);
+  background: var(--cal-meal-out);
+}
+.kitchen-way-bought {
+  fill: var(--tone-rose);
+  background: var(--tone-rose);
+}
+.kitchen-month-bars .tick-label.now {
+  fill: var(--text-2);
+  font-weight: 700;
+}
+.kitchen-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+.kitchen-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.kitchen-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+/* the year's figures as a table, for a reader who wants them exact */
+.kitchen-by-month {
+  margin-top: 8px;
+}
+.kitchen-by-month summary {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+/* the base sheet rings a focused field or button, not a summary */
+.kitchen-by-month summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.kitchen-by-month td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* lunch and dinner: each a bar split by how it was had, a 2px gap of the card between the parts */
+.kitchen-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kitchen-share-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.8125rem;
+}
+.kitchen-share-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.kitchen-share-bar > span {
+  flex: 1 1 0;
+  min-width: 3px;
+}
+.kitchen-share-line {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+
+/* Kitchen holds four segments since Stats joined it: on a phone their labels
+   grow with Dynamic Type only so far, as Home's do, or "This week" wraps and
+   crowds Grocery on a 375pt row (19-native-shell.css narrows the thumbs) */
+@media (max-width: 640px) {
+  .kitchen-seg .seg {
+    font-size: calc(13px * min(1.15, var(--type-scale)));
+  }
+}
+@media (pointer: coarse) {
+  .kitchen-by-month summary {
     display: flex;
     align-items: center;
     min-height: 44px;

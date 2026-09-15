@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildDigest } from '../../shared/digest.mjs'
 import { Places } from '../components/Places'
+import { PlacesStats } from '../components/PlacesStats'
 import { Today } from '../components/Today'
 import { buildLocalReminders } from '../reminders'
 import type { Meal, Place, Task } from '../types'
@@ -128,24 +129,32 @@ describe('a takeaway last night means it has not been a while', () => {
   })
 })
 
-describe('the Places tab counts meals eaten out, as its rows do', () => {
+describe('Places and its Stats count meals eaten out, as its rows do', () => {
   const page = (over: Partial<ComponentProps<typeof Places>> = {}) =>
     renderToStaticMarkup(
       <Places places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} onSave={noop} onDelete={noop} onLogOuting={noop} onPlan={noop} onOpenTask={noop} {...over} />,
     )
+  const stats = (over: Partial<ComponentProps<typeof PlacesStats>> = {}) =>
+    renderToStaticMarkup(<PlacesStats places={[nopi]} people={[]} tasks={[july]} meals={[takeaway]} onOpenPlace={noop} onPlan={noop} now={NOW} {...over} />)
 
   it('Outings this year counts the takeaway beside the logged dinner, and not next Friday', () => {
-    const html = page({ meals: [takeaway, friday] })
-    // the row counts the last 12 months, as its 12mo figure does; the tile counts the calendar year
-    expect(html).toContain('2 times in 12 months · ate here 1 time')
-    expect(html).toMatch(/Outings this year<\/div><div class="stat-value">2</)
-    expect(page({ meals: [] })).toMatch(/Outings this year<\/div><div class="stat-value">1</)
+    // the row counts the last 12 months, as its 12mo figure does; the Stats tile counts the calendar year
+    expect(page({ meals: [takeaway, friday] })).toContain('2 times in 12 months · ate here 1 time')
+    expect(stats({ meals: [takeaway, friday] })).toMatch(/Outings this year<\/div><div class="stat-value">2</)
+    expect(stats({ meals: [] })).toMatch(/Outings this year<\/div><div class="stat-value">1</)
   })
 
-  it('shows the year in places under the list, in its own scrolling box, and says what it counts', () => {
+  it('keeps the list to the places: its tiles and the year in places moved to Stats', () => {
     const html = page()
-    const table = sectionAt(html, 'class="chart-card year-report"')
-    expect(html.indexOf('class="people-list"')).toBeLessThan(html.indexOf('class="chart-card year-report"'))
+    expect(html).toContain('class="people-list"')
+    expect(html).not.toContain('kpi-row')
+    expect(html).not.toContain('year-report')
+    expect(html).not.toContain('Outings this year')
+  })
+
+  it('shows the year in places on Stats, in its own scrolling box, and says what it counts', () => {
+    const html = stats()
+    const table = sectionAt(html, 'class="chart-card year-report')
     expect(table).toContain('<h3>The year in places</h3>')
     expect(table).toContain('Outings per month, a meal eaten out there included, two in one day counted as two')
     expect(table).toContain('<div class="table-scroll"><table class="year-table">')
@@ -160,5 +169,6 @@ describe('the Places tab counts meals eaten out, as its rows do', () => {
 
   it('has nothing to show before any place is saved', () => {
     expect(page({ places: [] })).not.toContain('year-report')
+    expect(stats({ places: [] })).not.toContain('year-report')
   })
 })

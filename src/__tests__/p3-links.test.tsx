@@ -43,6 +43,7 @@ function links() {
     openSheet: log('openSheet'),
     goTasksTab: log('tasksTab'),
     goPeopleTab: log('peopleTab'),
+    openStats: log('stats'),
     setHomeTab: log('homeTab'),
     setView: log('view'),
     openJournal: log('journal'),
@@ -111,6 +112,32 @@ describe('plan= links open a sheet and write nothing (B5)', () => {
     const { apply, calls } = links()
     apply('drafter://new?plan=day')
     expect(calls.filter(c => c.startsWith('openSheet'))).toEqual([])
+  })
+})
+
+describe('a Stats view has a link, as the wardrobe has ?view=wardrobe', () => {
+  it('?view=places-stats opens People → Places on its Stats, for the visit, and writes nothing', () => {
+    for (const raw of ['/?view=places-stats', 'drafter://open?view=places-stats']) {
+      const { apply, calls } = links()
+      apply(raw)
+      expect(calls, raw).toEqual(['stats ["places"]'])
+    }
+  })
+
+  it('leaves ?tab=places on whichever half Places was showing', () => {
+    const { apply, calls } = links()
+    apply('/?tab=places')
+    expect(calls).toEqual(['peopleTab ["places"]', 'view ["people"]'])
+  })
+})
+
+describe('a view name is read from its own tables only', () => {
+  it('opens nothing for a name every object inherits', () => {
+    for (const raw of ['/?view=constructor', '/?view=toString', 'drafter://open?view=__proto__']) {
+      const { apply, calls } = links()
+      apply(raw)
+      expect(calls, raw).toEqual([])
+    }
   })
 })
 

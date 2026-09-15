@@ -1,6 +1,7 @@
 import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
 import { outingsAt } from './places'
 import { weekRange } from './review'
+import { daysBetween } from './stats'
 import { dateKey } from './utils'
 import { newerStamp } from '../shared/domain.mjs'
 import { mealHistory } from '../shared/weekplan.mjs'
@@ -115,8 +116,8 @@ export function cookedIndex(recipes: readonly Recipe[], meals: readonly Meal[], 
   return { dayKey, byId }
 }
 
-/** Whole days from one day key to another. */
-export const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+/** Whole days from one day key to another: the Stats rules' own (src/stats.ts), under the name Kitchen has always used. */
+export { daysBetween }
 
 /** "today", "yesterday", "5 days ago", "3 weeks ago", "4 months ago": how long ago, as the meal plan says it. */
 export function daysAgo(days: number): string {

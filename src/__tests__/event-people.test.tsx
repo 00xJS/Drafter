@@ -9,6 +9,7 @@ import type { AskSources } from '../ask'
 import { EventEditor, buildEntry } from '../components/EventEditor'
 import { enterPick } from '../components/PeoplePicker'
 import { People } from '../components/People'
+import { PeopleStats } from '../components/PeopleStats'
 import { Today } from '../components/Today'
 import { PeoplePlace } from '../components/taskeditor/PeoplePlace'
 import { blocksOn } from '../focus'
@@ -189,15 +190,22 @@ describe('a past event of your own counts toward the People figures', () => {
   const page = (over: Partial<ComponentProps<typeof People>> = {}) =>
     renderToStaticMarkup(<People people={[mum]} tasks={[]} onSave={noop} onDelete={noop} onLogVisit={noop} onPlan={noop} onOpenTask={noop} {...over} />)
 
+  const stats = (over: Partial<ComponentProps<typeof PeopleStats>> = {}) =>
+    renderToStaticMarkup(<PeopleStats people={[mum]} tasks={[]} onSaw={noop} onOpenPerson={noop} now={NOW} {...over} />)
+
   it('reads on the People page exactly as the same event from another calendar does once logged', () => {
     const mine = page({ entries: [lunch] })
     expect(mine).toBe(page({ tasks: [logged(lunch, ['mum'])] }))
     expect(mine).toContain('Last seen 1 day ago')
-    expect(mine).toMatch(/Occasions<\/div><div class="stat-value">1</)
-    expect(mine).toMatch(/People seen<\/div><div class="stat-value">1</)
+    // …and on People → Stats, where the list's tiles went
+    const figures = stats({ entries: [lunch] })
+    expect(figures).toBe(stats({ tasks: [logged(lunch, ['mum'])] }))
+    expect(figures).toMatch(/Occasions<\/div><div class="stat-value">1</)
+    expect(figures).toMatch(/People seen<\/div><div class="stat-value">1</)
     // …and without it, Mum has no visits at all
     expect(page()).toContain('No visits yet')
     expect(page({ entries: [{ ...lunch, peopleIds: undefined }] })).toBe(page())
+    expect(stats()).toMatch(/Occasions<\/div><div class="stat-value">0</)
   })
 
   function renderToday(over: Partial<ComponentProps<typeof Today>> = {}) {

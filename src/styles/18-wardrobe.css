@@ -1188,7 +1188,8 @@
   color: var(--muted);
 }
 
-/* ----- Stats */
+/* ----- Stats. The Stats kit (src/components/stats) draws every area's with
+   these too, under its stats- names beside the wardrobe's own. */
 .wardrobe-stats {
   display: flex;
   flex-direction: column;
@@ -1197,11 +1198,13 @@
 .wardrobe-tiles .stat-value {
   font-size: 1.5rem;
 }
-.wardrobe-hbars .hbar-row {
+.wardrobe-hbars .hbar-row,
+.stats-hbars .hbar-row {
   gap: 8px;
 }
 /* the shared bars' label is a fixed 92px gutter; here it carries a thumbnail and a name */
-.hbars .wardrobe-hbar-label {
+.hbars .wardrobe-hbar-label,
+.hbars .stats-hbar-label {
   flex: none;
   width: 42%;
   min-width: 0;
@@ -1216,7 +1219,8 @@
   font-size: 0.8125rem;
   text-align: left;
 }
-.wardrobe-hbar-name {
+.wardrobe-hbar-name,
+.stats-hbar-name {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -1235,7 +1239,8 @@
   border-radius: 8px;
 }
 .wardrobe-list,
-.wardrobe-repeats {
+.wardrobe-repeats,
+.stats-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1244,12 +1249,14 @@
   gap: 6px;
 }
 .wardrobe-list-row,
-.wardrobe-repeat {
+.wardrobe-repeat,
+.stats-list-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.wardrobe-list-piece {
+.wardrobe-list-piece,
+.stats-list-piece {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1264,13 +1271,15 @@
   text-align: left;
 }
 .wardrobe-list-piece > span,
+.stats-list-piece > span,
 .wardrobe-repeat-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
-.wardrobe-list-name {
+.wardrobe-list-name,
+.stats-list-name {
   font-size: 0.875rem;
   font-weight: 600;
   white-space: nowrap;
@@ -1287,7 +1296,8 @@
   width: 16px;
   height: 16px;
 }
-.wardrobe-month-total {
+.wardrobe-month-total,
+.stats-month-total {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1785,6 +1795,7 @@ button.photo-cal-day:focus-visible {
   .snap-hide,
   .wardrobe-forgot,
   .wardrobe-list-piece,
+  .stats-list-piece,
   .clothes-sort select,
   .clothes-season,
   .wardrobe-card-note,
