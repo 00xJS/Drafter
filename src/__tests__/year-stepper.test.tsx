@@ -6,6 +6,8 @@ import { PeopleStats } from '../components/PeopleStats'
 import { PlacesStats } from '../components/PlacesStats'
 import { ChartCard, Stepper } from '../components/stats'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
+import { NO_PERSON_FILTER } from '../people'
+import { NO_PLACE_FILTER } from '../places'
 import type { Person, Place } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
 import { elements, settled, type El } from './rendered'
@@ -31,12 +33,12 @@ const VIEWS: { name: string; card: string; draw(act?: Act): ReactNode }[] = [
   {
     name: 'People',
     card: 'The year with people',
-    draw: act => settled(PeopleStats, { people: [mum], tasks: [], onSaw: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }, act),
+    draw: act => settled(PeopleStats, { people: [mum], tasks: [], filter: NO_PERSON_FILTER, onFilter: noop, onSaw: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }, act),
   },
   {
     name: 'Places',
     card: 'The year in places',
-    draw: act => settled(PlacesStats, { places: [cafe], people: [], tasks: [], meals: [], onOpenPlace: noop, onPlan: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }, act),
+    draw: act => settled(PlacesStats, { places: [cafe], people: [], tasks: [], meals: [], filter: NO_PLACE_FILTER, onFilter: noop, onOpenPlace: noop, onPlan: noop, onOpenPerson: noop, onOpenDay: noop, now: NOW }, act),
   },
   {
     name: 'Wardrobe',
