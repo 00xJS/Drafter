@@ -1,6 +1,6 @@
 # Drafter
 
-Drafter is a personal planner and home journal for one life. Everything sits in one ongoing project (the owner's is called LIFE), so nothing asks which project a thing belongs to. It's an installable web app and the same app on the iPhone, works offline, syncs through Supabase, and lets assistants such as Claude help, within the permissions you give them.
+Drafter is a personal planner and home journal for one life. Everything sits in one ongoing home project, so nothing asks which project a thing belongs to. It's an installable web app and the same app on the iPhone, works offline, syncs through Supabase, and lets assistants such as Claude help, within the permissions you give them.
 
 Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other views as segments rather than more tabs. It's light by default, with Dark and Match system in Settings → Appearance.
 
@@ -26,7 +26,12 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 - **Month** and **Week** show tasks, events, meals, birthdays and work days together; drag a task to move it. **Timeline** lays out the project and its milestones.
 - Events block time; 🏠 Home and 🏢 Office work days never do.
 - Connect **Google** and **Outlook** accounts to see their calendars here, and mirror your tasks and events into a Drafter calendar in each; changes made there come back. Any `.ics` link overlays read-only, and a private subscribe link feeds Apple Calendar.
-- **Reminders**: push and a morning digest with the app closed (or by email), browser notifications while it's open, and reminders set on the iPhone itself. Mirrored copies carry no reminders, so nothing rings twice.
+- **Reminders**: push and a morning digest with the app closed (or by email), browser notifications while it's open, and reminders set on the iPhone itself. Mirrored copies carry no reminders, so nothing rings twice, unless you turn on *Calendar copies remind me too* (Settings → Reminders, off by default).
+
+### People and Places
+
+- Give each person a rhythm ("every 2 weeks"). Done tasks, past events and one-tap logs count as seeing them, and Today says who's due a catch-up. Birthdays and anniversaries come with **Plan a gift**.
+- **Places** (restaurants, cafés, bars, the outdoors and more) track when you last went, how often and with whom; a meal eaten out counts. A return rhythm nudges you, and ✨ **Where should we go?** suggests outings.
 
 ### Kitchen
 
@@ -34,12 +39,9 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 - **This week** plans breakfast, lunch and dinner, cooked or eaten out, and every meal shows on the calendar. **Grocery** builds the list from the plan.
 - **Plan this week's meals** proposes dinners for the empty nights, and ✨ suggests recipes like the ones you cook.
 
-### People and Places
-
-- Give each person a rhythm ("every 2 weeks"). Done tasks, past events and one-tap logs count as seeing them, and Today says who's due a catch-up. Birthdays and anniversaries come with **Plan a gift**.
-- **Places** (restaurants, cafés, bars, the outdoors and more) track when you last went, how often and with whom; a meal eaten out counts. A return rhythm nudges you, and ✨ **Where should we go?** suggests outings.
-
 ### Wardrobe
+
+Home's fourth segment.
 
 - **Add clothing** from photos, each cut out onto white on the device and checked by you (Looks good, Use original or Retake). A piece can have a back photo and be marked for Work, Personal or Both.
 - **Outfit** dresses a day by swiping through tops, bottoms, outerwear and shoes, and knows a work day from a day off. **Surprise me** deals a look, **Wearing this** logs it, and you can plan up to a year ahead (a plan counts only once it's worn).
@@ -64,7 +66,7 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
 The same app in a Capacitor shell, with:
 
 - iOS sheets, haptics and pull to refresh;
-- reminders the phone schedules itself, and a **Plan your day** notification at 8:00;
+- reminders the phone schedules itself, and a **Plan your day** notification each morning (8:00 unless you change it);
 - **Lock this iPhone** with Face ID, Touch ID or the passcode;
 - Apple's own subject lifting for the cut-out, on iOS 17 and later;
 - `drafter://` links, Home Screen quick actions and a Shortcut for the share sheet.
@@ -72,12 +74,12 @@ The same app in a Capacitor shell, with:
 ## Privacy and your data
 
 - **Local first.** Records live on the device and sync to Supabase, so the app works offline. Edits from two devices merge field by field; when both changed the same field, the newer one wins and a toast offers **Keep mine**.
-- **Household.** Settings → Household shares the project, tasks, notes, events, people, places and the kitchen with members you invite. Your journal, habits, routines, reviews, calendar subscriptions and wardrobe stay yours alone.
+- **Household.** Settings → Household shares the project, tasks, notes, events, people, places and the kitchen with members you invite. Your journal, habits, routines, reviews, calendar subscriptions and wardrobe never reach the household.
 - **Photos.** Note and task photos are shared with the household; wardrobe photos go in a folder only you can read.
-- **Backups.** Each night the server saves a snapshot of every account in private storage and keeps the newest 14; the owner downloads them from **Admin → Backups**. Anyone can export a JSON file from Tasks → List.
+- **Backups.** Each night the server saves a snapshot of every account, journal included, in private storage and keeps the newest 14; only the site owner can download them, from **Admin → Backups**. Anyone can export a JSON file from Tasks → List.
 - **Assistants** never get a wardrobe photo, and see the journal only with permission. Ask Drafter sends only the matching records, masks email addresses and phone numbers, and reads the journal only while its chip is on.
-- **AI.** ✨ requests go to NVIDIA first. Claude is an optional backup, used when its key is set and NVIDIA is busy or fails.
-- **On the device.** The cut-out never sends a photo anywhere, and the weather is off until you turn it on.
+- **AI.** ✨ requests go through Drafter's own server (the keys never reach the browser), to NVIDIA first. Claude is an optional backup, used when its key is set and NVIDIA is busy or fails; `AI_PROVIDER` can force one or the other.
+- **What leaves the device.** The cut-out never sends a photo anywhere. The weather is off until you turn it on, and then only rounded coordinates go to Open-Meteo.
 
 ## Run it
 
@@ -98,10 +100,11 @@ The smoke tests aren't part of `check`, since Netlify has no Postgres. Run `db:s
 
 ## Deploy
 
-- **Web.** Netlify builds `main` with `npm run check`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (for the server features) and `NVIDIA_API_KEY`, with `ANTHROPIC_API_KEY` as the optional backup; the rest are optional. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin.
+- **Web.** Netlify builds `main` with `npm run check`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (for the server features) and `NVIDIA_API_KEY`, with `ANTHROPIC_API_KEY` as the optional backup; the rest (a second NVIDIA key, GitHub, Google, Outlook, push, email, APNs) are optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin.
 - **Database.** The owner applies migrations with `supabase db push` before deploying code that needs them. A new kind of record must be on the sync allow-list first, or the server refuses it.
-- **Bot.** `supabase functions deploy bot --use-api`, with `BOT_TOKEN` set as a Supabase secret.
+- **Bot.** `supabase functions deploy bot` (add `--use-api` if Docker isn't running), with `BOT_TOKEN` set as a Supabase secret.
 - **iPhone.** `npm run ios`, then Run in Xcode. Free signing lasts 7 days, and the app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
+- **Checks.** Admin → Integrations has **Test AI**, **Send test push** and **Preview my digest**; Admin → Data shows what the database holds, and an hourly sync check puts a banner on the owner's Today if the server refuses a kind of record.
 
 ### When you join the Apple Developer Program
 
@@ -114,16 +117,13 @@ These need the paid program ($99 a year). The same list is in the app under Admi
 5. **TestFlight and the App Store.** `npm run build:ios`, then in Xcode *Product → Archive → Distribute App → App Store Connect*.
 6. **Later builds.** A Home Screen widget and a share extension, neither built yet.
 
-## Third-party
-
-### Garment cut-out
+## Garment cut-out
 
 The cut-out runs on the device: Apple's Vision on iOS 17 and later, and elsewhere MediaPipe's interactive segmenter with the MagicTouch model (about 17.5 MB, downloaded once on the web). Credits: MediaPipe Tasks Vision 1.0.1 (© Google LLC, Apache-2.0, https://github.com/google-ai-edge/mediapipe) and the MediaPipe MagicTouch interactive segmentation model v1 (© Google LLC, Apache-2.0, [model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf)). `/cutout/LICENSE`, `/cutout/NOTICE` and `/cutout/THIRD_PARTY_LICENSES` ship beside them, the last covering the BSD, MIT and MPL-2.0 libraries in the WASM runtime; `public/cutout/NOTICE` lists every component. Nothing AGPL, non-commercial or paid is used.
 
 ## Later
 
 - The paid Apple items above.
-- A Home Screen widget and a share extension.
 - Places nearby-now ("I'm here"), which needs the location permission and a native build.
 
 ---
