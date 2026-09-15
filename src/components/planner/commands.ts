@@ -1,7 +1,7 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import type { HomeTab, PeopleTab, TasksTab, View } from './routes'
+import type { HomeTab, KitchenTab, PeopleTab, TasksTab, View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
@@ -14,6 +14,8 @@ export interface PaletteNav {
   goTasksTab(tab: TasksTab): void
   setPeopleTab(tab: PeopleTab): void
   openWardrobe(o?: WardrobeOpen): void
+  /** Kitchen, on the segment named for this visit only, or the one last chosen. */
+  openKitchen(tab?: KitchenTab): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -34,7 +36,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, openWardrobe, openKitchen } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   return [
@@ -63,6 +65,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => { setPeopleTab('people'); setView('people') } },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => { setPeopleTab('places'); setView('people') } },
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
+    // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
+    { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]
 }

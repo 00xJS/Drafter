@@ -101,3 +101,28 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
+
+/** Kitchen's four segments: the recipes, the week's meals, the grocery list and
+ *  the figures. Kitchen remembers the one chosen by its buttons, as Tasks does. */
+export type KitchenTab = 'recipes' | 'week' | 'grocery' | 'stats'
+export const KITCHEN_TABS: { key: KitchenTab; label: string }[] = [
+  { key: 'recipes', label: 'Recipes' },
+  { key: 'week', label: 'This week' },
+  { key: 'grocery', label: 'Grocery' },
+  { key: 'stats', label: 'Stats' },
+]
+export const KITCHEN_TAB_KEY = 'drafter:kitchen-tab'
+export const storedKitchenTab = (): KitchenTab => {
+  try {
+    const saved = localStorage.getItem(KITCHEN_TAB_KEY)
+    return KITCHEN_TABS.find(t => t.key === saved)?.key ?? 'recipes'
+  } catch {
+    return 'recipes'
+  }
+}
+/** Links to a Kitchen segment, as `?view=wardrobe` is one to Home's: `?view=kitchen-stats`
+ *  opens Kitchen on Stats, for that visit only. */
+export const VIEW_TO_KITCHEN: Record<string, KitchenTab> = { 'kitchen-stats': 'stats' }
+/** The Kitchen segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
+export const kitchenTabOfView = (view: string | undefined): KitchenTab | null =>
+  view && Object.prototype.hasOwnProperty.call(VIEW_TO_KITCHEN, view) ? VIEW_TO_KITCHEN[view] : null

@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -29,6 +29,7 @@ interface Deps {
   openJournal: Nav['openJournal']
   openPlace: Nav['openPlace']
   openPerson: Nav['openPerson']
+  openKitchen: Nav['openKitchen']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -54,6 +55,7 @@ export function useDeepLinks({
   openJournal,
   openPlace,
   openPerson,
+  openKitchen,
   changeStatus,
   defer,
 }: Deps) {
@@ -99,12 +101,16 @@ export function useDeepLinks({
     // Every inbound link lands on the view it names. Views that became segments
     // still resolve: board / bills / notes open the Tasks tab on that segment,
     // and the former today / review views open Home on the day or the week.
+    // kitchen-stats opens Kitchen on Stats, for this visit only.
+    const kitchenTab = kitchenTabOfView(parsed.view)
     if (parsed.view && LEGACY_VIEW_TO_TASKS[parsed.view]) {
       goTasksTab(LEGACY_VIEW_TO_TASKS[parsed.view])
       setView('tasks')
     } else if (parsed.view && LEGACY_VIEW_TO_HOME[parsed.view]) {
       setHomeTab(LEGACY_VIEW_TO_HOME[parsed.view])
       setView('home')
+    } else if (kitchenTab) {
+      openKitchen(kitchenTab)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

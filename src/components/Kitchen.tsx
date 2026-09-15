@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -45,10 +45,10 @@ import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
+import { KitchenStats } from './planner/lazy'
+import { KITCHEN_TABS, KITCHEN_TAB_KEY, storedKitchenTab, type KitchenTab } from './planner/routes'
 import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
-type Seg = 'recipes' | 'week' | 'grocery'
-const SEG_KEY = 'drafter:kitchen-tab'
 /** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month and not on the plan, longest ago first. */
 type RecipeView = 'all' | 'lately'
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
@@ -78,17 +78,14 @@ interface Props {
   feedEvents?: CalendarEvent[]
   /** Optional: the planner's toast. With it the meal plan's confirmation and Undo go there; without it they stay in the sheet. */
   onToast?(msg: string, undo?: () => void): void
+  /** A segment to open on for this visit only (the palette's Kitchen stats, ?view=kitchen-stats); consumed, like openRecipe. */
+  openTab?: KitchenTab | null
+  onOpenTabConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast }: Props) {
-  const [seg, setSeg] = useState<Seg>(() => {
-    try {
-      const saved = localStorage.getItem(SEG_KEY) as Seg | null
-      return saved === 'week' || saved === 'grocery' || saved === 'recipes' ? saved : 'recipes'
-    } catch {
-      return 'recipes'
-    }
-  })
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed }: Props) {
+  // the segment last chosen, unless a way in names one for this visit
+  const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(() => {
     try {
       return localStorage.getItem(RECIPE_VIEW_KEY) === 'lately' ? 'lately' : 'all'
@@ -124,10 +121,10 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     return recipeView === 'lately' ? notLately(found, cooked) : found
   }, [recipes, q, recipeView, cooked])
 
-  const setTab = (s: Seg) => {
+  const setTab = (s: KitchenTab) => {
     setSeg(s)
     try {
-      localStorage.setItem(SEG_KEY, s)
+      localStorage.setItem(KITCHEN_TAB_KEY, s)
     } catch {
       /* ignore */
     }
@@ -201,13 +198,27 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRecipe])
 
+  // a way in (the palette, a link) moves the segment for this visit only: the
+  // one last chosen with its button stays remembered
+  useEffect(() => {
+    if (!openTab) return
+    setSeg(openTab)
+    onOpenTabConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTab])
+  /** Stats' dinner calendar: that day's week on This week, for this visit only. */
+  const goDay = (day: string) => {
+    setAnchor(new Date(`${day}T12:00:00`))
+    setSeg('week')
+  }
+
   return (
     <div className="kitchen">
       <div className="people-tab-seg">
         <span className="segmented">
-          {(['recipes', 'week', 'grocery'] as const).map(s => (
-            <button key={s} className={seg === s ? 'seg on' : 'seg'} onClick={() => setTab(s)}>
-              {s === 'recipes' ? 'Recipes' : s === 'week' ? 'This week' : 'Grocery'}
+          {KITCHEN_TABS.map(t => (
+            <button key={t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
+              {t.label}
             </button>
           ))}
         </span>
@@ -339,6 +350,14 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSave={onSave}
         />
+      )}
+
+      {/* Stats is a chunk of its own, with the kit it draws with: until it is
+          here, a quiet placeholder sits under the segment row */}
+      {seg === 'stats' && (
+        <Suspense fallback={<div className="view-pending" aria-busy="true" />}>
+          <KitchenStats recipes={recipes} meals={meals} groceries={groceries} places={places} onOpenRecipe={r => cook(r)} onGoDay={goDay} />
+        </Suspense>
       )}
 
       {/* Unmounted while its recipe is edited (it keeps its stored ticks for

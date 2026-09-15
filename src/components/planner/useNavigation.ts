@@ -9,6 +9,7 @@ import {
   storedTasksTab,
   type CalendarMode,
   type HomeTab,
+  type KitchenTab,
   type PeopleTab,
   type TasksTab,
   type View,
@@ -113,6 +114,13 @@ export function useNavigation() {
   }
   /** A recipe for Kitchen to open (Today's "tonight's dinner"); consumed by the view. */
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
+  /** A Kitchen segment to open on (the palette's Kitchen stats, ?view=kitchen-stats); consumed
+   *  by the view, so the segment moves for this visit only and the one last chosen stays remembered. */
+  const [kitchenOpen, setKitchenOpen] = useState<KitchenTab | null>(null)
+  const openKitchen = (tab?: KitchenTab) => {
+    if (tab) setKitchenOpen(tab)
+    setView('kitchen')
+  }
   /** A note for Tasks → Notes to open (the palette's search); consumed by the view. */
   const [noteOpenId, setNoteOpenId] = useState<string | null>(null)
   const openNote = (id: string) => {
@@ -165,6 +173,9 @@ export function useNavigation() {
     openJournal,
     kitchenRecipe,
     setKitchenRecipe,
+    kitchenOpen,
+    setKitchenOpen,
+    openKitchen,
     noteOpenId,
     setNoteOpenId,
     openNote,
