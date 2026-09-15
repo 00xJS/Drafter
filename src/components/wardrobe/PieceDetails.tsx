@@ -104,7 +104,7 @@ export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }
         <span>
           Price <small className="muted">(what it cost)</small>
         </span>
-        <input value={price} inputMode="decimal" maxLength={12} placeholder="0" onChange={e => setPrice(e.target.value)} onBlur={commitPrice} onKeyDown={onEnter(commitPrice)} />
+        <input value={price} inputMode="decimal" maxLength={12} placeholder="$0" onChange={e => setPrice(e.target.value)} onBlur={commitPrice} onKeyDown={onEnter(commitPrice)} />
       </label>
       <div className="field">
         <span>Wear it for</span>

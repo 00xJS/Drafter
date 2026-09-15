@@ -835,7 +835,7 @@ function seasonList(v: unknown): Season[] | undefined {
   return seasons.length > 0 ? seasons : undefined
 }
 
-/** What a piece cost, in whole units of the currency: money() rounded to the unit. */
+/** What a piece cost, in whole dollars: money() rounded to the dollar. */
 function wholePrice(v: unknown): number | undefined {
   const n = money(v)
   return n === undefined ? undefined : Math.round(n)

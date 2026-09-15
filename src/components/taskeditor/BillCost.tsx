@@ -50,11 +50,11 @@ export function BillCost({ form, set, showCosts }: Props) {
         <div className="field-row costs">
           <label className="field">
             <span>{bill ? 'Amount due' : 'Estimate'}</span>
-            <input inputMode="decimal" value={estimateCost} onChange={e => set({ estimateCost: e.target.value })} placeholder="0" />
+            <input inputMode="decimal" value={estimateCost} onChange={e => set({ estimateCost: e.target.value })} placeholder="$0" />
           </label>
           <label className="field">
             <span>{bill ? 'Paid' : 'Actual cost'}</span>
-            <input inputMode="decimal" value={actualCost} onChange={e => set({ actualCost: e.target.value })} placeholder="0" />
+            <input inputMode="decimal" value={actualCost} onChange={e => set({ actualCost: e.target.value })} placeholder="$0" />
           </label>
         </div>
       )}

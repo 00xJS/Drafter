@@ -113,7 +113,7 @@ export function starred<T extends Garment | Outfit>(x: T, on: boolean): T {
 }
 
 /**
- * A piece's details changed, stamped: a price in whole units (null, or a price
+ * A piece's details changed, stamped: a price in whole dollars (null, or a price
  * of nothing, clears it, as priceOf reads none), tags as a sync keeps them
  * (schema.ts garmentTags), seasons in the year's order — none is any season —
  * and what it is worn for (null is anytime). Only what is given changes.

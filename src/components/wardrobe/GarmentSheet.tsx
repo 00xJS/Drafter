@@ -144,7 +144,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const [type, setType] = useState<GarmentType>(preset ?? 'top')
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
-  // what it is worn for: Both unless chosen, and it carries on to the next photo in a queue, as its type does
+  // what it is worn for: Anytime unless chosen, and it carries on to the next photo in a queue, as its type does
   const [occasion, setOccasion] = useState<Occasion | undefined>(undefined)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)

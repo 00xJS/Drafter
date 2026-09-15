@@ -54,7 +54,7 @@ describe('formatMoney: every amount in dollars', () => {
 
   it('is the one formatter, and nothing else shows a pound sign', () => {
     const files = sources()
-    expect(files.filter(f => /style:\s*'currency'/.test(f.text)).map(f => f.path)).toEqual(['src/bills.ts'])
+    expect(files.filter(f => /style:\s*['"`]currency['"`]/.test(f.text)).map(f => f.path)).toEqual(['src/bills.ts'])
     // the typed-price parsers still take £ beside $ and € (a character class); nothing else says it
     expect(files.filter(f => f.text.replace(/\[[^\]\n]*£[^\]\n]*\]/g, '').includes('£')).map(f => f.path)).toEqual([])
   })
