@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
-import { VIEWS, type HomeTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
+import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
@@ -10,9 +10,14 @@ interface ShellState {
   homeTab: HomeTab
   tasksTab: TasksTab
   peopleTab: PeopleTab
+  /** People's own List · Stats */
+  peopleView: InnerView
+  calMode: CalendarMode
   /** what a tab tap re-reads: the segment last chosen on purpose */
   rememberedTasks: TasksTab
   rememberedPeople: PeopleTab
+  rememberedPeopleView: InnerView
+  rememberedCal: CalendarMode
   journalDate: string | null
   /** the one-shot way into Home → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
@@ -22,24 +27,74 @@ interface ShellState {
   sheets: Sheet[]
 }
 
-/** Two starting points that disagree on every field, so no landing is true by accident. */
+/** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from People → Stats left, the Timeline remembered. */
 const STARTS: ShellState[] = [
-  { view: 'kitchen', homeTab: 'journal', tasksTab: 'notes', peopleTab: 'places', rememberedTasks: 'bills', rememberedPeople: 'places', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
-  { view: 'home', homeTab: 'today', tasksTab: 'list', peopleTab: 'people', rememberedTasks: 'board', rememberedPeople: 'people', journalDate: null, wardrobe: null, settingsOpen: false, newTasks: [], sheets: [] },
+  {
+    view: 'kitchen',
+    homeTab: 'journal',
+    tasksTab: 'notes',
+    peopleTab: 'places',
+    peopleView: 'list',
+    calMode: 'month',
+    rememberedTasks: 'bills',
+    rememberedPeople: 'places',
+    rememberedPeopleView: 'list',
+    rememberedCal: 'timeline',
+    journalDate: null,
+    wardrobe: null,
+    settingsOpen: false,
+    newTasks: [],
+    sheets: [],
+  },
+  {
+    view: 'home',
+    homeTab: 'today',
+    tasksTab: 'list',
+    peopleTab: 'people',
+    peopleView: 'stats',
+    calMode: 'week',
+    rememberedTasks: 'board',
+    rememberedPeople: 'people',
+    rememberedPeopleView: 'stats',
+    rememberedCal: 'month',
+    journalDate: null,
+    wardrobe: null,
+    settingsOpen: false,
+    newTasks: [],
+    sheets: [],
+  },
 ]
 
 /** 2pm: between the morning's quick action and the evening's, so the palette's other rows are pinned on their own. */
 const AFTERNOON = new Date(2026, 8, 14, 14, 0)
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 /** A stand-in shell: the moves useNavigation and useOverlays make, on plain state. */
 function shell(start: ShellState, now: Date = AFTERNOON) {
   const s: ShellState = { ...start, newTasks: [], sheets: [] }
+  // what storage holds: the List · Stats chosen on People's own switch, and nothing for Places yet
+  vi.stubGlobal('localStorage', { getItem: (k: string) => (k === INNER_VIEW_KEYS.people ? s.rememberedPeopleView : null) })
   const nav: PaletteNav = {
     goView: v => {
       if (v === 'home') s.homeTab = 'today'
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
-      if (v === 'people') s.peopleTab = s.rememberedPeople
+      if (v === 'calendar') s.calMode = s.rememberedCal
+      if (v === 'people') {
+        s.peopleTab = s.rememberedPeople
+        s.peopleView = s.rememberedPeopleView
+      }
       s.view = v
+    },
+    goInnerView: (tab, v) => {
+      if (tab === 'people') s.peopleView = v
+    },
+    openStats: tab => {
+      s.peopleTab = tab
+      if (tab === 'people') s.peopleView = 'stats'
+      s.view = 'people'
     },
     setHomeTab: tab => {
       s.homeTab = tab
@@ -141,6 +196,7 @@ describe('the palette’s own commands', () => {
     ['go-calendar', { view: 'calendar' }],
     ['go-people', { view: 'people', peopleTab: 'people' }],
     ['go-places', { view: 'people', peopleTab: 'places' }],
+    ['go-people-stats', { view: 'people', peopleTab: 'people', peopleView: 'stats' }],
     ['go-kitchen', { view: 'kitchen' }],
   ]
 
@@ -164,6 +220,41 @@ describe('the palette’s own commands', () => {
       expect(run('go-places', start).rememberedPeople).toBe('places')
       expect(run('go-people', start).rememberedPeople).toBe('people')
     }
+  })
+
+  it('opens the Calendar on the mode last chosen, as a tab tap does, not on the month a day from People → Stats left', () => {
+    for (const start of STARTS) expect(run('go-calendar', start)).toMatchObject({ view: 'calendar', calMode: start.rememberedCal })
+  })
+
+  it('opens People stats for the visit only: the next tab tap goes back to what was chosen', () => {
+    expect(commands.find(c => c.id === 'go-people-stats')).toMatchObject({ label: 'People stats', icon: 'people' })
+    expect(commands.find(c => c.id === 'go-people-stats')?.quick).toBeFalsy()
+    for (const word of ['insights', 'most seen', 'together', 'streak']) expect(commands.find(c => c.id === 'go-people-stats')?.keywords).toContain(word)
+    for (const start of STARTS) {
+      const { s, nav, commands: cmds } = shell(start)
+      cmds.find(c => c.id === 'go-people-stats')!.run()
+      expect(s).toMatchObject({ view: 'people', peopleTab: 'people', peopleView: 'stats', rememberedPeople: start.rememberedPeople, rememberedPeopleView: start.rememberedPeopleView })
+      nav.goView('people')
+      expect(s).toMatchObject({ peopleTab: start.rememberedPeople, peopleView: start.rememberedPeopleView })
+    }
+  })
+
+  it('opens People on the List or Stats last chosen there, so a one-shot People stats does not linger', () => {
+    for (const start of STARTS) {
+      const { s, commands: cmds } = shell(start)
+      cmds.find(c => c.id === 'go-people-stats')!.run()
+      cmds.find(c => c.id === 'go-people')!.run()
+      expect(s).toMatchObject({ view: 'people', peopleTab: 'people', peopleView: start.rememberedPeopleView, rememberedPeopleView: start.rememberedPeopleView })
+    }
+    // the list when nothing was chosen, or storage cannot be read
+    const { s, commands: cmds } = shell(STARTS[1])
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    cmds.find(c => c.id === 'go-people')!.run()
+    expect(s).toMatchObject({ view: 'people', peopleTab: 'people', peopleView: 'list' })
   })
 })
 

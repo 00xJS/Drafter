@@ -1,10 +1,11 @@
 import type { PlannerCtx } from './ctx'
-import { People, Places } from './lazy'
+import { People, PeopleStats, Places } from './lazy'
+import { ListStatsSwitch } from './ListStatsSwitch'
 
-/** People, with Places as its second segment. */
+/** People, with Places as its second segment; People has its own List · Stats. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openJournal } = p
-  const { openTask, newTask, logOuting, logVisit, planAt, planWith, setEventEditor } = p
+  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
+  const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay } = p
   return (
     <>
       <div className="people-tab-seg">
@@ -55,30 +56,48 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
           onNewTask={preset => newTask(preset)}
         />
       ) : (
-        <People
-          people={store.people}
-          places={store.places}
-          tasks={store.tasks}
-          entries={store.events}
-          journal={store.journal}
-          onOpenJournal={date => openJournal(date)}
-          onSave={p => store.upsert(p)}
-          onDelete={id => {
-            store.remove(id)
-            showToast('Removed', () => store.restore([id]))
-          }}
-          onSavePlace={p => store.upsert(p)}
-          // Places with that row open, as search opens one; the segment moves
-          // for this visit only, like any link to it
-          onOpenPlace={place => openPlace(place.id)}
-          onLogVisit={logVisit}
-          onPlan={planWith}
-          onOpenTask={openTask}
-          onOpenEntry={e => setEventEditor({ entry: e, startIso: e.start })}
-          // a person picked in search (or Ask, or a reminder) arrives with their card open
-          openId={personOpenId}
-          onOpenConsumed={() => setPersonOpenId(null)}
-        />
+        <>
+          {/* remembered as the segments are: chosen here, and nowhere else */}
+          <ListStatsSwitch label="People list or stats" value={innerViews.people} onChange={v => setInnerView('people', v)} />
+          {innerViews.people === 'stats' ? (
+            <PeopleStats
+              // what the list reads, and nothing personal: every figure agrees with a row
+              people={store.people}
+              tasks={store.tasks}
+              entries={store.events}
+              // Today's Saw them: a visit logged now, with Undo
+              onSaw={sawThem}
+              // the podium, the bars and the lists open a person's card on the list
+              onOpenPerson={person => openPerson(person.id)}
+              onOpenDay={openCalendarDay}
+            />
+          ) : (
+            <People
+              people={store.people}
+              places={store.places}
+              tasks={store.tasks}
+              entries={store.events}
+              journal={store.journal}
+              onOpenJournal={date => openJournal(date)}
+              onSave={p => store.upsert(p)}
+              onDelete={id => {
+                store.remove(id)
+                showToast('Removed', () => store.restore([id]))
+              }}
+              onSavePlace={p => store.upsert(p)}
+              // Places with that row open, as search opens one; the segment moves
+              // for this visit only, like any link to it
+              onOpenPlace={place => openPlace(place.id)}
+              onLogVisit={logVisit}
+              onPlan={planWith}
+              onOpenTask={openTask}
+              onOpenEntry={e => setEventEditor({ entry: e, startIso: e.start })}
+              // a person picked in search (or Ask, or a reminder) arrives with their card open
+              openId={personOpenId}
+              onOpenConsumed={() => setPersonOpenId(null)}
+            />
+          )}
+        </>
       )}
     </>
   )

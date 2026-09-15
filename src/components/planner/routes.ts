@@ -81,11 +81,12 @@ export interface Toast {
   action?: { label: string; run: () => void }
 }
 
-// The two segmented views remember which half you chose — but only when you
+// The segmented views remember which half you chose — but only when you
 // chose it. Everything else (a deep link, a nudge, the palette's Board or
-// Notes) moves the segment for that visit alone, so a template's new tasks
-// shown on the Board cannot leave Tasks opening there, and the People tab
-// cannot get pinned to Places by one search result.
+// Notes, a day opened from People → Stats) moves the segment for that visit
+// alone, so a template's new tasks shown on the Board cannot leave Tasks
+// opening there, the People tab cannot get pinned to Places by one search
+// result, and the Calendar cannot be moved off the Timeline by one day.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)
@@ -101,3 +102,35 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
+/** The Calendar's Month / Week / Timeline, as last chosen on its buttons; the month otherwise. */
+export const storedCalMode = (): CalendarMode => {
+  try {
+    const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
+    return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
+  } catch {
+    return 'month'
+  }
+}
+
+/** People's and Places' own switch: the list, or its figures. Each segment
+ *  remembers its own, chosen on its buttons; a link, the palette or a search
+ *  result moves it for that visit alone, as it moves the segments. */
+export type InnerView = 'list' | 'stats'
+export const INNER_VIEWS: { key: InnerView; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'stats', label: 'Stats' },
+]
+export type InnerViews = Record<PeopleTab, InnerView>
+export const INNER_VIEW_KEYS: Record<PeopleTab, string> = { people: 'drafter:people-view', places: 'drafter:places-view' }
+export const storedInnerView = (tab: PeopleTab): InnerView => {
+  try {
+    return localStorage.getItem(INNER_VIEW_KEYS[tab]) === 'stats' ? 'stats' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+export const storedInnerViews = (): InnerViews => ({ people: storedInnerView('people'), places: storedInnerView('places') })
+
+/** A Stats view's own link: `?view=people-stats` opens People → People on its
+ *  Stats for that visit, as `?view=wardrobe` opens Home → Wardrobe. */
+export const STATS_VIEW_TO_PEOPLE: Record<string, PeopleTab> = { 'people-stats': 'people' }

@@ -73,7 +73,7 @@ describe('no task row names the project', () => {
 
 describe('nothing starts a second project', () => {
   it('the palette has no New project', () => {
-    const nav = { goView: noop, setHomeTab: noop, setView: noop, openJournal: noop, goTasksTab: noop, setPeopleTab: noop, openWardrobe: noop }
+    const nav = { goView: noop, setHomeTab: noop, setView: noop, openJournal: noop, goTasksTab: noop, setPeopleTab: noop, goInnerView: noop, openWardrobe: noop, openStats: noop }
     const commands = buildPaletteCommands(nav, { newTask: noop, setSettingsOpen: noop, openSheet: noop })
     expect(commands.filter(c => /project/i.test(c.label)).map(c => c.label)).toEqual([])
   })
