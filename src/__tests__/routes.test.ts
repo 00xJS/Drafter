@@ -14,6 +14,7 @@ import {
   TASKS_TABS,
   VIEW_ICONS,
   VIEW_LABELS,
+  VIEW_TO_KITCHEN,
   VIEWS,
   WARDROBE_TABS,
   peopleTabOfStatsView,
@@ -94,7 +95,7 @@ describe('old links still land on a segment', () => {
   })
 
   it('never shadows a live view with a legacy name', () => {
-    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE)]
+    const legacy = [...Object.keys(LEGACY_VIEW_TO_TASKS), ...Object.keys(LEGACY_VIEW_TO_HOME), ...Object.keys(STATS_VIEW_TO_PEOPLE), ...Object.keys(VIEW_TO_KITCHEN)]
     for (const name of legacy) expect(VIEWS as string[]).not.toContain(name)
     expect(new Set(legacy).size).toBe(legacy.length)
   })

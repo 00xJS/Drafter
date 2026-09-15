@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
-import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
+import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
@@ -23,6 +23,8 @@ interface ShellState {
   journalDate: string | null
   /** the one-shot way into Home → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
+  /** the one-shot Kitchen segment, when a command named one */
+  kitchenTab: KitchenTab | null
   settingsOpen: boolean
   newTasks: unknown[][]
   /** the planning sheets opened, in order */
@@ -46,6 +48,7 @@ const STARTS: ShellState[] = [
     rememberedCal: 'timeline',
     journalDate: null,
     wardrobe: null,
+    kitchenTab: null,
     settingsOpen: false,
     newTasks: [],
     sheets: [],
@@ -65,6 +68,7 @@ const STARTS: ShellState[] = [
     rememberedCal: 'month',
     journalDate: null,
     wardrobe: null,
+    kitchenTab: null,
     settingsOpen: false,
     newTasks: [],
     sheets: [],
@@ -129,6 +133,10 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       s.wardrobe = o
       s.homeTab = 'wardrobe'
       s.view = 'home'
+    },
+    openKitchen: tab => {
+      if (tab) s.kitchenTab = tab
+      s.view = 'kitchen'
     },
   }
   const overlays: PaletteOverlays = {
@@ -210,10 +218,23 @@ describe('the palette’s own commands', () => {
     ['go-people-stats', { view: 'people', peopleTab: 'people', peopleView: 'stats' }],
     ['go-places-stats', { view: 'people', peopleTab: 'places', placesView: 'stats' }],
     ['go-kitchen', { view: 'kitchen' }],
+    ['go-kitchen-stats', { view: 'kitchen', kitchenTab: 'stats' }],
   ]
 
   it.each(landings)('%s lands on its tab and segment from anywhere', (id, where) => {
     for (const start of STARTS) expect(run(id, start)).toMatchObject(where)
+  })
+
+  it('opens Kitchen on Stats for the visit only, moving no other segment, and the plain Kitchen where it was left', () => {
+    const stats = commands.find(c => c.id === 'go-kitchen-stats')
+    expect(stats).toMatchObject({ label: 'Kitchen stats', icon: 'kitchen' })
+    expect(stats?.quick).toBeFalsy()
+    for (const word of ['cooked', 'eaten out', 'bought']) expect(stats?.keywords).toContain(word)
+    for (const start of STARTS) {
+      const s = run('go-kitchen-stats', start)
+      expect(s).toMatchObject({ homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, rememberedPeople: start.rememberedPeople, wardrobe: null, settingsOpen: false })
+      expect(run('go-kitchen', start).kitchenTab).toBeNull()
+    }
   })
 
   it('has a way to every tab', () => {

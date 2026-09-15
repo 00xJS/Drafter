@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, peopleTabOfStatsView, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -30,6 +30,7 @@ interface Deps {
   openPlace: Nav['openPlace']
   openPerson: Nav['openPerson']
   openStats: Nav['openStats']
+  openKitchen: Nav['openKitchen']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -56,6 +57,7 @@ export function useDeepLinks({
   openPlace,
   openPerson,
   openStats,
+  openKitchen,
   changeStatus,
   defer,
 }: Deps) {
@@ -102,8 +104,9 @@ export function useDeepLinks({
     // still resolve: board / bills / notes open the Tasks tab on that segment,
     // and the former today / review views open Home on the day or the week.
     // people-stats and places-stats open that segment of People on its Stats,
-    // for this visit only.
+    // and kitchen-stats opens Kitchen on Stats, for this visit only.
     const statsTab = peopleTabOfStatsView(parsed.view)
+    const kitchenTab = kitchenTabOfView(parsed.view)
     if (parsed.view && LEGACY_VIEW_TO_TASKS[parsed.view]) {
       goTasksTab(LEGACY_VIEW_TO_TASKS[parsed.view])
       setView('tasks')
@@ -113,6 +116,8 @@ export function useDeepLinks({
     } else if (statsTab) {
       // a Stats view's own link: its segment of People on Stats, for this visit
       openStats(statsTab)
+    } else if (kitchenTab) {
+      openKitchen(kitchenTab)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

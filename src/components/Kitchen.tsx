@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -45,10 +45,10 @@ import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
+import { KitchenStats } from './planner/lazy'
+import { KITCHEN_TABS, KITCHEN_TAB_KEY, storedKitchenTab, type KitchenTab } from './planner/routes'
 import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
-type Seg = 'recipes' | 'week' | 'grocery'
-const SEG_KEY = 'drafter:kitchen-tab'
 /** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month and not on the plan, longest ago first. */
 type RecipeView = 'all' | 'lately'
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
@@ -78,17 +78,14 @@ interface Props {
   feedEvents?: CalendarEvent[]
   /** Optional: the planner's toast. With it the meal plan's confirmation and Undo go there; without it they stay in the sheet. */
   onToast?(msg: string, undo?: () => void): void
+  /** A segment to open on for this visit only (the palette's Kitchen stats, ?view=kitchen-stats); consumed, like openRecipe. */
+  openTab?: KitchenTab | null
+  onOpenTabConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast }: Props) {
-  const [seg, setSeg] = useState<Seg>(() => {
-    try {
-      const saved = localStorage.getItem(SEG_KEY) as Seg | null
-      return saved === 'week' || saved === 'grocery' || saved === 'recipes' ? saved : 'recipes'
-    } catch {
-      return 'recipes'
-    }
-  })
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed }: Props) {
+  // the segment last chosen, unless a way in names one for this visit
+  const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(() => {
     try {
       return localStorage.getItem(RECIPE_VIEW_KEY) === 'lately' ? 'lately' : 'all'
@@ -97,6 +94,9 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     }
   })
   const [anchor, setAnchor] = useState(() => new Date())
+  // a day opened from Stats' dinner calendar: This week scrolls to it and
+  // frames it until you move off the week or the segment
+  const [focusDay, setFocusDay] = useState<string | null>(null)
   // the recipe form, and where Save and Cancel go back to: the list, cook mode
   // on the recipe, or the side open over its main. Cook mode stays set while
   // its recipe is edited, so it comes back with its meal's sides and its ticks.
@@ -124,10 +124,11 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     return recipeView === 'lately' ? notLately(found, cooked) : found
   }, [recipes, q, recipeView, cooked])
 
-  const setTab = (s: Seg) => {
+  const setTab = (s: KitchenTab) => {
     setSeg(s)
+    setFocusDay(null)
     try {
-      localStorage.setItem(SEG_KEY, s)
+      localStorage.setItem(KITCHEN_TAB_KEY, s)
     } catch {
       /* ignore */
     }
@@ -201,13 +202,38 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRecipe])
 
+  // A way in (the palette, a link, a tap on the Kitchen tab) moves the segment
+  // for this visit only: the one last chosen with its button stays remembered.
+  // It moves as Kitchen renders, so the segment it leaves never shows first,
+  // even when Kitchen is already on screen; the hand-off is let go of once seen.
+  const [seenOpenTab, setSeenOpenTab] = useState(openTab)
+  if (openTab !== seenOpenTab) {
+    setSeenOpenTab(openTab)
+    if (openTab) {
+      setSeg(openTab)
+      setFocusDay(null)
+    }
+  }
+  useEffect(() => {
+    if (openTab) onOpenTabConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTab])
+  /** Stats' dinner calendar: that day on This week, scrolled to and framed, for this visit only. */
+  const goDay = (day: string) => {
+    setAnchor(new Date(`${day}T12:00:00`))
+    setFocusDay(day)
+    setSeg('week')
+  }
+
   return (
     <div className="kitchen">
-      <div className="people-tab-seg">
+      {/* four segments on one row: a phone narrows their thumbs and caps their
+          labels (.kitchen-seg), as Home's four are */}
+      <div className="people-tab-seg kitchen-seg">
         <span className="segmented">
-          {(['recipes', 'week', 'grocery'] as const).map(s => (
-            <button key={s} className={seg === s ? 'seg on' : 'seg'} onClick={() => setTab(s)}>
-              {s === 'recipes' ? 'Recipes' : s === 'week' ? 'This week' : 'Grocery'}
+          {KITCHEN_TABS.map(t => (
+            <button key={t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
+              {t.label}
             </button>
           ))}
         </span>
@@ -304,7 +330,11 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           places={places}
           cooked={cooked}
           visited={visited}
-          onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
+          focusDay={focusDay}
+          onShift={d => {
+            setFocusDay(null)
+            setAnchor(a => shiftRange(weekRange(a), d).start)
+          }}
           onSaveMeal={onSaveMeal}
           onClearMeal={onClearMeal}
           onCreatePlace={onCreatePlace}
@@ -339,6 +369,14 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSave={onSave}
         />
+      )}
+
+      {/* Stats is a chunk of its own, with the kit it draws with: until it is
+          here, a quiet placeholder sits under the segment row */}
+      {seg === 'stats' && (
+        <Suspense fallback={<div className="view-pending" aria-busy="true" />}>
+          <KitchenStats recipes={recipes} meals={meals} groceries={groceries} places={places} onOpenRecipe={r => cook(r)} onGoDay={goDay} />
+        </Suspense>
       )}
 
       {/* Unmounted while its recipe is edited (it keeps its stored ticks for
@@ -412,6 +450,7 @@ function WeekPlan({
   places,
   cooked,
   visited,
+  focusDay,
   onShift,
   onSaveMeal,
   onClearMeal,
@@ -428,6 +467,8 @@ function WeekPlan({
   cooked: CookedIndex
   /** When each place was last gone to, beside it under Eat out. */
   visited: VisitIndex
+  /** A day opened from Stats' dinner calendar: scrolled to and framed. */
+  focusDay?: string | null
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
@@ -445,6 +486,12 @@ function WeekPlan({
   const today = dateKey(new Date())
   // dinners still to plan from today on: a past night is not worth proposing
   const emptyDinners = days.map(dateKey).filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
+  // a day opened from Stats lands on screen, clear of the sticky bar (its scroll margin), not at the week's top
+  useEffect(() => {
+    if (!focusDay) return
+    const t = window.setTimeout(() => document.getElementById(`meal-day-${focusDay}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+    return () => window.clearTimeout(t)
+  }, [focusDay])
   return (
     <>
       <div className="people-toolbar">
@@ -475,7 +522,7 @@ function WeekPlan({
         {days.map(d => {
           const key = dateKey(d)
           return (
-            <li key={key} className={'meal-day' + (key === today ? ' today' : '')}>
+            <li key={key} id={`meal-day-${key}`} className={'meal-day' + (key === today ? ' today' : '') + (key === focusDay ? ' picked' : '')}>
               <div className="meal-day-head">
                 <strong>{d.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                 <span>{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>

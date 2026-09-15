@@ -1,7 +1,7 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import { storedInnerView, type HomeTab, type InnerView, type PeopleTab, type TasksTab, type View } from './routes'
+import { storedInnerView, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type TasksTab, type View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
@@ -18,6 +18,8 @@ export interface PaletteNav {
   openWardrobe(o?: WardrobeOpen): void
   /** A segment of People on its Stats, for this visit only. */
   openStats(tab: PeopleTab): void
+  /** Kitchen, on the segment named for this visit only, or the one last chosen. */
+  openKitchen(tab?: KitchenTab): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -38,7 +40,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openStats } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openStats, openKitchen } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats or Places stats does not linger. */
@@ -77,6 +79,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
     { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openStats('places') },
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => setView('kitchen') },
+    // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
+    { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]
 }
