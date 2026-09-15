@@ -66,8 +66,11 @@ if (runtimes.length !== 1 || whole.length !== 1) {
 }
 // The precache is what every install and every app update downloads before
 // the app can open offline, so it has a budget. Raise it on purpose, with the
-// reason in the commit, rather than let it creep.
-const PRECACHE_BUDGET_KIB = 1536
+// reason in the commit, rather than let it creep. It is there to catch models
+// and images slipping in, not app code. Measure it as Netlify builds, in cloud
+// mode with VITE_SUPABASE_URL set: a local-mode build leaves the Supabase
+// client out and reads about 200 KiB lighter.
+const PRECACHE_BUDGET_KIB = 2048
 const entries = [...sw.matchAll(/\burl:\s*"([^"]+)"|"url":\s*"([^"]+)"/g)].map(m => m[1] ?? m[2])
 const absent = entries.filter(url => !existsSync(join(dist, url)))
 if (absent.length) {
