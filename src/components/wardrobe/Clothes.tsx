@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { GARMENT_TYPES, GARMENT_TYPE_META, SEASONS, SEASON_META, type Garment, type GarmentType, type Season } from '../../types'
 import { CLOTHES_SORTS, clothesMatch, clothesOrder, tagsOf, wornShort, type ClothesShow, type ClothesSort, type WearIndex } from '../../wardrobe'
 import { Icon } from '../Icon'
-import { FavouriteMark, GarmentPhoto } from './GarmentPhoto'
+import { FavouriteMark, GarmentView, hasBack } from './GarmentPhoto'
 
 interface Props {
   garments: Garment[]
@@ -12,13 +12,15 @@ interface Props {
   onOpen(id: string): void
 }
 
+/** A tile opens its piece: a back photo is marked in the corner, not a control of its own, and said in words. */
 function Tile({ garment, ix, onOpen }: { garment: Garment; ix: WearIndex; onOpen(id: string): void }) {
   return (
     <li>
       <button type="button" className="clothes-tile" onClick={() => onOpen(garment.id)}>
         {garment.favourite && <FavouriteMark />}
-        <GarmentPhoto garment={garment} />
+        <GarmentView garment={garment} />
         <span className="clothes-name">{garment.name}</span>
+        {hasBack(garment) && <span className="wardrobe-sr"> (with a back photo)</span>}
         <span className="clothes-worn">{wornShort(ix, garment.id)}</span>
       </button>
     </li>

@@ -299,6 +299,17 @@ describe('unsentPhotoCount: what signing out would lose', () => {
     expect(await unsentPhotoCount()).toBe(1)
   })
 
+  it('counts a back photo with its thumbnail as one photo, as it does the front’s', async () => {
+    signedIn({ fail: () => true })
+    const front = await saveMedia(blob(), { personal: true, userId: USER })
+    await saveMedia(blob(), { personal: true, userId: USER, thumbOf: front })
+    const back = await saveMedia(blob(), { personal: true, userId: USER })
+    const backThumb = await saveMedia(blob(), { personal: true, userId: USER, thumbOf: back })
+    expect(rows.get(backThumb)).toMatchObject({ thumbOf: back, personal: true, pending: true })
+    // the front and the back: two photos to lose, not four
+    expect(await unsentPhotoCount()).toBe(2)
+  })
+
   it('is nothing in local mode, where nothing is ever sent', async () => {
     rows.set('x', pending('x'))
     expect(await unsentPhotoCount()).toBe(0)
@@ -461,6 +472,30 @@ describe('retireMedia: Replace photo lets go of the old two', () => {
     expect(removed).toEqual([[NEW_PHOTO, NEW_THUMB]])
     expect(rows.has(OLD_PHOTO) && rows.has(OLD_THUMB)).toBe(true)
     expect(queued()).toEqual([])
+  })
+
+  it('lets go of a back photo Remove back photo swapped out once the minute is gone, and keeps it when Undo put it back', async () => {
+    const { removed } = signedIn()
+    // the front stays (NEW_*, uploaded long ago); the back (OLD_*) is removed from the piece
+    for (const id of [NEW_PHOTO, NEW_THUMB, OLD_PHOTO, OLD_THUMB]) rows.set(id, uploaded(id))
+    // swappedPhotos(before, after) for Remove back photo: the back two gone, the front two now
+    const gone = [OLD_PHOTO, OLD_THUMB]
+    const now = [NEW_PHOTO, NEW_THUMB]
+    let pointing = [NEW_PHOTO, NEW_THUMB, OLD_PHOTO, OLD_THUMB]
+    untrack = trackMediaInUse(() => known(pointing))
+    // removed, and put back by its Undo before the minute was up: the piece points at the back again
+    retireMedia(gone, now, PIECE)
+    vi.setSystemTime(Date.now() + RETIRE_AFTER_MS)
+    await flushPendingMedia()
+    expect(removed).toEqual([])
+    expect(queued()).toEqual([])
+    // removed again, and left so
+    pointing = [NEW_PHOTO, NEW_THUMB]
+    retireMedia(gone, now, PIECE)
+    vi.setSystemTime(Date.now() + RETIRE_AFTER_MS)
+    await flushPendingMedia()
+    expect(removed).toEqual([[OLD_PHOTO, OLD_THUMB]])
+    expect(rows.has(NEW_PHOTO) && rows.has(NEW_THUMB)).toBe(true)
   })
 
   it('does nothing until the planner’s records have loaded', async () => {

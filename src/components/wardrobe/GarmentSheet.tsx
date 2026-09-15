@@ -7,13 +7,13 @@ import { NotSignedIn, imageFiles, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
 import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit } from '../../types'
 import { uid } from '../../utils'
-import { costLine, garmentStats, outfitLabel, renamed, starred, suggestedNames, wornLine, type WearIndex } from '../../wardrobe'
+import { costLine, garmentStats, outfitLabel, renamed, showingBack, starred, suggestedNames, withBack, wornLine, type WearIndex } from '../../wardrobe'
 import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
 import { CutoutLater, keptOffline } from './CutoutLater'
-import { GarmentPhoto } from './GarmentPhoto'
+import { GarmentView, hasBack, mainSide, type Side } from './GarmentPhoto'
 import { PieceDetails } from './PieceDetails'
 
 /** What the sheet is for: adding a piece (of a type, when the way in named one), or one piece. */
@@ -60,6 +60,17 @@ function warmCutout(): void {
 }
 
 const failure = (err: unknown) => (err instanceof PhotoUnreadable || err instanceof NotSignedIn ? err.message : 'That photo could not be kept on this device — try again')
+
+/**
+ * A photo made ready, filed under this account: the photo, then its thumbnail
+ * as that photo's (MediaItem.thumbOf), so a sign-out counts the two as one.
+ * A front and a back alike.
+ */
+async function fileAway(p: { photo: Blob; thumb: Blob }, userId?: string | null): Promise<{ photoId: string; thumbId: string }> {
+  const photoId = await saveMedia(p.photo, { personal: true, userId })
+  const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })
+  return { photoId, thumbId }
+}
 
 function TypeChips({ type, onChange }: { type: GarmentType; onChange(t: GarmentType): void }) {
   return (
@@ -121,6 +132,11 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const [picked, setPicked] = useState<Picked | null>(null)
   const checking = !!file && !picked
   const { ready, busy, error } = usePrepared(picked)
+  // the back, once there is a front: optional, through the same check
+  const [backFile, setBackFile] = useState<File | null>(null)
+  const [backPicked, setBackPicked] = useState<Picked | null>(null)
+  const checkingBack = !!backFile && !backPicked
+  const back = usePrepared(backPicked)
   const [lastSaved, setLastSaved] = useState<GarmentType | null>(null)
   const [type, setType] = useState<GarmentType>(preset ?? 'top')
   const [name, setName] = useState('')
@@ -132,6 +148,10 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
 
   useEffect(warmCutout, [])
 
+  const clearBack = () => {
+    setBackFile(null)
+    setBackPicked(null)
+  }
   const choose = (files: FileList | readonly File[] | null) => {
     const chosen = Array.from(files ?? [])
     // a photo taken mid-save would move the queue under the save still reading it
@@ -140,6 +160,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     setAt(0)
     setRound(r => r + 1)
     setPicked(null)
+    clearBack()
     setName('')
     setNotes('')
     setFailed(null)
@@ -190,6 +211,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     }
     setAt(at + 1)
     setPicked(null)
+    clearBack()
     setName('')
     setNotes('')
     setFailed(null)
@@ -204,28 +226,33 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       setAt(0)
     }
   }
+  const waiting = saving || busy || (!!file && !ready) || back.busy || checkingBack
   const save = async () => {
-    if (saving || busy || (file && !ready)) return
+    if (waiting) return
     setSaving(true)
     try {
-      // the two photos go into this device's store, and its upload queue, first; the piece then points at them
-      const photoId = ready ? await saveMedia(ready.photo, { personal: true, userId }) : undefined
-      const thumbId = ready ? await saveMedia(ready.thumb, { personal: true, userId, thumbOf: photoId }) : undefined
+      // the photos go into this device's store, and its upload queue, first; the piece then points at them
+      const front = ready ? await fileAway(ready, userId) : undefined
+      // a back rides only with a front: its + Back photo shows once there is one
+      const backIds = ready && back.ready ? await fileAway(back.ready, userId) : undefined
       const now = new Date().toISOString()
       onCreate({
         kind: 'garment',
         id: uid(),
         name: name.trim().slice(0, 80) || names[0],
         type,
-        photoId,
-        thumbId,
+        photoId: front?.photoId,
+        thumbId: front?.thumbId,
+        backPhotoId: backIds?.photoId,
+        backThumbId: backIds?.thumbId,
         color: ready?.color,
         notes: notes.trim().slice(0, 500) || undefined,
         createdAt: now,
         updatedAt: now,
       })
       // kept as it was only for want of a connection: its sheet offers Cut out now once online
-      if (photoId && picked?.offline) keptOffline(photoId)
+      if (front && picked?.offline) keptOffline(front.photoId)
+      if (backIds && backPicked?.offline) keptOffline(backIds.photoId)
       setLastSaved(type)
       next(type)
     } catch (err) {
@@ -236,7 +263,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   }
   // a photo made ready and not saved is the one thing here worth asking about
   const close = () => {
-    if (ready && !window.confirm('Discard this photo?')) return
+    if ((ready || back.ready) && !window.confirm('Discard this photo?')) return
     onClose()
   }
 
@@ -290,9 +317,45 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
             </>
           )}
         </label>
-        {(error || failed) && (
+        {/* the back, for a shirt whose logo is there: optional, and only once the front is in */}
+        {ready && (
+          <div className="garment-add-back">
+            {back.ready ? (
+              <>
+                <img src={back.ready.preview} alt="The back, to save" />
+                <span className="garment-add-back-text">Back photo</span>
+                <button type="button" className="btn subtle" disabled={saving} onClick={clearBack}>
+                  Remove
+                </button>
+              </>
+            ) : back.busy || checkingBack ? (
+              <span className="garment-busy" role="status">
+                <span className="garment-spinner" aria-hidden="true" />
+                Getting the back ready…
+              </span>
+            ) : (
+              <label className="toggle garment-back-pick">
+                + Back photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="garment-file"
+                  disabled={saving}
+                  onChange={e => {
+                    const chosen = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!chosen) return
+                    setBackPicked(null)
+                    setBackFile(chosen)
+                  }}
+                />
+              </label>
+            )}
+          </div>
+        )}
+        {(error || back.error || failed) && (
           <p className="garment-error" role="alert">
-            {error ?? failed}
+            {error ?? back.error ?? failed}
           </p>
         )}
         <div className="field">
@@ -323,7 +386,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
         <button type="button" className="btn" onClick={close}>
           Cancel
         </button>
-        <button type="button" className="btn primary" disabled={saving || busy || (!!file && !ready)} onClick={() => void save()}>
+        <button type="button" className="btn primary" disabled={waiting} onClick={() => void save()}>
           Save
         </button>
       </footer>
@@ -333,6 +396,14 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
         createPortal(
           <Suspense fallback={null}>
             <CutoutSheet key={`${round}.${at}`} photo={file} onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })} onCancel={skipPhoto} />
+          </Suspense>,
+          document.body,
+        )}
+      {backFile &&
+        checkingBack &&
+        createPortal(
+          <Suspense fallback={null}>
+            <CutoutSheet key={`back.${round}.${at}`} photo={backFile} onDone={(f, info) => setBackPicked({ file: f, cutout: info.cutout, offline: info.offline })} onCancel={() => setBackFile(null)} />
           </Suspense>,
           document.body,
         )}
@@ -351,8 +422,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const [photoError, setPhotoError] = useState<string | null>(null)
   /** Keeps what the details still have typed (the price, the tags), as the name and notes are kept. */
   const keepDetails = useRef(() => {})
-  // a replacement photo goes through the cut-out sheet first, as an added one does
-  const [checking, setChecking] = useState<File | null>(null)
+  // a photo picked for either side goes through the cut-out sheet first, as an added one does
+  const [checking, setChecking] = useState<{ file: File; side: Side } | null>(null)
   // gone from under the sheet (deleted, here or on another device): nothing left to show
   useEffect(() => {
     if (!g) onClose()
@@ -376,19 +447,20 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     if (!cur || text === (cur.notes ?? '')) return
     onEdit(cur, { ...cur, notes: text || undefined, updatedAt: newerStamp(cur.updatedAt) })
   }
-  const replace = async (file: File, cutout: boolean, offline?: boolean) => {
+  /** A photo for one side, made ready and filed: a front replaces the front (and its colour); a back is added, or replaces the back. */
+  const replace = async (file: File, cutout: boolean, offline?: boolean, side: Side = 'front') => {
     setChecking(null)
     setPhotoBusy(true)
     setPhotoError(null)
     try {
       const p = await prepareGarmentPhoto(file, { cutout })
-      const photoId = await saveMedia(p.photo, { personal: true, userId })
-      const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })
-      // the old two go once these two are up and the Undo has had its time,
-      // and only if no piece points at them by then (Wardrobe → retireMedia):
+      const ids = await fileAway(p, userId)
+      // the old ones go once these are up and the Undo has had its time, and
+      // only if no piece points at them by then (Wardrobe → retireMedia):
       // deleted at once, an Undo or another device's copy would point at nothing
-      edit(cur => ({ ...cur, photoId, thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
-      if (offline) keptOffline(photoId)
+      if (side === 'back') edit(cur => withBack(cur, ids), latest.current && hasBack(latest.current) ? 'Back photo replaced' : 'Back photo added')
+      else edit(cur => ({ ...cur, photoId: ids.photoId, thumbId: ids.thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
+      if (offline) keptOffline(ids.photoId)
     } catch (err) {
       setPhotoError(failure(err))
     } finally {
@@ -401,11 +473,18 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     keepDetails.current()
     onClose()
   }
+  /** A file picked for a side: to the cut-out sheet with it. */
+  const pickFor = (side: Side) => (e: { target: HTMLInputElement }) => {
+    const picked = e.target.files?.[0]
+    e.target.value = ''
+    if (picked) setChecking({ file: picked, side })
+  }
 
   const stats = garmentStats(g, ix)
   const cost = costLine(g, ix)
   const wornOn = (ix.days.get(g.id) ?? []).slice(0, 10)
   const inOutfits = outfits.filter(o => !o.deletedAt && o.garmentIds.includes(g.id))
+  const back = hasBack(g)
 
   return (
     <Modal onClose={close} className="modal narrow garment-sheet">
@@ -423,7 +502,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
       </ModalHead>
       <div className="modal-body">
         <div className="garment-hero">
-          <GarmentPhoto garment={g} size="photo" alt={g.name} />
+          {/* keyed by the side it leads with, so Show the back first shows at once */}
+          <GarmentView key={mainSide(g)} garment={g} size="photo" alt={g.name} flip />
           {photoBusy && (
             <span className="garment-busy" role="status">
               <span className="garment-spinner" aria-hidden="true" />
@@ -431,6 +511,27 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
             </span>
           )}
         </div>
+        {/* the back, for a piece whose logo or print is there: once it has a front */}
+        {(g.photoId || g.thumbId) && (
+          <div className="garment-back" role="group" aria-label="Back photo">
+            <label className="btn subtle garment-back-pick">
+              {back ? 'Replace back photo' : 'Add back photo'}
+              <input type="file" accept="image/*" className="garment-file" disabled={photoBusy} onChange={pickFor('back')} />
+            </label>
+            {back && (
+              <>
+                <button type="button" className="btn subtle" disabled={photoBusy} onClick={() => edit(cur => withBack(cur, null), 'Back photo removed')}>
+                  Remove back photo
+                </button>
+                <CutoutLater garment={g} side="back" disabled={photoBusy} onCutout={file => void replace(file, true, false, 'back')} onError={setPhotoError} />
+                <label className="garment-back-first">
+                  <input type="checkbox" role="switch" checked={!!g.showBack} onChange={e => edit(cur => showingBack(cur, e.target.checked))} />
+                  Show the back first
+                </label>
+              </>
+            )}
+          </div>
+        )}
         {photoError && (
           <p className="garment-error" role="alert">
             {photoError}
@@ -527,17 +628,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
         </button>
         <label className="btn subtle garment-replace">
           Replace photo
-          <input
-            type="file"
-            accept="image/*"
-            className="garment-file"
-            disabled={photoBusy}
-            onChange={e => {
-              const picked = e.target.files?.[0]
-              e.target.value = ''
-              if (picked) setChecking(picked)
-            }}
-          />
+          <input type="file" accept="image/*" className="garment-file" disabled={photoBusy} onChange={pickFor('front')} />
         </label>
         <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />
         <span className="spacer" />
@@ -548,7 +639,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
       {checking &&
         createPortal(
           <Suspense fallback={null}>
-            <CutoutSheet photo={checking} onDone={(f, info) => void replace(f, info.cutout, info.offline)} onCancel={() => setChecking(null)} />
+            <CutoutSheet photo={checking.file} onDone={(f, info) => void replace(f, info.cutout, info.offline, checking.side)} onCancel={() => setChecking(null)} />
           </Suspense>,
           document.body,
         )}

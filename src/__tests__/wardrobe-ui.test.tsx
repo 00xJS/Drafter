@@ -701,8 +701,11 @@ describe('the guards around the wardrobe', () => {
     // what the sheet hands back is what prepareGarmentPhoto makes the piece's photos from, told whether it is the cut-out
     expect(sheet).toContain('prepareGarmentPhoto(picked.file, { cutout: picked.cutout })')
     expect(sheet).toContain('onDone={(f, info) => setPicked({ file: f, cutout: info.cutout, offline: info.offline })}')
-    // Replace photo goes the same way
-    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout, info.offline)}')
+    // and Add clothing's back photo, through the same hook
+    expect(sheet).toContain('onDone={(f, info) => setBackPicked({ file: f, cutout: info.cutout, offline: info.offline })}')
+    expect(sheet).toContain('const back = usePrepared(backPicked)')
+    // Replace photo, and Add or Replace back photo, go the same way
+    expect(sheet).toContain('onDone={(f, info) => void replace(f, info.cutout, info.offline, checking.side)}')
     expect(sheet).toContain('prepareGarmentPhoto(file, { cutout })')
     // and no photo reaches prepareGarmentPhoto without the sheet: its only callers are those two
     expect(sheet.match(/prepareGarmentPhoto\(/g)).toHaveLength(2)
@@ -714,7 +717,8 @@ describe('the guards around the wardrobe', () => {
 
   it('deletes a garment’s photos with Delete forever, and sends waiting photos at launch and on a pull', () => {
     const shell = plannerSource()
-    expect(shell).toContain("if (row?.kind === 'garment') void deleteMedia([row.photoId, row.thumbId])")
+    // front and back: the one list every clean-up reads (shared/media.mjs)
+    expect(shell).toContain("if (row?.kind === 'garment') void deleteMedia(mediaIdsOf(row))")
     expect(shell).toContain('useEffect(() => watchPendingMedia(), [])')
     expect(shell).toMatch(/const manualSync = async \(\) => \{[\s\S]*?void flushPendingMedia\(\)/)
   })
@@ -724,8 +728,13 @@ describe('the guards around the wardrobe', () => {
     expect(wardrobe).toMatch(/const editPiece = [\s\S]*?onSave\(after\)\s*letGo\(before, after\)[\s\S]*?onSave\(back\)\s*letGo\(after, back\)/)
     // each swap names its piece, so it can wait for the server to have the edit
     expect(wardrobe).toMatch(/const \{ gone, now \} = swappedPhotos\(from, to\)\s*if \(gone\.length\) retireMedia\(gone, now, to\.id\)/)
-    // a piece's thumbnail is saved as its photo's, so the two count as one photo
-    expect(source('GarmentSheet').match(/thumbOf: photoId/g)).toHaveLength(2)
+    // a piece's thumbnail is saved as its photo's, so the two count as one photo:
+    // one place does it, for Add clothing's front and back and for either side of a piece
+    const sheet = source('GarmentSheet')
+    expect(sheet.match(/thumbOf: photoId/g)).toHaveLength(1)
+    expect(sheet).toContain('const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })')
+    expect(sheet.match(/await fileAway\(/g)).toHaveLength(3)
+    expect(sheet).not.toMatch(/saveMedia\((?!p\.photo|p\.thumb)/)
     // the swaps are told what every piece here, live or in Trash, points at — once the records are in —
     // and what the server may still hold: the records it has not confirmed, and what its copies point at
     const shell = plannerSource()

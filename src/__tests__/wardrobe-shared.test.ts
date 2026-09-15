@@ -58,8 +58,10 @@ const STAYED = [
   'todaySuggestions',
   'colorName',
   'suggestedNames',
-  // a replaced photo's clean-up
+  // a replaced photo's clean-up, and a piece's back photo
   'swappedPhotos',
+  'withBack',
+  'showingBack',
   // favourites, details, plans and notes, Surprise me, seasons and tags, worn with and cost per wear, the weather
   'starred',
   'withDetails',

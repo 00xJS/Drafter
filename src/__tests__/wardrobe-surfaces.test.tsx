@@ -392,6 +392,21 @@ describe('Ask draws on what you wear', () => {
     expect(looks[0].links).toEqual(expect.arrayContaining(['id-tee', 'id-jeans']))
   })
 
+  it('never sends a photo of either side of a piece', () => {
+    const photo = (tail: string) => `personal/00000000-0000-0000-0000-00000000000a/${tail}`
+    const withPhotos = src({
+      garments: garments.map(g =>
+        g.id === 'id-tee' ? { ...g, photoId: photo('f1f1f1f1-front'), thumbId: photo('f2f2f2f2-front'), backPhotoId: photo('b1b1b1b1-back'), backThumbId: photo('b2b2b2b2-back'), showBack: true as const } : g,
+      ),
+    })
+    const q = 'What have I not worn lately?'
+    const prep = prepareAsk(q, withPhotos, { now, tz: 'Europe/London', includeJournal: true })
+    const { system, prompt } = buildAskPrompt(q, prep.docs, prep.facts)
+    for (const sent of [JSON.stringify(buildCorpus(withPhotos, { now, includeJournal: true, includeAmounts: true })), JSON.stringify(prep.docs), system, prompt]) {
+      expect(sent).not.toMatch(/f1f1f1f1|f2f2f2f2|b1b1b1b1|b2b2b2b2|photoId|thumbId|backPhotoId|backThumbId|showBack/)
+    }
+  })
+
   it('sends a price, and the cost per wear, only for a question about money', () => {
     const plain = buildCorpus(src(), { now, includeJournal: false, includeAmounts: false }).find(d => d.title === 'Navy tee')!
     expect(plain.text).not.toContain('price')

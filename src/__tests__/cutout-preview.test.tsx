@@ -203,12 +203,20 @@ describe('Cut out background, from the piece sheet', () => {
     expect(cutoutLaterLabel(null, 'web', false)).toBeNull()
     expect(cutoutLaterLabel(true, 'unsupported', false)).toBeNull()
     expect(cutoutLaterLabel(true, null, false)).toBeNull()
+    // the back photo's own button says which photo it cuts out
+    expect(cutoutLaterLabel(true, 'web', false, 'back')).toBe('Cut out the back')
+    expect(cutoutLaterLabel(true, 'native', true, 'back')).toBe('Cut out the back now')
+    expect(cutoutLaterLabel(false, 'web', false, 'back')).toBeNull()
+    expect(cutoutLaterLabel(true, 'offline', true, 'back')).toBeNull()
   })
 
-  it('is one line in the piece sheet, and replaces the photo as Replace photo does', () => {
+  it('is one line in the piece sheet for each photo, and replaces it as Replace photo and Replace back photo do', () => {
     const sheet = read('../components/wardrobe/GarmentSheet.tsx')
-    expect(sheet.match(/<CutoutLater /g)).toHaveLength(1)
+    expect(sheet.match(/<CutoutLater /g)).toHaveLength(2)
     expect(sheet).toContain('<CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />')
+    expect(sheet).toContain(`<CutoutLater garment={g} side="back" disabled={photoBusy} onCutout={file => void replace(file, true, false, 'back')} onError={setPhotoError} />`)
+    // it reads the photo of the side it is for
+    expect(read('../components/wardrobe/CutoutLater.tsx')).toContain("const [photoId, thumbId] = side === 'back' ? [garment.backPhotoId, garment.backThumbId] : [garment.photoId, garment.thumbId]")
   })
 
   it('says so in the piece sheet when the saved photo cannot be read, rather than doing nothing', () => {
@@ -252,14 +260,17 @@ describe('Cut out background, from the piece sheet', () => {
   it('learns it from Use original offline, in Add clothing and in Replace photo, and forgets it once cut out or turned down online', () => {
     expect(read('../components/CutoutSheet.tsx')).toContain("offline: result?.reason === 'offline' && !online")
     const sheet = read('../components/wardrobe/GarmentSheet.tsx')
-    expect(sheet).toContain('if (photoId && picked?.offline) keptOffline(photoId)')
-    expect(sheet).toContain('if (offline) keptOffline(photoId)')
+    // Add clothing's front and back, and a photo for either side of a piece
+    expect(sheet).toContain('if (front && picked?.offline) keptOffline(front.photoId)')
+    expect(sheet).toContain('if (backIds && backPicked?.offline) keptOffline(backIds.photoId)')
+    expect(sheet).toContain('if (offline) keptOffline(ids.photoId)')
     expect(read('../components/wardrobe/CutoutLater.tsx')).toContain('if (info.cutout || !info.offline) forgetOffline(id)')
   })
 
   it('opens Check the cut-out over the piece sheet, not inside it, leaving the sheet as it was', () => {
     const sheet = read('../components/wardrobe/GarmentSheet.tsx')
-    expect(sheet.match(/createPortal\(/g)).toHaveLength(2)
+    // Add clothing's front and back, and the piece sheet's either side
+    expect(sheet.match(/createPortal\(/g)).toHaveLength(3)
     // no fragment round either sheet's Modal, so its lines keep their place
     expect(sheet).not.toMatch(/<>\s*<Modal/)
     expect(sheet.match(/^ {4}<Modal onClose=\{close\} className="modal narrow garment-sheet">$/gm)).toHaveLength(2)

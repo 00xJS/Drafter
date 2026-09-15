@@ -46,6 +46,63 @@
   color: var(--text);
   text-align: center;
 }
+/* a piece at card size or larger: its main side, and its other side as an
+   inset in the corner, under a third of the photo's width and framed in the
+   surface so it reads on any photo. A flip swaps the pictures, never a box */
+.garment-view {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.garment-view > .garment-photo {
+  flex: 1;
+  min-height: 0;
+}
+.garment-inset {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  display: flex;
+  width: 30%;
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
+}
+.garment-inset .garment-photo {
+  flex: 1;
+  border-radius: 6px;
+}
+.garment-inset .garment-photo-type {
+  display: none;
+}
+.garment-inset.flip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* a 44pt target however small the inset is drawn (no clipping on the button, so it reaches) */
+.garment-inset.flip::after {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - 22px));
+}
+/* the side a flip brings up fades in quickly, or with reduced motion just appears */
+.garment-photo.flippable img {
+  animation: garment-fade 0.16s ease-out;
+}
+@keyframes garment-fade {
+  from {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .garment-photo.flippable img {
+    animation: none;
+  }
+}
 
 /* ----- the day line: ‹ Today · Sun 14 Sep › */
 .wardrobe-day {
@@ -202,32 +259,58 @@
   flex: 1;
   min-height: 0;
 }
+/* the card's foot is a fixed height, its name's line over one more line
+   (1.2rem and 1rem), so the photo's corner is known to .snap-flip */
 .snap-name {
+  height: 1.2rem;
   font-size: 0.8125rem;
   font-weight: 600;
+  line-height: 1.2rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.snap-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 1rem;
+  min-width: 0;
+  overflow: hidden;
+}
 .snap-worn {
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.6875rem;
+  line-height: 1rem;
   color: var(--muted);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .snap-new {
-  align-self: flex-start;
+  flex: none;
   padding: 1px 7px;
   font-size: 0.625rem;
+  line-height: calc(1rem - 2px);
   background: var(--accent-soft);
   color: var(--accent-text);
 }
 /* a piece the day's look holds that the rows are not dealt: retired, or in Trash */
 .snap-held {
-  align-self: flex-start;
+  flex: none;
   padding: 1px 7px;
   font-size: 0.625rem;
+  line-height: calc(1rem - 2px);
   background: var(--surface-2);
   color: var(--muted);
+}
+/* a card's other side: a button beside the card, not in it, over the photo's
+   bottom-right corner — above the foot (1.2rem + 1rem), its two 2px gaps and
+   the 6px padding, 4px in */
+.snap-flip {
+  right: 10px;
+  bottom: calc(2.2rem + 14px);
+  width: calc((var(--card-w) - 12px) * 0.3);
 }
 .snap-none {
   flex: 1;
@@ -749,7 +832,7 @@
   font: inherit;
   text-align: left;
 }
-.clothes-tile .garment-photo {
+.clothes-tile .garment-view {
   width: 100%;
   aspect-ratio: 4 / 5;
 }
@@ -937,18 +1020,65 @@
 .garment-hero {
   position: relative;
 }
-.garment-hero .garment-photo {
+.garment-hero .garment-view {
   width: 100%;
   height: min(42vh, 360px);
+}
+.garment-hero .garment-view > .garment-photo {
   border-radius: var(--radius-lg);
 }
+.garment-hero .garment-inset {
+  right: 10px;
+  bottom: 10px;
+  width: min(30%, 120px);
+}
+/* bottom left: the inset has the other corner */
 .garment-hero .garment-busy {
   position: absolute;
-  right: 8px;
+  left: 8px;
   bottom: 8px;
   padding: 4px 10px;
   border-radius: 999px;
   background: var(--surface);
+}
+/* the back photo's moves, under the photo; and Add clothing's optional back */
+.garment-back,
+.garment-add-back {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.garment-back-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.garment-back-pick:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.garment-back-first {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.garment-add-back img {
+  flex: none;
+  width: 36px;
+  height: 45px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.garment-add-back-text {
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--text-2);
 }
 .garment-figures {
   display: flex;
@@ -1566,7 +1696,9 @@ button.photo-cal-day:focus-visible {
   .clothes-season,
   .wardrobe-card-note,
   .garment-with-piece,
-  .garment-fav {
+  .garment-fav,
+  .garment-back-pick,
+  .garment-back-first {
     min-height: 44px;
   }
   .wardrobe-step,

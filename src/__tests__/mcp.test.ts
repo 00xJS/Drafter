@@ -311,7 +311,20 @@ function household(): Row[] {
       projectId: 'p1',
     }),
     // the owner's wardrobe: personal like the journal, and its photos never leave Drafter
-    at(OWNER, { kind: 'garment', id: 'tee', name: 'Navy tee', type: 'top', color: '#1e2848', photoId: 'photo-of-tee', thumbId: 'thumb-of-tee', createdAt: added }),
+    at(OWNER, {
+      kind: 'garment',
+      id: 'tee',
+      name: 'Navy tee',
+      type: 'top',
+      color: '#1e2848',
+      photoId: 'photo-of-tee',
+      thumbId: 'thumb-of-tee',
+      // its back, with the logo, and shown first: still no photo leaves
+      backPhotoId: 'back-photo-of-tee',
+      backThumbId: 'back-thumb-of-tee',
+      showBack: true,
+      createdAt: added,
+    }),
     at(OWNER, { kind: 'garment', id: 'jeans', name: 'Blue jeans', type: 'bottom', createdAt: added }),
     at(OWNER, { kind: 'garment', id: 'dress', name: 'Green dress', type: 'onepiece', createdAt: added }),
     at(OWNER, { kind: 'garment', id: 'band', name: 'Old band tee', type: 'top', archivedAt: STAMP, createdAt: added }),
@@ -1020,7 +1033,8 @@ describe('the wardrobe over MCP', () => {
     for (const name of ['list_garments', 'list_outfits', 'get_wardrobe_stats', 'log_outfit']) {
       serveHousehold(household())
       const out = JSON.stringify(await tool(name).run(SWEEP[name], ctxFor()))
-      expect(out, name).not.toMatch(/photo-of-tee|thumb-of-tee|photoId|thumbId/)
+      // the front's photos or the back's, by id or by field
+      expect(out, name).not.toMatch(/photo-of-tee|thumb-of-tee|back-photo-of-tee|back-thumb-of-tee|photoId|thumbId|backPhotoId|backThumbId|showBack/)
       expect(out, name).not.toContain(SECRET)
     }
   })

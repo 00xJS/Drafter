@@ -7,6 +7,7 @@ import { uid } from './utils'
 import { describeCode, type Forecast } from './weather'
 import { newerStamp } from '../shared/domain.mjs'
 import { shiftDayKey } from '../shared/journal.mjs'
+import { mediaIdsOf } from '../shared/media.mjs'
 import { NOT_WORN_DAYS, cleanIds, coreKey, daysWithin, isCoreType, isPlanned, liveById, looksOn, marked, orderPieces, outfitDays, outfitLabel, pieceKey, slotOf, wearable } from '../shared/wardrobe.mjs'
 import type { WearIndex } from '../shared/wardrobe.mjs'
 
@@ -65,11 +66,41 @@ export function retired(g: Garment, on: boolean, now = new Date().toISOString())
   return next
 }
 
-/** What a write of a piece did to its photos — Replace photo, or the Undo of one: the ids it let go of, and the ones it points at now. */
+/**
+ * What a write of a piece did to its photos — Replace photo, a back photo
+ * replaced or removed, or the Undo of one: the ids it let go of, and the ones
+ * it points at now, front and back alike (shared/media.mjs mediaIdsOf).
+ */
 export function swappedPhotos(before: Garment, after: Garment): { gone: string[]; now: string[] } {
-  const now = [after.photoId, after.thumbId].filter((id): id is string => !!id)
-  const gone = [before.photoId, before.thumbId].filter((id): id is string => !!id && !now.includes(id))
+  const now = mediaIdsOf(after)
+  const gone = mediaIdsOf(before).filter(id => !now.includes(id))
   return { gone, now }
+}
+
+/**
+ * The piece with a photo of its back (its photo and thumbnail), or with none,
+ * stamped. With none it shows its front first again, as the back first means
+ * nothing without a back.
+ */
+export function withBack(g: Garment, back: { photoId: string; thumbId: string } | null): Garment {
+  const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
+  if (back) {
+    next.backPhotoId = back.photoId
+    next.backThumbId = back.thumbId
+  } else {
+    delete next.backPhotoId
+    delete next.backThumbId
+    delete next.showBack
+  }
+  return next
+}
+
+/** Shown back first, or front first again, stamped; only a piece with a back photo shows its back first. */
+export function showingBack(g: Garment, on: boolean): Garment {
+  const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
+  if (on && (g.backPhotoId || g.backThumbId)) next.showBack = true
+  else delete next.showBack
+  return next
 }
 
 /** A piece or a saved outfit starred as a favourite, or not, stamped. */

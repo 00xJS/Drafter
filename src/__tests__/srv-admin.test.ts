@@ -175,6 +175,21 @@ describe('Admin → delete an account → its wardrobe photos', () => {
     expect(removed).toEqual([[`personal/${LEAVER}/${P1}`]])
   })
 
+  it('deletes its pieces’ back photos with the rest, and keeps a back another piece still points at', async () => {
+    // P1 was the back of one of its own pieces, deleted with them; P2 and P3 are the back of a piece handed over
+    garmentRows = [
+      { id: 'g-heir', user_id: OWNER, data: { kind: 'garment', id: 'g-heir', name: 'Band tee', type: 'top', backPhotoId: `personal/${LEAVER}/${P3}`, backThumbId: `personal/${LEAVER}/${P2}` } },
+    ]
+    listed = [
+      { name: P1, id: 'o1' },
+      { name: P2, id: 'o2' },
+      { name: P3, id: 'o3' },
+    ]
+    const res = await act('deleteUser', { userId: LEAVER })
+    expect((await res.json()).photosDeleted).toBe(1)
+    expect(removed).toEqual([[`personal/${LEAVER}/${P1}`]])
+  })
+
   it('keeps the sign-in when the photos cannot be deleted, so Try again finishes the job', async () => {
     listFails = true
     const res = await act('deleteUser', { userId: LEAVER })

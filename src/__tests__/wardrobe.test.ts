@@ -47,6 +47,7 @@ import {
   saveOutfit,
   savedOrder,
   seasonOf,
+  showingBack,
   starred,
   suggestedNames,
   swappedPhotos,
@@ -61,6 +62,7 @@ import {
   wearsByMonth,
   weatherLine,
   weatherNeed,
+  withBack,
   withDetails,
   withNote,
   withPieces,
@@ -1019,5 +1021,41 @@ describe('the weather’s hint', () => {
     expect(outerwearFor([tee, jeans], ix, { cold: true, wet: true })).toBeUndefined()
     expect(hasOuterwear(['tee', 'coat'], liveById(everything))).toBe(true)
     expect(hasOuterwear(['tee', 'jeans', 'ghost'], liveById(everything))).toBe(false)
+  })
+})
+
+describe('a back photo: what a write lets go of, and what its Undo brings back', () => {
+  const P = (n: number) => `personal/00000000-0000-0000-0000-00000000000a/${String(n).repeat(8)}`
+  const front = piece('band-tee', 'top', { photoId: P(1), thumbId: P(2) })
+  const backed = withBack(front, { photoId: P(3), thumbId: P(4) })
+
+  it('Add back photo points at the back, stamped, and lets go of nothing; its Undo lets go of the back alone', () => {
+    expect(backed).toMatchObject({ photoId: P(1), thumbId: P(2), backPhotoId: P(3), backThumbId: P(4) })
+    expect(backed.updatedAt > front.updatedAt).toBe(true)
+    expect(swappedPhotos(front, backed)).toEqual({ gone: [], now: [P(1), P(2), P(3), P(4)] })
+    expect(swappedPhotos(backed, front)).toEqual({ gone: [P(3), P(4)], now: [P(1), P(2)] })
+  })
+
+  it('Replace back photo lets go of the old back and never the front; its Undo lets go of the new one and points at the old again', () => {
+    const replaced = withBack(backed, { photoId: P(5), thumbId: P(6) })
+    expect(swappedPhotos(backed, replaced)).toEqual({ gone: [P(3), P(4)], now: [P(1), P(2), P(5), P(6)] })
+    expect(swappedPhotos(replaced, backed)).toEqual({ gone: [P(5), P(6)], now: [P(1), P(2), P(3), P(4)] })
+  })
+
+  it('Remove back photo lets go of the back and leads with the front again; its Undo points at both again', () => {
+    const first = showingBack(backed, true)
+    const removed = withBack(first, null)
+    for (const k of ['backPhotoId', 'backThumbId', 'showBack']) expect(k in removed, k).toBe(false)
+    expect(removed).toMatchObject({ photoId: P(1), thumbId: P(2) })
+    expect(swappedPhotos(first, removed)).toEqual({ gone: [P(3), P(4)], now: [P(1), P(2)] })
+    expect(swappedPhotos(removed, first)).toEqual({ gone: [], now: [P(1), P(2), P(3), P(4)] })
+  })
+
+  it('shows the back first only with a back photo, stamped', () => {
+    const on = showingBack(backed, true)
+    expect(on.showBack).toBe(true)
+    expect(on.updatedAt > backed.updatedAt).toBe(true)
+    expect('showBack' in showingBack(front, true)).toBe(false)
+    expect('showBack' in showingBack(on, false)).toBe(false)
   })
 })

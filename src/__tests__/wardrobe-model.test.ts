@@ -231,3 +231,33 @@ describe('the fields the wardrobe grew: a star, tags, seasons, a price, a note, 
     expect(html).toContain('<small class="muted">Outfit planned</small> 2026-09-13 · 1 piece')
   })
 })
+
+describe('a back photo', () => {
+  const base = { kind: 'garment', id: 'g1', name: 'Band tee', type: 'top', createdAt: T0, updatedAt: T0 }
+  const BACK = `personal/${USER}/8e2b1a00-1b2c-4d3e-8f40-5a6b7c8d9e0f`
+  const BACK_THUMB = `personal/${USER}/9e2b1a00-1b2c-4d3e-8f40-5a6b7c8d9e0f`
+
+  it('keeps a back photo and its thumbnail only as media-store ids, as it keeps the front’s', () => {
+    const g = sanitizeGarment({ ...base, backPhotoId: BACK, backThumbId: BACK_THUMB })!
+    expect([g.backPhotoId, g.backThumbId]).toEqual([BACK, BACK_THUMB])
+    expect(sanitizeGarment({ ...base, backPhotoId: PHOTO })?.backPhotoId).toBe(PHOTO)
+    for (const bad of ['backups/x/y.json', '../x', `personal/${USER}/../x`, `personal/${USER}/`, 'short', '', 42, null]) {
+      const odd = sanitizeGarment({ ...base, backPhotoId: bad, backThumbId: bad })!
+      expect([odd.backPhotoId, odd.backThumbId], String(bad)).toEqual([undefined, undefined])
+    }
+  })
+
+  it('shows the back first only as true, and only while there is a back to show', () => {
+    expect(sanitizeGarment({ ...base, backPhotoId: BACK, showBack: true })?.showBack).toBe(true)
+    expect(sanitizeGarment({ ...base, backThumbId: BACK_THUMB, showBack: true })?.showBack).toBe(true)
+    // the back removed on one device while another turned this on: nothing to show first
+    expect(sanitizeGarment({ ...base, showBack: true })?.showBack).toBeUndefined()
+    expect(sanitizeGarment({ ...base, backPhotoId: '../x', showBack: true })?.showBack).toBeUndefined()
+    for (const v of ['true', 1, false, null]) expect(sanitizeGarment({ ...base, backPhotoId: BACK, showBack: v })?.showBack, String(v)).toBeUndefined()
+  })
+
+  it('round-trips a back photo and the back first through a JSON export', () => {
+    const items: Item[] = [{ ...garment, backPhotoId: BACK, backThumbId: BACK_THUMB, showBack: true }]
+    expect(migrateStored(JSON.parse(JSON.stringify({ version: 3, items })))).toEqual(items)
+  })
+})

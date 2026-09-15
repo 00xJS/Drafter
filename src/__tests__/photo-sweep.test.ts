@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../shared/media.mjs'
+import { garmentMediaIds, isPersonalMediaOf, mediaIdsOf, personalFolder } from '../../shared/media.mjs'
 import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, TRASH_KEEPS_PHOTOS_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
 
 // Wardrobe photos are private, under personal/<user id>/ in the media bucket,
@@ -191,6 +191,45 @@ describe('the shared rule: whose photo, and what still points at it', () => {
   it('waits as long as a tombstone is kept, and counts a piece in Trash a month longer than any device keeps it there', () => {
     expect(PHOTO_GRACE_MS).toBe(TOMBSTONE_TTL_MS)
     expect(TRASH_KEEPS_PHOTOS_MS).toBe(TOMBSTONE_TTL_MS + 30 * 86_400_000)
+  })
+})
+
+// A piece can carry a photo of its back too (a shirt whose logo is there):
+// the same shape, under the same folder, and every clean-up reads it from
+// the one list, mediaIdsOf, so the back is never the side one forgets.
+describe('a piece’s back photo', () => {
+  /** A back photo's id: a uid the media store could have made, apart from the fixtures' fronts. */
+  const backOf = (user: string, n: number) => `personal/${user}/b${String(n).repeat(7)}-back`
+
+  it('is one of the photos a piece points at, after its front', () => {
+    const g = { photoId: photo(A, 1), thumbId: photo(A, 2), backPhotoId: backOf(A, 1), backThumbId: backOf(A, 2) }
+    expect(mediaIdsOf(g)).toEqual([photo(A, 1), photo(A, 2), backOf(A, 1), backOf(A, 2)])
+    expect(mediaIdsOf({ backPhotoId: backOf(A, 3), thumbId: '' })).toEqual([backOf(A, 3)])
+    expect(mediaIdsOf(null)).toEqual([])
+    const ids = garmentMediaIds([
+      { kind: 'garment', backPhotoId: backOf(A, 1), backThumbId: backOf(A, 2), deletedAt: RECENT },
+      { kind: 'garment', purged: true, backPhotoId: backOf(A, 3) },
+      { kind: 'note', backPhotoId: backOf(A, 4) },
+    ])
+    expect([...ids].sort()).toEqual([backOf(A, 1), backOf(A, 2)])
+  })
+
+  it('is kept while a live piece, or one in Trash, points at it, and swept once the piece is deleted forever', async () => {
+    posts.push(garment('g-band', A, { photoId: photo(A, 1), backPhotoId: backOf(A, 1), backThumbId: backOf(A, 2) }))
+    posts.push(garment('g-coat', A, { backPhotoId: backOf(A, 3), backThumbId: backOf(A, 4), deletedAt: RECENT }))
+    for (const n of [1, 2, 3, 4]) objects.set(backOf(A, n), { updated_at: OLD, created_at: OLD })
+    // the fixtures' usual three, and no back
+    expect(await sweepPersonalPhotos(NOW)).toEqual({ deleted: 3, failures: [] })
+    for (const n of [1, 2, 3, 4]) expect(objects.has(backOf(A, n)), `back ${n}`).toBe(true)
+    // Delete forever on the band tee: its tombstone points at nothing
+    const band = posts.find(p => p.id === 'g-band')!
+    band.deleted = true
+    band.data = { kind: 'garment', id: 'g-band', name: '', type: 'top', purged: true, deletedAt: RECENT, createdAt: OLD, updatedAt: RECENT }
+    expect(await sweepPersonalPhotos(NOW)).toEqual({ deleted: 2, failures: [] })
+    expect(objects.has(backOf(A, 1)) || objects.has(backOf(A, 2))).toBe(false)
+    // the front it shared with a live piece stays, and so does the coat in Trash's back
+    expect(objects.has(photo(A, 1))).toBe(true)
+    expect(objects.has(backOf(A, 3)) && objects.has(backOf(A, 4))).toBe(true)
   })
 })
 

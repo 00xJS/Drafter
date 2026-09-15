@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Garment } from '../../types'
 import { wornShort, type WearIndex } from '../../wardrobe'
 import { heldBadge } from './composer'
-import { FavouriteMark, GarmentPhoto } from './GarmentPhoto'
+import { FavouriteMark, GarmentInset, GarmentPhoto, hasBack, mainSide, otherSide } from './GarmentPhoto'
 
 interface Props {
   /** "Tops": the row's heading and its radiogroup's name. */
@@ -39,6 +39,11 @@ const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia
  * piece, so a stray tap never leaves the row. It is a radiogroup: the arrow
  * keys, Home and End choose too, and ‹ › show at the ends for a mouse. No
  * haptic on a snap.
+ *
+ * A piece with a back photo shows its other side in its photo's corner: a
+ * button beside the card, not in it (a radio's contents are not a screen
+ * reader's to reach), that swaps the card's two sides for this visit and
+ * saves nothing. A tap on it flips; a swipe from it still scrolls the row.
  */
 export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, onInfo, onAdd, addLabel, emptyLabel, onHide }: Props) {
   const row = useRef<HTMLDivElement>(null)
@@ -52,6 +57,14 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
   /** The keys moved the choice, so focus follows it (a roving tabindex). */
   const keyed = useRef(false)
   const timer = useRef<number | undefined>(undefined)
+  /** The pieces shown by their other side for this visit. */
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(() => new Set())
+  const flip = (id: string) =>
+    setFlipped(was => {
+      const next = new Set(was)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
 
   const cells = () => Array.from(row.current?.querySelectorAll<HTMLElement>(':scope > .snap-cell') ?? [])
 
@@ -153,26 +166,31 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
           >
             {cards.map((g, i) => {
               const on = i === at
+              const shown = g ? (flipped.has(g.id) && hasBack(g) ? otherSide(mainSide(g)) : mainSide(g)) : 'front'
+              const held = g && heldBadge(g)
               return (
                 <div key={g?.id ?? 'none'} className={on ? 'snap-cell on' : 'snap-cell side'}>
                   <div role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className="snap-card" onClick={() => choose(i)}>
                     {g ? (
                       <>
                         {g.favourite && <FavouriteMark />}
-                        <GarmentPhoto garment={g} />
+                        <GarmentPhoto key={shown} garment={g} side={shown} className="flippable" />
                         <span className="snap-name">{g.name}</span>
-                        {heldBadge(g) ? (
-                          <span className="badge snap-held">{heldBadge(g)}</span>
-                        ) : ix.days.has(g.id) ? (
-                          <span className="snap-worn">{wornShort(ix, g.id)}</span>
-                        ) : (
-                          <span className="badge snap-new">New</span>
-                        )}
+                        <span className="snap-line">
+                          {held ? (
+                            <span className="badge snap-held">{held}</span>
+                          ) : ix.days.has(g.id) ? (
+                            <span className="snap-worn">{wornShort(ix, g.id)}</span>
+                          ) : (
+                            <span className="badge snap-new">New</span>
+                          )}
+                        </span>
                       </>
                     ) : (
                       <span className="snap-none">None</span>
                     )}
                   </div>
+                  {g && hasBack(g) && <GarmentInset garment={g} side={otherSide(shown)} className="snap-flip" tabIndex={on ? 0 : -1} onFlip={() => flip(g.id)} />}
                   {/* a piece in Trash, held for the day it was worn, has no sheet to open here */}
                   {on && g && !g.deletedAt && (
                     <button type="button" className="snap-info" aria-label={`About ${g.name}`} onClick={() => onInfo(g.id)}>

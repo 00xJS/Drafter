@@ -28,6 +28,16 @@ export function isPersonalMediaOf(id, userId) {
 }
 
 /**
+ * Every photo one piece points at, in this order: its front's photo and
+ * thumbnail, then its back's. The one list the sweep, a swap, Delete forever
+ * and account deletion all read, so a side added later is never one of them
+ * forgets.
+ */
+export function mediaIdsOf(g) {
+  return [g?.photoId, g?.thumbId, g?.backPhotoId, g?.backThumbId].filter(id => typeof id === 'string' && id !== '')
+}
+
+/**
  * Every photo a piece of clothing still points at: a live piece's, and one's in
  * Trash, so Restore brings it back whole. A piece deleted forever is a
  * content-free tombstone and points at nothing. With `expiredBefore`, a piece
@@ -40,7 +50,7 @@ export function garmentMediaIds(records, opts = {}) {
   for (const r of records ?? []) {
     if (r?.kind !== 'garment' || r.purged) continue
     if (r.deletedAt && Date.parse(r.deletedAt) < cutoff) continue
-    for (const id of [r.photoId, r.thumbId]) if (typeof id === 'string' && id) ids.add(id)
+    for (const id of mediaIdsOf(r)) ids.add(id)
   }
   return ids
 }

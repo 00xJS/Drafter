@@ -1355,7 +1355,7 @@ do $$
 declare r jsonb;
 begin
   r := public.sync_posts('[
-    {"kind":"garment","id":"g-tee","name":"White tee","type":"top","photoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a10","thumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a11","color":"#f5f5f0","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"garment","id":"g-tee","name":"White tee","type":"top","photoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a10","thumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a11","backPhotoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a12","backThumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a13","showBack":true,"color":"#f5f5f0","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"outfit","id":"o-friday","name":"Friday","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
   ]'::jsonb, '2099-01-01');
@@ -1373,6 +1373,12 @@ begin
   end if;
   if (select data ->> 'photoId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a10' then
     raise exception 'FAIL v3.14-1: the garment''s photo reference did not survive the write';
+  end if;
+  -- its back photo and the back first are plain fields of the record, stored as sent
+  if (select data ->> 'backPhotoId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a12'
+     or (select data ->> 'backThumbId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a13'
+     or (select data ->> 'showBack' from public.posts where id = 'g-tee') is distinct from 'true' then
+    raise exception 'FAIL v3.14-1: the garment''s back photo or back-first did not survive the write';
   end if;
   -- an edit, so the look has a history row a peer must not read either
   r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T09:00:00.000Z"}]'::jsonb, '2099-01-01');
@@ -1678,23 +1684,28 @@ begin
      or (select data ->> 'purged' from public.posts where id = 'g-hat') is distinct from 'true' then
     raise exception 'FAIL v3.14-7: a piece deleted forever should be stored content-free, pointing at no photo';
   end if;
-  -- garmentMediaIds (shared/media.mjs) in SQL: every photo a live piece, or one in Trash, points at
+  -- garmentMediaIds (shared/media.mjs) in SQL: every photo a live piece, or one in Trash, points at,
+  -- front and back (mediaIdsOf)
   select coalesce(array_agg(p order by p), '{}') into referenced
-    from public.posts, lateral (values (data ->> 'photoId'), (data ->> 'thumbId')) v(p)
+    from public.posts, lateral (values (data ->> 'photoId'), (data ->> 'thumbId'), (data ->> 'backPhotoId'), (data ->> 'backThumbId')) v(p)
    where kind = 'garment' and coalesce(data ->> 'purged', 'false') <> 'true' and p is not null;
   if referenced <> array[
     'personal/00000000-0000-0000-0000-00000000000a/7f3c9a10',
     'personal/00000000-0000-0000-0000-00000000000a/7f3c9a11',
+    'personal/00000000-0000-0000-0000-00000000000a/7f3c9a12',
+    'personal/00000000-0000-0000-0000-00000000000a/7f3c9a13',
     'personal/00000000-0000-0000-0000-00000000000a/c0a7c0a7',
     'personal/00000000-0000-0000-0000-00000000000a/c0a7c0a8'
   ] then
-    raise exception 'FAIL v3.14-7: the photos pieces point at should be the live and the trashed piece''s, got %', referenced;
+    raise exception 'FAIL v3.14-7: the photos pieces point at should be the live and the trashed piece''s, back photos too, got %', referenced;
   end if;
   -- step v3.14-5 deleted …0e, whose coat had a photo: nothing may still point into that folder
   if exists (select 1 from public.posts
               where kind = 'garment'
                 and (data ->> 'photoId' like 'personal/00000000-0000-0000-0000-00000000000e/%'
-                  or data ->> 'thumbId' like 'personal/00000000-0000-0000-0000-00000000000e/%')) then
+                  or data ->> 'thumbId' like 'personal/00000000-0000-0000-0000-00000000000e/%'
+                  or data ->> 'backPhotoId' like 'personal/00000000-0000-0000-0000-00000000000e/%'
+                  or data ->> 'backThumbId' like 'personal/00000000-0000-0000-0000-00000000000e/%')) then
     raise exception 'FAIL v3.14-7: a piece still points into the deleted account''s personal folder';
   end if;
   insert into storage.objects (bucket_id, name, owner) values

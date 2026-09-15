@@ -1,4 +1,5 @@
 import { Suspense, useState, type ReactNode } from 'react'
+import { mediaIdsOf } from '../../../shared/media.mjs'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
 import type { AskDoc } from '../../ask'
 import { newerStamp } from '../../itemops'
@@ -373,8 +374,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               // queued until the server takes it: offline or refused, it stays unsynced and is retried
               void store.purge([id]).then(done => {
                 showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync')
-                // a piece of clothing's two photos go with it, from this device and the bucket
-                if (row?.kind === 'garment') void deleteMedia([row.photoId, row.thumbId])
+                // a piece of clothing's photos, front and back, go with it, from this device and the bucket
+                if (row?.kind === 'garment') void deleteMedia(mediaIdsOf(row))
               })
             }}
             onClose={() => setTrashOpen(false)}

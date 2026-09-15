@@ -852,6 +852,8 @@ export function sanitizeGarment(raw: unknown): Garment | null {
   const type: GarmentType = typeof r.type === 'string' && GARMENT_TYPE_SET.has(r.type) ? (r.type as GarmentType) : 'accessory'
   const name = str(r.name)?.trim().slice(0, 80)
   const color = str(r.color)?.trim()
+  const backPhotoId = mediaId(r.backPhotoId)
+  const backThumbId = mediaId(r.backThumbId)
   const now = new Date().toISOString()
   return {
     kind: 'garment',
@@ -860,6 +862,10 @@ export function sanitizeGarment(raw: unknown): Garment | null {
     type,
     photoId: mediaId(r.photoId),
     thumbId: mediaId(r.thumbId),
+    backPhotoId,
+    backThumbId,
+    // the back first means nothing without a back to show
+    showBack: r.showBack === true && !!(backPhotoId || backThumbId) ? true : undefined,
     color: color && HEX_COLOR.test(color) ? color.toLowerCase() : undefined,
     notes: str(r.notes)?.trim().slice(0, 500) || undefined,
     favourite: r.favourite === true || undefined,

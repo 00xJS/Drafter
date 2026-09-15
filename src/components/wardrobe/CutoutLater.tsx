@@ -66,10 +66,12 @@ function forgetOffline(photoId: string): void {
  * The button's words, or no button: none for a photo that is a cut-out
  * already or not read yet, nor where no cut-out can be made now; Cut out now
  * once the device is online for a photo kept as it was offline; else Cut out
- * background.
+ * background. The back photo's say so ("Cut out the back", "Cut out the back
+ * now"), as the sheet shows both.
  */
-export function cutoutLaterLabel(uncut: boolean | null, can: Availability | null, wasOffline: boolean): string | null {
+export function cutoutLaterLabel(uncut: boolean | null, can: Availability | null, wasOffline: boolean, side: 'front' | 'back' = 'front'): string | null {
   if (!uncut || (can !== 'native' && can !== 'web')) return null
+  if (side === 'back') return wasOffline ? 'Cut out the back now' : 'Cut out the back'
   return wasOffline ? 'Cut out now' : 'Cut out background'
 }
 
@@ -83,17 +85,21 @@ async function savedPhoto(id: string): Promise<Blob | null> {
 
 export function CutoutLater({
   garment,
+  side = 'front',
   disabled,
   onCutout,
   onError,
 }: {
   garment: Garment
+  /** Which of the piece's photos: its front's, or its back's, cut out the same way. */
+  side?: 'front' | 'back'
   disabled?: boolean
   onCutout(file: File): void
   /** A line for the piece sheet's own error, or null to clear it. */
   onError?(message: string | null): void
 }) {
-  const small = garment.thumbId ?? garment.photoId
+  const [photoId, thumbId] = side === 'back' ? [garment.backPhotoId, garment.backThumbId] : [garment.photoId, garment.thumbId]
+  const small = thumbId ?? photoId
   // what was read, and for which photo, so a replaced photo is read afresh
   const [read, setRead] = useState<{ id: string; uncut: boolean } | null>(null)
   const uncut = small && read?.id === small ? read.uncut : null
@@ -144,8 +150,8 @@ export function CutoutLater({
     }
   }, [uncut])
 
-  const id = garment.photoId
-  const label = cutoutLaterLabel(uncut, can, sawOffline || wasKeptOffline(id))
+  const id = photoId
+  const label = cutoutLaterLabel(uncut, can, sawOffline || wasKeptOffline(id), side)
   if (!label || !id) return null
   const open = async () => {
     setOpening(true)

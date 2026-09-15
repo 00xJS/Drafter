@@ -621,6 +621,11 @@ export interface Garment extends Owned {
   photoId?: string
   /** 360px JPEG, same shape: rows, the grid and Today use it. */
   thumbId?: string
+  /** The back, for a piece whose logo or print is there: a 1200px photo and its 360px thumbnail, the same shape as the front's. */
+  backPhotoId?: string
+  backThumbId?: string
+  /** Shown back first: the back is the main picture and the front the inset. Only with a back photo. */
+  showBack?: true
   /** #rrggbb sampled from the photo: the placeholder, the tints, the name suggestion. */
   color?: string
   notes?: string
