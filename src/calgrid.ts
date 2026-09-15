@@ -1,8 +1,8 @@
 // The date maths behind the Calendar's Month and Week views: which days a grid
 // shows, and what lands on each of them. Kept out of the component so the
 // bucketing and the week ranges can be tested without a DOM.
-import { eventDayKeys } from './calendars'
-import { CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task } from './types'
+import { entryToEvent, eventDayKeys } from './calendars'
+import { CalendarEntry, CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task } from './types'
 import { dateKey } from './utils'
 
 /** A dated project moment: the project's own target, or one of its milestones. */
@@ -115,6 +115,21 @@ export function eventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[
   }
   for (const arr of map.values()) arr.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start))
   return map
+}
+
+/** Work days, bucketed by day: what the Calendar draws as a day's work badge. */
+export function workByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
+  return eventsByDay(events.filter(e => e.work))
+}
+
+/**
+ * The days your own work-day entries fall on — the Calendar's work badge
+ * (workByDay), from your entries alone: a household member's work day is not
+ * yours. An entry with no owner is this device's own (local mode).
+ */
+export function workDaysOf(entries: readonly CalendarEntry[], myId?: string | null): Set<string> {
+  const mine = entries.filter(e => !e.deletedAt && e.work && (!e.ownerId || !myId || e.ownerId === myId))
+  return new Set(workByDay(mine.map(entryToEvent)).keys())
 }
 
 /** Project target dates and dated milestones, bucketed by day. Archived projects stay out. */

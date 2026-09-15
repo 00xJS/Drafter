@@ -411,13 +411,19 @@ async function wardrobeOf(db, clock) {
 /** A piece named in an answer: its id, name and type, and nothing of its photos. */
 const pieceOf = g => ({ id: g.id, name: g.name, type: g.type })
 
-/** A piece as list_garments gives it: how it has been worn, counted in the user's days. */
+/**
+ * A piece as list_garments gives it: what it is worn for, and how it has been
+ * worn, counted in the user's days. Field by field, so no photo of either
+ * side ever rides along.
+ */
 function summarizeGarment(g, ix, clock) {
   const days = ix.days.get(g.id) ?? []
   return {
     ...pieceOf(g),
     color: g.color ?? null,
     notes: g.notes ?? null,
+    // unmarked is for both, the app's default
+    occasion: g.occasion === 'work' || g.occasion === 'personal' ? g.occasion : 'both',
     retired: !!g.archivedAt,
     addedOn: clock.dayKeyOf(g.createdAt),
     lastWorn: days[0] ?? null,
@@ -1290,7 +1296,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'Every piece of clothing in Home → Wardrobe: its name, type (top, bottom, onepiece, outerwear, shoes or accessory), colour and notes, whether it is retired (given away or worn out: kept for its history, out of the day\'s choices), and how it has been worn — lastWorn (YYYY-MM-DD, or null) and daysWorn, all time and in the last 30 and 365 days — counted as the app counts them: distinct days with a look holding it, up to the user\'s today. Photos never leave Drafter. type narrows the list.',
+      'Every piece of clothing in Home → Wardrobe: its name, type (top, bottom, onepiece, outerwear, shoes or accessory), colour and notes, what it is worn for (occasion: work, personal, or both — unmarked pieces are for both), whether it is retired (given away or worn out: kept for its history, out of the day\'s choices), and how it has been worn — lastWorn (YYYY-MM-DD, or null) and daysWorn, all time and in the last 30 and 365 days — counted as the app counts them: distinct days with a look holding it, up to the user\'s today. Photos never leave Drafter. type narrows the list.',
     inputSchema: { type: 'object', properties: { type: { type: 'string', enum: GARMENT_TYPES } } },
     async run({ type } = {}, { db, clock }) {
       if (type !== undefined) oneOf(type, GARMENT_TYPES, 'type')

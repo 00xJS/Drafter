@@ -866,6 +866,7 @@ export function sanitizeGarment(raw: unknown): Garment | null {
     backThumbId,
     // the back first means nothing without a back to show
     showBack: r.showBack === true && !!(backPhotoId || backThumbId) ? true : undefined,
+    occasion: r.occasion === 'work' || r.occasion === 'personal' ? r.occasion : undefined,
     color: color && HEX_COLOR.test(color) ? color.toLowerCase() : undefined,
     notes: str(r.notes)?.trim().slice(0, 500) || undefined,
     favourite: r.favourite === true || undefined,

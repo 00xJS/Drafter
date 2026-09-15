@@ -29,6 +29,7 @@ import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
+import { workDaysOf } from '../calgrid'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
@@ -596,7 +597,16 @@ export function Today({
   const [morning] = useState(() => new Date().getHours() < 12)
   const wardrobeCard =
     garments && outfits && wears && onLogWear && onOpenWardrobe ? (
-      <WardrobeCard garments={garments} outfits={outfits} wears={wears} dayKey={dateKey(new Date())} onLog={onLogWear} onOpen={onOpenWardrobe} />
+      <WardrobeCard
+        garments={garments}
+        outfits={outfits}
+        wears={wears}
+        dayKey={dateKey(new Date())}
+        // a work day of your own on the calendar puts the looks for work first
+        workDay={workDaysOf(entries, myId).has(dateKey(new Date()))}
+        onLog={onLogWear}
+        onOpen={onOpenWardrobe}
+      />
     ) : null
   // NOT frozen: Today stays mounted across a night on the phone, and a routines
   // card still filtering by last night's hour would hide the morning list. The

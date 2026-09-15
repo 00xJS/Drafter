@@ -907,7 +907,7 @@ async function main() {
     const piece = (id, name, type, extra = {}) => ({ kind: 'garment', id, name, type, createdAt: addedAt, updatedAt: wardrobeStamp, ...extra })
     const look = (day, suffix, garmentIds) => ({ kind: 'wear', id: `wear~${day}~${suffix}`, date: day, garmentIds, createdAt: wardrobeStamp, updatedAt: wardrobeStamp })
     seedRows([
-      // its back too (the logo), and shown first: still no photo leaves
+      // its back too (the logo), shown first, and marked for work: still no photo leaves
       piece('tee', 'Navy tee', 'top', {
         color: '#1e2848',
         photoId: 'smoke-photo-of-tee',
@@ -915,6 +915,7 @@ async function main() {
         backPhotoId: 'smoke-back-photo-of-tee',
         backThumbId: 'smoke-back-thumb-of-tee',
         showBack: true,
+        occasion: 'work',
       }),
       piece('jeans', 'Blue jeans', 'bottom'),
       piece('dress', 'Green dress', 'onepiece'),
@@ -934,6 +935,8 @@ async function main() {
     eq(tee?.daysWorn, 1, 'and how many days it was worn')
     eq(clothes.garments.find(g => g.id === 'band')?.retired, true, 'a retired piece says so')
     eq(clothes.garments.find(g => g.id === 'linen')?.daysWorn, 0, 'a plan never confirmed counts in no figure')
+    eq(tee?.occasion, 'work', 'list_garments says what a piece is worn for')
+    eq(clothes.garments.find(g => g.id === 'jeans')?.occasion, 'both', 'and a piece marked for neither is for both')
     ok(!/smoke-(back-)?(photo|thumb)-of-tee|photoId|thumbId|backPhotoId|backThumbId|showBack/.test(JSON.stringify(clothes)), 'no photo, front or back, leaves through list_garments')
     const stats = await call('get_wardrobe_stats', { window: 'all' })
     eq(stats.mostWorn.pieces.map(p => p.id).join(','), 'jeans,tee,dress', "get_wardrobe_stats ranks the most worn by the app's rule")

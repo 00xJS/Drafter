@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { workDaysOf } from '../../calgrid'
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import { retireMedia } from '../../media'
-import type { Garment, Item, Outfit, Wear } from '../../types'
+import type { CalendarEntry, Garment, Item, Outfit, Wear } from '../../types'
 import { lastPlanDay, liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, starred, swappedPhotos, wearable, wearIndex, type LookLog } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
@@ -21,6 +22,8 @@ interface Props {
   wears: Wear[]
   /** The account signed in: a piece's photos are filed under its own personal/ folder. */
   myId?: string | null
+  /** Calendar entries: a day with a work-day entry of your own is a work day, and Outfit dresses it for work. */
+  entries?: CalendarEntry[]
   onSave(item: Item): void
   onRemove(id: string): void
   onRestore(ids: string[]): void
@@ -40,6 +43,7 @@ const outfitFor = (o: WardrobeOpen | null, outfits: readonly Outfit[]): string[]
 }
 const lastOf = <T,>(list: readonly T[]): T | undefined => list[list.length - 1]
 const NONE: Garment[] = []
+const NO_ENTRIES: CalendarEntry[] = []
 /** The piece sheet shows none of today's look, so its Wear today keeps all of it but what the piece replaces. */
 const NOTHING_SHOWN: ReadonlySet<string> = new Set()
 
@@ -49,8 +53,9 @@ const NOTHING_SHOWN: ReadonlySet<string> = new Set()
  * every write the three make, each with its toast and Undo; nothing here ever
  * rewrites a look or an outfit because a piece changed or went away.
  */
-export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null, onSave, onRemove, onRestore, showToast, open, onOpenConsumed }: Props) {
+export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null, entries = NO_ENTRIES, onSave, onRemove, onRestore, showToast, open, onOpenConsumed }: Props) {
   const todayKey = localDayKey()
+  const workDays = useMemo(() => workDaysOf(entries, myId), [entries, myId])
   const [tab, setTab] = useState<WardrobeTab>(() => open?.tab ?? 'outfit')
   const [day, setDay] = useState(() => dayOr(open?.date, todayKey))
   const [sheet, setSheet] = useState<SheetMode | null>(() => sheetFor(open))
@@ -179,6 +184,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           ix={ix}
           day={day}
           todayKey={todayKey}
+          workDays={workDays}
           onDay={d => setDay(dayOr(d, todayKey))}
           onLog={logDay}
           onRemoveLook={removeLook}

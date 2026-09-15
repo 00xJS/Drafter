@@ -1,4 +1,4 @@
-import { GARMENT_TYPE_META, Garment, GarmentType, Outfit, SEASONS, Season, Wear } from './types'
+import { GARMENT_TYPE_META, Garment, GarmentType, Occasion, Outfit, SEASONS, Season, Wear } from './types'
 import { formatMoney } from './bills'
 import { daysAgo, daysBetween } from './kitchen'
 import { countOf, monthsAndTrend, visitSummary } from './people'
@@ -114,11 +114,15 @@ export function starred<T extends Garment | Outfit>(x: T, on: boolean): T {
 /**
  * A piece's details changed, stamped: a price in whole units (null, or a price
  * of nothing, clears it, as priceOf reads none), tags as a sync keeps them
- * (schema.ts garmentTags), seasons in the year's order — none is any season.
- * Only what is given changes.
+ * (schema.ts garmentTags), seasons in the year's order — none is any season —
+ * and what it is worn for (null is both). Only what is given changes.
  */
-export function withDetails(g: Garment, d: { price?: number | null; tags?: readonly string[]; seasons?: readonly Season[] }): Garment {
+export function withDetails(g: Garment, d: { price?: number | null; tags?: readonly string[]; seasons?: readonly Season[]; occasion?: Occasion | null }): Garment {
   const next: Garment = { ...g, updatedAt: newerStamp(g.updatedAt) }
+  if (d.occasion !== undefined) {
+    if (d.occasion === 'work' || d.occasion === 'personal') next.occasion = d.occasion
+    else delete next.occasion
+  }
   if (d.price !== undefined) {
     const whole = d.price === null ? NaN : Math.round(d.price)
     if (Number.isFinite(whole) && whole > 0) next.price = whole
@@ -268,13 +272,49 @@ export function seasonOf(day: string): Season {
 /** For this season: marked for it, or marked for none, which is a piece for any season. */
 export const inSeason = (g: Garment, season: Season): boolean => !g.seasons?.length || g.seasons.includes(season)
 
+// ---- work and personal -------------------------------------------------------------
+
+/** What a day is dressed for: work on a work day, personal on a day off. */
+export type DayOccasion = Occasion
+
+/**
+ * What a day is: a work day when your own calendar has a work-day entry on it
+ * (`workDays`, calgrid.ts workDaysOf: the Calendar's own work badge), else a
+ * day off. The composer can flip it for the day it shows, saving nothing.
+ */
+export const dayOccasion = (day: string, workDays: ReadonlySet<string>): DayOccasion => (workDays.has(day) ? 'work' : 'personal')
+
+/** The other occasion: what the composer's flip turns a day into. */
+export const otherOccasion = (o: DayOccasion): DayOccasion => (o === 'work' ? 'personal' : 'work')
+
+/** The day's words, beside its date: "Work day" or "Day off". */
+export const DAY_OCCASION_LABEL: Record<DayOccasion, string> = { work: 'Work day', personal: 'Day off' }
+
+/** For this occasion: marked for it, or for neither, which is a piece for both. */
+export const fitsOccasion = (g: Garment, o: DayOccasion): boolean => !g.occasion || g.occasion === o
+
+/**
+ * A saved outfit's or a look's occasion, from its pieces: work when one is
+ * for work and none is personal, personal the other way round; none when they
+ * are mixed, or every piece is for both.
+ */
+export function outfitOccasion(ids: readonly string[], byId: ReadonlyMap<string, Garment>): Occasion | undefined {
+  const marks = new Set(ids.map(id => byId.get(id)?.occasion).filter((o): o is Occasion => !!o))
+  return marks.size === 1 ? [...marks][0] : undefined
+}
+
 /** What Clothes shows: every piece, the favourites, or one type. */
 export type ClothesShow = 'all' | 'favourites' | GarmentType
 
-/** Whether a piece passes Clothes' filters: what to show, a season (a piece for any season passes every one) and a tag. */
-export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season | null; tag?: string | null }): boolean {
+/**
+ * Whether a piece passes Clothes' filters: what to show, a season (a piece
+ * for any season passes every one), an occasion (For work is the work pieces
+ * and those for both) and a tag.
+ */
+export function clothesMatch(g: Garment, f: { show: ClothesShow; season?: Season | null; occasion?: Occasion | null; tag?: string | null }): boolean {
   if (f.show === 'favourites' ? !g.favourite : f.show !== 'all' && g.type !== f.show) return false
   if (f.season && !inSeason(g, f.season)) return false
+  if (f.occasion && !fitsOccasion(g, f.occasion)) return false
   return !f.tag || !!g.tags?.includes(f.tag)
 }
 
@@ -430,13 +470,16 @@ const SUGGEST_DAYS = 60
  * Grouped by coreKey; score = distinct days worn in those 60 days. Sorted by
  * score, then the latest worn, saved first, then by label. The pieces are the
  * saved outfit's, else the newest look's that is still wearable whole. The
- * label is the outfit's name, else outfitLabel. At most `limit`.
+ * label is the outfit's name, else outfitLabel. At most `limit`. With an
+ * `occasion` (the card gives one on a work day), the looks whose every piece
+ * fits it come first.
  */
 export function todaySuggestions(
   ix: WearIndex,
   outfits: readonly Outfit[],
   byId: ReadonlyMap<string, Garment>,
   limit = 3,
+  occasion?: DayOccasion,
 ): { key: string; garmentIds: string[]; label: string; reason: 'saved' | 'often' }[] {
   const found = new Map<string, { saved?: Outfit; pieces?: string[]; days: Set<string>; lastWorn: string }>()
   const at = (key: string) => {
@@ -462,16 +505,18 @@ export function todaySuggestions(
       if (!c.pieces && wearable(look.garmentIds, byId)) c.pieces = [...look.garmentIds]
     }
   }
-  const ranked: { key: string; garmentIds: string[]; label: string; reason: 'saved' | 'often'; score: number; lastWorn: string }[] = []
+  const ranked: { key: string; garmentIds: string[]; label: string; reason: 'saved' | 'often'; score: number; lastWorn: string; fits: number }[] = []
   for (const [key, c] of found) {
     const garmentIds = c.saved ? [...c.saved.garmentIds] : c.pieces
     if (!garmentIds) continue
     const label = c.saved?.name || outfitLabel(garmentIds, byId)
-    ranked.push({ key, garmentIds, label, reason: c.saved ? 'saved' : 'often', score: c.days.size, lastWorn: c.lastWorn })
+    const fits = !occasion || garmentIds.every(id => fitsOccasion(byId.get(id)!, occasion)) ? 1 : 0
+    ranked.push({ key, garmentIds, label, reason: c.saved ? 'saved' : 'often', score: c.days.size, lastWorn: c.lastWorn, fits })
   }
   return ranked
     .sort(
       (a, b) =>
+        b.fits - a.fits ||
         b.score - a.score ||
         b.lastWorn.localeCompare(a.lastWorn) ||
         Number(b.reason === 'saved') - Number(a.reason === 'saved') ||
@@ -564,16 +609,26 @@ const RAIN_TAG = /rain|waterproof/
 
 /**
  * The outerwear a cold or wet day suggests: live and unretired, in season when
- * one is; on a wet day one tagged for rain first; then the one worn on the most
- * days in the last 60, the latest worn, the name. Undefined with none to offer.
+ * one is; one that fits the day's `occasion` first, when it has one; then on a
+ * wet day one tagged for rain; then the one worn on the most days in the last
+ * 60, the latest worn, the name. Undefined with none to offer.
  */
-export function outerwearFor(garments: readonly Garment[], ix: WearIndex, need: WeatherNeed, season: Season = seasonOf(ix.dayKey)): Garment | undefined {
+export function outerwearFor(
+  garments: readonly Garment[],
+  ix: WearIndex,
+  need: WeatherNeed,
+  season: Season = seasonOf(ix.dayKey),
+  occasion?: DayOccasion,
+): Garment | undefined {
   const coats = garments.filter(g => !g.deletedAt && !g.archivedAt && g.type === 'outerwear')
   const fits = coats.filter(g => inSeason(g, season))
+  const forDay = (g: Garment) => (occasion && fitsOccasion(g, occasion) ? 1 : 0)
   const rainy = (g: Garment) => (need.wet && g.tags?.some(t => RAIN_TAG.test(t)) ? 1 : 0)
   const lately = (g: Garment) => daysWithin(ix.days.get(g.id) ?? [], ix.dayKey, SUGGEST_DAYS)
   const last = (g: Garment) => ix.days.get(g.id)?.[0] ?? ''
-  return [...(fits.length > 0 ? fits : coats)].sort((a, b) => rainy(b) - rainy(a) || lately(b) - lately(a) || last(b).localeCompare(last(a)) || a.name.localeCompare(b.name))[0]
+  return [...(fits.length > 0 ? fits : coats)].sort(
+    (a, b) => forDay(b) - forDay(a) || rainy(b) - rainy(a) || lately(b) - lately(a) || last(b).localeCompare(last(a)) || a.name.localeCompare(b.name),
+  )[0]
 }
 
 /** Whether these pieces already hold outerwear, so a weather hint has nothing to add. */

@@ -62,6 +62,12 @@ const STAYED = [
   'swappedPhotos',
   'withBack',
   'showingBack',
+  // work and personal
+  'dayOccasion',
+  'otherOccasion',
+  'DAY_OCCASION_LABEL',
+  'fitsOccasion',
+  'outfitOccasion',
   // favourites, details, plans and notes, Surprise me, seasons and tags, worn with and cost per wear, the weather
   'starred',
   'withDetails',

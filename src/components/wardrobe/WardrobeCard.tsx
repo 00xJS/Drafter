@@ -48,6 +48,8 @@ interface Props {
   now?: Date
   /** Today's forecast; by default the one the briefing cached (the tests hand one in). */
   forecast?: Forecast | null
+  /** A work day on your calendar: the one-tap looks that fit it come first, and so does a coat that does. */
+  workDay?: boolean
 }
 
 /**
@@ -112,19 +114,20 @@ function LookNote({ look, onSave }: { look: Wear; onSave(note: string): void }) 
  * today has a look it is one line with Change, and its note. When the forecast
  * is cold or wet, it offers a coat. Hidden until the wardrobe can dress you (a
  * top and a bottom, or a one-piece), so nobody without one is asked. The one
- * tap is the only thing in the wardrobe that buzzes.
+ * tap is the only thing in the wardrobe that buzzes. On a work day the looks
+ * whose pieces are all for work, or for both, come first.
  */
-export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now = new Date(), forecast: given }: Props) {
+export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now = new Date(), forecast: given, workDay = false }: Props) {
   const byId = useMemo(() => liveById(garments), [garments])
   const ix = useMemo(() => wearIndex(wears, dayKey), [wears, dayKey])
-  const chips = useMemo(() => todaySuggestions(ix, outfits, byId), [ix, outfits, byId])
+  const chips = useMemo(() => todaySuggestions(ix, outfits, byId, 3, workDay ? 'work' : undefined), [ix, outfits, byId, workDay])
   const cached = useCachedForecast()
   const [withCoat, setWithCoat] = useState(false)
   if (!canDress(garments)) return null
 
   const forecast = given !== undefined ? given : cached
   const need = weatherNeed(forecast)
-  const coat = need ? outerwearFor(garments, ix, need) : undefined
+  const coat = need ? outerwearFor(garments, ix, need, undefined, workDay ? 'work' : 'personal') : undefined
   const sky = forecast && need ? weatherLine(forecast, need) : ''
   /** The one tap: a look logged, or a plan said to be worn. */
   const tap = (w: Wear, before?: Wear) => {

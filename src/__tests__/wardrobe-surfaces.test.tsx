@@ -392,19 +392,31 @@ describe('Ask draws on what you wear', () => {
     expect(looks[0].links).toEqual(expect.arrayContaining(['id-tee', 'id-jeans']))
   })
 
-  it('never sends a photo of either side of a piece', () => {
+  it('says what a piece is worn for, tells a question about clothes the rest are for both, and never sends a photo of either side', () => {
     const photo = (tail: string) => `personal/00000000-0000-0000-0000-00000000000a/${tail}`
-    const withPhotos = src({
+    const marked = src({
       garments: garments.map(g =>
-        g.id === 'id-tee' ? { ...g, photoId: photo('f1f1f1f1-front'), thumbId: photo('f2f2f2f2-front'), backPhotoId: photo('b1b1b1b1-back'), backThumbId: photo('b2b2b2b2-back'), showBack: true as const } : g,
+        g.id === 'id-tee'
+          ? { ...g, occasion: 'work' as const, photoId: photo('f1f1f1f1-front'), thumbId: photo('f2f2f2f2-front'), backPhotoId: photo('b1b1b1b1-back'), backThumbId: photo('b2b2b2b2-back'), showBack: true as const }
+          : g.id === 'id-jeans'
+            ? { ...g, occasion: 'personal' as const }
+            : g,
       ),
     })
+    const docs = buildCorpus(marked, { now, includeJournal: false, includeAmounts: false })
+    expect(docs.find(d => d.title === 'Navy tee')!.text).toBe('top · for work · worn on 2 days · last worn 2026-09-12 · first worn 2026-09-08')
+    expect(docs.find(d => d.title === 'Black jeans')!.text).toMatch(/^bottom · for personal time · worn on 3 days/)
+    // marked for neither: for both, and said by the fact below, not on every line
+    expect(docs.find(d => d.title === 'Grey mac')!.text).not.toMatch(/for work|for personal/)
     const q = 'What have I not worn lately?'
-    const prep = prepareAsk(q, withPhotos, { now, tz: 'Europe/London', includeJournal: true })
+    const prep = prepareAsk(q, marked, { now, tz: 'Europe/London', includeJournal: true })
+    expect(prep.facts).toContain('A piece marked for work, or for personal time, is for that alone; a piece marked for neither is for both.')
     const { system, prompt } = buildAskPrompt(q, prep.docs, prep.facts)
-    for (const sent of [JSON.stringify(buildCorpus(withPhotos, { now, includeJournal: true, includeAmounts: true })), JSON.stringify(prep.docs), system, prompt]) {
+    for (const sent of [JSON.stringify(buildCorpus(marked, { now, includeJournal: true, includeAmounts: true })), JSON.stringify(prep.docs), system, prompt]) {
       expect(sent).not.toMatch(/f1f1f1f1|f2f2f2f2|b1b1b1b1|b2b2b2b2|photoId|thumbId|backPhotoId|backThumbId|showBack/)
     }
+    // a wardrobe with nothing marked needs no word about it
+    expect(factsFor(parseQuestion(q, src(), now), src(), now, 'Europe/London').join(' ')).not.toContain('marked for neither')
   })
 
   it('sends a price, and the cost per wear, only for a question about money', () => {

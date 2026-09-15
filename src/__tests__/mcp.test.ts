@@ -323,6 +323,7 @@ function household(): Row[] {
       backPhotoId: 'back-photo-of-tee',
       backThumbId: 'back-thumb-of-tee',
       showBack: true,
+      occasion: 'work',
       createdAt: added,
     }),
     at(OWNER, { kind: 'garment', id: 'jeans', name: 'Blue jeans', type: 'bottom', createdAt: added }),
@@ -957,6 +958,7 @@ describe('the wardrobe over MCP', () => {
       type: 'top',
       color: '#1e2848',
       notes: null,
+      occasion: 'work',
       retired: false,
       addedOn: daysAgo(30),
       lastWorn: daysAgo(3),
@@ -965,6 +967,9 @@ describe('the wardrobe over MCP', () => {
       daysWornLast365Days: 1,
     })
     expect(out.garments.find(g => g.id === 'band')).toMatchObject({ retired: true, lastWorn: null, daysWorn: 0 })
+    // a piece marked for neither work nor personal time is for both, and says so
+    expect(out.garments.find(g => g.id === 'jeans')).toMatchObject({ occasion: 'both' })
+    expect(out.garments.every(g => ['work', 'personal', 'both'].includes(g.occasion as string))).toBe(true)
     serveHousehold(household())
     expect(ids(((await tool('list_garments').run({ type: 'top' }, ctxFor())) as { garments: Piece[] }).garments)).toEqual(['linen', 'tee', 'band'])
     await expect(tool('list_garments').run({ type: 'hat' }, ctxFor())).rejects.toThrow(/Invalid type "hat"/)

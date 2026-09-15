@@ -167,6 +167,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           outfits={store.outfits}
           wears={store.wears}
           myId={household.myId}
+          // your work days on the calendar: Outfit dresses them for work
+          entries={store.events}
           onSave={item => store.upsert(item)}
           onRemove={id => store.remove(id)}
           onRestore={ids => store.restore(ids)}

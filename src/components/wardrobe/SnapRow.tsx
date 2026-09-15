@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { Garment } from '../../types'
-import { wornShort, type WearIndex } from '../../wardrobe'
+import { OCCASION_META, type Garment } from '../../types'
+import { fitsOccasion, wornShort, type DayOccasion, type WearIndex } from '../../wardrobe'
 import { heldBadge } from './composer'
 import { FavouriteMark, GarmentInset, GarmentPhoto, hasBack, mainSide, otherSide } from './GarmentPhoto'
 
@@ -16,6 +16,8 @@ interface Props {
   none?: boolean
   /** The smaller cards of the optional rows. */
   small?: boolean
+  /** What the day is dressed for: a piece for the other occasion is a quieter card. */
+  occasion?: DayOccasion
   /** The middle card's "i": the piece sheet. */
   onInfo(id: string): void
   onAdd(): void
@@ -45,7 +47,7 @@ const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia
  * reader's to reach), that swaps the card's two sides for this visit and
  * saves nothing. A tap on it flips; a swipe from it still scrolls the row.
  */
-export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, onInfo, onAdd, addLabel, emptyLabel, onHide }: Props) {
+export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, occasion, onInfo, onAdd, addLabel, emptyLabel, onHide }: Props) {
   const row = useRef<HTMLDivElement>(null)
   const cards: (Garment | null)[] = none ? [null, ...pieces] : pieces
   const at = Math.max(0, cards.findIndex(g => (g?.id ?? null) === selected))
@@ -166,10 +168,12 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
           >
             {cards.map((g, i) => {
               const on = i === at
+              // a piece for the other occasion stays in the row, quieter
+              const off = !!g && !!occasion && !fitsOccasion(g, occasion)
               const shown = g ? (flipped.has(g.id) && hasBack(g) ? otherSide(mainSide(g)) : mainSide(g)) : 'front'
               const held = g && heldBadge(g)
               return (
-                <div key={g?.id ?? 'none'} className={on ? 'snap-cell on' : 'snap-cell side'}>
+                <div key={g?.id ?? 'none'} className={`${on ? 'snap-cell on' : 'snap-cell side'}${off ? ' off' : ''}`}>
                   <div role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className="snap-card" onClick={() => choose(i)}>
                     {g ? (
                       <>
@@ -184,6 +188,7 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, on
                           ) : (
                             <span className="badge snap-new">New</span>
                           )}
+                          {g.occasion && <span className={`badge occasion-badge ${g.occasion}`}>{OCCASION_META[g.occasion].label}</span>}
                         </span>
                       </>
                     ) : (

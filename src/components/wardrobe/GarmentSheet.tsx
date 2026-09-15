@@ -5,7 +5,7 @@ import { shortDay } from '../../kitchen'
 import { preloadable, warm } from '../../lazyload'
 import { NotSignedIn, imageFiles, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
-import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Outfit } from '../../types'
+import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Occasion, type Outfit } from '../../types'
 import { uid } from '../../utils'
 import { costLine, garmentStats, outfitLabel, renamed, showingBack, starred, suggestedNames, withBack, wornLine, type WearIndex } from '../../wardrobe'
 import { Bars } from '../bits'
@@ -14,7 +14,7 @@ import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
 import { CutoutLater, keptOffline } from './CutoutLater'
 import { GarmentView, hasBack, mainSide, type Side } from './GarmentPhoto'
-import { PieceDetails } from './PieceDetails'
+import { OccasionChoice, PieceDetails } from './PieceDetails'
 
 /** What the sheet is for: adding a piece (of a type, when the way in named one), or one piece. */
 export type SheetMode = { kind: 'add'; type?: GarmentType } | { kind: 'edit'; id: string }
@@ -141,6 +141,8 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const [type, setType] = useState<GarmentType>(preset ?? 'top')
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  // what it is worn for: Both unless chosen, and it carries on to the next photo in a queue, as its type does
+  const [occasion, setOccasion] = useState<Occasion | undefined>(undefined)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -245,6 +247,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
         thumbId: front?.thumbId,
         backPhotoId: backIds?.photoId,
         backThumbId: backIds?.thumbId,
+        occasion,
         color: ready?.color,
         notes: notes.trim().slice(0, 500) || undefined,
         createdAt: now,
@@ -372,6 +375,10 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
             ))}
           </div>
           <input value={name} placeholder={names[0]} maxLength={80} aria-label="Name" onChange={e => setName(e.target.value)} />
+        </div>
+        <div className="field">
+          <span>Wear it for</span>
+          <OccasionChoice value={occasion} onChange={setOccasion} />
         </div>
         <details className="garment-more">
           <summary>More</summary>

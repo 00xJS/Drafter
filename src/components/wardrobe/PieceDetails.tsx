@@ -1,9 +1,29 @@
 import { useRef, useState, type MutableRefObject } from 'react'
 import { countOf } from '../../people'
 import { garmentTags } from '../../schema'
-import { SEASONS, SEASON_META, type Garment } from '../../types'
+import { OCCASION_META, SEASONS, SEASON_META, type Garment, type Occasion } from '../../types'
 import { priceOf, withDetails, wornWith, type WearIndex } from '../../wardrobe'
 import { GarmentPhoto } from './GarmentPhoto'
+
+/** "Wear it for"'s three answers, in the order it says them: work, personal, or both — which is marking neither. */
+const WEAR_FOR: { value?: Occasion; label: string }[] = [
+  { value: 'work', label: OCCASION_META.work.label },
+  { value: 'personal', label: OCCASION_META.personal.label },
+  { label: 'Both' },
+]
+
+/** "Wear it for: Work · Personal · Both", Both by default: the piece sheet's, and Add clothing's. */
+export function OccasionChoice({ value, onChange }: { value?: Occasion; onChange(o: Occasion | undefined): void }) {
+  return (
+    <span className="segmented garment-occasion" role="radiogroup" aria-label="Wear it for">
+      {WEAR_FOR.map(o => (
+        <button key={o.label} type="button" role="radio" aria-checked={value === o.value} className={value === o.value ? 'seg on' : 'seg'} onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </span>
+  )
+}
 
 interface Props {
   garment: Garment
@@ -38,10 +58,10 @@ export function readPrice(text: string): number | null | undefined {
 }
 
 /**
- * A piece's own details on its sheet: what it cost, the seasons it is for,
- * its tags, and the pieces it is worn with most. The two typed fields save on
- * Enter or blur, or through `keep` when the sheet closes; a season saves as it
- * is tapped.
+ * A piece's own details on its sheet: what it cost, what it is worn for, the
+ * seasons it is for, its tags, and the pieces it is worn with most. The two
+ * typed fields save on Enter or blur, or through `keep` when the sheet
+ * closes; an occasion or a season saves as it is tapped.
  */
 export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }: Props) {
   const [price, setPrice] = useState(() => priceText(g))
@@ -86,6 +106,10 @@ export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }
         </span>
         <input value={price} inputMode="decimal" maxLength={12} placeholder="0" onChange={e => setPrice(e.target.value)} onBlur={commitPrice} onKeyDown={onEnter(commitPrice)} />
       </label>
+      <div className="field">
+        <span>Wear it for</span>
+        <OccasionChoice value={g.occasion} onChange={o => o !== g.occasion && onEdit(cur => withDetails(cur, { occasion: o ?? null }))} />
+      </div>
       <div className="field">
         <span>
           Seasons <small className="muted">(none is any season)</small>

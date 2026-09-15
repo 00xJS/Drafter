@@ -1,5 +1,5 @@
 import { GARMENT_TYPES, type Garment, type GarmentType, type Season, type Wear } from '../../types'
-import { coreKey, inSeason, notInUse, pickWeighted, restWeight, seasonOf, type WearIndex } from '../../wardrobe'
+import { coreKey, fitsOccasion, inSeason, notInUse, pickWeighted, restWeight, seasonOf, type DayOccasion, type WearIndex } from '../../wardrobe'
 
 // The composer's selection, with no React in it: what each row holds, which
 // card each has chosen, and the pieces a log or a save takes from them.
@@ -48,18 +48,23 @@ export function heldPieces(look: Wear | undefined, garments: readonly Garment[],
  * The rows, dealt in the order frozen when the composer mounted: a piece added
  * since goes on the end of its row, and one retired or deleted since drops
  * out. They never re-sort under a thumb during a visit. The day's held pieces
- * lead their rows.
+ * lead their rows. With the day's `occasion`, the pieces that fit it (marked
+ * for it, or for both) come next, in that same order, and the ones for the
+ * other occasion after them: still there, never hidden.
  */
-export function rowsOf(garments: readonly Garment[], frozen: readonly string[], held: readonly Garment[] = []): Rows {
-  const rows = Object.fromEntries(GARMENT_TYPES.map(t => [t, held.filter(g => g.type === t)])) as Rows
+export function rowsOf(garments: readonly Garment[], frozen: readonly string[], held: readonly Garment[] = [], occasion?: DayOccasion): Rows {
+  const dealt = Object.fromEntries(GARMENT_TYPES.map(t => [t, [] as Garment[]])) as Rows
   const live = new Map(garments.filter(g => !g.deletedAt && !g.archivedAt).map(g => [g.id, g]))
   for (const id of frozen) {
     const g = live.get(id)
-    if (g) rows[g.type].push(g)
+    if (g) dealt[g.type].push(g)
   }
-  const dealt = new Set(frozen)
-  for (const g of [...live.values()].filter(g => !dealt.has(g.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) rows[g.type].push(g)
-  return rows
+  const inOrder = new Set(frozen)
+  for (const g of [...live.values()].filter(g => !inOrder.has(g.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) dealt[g.type].push(g)
+  const fits = (g: Garment) => !occasion || fitsOccasion(g, occasion)
+  return Object.fromEntries(
+    GARMENT_TYPES.map(t => [t, [...held.filter(g => g.type === t), ...dealt[t].filter(fits), ...dealt[t].filter(g => !fits(g))]]),
+  ) as Rows
 }
 
 /** Every piece the rows show: one a log leaves out was seen there and moved on from. */
@@ -134,21 +139,39 @@ export function chosenIn(sel: Selection, rows: Rows, asked: readonly Optional[])
 }
 
 /**
- * Surprise me: every row on screen moves to a piece drawn at random, weighted
- * toward the least recently worn (restWeight), and never to the one it is on
- * while it has another. A piece only held for the day (retired, in Trash) is
- * not in the draw, nor one out of `season` while the row has one in it.
- * Accessories stay as they are, and nothing is saved: only the rows move.
+ * What Surprise me draws a row from: the pieces dealt to it (not one only
+ * held for the day, retired or in Trash) that fit the day's `occasion` — for
+ * it, or for both — and of those the ones in `season`; a row with none that
+ * fits keeps its whole deal at that step, so nothing is ruled out for good.
  */
-export function surprise(sel: Selection, rows: Rows, asked: readonly Optional[], ix: WearIndex, opts: { season?: Season; random?: () => number } = {}): Selection {
+export function surprisePool(row: readonly Garment[], season: Season, occasion?: DayOccasion): Garment[] {
+  const dealt = row.filter(g => !heldBadge(g))
+  const forDay = occasion ? dealt.filter(g => fitsOccasion(g, occasion)) : dealt
+  const day = forDay.length > 0 ? forDay : dealt
+  const inTime = day.filter(g => inSeason(g, season))
+  return inTime.length > 0 ? inTime : day
+}
+
+/**
+ * Surprise me: every row on screen moves to a piece drawn at random from its
+ * pool (surprisePool: the day's occasion first, then the season), weighted
+ * toward the least recently worn (restWeight), and never to the one it is on
+ * while it has another. Accessories stay as they are, and nothing is saved:
+ * only the rows move.
+ */
+export function surprise(
+  sel: Selection,
+  rows: Rows,
+  asked: readonly Optional[],
+  ix: WearIndex,
+  opts: { season?: Season; occasion?: DayOccasion; random?: () => number } = {},
+): Selection {
   const { slots, onepieceMode, open } = chosenIn(sel, rows, asked)
   const season = opts.season ?? seasonOf(ix.dayKey)
   const picked: Picked = { ...sel.picked }
   const shown: Slot[] = [...(onepieceMode ? (['onepiece'] as const) : (['top', 'bottom'] as const)), ...open]
   for (const slot of shown) {
-    const dealt = rows[slot].filter(g => !heldBadge(g))
-    const fits = dealt.filter(g => inSeason(g, season))
-    const pool = fits.length > 0 ? fits : dealt
+    const pool = surprisePool(rows[slot], season, opts.occasion)
     const g = pickWeighted(pool.length > 1 ? pool.filter(x => x.id !== slots[slot]) : pool, x => restWeight(ix, x.id), opts.random)
     if (g) picked[slot] = g.id
   }

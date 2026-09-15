@@ -14,6 +14,7 @@ import {
   tasksByDay,
   weekDays,
   weekLabel,
+  workByDay,
 } from '../calgrid'
 import { cookedIndex, visitIndex, mealLabel, mealsByDay } from '../kitchen'
 import { plannedGift } from '../people'
@@ -159,8 +160,9 @@ export function Calendar({
   }, [places])
   // A work day is drawn as a badge on the day, not as an item competing with
   // the day's events and meals: "am I home on Thursday" is a property of the day.
-  const workByDay = useMemo(() => eventsByDay(events.filter(e => e.work)), [events])
-  const workOn = (d: Date) => (workByDay.get(dateKey(d)) ?? [])[0]
+  // (workByDay in calgrid.ts: the wardrobe reads a work day from the same map)
+  const workDays = useMemo(() => workByDay(events), [events])
+  const workOn = (d: Date) => (workDays.get(dateKey(d)) ?? [])[0]
   const workBadge = (d: Date) => {
     const w = workOn(d)
     if (!w?.work) return null

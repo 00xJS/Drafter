@@ -609,6 +609,13 @@ export const SEASON_META: Record<Season, { label: string }> = {
   autumn: { label: 'Autumn' },
   winter: { label: 'Winter' },
 }
+/** What a piece is worn for. A piece marked for neither is for both, the default. */
+export type Occasion = 'work' | 'personal'
+export const OCCASIONS: Occasion[] = ['work', 'personal']
+export const OCCASION_META: Record<Occasion, { label: string }> = {
+  work: { label: 'Work' },
+  personal: { label: 'Personal' },
+}
 
 /** One piece of clothing. Personal, like the journal: never a household peer's to read. */
 export interface Garment extends Owned {
@@ -626,6 +633,8 @@ export interface Garment extends Owned {
   backThumbId?: string
   /** Shown back first: the back is the main picture and the front the inset. Only with a back photo. */
   showBack?: true
+  /** Worn for work or your own time; absent is both. */
+  occasion?: Occasion
   /** #rrggbb sampled from the photo: the placeholder, the tints, the name suggestion. */
   color?: string
   notes?: string

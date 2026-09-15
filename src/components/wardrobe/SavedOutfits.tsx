@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import type { Garment, Outfit } from '../../types'
-import { outfitLabel, outfitLine, savedOrder, unwearable, type WearIndex } from '../../wardrobe'
+import { OCCASION_META, type Garment, type Outfit } from '../../types'
+import { outfitLabel, outfitLine, outfitOccasion, savedOrder, unwearable, type WearIndex } from '../../wardrobe'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Modal, ModalHead } from '../Modal'
@@ -20,8 +20,9 @@ interface Props {
 
 /**
  * The saved outfits under the composer, the favourites and then the most worn
- * lately first: a tap puts one in the rows, and "…" wears it today, stars it,
- * renames it or deletes it.
+ * lately first: a tap puts one in the rows — whatever the day is dressed for —
+ * and "…" wears it today, stars it, renames it or deletes it. One whose pieces
+ * are for work, or for personal time, says so (outfitOccasion).
  */
 export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFavourite, onDelete }: Props) {
   const list = useMemo(() => savedOrder(outfits, ix, byId), [outfits, ix, byId])
@@ -33,7 +34,9 @@ export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFa
     <section className="saved-outfits">
       <h3 className="wardrobe-heading">Saved outfits ({list.length})</h3>
       <ul className="saved-strip">
-        {list.map(o => (
+        {list.map(o => {
+          const occasion = outfitOccasion(o.garmentIds, byId)
+          return (
           <li key={o.id} className="saved-tile">
             <button type="button" className="saved-load" title="Put it in the rows" onClick={() => onLoad(o)}>
               <Collage ids={o.garmentIds} byId={byId} />
@@ -42,12 +45,14 @@ export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFa
                 {label(o)}
               </span>
               <span className="saved-line">{outfitLine(o, ix, byId)}</span>
+              {occasion && <span className={`badge occasion-badge ${occasion}`}>{OCCASION_META[occasion].label}</span>}
             </button>
             <button type="button" className="saved-more" aria-label={`More for ${label(o)}`} onClick={() => setMenuId(o.id)}>
               <span aria-hidden="true">…</span>
             </button>
           </li>
-        ))}
+          )
+        })}
       </ul>
       {menu && (
         <OutfitMenu

@@ -2,7 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { shiftDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import { GARMENT_TYPE_META, LOOK_NOTE_MAX, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
-import { byRest, lastPlanDay, looksOn, outerwearFor, seasonOf, weatherLine, weatherNeed, type WearIndex } from '../../wardrobe'
+import {
+  byRest,
+  DAY_OCCASION_LABEL,
+  dayOccasion,
+  lastPlanDay,
+  looksOn,
+  otherOccasion,
+  outerwearFor,
+  seasonOf,
+  weatherLine,
+  weatherNeed,
+  type DayOccasion,
+  type WearIndex,
+} from '../../wardrobe'
 import type { Forecast } from '../../weather'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
@@ -15,6 +28,7 @@ import { SnapRow } from './SnapRow'
 /** Which of the optional rows are open: this device's preference, like the journal's stats. */
 const ROWS_KEY = 'drafter:wardrobe-rows'
 const NONE: Garment[] = []
+const NO_DAYS: ReadonlySet<string> = new Set()
 
 function storedRows(): Optional[] {
   try {
@@ -36,6 +50,8 @@ interface Props {
   /** The day being dressed: today, a day before it, or a day ahead to plan. */
   day: string
   todayKey: string
+  /** Your work days (calgrid.ts workDaysOf): a day among them is dressed for work, any other is a day off. */
+  workDays?: ReadonlySet<string>
   onDay(day: string): void
   /**
    * Log the pieces on the day: its latest look takes them, or with `another` a
@@ -71,14 +87,24 @@ interface Props {
  * Trash, joins its row for the visit, badged, so Update look never writes over
  * what you cannot see. A day still to come is planned: its look counts once it
  * is said to be worn. On today, a cold or wet forecast offers a coat.
+ *
+ * Beside the date, the day is a Work day (a work-day entry of yours is on the
+ * calendar) or a Day off; a tap turns it the other way for this visit and
+ * saves nothing. The pieces for it, or for both, lead each row, and those for
+ * the other occasion follow, quieter; Surprise me and the coat keep to it.
  */
 export function OutfitComposer(props: Props) {
-  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece, pending, onPendingUsed } = props
+  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, workDays = NO_DAYS, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece, pending, onPendingUsed } =
+    props
   const [frozen] = useState(() => byRest(garments, ix).map(g => g.id))
   const dayLooks = looksOn(wears, day)
   const latest = dayLooks[dayLooks.length - 1]
+  /** A day turned the other way than the calendar has it: for the view only, never saved. */
+  const [flip, setFlip] = useState<{ day: string; to: DayOccasion } | null>(null)
+  const calendarSays = dayOccasion(day, workDays)
+  const occasion = flip?.day === day ? flip.to : calendarSays
   const held = useMemo(() => heldPieces(latest, garments, inTrash), [latest, garments, inTrash])
-  const rows = useMemo(() => rowsOf(garments, frozen, held), [garments, frozen, held])
+  const rows = useMemo(() => rowsOf(garments, frozen, held, occasion), [garments, frozen, held, occasion])
   const shown = useMemo(() => shownIn(rows), [rows])
   const [sel, setSel] = useState<Selection>(() => {
     const first = start(rows, latest, byId)
@@ -138,7 +164,8 @@ export function OutfitComposer(props: Props) {
   }
   const loadOutfit = (o: Outfit) => setSel(s => load(s, o.garmentIds, rows, byId))
   // the rows move and nothing is written: Wearing this is still yours to press
-  const shuffle = () => setSel(s => surprise(s, rows, openRows, ix, { season: seasonOf(day) }))
+  const shuffle = () => setSel(s => surprise(s, rows, openRows, ix, { season: seasonOf(day), occasion }))
+  const flipDay = () => setFlip(occasion === calendarSays ? { day, to: otherOccasion(occasion) } : null)
   const canShuffle = (onepieceMode ? rows.onepiece : [...rows.top, ...rows.bottom]).length > 0
 
   const yesterday = shiftDayKey(todayKey, -1)
@@ -157,7 +184,7 @@ export function OutfitComposer(props: Props) {
 
   // what today's forecast asks for, when the rows have no outerwear chosen yet
   const need = day === todayKey ? weatherNeed(forecast) : null
-  const coat = need && !chosen.outerwear ? outerwearFor(garments, ix, need) : undefined
+  const coat = need && !chosen.outerwear ? outerwearFor(garments, ix, need, undefined, occasion) : undefined
 
   const row = (slot: Slot, optional?: Optional) => {
     const meta = GARMENT_TYPE_META[slot]
@@ -171,6 +198,7 @@ export function OutfitComposer(props: Props) {
         onSelect={id => pick(slot, id)}
         none={!!optional}
         small={!!optional}
+        occasion={occasion}
         onHide={optional ? () => showRow(optional, false) : undefined}
         onInfo={onOpenPiece}
         onAdd={() => onAdd(slot)}
@@ -186,28 +214,41 @@ export function OutfitComposer(props: Props) {
         <button type="button" className="btn subtle wardrobe-step" aria-label="The day before" onClick={() => onDay(shiftDayKey(day, -1))}>
           ‹
         </button>
-        <span className="wardrobe-day-pick">
-          <span className="wardrobe-day-name" aria-hidden="true">
-            {dayName}
+        {/* the date and what the day is dressed for: side by side, or on a
+            phone one over the other, so the line stays one line */}
+        <span className="wardrobe-day-mid">
+          <span className="wardrobe-day-pick">
+            <span className="wardrobe-day-name" aria-hidden="true">
+              {dayName}
+            </span>
+            <input
+              type="date"
+              max={lastDay}
+              value={day}
+              aria-label={`Day: ${dayName}`}
+              onChange={e => {
+                const v = e.target.value
+                // a year ahead at most: a plan, not a diary
+                if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= lastDay) onDay(v)
+              }}
+              onClick={e => {
+                try {
+                  e.currentTarget.showPicker()
+                } catch {
+                  /* the browser opens its own, or has none to show */
+                }
+              }}
+            />
           </span>
-          <input
-            type="date"
-            max={lastDay}
-            value={day}
-            aria-label={`Day: ${dayName}`}
-            onChange={e => {
-              const v = e.target.value
-              // a year ahead at most: a plan, not a diary
-              if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= lastDay) onDay(v)
-            }}
-            onClick={e => {
-              try {
-                e.currentTarget.showPicker()
-              } catch {
-                /* the browser opens its own, or has none to show */
-              }
-            }}
-          />
+          <button
+            type="button"
+            className={occasion === calendarSays ? 'wardrobe-occasion' : 'wardrobe-occasion changed'}
+            aria-label={`${DAY_OCCASION_LABEL[occasion]}: dress for ${occasion === 'work' ? 'a day off' : 'work'} instead`}
+            title={occasion === calendarSays ? (occasion === 'work' ? 'A work day on your calendar' : 'No work day on your calendar') : 'Changed for now: nothing is saved'}
+            onClick={flipDay}
+          >
+            {DAY_OCCASION_LABEL[occasion]}
+          </button>
         </span>
         <button type="button" className="btn subtle wardrobe-step" aria-label="The day after" disabled={day >= lastDay} onClick={() => onDay(shiftDayKey(day, 1))}>
           ›

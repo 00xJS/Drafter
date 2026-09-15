@@ -232,7 +232,7 @@ describe('the fields the wardrobe grew: a star, tags, seasons, a price, a note, 
   })
 })
 
-describe('a back photo', () => {
+describe('a back photo, and what a piece is worn for', () => {
   const base = { kind: 'garment', id: 'g1', name: 'Band tee', type: 'top', createdAt: T0, updatedAt: T0 }
   const BACK = `personal/${USER}/8e2b1a00-1b2c-4d3e-8f40-5a6b7c8d9e0f`
   const BACK_THUMB = `personal/${USER}/9e2b1a00-1b2c-4d3e-8f40-5a6b7c8d9e0f`
@@ -256,8 +256,14 @@ describe('a back photo', () => {
     for (const v of ['true', 1, false, null]) expect(sanitizeGarment({ ...base, backPhotoId: BACK, showBack: v })?.showBack, String(v)).toBeUndefined()
   })
 
-  it('round-trips a back photo and the back first through a JSON export', () => {
-    const items: Item[] = [{ ...garment, backPhotoId: BACK, backThumbId: BACK_THUMB, showBack: true }]
+  it('keeps what a piece is worn for only as work or personal; anything else is both, which is no field at all', () => {
+    expect(sanitizeGarment({ ...base, occasion: 'work' })?.occasion).toBe('work')
+    expect(sanitizeGarment({ ...base, occasion: 'personal' })?.occasion).toBe('personal')
+    for (const v of ['both', 'Work', 'gym', 1, null, undefined]) expect(sanitizeGarment({ ...base, occasion: v })?.occasion, String(v)).toBeUndefined()
+  })
+
+  it('round-trips a back photo, the back first and an occasion through a JSON export', () => {
+    const items: Item[] = [{ ...garment, backPhotoId: BACK, backThumbId: BACK_THUMB, showBack: true, occasion: 'work' }]
     expect(migrateStored(JSON.parse(JSON.stringify({ version: 3, items })))).toEqual(items)
   })
 })

@@ -1355,7 +1355,7 @@ do $$
 declare r jsonb;
 begin
   r := public.sync_posts('[
-    {"kind":"garment","id":"g-tee","name":"White tee","type":"top","photoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a10","thumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a11","backPhotoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a12","backThumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a13","showBack":true,"color":"#f5f5f0","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
+    {"kind":"garment","id":"g-tee","name":"White tee","type":"top","photoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a10","thumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a11","backPhotoId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a12","backThumbId":"personal/00000000-0000-0000-0000-00000000000a/7f3c9a13","showBack":true,"occasion":"work","color":"#f5f5f0","createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"outfit","id":"o-friday","name":"Friday","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"},
     {"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee","g-jeans"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T08:00:00.000Z"}
   ]'::jsonb, '2099-01-01');
@@ -1374,11 +1374,12 @@ begin
   if (select data ->> 'photoId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a10' then
     raise exception 'FAIL v3.14-1: the garment''s photo reference did not survive the write';
   end if;
-  -- its back photo and the back first are plain fields of the record, stored as sent
+  -- its back photo, the back first and what it is worn for are plain fields of the record, stored as sent
   if (select data ->> 'backPhotoId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a12'
      or (select data ->> 'backThumbId' from public.posts where id = 'g-tee') is distinct from 'personal/00000000-0000-0000-0000-00000000000a/7f3c9a13'
-     or (select data ->> 'showBack' from public.posts where id = 'g-tee') is distinct from 'true' then
-    raise exception 'FAIL v3.14-1: the garment''s back photo or back-first did not survive the write';
+     or (select data ->> 'showBack' from public.posts where id = 'g-tee') is distinct from 'true'
+     or (select data ->> 'occasion' from public.posts where id = 'g-tee') is distinct from 'work' then
+    raise exception 'FAIL v3.14-1: the garment''s back photo, back-first or occasion did not survive the write';
   end if;
   -- an edit, so the look has a history row a peer must not read either
   r := public.sync_posts('[{"kind":"wear","id":"wear~2026-09-13~a1b2c3d4e5","date":"2026-09-13","garmentIds":["g-tee"],"createdAt":"2026-09-13T08:00:00.000Z","updatedAt":"2026-09-13T09:00:00.000Z"}]'::jsonb, '2099-01-01');

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { GARMENT_TYPES, GARMENT_TYPE_META, SEASONS, SEASON_META, type Garment, type GarmentType, type Season } from '../../types'
+import { GARMENT_TYPES, GARMENT_TYPE_META, SEASONS, SEASON_META, type Garment, type GarmentType, type Occasion, type Season } from '../../types'
 import { CLOTHES_SORTS, clothesMatch, clothesOrder, tagsOf, wornShort, type ClothesShow, type ClothesSort, type WearIndex } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { FavouriteMark, GarmentView, hasBack } from './GarmentPhoto'
@@ -28,14 +28,15 @@ function Tile({ garment, ix, onOpen }: { garment: Garment; ix: WearIndex; onOpen
 }
 
 /**
- * Every piece: a filter by type or to the favourites, a season and a tag to
- * narrow it, a sort (the ones rested longest first unless you choose
- * otherwise), a tile to add one, and the retired ones kept apart at the foot,
- * their history intact.
+ * Every piece: a filter by type or to the favourites, a season, an occasion
+ * and a tag to narrow it, a sort (the ones rested longest first unless you
+ * choose otherwise), a tile to add one, and the retired ones kept apart at the
+ * foot, their history intact.
  */
 export function Clothes({ garments, ix, onAdd, onOpen }: Props) {
   const [filter, setFilter] = useState<ClothesShow>('all')
   const [season, setSeason] = useState<Season | ''>('')
+  const [occasion, setOccasion] = useState<Occasion | ''>('')
   const [tag, setTag] = useState<string | null>(null)
   const [sort, setSort] = useState<ClothesSort>('rest')
   const inUse = useMemo(() => garments.filter(g => !g.deletedAt && !g.archivedAt), [garments])
@@ -50,7 +51,10 @@ export function Clothes({ garments, ix, onAdd, onOpen }: Props) {
   // a filter whose last piece went (retired, deleted, retyped, unstarred, untagged) falls back to All
   const show: ClothesShow = filter === 'favourites' ? (favourites > 0 ? filter : 'all') : filter !== 'all' && counts.get(filter) ? filter : 'all'
   const tagOn = tag && tags.some(t => t.tag === tag) ? tag : null
-  const shown = useMemo(() => clothesOrder(inUse.filter(g => clothesMatch(g, { show, season: season || null, tag: tagOn })), ix, sort), [inUse, show, season, tagOn, ix, sort])
+  const shown = useMemo(
+    () => clothesOrder(inUse.filter(g => clothesMatch(g, { show, season: season || null, occasion: occasion || null, tag: tagOn })), ix, sort),
+    [inUse, show, season, occasion, tagOn, ix, sort],
+  )
 
   return (
     <div className="clothes">
@@ -78,6 +82,12 @@ export function Clothes({ garments, ix, onAdd, onOpen }: Props) {
               {SEASON_META[s].label}
             </option>
           ))}
+        </select>
+        {/* a piece for both is for work and for personal time, so it stays under either */}
+        <select className="clothes-season" aria-label="Occasion" value={occasion} onChange={e => setOccasion(e.target.value as Occasion | '')}>
+          <option value="">Work and personal</option>
+          <option value="work">For work</option>
+          <option value="personal">For personal</option>
         </select>
         <label className="clothes-sort">
           <span>Sort</span>

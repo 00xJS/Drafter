@@ -103,6 +103,21 @@
     animation: none;
   }
 }
+/* a piece for work, or for personal time: one small badge on a card and on a saved outfit */
+.occasion-badge {
+  flex: none;
+  padding: 1px 7px;
+  font-size: 0.625rem;
+  line-height: calc(1rem - 2px);
+}
+.occasion-badge.work {
+  background: var(--tone-indigo-bg);
+  color: var(--tone-indigo);
+}
+.occasion-badge.personal {
+  background: var(--tone-green-bg);
+  color: var(--tone-green);
+}
 
 /* ----- the day line: ‹ Today · Sun 14 Sep › */
 .wardrobe-day {
@@ -149,6 +164,34 @@
   cursor: pointer;
 }
 .wardrobe-day-pick:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+/* the date and what the day is dressed for, side by side (a phone stacks them) */
+.wardrobe-day-mid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+/* Work day or Day off: a tap turns it the other way for the visit, saving nothing */
+.wardrobe-occasion {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wardrobe-occasion.changed {
+  border-style: dashed;
+  color: var(--accent-text);
+  text-decoration: underline dotted;
+}
+.wardrobe-occasion:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
@@ -311,6 +354,18 @@
   right: 10px;
   bottom: calc(2.2rem + 14px);
   width: calc((var(--card-w) - 12px) * 0.3);
+}
+/* a piece for the other occasion: still in the row, quieter */
+.snap-cell.off .snap-card {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+.snap-cell.off .snap-card .garment-photo img {
+  opacity: 0.7;
+}
+.snap-cell.off .snap-name {
+  color: var(--text-2);
+  font-weight: 500;
 }
 .snap-none {
   flex: 1;
@@ -574,6 +629,9 @@
 .saved-line {
   font-size: 0.6875rem;
   color: var(--muted);
+}
+.saved-load .occasion-badge {
+  align-self: flex-start;
 }
 .saved-more {
   position: absolute;
@@ -1651,6 +1709,21 @@ button.photo-cal-day:focus-visible {
     padding-inline: 2px;
     font-size: calc(13px * min(1.15, var(--type-scale)));
   }
+  /* the date over the day's occasion, so the line stays one line at 375pt */
+  .wardrobe-day-mid {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .wardrobe-day-mid .wardrobe-day-pick {
+    padding-block: 1px;
+  }
+  .wardrobe-occasion {
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    font-size: calc(11px * min(1.15, var(--type-scale)));
+  }
   .wardrobe-day-state {
     gap: 4px;
   }
@@ -1698,7 +1771,8 @@ button.photo-cal-day:focus-visible {
   .garment-with-piece,
   .garment-fav,
   .garment-back-pick,
-  .garment-back-first {
+  .garment-back-first,
+  .wardrobe-occasion {
     min-height: 44px;
   }
   .wardrobe-step,
@@ -1711,5 +1785,20 @@ button.photo-cal-day:focus-visible {
   .garment-more summary {
     min-height: 44px;
     padding-block: 12px;
+  }
+}
+/* a phone's day line stacks the occasion under the date, where its words fit
+   but a 44pt box would not: the box stays small, and its target reaches down
+   over the first row's heading line, which holds only the row's name */
+@media (max-width: 640px) and (pointer: coarse) {
+  .wardrobe-occasion {
+    position: relative;
+    z-index: 1;
+    min-height: 0;
+  }
+  .wardrobe-occasion::after {
+    content: '';
+    position: absolute;
+    inset: -2px -2px -22px;
   }
 }
