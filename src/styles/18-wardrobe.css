@@ -70,7 +70,11 @@
   border: 2px solid var(--surface);
   border-radius: 8px;
   background: var(--surface-2);
-  box-shadow: var(--shadow-sm);
+  /* a hairline outside the surface frame: a white inset on a white cut-out, or
+     a dark one on the dark tile, still has an edge */
+  box-shadow:
+    0 0 0 1px var(--border-strong),
+    var(--shadow-sm);
 }
 .garment-inset .garment-photo {
   flex: 1;
@@ -1772,6 +1776,7 @@ button.photo-cal-day:focus-visible {
   .garment-fav,
   .garment-back-pick,
   .garment-back-first,
+  .garment-back .btn,
   .wardrobe-occasion {
     min-height: 44px;
   }

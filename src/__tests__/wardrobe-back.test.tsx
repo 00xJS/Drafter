@@ -170,11 +170,11 @@ describe('the piece sheet', () => {
 
   it('with a back: Replace, Remove and Show the back first, and the photo flips with its inset, a button', () => {
     const html = sheet(band)
-    for (const s of ['Replace back photo', '>Remove back photo</button>', 'Show the back first', '<input type="checkbox" role="switch"/>']) expect(html).toContain(s)
+    for (const s of ['Replace back photo', '>Remove back photo</button>', 'Show the back first', '<input type="checkbox" role="switch" class="tcheck"/>']) expect(html).toContain(s)
     expect(html).toContain('<button type="button" class="garment-inset flip" aria-label="Show the back" title="Show the back">')
     expect(sides(html).slice(0, 2)).toEqual(['front', 'back'])
     const first = sheet(backFirst)
-    expect(first).toContain('<input type="checkbox" role="switch" checked=""/>')
+    expect(first).toContain('<input type="checkbox" role="switch" class="tcheck" checked=""/>')
     expect(first).toContain('aria-label="Show the front"')
     expect(sides(first).slice(0, 2)).toEqual(['back', 'front'])
   })
@@ -191,6 +191,8 @@ describe('the piece sheet', () => {
     )
     expect(add).not.toContain('Back photo')
     expect(read('../components/wardrobe/GarmentSheet.tsx')).toMatch(/\{ready && \(\s*<div className="garment-add-back">/)
+    // a Save that fails once the front is filed (the back's write, say) takes the front back out: nothing is left pending
+    expect(read('../components/wardrobe/GarmentSheet.tsx')).toMatch(/fileAway\(ready, userId, filed\)[\s\S]*fileAway\(back\.ready, userId, filed\)[\s\S]*catch \(err\) \{[\s\S]*?await deleteMedia\(filed\)/)
   })
 })
 

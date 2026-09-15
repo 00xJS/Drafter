@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
 import { preloadable, warm } from '../../lazyload'
-import { NotSignedIn, imageFiles, saveMedia } from '../../media'
+import { NotSignedIn, deleteMedia, imageFiles, saveMedia } from '../../media'
 import { PhotoUnreadable, prepareGarmentPhoto } from '../../photo'
 import { GARMENT_TYPES, GARMENT_TYPE_META, type Garment, type GarmentType, type Occasion, type Outfit } from '../../types'
 import { uid } from '../../utils'
@@ -64,11 +64,14 @@ const failure = (err: unknown) => (err instanceof PhotoUnreadable || err instanc
 /**
  * A photo made ready, filed under this account: the photo, then its thumbnail
  * as that photo's (MediaItem.thumbOf), so a sign-out counts the two as one.
- * A front and a back alike.
+ * A front and a back alike. Each id goes into `filed` as it is saved, so a
+ * caller whose save fails part way can take back what went in.
  */
-async function fileAway(p: { photo: Blob; thumb: Blob }, userId?: string | null): Promise<{ photoId: string; thumbId: string }> {
+async function fileAway(p: { photo: Blob; thumb: Blob }, userId?: string | null, filed: string[] = []): Promise<{ photoId: string; thumbId: string }> {
   const photoId = await saveMedia(p.photo, { personal: true, userId })
+  filed.push(photoId)
   const thumbId = await saveMedia(p.thumb, { personal: true, userId, thumbOf: photoId })
+  filed.push(thumbId)
   return { photoId, thumbId }
 }
 
@@ -232,11 +235,13 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   const save = async () => {
     if (waiting) return
     setSaving(true)
+    // what this Save has filed so far: a Save that fails leaves none of it pending
+    const filed: string[] = []
     try {
       // the photos go into this device's store, and its upload queue, first; the piece then points at them
-      const front = ready ? await fileAway(ready, userId) : undefined
+      const front = ready ? await fileAway(ready, userId, filed) : undefined
       // a back rides only with a front: its + Back photo shows once there is one
-      const backIds = ready && back.ready ? await fileAway(back.ready, userId) : undefined
+      const backIds = ready && back.ready ? await fileAway(back.ready, userId, filed) : undefined
       const now = new Date().toISOString()
       onCreate({
         kind: 'garment',
@@ -259,6 +264,8 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       setLastSaved(type)
       next(type)
     } catch (err) {
+      // no piece points at them: a front filed before the back failed would sit pending, and a retry would file it twice
+      await deleteMedia(filed).catch(() => {})
       setFailed(failure(err))
     } finally {
       setSaving(false)
@@ -532,7 +539,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
                 </button>
                 <CutoutLater garment={g} side="back" disabled={photoBusy} onCutout={file => void replace(file, true, false, 'back')} onError={setPhotoError} />
                 <label className="garment-back-first">
-                  <input type="checkbox" role="switch" checked={!!g.showBack} onChange={e => edit(cur => showingBack(cur, e.target.checked))} />
+                  <input type="checkbox" role="switch" className="tcheck" checked={!!g.showBack} onChange={e => edit(cur => showingBack(cur, e.target.checked))} />
                   Show the back first
                 </label>
               </>
