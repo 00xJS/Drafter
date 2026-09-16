@@ -24,6 +24,7 @@ export function RankedBars<R extends Ranked>({
   empty,
   rank,
   initial = 30,
+  window,
   color,
   picture,
   badge,
@@ -35,8 +36,15 @@ export function RankedBars<R extends Ranked>({
   /** What the card says when nothing counts in the window. */
   empty: ReactNode
   rank(window: DayWindow): readonly R[]
-  /** The window it opens on. */
+  /** The window it opens on, when the card owns the switch. */
   initial?: DayWindow
+  /**
+   * The window to follow instead of keeping one. Given, the card has no switch
+   * of its own: the Stats lens asks its whole page one question at a time, and
+   * a second switch inside the card would let two parts of one screen disagree.
+   * The areas' own Stats leave it out and keep their switch.
+   */
+  window?: DayWindow
   color?(row: R): string | undefined
   picture?(row: R): ReactNode
   badge?(row: R): ReactNode
@@ -45,11 +53,12 @@ export function RankedBars<R extends Ranked>({
   prefix?: string
 }) {
   const theme = useTheme()
-  const [span, setSpan] = useState<DayWindow>(initial)
+  const [own, setOwn] = useState<DayWindow>(initial)
+  const span = window ?? own
   const rows = rank(span)
   const most = Math.max(1, ...rows.map(r => r.count))
   return (
-    <ChartCard title={title} sub={sub} aside={<WindowSwitch value={span} onChange={setSpan} />}>
+    <ChartCard title={title} sub={sub} aside={window === undefined ? <WindowSwitch value={own} onChange={setOwn} /> : undefined}>
       {rows.length === 0 ? (
         <p className="empty">{empty}</p>
       ) : (

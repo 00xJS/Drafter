@@ -8,6 +8,10 @@
  *
  * - StatTile, StreakTiles: counters for a kpi-row.
  * - ChartCard, with a Stepper (‹ year ›) or a WindowSwitch (30 days · 12 months · All) at its head.
+ * - Segmented: one track with a thumb that slides, for a switch that swaps the panel under it.
+ * - Ring: "13 of 15" as an arc. Sparkline: a series small enough to sit in a row.
+ * - HeatGrid: a year of days as a column per week — runs and gaps in one glance.
+ * - AreaCard: one area's line on the Overview, and the way to that area's segment of the lens.
  * - RankedBars: ranked bars under that switch. Podium: the top three.
  * - MonthCalendar: a month grid with ‹ ›, each day drawn through a render prop.
  * - MonthBars: a year by month, with its total and a TrendBadge.
@@ -18,8 +22,10 @@
  *
  * Every colour is a theme token, or a user's colour through src/contrast.ts.
  * The styles live in 05-stats-charts.css, 11-people-review-search.css (the
- * year table) and 18-wardrobe.css (the podium, the photo calendar, and the
- * stats- classes beside the wardrobe- ones that `prefix="wardrobe"` keeps).
+ * year table), 18-wardrobe.css (the podium, the photo calendar, and the
+ * stats- classes beside the wardrobe- ones that `prefix="wardrobe"` keeps) and
+ * 18-stats-lens.css (the pieces the Stats lens added, and the lens's layout);
+ * the segmented track itself is in 04-table-modal.css.
  * Import the kit from a lazy view only: StatTile and TrendBadge reach the
  * first load through bits.tsx, and nothing else here should.
  */
@@ -35,3 +41,8 @@ export { ListCard, ListRow } from './ListCard'
 export { YearTable, type YearRow } from './YearTable'
 export { Narrowed } from './Narrowed'
 export { markInk } from './ink'
+export { Segmented } from './Segmented'
+export { Ring } from './Ring'
+export { Sparkline } from './Sparkline'
+export { HeatGrid, heatDays, type HeatDay } from './HeatGrid'
+export { AreaCard } from './AreaCard'

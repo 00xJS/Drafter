@@ -262,6 +262,129 @@ textarea {
   cursor: not-allowed;
 }
 
+/* ---------- the segmented control as a track ----------
+
+   A switch that swaps the panel under it is one control, not a row of separate
+   outlined buttons: a filled track with a single raised thumb, the shape iOS
+   has used since UISegmentedControl. The shell drew it that way already
+   (19-native-shell.css); this is the same control on the web, so the browser
+   and the phone no longer look like two different products.
+
+   Scoped to the containers that hold a tab-level switcher, never to `.seg`
+   itself — a bare rule here would stretch the grocery filter, the year
+   steppers and every other segmented row in the app. The .native block still
+   comes last and refines what the shell wants differently. */
+.people-tab-seg .segmented,
+.segmented.cal-mode,
+.segmented.seg-track {
+  display: flex;
+  width: 100%;
+  /* A track stretched over a 1600px window is a stripe, not a control. It
+     takes the width it needs and no more on a mouse page; the phone block
+     below gives it the full line, where a full-width track is the convention
+     and the labels need every point of it. */
+  max-width: 520px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+}
+.people-tab-seg .segmented .seg,
+.segmented.cal-mode .seg,
+.segmented.seg-track .seg {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: center;
+  font-weight: 600;
+  /* the label crosses the thumb rather than being repainted under it */
+  position: relative;
+  z-index: 1;
+  transition: color 0.18s ease;
+}
+.people-tab-seg .segmented .seg.on,
+.segmented.cal-mode .seg.on {
+  background: var(--surface);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-sm);
+}
+.people-tab-seg .segmented .seg:hover:not(.on),
+.segmented.cal-mode .seg:hover:not(.on),
+.segmented.seg-track .seg:hover:not(.on) {
+  color: var(--text);
+}
+/* Four labels have to sit inside 375pt on Home (Today · Week · Journal ·
+   Wardrobe) and in the Kitchen (Recipes · This week · Grocery · Stats); at the
+   desktop's 10px sides "Wardrobe" pressed against its neighbours. */
+@media (max-width: 640px) {
+  .people-tab-seg .segmented,
+  .segmented.cal-mode,
+  .segmented.seg-track {
+    max-width: none;
+  }
+  .people-tab-seg .segmented .seg,
+  .segmented.seg-track .seg {
+    padding-inline: 6px;
+  }
+}
+
+/* A track whose thumb is an element of its own, so moving between two choices
+   is one transform rather than a colour appearing somewhere else. The track
+   writes --seg-n (how many) and --seg-i (which); Reduce Motion (01-base.css)
+   puts it where it belongs at once. */
+.segmented.seg-track {
+  position: relative;
+  gap: 0;
+}
+.seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--seg-n, 1));
+  transform: translateX(calc(var(--seg-i, 0) * 100%));
+  background: var(--surface);
+  border-radius: 9px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.segmented.seg-track .seg.on {
+  color: var(--accent-text);
+}
+
+/* More choices than fit a line — the Stats lens has nine. The segments take
+   their own widths, the track scrolls, and Segmented keeps the chosen one in
+   view. No thumb: one that has to travel past the edge of its own track reads
+   worse than a raised button, so the chosen segment is simply raised, as every
+   non-sliding track in the app already does it. */
+.segmented.seg-scroll {
+  max-width: none;
+  /* .segmented wraps by default (the filter rows want that); a track that
+     wrapped would become three rows on a phone instead of one that scrolls */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  gap: 2px;
+}
+.segmented.seg-scroll::-webkit-scrollbar {
+  display: none;
+}
+.segmented.seg-scroll .seg {
+  flex: 0 0 auto;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+.segmented.seg-scroll .seg.on {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
 .warn {
   color: var(--danger);
   font-size: 0.75rem;
