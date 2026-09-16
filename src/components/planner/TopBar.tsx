@@ -7,7 +7,7 @@ import { Search, Settings, TaskEditor, preloadView } from './lazy'
 import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
 
 /**
- * The header: the name, the five tabs (a strip on the desktop, the bar at the
+ * The header: the name, the six tabs (a strip on the desktop, the bar at the
  * foot of the phone), the sync pill, search, settings, Admin and New task.
  * A finger landing on a tab or a button (or focus reaching it) starts fetching
  * what it opens, so the tap that follows finds it here.

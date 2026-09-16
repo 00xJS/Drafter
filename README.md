@@ -2,7 +2,7 @@
 
 Drafter is a personal planner and home journal for one life. Everything sits in one ongoing home project, so nothing asks which project a thing belongs to. It's an installable web app and the same app on the iPhone, works offline, syncs through Supabase, and lets assistants such as Claude help, within the permissions you give them.
 
-Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other views as segments rather than more tabs. It's light by default, with Dark and Match system in Settings → Appearance.
+Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — and one lens, **Stats**, the only tab you never add anything to. Everything else is a segment inside a tab rather than a tab of its own. It's light by default, with Dark and Match system in Settings → Appearance.
 
 ## What it does
 
@@ -47,6 +47,14 @@ Five tabs, **Home · Tasks · Calendar · People · Kitchen**, keep their other 
   - your most cooked recipes, home-cooked streaks, and a month calendar of dinners;
   - what you cooked, ate out and bought each month;
   - the sides you pair with each main.
+
+### Stats
+
+Every figure the app keeps, in one tab. Nothing here sends you to another tab to read the rest.
+
+- **Overview** reads across all of it: what you finished, days you saw someone, days you cooked and days you dressed over the last 30 days, 12 months or all time; your streaks; a card for each area; and a year of days as one grid.
+- **Tasks**, **Money**, **Habits** and **Journal** are counted here and nowhere else — finished work by month, weekday, tag and priority and how long the overdue have waited; what you paid, to whom and on what; each habit kept against what was due; entries, words and moods.
+- **People**, **Places**, **Kitchen** and **Wardrobe** are the same figures those areas keep beside their own lists, drawn here. They read the same search and chips, so a number here and the same number there always agree.
 
 ### Wardrobe
 

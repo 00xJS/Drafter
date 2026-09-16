@@ -80,7 +80,7 @@ export default defineConfig({
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',
-        description: 'Home journal and planner: Home, Tasks, Calendar, People and Kitchen, with habits, routines and a weekly review',
+        description: 'Home journal and planner: Home, Tasks, Calendar, People, Kitchen and Stats, with habits, routines and a weekly review',
         share_target: {
           action: '/',
           method: 'GET',
