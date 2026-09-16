@@ -37,8 +37,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OWNER = '00000000-0000-0000-0000-00000000000a'
 const OWNER_EMAIL = 'owner@example.test'
-const SERVICE_KEY = 'smoke-test-service-key'
-const ANON_KEY = 'smoke-test-anon-key'
+// New-style keys ("sb_secret_…", "sb_publishable_…"), which the platform takes
+// on the apikey header only. The shim refuses one sent as a bearer as well, as
+// the real gateway does — it tries to read it as a JWT and fails — so this run
+// proves the endpoint sends the keys the new way.
+const SERVICE_KEY = 'sb_secret_smoke-test-key'
+const ANON_KEY = 'sb_publishable_smoke-test-key'
 const MACHINE_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 /** supabase/config.toml [api] max_rows: PostgREST never returns more rows than this in one response. */
 const MAX_ROWS = 1000
@@ -333,10 +337,11 @@ function rpcSyncPosts(body) {
   return `select public.sync_posts(${jsonLit(body.incoming)}::jsonb, ${body.since ? `${lit(body.since)}::timestamptz` : 'null'})::text`
 }
 
-/** The role a request's keys map to, as PostgREST would: the service key, or a minted session's JWT. */
+/** The role a request's keys map to, as PostgREST would: the secret key on apikey alone, or a minted session's JWT. */
 function whoIs(headers) {
   const bearer = /^Bearer\s+(.+)$/i.exec(headers.authorization ?? '')?.[1] ?? ''
-  if (bearer === SERVICE_KEY && headers.apikey === SERVICE_KEY) return { role: 'service_role', claims: null }
+  // a secret key is no JWT, so one sent as the bearer as well is refused, not honoured
+  if (headers.apikey === SERVICE_KEY && !bearer) return { role: 'service_role', claims: null }
   const m = /^user:([0-9a-f-]{36})$/.exec(bearer)
   if (m && headers.apikey === ANON_KEY) return { role: 'authenticated', claims: { sub: m[1], role: 'authenticated' } }
   return null
@@ -348,7 +353,7 @@ const auth = { links: new Map(), mints: 0, verifyTypes: [], logouts: 0, rejectMa
 
 function authRoute(method, path, headers, body, reply) {
   const bearer = /^Bearer\s+(.+)$/i.exec(headers.authorization ?? '')?.[1] ?? ''
-  const serviceKeyed = headers.apikey === SERVICE_KEY && bearer === SERVICE_KEY
+  const serviceKeyed = headers.apikey === SERVICE_KEY && !bearer
   const userById = id => psqlJson(`select json_build_object('id', id, 'email', email, 'banned_until', null) from auth.users where id = ${lit(id)}`)
   const admin = /^\/auth\/v1\/admin\/users\/([0-9a-f-]{36})$/.exec(path)
   if (admin && method === 'GET') {
@@ -1164,7 +1169,7 @@ async function main() {
     const bulkStamp = new Date(Date.now() - 20_000).toISOString()
     seedRows(Array.from({ length: 1001 }, (_, i) => ({ kind: 'task', id: `bulk-${i}`, title: `Bulk ${i}`, description: '', status: 'todo', priority: 'low', tags: ['bulk'], createdAt: bulkStamp, updatedAt: bulkStamp })))
     const probeMark = audit.length
-    const unpaged = await fetch(`${url}/rest/v1/posts?select=data&deleted=is.false`, { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } })
+    const unpaged = await fetch(`${url}/rest/v1/posts?select=data&deleted=is.false`, { headers: { apikey: SERVICE_KEY } })
     eq((await unpaged.json()).length, MAX_ROWS, 'the shim, like PostgREST, answers at most max_rows rows at once')
     audit.splice(probeMark, 1) // that read was this test's, with the service key on purpose — not the endpoint's
     const bulk = await callOver(proxy, 'list_tasks', { search: 'Bulk', limit: 5 })

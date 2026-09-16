@@ -6,6 +6,7 @@
 // handler — which is what stopped the deploy of 4297356. lib/ is not scanned.
 import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../../shared/domain.mjs'
 import { kindOf, readableKind } from '../../../shared/kinds.mjs'
+import { keyHeaders } from './supabasekeys.mjs'
 
 const DAY = 86_400_000
 const OPEN = ['todo', 'doing', 'blocked']
@@ -112,8 +113,7 @@ export function feedFor(items, site, tz, myId) {
 
 /** Headers for a service-key read. */
 export function serviceHeaders() {
-  const key = process.env.SUPABASE_SERVICE_KEY
-  return { apikey: key, authorization: `Bearer ${key}` }
+  return keyHeaders(process.env.SUPABASE_SERVICE_KEY)
 }
 
 export function baseUrl() {

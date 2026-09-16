@@ -145,7 +145,8 @@ describe('transport rules', () => {
     // looked up by its hash, and found nowhere: never stamped as used
     expect(calls.map(c => c.path)).toEqual(['/rest/v1/agent_tokens'])
     expect(calls[0].search).toContain(`access_hash=eq.${sha(UNKNOWN)}`)
-    expect(calls[0].headers.authorization).toBe('Bearer service-key')
+    expect(calls[0].headers.apikey).toBe('service-key')
+    expect(calls[0].headers.authorization, 'a new-style key goes on apikey alone').toBeUndefined()
     // a malformed bearer never reaches the database
     calls = []
     expect((await post(rpc(1, 'tools/list'), { token: 'not-a-drafter-token' })).status).toBe(401)
@@ -238,9 +239,10 @@ describe('acting as the user', () => {
 
     const [who, link, verify] = authCalls()
     expect(who).toMatchObject({ path: `/auth/v1/admin/users/${USER}`, method: 'GET' })
-    expect(who.headers).toMatchObject({ apikey: 'service-key', authorization: 'Bearer service-key' })
+    expect(who.headers.apikey).toBe('service-key')
+    expect(who.headers.authorization).toBeUndefined()
     expect(link).toMatchObject({ path: '/auth/v1/admin/generate_link', method: 'POST', body: { type: 'magiclink', email: 'owner@example.test' } })
-    expect(link.headers.authorization).toBe('Bearer service-key')
+    expect(link.headers.apikey).toBe('service-key')
     expect(verify).toMatchObject({ path: '/auth/v1/verify', method: 'POST', body: { type: 'magiclink', token_hash: 'hash-1' } })
     expect(verify.headers.apikey).toBe('anon-key')
     expect(verify.headers.authorization).toBeUndefined()
@@ -249,7 +251,7 @@ describe('acting as the user', () => {
     expect(reads.length).toBeGreaterThan(0)
     for (const r of reads) expect(r.headers).toMatchObject({ apikey: 'anon-key', authorization: 'Bearer jwt-hash-1' })
     // the service key: the token check, the zone (cached for five minutes, so maybe not this time), and minting
-    const serviceKeyPaths = new Set(calls.filter(c => c.headers.authorization === 'Bearer service-key').map(c => c.path))
+    const serviceKeyPaths = new Set(calls.filter(c => c.headers.apikey === 'service-key').map(c => c.path))
     for (const path of serviceKeyPaths) expect(['/auth/v1/admin/generate_link', `/auth/v1/admin/users/${USER}`, '/rest/v1/agent_tokens', '/rest/v1/rpc/agent_token_use', '/rest/v1/user_settings']).toContain(path)
     expect(serviceKeyPaths.has('/rest/v1/rpc/agent_token_use')).toBe(true)
 

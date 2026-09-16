@@ -37,6 +37,7 @@ import { complete, resolveProvider } from './lib/ai.mjs'
 import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
+import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -69,7 +70,7 @@ const AUTH_READ_MS = 5_000
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${url}/rest/v1/${path}`, { ...init, headers: { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', ...(init.headers ?? {}) } })
+  const res = await fetch(`${url}/rest/v1/${path}`, { ...init, headers: keyHeaders(key, { 'content-type': 'application/json', ...(init.headers ?? {}) }) })
   if (!res.ok) throw new Error(`${path.split('?')[0]}: ${res.status}`)
   const text = await res.text()
   return text ? JSON.parse(text) : null
@@ -122,7 +123,7 @@ async function writeReview(review, userId, { handOver = false } = {}) {
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
   const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
     method: 'POST',
-    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+    headers: keyHeaders(serviceKey, { 'content-type': 'application/json' }),
     body: JSON.stringify({ incoming: [review], since: new Date(Date.now() + 86_400_000).toISOString() }),
   })
   if (!res.ok) return false
@@ -132,7 +133,7 @@ async function writeReview(review, userId, { handOver = false } = {}) {
   // for the site owner this changes nothing and answers 204 all the same
   return fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
     method: 'PATCH',
-    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+    headers: keyHeaders(serviceKey, { 'content-type': 'application/json', prefer: 'return=minimal' }),
     body: JSON.stringify({ user_id: userId }),
   }).then(
     r => r.ok,
@@ -258,7 +259,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
 async function userEmail(userId) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${url}/auth/v1/admin/users/${userId}`, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+  const res = await fetch(`${url}/auth/v1/admin/users/${userId}`, { headers: keyHeaders(key) })
   if (!res.ok) return null
   return (await res.json())?.email ?? null
 }
@@ -280,7 +281,7 @@ async function disabledAccounts(now, ms) {
   try {
     const out = new Set()
     for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
-      const res = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=${AUTH_PAGE}`, { headers: { apikey: key, authorization: `Bearer ${key}` }, signal: ctrl.signal })
+      const res = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=${AUTH_PAGE}`, { headers: keyHeaders(key), signal: ctrl.signal })
       if (!res.ok) throw new Error(`auth admin users: ${res.status}`)
       const list = (await res.json())?.users
       if (!Array.isArray(list)) throw new Error('auth admin users: no list')

@@ -18,6 +18,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import { getUser } from './session.mjs'
+import { keyHeaders, userHeaders } from './supabasekeys.mjs'
 import { adoptTimeZone } from './timezone.mjs'
 
 /** Fixed prefixes, so secret scanners can find a leaked token. */
@@ -79,7 +80,7 @@ export async function serviceRest(path, { method = 'GET', body, headers = {} } =
   if (!url || !serviceKey) throw httpError('SUPABASE_SERVICE_KEY is not set on the host', 501, 'not_configured')
   const res = await fetch(`${url}${path}`, {
     method,
-    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', ...headers },
+    headers: keyHeaders(serviceKey, { 'content-type': 'application/json', ...headers }),
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()
@@ -167,7 +168,7 @@ function sessionError(message) {
 async function mintSession(userId) {
   const { url, anonKey, serviceKey } = supabaseEnv()
   if (!url || !anonKey || !serviceKey) throw httpError('Assistants are not configured on this site.', 501, 'not_configured')
-  const admin = { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' }
+  const admin = keyHeaders(serviceKey, { 'content-type': 'application/json' })
 
   const who = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: admin })
   if (!who.ok) throw sessionError(`the account lookup failed (${who.status}).`)
@@ -213,7 +214,7 @@ async function mintSession(userId) {
 function logout(accessToken) {
   const { url, anonKey } = supabaseEnv()
   if (!url || !anonKey) return
-  fetch(`${url}/auth/v1/logout?scope=local`, { method: 'POST', headers: { apikey: anonKey, authorization: `Bearer ${accessToken}` } }).catch(() => {})
+  fetch(`${url}/auth/v1/logout?scope=local`, { method: 'POST', headers: userHeaders(anonKey, accessToken) }).catch(() => {})
 }
 
 /** A JWT for this user, minted at most once at a time and reused until a minute before it expires. */

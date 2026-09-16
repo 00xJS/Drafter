@@ -1,6 +1,8 @@
 // Resolve the signed-in Supabase user from the bearer token the app sends.
 // Every integration secret is keyed by this user id.
 
+import { keyHeaders, userHeaders } from './supabasekeys.mjs'
+
 /**
  * Settings → Reminders → "Calendar copies remind me too", kept in the
  * account's own sign-in metadata: every device and every mirror function reads
@@ -15,7 +17,7 @@ export async function getUser(req) {
   if (!supabaseUrl || !anonKey) return { user: null, response: null, unconfigured: true }
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!token) return { user: null, response: Response.json({ error: 'sign in required' }, { status: 401 }) }
-  const res = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, authorization: `Bearer ${token}` } })
+  const res = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: userHeaders(anonKey, token) })
   if (!res.ok) return { user: null, response: Response.json({ error: 'invalid session' }, { status: 401 }) }
   const u = await res.json()
   // off unless the owner turned it on: Drafter alone sends reminders
@@ -60,7 +62,7 @@ async function rest(path, init = {}) {
   if (!e.serviceKey) throw Object.assign(new Error('SUPABASE_SERVICE_KEY is not set on the host'), { status: 501 })
   const res = await fetch(`${e.supabaseUrl}/rest/v1/user_settings${path}`, {
     ...init,
-    headers: { apikey: e.serviceKey, authorization: `Bearer ${e.serviceKey}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: keyHeaders(e.serviceKey, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
   })
   if (!res.ok) throw new Error(`settings store ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const text = await res.text()
