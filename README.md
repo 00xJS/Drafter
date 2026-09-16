@@ -109,7 +109,7 @@ The smoke tests aren't part of `check`, since Netlify has no Postgres. Run `db:s
 
 ## Deploy
 
-- **Web.** Netlify builds `main` with `npm run check`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (for the server features) and `NVIDIA_API_KEY`, with `ANTHROPIC_API_KEY` as the optional backup; the rest (a second NVIDIA key, GitHub, Google, Outlook, push, email, APNs) are optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin.
+- **Web.** Netlify builds `main` with `npm run check`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (the publishable key, `sb_publishable_…`), `SUPABASE_SERVICE_KEY` (the secret key, `sb_secret_…`, for the server features) and `NVIDIA_API_KEY`, with `ANTHROPIC_API_KEY` as the optional backup; the legacy anon and service_role keys still work until the project turns them off; the rest (a second NVIDIA key, GitHub, Google, Outlook, push, email, APNs) are optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin.
 - **Database.** The owner applies migrations with `supabase db push` before deploying code that needs them. A new kind of record must be on the sync allow-list first, or the server refuses it.
 - **Bot.** `supabase functions deploy bot` (add `--use-api` if Docker isn't running), with `BOT_TOKEN` set as a Supabase secret.
 - **iPhone.** `npm run ios`, then Run in Xcode. Free signing lasts 7 days, and the app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.

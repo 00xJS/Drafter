@@ -18,7 +18,7 @@ export declare function returnTarget(req: Request, origin: string): string
 /** True when a stored handoff is still fresh. */
 export declare function handoffFresh(at: string | null | undefined): boolean
 
-/** The `state` for a verifier cookie: an HMAC, so only its holder can produce it. */
+/** The `state` for a verifier cookie: an HMAC, so only its holder can produce it. Throws when OAUTH_STATE_SECRET and SUPABASE_SERVICE_KEY are both unset. */
 export declare function stateFor(verifier: string): string
 /** True when this browser's cookie produced the (browser half of the) state. */
 export declare function verifyState(req: Request, name: string, state: string): boolean
