@@ -28,6 +28,16 @@ export const Review = preloadable(() => import('../Review').then(m => m.Review),
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
 // Only Today's card and the thumbnails it draws stay in the Planner chunk.
 export const Wardrobe = preloadable(() => import('../wardrobe/Wardrobe').then(m => m.Wardrobe), 'Wardrobe')
+// …and the wardrobe's figures on their own, because the Stats lens draws them
+// too and must not drag the composer, the clothes grid and the photo pipeline
+// in behind them. Wardrobe.tsx still imports the view directly, so the two
+// share one chunk rather than shipping it twice.
+export const WardrobeStats = preloadable(() => import('../wardrobe/WardrobeStats').then(m => m.WardrobeStats), 'WardrobeStats')
+// The Stats lens: the tab's own segments (Overview, Tasks, Money, Habits,
+// Journal) and the counting only it reads (lensstats.ts). The four areas that
+// keep Stats of their own are drawn from THEIR chunks, above — one view, one
+// chunk, wherever it is shown.
+export const StatsLens = preloadable(() => import('../StatsLens').then(m => m.StatsLens), 'StatsLens')
 
 export const TaskEditor = preloadable(() => import('../TaskEditor').then(m => m.TaskEditor), 'TaskEditor')
 export const ProjectEditor = preloadable(() => import('../ProjectEditor').then(m => m.ProjectEditor), 'ProjectEditor')
@@ -51,11 +61,13 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   calendar: [Calendar.preload, Roadmap.preload],
   people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload],
   kitchen: [Kitchen.preload, KitchenStats.preload],
+  // the lens draws every area's Stats, so a finger on it warms all of them
+  stats: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, Review, Wardrobe, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

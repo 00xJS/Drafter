@@ -1,7 +1,7 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import { storedInnerView, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type TasksTab, type View } from './routes'
+import { storedInnerView, type HomeTab, type InnerView, type PeopleTab, type StatsTab, type TasksTab, type View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
@@ -16,10 +16,8 @@ export interface PaletteNav {
   /** A segment of People's List · Stats, for this visit only. */
   goInnerView(tab: PeopleTab, v: InnerView): void
   openWardrobe(o?: WardrobeOpen): void
-  /** A segment of People on its Stats, for this visit only. */
-  openStats(tab: PeopleTab): void
-  /** Kitchen, on the segment named for this visit only, or the one last chosen. */
-  openKitchen(tab?: KitchenTab): void
+  /** The Stats lens, on the segment named for this visit only, or the one last chosen. Every "… stats" row lands here. */
+  openLens(tab?: StatsTab): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -40,7 +38,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openStats, openKitchen } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openLens } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats or Places stats does not linger. */
@@ -75,15 +73,25 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => goView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => goPeople('people') },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => goPeople('places') },
-    // a segment's figures, for this visit: the next tab tap opens the view last chosen
-    { id: 'go-people-stats', label: 'People stats', icon: 'people', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openStats('people') },
-    { id: 'go-places-stats', label: 'Places stats', icon: 'people', keywords: 'insights figures outings most visited where we go', run: () => openStats('places') },
+    // Every figure in the app lives in the Stats lens, so every "… stats" row
+    // lands there, on that area's segment, for this visit only. The areas keep
+    // their own Stats beside their lists — that is where you reach them while
+    // you are narrowing one — and `?view=people-stats` and the other three
+    // still go THERE, because a link already in a Shortcut or a reminder must
+    // not quietly change where it lands.
+    { id: 'go-people-stats', label: 'People stats', icon: 'stats', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openLens('people') },
+    { id: 'go-places-stats', label: 'Places stats', icon: 'stats', keywords: 'insights figures outings most visited where we go', run: () => openLens('places') },
     // where you last left it, as a tab tap opens it, not the Stats a Kitchen stats left for its visit
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => goView('kitchen') },
-    // the figures, for this visit: a link does the same, and the segment you last chose stays remembered
-    { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'kitchen', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openKitchen('stats') },
-    // the wardrobe's figures, for this visit: a link does the same, and the next visit opens on today's composer
-    { id: 'go-wardrobe-stats', label: 'Wardrobe stats', icon: 'wardrobe', keywords: 'most worn never worn cost per wear streak uniform photo calendar repeated outfits insights figures', run: () => openWardrobe({ tab: 'stats' }) },
+    { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'stats', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openLens('kitchen') },
+    { id: 'go-wardrobe-stats', label: 'Wardrobe stats', icon: 'stats', keywords: 'most worn never worn cost per wear streak uniform photo calendar repeated outfits insights figures', run: () => openLens('wardrobe') },
+    // the lens, on the segment last chosen, as a tab tap opens it…
+    { id: 'go-stats', label: 'Stats', icon: 'stats', keywords: 'figures insights numbers charts overview trends how am i doing', run: () => goView('stats') },
+    // …and the four segments whose figures live nowhere else
+    { id: 'go-task-stats', label: 'Task stats', icon: 'stats', keywords: 'finished done throughput overdue by tag priority weekday streak figures', run: () => openLens('tasks') },
+    { id: 'go-money-stats', label: 'Money stats', icon: 'stats', keywords: 'spending paid payee subscriptions budget outgoings figures', run: () => openLens('money') },
+    { id: 'go-habit-stats', label: 'Habit stats', icon: 'stats', keywords: 'streaks kept consistency clean days figures', run: () => openLens('habits') },
+    { id: 'go-journal-stats', label: 'Journal stats', icon: 'stats', keywords: 'mood words entries streak figures', run: () => openLens('journal') },
     { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
   ]
 }

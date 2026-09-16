@@ -31,6 +31,7 @@ export type IconName =
   | 'wardrobe'
   | 'star'
   | 'shuffle'
+  | 'stats'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -160,6 +161,15 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M3 7h3.2c2 0 3.2 1 4.3 2.8l2.9 4.4c1.1 1.8 2.3 2.8 4.3 2.8H21" />
       <path d="M3 17h3.2c1.5 0 2.5-.6 3.4-1.6M14.3 8.6c.9-1 1.9-1.6 3.4-1.6H21" />
       <path d="M18.4 4.4 21 7l-2.6 2.6M18.4 14.4 21 17l-2.6 2.6" />
+    </>
+  ),
+  // the lens tab: three columns rising off a baseline, the tallest last
+  stats: (
+    <>
+      <path d="M3.4 20.4h17.2" />
+      <rect x="4.8" y="12.4" width="4" height="6" rx="1.4" />
+      <rect x="10.4" y="8.6" width="4" height="9.8" rx="1.4" />
+      <rect x="16" y="4.4" width="4" height="14" rx="1.4" />
     </>
   ),
 }

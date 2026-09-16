@@ -1,0 +1,431 @@
+/* ---------- the Stats lens ----------
+
+   The sixth tab and the chart primitives it introduced. Late in the cascade
+   (after 05-stats-charts.css, which the kit's older pieces live in) so a lens
+   rule can refine one of those without out-specifying it; before the native
+   shell, which still gets the last word.
+
+   Every colour here is a theme token or a mark passed in by the view through
+   src/contrast.ts, as everywhere else. */
+
+.stats-lens {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+
+/* A run of cards under one heading, rather than a page of equal white boxes:
+   the heading sits OUTSIDE the cards, on the page ground, so a section reads
+   as a group before you read any figure in it. */
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-section > h2 {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* the line under a section heading, for a section whose counting needs a word */
+.stats-section > h2 + .stats-note {
+  margin-top: -6px;
+}
+
+.stats-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* The lens's own head: the segmented track, then the window the figures count.
+   Sticky under the top bar so the window you chose stays in reach down a long
+   page — the bar's own height is a token, never a number kept here.
+
+   z-index 2, the same as every other sticky header in the app (the journal's
+   month header sits at the same `top` with the same 2). It has to stay UNDER
+   the pull-to-refresh disc, which is z 10 (19-native-shell.css): above it, the
+   whole tab pulled with a haptic and a spin the person never saw. */
+.stats-bar {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+
+.stats-window {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The window is the page's own filter, not an aside in a card head, so it
+   takes the same track as the segments above it rather than staying the row
+   of outlined pills the kit draws inside a chart card. */
+.stats-window > .segmented {
+  flex: 1 1 200px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  max-width: 320px;
+}
+.stats-window > .segmented > .seg {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 9px;
+  padding: 7px 10px;
+  text-align: center;
+  font-weight: 600;
+}
+.stats-window > .segmented > .seg.on {
+  background: var(--surface);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Overview: one card per area ---------- */
+
+.area-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+
+.area-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 13px 15px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.area-open {
+  appearance: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+.area-open:hover {
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-md);
+}
+.area-open:active {
+  transform: scale(0.99);
+}
+
+.area-head {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.area-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.area-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.area-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.area-aside {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.area-go {
+  flex: none;
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+/* ---------- Sparkline ---------- */
+
+.sparkline {
+  display: block;
+  width: 96px;
+  height: 30px;
+}
+
+.spark-area {
+  opacity: 0.16;
+}
+
+/* ---------- Ring ---------- */
+
+.stat-ring {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+}
+
+.stat-ring svg {
+  display: block;
+}
+
+.ring-track {
+  stroke: var(--viz-empty);
+  opacity: var(--viz-empty-opacity);
+}
+
+.ring-arc {
+  stroke: var(--viz-series-1);
+}
+
+/* centred over the ring: the figure belongs in the hole, not under it */
+.ring-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--ring-h, 68px);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.ring-caption {
+  margin-top: 2px;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- HeatGrid ---------- */
+
+.heat-wrap {
+  min-width: 0;
+}
+
+/* A year is 53 columns. On a phone that is narrower than a finger, so the grid
+   keeps a readable cell and takes the sideways drag itself rather than
+   squeezing; the page still scrolls down through it. */
+.heat-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+
+.heat-months,
+.heat-grid {
+  display: grid;
+  min-width: 620px;
+  gap: 3px;
+}
+
+.heat-months {
+  margin-bottom: 4px;
+}
+
+.heat-month {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.heat-grid {
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+}
+
+/* An empty day is a surface step, not --viz-empty: a whole year of them fills
+   the card, and the kit's empty mark — tuned to stay visible as one bar among
+   many — reads as "a little" rather than "none" at that scale. A lit day sets
+   its own background and opacity inline, which wins over both. */
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+
+/* days still to come are not empty days: they are not days yet */
+.heat-cell.ahead {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.heat-cell.today {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* ---------- the rows the lens's own segments draw ---------- */
+
+.lens-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.lens-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.lens-row:last-child {
+  border-bottom: none;
+}
+
+.lens-row-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lens-row-name > b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lens-row-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.lens-row-value {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A bar that fills its own row, for a share that needs no gutter of labels.
+   The track is a surface step rather than --viz-empty at its opacity: opacity
+   here would fade the fill inside it too. */
+.lens-meter {
+  flex: 1 1 90px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.lens-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--viz-series-1);
+}
+
+/* the mood columns, one per step, so the shape of a month reads without a key */
+.mood-spread {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 0 0;
+  min-height: 92px;
+}
+
+.mood-spread > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mood-bar {
+  width: 100%;
+  max-width: 48px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--viz-mood);
+  min-height: 3px;
+}
+
+.mood-face {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.mood-count {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- entry ----------
+
+   A section arrives rather than appearing: a short rise as the panel mounts,
+   staggered a little down the page so the eye follows it. Reduce Motion turns
+   every duration in the sheet to nothing (01-base.css), which leaves the end
+   state — exactly where these sit anyway. */
+@keyframes stats-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stats-lens > .stats-section {
+  animation: stats-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.stats-lens > .stats-section:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.stats-lens > .stats-section:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.stats-lens > .stats-section:nth-child(n + 4) {
+  animation-delay: 0.12s;
+}

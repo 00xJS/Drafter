@@ -3,7 +3,7 @@ import { Kitchen } from './lazy'
 
 /** Kitchen: recipes, the week's meals, the grocery list and the figures. */
 export function KitchenScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
+  const { store, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
   return (
     <Kitchen
       recipes={store.recipes}
@@ -24,6 +24,8 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
       // a segment the palette or a link named (Kitchen stats), for this visit only
       openTab={kitchenOpen}
       onOpenTabConsumed={() => setKitchenOpen(null)}
+      openDay={kitchenDay}
+      onOpenDayConsumed={() => setKitchenDay(null)}
       // for Plan this week's meals: outings at places counted from tasks too, a
       // busy evening flagged from your own events and subscribed calendars, and
       // the confirmation with its Undo in the planner's toast

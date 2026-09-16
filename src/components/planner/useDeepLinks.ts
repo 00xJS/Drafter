@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, statsTabOfView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -30,6 +30,7 @@ interface Deps {
   openPlace: Nav['openPlace']
   openPerson: Nav['openPerson']
   openStats: Nav['openStats']
+  openLens: Nav['openLens']
   openKitchen: Nav['openKitchen']
   openWardrobe: Nav['openWardrobe']
   changeStatus: (id: string, status: TaskStatus) => void
@@ -58,6 +59,7 @@ export function useDeepLinks({
   openPlace,
   openPerson,
   openStats,
+  openLens,
   openKitchen,
   openWardrobe,
   changeStatus,
@@ -107,13 +109,19 @@ export function useDeepLinks({
     // and the former today / review views open Home on the day or the week.
     // people-stats and places-stats open that segment of People on its Stats,
     // kitchen-stats opens Kitchen on Stats, and wardrobe-stats opens Home →
-    // Wardrobe on Stats, for this visit only. Each name is read from its own
-    // table's keys, so ?view=constructor lands nowhere.
+    // Wardrobe on Stats, for this visit only — those four shipped pointing at
+    // the Stats each area keeps inside itself, and still land there. The Stats
+    // lens has its own names the other way round, `stats-<segment>`:
+    // stats-tasks, stats-money, stats-people, stats-places, stats-kitchen,
+    // stats-wardrobe, stats-habits and stats-journal. A bare ?view=stats names
+    // no segment, so it opens the lens on the one last chosen. Each name is
+    // read from its own table's keys, so ?view=constructor lands nowhere.
     const tasksTab = viewIn(LEGACY_VIEW_TO_TASKS, parsed.view)
     const homeTab = viewIn(LEGACY_VIEW_TO_HOME, parsed.view)
     const statsTab = peopleTabOfStatsView(parsed.view)
     const kitchenTab = kitchenTabOfView(parsed.view)
     const wardrobeTab = wardrobeTabOfView(parsed.view)
+    const lensTab = statsTabOfView(parsed.view)
     if (tasksTab) {
       goTasksTab(tasksTab)
       setView('tasks')
@@ -128,6 +136,8 @@ export function useDeepLinks({
     } else if (wardrobeTab) {
       // handed to the Wardrobe as a way in, so it moves there even when it is already on screen
       openWardrobe({ tab: wardrobeTab })
+    } else if (lensTab) {
+      openLens(lensTab)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }

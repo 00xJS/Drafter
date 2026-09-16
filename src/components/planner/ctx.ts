@@ -3,6 +3,7 @@ import type { Store } from '../../store'
 import type { projectById } from '../../taskutils'
 import type { Command } from '../Search'
 import type { useCalendarSync } from './useCalendarSync'
+import type { useListFilters } from './useListFilters'
 import type { useFocusActions } from './useFocusActions'
 import type { useLifeActions } from './useLifeActions'
 import type { useMineOnly } from './useMineOnly'
@@ -14,7 +15,7 @@ import type { useTaskActions } from './useTaskActions'
 import type { useToast } from './useToast'
 
 /**
- * Everything the top bar, the five screens and the overlays can reach: what
+ * Everything the top bar, the six screens and the overlays can reach: what
  * the planner hooks return, plus the store, the household, the project lookup
  * and the palette's commands. Planner rebuilds it every render and hands it
  * down as one `p` prop. There is no context, so a screen re-renders exactly
@@ -27,6 +28,7 @@ export type PlannerCtx = {
   paletteCommands: Command[]
 } & ReturnType<typeof useMineOnly> &
   ReturnType<typeof useNavigation> &
+  ReturnType<typeof useListFilters> &
   ReturnType<typeof useToast> &
   ReturnType<typeof useCalendarSync> &
   ReturnType<typeof useOverlays> &

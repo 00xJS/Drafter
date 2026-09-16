@@ -78,12 +78,15 @@ interface Props {
   feedEvents?: CalendarEvent[]
   /** Optional: the planner's toast. With it the meal plan's confirmation and Undo go there; without it they stay in the sheet. */
   onToast?(msg: string, undo?: () => void): void
-  /** A segment to open on for this visit only (the palette's Kitchen stats, ?view=kitchen-stats); consumed, like openRecipe. */
+  /** A segment to open on for this visit only (?view=kitchen-stats, a tab tap); consumed, like openRecipe. */
   openTab?: KitchenTab | null
   onOpenTabConsumed?(): void
+  /** A day for This week to open on, framed (the Stats lens's dinner calendar); consumed like openTab. */
+  openDay?: string | null
+  onOpenDayConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed }: Props) {
+export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(() => {
@@ -93,10 +96,15 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
       return 'all'
     }
   })
-  const [anchor, setAnchor] = useState(() => new Date())
-  // a day opened from Stats' dinner calendar: This week scrolls to it and
-  // frames it until you move off the week or the segment
-  const [focusDay, setFocusDay] = useState<string | null>(null)
+  // Both seeded from the day a way in names, as `seg` is seeded from openTab.
+  // The Stats lens's dinner calendar is the only sender, and it always sends
+  // from another tab — so the Kitchen MOUNTS with the hand-off already set, and
+  // the render-phase reconcile below (which only fires on a change) would never
+  // see it. Without these two initialisers the day is consumed and thrown away.
+  const [anchor, setAnchor] = useState(() => (openDay ? new Date(`${openDay}T12:00:00`) : new Date()))
+  // a day opened from a dinner calendar: This week scrolls to it and frames it
+  // until you move off the week or the segment
+  const [focusDay, setFocusDay] = useState<string | null>(openDay ?? null)
   // the recipe form, and where Save and Cancel go back to: the list, cook mode
   // on the recipe, or the side open over its main. Cook mode stays set while
   // its recipe is edited, so it comes back with its meal's sides and its ticks.
@@ -197,12 +205,17 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     const key = dateKey(new Date())
     const meal = meals.find(m => m.date === key && m.slot === 'dinner' && m.recipeId === openRecipe.id) ?? meals.find(m => m.date === key && m.recipeId === openRecipe.id)
     cook(openRecipe, meal)
-    setTab('recipes')
+    // setSeg, not setTab: a way in (Today's Cook, the Stats lens's Most cooked)
+    // moves the segment for this visit only. setTab writes KITCHEN_TAB_KEY, so
+    // it would leave every later tap of the Kitchen tab opening Recipes instead
+    // of the segment the person actually chose.
+    setSeg('recipes')
+    setFocusDay(null)
     onOpenRecipeConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRecipe])
 
-  // A way in (the palette, a link, a tap on the Kitchen tab) moves the segment
+  // A way in (a link, a tap on the Kitchen tab) moves the segment
   // for this visit only: the one last chosen with its button stays remembered.
   // It moves as Kitchen renders, so the segment it leaves never shows first,
   // even when Kitchen is already on screen; the hand-off is let go of once seen.
@@ -218,6 +231,21 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
     if (openTab) onOpenTabConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTab])
+  // …and a day with it, from the Stats lens's dinner calendar: the same landing
+  // Stats' own days make, since it is the same calendar
+  const [seenOpenDay, setSeenOpenDay] = useState(openDay)
+  if (openDay !== seenOpenDay) {
+    setSeenOpenDay(openDay)
+    if (openDay) {
+      setAnchor(new Date(`${openDay}T12:00:00`))
+      setFocusDay(openDay)
+      setSeg('week')
+    }
+  }
+  useEffect(() => {
+    if (openDay) onOpenDayConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDay])
   /** Stats' dinner calendar: that day on This week, scrolled to and framed, for this visit only. */
   const goDay = (day: string) => {
     setAnchor(new Date(`${day}T12:00:00`))

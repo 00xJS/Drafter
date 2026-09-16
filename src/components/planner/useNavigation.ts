@@ -4,11 +4,13 @@ import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
   PEOPLE_TAB_KEY,
+  STATS_TAB_KEY,
   TASKS_TAB_KEY,
   storedCalMode,
   storedInnerViews,
   storedKitchenTab,
   storedPeopleTab,
+  storedStatsTab,
   storedTasksTab,
   type CalendarMode,
   type HomeTab,
@@ -16,6 +18,7 @@ import {
   type InnerViews,
   type KitchenTab,
   type PeopleTab,
+  type StatsTab,
   type TasksTab,
   type View,
   type WardrobeTab,
@@ -63,6 +66,9 @@ export function useNavigation() {
   const [innerViews, showInnerViews] = useState<InnerViews>(storedInnerViews)
   /** Move a segment's List · Stats for this visit only. */
   const goInnerView = (tab: PeopleTab, v: InnerView) => startTransition(() => showInnerViews(cur => (cur[tab] === v ? cur : { ...cur, [tab]: v })))
+  /** The Stats lens's segment, as last chosen on its own buttons; a link or the palette moves it for that visit alone. */
+  const [statsTab, showStatsTab] = useState<StatsTab>(storedStatsTab)
+  const goStatsTab = (tab: StatsTab) => startTransition(() => showStatsTab(tab))
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
@@ -80,6 +86,15 @@ export function useNavigation() {
     goPeopleTab(tab)
     try {
       localStorage.setItem(PEOPLE_TAB_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }
+  /** …and the lens's nine — Overview · Tasks · Money · People · Places · Kitchen · Wardrobe · Habits · Journal: its own track, and nothing else. */
+  const setStatsTab = (tab: StatsTab) => {
+    goStatsTab(tab)
+    try {
+      localStorage.setItem(STATS_TAB_KEY, tab)
     } catch {
       /* ignore */
     }
@@ -118,7 +133,13 @@ export function useNavigation() {
       startTransition(() => showInnerViews(storedInnerViews()))
     }
     if (v === 'kitchen') setKitchenOpen(storedKitchenTab())
+    if (v === 'stats') goStatsTab(storedStatsTab())
     setView(v)
+  }
+  /** The lens, on one of its segments (a link, the palette), for this visit only. */
+  const openLens = (tab?: StatsTab) => {
+    if (tab) goStatsTab(tab)
+    setView('stats')
   }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
   const [journalOpenDate, setJournalOpenDate] = useState<string | null>(null)
@@ -140,7 +161,10 @@ export function useNavigation() {
     // the card it opens is on the list, whichever half the segment was left on
     if (id) goInnerView('people', 'list')
   }
-  /** A segment's Stats (the palette's People stats and Places stats, ?view=people-stats and ?view=places-stats), for this visit only: a tab tap opens the view last chosen. */
+  /** A segment's Stats, for this visit only: a tab tap opens the view last chosen.
+   *  Reached by ?view=people-stats and ?view=places-stats alone — the links that
+   *  shipped before the lens. The palette's People stats and Places stats rows
+   *  open the lens now, where every figure lives. */
   const openStats = (tab: PeopleTab) => {
     goPeopleTab(tab)
     goInnerView(tab, 'stats')
@@ -153,11 +177,19 @@ export function useNavigation() {
   }
   /** A recipe for Kitchen to open (Today's "tonight's dinner"); consumed by the view. */
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
-  /** A Kitchen segment to open on (the palette's Kitchen stats, ?view=kitchen-stats); consumed
-   *  by the view, so the segment moves for this visit only and the one last chosen stays remembered. */
+  /** A Kitchen segment to open on (?view=kitchen-stats — the palette's Kitchen stats
+   *  opens the lens now); consumed by the view, so the segment moves for this visit
+   *  only and the one last chosen stays remembered. */
   const [kitchenOpen, setKitchenOpen] = useState<KitchenTab | null>(null)
   const openKitchen = (tab?: KitchenTab) => {
     if (tab) setKitchenOpen(tab)
+    setView('kitchen')
+  }
+  /** A day for This week to open on, framed (the dinner calendar in the Stats lens's Kitchen); consumed by the view, like the segment. */
+  const [kitchenDay, setKitchenDay] = useState<string | null>(null)
+  const openKitchenDay = (day: string) => {
+    setKitchenDay(day)
+    setKitchenOpen('week')
     setView('kitchen')
   }
   /** A note for Tasks → Notes to open (the palette's search); consumed by the view. */
@@ -169,8 +201,10 @@ export function useNavigation() {
     goTasksTab('notes')
     setView('tasks')
   }
-  /** Where to land in the wardrobe (the Today card, the palette's Wardrobe stats, ?view=wardrobe-stats); consumed
-   *  by the segment, which moves to it even when it is already on screen. */
+  /** Where to land in the wardrobe (the Today card, the palette's Add clothing and
+   *  What am I wearing?, ?view=wardrobe-stats); consumed by the segment, which moves
+   *  to it even when it is already on screen. The palette's Wardrobe stats row opens
+   *  the lens instead. */
   const [wardrobeOpen, setWardrobeOpen] = useState<WardrobeOpen | null>(null)
   const openWardrobe = (o: WardrobeOpen = {}) => {
     setWardrobeOpen(o)
@@ -203,6 +237,10 @@ export function useNavigation() {
     goInnerView,
     setInnerView,
     openStats,
+    statsTab,
+    goStatsTab,
+    setStatsTab,
+    openLens,
     homeTab,
     setHomeTab,
     setTasksTab,
@@ -222,6 +260,9 @@ export function useNavigation() {
     kitchenOpen,
     setKitchenOpen,
     openKitchen,
+    kitchenDay,
+    setKitchenDay,
+    openKitchenDay,
     noteOpenId,
     setNoteOpenId,
     openNote,

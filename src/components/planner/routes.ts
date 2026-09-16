@@ -3,9 +3,18 @@ import type { IconName } from '../Icon'
 // Each tab that shows the same data more than one way holds those ways as
 // segments instead of splitting into peer tabs: Home holds the day, the week,
 // the journal and the wardrobe; Tasks holds the list, board, bills and notes;
-// People holds Places. Desktop and phone then land on the identical five nouns.
-export type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen'
-export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen']
+// People holds Places. Desktop and phone then land on the identical six tabs.
+//
+// Five of them are nouns — things you add to. Stats is the sixth and is not a
+// noun but a lens: the only tab you never put anything into, reading across
+// every other one. That is why it can join them without competing for the same
+// slot, and why the areas that already count themselves (People, Places,
+// Kitchen, the Wardrobe) keep their own Stats, which follow that list's search
+// and chips. The lens aggregates those and holds the four areas that have
+// nowhere else to be counted: tasks, money, habits and the journal.
+// Still no More drawer.
+export type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen' | 'stats'
+export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen', 'stats']
 export type CalendarMode = 'month' | 'week' | 'timeline'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 export type PeopleTab = 'people' | 'places'
@@ -53,6 +62,7 @@ export const VIEW_LABELS: Record<View, string> = {
   calendar: 'Calendar',
   people: 'People',
   kitchen: 'Kitchen',
+  stats: 'Stats',
 }
 
 /** The line icon each view carries in the desktop tab strip. */
@@ -62,14 +72,17 @@ export const VIEW_ICONS: Record<View, IconName> = {
   calendar: 'calendar',
   people: 'people',
   kitchen: 'kitchen',
+  stats: 'stats',
 }
 
-/** Phone tab bar: the same five nouns as the desktop, no catch-all. Home carries
- *  the day, week, journal and wardrobe; Tasks the board, bills and notes. */
+/** Phone tab bar: the same six tabs as the desktop, no catch-all. Home carries
+ *  the day, week, journal and wardrobe; Tasks the board, bills and notes. Stats
+ *  sits in the middle, between the things you plan and the things you keep. */
 export const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
   { id: 'home', icon: 'home', label: 'Home' },
   { id: 'calendar', icon: 'calendar', label: 'Calendar' },
   { id: 'tasks', icon: 'tasks', label: 'Tasks' },
+  { id: 'stats', icon: 'stats', label: 'Stats' },
   { id: 'kitchen', icon: 'kitchen', label: 'Kitchen' },
   { id: 'people', icon: 'people', label: 'People' },
 ]
@@ -173,3 +186,63 @@ export const kitchenTabOfView = (view: string | undefined): KitchenTab | null =>
 export const VIEW_TO_WARDROBE: Record<string, WardrobeTab> = { 'wardrobe-stats': 'stats' }
 /** The Wardrobe view a link's view names, or null. Its own names only, so `?view=constructor` names none. */
 export const wardrobeTabOfView = (view: string | undefined): WardrobeTab | null => viewIn(VIEW_TO_WARDROBE, view)
+
+/**
+ * The Stats lens's own segments — every figure the app keeps, in one tab.
+ *
+ * Overview reads across all of them. The rest are one per area: the four that
+ * had nowhere else to be counted (what you finish, what you pay, what you keep
+ * up, what you write) and the four that keep Stats of their own inside their
+ * area too (People, Places, Kitchen, the Wardrobe). Those four are drawn HERE,
+ * not linked to: the lens is where you go to look at figures, and being sent
+ * to another tab to see half of them is the thing it exists to fix. They are
+ * the same components their own areas draw, reading the same find boxes and
+ * chips (useListFilters), so a figure here and the same figure there can never
+ * disagree.
+ *
+ * Remembered like Tasks' and Kitchen's, on its own track only: a link or the
+ * palette moves it for that visit alone.
+ */
+export type StatsTab = 'overview' | 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
+export const STATS_TABS: { key: StatsTab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'money', label: 'Money' },
+  { key: 'people', label: 'People' },
+  { key: 'places', label: 'Places' },
+  { key: 'kitchen', label: 'Kitchen' },
+  { key: 'wardrobe', label: 'Wardrobe' },
+  { key: 'habits', label: 'Habits' },
+  { key: 'journal', label: 'Journal' },
+]
+export const STATS_TAB_KEY = 'drafter:stats-tab'
+export const storedStatsTab = (): StatsTab => {
+  try {
+    const saved = localStorage.getItem(STATS_TAB_KEY)
+    return STATS_TABS.find(t => t.key === saved)?.key ?? 'overview'
+  } catch {
+    return 'overview'
+  }
+}
+/**
+ * Links straight to one of the lens's segments, `stats-<segment>` for each.
+ *
+ * The older `people-stats`, `places-stats`, `kitchen-stats` and
+ * `wardrobe-stats` are NOT these: they were shipped pointing at the Stats each
+ * area keeps inside itself, and they still land there, so no link already in a
+ * Shortcut, a reminder or someone's notes changes where it goes. `?view=stats`
+ * names no segment at all, so it opens the lens on the one last chosen — as
+ * `?view=kitchen` does.
+ */
+export const VIEW_TO_STATS: Record<string, StatsTab> = {
+  'stats-tasks': 'tasks',
+  'stats-money': 'money',
+  'stats-people': 'people',
+  'stats-places': 'places',
+  'stats-kitchen': 'kitchen',
+  'stats-wardrobe': 'wardrobe',
+  'stats-habits': 'habits',
+  'stats-journal': 'journal',
+}
+/** The lens segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
+export const statsTabOfView = (view: string | undefined): StatsTab | null => viewIn(VIEW_TO_STATS, view)

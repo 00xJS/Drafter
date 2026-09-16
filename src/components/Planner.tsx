@@ -18,6 +18,7 @@ import { KitchenScreen } from './planner/KitchenScreen'
 import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
 import { PeopleScreen } from './planner/PeopleScreen'
+import { StatsScreen } from './planner/StatsScreen'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
 import { Toast } from './planner/Toast'
@@ -28,6 +29,7 @@ import { useFocusActions } from './planner/useFocusActions'
 import { useLifeActions } from './planner/useLifeActions'
 import { useMineOnly } from './planner/useMineOnly'
 import { useNativeShell } from './planner/useNativeShell'
+import { useListFilters } from './planner/useListFilters'
 import { useNavigation } from './planner/useNavigation'
 import { useOverlays } from './planner/useOverlays'
 import { useOwner } from './planner/useOwner'
@@ -67,6 +69,10 @@ export default function Planner() {
     window.location.reload()
   }, store.syncInfo.authError)
   const nav = useNavigation()
+  // the People and Places lists' find boxes and chips: on the shell, because
+  // their Stats are drawn in two places now (the segment's own, and the Stats
+  // lens) and one figure must not read two ways on one device
+  const listFilters = useListFilters({ store, personOpenId: nav.personOpenId, placeOpenId: nav.placeOpenId })
   const toaster = useToast({ store })
   const { showToast } = toaster
 
@@ -113,6 +119,7 @@ export default function Planner() {
     paletteCommands: buildPaletteCommands(nav, overlays),
     ...mine,
     ...nav,
+    ...listFilters,
     ...toaster,
     ...cal,
     ...overlays,
@@ -164,6 +171,7 @@ export default function Planner() {
               {view === 'tasks' && <TasksScreen p={p} />}
               {view === 'people' && <PeopleScreen p={p} />}
               {view === 'kitchen' && <KitchenScreen p={p} />}
+              {view === 'stats' && <StatsScreen p={p} />}
             </Suspense>
           </ErrorBoundary>
         )}
