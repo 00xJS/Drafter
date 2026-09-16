@@ -52,7 +52,7 @@ interface Props {
   /** Turn an outing idea into a task. */
   onNewTask?(preset: Partial<Task>): void
   /**
-   * The kind chip and find box. The People tab holds them rather than the
+   * The kind chip and find box. The shell holds them rather than the
    * list, so Places → Stats counts the rows they leave and List → Stats →
    * List keeps them.
    */

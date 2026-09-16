@@ -112,7 +112,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
   const now = useMemo(() => handed ?? new Date(), [handed, today])
   const thisYear = now.getFullYear()
   const [year, setYear] = useState(thisYear)
-  // The list's kind chips and find box, which the People tab holds for both:
+  // The list's kind chips and find box, which the shell holds for both:
   // every figure counts only the places the list shows, by its own rule
   // (placeMatcher). Not remembered, as the list's are not; a kind whose last
   // place has gone falls back to All.

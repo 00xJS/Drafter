@@ -9,12 +9,14 @@ import {
   LEGACY_VIEW_TO_HOME,
   LEGACY_VIEW_TO_TASKS,
   PEOPLE_TAB_KEY,
+  STATS_TABS,
   STATS_VIEW_TO_PEOPLE,
   TASKS_TAB_KEY,
   TASKS_TABS,
   VIEW_ICONS,
   VIEW_LABELS,
   VIEW_TO_KITCHEN,
+  VIEW_TO_STATS,
   VIEW_TO_WARDROBE,
   VIEWS,
   WARDROBE_TABS,
@@ -22,20 +24,27 @@ import {
   storedCalMode,
   storedInnerView,
   storedInnerViews,
+  statsTabOfView,
   storedPeopleTab,
+  storedStatsTab,
   storedTasksTab,
   viewIn,
   wardrobeTabOfView,
 } from '../components/planner/routes'
 
 /*
- * The shell's routing table: five tabs, the segments inside them, and the old
+ * The shell's routing table: six tabs, the segments inside them, and the old
  * link names that still have to land somewhere.
+ *
+ * Five of the six are nouns — things you add to. Stats is the sixth and is a
+ * lens: the only tab you never put anything into. It joined on 2026-09-15; the
+ * rule it replaced ("five tabs") is now "five nouns and one lens, and still no
+ * More drawer".
  */
 
-describe('five tabs, the same on the phone and the desktop', () => {
-  it('puts the five nouns on the phone bar in its own order, and nothing else', () => {
-    expect(COMPACT_TABS.map(t => t.id)).toEqual(['home', 'calendar', 'tasks', 'kitchen', 'people'])
+describe('six tabs, the same on the phone and the desktop', () => {
+  it('puts the five nouns and the lens on the phone bar in its own order, and nothing else', () => {
+    expect(COMPACT_TABS.map(t => t.id)).toEqual(['home', 'calendar', 'tasks', 'stats', 'kitchen', 'people'])
     expect([...COMPACT_TABS.map(t => t.id)].sort()).toEqual([...VIEWS].sort())
   })
 
@@ -56,12 +65,60 @@ describe('five tabs, the same on the phone and the desktop', () => {
       ['list', 'List'],
       ['stats', 'Stats'],
     ])
-    expect(VIEWS as string[]).not.toContain('stats')
+    // the lens is a tab; a segment's OWN figures stay inside that segment,
+    // because they count only what its find box and chip leave and the lens
+    // has no list to read
     expect(VIEWS as string[]).not.toContain('places')
   })
 
+  it('holds every area\u2019s figures as a segment of the lens, and a link to each', () => {
+    expect(STATS_TABS.map(t => [t.key, t.label])).toEqual([
+      ['overview', 'Overview'],
+      ['tasks', 'Tasks'],
+      ['money', 'Money'],
+      ['people', 'People'],
+      ['places', 'Places'],
+      ['kitchen', 'Kitchen'],
+      ['wardrobe', 'Wardrobe'],
+      ['habits', 'Habits'],
+      ['journal', 'Journal'],
+    ])
+    // every segment but the Overview has a link of its own, `stats-<segment>`
+    const segments = STATS_TABS.map(t => t.key).filter(k => k !== 'overview') as string[]
+    expect(Object.values(VIEW_TO_STATS).sort()).toEqual([...segments].sort())
+    for (const key of segments) expect(statsTabOfView(`stats-${key}`)).toBe(key)
+    // a bare ?view=stats names no segment, so the lens opens on the one last
+    // chosen — as ?view=kitchen does
+    expect(statsTabOfView('stats')).toBeNull()
+    expect(statsTabOfView('constructor')).toBeNull()
+    expect(statsTabOfView(undefined)).toBeNull()
+  })
+
+  it('leaves the areas\u2019 own shipped links pointing where they always did', () => {
+    // ?view=people-stats and the other three were released pointing at the
+    // Stats each area keeps inside itself. The lens draws those same figures
+    // now, but a link already in a Shortcut, a reminder or someone's notes must
+    // not quietly change where it lands.
+    for (const name of ['people-stats', 'places-stats', 'kitchen-stats', 'wardrobe-stats']) expect(statsTabOfView(name)).toBeNull()
+    expect(peopleTabOfStatsView('people-stats')).toBe('people')
+    expect(VIEW_TO_KITCHEN['kitchen-stats']).toBe('stats')
+    expect(VIEW_TO_WARDROBE['wardrobe-stats']).toBe('stats')
+  })
+
+  it('remembers the lens segment chosen on its own track, and nothing else', () => {
+    const read = (v: string | null) => {
+      vi.stubGlobal('localStorage', { getItem: () => v })
+      return storedStatsTab()
+    }
+    expect(read(null)).toBe('overview')
+    expect(read('money')).toBe('money')
+    expect(read('wardrobe')).toBe('wardrobe')
+    expect(read('recipes')).toBe('overview')
+    expect(read('__proto__')).toBe('overview')
+  })
+
   it('gives the wardrobe a segment on Home, never a tab of its own', () => {
-    expect(VIEWS).toHaveLength(5)
+    expect(VIEWS).toHaveLength(6)
     expect(VIEWS as string[]).not.toContain('wardrobe')
     expect(HOME_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')
     expect(WARDROBE_TABS.map(t => [t.key, t.label])).toEqual([

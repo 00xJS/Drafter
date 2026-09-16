@@ -140,7 +140,10 @@ const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
   // Kitchen → Stats' counting travels with it
   resolve(SRC, 'kitchenstats.ts'),
-  // the wardrobe's screens and its photo pipeline: only Today's card and its thumbnails ride in the Planner chunk
+  // the wardrobe's screens and its photo pipeline: only Today's card and its
+  // thumbnails ride in the Planner chunk. WardrobeStats has a preloadable of
+  // its own too (the Stats lens draws it), so it must stay out of the first
+  // load by BOTH routes — hence it is listed here as well as among the views.
   ...['wardrobe/OutfitComposer', 'wardrobe/SnapRow', 'wardrobe/SavedOutfits', 'wardrobe/Clothes', 'wardrobe/GarmentSheet', 'wardrobe/PieceDetails', 'wardrobe/WardrobeStats'].map(component),
   resolve(SRC, 'components', 'wardrobe', 'composer.ts'),
   // People → Stats' and Places → Stats' counting travels with its view, and the face both draw a person with

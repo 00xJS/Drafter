@@ -8,8 +8,10 @@ import { PeopleStats } from '../components/PeopleStats'
 import { Places } from '../components/Places'
 import { PlacesStats } from '../components/PlacesStats'
 import type { PlannerCtx } from '../components/planner/ctx'
+import type { Store } from '../store'
 import * as lazy from '../components/planner/lazy'
 import { PeopleScreen } from '../components/planner/PeopleScreen'
+import { useListFilters } from '../components/planner/useListFilters'
 import { useNavigation } from '../components/planner/useNavigation'
 import { ChartCard, ListCard, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, StreakTiles, YearTable } from '../components/stats'
 import { NO_PERSON_FILTER, findsPerson, personMatcher, type PersonFilter } from '../people'
@@ -526,9 +528,10 @@ describe('the lists set what the tab holds', () => {
 type Nav = ReturnType<typeof useNavigation>
 const STORE = { people: PEOPLE, places: PLACES, tasks: TASKS, meals: MEALS, events: ENTRIES, journal: [], upsert: noop, remove: noop, restore: noop }
 /** The shell's context as the People tab reads it: the real navigation over the records above, with nothing else doing anything. */
-const ctx = (nav: Nav) =>
+const ctx = (nav: Nav, filters: ReturnType<typeof useListFilters>) =>
   ({
     ...nav,
+    ...filters,
     store: STORE,
     showToast: noop,
     openTask: noop,
@@ -558,8 +561,12 @@ function onTheTab(steps: ((tree: ReactNode, nav: Nav) => void)[]) {
   const trees: ReactNode[] = []
   function Shell() {
     const nav = useNavigation()
+    // the two filters live on the shell now, not on the tab: the Stats lens
+    // draws these same two Stats in its own tab, and one figure must not read
+    // two ways on one device
+    const filters = useListFilters({ store: STORE as unknown as Store, personOpenId: nav.personOpenId, placeOpenId: nav.placeOpenId })
     const [, tick] = useState(0)
-    const tree = PeopleScreen({ p: ctx(nav) })
+    const tree = PeopleScreen({ p: ctx(nav, filters) })
     trees.push(tree)
     const step = steps[trees.length - 1]
     if (step) {
@@ -670,12 +677,30 @@ describe('the People tab holds them for the visit', () => {
     expect(handed(trees[trees.length - 1], lazy.People)).toMatchObject({ filter: NO_PERSON_FILTER, openId: 'new' })
   })
 
-  it('saves nothing, and drops them when the tab is left: it is drawn only while it is the view', () => {
+  it('saves nothing, and drops them with the page: they are a visit, never a preference', () => {
+    // They moved off PeopleScreen on 2026-09-15, when the Stats lens began
+    // drawing these same two Stats in its own tab: one pair on the shell, so a
+    // chip pressed on the List, on the segment's Stats or on the lens's is
+    // pressed on all three, and no figure can read two ways at once.
+    //
+    // ONE THING CHANGED WITH THE MOVE, on purpose: they used to clear when you
+    // left the People tab, because the tab's own useState went with it. On the
+    // shell they last the page. That is what sharing them costs, and it is the
+    // right way round — a chip is lit on screen with a "Show all" beside it,
+    // so nothing is hidden by state you cannot see, and coming back to the
+    // figures you were reading is what you wanted. Still saved nowhere: a
+    // reload starts over.
+    const held = source('components/planner/useListFilters.ts')
+    expect(held).not.toMatch(/localStorage|sessionStorage/)
+    expect(held).toContain('useState<PersonFilter>(NO_PERSON_FILTER)')
+    expect(held).toContain('useState<PlaceFilter>(NO_PLACE_FILTER)')
+    // the tab reads them rather than holding them, and holds none of its own
     const screen = source('components/planner/PeopleScreen.tsx')
-    expect(screen).not.toMatch(/localStorage|sessionStorage/)
-    expect(screen).toContain('useState<PersonFilter>(NO_PERSON_FILTER)')
-    expect(screen).toContain('useState<PlaceFilter>(NO_PLACE_FILTER)')
+    expect(screen).not.toMatch(/useState/)
+    expect(screen).toContain('const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p')
     expect(plannerSource()).toContain("{view === 'people' && <PeopleScreen p={p} />}")
+    // …and the shell builds them once, for every tab that draws a filtered figure
+    expect(plannerSource()).toContain('const listFilters = useListFilters({ store, personOpenId: nav.personOpenId, placeOpenId: nav.placeOpenId })')
   })
 })
 

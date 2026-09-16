@@ -116,11 +116,13 @@ describe('the journal is two taps away, and never moves under the caret', () => 
     expect(today).not.toMatch(/autoFocus/)
   })
 
-  it('keeps the phone to five tabs and no More drawer', () => {
+  it('keeps the phone to six tabs and no More drawer', () => {
     // Board, Bills and Notes moved into the Tasks tab as segments, so the
-    // catch-all sheet is gone — its data and its open-state with it.
+    // catch-all sheet is gone — its data and its open-state with it. Stats
+    // joined the bar on 2026-09-15 as the sixth: five nouns and one lens, and
+    // still nothing behind a More sheet.
     const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const CAL_MODE_KEY'))
-    expect(bar.match(/id: '/g)).toHaveLength(5)
+    expect(bar.match(/id: '/g)).toHaveLength(6)
     expect(planner).not.toMatch(/MORE_VIEWS/)
     expect(planner).not.toMatch(/moreOpen/)
   })

@@ -1,0 +1,617 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import type { ReactElement, ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import { StatsLens } from '../components/StatsLens'
+import { StatsScreen } from '../components/planner/StatsScreen'
+import { StatsLens as LensChunk } from '../components/planner/lazy'
+import { STATS_TABS, VIEWS, VIEW_LABELS, VIEW_TO_STATS, statsTabOfView, type StatsTab } from '../components/planner/routes'
+import { AreaCard, HeatGrid, RankedBars, Ring, Segmented, WindowSwitch, heatDays } from '../components/stats'
+import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from '../components/planner/lazy'
+import { NO_PERSON_FILTER } from '../people'
+import { NO_PLACE_FILTER } from '../places'
+import { wardrobeCosts, wearIndex } from '../wardrobe'
+import { doneByPriority, doneByTag, doneDays, habitReport, journalReport, moneyReport, taskReport } from '../lensstats'
+import type { Garment, Habit, JournalEntry, Task, Wear } from '../types'
+import { elements, press, settled } from './rendered'
+import { sheetSource } from './source'
+
+/*
+ * The Stats lens: the sixth tab. What it counts (src/lensstats.ts), what it
+ * draws, and the two rules that keep it honest —
+ *
+ *  - it never re-counts an area that counts itself. People, Places, Kitchen and
+ *    the Wardrobe each count what their own list's find box and chips leave, so
+ *    the lens links to them instead of printing a second, different number;
+ *  - it never quotes the journal. The journal segment is counts and moods.
+ */
+
+const STAMP = '2026-01-01T00:00:00.000Z'
+/** Tuesday 15 September 2026, in the evening. */
+const NOW = new Date(2026, 8, 15, 18, 0)
+
+const task = (id: string, over: Partial<Task> = {}): Task => ({
+  kind: 'task',
+  id,
+  title: id,
+  description: '',
+  status: 'todo',
+  priority: 'normal',
+  tags: [],
+  createdAt: STAMP,
+  updatedAt: STAMP,
+  ...over,
+})
+/** A task finished on a local day, at midday so no zone moves it. */
+const done = (id: string, day: string, over: Partial<Task> = {}) => task(id, { status: 'done', completedAt: `${day}T12:00:00`, ...over })
+const habit = (id: string, days: string[], over: Partial<Habit> = {}): Habit => ({ kind: 'habit', id, name: id, done: days, createdAt: STAMP, updatedAt: STAMP, ...over })
+const entry = (day: string, over: Partial<JournalEntry> = {}): JournalEntry => ({ kind: 'journal', id: `journal~${day}~x`, date: day, body: 'a b c', createdAt: STAMP, updatedAt: STAMP, ...over })
+const garment = (id: string, over: Partial<Garment> = {}): Garment => ({ kind: 'garment', id, name: id, type: 'top', createdAt: STAMP, updatedAt: STAMP, ...over })
+const wear = (day: string, ids: string[], over: Partial<Wear> = {}): Wear => ({ kind: 'wear', id: `wear~${day}~x`, date: day, garmentIds: ids, createdAt: STAMP, updatedAt: STAMP, ...over })
+
+describe('what the lens counts: finished work', () => {
+  const TASKS = [
+    done('a', '2026-09-15', { tags: ['home'], priority: 'high' }),
+    done('b', '2026-09-15', { tags: ['home', 'money'] }),
+    done('c', '2026-09-14', { tags: ['money'], priority: 'urgent' }),
+    done('old', '2026-05-01', { tags: ['home'] }),
+    task('open1', { dueAt: '2026-09-01T12:00:00' }),
+    task('open2', { status: 'doing', dueAt: '2026-06-01T12:00:00' }),
+    task('open3', { status: 'wishlist' }),
+    task('gone', { status: 'done', completedAt: '2026-09-15T12:00:00', deletedAt: STAMP }),
+  ]
+
+  it('counts a finished task in the window it was finished in, never the one it was made in', () => {
+    expect(taskReport(TASKS, 30, NOW).done).toBe(3)
+    expect(taskReport(TASKS, 'all', NOW).done).toBe(4)
+    // a task in Trash is finished by nobody
+    expect(doneDays(TASKS)).toEqual(['2026-09-15', '2026-09-14', '2026-05-01'])
+  })
+
+  it('counts two tasks on one day as one day, and lets today wait rather than break the run', () => {
+    const r = taskReport(TASKS, 30, NOW)
+    expect(r.days).toEqual(['2026-09-15', '2026-09-14'])
+    expect(r.streaks).toMatchObject({ current: 2, best: 2, today: true })
+    // nothing done today: the run still stands, and asks for today
+    const yesterdayOnly = taskReport([done('c', '2026-09-14')], 30, NOW)
+    expect(yesterdayOnly.streaks).toMatchObject({ current: 1, today: false })
+  })
+
+  it('leaves what is open open, whatever window is chosen', () => {
+    for (const w of [30, 365, 'all'] as const) {
+      const r = taskReport(TASKS, w, NOW)
+      // wishlist is not open work: it is a list of maybes
+      expect(r.open).toBe(2)
+      expect(r.overdue).toBe(2)
+      expect(r.byStatus.map(s => [s.key, s.count])).toEqual([
+        ['todo', 1],
+        ['doing', 1],
+      ])
+    }
+  })
+
+  it('ages an overdue task by how long it has waited, and leaves an empty bucket out', () => {
+    const r = taskReport(TASKS, 30, NOW)
+    // open1 is a fortnight past its date, open2 three and a half months
+    expect(r.aging.map(b => [b.key, b.count])).toEqual([
+      ['month', 1],
+      ['older', 1],
+    ])
+    expect(r.aging.find(b => b.key === 'week')).toBeUndefined()
+    expect(r.aging.find(b => b.key === 'quarter')).toBeUndefined()
+  })
+
+  it('files finished work on the weekday it was finished, Sunday first', () => {
+    // 2026-09-15 is a Tuesday, 2026-09-14 a Monday
+    expect(taskReport(TASKS, 30, NOW).weekday).toEqual([0, 1, 2, 0, 0, 0, 0])
+  })
+
+  it('counts a task once per tag it carried, and not at all without one', () => {
+    expect(doneByTag(TASKS, 30, NOW).map(r => [r.key, r.count])).toEqual([
+      ['home', 2],
+      ['money', 2],
+    ])
+    expect(doneByTag([done('x', '2026-09-15')], 30, NOW)).toEqual([])
+  })
+
+  it('ranks priorities urgent first and leaves out one nobody finished', () => {
+    expect(doneByPriority(TASKS, 30, NOW).map(r => [r.key, r.count])).toEqual([
+      ['urgent', 1],
+      ['high', 1],
+      ['normal', 1],
+    ])
+  })
+})
+
+describe('what the lens counts: money', () => {
+  const BILLS: Task[] = [
+    done('e1', '2026-03-04', { actualCost: 100, bill: { kind: 'bill', payee: 'Electric' } }),
+    done('e2', '2026-04-04', { actualCost: 120, bill: { kind: 'bill', payee: 'Electric' } }),
+    done('card', '2026-04-10', { actualCost: 300, bill: { kind: 'card', payee: 'Amex' } }),
+    done('odd', '2026-05-02', { title: 'New tyres', actualCost: 450 }),
+    done('free', '2026-05-03', { actualCost: 0 }),
+    done('lastyear', '2025-04-04', { actualCost: 999, bill: { kind: 'bill', payee: 'Electric' } }),
+    task('unpaid', { estimateCost: 70, bill: { kind: 'subscription', payee: 'Internet' } }),
+  ]
+
+  it('adds amounts rather than counting rows, in the year they were paid', () => {
+    const m = moneyReport(BILLS, 2026, NOW)
+    expect(m.spent).toBe(970)
+    expect(m.months[2]).toBe(100)
+    expect(m.months[3]).toBe(420)
+    expect(m.months[4]).toBe(450)
+    // last year's is last year's
+    expect(moneyReport(BILLS, 2025, NOW).spent).toBe(999)
+  })
+
+  it('names who was paid, a task with no bill by its own title, and leaves a zero out', () => {
+    expect(moneyReport(BILLS, 2026, NOW).byPayee.map(r => [r.name, r.count])).toEqual([
+      ['New tyres', 450],
+      ['Amex', 300],
+      ['Electric', 220],
+    ])
+  })
+
+  it('groups only the repeating payments by kind', () => {
+    expect(moneyReport(BILLS, 2026, NOW).byKind.map(r => [r.key, r.count])).toEqual([
+      ['card', 300],
+      ['bill', 220],
+    ])
+  })
+
+  it('counts as still to pay only a bill somebody is going to pay', () => {
+    const m = moneyReport(BILLS, 2026, NOW)
+    expect(m.dueNow).toBe(1)
+    expect(m.dueNowTotal).toBe(70)
+    // `status !== 'done'` also took in these three, and none of them is money owed
+    const notOwed = [
+      task('cancelled', { status: 'canceled', estimateCost: 500, bill: { kind: 'bill', payee: 'Gone' } }),
+      task('maybe', { status: 'wishlist', estimateCost: 500, bill: { kind: 'bill', payee: 'Someday' } }),
+      task('binned', { status: 'todo', deletedAt: STAMP, estimateCost: 500, bill: { kind: 'bill', payee: 'Trash' } }),
+    ]
+    const withNoise = moneyReport([...BILLS, ...notOwed], 2026, NOW)
+    expect(withNoise.dueNow).toBe(1)
+    expect(withNoise.dueNowTotal).toBe(70)
+  })
+
+  it('reads cost per wear from the wardrobe\u2019s own rule, so the two cannot disagree', () => {
+    // The lens once counted every LOOK a priced piece was in; the wardrobe
+    // counts the DAYS it was worn (wearIndex). Two looks on one day made the
+    // lens's figure cheaper than the Wardrobe's for the same clothes, which is
+    // the one thing a second copy of a rule always ends up doing.
+    const clothes = [garment('tee', { price: 30 }), garment('hat', { price: 10, type: 'accessory' }), garment('free')]
+    const worn = [
+      wear('2026-09-15', ['tee', 'free']),
+      // an evening change: a second look on a day already counted
+      { ...wear('2026-09-15', ['tee', 'hat']), id: 'wear~2026-09-15~b' },
+      wear('2026-09-14', ['tee', 'hat']),
+      // a plan is not a wear until it is confirmed
+      wear('2026-09-13', ['tee'], { planned: true }),
+    ]
+    const ix = wearIndex(worn, '2026-09-15')
+    const c = wardrobeCosts(clothes, ix)
+    expect(c.spent).toBe(40)
+    expect(c.rows).toHaveLength(2)
+    // tee on 2 DAYS (not 3 looks) and hat on 2: $40 over 4 day-wears
+    expect(c.wears).toBe(4)
+    expect(c.perWear).toBeCloseTo(10)
+    expect(wardrobeCosts(clothes, wearIndex([], '2026-09-15')).perWear).toBeUndefined()
+  })
+})
+
+describe('what the lens counts: habits', () => {
+  // every day for the four days to 15 Sep, and one gap on the 12th
+  const walk = habit('walk', ['2026-09-15', '2026-09-14', '2026-09-13', '2026-09-11'])
+  const read = habit('read', ['2026-09-15', '2026-09-14', '2026-09-12'])
+
+  it('counts a day nobody was due as neither kept nor missed', () => {
+    // a weekend-only habit is owed nothing on a Tuesday
+    const weekend = habit('weekend', [], { days: [0, 6] })
+    const r = habitReport([weekend], 30, NOW)
+    const row = r.rows.find(x => x.habit.id === 'weekend')
+    expect(row?.due).toBeGreaterThan(0)
+    expect(row?.due).toBeLessThan(10)
+  })
+
+  it('calls a day clean only when everything due that day was kept', () => {
+    const r = habitReport([walk, read], 30, NOW)
+    expect(r.cleanDays.slice(0, 2)).toEqual(['2026-09-15', '2026-09-14'])
+    expect(r.cleanDays).not.toContain('2026-09-13')
+    expect(r.cleanDays).not.toContain('2026-09-12')
+    expect(r.streaks).toMatchObject({ current: 2, today: true })
+  })
+
+  it('leaves an archived habit out: it is history, not something you are keeping', () => {
+    expect(habitReport([habit('gone', ['2026-09-15'], { archivedAt: STAMP })], 30, NOW).rows).toEqual([])
+    expect(habitReport([habit('binned', ['2026-09-15'], { deletedAt: STAMP })], 30, NOW).rows).toEqual([])
+  })
+
+  it('orders the rows by how well they went', () => {
+    const r = habitReport([read, walk], 30, NOW)
+    expect(r.rows[0].habit.id).toBe('walk')
+    expect(r.rows[0].pct).toBeGreaterThanOrEqual(r.rows[1].pct)
+  })
+})
+
+describe('what the lens counts: the journal', () => {
+  const ENTRIES = [entry('2026-09-15', { mood: 5 }), entry('2026-09-14', { mood: 3 }), entry('2026-09-13'), entry('2026-04-02', { mood: 1 }), entry('2026-09-10', { deletedAt: STAMP })]
+
+  it('counts days and moods, and never a word of what was written', () => {
+    const r = journalReport(ENTRIES, 30, 2026, NOW)
+    expect(r.entries).toBe(3)
+    expect(r.mood).toBeCloseTo(4)
+    expect(r.moodCounts).toEqual([0, 0, 1, 0, 1])
+    expect(r.streaks).toMatchObject({ current: 3, today: true })
+    // three words each, three entries in the window
+    expect(r.words).toBe(9)
+  })
+
+  it('counts a deleted entry nowhere, and the whole year in the months', () => {
+    const r = journalReport(ENTRIES, 30, 2026, NOW)
+    expect(r.total).toBe(4)
+    expect(r.months[3]).toBe(1)
+    expect(r.months[8]).toBe(3)
+  })
+
+  it('says nothing about mood when no entry carried one', () => {
+    expect(journalReport([entry('2026-09-15')], 30, 2026, NOW).mood).toBeNull()
+  })
+})
+
+// ---- the view ---------------------------------------------------------------------
+
+const html = (node: ReactNode) => renderToStaticMarkup(node as ReactElement).replace(/<!-- -->/g, '')
+
+/** What the four in-area Stats are handed. Inert here: these tests are about the lens, not about those views. */
+const AREAS = {
+  peopleFilter: NO_PERSON_FILTER,
+  onPeopleFilter: () => {},
+  placeFilter: NO_PLACE_FILTER,
+  onPlaceFilter: () => {},
+  mineOnCalendar: false,
+  onOpenPerson: () => {},
+  onOpenPlace: () => {},
+  onOpenDay: () => {},
+  onSaw: () => {},
+  onPlanAt: () => {},
+  onOpenRecipe: () => {},
+  onGoMealDay: () => {},
+  onOpenPiece: () => {},
+  onRetirePiece: () => {},
+  onSaveOutfit: () => {},
+  onGoWearDay: () => {},
+  byId: new Map<string, Garment>(),
+  wearIx: wearIndex([], '2026-09-15'),
+}
+
+const LENS_PROPS = {
+  tab: 'overview' as const,
+  onTab: () => {},
+  tasks: [done('a', '2026-09-15', { tags: ['home'] }), task('open', { dueAt: '2026-09-01T12:00:00' })],
+  people: [],
+  places: [],
+  events: [],
+  meals: [],
+  recipes: [],
+  groceries: [],
+  journal: [entry('2026-09-15', { mood: 4 })],
+  habits: [habit('walk', ['2026-09-15'])],
+  garments: [garment('tee', { price: 30 })],
+  outfits: [],
+  wears: [wear('2026-09-15', ['tee'])],
+  onTasks: () => {},
+  areas: AREAS,
+  now: NOW,
+}
+
+describe('the lens drawn', () => {
+  it('draws every segment on the server, with nothing to count and with something', () => {
+    const empty = { ...LENS_PROPS, tasks: [], journal: [], habits: [], garments: [], wears: [] }
+    for (const t of STATS_TABS) {
+      expect(() => html(<StatsLens {...LENS_PROPS} tab={t.key} />), t.key).not.toThrow()
+      expect(() => html(<StatsLens {...empty} tab={t.key} />), t.key).not.toThrow()
+    }
+  })
+
+  it('opens on the Overview and offers every area as one scrolling track', () => {
+    const tree = settled(StatsLens, LENS_PROPS)
+    const track = elements(tree).find(e => e.type === Segmented)
+    expect(track).toBeTruthy()
+    expect((track!.props.items as { key: string }[]).map(i => i.key)).toEqual(['overview', 'tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal'])
+    // nine will not sit on a 375pt line, so the track scrolls and keeps the chosen one in view
+    expect(track!.props.scroll).toBe(true)
+  })
+
+  it('never leaves the tab: every Overview card opens a segment of this one', () => {
+    const went: string[] = []
+    const tree = into(settled(StatsLens, { ...LENS_PROPS, onTab: (t: string) => went.push(t) }), 'Overview')
+    const cards = elements(tree).filter(e => e.type === AreaCard)
+    expect(cards.map(c => c.props.name)).toEqual(['Tasks', 'Money', 'People', 'Places', 'Kitchen', 'Wardrobe', 'Habits', 'Journal'])
+    for (const card of cards) (card.props.onOpen as () => void)()
+    // one card per segment, in the track's own order, and not one of them is a jump to another tab
+    expect(went).toEqual(['tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal'])
+    expect(went).toEqual(STATS_TABS.filter(t => t.key !== 'overview').map(t => t.key))
+  })
+
+  it('draws each area\u2019s own Stats component in the tab, rather than a second version of it', () => {
+    const drawn: [StatsTab, unknown][] = [
+      ['people', PeopleStats],
+      ['places', PlacesStats],
+      ['kitchen', KitchenStats],
+      ['wardrobe', WardrobeStats],
+    ]
+    for (const [tab, Component] of drawn) {
+      const tree = settled(StatsLens, { ...LENS_PROPS, tab })
+      expect(
+        elements(tree).some(e => e.type === Component),
+        tab,
+      ).toBe(true)
+    }
+  })
+
+  it('hands People and Places the lists\u2019 own find box and chips, so one figure cannot read two ways', () => {
+    const filter = { group: 'family' as const, q: 'mu' }
+    const tree = settled(StatsLens, { ...LENS_PROPS, tab: 'people' as const, areas: { ...AREAS, peopleFilter: filter } })
+    const view = elements(tree).find(e => e.type === PeopleStats)!
+    expect(view.props.filter).toBe(filter)
+    expect(view.props.onFilter).toBe(AREAS.onPeopleFilter)
+    // …and the unnarrowed task list, as the People tab's own Stats are given
+    expect(view.props.tasks).toBe(LENS_PROPS.tasks)
+  })
+
+  it('never puts a word of the journal on the page', () => {
+    const secret = 'the thing I only wrote down'
+    const props = { ...LENS_PROPS, tab: 'journal' as const, journal: [entry('2026-09-15', { mood: 4, body: secret })] }
+    const out = html(<StatsLens {...props} />)
+    expect(out).not.toContain(secret)
+    expect(out).toContain('nothing you wrote is shown here')
+  })
+
+  it('shows the window switch only where it governs something', () => {
+    const windowed = (tab: StatsTab) => elements(settled(StatsLens, { ...LENS_PROPS, tab })).some(e => e.type === WindowSwitch)
+    // the lens's own counting reads it…
+    for (const tab of ['overview', 'tasks', 'habits', 'journal'] as StatsTab[]) expect(windowed(tab), tab).toBe(true)
+    // …Money is counted by a year on its own stepper, and the four area views
+    // bring their own switches inside their cards, so a page-level one there
+    // would sit doing nothing
+    for (const tab of ['money', 'people', 'places', 'kitchen', 'wardrobe'] as StatsTab[]) expect(windowed(tab), tab).toBe(false)
+  })
+
+  it('asks the page one question at a time: a ranked card in the lens follows the window rather than keeping its own', () => {
+    const tree = into(settled(StatsLens, { ...LENS_PROPS, tab: 'tasks' as const }), 'TasksLens')
+    const ranked = elements(tree).filter(e => e.type === RankedBars)
+    expect(ranked).toHaveLength(2)
+    for (const card of ranked) expect(card.props.window).toBe(30)
+    // …and an area's own Stats keeps its switch: the prop is absent there
+    expect(readSource('components/kitchen/KitchenStats.tsx')).not.toContain('window={')
+  })
+
+  it('counts by one window across the segments, so the question survives a move between them', () => {
+    // the window lives on the lens, not inside a segment, and the segment is a
+    // prop — a move between them cannot reset it
+    const src = readSource('components/StatsLens.tsx')
+    expect(src).toMatch(/const \[span, setSpan\] = useState<DayWindow>\(30\)/)
+    expect(src.indexOf('const [span')).toBeLessThan(src.indexOf('function Overview'))
+  })
+})
+
+describe('the kit the lens introduced', () => {
+  it('lays a year of days out in whole Sunday-aligned weeks, ending on the week today is in', () => {
+    const days = heatDays(NOW, 53)
+    expect(days).toHaveLength(53 * 7)
+    // 2026-09-15 is a Tuesday, so its week began on Sunday the 13th
+    expect(days[days.length - 7]).toBe('2026-09-13')
+    expect(days).toContain('2026-09-15')
+    // …and the week runs past today rather than stopping mid-column
+    expect(days[days.length - 1]).toBe('2026-09-19')
+  })
+
+  it('draws a day still to come as neither empty nor lit', () => {
+    const out = html(<HeatGrid counts={new Map([['2026-09-15', 2]])} end={NOW} weeks={2} label="Days" />)
+    expect(out).toContain('heat-cell ahead')
+    expect(out).toContain('heat-cell today')
+    // the lit day carries its count in words for a pointer
+    expect(out).toContain('2026-09-15: 2 days')
+  })
+
+  it('draws a ring as an arc of its share, and no arc at all for nothing', () => {
+    expect(html(<Ring value={3} of={4} label="75%" />)).toContain('ring-arc')
+    expect(html(<Ring value={0} of={4} label="0%" />)).not.toContain('ring-arc')
+    // a share is never over the whole, however the caller counted
+    expect(html(<Ring value={9} of={4} label="all" />)).toContain('aria-label="9 of 4"')
+  })
+
+  it('moves the segmented thumb by index rather than repainting a button', () => {
+    const out = html(<Segmented items={[{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'c', label: 'C' }]} value="b" onChange={() => {}} label="Which" />)
+    expect(out).toContain('seg-thumb')
+    expect(out).toContain('--seg-n:3')
+    expect(out).toContain('--seg-i:1')
+  })
+
+  it('sends a press to the choice it names', () => {
+    const chosen: string[] = []
+    const tree = settled(Segmented, { items: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }], value: 'a', onChange: (k: string) => chosen.push(k), label: 'Which' })
+    press(tree, 'B')
+    expect(chosen).toEqual(['b'])
+  })
+})
+
+describe('the sixth tab', () => {
+  it('is a view of its own, with its own chunk and its own link names', () => {
+    expect(VIEWS).toContain('stats')
+    expect(LensChunk.preload).toBeTypeOf('function')
+    expect(Object.keys(VIEW_TO_STATS).sort()).toEqual(['stats-habits', 'stats-journal', 'stats-kitchen', 'stats-money', 'stats-people', 'stats-places', 'stats-tasks', 'stats-wardrobe'])
+    expect(statsTabOfView('stats-tasks')).toBe('tasks')
+  })
+
+  it('reads every task, not the Mine / Everyone list, as the areas that count themselves do', () => {
+    const src = readSource('components/planner/StatsScreen.tsx')
+    expect(src).toContain('tasks={store.tasks}')
+    expect(src).not.toContain('filteredTasks')
+  })
+
+  it('hands the screen the events written here, the same list People count seeing someone by', () => {
+    expect(readSource('components/planner/StatsScreen.tsx')).toContain('events={store.events}')
+  })
+
+  it('lands the Overdue tile on the task LIST, not on whatever Tasks segment was last chosen', () => {
+    // the tile counts overdue tasks; landing on Bills or Notes shows none of them
+    const src = readSource('components/planner/StatsScreen.tsx')
+    // the comment above the jump says the same thing, so read the code alone
+    const jump = src.slice(src.indexOf('onTasks={'), src.indexOf('areas={areas}')).replace(/\/\/[^\n]*/g, '')
+    expect(jump).toContain("goTasksTab('list')")
+    expect(jump).toContain("setView('tasks')")
+    // goTasksTab, not setTasksTab: a jump moves the segment for the visit only
+    expect(jump).not.toContain('setTasksTab')
+  })
+
+  it('keeps one clock per day rather than a new one per render', () => {
+    // `now = new Date()` in the parameter list is a fresh object every render,
+    // and it is a dependency of every report in the file
+    const src = readSource('components/StatsLens.tsx')
+    expect(src).not.toMatch(/now = new Date\(\) \} = p/)
+    expect(src).toContain('const now = useMemo(() => handed ?? new Date(), [handed, today])')
+  })
+
+  it('stamps the retire Undo newer than the write it undoes, not than the piece', () => {
+    // newerStamp is max(now, prev + 1). Undoing from the piece the write was
+    // made ON can land on the same millisecond as the write, and a tie loses
+    // last-write-wins — the piece would stay retired with nothing to show for
+    // the press. Wardrobe.tsx stamps its own Undo the same way.
+    const src = readSource('components/planner/StatsScreen.tsx')
+    expect(src).toContain('const gone = retired(g, true)')
+    expect(src).toContain('updatedAt: newerStamp(gone.updatedAt)')
+  })
+
+  it('is mounted by the shell on its own view', () => {
+    expect(readSource('components/Planner.tsx')).toContain("{view === 'stats' && <StatsScreen p={p} />}")
+  })
+
+  it('gathers what the areas need and counts nothing itself', () => {
+    const src = readSource('components/planner/StatsScreen.tsx')
+    // the screen is wiring. It memoizes the two values the wardrobe's figures
+    // are read from — Wardrobe.tsx works out the same two for itself — and
+    // holds no state of its own: the filters are the shell's, the segment is
+    // the navigation's.
+    expect(src).not.toMatch(/useState/)
+    expect(src).toContain('const byId = useMemo(() => liveById(store.garments)')
+    // …and the day key is a dependency of the index, not read inside the
+    // factory: store.wears keeps its identity when a sync changes nothing, so
+    // an index memoized on the list alone calls yesterday "today" after midnight
+    expect(src).toContain('const today = localDayKey()')
+    expect(src).toContain('const wearIx = useMemo(() => wearIndex(store.wears, today), [store.wears, today])')
+    expect(src).not.toMatch(/\b(taskReport|moneyReport|habitReport|journalReport|kitchenIndex)\b/)
+    expect(StatsScreen).toBeTypeOf('function')
+  })
+
+  it('draws one view per area, from that area\u2019s own chunk, so nothing ships twice', () => {
+    const lazySrc = readSource('components/planner/lazy.ts')
+    // the wardrobe's figures get a chunk entry of their own, so the lens does
+    // not drag the composer, the clothes grid and the photo pipeline in with them
+    expect(lazySrc).toContain("import('../wardrobe/WardrobeStats')")
+    // …and a finger on the Stats tab warms every view it can draw
+    expect(lazySrc).toMatch(/stats: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload\]/)
+    // the lens reaches them through lazy.ts, never by importing the files
+    const lens = readSource('components/StatsLens.tsx')
+    expect(lens).toContain("from './planner/lazy'")
+    expect(lens).not.toMatch(/from '\.\/(PeopleStats|PlacesStats)'/)
+  })
+})
+
+describe('what the app says about itself names the tab', () => {
+  /*
+   * The tab list is written out in four places a reader meets before they ever
+   * see the app: the landing page, the HTML meta description, the PWA
+   * manifest, and the README. Three of them were still saying "five tabs" a
+   * day after Stats shipped, and nothing caught it — the tests read routes.ts,
+   * and prose is not routes.ts. These read the prose.
+   */
+  const file = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8')
+
+  it('says six tabs, and names Stats, wherever it counts them', () => {
+    const prose = [
+      ['the landing page', readSource('components/Landing.tsx')],
+      ['the meta description', file('index.html')],
+      ['the PWA manifest', file('vite.config.ts')],
+      ['the README', file('README.md')],
+    ] as const
+    for (const [where, text] of prose) {
+      expect(text, where).not.toMatch(/\bfive tabs\b/i)
+      expect(text, where).toMatch(/\bStats\b/)
+    }
+  })
+
+  it('never lets a tab list in prose omit one of the six', () => {
+    // a sentence that names four of the tabs has to name all six
+    const named = (text: string) => VIEWS.filter(v => new RegExp(`\\b${VIEW_LABELS[v]}\\b`).test(text))
+    for (const [where, text] of [
+      ['the landing page', readSource('components/Landing.tsx')],
+      ['the meta description', file('index.html')],
+      ['the PWA manifest', file('vite.config.ts')],
+    ] as const) {
+      expect(named(text).sort(), where).toEqual([...VIEWS].sort())
+    }
+  })
+})
+
+describe('the segmented control is the same control everywhere', () => {
+  const css = sheetSource().replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it('gives the web the track and thumb the shell already had, not a row of outlined buttons', () => {
+    // the track is declared outside any .native scope, so a browser gets it too
+    const track = css.match(/\.people-tab-seg \.segmented,\s*\.segmented\.cal-mode,\s*\.segmented\.seg-track \{([^}]*)\}/)
+    expect(track, 'no un-scoped track rule for the tab switchers').toBeTruthy()
+    expect(track![1]).toMatch(/background: var\(--surface-2\)/)
+    expect(track![1]).toMatch(/border-radius: 12px/)
+  })
+
+  it('never widens the bare .seg, which every other segmented row in the app shares', () => {
+    const bare = css.match(/(?:^|\})\s*\.seg \{([^}]*)\}/)
+    expect(bare, 'no bare .seg rule').toBeTruthy()
+    expect(bare![1]).not.toMatch(/flex:/)
+  })
+
+  it('takes the width it needs on a mouse page and the whole line on a phone', () => {
+    expect(css).toMatch(/\.segmented\.seg-track \{[^}]*max-width: 520px/s)
+    const phone = css.slice(css.indexOf('@media (max-width: 640px)'))
+    expect(phone).toMatch(/\.segmented\.seg-track \{\s*max-width: none;/)
+  })
+
+  it('scrolls the nine-segment track instead of wrapping it into three rows', () => {
+    // `.segmented` wraps by default, which the filter rows want and a track
+    // never does: wrapped, the lens's nine became three rows on a 375pt phone
+    const scroll = css.match(/\.segmented\.seg-scroll \{([^}]*)\}/)
+    expect(scroll, 'no .segmented.seg-scroll rule').toBeTruthy()
+    expect(scroll![1]).toMatch(/flex-wrap: nowrap/)
+    expect(scroll![1]).toMatch(/overflow-x: auto/)
+    expect(scroll![1]).toMatch(/max-width: none/)
+  })
+
+  it('moves the thumb by a transform, so Reduce Motion simply puts it where it belongs', () => {
+    const thumb = css.match(/\.seg-thumb \{([^}]*)\}/)
+    expect(thumb![1]).toMatch(/transform: translateX\(calc\(var\(--seg-i, 0\) \* 100%\)\)/)
+    expect(thumb![1]).toMatch(/transition: transform/)
+  })
+})
+
+/**
+ * The tree of the one component called `name` inside `tree`, with its own hooks
+ * run: `elements` lists a component, never calls it, and the lens's segments are
+ * components of its own.
+ */
+function into(tree: ReactNode, name: string): ReactNode {
+  const hit = elements(tree).find(e => typeof e.type === 'function' && (e.type as { name?: string }).name === name)
+  if (!hit) throw new Error(`no ${name} in the tree`)
+  return settled(hit.type as (props: unknown) => ReactNode, hit.props)
+}
+
+/** A module's own text: a few rules here are about where a thing is written, not what it renders. */
+const cache = new Map<string, string>()
+function readSource(rel: string): string {
+  const hit = cache.get(rel)
+  if (hit !== undefined) return hit
+  const text = readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8')
+  cache.set(rel, text)
+  return text
+}

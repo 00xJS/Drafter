@@ -38,7 +38,7 @@ interface Props {
   openId?: string | null
   onOpenConsumed?(): void
   /**
-   * The group chip and find box. The People tab holds them rather than the
+   * The group chip and find box. The shell holds them rather than the
    * list, so People → Stats counts the rows they leave and List → Stats →
    * List keeps them.
    */
