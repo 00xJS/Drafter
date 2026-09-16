@@ -19,9 +19,20 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
+/**
+ * The key this gateway reads the database with: its own `BOT_DB_KEY` when one
+ * is set, and otherwise the service-role key Supabase injects. Supabase keeps
+ * the `SUPABASE_` prefix for its own variables, so the bot's key cannot share
+ * it. Setting `BOT_DB_KEY` lets the project's legacy keys be retired without
+ * taking the bot down with them.
+ */
+function dbKey(): string {
+  return Deno.env.get('BOT_DB_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+}
+
 /** The service-role client. Typed from this call: `ReturnType<typeof createClient>` resolves its generics to never. */
 function adminClient() {
-  return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  return createClient(Deno.env.get('SUPABASE_URL')!, dbKey())
 }
 type Admin = ReturnType<typeof adminClient>
 
@@ -159,7 +170,7 @@ Deno.serve(async req => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'the body must be a JSON object')
   if (body.action !== 'sync' && body.action !== 'list') return fail(400, 'unknown action (use "sync" or "list")')
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const admin = adminClient()
   let scope: Scope
   try {
     scope = await scopeOf(admin)

@@ -75,8 +75,12 @@ const echo =
     gone: [],
   })
 
-/** The gateway, compiled from its source and run against these rows: `call` posts a body with the bot's token. */
-function gateway(rows: Row[], answer: Answer = echo(rows)) {
+/**
+ * The gateway, compiled from its source and run against these rows: `call`
+ * posts a body with the bot's token. `extraEnv` adds to (or replaces) what the
+ * stand-in Deno hands it, and `keys` records the key each client was made with.
+ */
+function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<string, string> = {}) {
   if (!SOURCE.includes(IMPORT)) throw new Error('the gateway no longer imports supabase-js the way this stand-in replaces it')
   const synced: Record<string, unknown>[][] = []
   const members = [
@@ -107,21 +111,40 @@ function gateway(rows: Row[], answer: Answer = echo(rows)) {
       return { data: answer(args.incoming), error: null }
     },
   }
-  const env: Record<string, string> = { BOT_TOKEN: TOKEN, SUPABASE_URL: 'https://db.example.test', SUPABASE_SERVICE_ROLE_KEY: 'service-key' }
+  const env: Record<string, string> = { BOT_TOKEN: TOKEN, SUPABASE_URL: 'https://db.example.test', SUPABASE_SERVICE_ROLE_KEY: 'service-key', ...extraEnv }
   const box: { handler?: Handler } = {}
+  const keys: string[] = []
   const deno = { env: { get: (k: string) => env[k] }, serve: (h: Handler) => void (box.handler = h) }
   const js = ts.transpileModule(SOURCE.replace(IMPORT, 'const { createClient } = supabase'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-  new Function('Deno', 'supabase', js)(deno, { createClient: () => client })
+  new Function('Deno', 'supabase', js)(deno, { createClient: (...args: string[]) => (keys.push(args[1]), client) })
   const call = async (body: unknown, token = TOKEN) => {
     const res = await box.handler!(new Request('https://gateway.test/', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bot-token': token }, body: JSON.stringify(body) }))
     return { status: res.status, json: (await res.json()) as any }
   }
-  return { call, synced }
+  return { call, synced, keys }
 }
 
 const idsOf = (list: { id: string }[]) => list.map(p => p.id)
 
 describe('the gateway, run from its own source', () => {
+  it('reads the database with the key Supabase injects, when it has none of its own', async () => {
+    const rows = [row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })]
+    const { call, keys } = gateway(rows)
+    const { status } = await call({ action: 'list' })
+    expect(status).toBe(200)
+    expect(keys.length).toBeGreaterThan(0)
+    expect(new Set(keys)).toEqual(new Set(['service-key']))
+  })
+
+  it('prefers its own BOT_DB_KEY, so the project can retire the injected one', async () => {
+    const rows = [row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })]
+    const { call, keys } = gateway(rows, echo(rows), { BOT_DB_KEY: 'bot-key' })
+    const { status, json } = await call({ action: 'list' })
+    expect(status).toBe(200)
+    expect(idsOf(json.posts)).toEqual(['mine'])
+    expect(new Set(keys)).toEqual(new Set(['bot-key']))
+  })
+
   it('reads what the owner may: their own rows and the household\'s shared ones, never a peer\'s wardrobe', async () => {
     const { call } = gateway([
       row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' }),
