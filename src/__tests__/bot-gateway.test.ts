@@ -78,7 +78,8 @@ const echo =
 /**
  * The gateway, compiled from its source and run against these rows: `call`
  * posts a body with the bot's token. `extraEnv` adds to (or replaces) what the
- * stand-in Deno hands it, and `keys` records the key each client was made with.
+ * stand-in Deno hands it — an empty value unsets that variable, as Deno answers
+ * undefined for one never set — and `keys` records the key each client was made with.
  */
 function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<string, string> = {}) {
   if (!SOURCE.includes(IMPORT)) throw new Error('the gateway no longer imports supabase-js the way this stand-in replaces it')
@@ -112,6 +113,7 @@ function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<stri
     },
   }
   const env: Record<string, string> = { BOT_TOKEN: TOKEN, SUPABASE_URL: 'https://db.example.test', SUPABASE_SERVICE_ROLE_KEY: 'service-key', ...extraEnv }
+  for (const [k, v] of Object.entries(env)) if (v === '') delete env[k]
   const box: { handler?: Handler } = {}
   const keys: string[] = []
   const opts: any[] = []
@@ -171,6 +173,16 @@ describe('the gateway, run from its own source', () => {
     expect(status).toBe(200)
     expect(idsOf(json.posts)).toEqual(['mine'])
     expect(new Set(keys)).toEqual(new Set(['bot-key']))
+  })
+
+  it('says which secret to set when it has no key at all, rather than building a client from undefined', async () => {
+    const rows = [row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })]
+    const { call, keys } = gateway(rows, echo(rows), { SUPABASE_SERVICE_ROLE_KEY: '' })
+    const { status, json } = await call({ action: 'list' })
+    expect(status).toBe(500)
+    expect(json.error).toMatch(/BOT_DB_KEY/)
+    // and nothing was built with an undefined key, to fail obscurely on its first query
+    expect(keys).toEqual([])
   })
 
   it('reads what the owner may: their own rows and the household\'s shared ones, never a peer\'s wardrobe', async () => {

@@ -24,10 +24,14 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
  * is set, and otherwise the service-role key Supabase injects. Supabase keeps
  * the `SUPABASE_` prefix for its own variables, so the bot's key cannot share
  * it. Setting `BOT_DB_KEY` lets the project's legacy keys be retired without
- * taking the bot down with them.
+ * taking the bot down with them. With neither set there is no key to read the
+ * database with, and saying so here is plainer than a client built from
+ * undefined failing on its first query.
  */
 function dbKey(): string {
-  return Deno.env.get('BOT_DB_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const key = Deno.env.get('BOT_DB_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!key) throw new Error('The bot has no database key: set BOT_DB_KEY (or SUPABASE_SERVICE_ROLE_KEY) as a Supabase secret.')
+  return key
 }
 
 /**
@@ -187,7 +191,12 @@ Deno.serve(async req => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'the body must be a JSON object')
   if (body.action !== 'sync' && body.action !== 'list') return fail(400, 'unknown action (use "sync" or "list")')
 
-  const admin = adminClient()
+  let admin: Admin
+  try {
+    admin = adminClient()
+  } catch (e) {
+    return fail(500, (e as Error).message)
+  }
   let scope: Scope
   try {
     scope = await scopeOf(admin)
