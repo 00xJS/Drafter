@@ -18,6 +18,7 @@ import { complete, completeNvidia, nvidiaKeyOrder, resolveProvider } from './lib
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, restAll, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
+import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
 import { buildPeerMap, sendEmail } from './digest.mjs'
 import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
@@ -33,7 +34,7 @@ async function rest(path, init = {}) {
   const e = env()
   const res = await fetch(`${e.url}/rest/v1/${path}`, {
     ...init,
-    headers: { apikey: e.key, authorization: `Bearer ${e.key}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: keyHeaders(e.key, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
   })
   if (!res.ok) throw new Error(`${path.split('?')[0]} ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const text = await res.text()
@@ -45,7 +46,7 @@ async function count(path) {
   const e = env()
   const res = await fetch(`${e.url}/rest/v1/${path}`, {
     method: 'HEAD',
-    headers: { apikey: e.key, authorization: `Bearer ${e.key}`, prefer: 'count=exact', range: '0-0' },
+    headers: keyHeaders(e.key, { prefer: 'count=exact', range: '0-0' }),
   })
   if (!res.ok) return null
   const m = /\/(\d+|\*)$/.exec(res.headers.get('content-range') ?? '')
@@ -61,7 +62,7 @@ async function authAdmin(path, init = {}) {
   const e = env()
   const res = await fetch(`${e.url}/auth/v1/admin/${path}`, {
     ...init,
-    headers: { apikey: e.key, authorization: `Bearer ${e.key}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: keyHeaders(e.key, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
   })
   const text = await res.text()
   const body = text ? JSON.parse(text) : null

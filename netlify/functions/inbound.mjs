@@ -16,6 +16,7 @@
 import { newerStamp } from '../../shared/domain.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
+import { keyHeaders } from './lib/supabasekeys.mjs'
 import { validTimeZone, zonedTime } from './lib/timezone.mjs'
 
 const MAX_BODY = 4000
@@ -165,7 +166,7 @@ export default async req => {
       fetch(`${supabaseUrl}/rest/v1/${path}`, {
         ...init,
         signal,
-        headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+        headers: keyHeaders(serviceKey, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
       }),
     )
   // a future cursor means the RPC returns nothing: without it every inbound

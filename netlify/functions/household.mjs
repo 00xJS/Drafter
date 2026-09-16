@@ -6,6 +6,7 @@
 
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
+import { keyHeaders } from './lib/supabasekeys.mjs'
 
 function env() {
   return { url: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
@@ -13,7 +14,7 @@ function env() {
 
 async function rest(path, init = {}) {
   const e = env()
-  const res = await fetch(`${e.url}/rest/v1/${path}`, { ...init, headers: { apikey: e.key, authorization: `Bearer ${e.key}`, 'content-type': 'application/json', ...(init.headers ?? {}) } })
+  const res = await fetch(`${e.url}/rest/v1/${path}`, { ...init, headers: keyHeaders(e.key, { 'content-type': 'application/json', ...(init.headers ?? {}) }) })
   if (!res.ok) throw new Error(`${path.split('?')[0]} ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const text = await res.text()
   return text ? JSON.parse(text) : null
@@ -23,7 +24,7 @@ async function adminUsers() {
   const e = env()
   const out = []
   for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`${e.url}/auth/v1/admin/users?page=${page}&per_page=200`, { headers: { apikey: e.key, authorization: `Bearer ${e.key}` } })
+    const res = await fetch(`${e.url}/auth/v1/admin/users?page=${page}&per_page=200`, { headers: keyHeaders(e.key) })
     if (!res.ok) break
     const body = await res.json()
     const list = body.users ?? []

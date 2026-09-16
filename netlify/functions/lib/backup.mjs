@@ -11,6 +11,7 @@
 
 import { kindOf, readableKind } from '../../../shared/kinds.mjs'
 import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mjs'
+import { keyHeaders } from './supabasekeys.mjs'
 
 const DAY = 86_400_000
 export const KEEP_BACKUPS = 14
@@ -48,12 +49,7 @@ async function restResponse(path, init = {}) {
   const e = env()
   const res = await fetch(`${e.url}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: e.key,
-      authorization: `Bearer ${e.key}`,
-      'content-type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers: keyHeaders(e.key, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
   })
   if (!res.ok) throw new Error(`${path.split('?')[0]}: ${res.status} ${(await res.text()).slice(0, 160)}`)
   return res
@@ -69,11 +65,7 @@ export async function storage(path, init = {}) {
   const e = env()
   const res = await fetch(`${e.url}/storage/v1${path}`, {
     ...init,
-    headers: {
-      apikey: e.key,
-      authorization: `Bearer ${e.key}`,
-      ...(init.headers ?? {}),
-    },
+    headers: keyHeaders(e.key, init.headers ?? {}),
   })
   if (!res.ok) throw new Error(`storage ${path}: ${res.status} ${(await res.text()).slice(0, 160)}`)
   const text = await res.text()
