@@ -114,14 +114,15 @@ function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<stri
   const env: Record<string, string> = { BOT_TOKEN: TOKEN, SUPABASE_URL: 'https://db.example.test', SUPABASE_SERVICE_ROLE_KEY: 'service-key', ...extraEnv }
   const box: { handler?: Handler } = {}
   const keys: string[] = []
+  const opts: any[] = []
   const deno = { env: { get: (k: string) => env[k] }, serve: (h: Handler) => void (box.handler = h) }
   const js = ts.transpileModule(SOURCE.replace(IMPORT, 'const { createClient } = supabase'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-  new Function('Deno', 'supabase', js)(deno, { createClient: (...args: string[]) => (keys.push(args[1]), client) })
+  new Function('Deno', 'supabase', js)(deno, { createClient: (...args: any[]) => (keys.push(args[1]), opts.push(args[2]), client) })
   const call = async (body: unknown, token = TOKEN) => {
     const res = await box.handler!(new Request('https://gateway.test/', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bot-token': token }, body: JSON.stringify(body) }))
     return { status: res.status, json: (await res.json()) as any }
   }
-  return { call, synced, keys }
+  return { call, synced, keys, opts }
 }
 
 const idsOf = (list: { id: string }[]) => list.map(p => p.id)
@@ -134,6 +135,33 @@ describe('the gateway, run from its own source', () => {
     expect(status).toBe(200)
     expect(keys.length).toBeGreaterThan(0)
     expect(new Set(keys)).toEqual(new Set(['service-key']))
+  })
+
+  it('sends a key of the new style in the apikey header alone, because Supabase reads it as a JWT otherwise', async () => {
+    const rows = [row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })]
+    const { call, opts } = gateway(rows, echo(rows), { BOT_DB_KEY: 'sb_secret_abc' })
+    await call({ action: 'list' })
+    const wrapped = opts.find(o => o?.global?.fetch)?.global.fetch
+    expect(wrapped, 'a new-style key gets a fetch that drops the Bearer header').toBeTypeOf('function')
+    const seen: Headers[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (_input: unknown, init: RequestInit) => (seen.push(new Headers(init.headers)), new Response('{}'))) as typeof fetch
+    try {
+      await wrapped('https://db.example.test/rest/v1/posts', { headers: { apikey: 'sb_secret_abc', Authorization: 'Bearer sb_secret_abc', 'content-type': 'application/json' } })
+    } finally {
+      globalThis.fetch = real
+    }
+    expect(seen[0].get('Authorization')).toBeNull()
+    expect(seen[0].get('apikey')).toBe('sb_secret_abc')
+    expect(seen[0].get('content-type')).toBe('application/json')
+  })
+
+  it('leaves a legacy key alone, Bearer and all, so nothing changes until the project moves', async () => {
+    const rows = [row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })]
+    const { call, opts, keys } = gateway(rows, echo(rows), { BOT_DB_KEY: 'eyJhbGciOiJIUzI1NiJ9.legacy' })
+    await call({ action: 'list' })
+    expect(new Set(keys)).toEqual(new Set(['eyJhbGciOiJIUzI1NiJ9.legacy']))
+    expect(opts.some(o => o?.global?.fetch), 'a legacy key needs no wrapper').toBe(false)
   })
 
   it('prefers its own BOT_DB_KEY, so the project can retire the injected one', async () => {

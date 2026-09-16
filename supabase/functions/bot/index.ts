@@ -30,9 +30,26 @@ function dbKey(): string {
   return Deno.env.get('BOT_DB_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 }
 
+/**
+ * A key of the new style is not a JWT, so Supabase reads it only in the
+ * `apikey` header and answers "Invalid JWT" to anything that sends it as a
+ * Bearer token. supabase-js sends the key both ways, and the option that stops
+ * it is its own, not ours, so the client's fetch is wrapped to drop the header
+ * it just added. A legacy key keeps both headers, exactly as before.
+ */
+const isNewKey = (key: string) => key.startsWith('sb_publishable_') || key.startsWith('sb_secret_')
+
 /** The service-role client. Typed from this call: `ReturnType<typeof createClient>` resolves its generics to never. */
 function adminClient() {
-  return createClient(Deno.env.get('SUPABASE_URL')!, dbKey())
+  const key = dbKey()
+  const url = Deno.env.get('SUPABASE_URL')!
+  if (!isNewKey(key)) return createClient(url, key)
+  const apiKeyOnly: typeof fetch = (input, init) => {
+    const headers = new Headers(init?.headers)
+    if (headers.get('Authorization') === `Bearer ${key}`) headers.delete('Authorization')
+    return fetch(input, { ...init, headers })
+  }
+  return createClient(url, key, { global: { fetch: apiKeyOnly } })
 }
 type Admin = ReturnType<typeof adminClient>
 
