@@ -7,14 +7,16 @@ import { StatsLens } from '../components/StatsLens'
 import { StatsScreen } from '../components/planner/StatsScreen'
 import { StatsLens as LensChunk } from '../components/planner/lazy'
 import { STATS_TABS, VIEWS, VIEW_LABELS, VIEW_TO_STATS, statsTabOfView, type StatsTab } from '../components/planner/routes'
-import { AreaCard, HeatGrid, RankedBars, Ring, Segmented, WindowSwitch, heatDays } from '../components/stats'
+import { AreaCard, HeatGrid, RankedBars, Ring, Segmented, StatTile, WindowSwitch, heatDays } from '../components/stats'
+import type { DayWindow } from '../stats'
 import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from '../components/planner/lazy'
 import { NO_PERSON_FILTER } from '../people'
 import { NO_PLACE_FILTER } from '../places'
 import { wardrobeCosts, wearIndex } from '../wardrobe'
 import { doneByPriority, doneByTag, doneDays, habitReport, journalReport, moneyReport, taskReport } from '../lensstats'
-import type { Garment, Habit, JournalEntry, Task, Wear } from '../types'
-import { elements, press, settled } from './rendered'
+import { dateKey } from '../utils'
+import type { Garment, Habit, JournalEntry, Meal, Person, Place, Task, Wear } from '../types'
+import { elements, press, settled, textOf } from './rendered'
 import { sheetSource } from './source'
 
 /*
@@ -121,6 +123,69 @@ describe('what the lens counts: finished work', () => {
       ['high', 1],
       ['normal', 1],
     ])
+  })
+})
+
+describe('the figures an adversarial review found wrong', () => {
+  /*
+   * Eight numbers the lens printed that no other surface agreed with. Each was
+   * green under the whole suite, because a figure nobody pins is a figure
+   * nobody checks. These pin them.
+   */
+
+  it('calls a task due TODAY due today, as Home, the digest and get_overview do', () => {
+    // an untimed task's 00:00 is a day, not a deadline (dueTone's own words)
+    const at10am = new Date(2026, 8, 15, 10, 0)
+    const r = taskReport(
+      [
+        task('untimed-today', { dueAt: '2026-09-15T00:00:00' }),
+        task('timed-this-morning', { dueAt: '2026-09-15T09:00:00' }),
+        task('tomorrow', { dueAt: '2026-09-16T00:00:00' }),
+        task('yesterday', { dueAt: '2026-09-14T09:00:00' }),
+      ],
+      30,
+      at10am,
+    )
+    // only yesterday's. Flooring milliseconds instead made it 3 of the 4.
+    expect(r.overdue).toBe(1)
+    expect(r.aging.map(b => [b.key, b.count])).toEqual([['week', 1]])
+  })
+
+  it('does not count a logged visit as work finished', () => {
+    // shared/review.mjs has drawn this line since the review shipped: the Done
+    // tile, the weekly sparkline and the review all leave visits out
+    const tasks = [done('chore', '2026-09-15', { tags: ['home'] }), done('saw-mum', '2026-09-15', { title: 'Saw Mum', tags: ['visit'], peopleIds: ['mum'] })]
+    expect(taskReport(tasks, 30, NOW).done).toBe(1)
+    expect(doneDays(tasks)).toEqual(['2026-09-15'])
+    expect(doneByTag(tasks, 30, NOW).map(r => r.key)).toEqual(['home'])
+    expect(doneByPriority(tasks, 30, NOW).map(r => r.count)).toEqual([1])
+  })
+
+  it('rounds the year once, from the real amounts, not by adding up rounded months', () => {
+    // Two half-dollars in different months. Each month's own bar rounds to $11
+    // — that is what a bar labelled $11 should say — but the YEAR is $21, and
+    // adding the rounded months gave $22, a dollar the person never spent.
+    const halves = [done('a', '2026-03-01', { title: 'A', actualCost: 10.5 }), done('b', '2026-04-01', { title: 'B', actualCost: 10.5 })]
+    const m = moneyReport(halves, 2026, NOW)
+    expect(m.spent).toBe(21)
+    expect(m.months[2]).toBe(11)
+    expect(m.months[3]).toBe(11)
+    expect(m.spent).not.toBe(m.months.reduce((a, b) => a + b, 0))
+  })
+
+  it('owes a habit nothing before it existed, and walks a whole year of clean days', () => {
+    const born = '2026-09-14T12:00:00.000Z'
+    const fresh: Habit = { kind: 'habit', id: 'new', name: 'new', done: ['2026-09-15', '2026-09-14'], createdAt: born, updatedAt: born }
+    const old = habit('old', ['2026-09-15', '2026-09-14', '2026-09-13', '2026-09-12'])
+    // adding a habit yesterday must not wipe the clean days behind it…
+    const r = habitReport([old, fresh], 30, NOW)
+    expect(r.cleanDays).toContain('2026-09-13')
+    expect(r.cleanDays).toContain('2026-09-12')
+    // …and the run is walked over a year, not the chosen window, because the
+    // grid drawing it is a year wide and a best run must not be cut at its edge
+    const longAgo = habit('long', [dateKey(new Date(2026, 2, 1)), dateKey(new Date(2026, 2, 2)), dateKey(new Date(2026, 2, 3))])
+    expect(habitReport([longAgo], 30, NOW).cleanDays.length).toBe(3)
+    expect(habitReport([longAgo], 30, NOW).streaks.best).toBe(3)
   })
 })
 
@@ -358,6 +423,66 @@ describe('the lens drawn', () => {
     expect(view.props.onFilter).toBe(AREAS.onPeopleFilter)
     // …and the unnarrowed task list, as the People tab's own Stats are given
     expect(view.props.tasks).toBe(LENS_PROPS.tasks)
+  })
+
+  it('counts a day you saw someone, not a day you finished a chore', () => {
+    // seenTasks is a HAYSTACK — every task, plus past events with people on
+    // them — which People narrows per person. Mapping it raw made "Days seen"
+    // equal the Finished tile's day count, and counted tasks in Trash too.
+    const props = {
+      ...LENS_PROPS,
+      people: [{ kind: 'person', id: 'mum', name: 'Mum', color: '#f472b6', group: 'family', createdAt: STAMP, updatedAt: STAMP } as Person],
+      // (the screen hands over store.tasks, which already drops tombstones)
+      tasks: [done('bins', '2026-09-15', { title: 'Take the bins out' }), done('lunch', '2026-09-13', { title: 'Lunch with Mum', peopleIds: ['mum'] })],
+    }
+    const tree = into(settled(StatsLens, props), 'Overview')
+    const tile = elements(tree).find(e => e.type === StatTile && e.props.label === 'Days seen')!
+    // one day: the lunch. Not the bins, and not the one in Trash.
+    expect(tile.props.value).toBe('1')
+    const card = elements(tree).filter(e => e.type === AreaCard).find(c => c.props.name === 'People')!
+    expect(card.props.value).toBe('1 day')
+  })
+
+  it('counts a place you have been to by the app\u2019s one rule, meals eaten out included', () => {
+    const places: Place[] = [
+      { kind: 'place' as const, id: 'cafe', name: 'Caf\u00e9', color: '#a3e635', category: 'cafe' as const, createdAt: STAMP, updatedAt: STAMP },
+      { kind: 'place' as const, id: 'bar', name: 'Bar', color: '#38bdf8', category: 'bar' as const, createdAt: STAMP, updatedAt: STAMP },
+      { kind: 'place' as const, id: 'gone', name: 'Gone', color: '#f87171', category: 'bar' as const, createdAt: STAMP, updatedAt: STAMP, deletedAt: STAMP },
+    ]
+    const props = {
+      ...LENS_PROPS,
+      places,
+      // a done task at the caf\u00e9, a meal eaten out at the bar, and a done task
+      // at a place since deleted
+      tasks: [done('coffee', '2026-09-15', { placeId: 'cafe' }), done('old', '2026-09-10', { placeId: 'gone' })],
+      meals: [{ kind: 'meal', id: 'm1', date: '2026-09-12', slot: 'dinner', title: 'Bar', out: true, placeId: 'bar', createdAt: STAMP } as Meal],
+    }
+    const tree = into(settled(StatsLens, props), 'Overview')
+    const card = elements(tree).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!
+    // the caf\u00e9 and the bar. The meal counts (outingsAt says so); the deleted
+    // place does not, or the ring would read more than its own total.
+    expect(card.props.value).toBe('2 places')
+    // the ring is handed to the card as `aside`, so it is not in its children
+    const ring = elements(card.props.aside as ReactNode).find(e => e.type === Ring)!
+    expect([ring.props.value, ring.props.of]).toEqual([2, 2])
+  })
+
+  it('finishes the heading\u2019s sentence on every window, including All', () => {
+    // the headings read "The last {spanWords}", and 'All' lowercased gave the
+    // non-phrase "The last all"
+    const heads = (w: DayWindow) => {
+      const tree = settled(StatsLens, LENS_PROPS, t => {
+        const sw = elements(t).find(e => e.type === WindowSwitch)!
+        ;(sw.props.onChange as (x: DayWindow) => void)(w)
+      })
+      return elements(into(tree, 'Overview'))
+        .filter(e => e.type === 'h2')
+        .map(h => textOf(h.props.children))
+    }
+    expect(heads(30)).toContain('The last 30 days')
+    expect(heads(365)).toContain('The last 12 months')
+    expect(heads('all')).toContain('The last all time')
+    expect(heads('all')).not.toContain('The last all')
   })
 
   it('never puts a word of the journal on the page', () => {

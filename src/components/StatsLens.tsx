@@ -4,7 +4,8 @@ import { doneByPriority, doneByTag, doneMonths, habitReport, journalReport, mone
 import { wardrobeCosts } from '../wardrobe'
 import { kitchenIndex, kitchenTiles } from '../kitchenstats'
 import { countOf } from '../people'
-import { seenTasks } from '../people'
+import { getTogethers, peopleSeen } from '../peoplestats'
+import { outingsAt } from '../places'
 import { DAY_WINDOWS, countDays, distinctDays, monthBuckets, type DayWindow } from '../stats'
 import { inWindow } from '../../shared/stats.mjs'
 import { useTheme } from '../theme'
@@ -110,7 +111,9 @@ export function StatsLens(p: StatsLensProps) {
   const now = useMemo(() => handed ?? new Date(), [handed, today])
   const [span, setSpan] = useState<DayWindow>(30)
   const [year, setYear] = useState(now.getFullYear())
-  const spanWords = LENS_WINDOWS.find(w => w.key === span)?.label.toLowerCase() ?? 'all time'
+  // the headings read "The last {spanWords}", so 'All' has to become words that
+  // finish that sentence — "the last all" is not a phrase
+  const spanWords = span === 'all' ? 'all time' : (LENS_WINDOWS.find(w => w.key === span)?.label.toLowerCase() ?? 'all time')
   return (
     <>
       <div className="stats-bar">
@@ -194,28 +197,38 @@ function YearStep({ year, setYear, now }: { year: number; setYear(y: number): vo
 // ---- Overview --------------------------------------------------------------------
 
 function Overview(p: Lens) {
-  const { tasks, places, events, meals, recipes, journal, habits, garments, wears, areas: a, span, spanWords, now } = p
+  const { tasks, people, places, events, meals, recipes, journal, habits, garments, wears, areas: a, span, spanWords, now } = p
   const theme = useTheme()
   const year = now.getFullYear()
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
   const ix = useMemo(() => kitchenIndex(recipes, meals, places, now), [recipes, meals, places, now])
   const kitchen = useMemo(() => kitchenTiles(ix), [ix])
   const wear = useMemo(() => wearIndex(wears, dateKey(now)), [wears, now])
-  const seen = useMemo(() => seenTasks(tasks, events, now), [tasks, events, now])
+  // seenTasks is a HAYSTACK — every task plus the past events with people on
+  // them — which People narrows per person. Mapping it raw made every day you
+  // finished any chore a day you saw someone, and counted tasks in Trash too.
+  // getTogethers is the narrowing People's own tiles use, so the two agree.
+  const { seen, all } = useMemo(() => peopleSeen(people, tasks, events, now), [people, tasks, events, now])
+  const together = useMemo(() => getTogethers(all, seen), [all, seen])
   const jr = useMemo(() => journalReport(journal, span, year, now), [journal, span, year, now])
   const hr = useMemo(() => habitReport(habits, span, now), [habits, span, now])
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
   // the Wardrobe's own rule, over the index the screen built: a piece's price
   // over the DAYS it was worn, so the lens and Home → Wardrobe agree exactly
   const clothes = useMemo(() => wardrobeCosts(garments, a.wearIx), [garments, a.wearIx])
-  const doneSeries = useMemo(() => monthBuckets(seen.map(t => ({ at: t.completedAt as string })), year, countDays), [seen, year])
+  const doneSeries = useMemo(() => monthBuckets(together, year, countDays), [together, year])
   // every tile under "the last …" counts that window and nothing else, so the
   // four of them are answering one question rather than four
   const today = dateKey(now)
-  const peopleDays = useMemo(() => distinctDays(seen.map(t => ({ at: t.completedAt as string })), iso => dateKey(new Date(iso))).filter(d => inWindow(d, today, span)), [seen, today, span])
+  const peopleDays = useMemo(() => distinctDays(together, iso => dateKey(new Date(iso))).filter(d => inWindow(d, today, span)), [together, today, span])
   const cookedDays = useMemo(() => ix.meals.filter(m => ix.ways.get(m.id) === 'cooked' && inWindow(m.date, today, span)).map(m => m.date), [ix, today, span])
   const dressedDays = useMemo(() => wear.logged.filter(d => inWindow(d, today, span)), [wear, today, span])
-  const placesVisited = useMemo(() => new Set(tasks.filter(t => !t.deletedAt && t.status === 'done' && t.placeId).map(t => t.placeId)).size, [tasks])
+  // outingsAt is the app's one rule for having been somewhere: a done task
+  // carrying the place, AND a past meal eaten out there — counting a takeaway
+  // is what keeps the Kitchen and Places agreeing. Only over places that still
+  // exist, or the ring could read more than its own total.
+  const livePlaces = useMemo(() => places.filter(pl => !pl.deletedAt), [places])
+  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, tasks, meals, now).length > 0).length, [livePlaces, tasks, meals, now])
   const done = useMemo(() => monthBuckets(tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt).map(t => ({ at: t.completedAt as string })), year), [tasks, year])
   return (
     <>
@@ -262,7 +275,7 @@ function Overview(p: Lens) {
             sub="you have been to at least once"
             onOpen={() => p.onTab('places')}
             openLabel="Open Places"
-            aside={<Ring value={placesVisited} of={Math.max(1, places.filter(pl => !pl.deletedAt).length)} size={52} label={String(placesVisited)} tone={markInk(undefined, theme)} />}
+            aside={<Ring value={placesVisited} of={Math.max(1, livePlaces.length)} size={52} label={String(placesVisited)} tone={markInk(undefined, theme)} />}
           />
           <AreaCard
             name="Kitchen"

@@ -1,5 +1,7 @@
 import { isBill, withPaidDefault } from './bills'
 import { habitsConsistency, isDueOn, streakOf } from './habits'
+import { isVisit } from './review'
+import { dayOffset } from './taskutils'
 import { journalDays, weekdayOf } from './journal'
 import { countDays, dayStreaks, monthBuckets, monthsAndTrend, recentTrend, topN, type DayWindow, type Dated, type Streaks } from './stats'
 import { BILL_KIND_META, PRIORITY_META, STATUS_META, type Habit, type JournalEntry, type Priority, type Task, type TaskStatus } from './types'
@@ -21,10 +23,19 @@ import { inWindow } from '../shared/stats.mjs'
  * never disagree by an afternoon.
  */
 
-/** A done task, as the dated mark a chart counts: filed at the moment it was finished. */
+/**
+ * A done task, as the dated mark a chart counts: filed at the moment it was
+ * finished. A logged visit ("Saw Mum", tagged 'visit') is NOT work finished —
+ * shared/review.mjs has drawn that line since the review shipped, and the Done
+ * tile, the weekly sparkline and the review all honour it. Counting them here
+ * made a quiet week of catch-ups look like a productive one.
+ */
 function doneMarks(tasks: readonly Task[]): Dated[] {
-  return tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt).map(t => ({ at: t.completedAt as string }))
+  return workDone(tasks).map(t => ({ at: t.completedAt as string }))
 }
+
+/** Every task that is finished WORK: done, not in Trash, and not a logged visit. */
+const workDone = (tasks: readonly Task[]): Task[] => tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt && !isVisit(t))
 
 /** The day keys something was finished on, newest first: two tasks on one Saturday are one day. */
 export function doneDays(tasks: readonly Task[]): string[] {
@@ -63,8 +74,15 @@ export interface TaskReport {
 const OPEN_STATUSES: readonly TaskStatus[] = ['todo', 'doing', 'blocked']
 const isOpen = (t: Task) => !t.deletedAt && OPEN_STATUSES.includes(t.status)
 
-/** How many whole days `iso` is before `now`; negative when it is still to come. */
-const daysLate = (iso: string, now: Date): number => Math.floor((now.getTime() - Date.parse(iso)) / 86_400_000)
+/**
+ * How many whole CALENDAR days `iso` is before `now`; negative when it is still
+ * to come, 0 on the day itself. dayOffset, not a millisecond floor: an untimed
+ * task's 00:00 is a day, not a deadline, so it is due all day and overdue from
+ * midnight — the rule bucketByDue, dueTone, Today, the digest and get_overview
+ * all read. Flooring milliseconds instead called a task "overdue" from the
+ * first minute of the day it was due.
+ */
+const daysLate = (iso: string, now: Date): number => -dayOffset(iso, now)
 
 /** The Tasks segment's figures, at `now`, counting what happened inside `window`. */
 export function taskReport(tasks: readonly Task[], window: DayWindow, now: Date = new Date()): TaskReport {
@@ -75,7 +93,7 @@ export function taskReport(tasks: readonly Task[], window: DayWindow, now: Date 
   const weekday = Array.from({ length: 7 }, () => 0)
   for (const m of marks) weekday[weekdayOf(dateKey(new Date(m.at)))]++
   const open = tasks.filter(isOpen)
-  const overdue = open.filter(t => t.dueAt && daysLate(t.dueAt, now) >= 0)
+  const overdue = open.filter(t => t.dueAt && daysLate(t.dueAt, now) > 0)
   const byStatus = OPEN_STATUSES.map(key => ({ key, name: STATUS_META[key].label, count: open.filter(t => t.status === key).length })).filter(r => r.count > 0)
   const aging = AGE_BUCKETS.map(b => ({ key: b.key, name: b.label, count: 0 }))
   for (const t of overdue) {
@@ -100,7 +118,7 @@ export function doneByTag(tasks: readonly Task[], window: DayWindow, now: Date =
   const today = dateKey(now)
   const counts = new Map<string, number>()
   for (const t of tasks) {
-    if (t.deletedAt || t.status !== 'done' || !t.completedAt) continue
+    if (t.deletedAt || t.status !== 'done' || !t.completedAt || isVisit(t)) continue
     if (!inWindow(dateKey(new Date(t.completedAt)), today, window)) continue
     for (const tag of new Set(t.tags ?? [])) counts.set(tag, (counts.get(tag) ?? 0) + 1)
   }
@@ -116,7 +134,7 @@ export function doneByPriority(tasks: readonly Task[], window: DayWindow, now: D
     .map(key => ({
       key,
       name: PRIORITY_META[key].label,
-      count: tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt && t.priority === key && inWindow(dateKey(new Date(t.completedAt)), today, window)).length,
+      count: workDone(tasks).filter(t => t.priority === key && inWindow(dateKey(new Date(t.completedAt as string)), today, window)).length,
     }))
     .filter(r => r.count > 0)
 }
@@ -155,20 +173,21 @@ function paidMarks(tasks: readonly Task[]): (Dated & { amount: number; payee: st
   return out
 }
 
-/** A money total is a sum, not a count, so the month buckets add amounts rather than rows. */
+/** A money total is a sum, not a count, so the month buckets add amounts rather than rows. Unrounded: see moneyReport. */
 const sumIn = (marks: readonly (Dated & { amount: number })[], year: number): number[] => {
   const months = Array.from({ length: 12 }, () => 0)
   for (const m of marks) {
     const d = new Date(m.at)
     if (d.getFullYear() === year) months[d.getMonth()] += m.amount
   }
-  return months.map(n => Math.round(n))
+  return months
 }
 
 /** The Money segment's figures for `year`, at `now`. */
 export function moneyReport(tasks: readonly Task[], year: number, now: Date = new Date(), n = 10): MoneyReport {
   const marks = paidMarks(tasks)
-  const months = sumIn(marks, year)
+  const exact = sumIn(marks, year)
+  const months = exact.map(n => Math.round(n))
   const byPayeeCounts = new Map<string, number>()
   for (const m of marks) if (new Date(m.at).getFullYear() === year) byPayeeCounts.set(m.payee, (byPayeeCounts.get(m.payee) ?? 0) + m.amount)
   const byPayee = topN(
@@ -192,7 +211,9 @@ export function moneyReport(tasks: readonly Task[], year: number, now: Date = ne
   // one still on the Wishlist, and neither is money you owe
   const outstanding = tasks.filter(t => isBill(t) && isOpen(t)).map(withPaidDefault)
   return {
-    spent: months.reduce((a, b) => a + b, 0),
+    // the year's own sum, rounded once. Rounding each month first and adding
+    // those made the total disagree with the payee bars beside it and with Bills.
+    spent: Math.round(exact.reduce((a, b) => a + b, 0)),
     months,
     trend: Math.round(recentTrend(marks, now, items => (items as (Dated & { amount: number })[]).reduce((a, b) => a + b.amount, 0))),
     byPayee,
@@ -239,6 +260,9 @@ export interface HabitReport {
 /** How many days back a window looks; 'all' is a year, which is as far as the grid draws. */
 const windowDays = (window: DayWindow): number => (window === 'all' ? 365 : window)
 
+/** The clean-day walk is always a year: the grid drawing it is a year wide, and a run must not be cut off at a window's edge. */
+const CLEAN_DAY_SPAN = 365
+
 /** The Habits segment's figures over the window ending at `now`. Archived habits are history and are left out. */
 export function habitReport(habits: readonly Habit[], window: DayWindow, now: Date = new Date()): HabitReport {
   const live = habits.filter(h => !h.deletedAt && !h.archivedAt)
@@ -254,11 +278,17 @@ export function habitReport(habits: readonly Habit[], window: DayWindow, now: Da
     streak: streakOf(r.habit, now),
     pct: r.due > 0 ? Math.round((r.done / r.due) * 100) : 0,
   }))
+  // A clean day is walked over a WHOLE YEAR, not the chosen window: the grid
+  // that draws them is a year wide, and a best run cut off at the window's edge
+  // is not the best run. And a habit owes nothing before it existed — the same
+  // rule habitsKept applies to the Kept tile above, so adding a habit today no
+  // longer wipes every clean day behind it.
+  const born = new Map(live.map(h => [h.id, dateKey(new Date(h.createdAt))]))
   const cleanDays: string[] = []
-  const d = new Date(start)
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (CLEAN_DAY_SPAN - 1))
   while (d.getTime() <= now.getTime()) {
     const key = dateKey(d)
-    const due = live.filter(h => isDueOn(h, d))
+    const due = live.filter(h => isDueOn(h, d) && (born.get(h.id) ?? key) <= key)
     if (due.length > 0 && due.every(h => h.done.includes(key))) cleanDays.push(key)
     d.setDate(d.getDate() + 1)
   }
