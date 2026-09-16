@@ -18,8 +18,11 @@
 /* ---------- compact header: landscape phones and narrow windows ----------
    Every iPhone is wider than 640pt on its side, so landscape gets the desktop
    header, less the notch's inset on each side (--safe-l / --safe-r, up to
-   59pt). Its controls want 964px, 1046px with Admin, so at 667–932pt
-   "+ New task" ran off the right edge. Up to 960px the header sheds width the
+   59pt). Its controls want 1052px, 1135px with Admin (measured 2026-09-16 with
+   six tabs; re-measure by summing .topbar's children plus its gaps and padding
+   at a width where nothing compacts, above 1134px, with an .admin-btn injected
+   — local mode renders none). So at 667–932pt "+ New task" ran off the right
+   edge. Up to 960px the header sheds width the
    way the phone bar does: the wordmark goes (the container keeps the name),
    the tabs become icons (each label stays in its button, hidden to the eye
    only, so it is still the tab's accessible name), the gaps tighten, the sync
@@ -82,12 +85,42 @@
   }
 }
 
-/* The owner's header carries Admin too, 82px more, so it overflowed from 961px
-   to about 1075px (1046px plus a classic scrollbar), and search and settings
-   squashed to 21px. There the owner's header sheds what the compact one sheds
-   first, and keeps the tab labels: the wordmark, the wide gaps and the sync
-   pill's width go, and the icon buttons keep their squares. */
-@media (min-width: 961px) and (max-width: 1080px) {
+/* Above 960px the tab labels are worth keeping, so the header sheds only what
+   the compact one sheds FIRST: the wordmark, the wide gaps and the sync pill's
+   width, while the icon buttons keep their squares. Without it search and
+   settings flex-squash to 21px — they are 36px targets and must never shrink.
+
+   This used to be the owner's alone, because with five tabs the strip wanted
+   964px and only Admin pushed it past 961. The sixth tab (Stats, 2026-09-15)
+   added 88px, so EVERY window from 961px to 1051px needs it now. */
+@media (min-width: 961px) and (max-width: 1051px) {
+  .topbar {
+    gap: 10px;
+  }
+  .topbar .brand > span:not(.brand-mark) {
+    display: none;
+  }
+  .topbar .icon-btn {
+    flex: none;
+  }
+  .topbar .sync-btn {
+    min-width: 0;
+  }
+  .topbar .sync-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar .sync-dot {
+    flex: none;
+  }
+}
+
+/* …and the owner's header carries Admin too, 83px more, so it needs the same
+   treatment for a further stretch, up to 1134px. Below 1052px the block above
+   already covers them. */
+@media (min-width: 1052px) and (max-width: 1134px) {
   .topbar:has(.admin-btn) {
     gap: 10px;
   }
@@ -185,7 +218,7 @@
     display: none;
   }
 
-  /* five equal slots: Today, Calendar, More, Kitchen, People */
+  /* six equal slots: Home, Calendar, Tasks, Stats, Kitchen, People */
   .tabs-compact {
     display: flex;
     position: fixed;
@@ -217,7 +250,7 @@
   .keyboard-open .tabs-compact {
     transform: translateY(100%);
     pointer-events: none;
-    /* off-screen is not gone: without this the five buttons stay in the tab
+    /* off-screen is not gone: without this the six buttons stay in the tab
        order and in VoiceOver's swipe order while the keyboard is up. The 0.2s
        delay is declared HERE, not on the base rule, so the bar stays painted
        for the slide out but reappears instantly on the way back in. */
@@ -236,7 +269,7 @@
     gap: 2px;
     padding: 6px 2px 4px;
     border-radius: 10px;
-    /* The one place the ramp is capped. Five labels have to stay on one line
+    /* The one place the ramp is capped. Six labels have to stay on one line
        inside a 56px bar, and at scale 1.6 a 16px label wraps and pushes the bar
        over the content it is meant to sit beside. 1.15 still reads larger and
        still keeps "Calendar" on its line. */

@@ -103,12 +103,15 @@
   box-shadow: inset 0 1px 0 var(--tabbar-edge);
 }
 
-/* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal,
-   Tasks' List/Board/Bills/Notes, People/Places, the calendar's Month/Week/
-   Timeline) become a filled track with a raised thumb that stretches the width,
-   the way UISegmentedControl does — not a row of separate buttons. Scoped to
-   those container classes so the grocery, settings and other segmented controls
-   keep their own shape. The household's Mine / Everyone shares the Tasks row
+/* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal/
+   Wardrobe, Tasks' List/Board/Bills/Notes, People/Places, Kitchen's Recipes/
+   This week/Grocery/Stats, the calendar's Month/Week/Timeline) become a filled
+   track with a raised thumb that stretches the width, the way UISegmentedControl
+   does — not a row of separate buttons. Since 2026-09-15 the web gets the same
+   track from 04-table-modal.css, and the Stats lens's nine-segment track scrolls
+   (.seg-scroll) rather than stretching; these rules refine the shell's own.
+   Scoped to those container classes so the grocery, settings and other
+   segmented controls keep their own shape. The household's Mine / Everyone shares the Tasks row
    (.tasks-seg), so on iOS it becomes a second full-width track on its own line,
    consistent with the switchers above it. */
 .native .people-tab-seg .segmented,

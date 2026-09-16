@@ -34,7 +34,7 @@ describe('phone chrome: the keyboard is subtracted exactly once', () => {
   })
 
   it('takes the hidden tab bar out of the focus and VoiceOver order too', () => {
-    // off-screen is not gone: without visibility the five buttons stay tabbable
+    // off-screen is not gone: without visibility the six buttons stay tabbable
     expect(css).toMatch(/\.keyboard-open \.tabs-compact\s*\{[^}]*visibility:\s*hidden/)
   })
 })
@@ -484,7 +484,7 @@ describe('phone: the type ramp follows the system text size', () => {
     expect(rem).toBeGreaterThan(sizes.length * 0.7)
   })
 
-  it('caps the tab bar label, since five of them share one fixed-height bar', () => {
+  it('caps the tab bar label, since six of them share one fixed-height bar', () => {
     const compact = narrowBlocks().map(b => rule(b.body, '.tabs-compact .tab')).find(Boolean)
     expect(compact, 'no .tabs-compact .tab rule under @media (max-width: 640px)').toBeTruthy()
     expect(compact).toMatch(/font-size:\s*calc\(10px \* min\(1\.15, var\(--type-scale\)\)\)/)

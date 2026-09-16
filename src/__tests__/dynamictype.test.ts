@@ -18,7 +18,7 @@ describe('Dynamic Type: the scale the OS drives', () => {
   })
 
   it('clamps: the accessibility sizes would otherwise break the chrome', () => {
-    // xxxLarge accessibility body is 53px — 3.1x, which no five-tab bar survives
+    // xxxLarge accessibility body is 53px — 3.1x, which no six-tab bar survives
     expect(typeScaleFor(53)).toBe(1.6)
     expect(typeScaleFor(1000)).toBe(1.6)
     // and the smallest setting must still leave a tappable app
