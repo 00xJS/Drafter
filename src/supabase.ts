@@ -9,10 +9,28 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(url && anonKey)
 }
 
+/**
+ * A key of the new style ("sb_publishable_…") is not a JWT, so Supabase reads
+ * it in the `apikey` header alone and refuses it as a Bearer token. supabase-js
+ * falls back to sending the key as the bearer whenever nobody is signed in yet,
+ * which is exactly when signing in happens, so its fetch is wrapped to drop the
+ * header it just added. A signed-in person's own token is never touched, and a
+ * legacy key ("eyJ…") keeps both headers as before.
+ */
+export const isNewKey = (key: string): boolean => key.startsWith('sb_publishable_') || key.startsWith('sb_secret_')
+
+const apiKeyOnly =
+  (key: string): typeof fetch =>
+  (input, init) => {
+    const headers = new Headers(init?.headers)
+    if (headers.get('Authorization') === `Bearer ${key}`) headers.delete('Authorization')
+    return fetch(input, { ...init, headers })
+  }
+
 /** Shared client, or null when the app runs in local mode (no Supabase env vars). */
 export function getSupabase(): SupabaseClient | null {
   if (!url || !anonKey) return null
-  client ??= createClient(url, anonKey)
+  client ??= isNewKey(anonKey) ? createClient(url, anonKey, { global: { fetch: apiKeyOnly(anonKey) } }) : createClient(url, anonKey)
   return client
 }
 
