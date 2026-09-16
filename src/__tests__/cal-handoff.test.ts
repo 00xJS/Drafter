@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { challengeFor, checkNativeCompletion, handoffChallenge, isNativeState, nativeHandoff, nativeState, stateFor, verifyState } from '../../netlify/functions/lib/oauth.mjs'
 import { beginNativeOAuth, finishOAuthReturn, newOAuthVerifier, oauthChallenge, onOAuthSettled, parseOAuthReturn } from '../calendars'
@@ -17,6 +18,12 @@ const GOOGLE_FUNCTION = '../../netlify/functions/google.mjs'
 const MICROSOFT_FUNCTION = '../../netlify/functions/microsoft.mjs'
 const SITE = 'https://drafterz.netlify.app'
 
+// Signing state takes a secret, and there is no hard-coded fallback any more.
+// Set here rather than stubbed in a hook: the suites below sign state as they
+// are collected, which happens before any hook runs. vi.unstubAllEnvs() puts
+// this value back, as it is the one the stubs are taken from.
+process.env.OAUTH_STATE_SECRET = 'state-secret'
+
 type Handler = (req: Request) => Promise<Response>
 const load = async (path: string) => (await import(/* @vite-ignore */ path)).default as Handler
 
@@ -31,6 +38,41 @@ describe('the verifier and its challenge', () => {
     const a = newOAuthVerifier()
     expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(newOAuthVerifier()).not.toBe(a)
+  })
+})
+
+describe('the secret that signs state', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('prefers OAUTH_STATE_SECRET, so rotating the Supabase key leaves the flows in the air alone', () => {
+    vi.stubEnv('OAUTH_STATE_SECRET', 'state-secret')
+    vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
+    const state = stateFor('a-verifier')
+    vi.stubEnv('SUPABASE_SERVICE_KEY', 'rotated-service-key')
+    expect(stateFor('a-verifier')).toBe(state)
+    // its own secret is the one that changes it
+    vi.stubEnv('OAUTH_STATE_SECRET', 'rotated-state-secret')
+    expect(stateFor('a-verifier')).not.toBe(state)
+  })
+
+  it('falls back to SUPABASE_SERVICE_KEY, so a host that sets nothing new is unchanged', () => {
+    vi.stubEnv('OAUTH_STATE_SECRET', '')
+    vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
+    expect(stateFor('a-verifier')).toBe(createHmac('sha256', 'service-key').update('a-verifier').digest('base64url'))
+  })
+
+  it('with neither set, refuses to sign and names the variable, rather than signing with a literal', () => {
+    vi.stubEnv('OAUTH_STATE_SECRET', '')
+    vi.stubEnv('SUPABASE_SERVICE_KEY', '')
+    // the chain used to end in a literal from a public repository, borrowing a
+    // provider's client secret on the way: neither signs state now
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'google-secret')
+    vi.stubEnv('MICROSOFT_CLIENT_SECRET', 'ms-secret')
+    expect(() => stateFor('a-verifier')).toThrow(/OAUTH_STATE_SECRET/)
+    const req = new Request(SITE, { headers: { cookie: 'drafter_google_oauth=a-verifier' } })
+    expect(() => verifyState(req, 'drafter_google_oauth', 'any-state')).toThrow(/OAUTH_STATE_SECRET/)
   })
 })
 
@@ -251,5 +293,26 @@ describe('the native handoff, end to end through the real functions', () => {
     expect(done.status).toBe(200)
     expect(w.rows.get('u-owner')?.microsoft_accounts).toEqual([expect.objectContaining({ id: 'ms-acct-1', email: 'owner@outlook.example', refreshToken: 'ms-rt-for-ms-code' })])
     expect(w.rows.get('u-other')?.microsoft_accounts).toBeUndefined()
+  })
+
+  it('never signs without a secret: with none set the routes refuse before they reach one', async () => {
+    setup()
+    const google = await load(GOOGLE_FUNCTION)
+    const auth = await post(google, 'google', 's-owner', { action: 'auth', native: true, challenge: await oauthChallenge(newOAuthVerifier()) })
+    const startUrl = ((await auth.json()) as { url: string }).url
+    // state falls back to SUPABASE_SERVICE_KEY, and every route needs that key for
+    // the settings store first, so "nothing to sign with" is already "not configured"
+    vi.stubEnv('OAUTH_STATE_SECRET', '')
+    vi.stubEnv('SUPABASE_SERVICE_KEY', '')
+
+    // the two routes carrying no session refuse in their own way, never crashing
+    const start = await google(new Request(startUrl))
+    expect(start.headers.get('location')).toBe('drafter://oauth?google=error&reason=not_configured')
+    const back = await google(new Request(`${SITE}/api/google/callback?code=c&state=s`))
+    expect(back.headers.get('location')).toBe(`${SITE}/?google=error&reason=not_configured`)
+
+    const web = await post(google, 'google', 's-owner', { action: 'auth' })
+    expect(web.status).toBe(501)
+    expect(((await web.json()) as { error: string }).error).toMatch(/SUPABASE_SERVICE_KEY/)
   })
 })

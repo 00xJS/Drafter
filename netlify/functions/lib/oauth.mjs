@@ -11,7 +11,19 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 
 const MAX_AGE = 600 // seconds
 
-const secret = () => process.env.SUPABASE_SERVICE_KEY ?? process.env.MICROSOFT_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET ?? 'drafter'
+// The key that signs state. It has a variable of its own, so rotating the
+// Supabase key no longer invalidates every flow in the air; SUPABASE_SERVICE_KEY
+// remains the fallback, so a host that sets nothing new behaves as it did.
+// There is deliberately no hard-coded last resort: a literal in a public
+// repository is a secret anyone could mint their own state with. No route
+// reaches the refusal below today — each needs the settings store, and so that
+// fallback key, before it signs anything (googleConfigured, microsoftConfigured)
+// — so it stands as the backstop for whatever calls this next.
+function secret() {
+  const key = process.env.OAUTH_STATE_SECRET || process.env.SUPABASE_SERVICE_KEY
+  if (!key) throw Object.assign(new Error('OAuth state cannot be signed: set OAUTH_STATE_SECRET on the host.'), { status: 501 })
+  return key
+}
 
 /** Opaque value for the cookie; only its HMAC travels in the URL. */
 export const newVerifier = () => randomBytes(24).toString('base64url')
