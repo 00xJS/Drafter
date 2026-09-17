@@ -238,6 +238,13 @@
   white-space: pre-wrap;
   line-height: 1.6;
 }
+/* .chart-head is already the row; the sub wraps instead of squashing the toggle */
+.review-summary .chart-head > div {
+  min-width: 0;
+}
+.review-summary-toggle {
+  flex: none;
+}
 .review-days {
   display: flex;
   align-items: flex-end;

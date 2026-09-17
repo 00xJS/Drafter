@@ -83,6 +83,14 @@ function TaskList({ tasks, onOpen, onStatus, max = 12 }: { tasks: Task[]; onOpen
   )
 }
 
+/** Whether the summary card is open, per device. Open unless it was shut. */
+const SUMMARY_KEY = 'drafter:review-summary'
+
+/** Words in a summary, for the line that stands in for it while it is hidden. */
+export function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0
+}
+
 /** The Top 3, reflections and summary drafts a saved review loads into: three Top 3 lines, always. */
 export function reviewDraft(saved: ReviewRecord | undefined): { top: string[]; reflections: string; summary: string } {
   return {
@@ -151,6 +159,22 @@ export function Review({
   const [summary, setSummary] = useState(() => reviewDraft(saved).summary)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [summaryOpen, setSummaryOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SUMMARY_KEY) !== '0'
+    } catch {
+      return true
+    }
+  })
+  const toggleSummary = () => {
+    const next = !summaryOpen
+    setSummaryOpen(next)
+    try {
+      localStorage.setItem(SUMMARY_KEY, next ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }
 
   // The drafts follow the saved review: to another week or month, and when the
   // record changes from outside — Plan next week, its Undo, a sync. Kept, a
@@ -209,6 +233,8 @@ export function Review({
       })
       setSummary(text)
       persist({ summary: text })
+      // asking for one is asking to read it, so a card shut earlier opens
+      if (!summaryOpen) toggleSummary()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -297,10 +323,24 @@ export function Review({
           <header className="chart-head">
             <div>
               <h3>Summary</h3>
-              <p className="chart-sub">Written by the model from this period's data and your reflections</p>
+              <p className="chart-sub">
+                {error
+                  ? 'The model could not write it'
+                  : summaryOpen
+                    ? "Written by the model from this period's data and your reflections"
+                    : `${wordCount(summary)} ${wordCount(summary) === 1 ? 'word' : 'words'}, hidden`}
+              </p>
             </div>
+            {/* An error is the one thing here worth reading, so it is never
+                behind the toggle; a summary is long, and on a phone it pushes
+                everything the period actually holds off the screen. */}
+            {!error && (
+              <button type="button" className="btn subtle review-summary-toggle" aria-expanded={summaryOpen} onClick={toggleSummary}>
+                {summaryOpen ? 'Hide' : 'Show'}
+              </button>
+            )}
           </header>
-          {error ? <p className="warn">{error}</p> : <div className="review-summary-text">{summary}</div>}
+          {error ? <p className="warn">{error}</p> : summaryOpen && <div className="review-summary-text">{summary}</div>}
         </section>
       )}
 
