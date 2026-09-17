@@ -1255,6 +1255,22 @@
   align-items: center;
   gap: 10px;
 }
+/* the two answers to a piece going unworn sit together at the row's end; on a
+   phone they wrap under it rather than squeezing the name */
+.wardrobe-list-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 420px) {
+  .wardrobe-list-row {
+    flex-wrap: wrap;
+  }
+  .wardrobe-list-actions {
+    margin-left: auto;
+  }
+}
 .wardrobe-list-piece,
 .stats-list-piece {
   flex: 1;

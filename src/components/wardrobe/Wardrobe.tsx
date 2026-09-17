@@ -177,7 +177,6 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     setTab('outfit')
     setDay(dayOr(d, todayKey))
   }
-
   return (
     <section className="wardrobe">
       <div className="wardrobe-bar">
@@ -234,6 +233,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           onRetire={g => retire(g, true)}
           onSaveOutfit={saveCombo}
           onGoDay={goDay}
+          onWearToday={wearToday}
         />
       )}
 

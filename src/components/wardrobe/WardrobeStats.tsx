@@ -36,6 +36,8 @@ interface Props {
   onOpenPiece(id: string): void
   onRetire(g: Garment): void
   onSaveOutfit(pieces: string[]): void
+  /** A piece from the unworn lists, straight into today's look — the piece sheet's own Wear today. */
+  onWearToday?(g: Garment): void
   /** Outfit on a day: the photo calendar's days open it, to see a look or log one. */
   onGoDay?(day: string): void
   /** The clock the trends are read from; the tests hand one in. */
@@ -48,7 +50,29 @@ const ranked = (r: { garment: Garment; count: number }) => ({ key: r.garment.id,
 /** "Watch", "Trainers and Watch", "Mac, Trainers and Watch". */
 const andList = (names: string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
 
-function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line: string; onOpen(id: string): void; onRetire(g: Garment): void }) {
+/**
+ * A piece in one of the two lists that name what is going unworn, with the two
+ * answers to that beside it: wear it today, or let it go.
+ *
+ * Wear today is the point of the list. Reading that a coat has rested 90 days
+ * and being able to do nothing about it from there is how a figure stays a
+ * figure. It is the piece sheet's own Wear today — the piece goes into today's
+ * look where it stands, with the toast's Undo behind it — so one label means
+ * one thing wherever it is pressed.
+ */
+function PieceRow({
+  garment,
+  line,
+  onOpen,
+  onRetire,
+  onWearToday,
+}: {
+  garment: Garment
+  line: string
+  onOpen(id: string): void
+  onRetire(g: Garment): void
+  onWearToday?(g: Garment): void
+}) {
   return (
     <ListRow
       prefix={PREFIX}
@@ -57,9 +81,16 @@ function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line:
       line={line}
       onOpen={() => onOpen(garment.id)}
       action={
-        <button type="button" className="btn subtle" onClick={() => onRetire(garment)}>
-          Retire
-        </button>
+        <span className="wardrobe-list-actions">
+          {onWearToday && (
+            <button type="button" className="btn" onClick={() => onWearToday(garment)}>
+              Wear today
+            </button>
+          )}
+          <button type="button" className="btn subtle" onClick={() => onRetire(garment)}>
+            Retire
+          </button>
+        </span>
       }
     />
   )
@@ -75,7 +106,7 @@ function PieceRow({ garment, line, onOpen, onRetire }: { garment: Garment; line:
  * with the Stats kit (components/stats), which People, Places and Kitchen
  * share.
  */
-export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, onGoDay, now = new Date() }: Props) {
+export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, onGoDay, onWearToday, now = new Date() }: Props) {
   const theme = useTheme()
   const thisYear = Number(ix.dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
@@ -150,7 +181,16 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
         sub={`Worn before, but not in ${NOT_WORN_DAYS} days or more`}
         items={rested}
         empty="Nothing has rested that long."
-        row={g => <PieceRow key={g.id} garment={g} line={`Last worn ${daysAgo(daysBetween(ix.days.get(g.id)![0], ix.dayKey))}`} onOpen={onOpenPiece} onRetire={onRetire} />}
+        row={g => (
+          <PieceRow
+            key={g.id}
+            garment={g}
+            line={`Last worn ${daysAgo(daysBetween(ix.days.get(g.id)![0], ix.dayKey))}`}
+            onOpen={onOpenPiece}
+            onRetire={onRetire}
+            onWearToday={onWearToday}
+          />
+        )}
       />
 
       <ListCard
@@ -159,7 +199,16 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
         sub="Added a week or more ago, and not logged since"
         items={never}
         empty="Everything added over a week ago has been worn."
-        row={g => <PieceRow key={g.id} garment={g} line={`Added ${daysAgo(daysBetween(dateKey(g.createdAt), ix.dayKey))}`} onOpen={onOpenPiece} onRetire={onRetire} />}
+        row={g => (
+          <PieceRow
+            key={g.id}
+            garment={g}
+            line={`Added ${daysAgo(daysBetween(dateKey(g.createdAt), ix.dayKey))}`}
+            onOpen={onOpenPiece}
+            onRetire={onRetire}
+            onWearToday={onWearToday}
+          />
+        )}
       />
 
       <ChartCard
