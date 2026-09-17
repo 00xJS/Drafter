@@ -144,10 +144,17 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // stable vendor chunks survive app-code deploys in the service-worker cache
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-supabase': ['@supabase/supabase-js'],
+        manualChunks(id) {
+          // stable vendor chunks survive app-code deploys in the service-worker cache
+          if (id.includes('node_modules/react-dom/') || /node_modules\/react\//.test(id)) return 'vendor-react'
+          if (id.includes('node_modules/@supabase/')) return 'vendor-supabase'
+          // The assistant's prompts and parsers, and the retrieval Ask Drafter
+          // runs over the device. Nothing on Today touches either: every view
+          // that does is lazy. But ten of those lazy views share them, and a
+          // module shared by several async chunks is hoisted into their common
+          // parent — the shell — so first paint was paying for both.
+          if (/\/src\/(ai|ask)\.ts$/.test(id)) return 'assistant'
+          return undefined
         },
       },
     },
