@@ -134,13 +134,17 @@ describe('Surprise me', () => {
     const garments = [piece('t-today', 'top'), piece('t-month', 'top'), piece('t-never', 'top'), piece('b', 'bottom')]
     const ix = wearIndex([look(TODAY, ['t-today', 'b']), look('2026-08-15', ['t-month', 'b'])], TODAY)
     const rows = rowsOf(garments, byRest(garments, ix).map(g => g.id))
-    // never worn leads the row, so it is the card the row starts on
+    // an undressed day starts on None; never worn leads the row behind it
     const sel = start(rows, undefined, liveById(garments))
-    expect(chosenIn(sel, rows, []).slots.top).toBe('t-never')
+    expect(chosenIn(sel, rows, []).slots.top).toBeNull()
+    expect(rows.top[0].id).toBe('t-never')
     const drawn = (r: number) => chosenIn(surprise(sel, rows, [], ix, { random: () => r }), rows, []).slots.top
-    // a month's rest weighs 31, a day's 1: 31 draws in 32 go to the one worn a month ago
-    expect(drawn(0.95)).toBe('t-month')
-    expect(drawn(0.98)).toBe('t-today')
+    // Never worn weighs 61, a month's rest 32, today's 1 — 94 between them.
+    // Surprise me skips the card the row is on, and None is not a card of
+    // anything, so from an undressed day all three are in the draw.
+    expect(drawn(0.5)).toBe('t-never')
+    expect(drawn(0.9)).toBe('t-month')
+    expect(drawn(0.999)).toBe('t-today')
   })
 
   it('never deals a piece only held for the day, nor one out of season while the row has one in it', () => {

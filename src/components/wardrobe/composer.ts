@@ -92,13 +92,22 @@ export function load(sel: Selection, ids: readonly string[], rows: Rows, byId: R
   return { picked, onepiece, note: notInUse(ids.filter(id => !inRows.has(id)), byId) || undefined }
 }
 
-/** Where the rows start: on the day's latest look when it has one, otherwise on each row's first card. */
+/**
+ * Where the rows start: on the day's latest look when it has one, and on None
+ * when it has not.
+ *
+ * They used to start on each row's first card, which meant a day you had not
+ * dressed was indistinguishable from one you had — the rows showed a top and a
+ * bottom either way, "Wearing this" was live, and a press logged a look nobody
+ * had chosen. For a wardrobe whose whole point is what you actually wore, a
+ * guess that looks like a record is the one thing it must not do.
+ */
 export function start(rows: Rows, look: Wear | undefined, byId: ReadonlyMap<string, Garment>): Selection {
-  const first: Selection = {
-    picked: { top: rows.top[0]?.id ?? null, bottom: rows.bottom[0]?.id ?? null, onepiece: rows.onepiece[0]?.id ?? null, outerwear: null, shoes: null, accessories: [] },
+  const nothing: Selection = {
+    picked: { top: null, bottom: null, onepiece: null, outerwear: null, shoes: null, accessories: [] },
     onepiece: false,
   }
-  return look ? load(first, look.garmentIds, rows, byId) : first
+  return look ? load(nothing, look.garmentIds, rows, byId) : nothing
 }
 
 /** What the rows have chosen, and so what a log or a save takes. */
@@ -120,10 +129,14 @@ export interface Chosen {
 
 export function chosenIn(sel: Selection, rows: Rows, asked: readonly Optional[]): Chosen {
   const member = (type: GarmentType, id: string | null) => (id && rows[type].some(g => g.id === id) ? id : null)
+  // No slot falls back to its row's first card any more — not on a day nobody
+  // has dressed, and not when a piece leaves its row mid-visit (retired from
+  // its own sheet). Either way the row goes to None and says so, rather than
+  // standing on a garment the wearer never chose.
   const slots: Record<Slot, string | null> = {
-    top: member('top', sel.picked.top) ?? rows.top[0]?.id ?? null,
-    bottom: member('bottom', sel.picked.bottom) ?? rows.bottom[0]?.id ?? null,
-    onepiece: member('onepiece', sel.picked.onepiece) ?? rows.onepiece[0]?.id ?? null,
+    top: member('top', sel.picked.top),
+    bottom: member('bottom', sel.picked.bottom),
+    onepiece: member('onepiece', sel.picked.onepiece),
     outerwear: member('outerwear', sel.picked.outerwear),
     shoes: member('shoes', sel.picked.shoes),
   }

@@ -186,6 +186,9 @@ export function OutfitComposer(props: Props) {
   const need = day === todayKey ? weatherNeed(forecast) : null
   const coat = need && !chosen.outerwear ? outerwearFor(garments, ix, need, undefined, occasion) : undefined
 
+  // Every row leads with a None card, the optional ones and the core ones
+  // alike: a day nobody has dressed shows None rather than standing on a
+  // garment, so what the rows say is always what the day holds.
   const row = (slot: Slot, optional?: Optional) => {
     const meta = GARMENT_TYPE_META[slot]
     return (
@@ -196,7 +199,7 @@ export function OutfitComposer(props: Props) {
         ix={ix}
         selected={chosen[slot]}
         onSelect={id => pick(slot, id)}
-        none={!!optional}
+        none
         small={!!optional}
         occasion={occasion}
         onHide={optional ? () => showRow(optional, false) : undefined}

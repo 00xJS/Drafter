@@ -146,7 +146,10 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, oc
           </button>
         )}
       </div>
-      {cards.length === 0 ? (
+      {/* the pieces, not the cards: with a None card in front, a row holding
+          no garments at all would otherwise show None where it should be
+          asking for the first one */}
+      {pieces.length === 0 ? (
         <button type="button" className="snap-empty" onClick={onAdd}>
           {emptyLabel}
         </button>

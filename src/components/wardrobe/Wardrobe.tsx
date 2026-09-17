@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { workDaysOf } from '../../calgrid'
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
@@ -8,6 +8,7 @@ import type { CalendarEntry, Garment, Item, Outfit, Wear } from '../../types'
 import { lastPlanDay, liveById, logLook, looksOn, outfitLabel, renamed, retired, saveOutfit, starred, swappedPhotos, wearable, wearIndex, type LookLog } from '../../wardrobe'
 import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
+import { dayAfterRoll, useDayKey } from '../../useDayKey'
 import type { WardrobeOpen } from '../planner/useNavigation'
 import { Clothes } from './Clothes'
 import { GarmentSheet, type SheetMode } from './GarmentSheet'
@@ -54,7 +55,10 @@ const NOTHING_SHOWN: ReadonlySet<string> = new Set()
  * rewrites a look or an outfit because a piece changed or went away.
  */
 export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null, entries = NO_ENTRIES, onSave, onRemove, onRestore, showToast, open, onOpenConsumed }: Props) {
-  const todayKey = localDayKey()
+  // not localDayKey() on its own: nothing re-rendered this at midnight, so an
+  // app left open — and on the phone that is every app, since iOS resumes the
+  // page rather than killing it — went on dressing yesterday
+  const todayKey = useDayKey()
   const workDays = useMemo(() => workDaysOf(entries, myId), [entries, myId])
   const [tab, setTab] = useState<WardrobeTab>(() => open?.tab ?? 'outfit')
   const [day, setDay] = useState(() => dayOr(open?.date, todayKey))
@@ -65,6 +69,21 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   /** Every piece this device has, Trash included: a log reads each one's slot here. */
   const records = useMemo(() => [...garments, ...inTrash], [garments, inTrash])
   const ix = useMemo(() => wearIndex(wears, todayKey), [wears, todayKey])
+
+  /**
+   * The local day rolled under an open app. A composer sitting on what WAS
+   * today follows it to the new one; a day the wearer went to themselves is
+   * theirs, and stays. The composer is keyed on the day it is dressing, so
+   * the roll remounts it: the rows re-deal by rest, and the new day starts on
+   * None instead of carrying what was chosen for yesterday.
+   */
+  const rolledFrom = useRef(todayKey)
+  useEffect(() => {
+    if (rolledFrom.current === todayKey) return
+    const was = rolledFrom.current
+    rolledFrom.current = todayKey
+    setDay(d => dayAfterRoll(d, was, todayKey))
+  }, [todayKey])
 
   // a way in is used once — the view, the day, the sheet, an outfit for the
   // rows — and then forgotten, so the next visit opens on today's composer
@@ -176,6 +195,8 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
 
       {tab === 'outfit' && (
         <OutfitComposer
+          // a day roll starts the composer over; stepping between days does not
+          key={day === todayKey ? todayKey : 'browsing'}
           garments={garments}
           inTrash={inTrash}
           outfits={outfits}

@@ -92,8 +92,13 @@ describe('Outfit: the composer', () => {
     // a roving tabindex: the chosen card is the one Tab lands on
     expect(html.match(/role="radio" aria-checked="true" tabindex="0"/g)).toHaveLength(2)
     expect(html).toContain('role="radio" aria-checked="false" tabindex="-1"')
-    // the chosen card's way to its piece, and the dashed tile at each row's end
-    expect(html).toContain('aria-label="About black-tee"')
+    // An undressed day sits on None in both rows, so there is no piece to
+    // reach. (chosenNames is no help here: with no snap-name on the None card
+    // its regex runs on to the next card's, so the card itself is what to ask.)
+    expect(html.match(/aria-checked="true"[^>]*class="snap-card"><span class="snap-none">None<\/span>/g)).toHaveLength(2)
+    expect(html).not.toContain('aria-label="About black-tee"')
+    // a day that was dressed sits on its look, and that card has its way to the piece
+    expect(composer({ wears: [look(TODAY, ['black-tee', 'jeans'])] })).toContain('aria-label="About black-tee"')
     expect(html).toContain('+ Add top')
     expect(html).toContain('+ Add bottom')
   })
@@ -155,7 +160,9 @@ describe('Outfit: the composer', () => {
     const only = composer({ garments: [dress] })
     expect(only).toContain('aria-label="One-pieces"')
     expect(only).not.toContain('Separates')
-    expect(only).toContain('<button type="button" class="btn primary">Wearing this</button>')
+    // there, but not live: an undressed day has chosen nothing to wear yet
+    expect(only).toContain('Wearing this')
+    expect(only).toContain('class="btn primary" disabled=""')
     // a look in a one-piece opens on that row
     expect(composer({ garments: [...tops, ...bottoms, dress], wears: [look(TODAY, ['dress'])] })).toContain('aria-label="One-pieces"')
   })
