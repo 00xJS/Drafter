@@ -35,13 +35,52 @@ async function request(system: string, prompt: string, maxTokens: number, json: 
   return typeof text === 'string' ? text : ''
 }
 
+/** Words long enough that an answer never repeats a run of them by accident. */
+const ECHO_RUN = 6
+
+const flatten = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+/**
+ * Whether a plain-text reply is the model thinking rather than answering.
+ *
+ * A reasoning model restates its brief before it works — "We need to produce a
+ * personal review, warm, candid… no headings… 120-220 words" — and when the
+ * budget runs out there, that is what comes back. It is prose, so nothing about
+ * its shape gives it away; what gives it away is that it quotes the
+ * instructions, which an answer has no reason to do. So: flatten both, and look
+ * for any run of six words from the brief inside the reply.
+ *
+ * Untagged thinking that quotes nothing gets through, and should: a rule loose
+ * enough to catch it would throw away real answers.
+ */
+export function looksLikeThinking(text: string, system: string): boolean {
+  const said = flatten(text)
+  const brief = flatten(system).split(' ')
+  if (!said || brief.length < ECHO_RUN) return false
+  for (let i = 0; i + ECHO_RUN <= brief.length; i++) {
+    if (said.includes(brief.slice(i, i + ECHO_RUN).join(' '))) return true
+  }
+  return false
+}
+
+const NO_THINKING = 'Reply with the finished text only — no reasoning, no commentary, and do not restate these instructions.'
+
 async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
   let text = await request(system, prompt, maxTokens, json)
   // A reasoning model (NVIDIA's default is one) can spend its budget thinking
-  // and stop mid-answer — "Where should we go?" came back as half an array.
-  // Ask once more, with room and no preamble, before giving up.
+  // and stop mid-answer — "Where should we go?" came back as half an array,
+  // and the week's review came back as the thinking alone. Ask once more, with
+  // room and no preamble, before giving up.
   if (json && !hasWholeJSON(text)) {
     text = await request(`${system}\n\nReply with the JSON only — no reasoning and no commentary.`, prompt, Math.min(4096, Math.max(2048, maxTokens * 2)), json)
+  } else if (!json && looksLikeThinking(text, system)) {
+    text = await request(`${system}\n\n${NO_THINKING}`, prompt, Math.min(4096, Math.max(2048, maxTokens * 2)), json)
+    // Better an error the reader can act on than thinking saved as their review.
+    if (looksLikeThinking(text, system)) throw new AIError('The model thought out loud instead of answering — try again.')
   }
   if (!text.trim()) throw new AIError('The model returned an empty response — try again in a moment.')
   return text
@@ -334,9 +373,18 @@ export async function summarizeReview(input: {
           .map((t, i) => `- ${t}${input.kept?.[i] ? ' (done)' : ' (not done)'}`)
           .join('\n')
       : '- none recorded'
+  // Written at the reader, not at the model. The old brief spent five sentences
+  // on rules — what not to head, what not to emphasise — and the model spent
+  // its whole budget weighing them ("is 'Completed:' a heading?") without ever
+  // reaching the review. Say the job first, the format once, and stop.
   return complete(
-    'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with the two or three things that would matter most next. When the journal explains why the period went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\nWrite the review in 120–220 words.`,
+    // Worded so that nothing in it is a phrase the review itself would use:
+    // the guard that catches thinking (`looksLikeThinking`) works by spotting
+    // the brief quoted back, and a brief that says "the two or three things
+    // that matter most next" invites the review to say exactly that and be
+    // sent back for it.
+    'You are writing someone their own review of the period, in the second person: warm, candid, a good friend who is also organised. Name the tasks and the people. Say what went well, say plainly what slipped, and finish by naming the few things worth doing first. Where their journal explains how the period went, use their own words for it. Use only what is below — invent nothing, and leave out anything they did not do.\n\nPlain prose in short paragraphs, with "-" bullets where a list reads better. No headings, no bold, no italics. Write only the review.',
+    `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\n120–220 words. Begin with the review's first sentence.`,
     900,
   )
 }

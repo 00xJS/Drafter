@@ -52,7 +52,11 @@ describe('the Anthropic backup request', () => {
 })
 
 describe('the NVIDIA request', () => {
-  it('gives a JSON call room to reason before it answers; plain text keeps its budget', async () => {
+  // Plain text used to keep its own budget, on the reasoning that prose has no
+  // shape to break. It breaks worse: the week's review asked for 900 tokens,
+  // the model spent all of them thinking about how to write a review, and the
+  // thinking is what was saved and shown as the review.
+  it('gives every call room to reason before it answers, whatever shape the answer takes', async () => {
     const bodies: { max_tokens: number }[] = []
     vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
       bodies.push(JSON.parse(init.body))
@@ -61,9 +65,34 @@ describe('the NVIDIA request', () => {
     process.env.NVIDIA_API_KEY = 'test-key'
     try {
       await completeNvidia({ system: 's', prompt: 'p', maxTokens: 300, json: true })
-      await completeNvidia({ system: 's', prompt: 'p', maxTokens: 300, json: false })
+      await completeNvidia({ system: 's', prompt: 'p', maxTokens: 900, json: false })
+      await completeNvidia({ system: 's', prompt: 'p', maxTokens: 4096, json: false })
       expect(bodies[0].max_tokens).toBe(2048)
-      expect(bodies[1].max_tokens).toBe(300)
+      expect(bodies[1].max_tokens).toBe(2048)
+      // a budget above the floor is the caller's, and stands
+      expect(bodies[2].max_tokens).toBe(4096)
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.NVIDIA_API_KEY
+    }
+  })
+
+  it('strips tagged thinking, closed or cut off, whichever wrapper the model used', async () => {
+    const replies = [
+      '<think>Let me work this out.</think>The answer.',
+      '<thinking>Still going</thinking>\nThe answer.',
+      '<reasoning>Hmm</reasoning> The answer.',
+      '◁think▷weighing it◁/think▷The answer.',
+      // the budget ran out mid-thought, so the close never arrived
+      '<think>I should start by considering',
+    ]
+    process.env.NVIDIA_API_KEY = 'test-key'
+    try {
+      for (const content of replies) {
+        vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 }))
+        const { text } = await completeNvidia({ system: 's', prompt: 'p', maxTokens: 300 })
+        expect(text).toBe(content.startsWith('<think>I should') ? '' : 'The answer.')
+      }
     } finally {
       vi.unstubAllGlobals()
       delete process.env.NVIDIA_API_KEY

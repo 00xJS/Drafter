@@ -61,10 +61,23 @@ export function resolveProvider() {
   return null
 }
 
+/**
+ * A reasoning model's thinking, out of the text. Tagged thinking is the easy
+ * half — a closed block, or an opening tag whose close never arrived because
+ * the budget ran out. Models tag it `<think>`, `<thinking>` or `<reasoning>`,
+ * and some NIM builds wrap it in `◁think▷` instead of angle brackets.
+ *
+ * The hard half is untagged thinking, which no rule here can see: NVIDIA's
+ * default answered a review with 900 tokens of "We need to produce a personal
+ * review…" and never reached the review. That one is caught where the answer
+ * is read (`looksLikeThinking` in src/ai.ts), not here.
+ */
 function stripThinking(text) {
   return String(text ?? '')
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/^<think>[\s\S]*$/, '')
+    .replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/g, '')
+    .replace(/^\s*<(think|thinking|reasoning)>[\s\S]*$/, '')
+    .replace(/◁(think|thinking)▷[\s\S]*?◁\/\1▷/g, '')
+    .replace(/^\s*◁(think|thinking)▷[\s\S]*$/, '')
     .trim()
 }
 
@@ -117,9 +130,14 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
   if (system) messages.push({ role: 'system', content: system })
   messages.push({ role: 'user', content: prompt })
   const temperature = json ? 0.2 : 0.6
-  // the default model reasons before it answers, and its thinking counts
-  // against max_tokens: a small JSON budget ended mid-array
-  const budget = json ? Math.max(maxTokens ?? 0, 2048) : maxTokens
+  // The default model reasons before it answers, and its thinking counts
+  // against max_tokens: a small JSON budget ended mid-array. Plain text was
+  // left on its own budget, on the reasoning that prose has no shape to break —
+  // but it breaks worse. The week's review asked for 900 tokens and spent all
+  // of them thinking about how to write a review, so what was saved and shown
+  // as the review was the thinking, cut off mid-sentence. Every call gets the
+  // room now; it is a ceiling, and the prompt still asks for the length.
+  const budget = Math.max(maxTokens ?? 0, 2048)
 
   const configured = process.env.NVIDIA_MODEL?.trim()
   const candidates = only ? [only] : [...new Set([resolvedNvidiaModels.get(keyName), configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
@@ -137,6 +155,9 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
           : Array.isArray(content)
             ? content.filter(part => part?.type === 'text').map(part => part.text).join('')
             : ''
+      // `content` only, never `message.reasoning_content`: a build that puts
+      // the thinking in its own field has already kept it out of the answer,
+      // and one that does not is caught by stripThinking or by the reader.
       return { model, result: { text: stripThinking(text), provider: 'nvidia' } }
     }
     if (attempt.status === 404 || attempt.status === 400) {
