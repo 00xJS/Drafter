@@ -14,6 +14,7 @@ import {
   faceGroup,
   idSet,
   journalDays,
+  journalWeek,
   localDayKey,
   lowestMoodWeekday,
   mergeDraft,
@@ -611,6 +612,14 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [limit, setLimit] = useState(() => lastLimit)
+  /**
+   * Past days with nothing written that the reader has opened anyway. The list
+   * below is built from days that have an entry, so without these there is no
+   * row to put the editor in — which is why a day you skipped could not be
+   * written up later. Not persisted: one that gets words joins the list on its
+   * own, and one that does not is a tap away again.
+   */
+  const [blankDays, setBlankDays] = useState<string[]>([])
   /** Results are their own list with their own paging; it starts fresh on every new query. */
   const [hitLimit, setHitLimit] = useState(SEARCH_PAGE)
   const narrow = useMediaQuery('(max-width: 640px)')
@@ -686,7 +695,8 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     setQ('')
     setHitLimit(SEARCH_PAGE)
     setEditing(openDate === today ? null : openDate)
-    const idx = journalDays(entries).filter(d => d !== today).indexOf(openDate)
+    // a link can name a day with nothing written on it (drafter://journal?date=…), which needs a row like any other
+    const idx = rowsWith(openDate).indexOf(openDate)
     if (idx >= limit) setLimit((lastLimit = idx + 10))
     // …unless the mount above is putting the reader back where they were, which
     // only ever happens for today's key. Cleared straight away: a past day
@@ -723,7 +733,12 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const weekdayScored = weekdays.reduce((n, d) => n + d.count, 0)
 
   const query = q.trim()
-  const shownDays = useMemo(() => days.filter(d => d !== today), [days, today])
+  const week = useMemo(() => journalWeek(entries, today), [entries, today])
+  // a blank day that has since been written is already in `days`, so the set drops it
+  const shownDays = useMemo(
+    () => [...new Set([...days, ...blankDays])].filter(d => d !== today).sort((a, b) => b.localeCompare(a)),
+    [days, blankDays, today],
+  )
   const peopleById = useMemo(() => peopleNameMap(people), [people])
   // `total` counts every match across every year; `hits` is only what is drawn,
   // so a diary with a decade in it still answers "how often did I write this".
@@ -731,16 +746,26 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const spansYears = new Set(results.hits.map(h => h.entry.date.slice(0, 4))).size > 1
 
   /**
-   * Open a day for editing from a search result: the same path `openDate`
-   * takes, minus the restore deference (this one is a tap, so it is always the
-   * target). Dropping the query is what puts the day list back on screen for
-   * the scroll to land in.
+   * The rows `date` will land among, giving it one when nothing is written
+   * there yet. Today is its own card at the top and never a row.
+   */
+  const rowsWith = (date: string): string[] => {
+    if (date === today || shownDays.includes(date)) return shownDays
+    setBlankDays(ds => (ds.includes(date) ? ds : [...ds, date]))
+    return [...shownDays, date].sort((a, b) => b.localeCompare(a))
+  }
+
+  /**
+   * Open a day for editing — from a search result, the week strip or the date
+   * picker: the same path `openDate` takes, minus the restore deference (this
+   * one is a tap, so it is always the target). Dropping the query is what puts
+   * the day list back on screen for the scroll to land in.
    */
   const openDay = (date: string) => {
     setQ('')
     setHitLimit(SEARCH_PAGE)
     setEditing(date === today ? null : date)
-    const idx = shownDays.indexOf(date)
+    const idx = rowsWith(date).indexOf(date)
     if (idx >= limit) setLimit((lastLimit = idx + 10))
     restored.current = false
     window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
@@ -775,6 +800,51 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
         {/* no peopleOpen: the whole household as chips is 100+px between the
             title and the box you came here to type in. "+ Who" is one tap. */}
         <JournalEditor entry={entryOn(entries, today)} date={today} people={people} onSave={onSave} onDelete={onDelete} showDelete />
+      </section>
+
+      {/* This week, every day of it. The archive below lists only days that
+          have an entry, so the day you meant to write up and didn't had no row
+          to tap; these seven always do. */}
+      <section className="journal-week" aria-label="This week">
+        <ul className="journal-week-days">
+          {week.map(d => (
+            <li key={d.date}>
+              <button
+                type="button"
+                className={`journal-week-day${d.date === today ? ' today' : ''}${d.written ? ' written' : ''}`}
+                disabled={d.ahead}
+                aria-current={d.date === today ? 'date' : undefined}
+                aria-label={`${dayLabel(d.date)}: ${d.ahead ? 'still to come' : d.written ? (d.mood ? MOOD_META[d.mood].label : 'written') : 'nothing written'}`}
+                onClick={() => openDay(d.date)}
+              >
+                <span className="journal-week-name" aria-hidden>
+                  {dayLabel(d.date, { weekday: 'narrow' })}
+                </span>
+                <span className="journal-week-num" aria-hidden>
+                  {dayLabel(d.date, { day: 'numeric' })}
+                </span>
+                <span className="journal-week-mark" aria-hidden>
+                  {d.mood ? MOOD_META[d.mood].emoji : d.written ? '·' : ''}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <label className="journal-pick">
+          <span>Another day</span>
+          {/* a button that happens to look like a field: it jumps to a day and
+              clears, so nothing is left sitting in it to mean something later */}
+          <input
+            type="date"
+            max={today}
+            defaultValue=""
+            onChange={e => {
+              const picked = e.target.value
+              e.target.value = ''
+              if (picked) openDay(picked)
+            }}
+          />
+        </label>
       </section>
 
       <div className="journal-stats" ref={statsBox}>
@@ -913,25 +983,28 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
                   <header className="journal-day-head">
                     <strong>{relativeDayLabel(d, today)}</strong>
                     <small className="muted">{dayLabel(d, { day: 'numeric', month: 'short', year: 'numeric' })}</small>
-                    {first.mood && (
+                    {first?.mood && (
                       <span className="journal-mood" title={MOOD_META[first.mood].label}>
                         {MOOD_META[first.mood].emoji}
                       </span>
                     )}
-                    <JournalPeople entry={first} people={people} />
+                    {first && <JournalPeople entry={first} people={people} />}
                     <span className="spacer" />
                     <button className="btn subtle" onClick={() => setEditing(isEditing ? null : d)}>
-                      {isEditing ? 'Done' : 'Edit'}
+                      {isEditing ? 'Done' : first ? 'Edit' : 'Write'}
                     </button>
                   </header>
                   {isEditing ? (
                     <JournalEditor entry={first} date={d} people={people} onSave={onSave} onDelete={onDelete} autoFocus showDelete peopleOpen />
-                  ) : (
+                  ) : list.length ? (
                     list.map(e => (
                       <p key={e.id} className="journal-body">
                         {e.body || (e.mood ? MOOD_META[e.mood].label : '')}
                       </p>
                     ))
+                  ) : (
+                    // a day opened from the week strip and then left alone
+                    <p className="journal-body muted">Nothing written.</p>
                   )}
                 </li>
               </Fragment>

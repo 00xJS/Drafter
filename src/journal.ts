@@ -137,6 +137,30 @@ export function journalDays(entries: JournalEntry[]): string[] {
   return [...new Set(entries.filter(e => !e.deletedAt).map(e => e.date))].sort((a, b) => b.localeCompare(a))
 }
 
+/** One day of the week strip: written or not, its face if it has one, and whether it has come yet. */
+export interface WeekDay {
+  date: string
+  written: boolean
+  mood?: Mood
+  /** After today: shown in its place, but there is nothing to write there yet. */
+  ahead: boolean
+}
+
+/**
+ * This week, Sunday first — every day, not only the written ones.
+ *
+ * The page below it lists days that have an entry, which is the whole archive
+ * and no help at all for the day you meant to write about and didn't: a day
+ * with nothing on it had no row, so there was nothing to tap. Seven cells fix
+ * that for the week you are in, which is where "I forgot Tuesday" lives.
+ */
+export function journalWeek(entries: JournalEntry[], today = localDayKey()): WeekDay[] {
+  return weekDayKeys(today).map(date => {
+    const entry = sharedEntryOn(entries, date)
+    return { date, written: !!entry, mood: entry?.mood, ahead: date > today }
+  })
+}
+
 /** "Monday 8 September" for a YYYY-MM-DD key, in the viewer's locale. */
 export function dayLabel(key: string, opts: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' }): string {
   const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/)

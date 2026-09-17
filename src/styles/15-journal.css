@@ -91,6 +91,80 @@
   line-height: 1.5;
   cursor: pointer;
 }
+/* This week, every day of it, under today's card: seven equal cells so a day
+   you skipped is still a thing you can press, and a date field beside them for
+   anything older. The archive below only ever lists days that were written. */
+.journal-week {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.journal-week-days {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  min-width: 240px;
+}
+.journal-week-days > li {
+  flex: 1;
+}
+.journal-week-day {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+}
+.journal-week-day:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.journal-week-day:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.journal-week-day.written {
+  background: var(--accent-softer);
+  border-color: var(--accent-ring);
+}
+.journal-week-day.today {
+  border-color: var(--accent);
+}
+.journal-week-name {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.journal-week-num {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+/* always occupies its line, so a written day does not stand taller than a blank one */
+.journal-week-mark {
+  font-size: 0.8rem;
+  min-height: 1.1em;
+}
+.journal-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+
 .journal-days {
   list-style: none;
   padding: 0;
