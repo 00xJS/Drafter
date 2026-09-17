@@ -1,6 +1,7 @@
 import { CSSProperties, Fragment, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { newerStamp } from '../itemops'
+import { useDayKey } from '../useDayKey'
 import {
   JournalDraft,
   MoodSeries,
@@ -15,7 +16,6 @@ import {
   idSet,
   journalDays,
   journalWeek,
-  localDayKey,
   lowestMoodWeekday,
   mergeDraft,
   moodAverage,
@@ -321,7 +321,9 @@ export function JournalCard({
   onDelete?(id: string): void
   onOpenAll(): void
 }) {
-  const today = localDayKey()
+  // not localDayKey() alone: this card writes the entry, and a card still
+  // holding yesterday after midnight writes into yesterday's record
+  const today = useDayKey()
   const entry = entryOn(entries, today)
   const yesterday = entryOn(entries, shiftDayKey(today, -1))
   const run = streak(entries, today)
@@ -608,7 +610,7 @@ let lastLimit = 60
 
 /** The journal page: today at the top, then every past day, newest first. */
 export function JournalView({ entries, people, onSave, onDelete, openDate, onOpenDateConsumed }: ViewProps) {
-  const today = localDayKey()
+  const today = useDayKey()
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [limit, setLimit] = useState(() => lastLimit)

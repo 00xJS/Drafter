@@ -32,6 +32,7 @@ import { eventStartDate } from '../calendars'
 import { workDaysOf } from '../calgrid'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
+import { useDayKey } from '../useDayKey'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { bucketByDue, focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
@@ -579,6 +580,18 @@ export function Today({
   onOpenSyncCheck,
   onDismissSyncAlarm,
 }: Props) {
+  /**
+   * Today's day key, and the reason this page re-renders at midnight.
+   *
+   * Everything below used to read `dateKey(new Date())` where it stood, which
+   * is right at the instant it runs and wrong for as long as the page stays
+   * mounted afterwards. On the phone that is the normal case: iOS suspends and
+   * resumes the WKWebView rather than killing it, so Home left open overnight
+   * kept yesterday — and the cards that take a day key WRITE with it. A look
+   * logged from the wardrobe card, a habit ticked, a routine step: each landed
+   * on the day before.
+   */
+  const todayKey = useDayKey()
   const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
   const isSunday = new Date().getDay() === 0
@@ -601,9 +614,9 @@ export function Today({
         garments={garments}
         outfits={outfits}
         wears={wears}
-        dayKey={dateKey(new Date())}
+        dayKey={todayKey}
         // a work day of your own on the calendar puts the looks for work first
-        workDay={workDaysOf(entries, myId).has(dateKey(new Date()))}
+        workDay={workDaysOf(entries, myId).has(todayKey)}
         onLog={onLogWear}
         onOpen={onOpenWardrobe}
       />
@@ -624,7 +637,6 @@ export function Today({
   }, [reviews])
   const top3 = useMemo(() => (weekReview?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3), [weekReview])
   const topDone = useMemo(() => weekReview?.topDone ?? [], [weekReview])
-  const todayKey = dateKey(new Date())
   // today's focus has its own card: the lists below leave it out and say so
   const focus = useMemo(() => focusTasks(tasks, todayKey, myId), [tasks, todayKey, myId])
   const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
@@ -925,9 +937,9 @@ export function Today({
 
       {!morning && wardrobeCard}
 
-      <HabitsCard habits={habits} today={dateKey(new Date())} onSave={onSaveHabit} onDelete={onDeleteHabit} />
+      <HabitsCard habits={habits} today={todayKey} onSave={onSaveHabit} onDelete={onDeleteHabit} />
 
-      <RoutinesCard routines={routines} today={dateKey(new Date())} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
+      <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
 
       {top3.length > 0 && (
         <section className="chart-card week-top3">

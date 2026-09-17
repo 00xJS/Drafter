@@ -40,6 +40,7 @@ import {
 } from '../kitchen'
 import type { CookedIndex, VisitIndex } from '../kitchen'
 import { RECIPE_TEXT_HINT, readRecipe } from '../ai'
+import { useDayKey } from '../useDayKey'
 import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
@@ -117,11 +118,24 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
   const [q, setQ] = useState('')
   const [planningMeals, setPlanningMeals] = useState(false)
 
+  /**
+   * Today, and the reason this page re-renders at midnight. The anchor below
+   * follows it the way the wardrobe's day does: a week the reader stepped to
+   * is theirs and stays, but one that is still on what WAS this week moves on
+   * — otherwise a grocery list built after midnight is built into last week.
+   */
+  const today = useDayKey()
+  const rolledFrom = useRef(today)
+  useEffect(() => {
+    if (rolledFrom.current === today) return
+    const was = rolledFrom.current
+    rolledFrom.current = today
+    setAnchor(a => (dateKey(a) === was ? new Date(`${today}T12:00:00`) : a))
+  }, [today])
+
   const week = useMemo(() => weekRange(anchor), [anchor])
   const weekMeals = useMemo(() => mealsForWeek(meals, week.start), [meals, week.start])
   const grocery = groceries.find(g => g.weekKey === week.key && !g.deletedAt)
-  // when each recipe was last cooked, as of today: the list, the pickers and cook mode all say it
-  const today = dateKey(new Date())
   const cooked = useMemo(() => cookedIndex(recipes, meals, today), [recipes, meals, today])
   // and when each place was last gone to, beside it under Eat out
   const visited = useMemo(() => visitIndex(places, tasks ?? [], meals), [places, tasks, meals])
@@ -360,6 +374,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           cooked={cooked}
           visited={visited}
           focusDay={focusDay}
+          today={today}
           onShift={d => {
             setFocusDay(null)
             setAnchor(a => shiftRange(weekRange(a), d).start)
@@ -487,6 +502,7 @@ function WeekPlan({
   onCreateRecipe,
   onOpenRecipe,
   onPlan,
+  today,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
   meals: Meal[]
@@ -498,6 +514,8 @@ function WeekPlan({
   visited: VisitIndex
   /** A day opened from Stats' dinner calendar: scrolled to and framed. */
   focusDay?: string | null
+  /** Today, from the page's own useDayKey, so this grid and the page never disagree about it. */
+  today: string
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
@@ -512,7 +530,6 @@ function WeekPlan({
     d.setDate(d.getDate() + i)
     return d
   })
-  const today = dateKey(new Date())
   // dinners still to plan from today on: a past night is not worth proposing
   const emptyDinners = days.map(dateKey).filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
   // a day opened from Stats lands on screen, clear of the sticky bar (its scroll margin), not at the week's top

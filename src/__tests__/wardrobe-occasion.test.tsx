@@ -308,7 +308,9 @@ describe('Today’s card', () => {
     const labels = (html: string) => [...html.matchAll(/class="wardrobe-chip-label">([^<]+)</g)].map(m => m[1])
     expect(labels(card(false))).toEqual(['gym-top + joggers', 'shirt + slacks'])
     expect(labels(card(true))).toEqual(['shirt + slacks', 'gym-top + joggers'])
-    expect(read('../components/Today.tsx')).toContain('workDay={workDaysOf(entries, myId).has(dateKey(new Date()))}')
+    // Today decides the work day from the same key it hands the card, and that
+    // key now follows the clock (useDayKey) rather than being read once at mount
+    expect(read('../components/Today.tsx')).toContain('workDay={workDaysOf(entries, myId).has(todayKey)}')
   })
 })
 

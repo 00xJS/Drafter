@@ -78,7 +78,10 @@ interface Props {
  * ideas go at 2pm and dinner ideas at 8pm, when they could only nag.
  */
 export function MealIdeasCard({ dayKey, now, meals, recipes, places, tasks, onPlan }: Props) {
-  const [dismissed, setDismissed] = useState(() => mealIdeasDismissed(dayKey))
+  // the DAY it was dismissed, not a frozen boolean: "Not today" said at 22:00
+  // kept the card hidden after midnight, which is the one time it is wanted
+  const [dismissedDay, setDismissedDay] = useState<string | null>(() => (mealIdeasDismissed(dayKey) ? dayKey : null))
+  const dismissed = dismissedDay === dayKey || mealIdeasDismissed(dayKey)
   // the ideas only change with the records, the day and the hour, never the minute
   const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime()
   const groups = useMemo(
@@ -102,7 +105,7 @@ export function MealIdeasCard({ dayKey, now, meals, recipes, places, tasks, onPl
           className="btn subtle"
           onClick={() => {
             dismissMealIdeas(dayKey)
-            setDismissed(true)
+            setDismissedDay(dayKey)
           }}
         >
           Not today
