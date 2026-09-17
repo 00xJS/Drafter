@@ -202,6 +202,40 @@ export function compareStats(a: PersonStats, b: PersonStats): number {
   return (b.daysSince ?? 0) - (a.daysSince ?? 0)
 }
 
+/**
+ * How many never-seen people Today offers at a time.
+ *
+ * Two, not all of them. The whole list at once is a backlog, and a backlog on
+ * the morning page is something to scroll past; two is an invitation. It needs
+ * no rotation to move on, either — logging one makes them "on track", and the
+ * next two come up on their own.
+ */
+export const NEVER_NUDGES = 2
+
+/**
+ * Who Today asks about: the people drifting, then a couple nobody has logged
+ * at all.
+ *
+ * The second half is the whole point of this. Today used to take only `due`
+ * and `overdue`, and `seenStatus` gives someone with no visit `never` — so a
+ * person had to have been logged once before Today would ever suggest logging
+ * them. Thirty-four people were on the list and thirty of them could not be
+ * reached: the nudge that would have started it only appeared once it had
+ * started. Someone is on the list because you meant to see them, so never
+ * having is the strongest reason to ask, not a reason to stay quiet.
+ *
+ * They go below the drifting ones, oldest on the list first, because the ones
+ * that have sat there longest are the ones being forgotten.
+ */
+export function peopleToNudge(stats: readonly PersonStats[], max = 6, never = NEVER_NUDGES): PersonStats[] {
+  const drifting = stats.filter(s => s.status === 'overdue' || s.status === 'due').sort(compareStats)
+  const unseen = stats
+    .filter(s => s.status === 'never')
+    .sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt))
+    .slice(0, never)
+  return [...drifting, ...unseen].slice(0, max)
+}
+
 /** People's find box: the lower-cased query in a person's name or notes, as findsPlace is Places'. */
 export function findsPerson(p: Person, needle: string): boolean {
   if (!needle) return true

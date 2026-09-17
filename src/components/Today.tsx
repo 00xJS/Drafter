@@ -24,7 +24,7 @@ import {
 import { mealLabel, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
-import { SEEN_META, compareStats, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
+import { SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
@@ -640,11 +640,10 @@ export function Today({
     () => {
       // your own events that have happened count as seeing the people on them, as on People
       const seen = seenTasks(allTasks, entries)
-      return people
-        .map(p => personStats(p, seen))
-        .filter(s => s.status === 'overdue' || s.status === 'due')
-        .sort(compareStats)
-        .slice(0, 6)
+      // peopleToNudge, not a filter here: the rule about who Today asks after
+      // — the drifting, then a couple nobody has logged at all — lives with
+      // the rest of the people rules
+      return peopleToNudge(people.map(p => personStats(p, seen)))
     },
     [people, allTasks, entries],
   )
@@ -1078,7 +1077,7 @@ export function Today({
           <header className="chart-head">
             <div>
               <h3>People</h3>
-              <p className="chart-sub">Who's due a call — and where you've meant to go back to</p>
+              <p className="chart-sub">Who's due a call, who you've not logged yet — and where you've meant to go back to</p>
             </div>
           </header>
           <ul className="dash-list event-list">
