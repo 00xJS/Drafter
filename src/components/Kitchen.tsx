@@ -39,6 +39,7 @@ import {
   visibleGroceryLines,
 } from '../kitchen'
 import type { CookedIndex, VisitIndex } from '../kitchen'
+import { RECIPE_TEXT_HINT, readRecipe } from '../ai'
 import { haptic } from '../native'
 import { ConfirmButton } from './ConfirmButton'
 import { MealSlotRow } from './MealSlotRow'
@@ -1071,6 +1072,46 @@ function RecipeForm({
   const [steps, setSteps] = useState((recipe?.steps ?? []).join('\n'))
   const [tags, setTags] = useState((recipe?.tags ?? []).join(', '))
   const [notes, setNotes] = useState(recipe?.notes ?? '')
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [paste, setPaste] = useState('')
+  const [reading, setReading] = useState(false)
+  const [readErr, setReadErr] = useState('')
+  const [readNote, setReadNote] = useState('')
+
+  /**
+   * Read a pasted recipe into the fields. It fills them in and stops there —
+   * the cook reads what it found and presses Save, as with every other ✨ in
+   * the app. Anything already typed is kept: a blank row list is replaced, a
+   * started one is added to.
+   */
+  const readPaste = async () => {
+    setReading(true)
+    setReadErr('')
+    setReadNote('')
+    try {
+      const found = await readRecipe(paste)
+      if (!found.ingredients.length && !found.steps.length) {
+        setReadErr('Nothing in there reads like a recipe — check the text and try again.')
+        return
+      }
+      if (found.name && !name.trim()) setName(found.name)
+      if (found.servings) setServings(String(found.servings))
+      if (found.ingredients.length) {
+        const rows = found.ingredients.map(i => ({ ...newIngredient(), ...i }))
+        setIngredients(list => (list.every(i => !i.name.trim()) ? rows : [...list.filter(i => i.name.trim()), ...rows]))
+      }
+      if (found.steps.length) setSteps(s => (s.trim() ? `${s.trim()}\n${found.steps.join('\n')}` : found.steps.join('\n')))
+      const ings = `${found.ingredients.length} ingredient${found.ingredients.length === 1 ? '' : 's'}`
+      const sts = `${found.steps.length} step${found.steps.length === 1 ? '' : 's'}`
+      setReadNote(`${ings} and ${sts}. Check them, then Save.`)
+      setPasteOpen(false)
+      setPaste('')
+    } catch (e) {
+      setReadErr((e as Error).message)
+    } finally {
+      setReading(false)
+    }
+  }
 
   const save = () => {
     if (!name.trim()) return
@@ -1103,6 +1144,40 @@ function RecipeForm({
     <Modal onClose={onClose}>
       <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
       <div className="modal-body">
+        {/* First, because typing a shop's worth of rows one at a time is the
+            reason recipes end up as bare names — and a bare name can never put
+            a line on the grocery list. */}
+        <div className="recipe-paste">
+          {pasteOpen ? (
+            <>
+              <label className="field">
+                <span>Paste a recipe</span>
+                <textarea rows={6} value={paste} onChange={e => setPaste(e.target.value)} placeholder={RECIPE_TEXT_HINT} autoFocus />
+              </label>
+              <div className="recipe-paste-foot">
+                <button className="btn primary" disabled={reading || !paste.trim()} onClick={readPaste}>
+                  {reading ? 'Reading…' : '✨ Read it'}
+                </button>
+                <button
+                  className="btn subtle"
+                  disabled={reading}
+                  onClick={() => {
+                    setPasteOpen(false)
+                    setReadErr('')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <button className="btn subtle" onClick={() => setPasteOpen(true)}>
+              ✨ Paste a recipe
+            </button>
+          )}
+          {readErr && <p className="warn">{readErr}</p>}
+          {readNote && !readErr && <p className="chart-sub">{readNote}</p>}
+        </div>
         <div className="field-row">
           <label className="field emoji-field">
             <span>Icon</span>

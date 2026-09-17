@@ -165,6 +165,9 @@ export function hasWholeJSON(text: string): boolean {
   }
 }
 
+/** One line of a model's list, trimmed to `max`; anything that is not a string is nothing. */
+const oneLine = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max).trim() : '')
+
 /** Suggest a handful of tags for a task. */
 export async function suggestTags(body: string): Promise<string[]> {
   const text = await complete(
@@ -875,7 +878,6 @@ export function parseMealAssist(text: string, offered: Pick<MealAssistInput, 'sl
   const open = new Set(offered.slots.map(s => `${s.date}|${s.slot}`))
   const recipes = new Set(offered.recipes.map(r => r.ref.toUpperCase()))
   const places = new Set(offered.places.map(p => p.ref.toUpperCase()))
-  const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max).trim() : '')
   const filled = new Set<string>()
   const suggestions: MealSuggestion[] = []
   for (const x of Array.isArray(raw.suggestions) ? raw.suggestions : []) {
@@ -1027,6 +1029,40 @@ export function buildRecipeSuggestPrompt(i: RecipeSuggestInput): { system: strin
 }
 
 /**
+ * A model's ingredients, as the app stores them. Each is `{name}` with an
+ * optional quantity and unit — the shape the grocery list adds up by
+ * (`ingredientKey` in shared/kitchen.mjs) — and a plain string is a name.
+ * A quantity that is not a sane positive number is dropped rather than guessed,
+ * because a wrong one quietly doubles a grocery line.
+ *
+ * Shared by the recipe suggester and by reading a pasted recipe, so a dish
+ * arrives the same way whoever proposed it.
+ */
+export function parseIngredients(raw: unknown, max = SUGGESTION_INGREDIENTS_MAX): { name: string; qty?: number; unit?: string }[] {
+  const out: { name: string; qty?: number; unit?: string }[] = []
+  for (const ing of Array.isArray(raw) ? raw : []) {
+    if (out.length >= max) break
+    const o = typeof ing === 'string' ? { name: ing } : ing && typeof ing === 'object' ? (ing as Record<string, unknown>) : null
+    const name = o ? oneLine(o.name, 60) : ''
+    if (!o || !name) continue
+    const n = typeof o.qty === 'number' ? o.qty : typeof o.qty === 'string' && o.qty.trim() ? Number(o.qty) : NaN
+    const qty = Number.isFinite(n) && n > 0 && n <= 10_000 ? Math.round(n * 100) / 100 : undefined
+    const unit = oneLine(o.unit, 16)
+    out.push({ name, ...(qty !== undefined ? { qty } : {}), ...(unit ? { unit } : {}) })
+  }
+  return out
+}
+
+/** A model's steps, numbering stripped: the app numbers them itself, and cook mode counts them. */
+export function parseSteps(raw: unknown, max = SUGGESTION_STEPS_MAX): string[] {
+  return (Array.isArray(raw) ? raw : [])
+    // "1. Heat the oil" → "Heat the oil"; "2.5 kg of flour" keeps its number
+    .map(st => oneLine(st, 300).replace(/^(?:step\s*)?\d{1,2}[.)]\s+/i, ''))
+    .filter(Boolean)
+    .slice(0, max)
+}
+
+/**
  * The suggester's answer, kept only where it is sound: a title that is not one
  * of theirs and not excluded, once each; references only to recipes that were
  * sent; and every list capped — at most five dishes, twenty ingredients and
@@ -1041,7 +1077,6 @@ export function parseRecipeSuggestions(text: string, offered: RecipeSuggestInput
       : []
   const refs = new Set(offered.recipes.map(r => r.ref.toUpperCase()))
   const taken = new Set([...offered.recipes.map(r => recipeTitleKey(r.name)), ...offered.exclude.map(recipeTitleKey)].filter(Boolean))
-  const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max).trim() : '')
   const out: RecipeSuggestion[] = []
   for (const x of list) {
     if (out.length >= SUGGESTIONS_MAX) break
@@ -1053,23 +1088,7 @@ export function parseRecipeSuggestions(text: string, offered: RecipeSuggestInput
     taken.add(key)
     const similarTo = [...new Set((Array.isArray(s.similarTo) ? s.similarTo : []).map(r => oneLine(r, 8).toUpperCase()).filter(r => refs.has(r)))].slice(0, SIMILAR_MAX)
     const tags = [...new Set((Array.isArray(s.tags) ? s.tags : []).map(t => oneLine(t, 24).toLowerCase().replace(/^#/, '')).filter(Boolean))].slice(0, SUGGESTION_TAGS_MAX)
-    const ingredients: RecipeSuggestion['ingredients'] = []
-    for (const ing of Array.isArray(s.ingredients) ? s.ingredients : []) {
-      if (ingredients.length >= SUGGESTION_INGREDIENTS_MAX) break
-      const o = typeof ing === 'string' ? { name: ing } : ing && typeof ing === 'object' ? (ing as Record<string, unknown>) : null
-      const name = o ? oneLine(o.name, 60) : ''
-      if (!o || !name) continue
-      const n = typeof o.qty === 'number' ? o.qty : typeof o.qty === 'string' && o.qty.trim() ? Number(o.qty) : NaN
-      const qty = Number.isFinite(n) && n > 0 && n <= 10_000 ? Math.round(n * 100) / 100 : undefined
-      const unit = oneLine(o.unit, 16)
-      ingredients.push({ name, ...(qty !== undefined ? { qty } : {}), ...(unit ? { unit } : {}) })
-    }
-    const steps = (Array.isArray(s.steps) ? s.steps : [])
-      // "1. Heat the oil" → "Heat the oil"; "2.5 kg of flour" keeps its number
-      .map(st => oneLine(st, 300).replace(/^(?:step\s*)?\d{1,2}[.)]\s+/i, ''))
-      .filter(Boolean)
-      .slice(0, SUGGESTION_STEPS_MAX)
-    out.push({ title, why: oneLine(s.why, 200), similarTo, tags, ingredients, steps })
+    out.push({ title, why: oneLine(s.why, 200), similarTo, tags, ingredients: parseIngredients(s.ingredients), steps: parseSteps(s.steps) })
   }
   return out
 }
@@ -1083,3 +1102,59 @@ export async function suggestRecipes(input: RecipeSuggestInput): Promise<RecipeS
   return parseRecipeSuggestions(await complete(system, prompt, 1800, true), input)
 }
 
+
+/** What reading a pasted recipe found. Everything is a proposal until the cook saves it. */
+export interface ReadRecipe {
+  /** The dish's name, when the text names one; the editor keeps what is already typed otherwise. */
+  name: string
+  servings?: number
+  ingredients: { name: string; qty?: number; unit?: string }[]
+  steps: string[]
+}
+
+/** As much text as one recipe can reasonably need — a long web page is mostly not the recipe. */
+const RECIPE_TEXT_MAX = 8000
+
+export const RECIPE_TEXT_HINT = 'Paste the recipe — a card, a text from someone, a page from a site. It never leaves for anywhere but Drafter’s own server.'
+
+export function buildReadRecipePrompt(text: string): { system: string; prompt: string } {
+  const system = [
+    'You read a recipe someone pasted and return what it says, as JSON.',
+    'Shape: {"name": string, "servings": number, "ingredients": [{"name": string, "qty": number, "unit": string}], "steps": [string]}.',
+    'An ingredient is one line of the shopping list: "2 large onions, diced" is name "onions", qty 2, unit "" — the size and the cut belong in the step, not the name, and a name is what you would look for in a shop.',
+    'Halve nothing and scale nothing: give the quantities as written, for the servings as written.',
+    'A step is one instruction, no numbering.',
+    'Leave out anything the text does not say. Omit servings rather than guess it, omit qty rather than guess it, and never invent an ingredient to round out a dish.',
+  ].join(' ')
+  const prompt = `Read this recipe:\n"""\n${text.slice(0, RECIPE_TEXT_MAX)}\n"""`
+  return { system, prompt }
+}
+
+/** The reader's answer, kept only where it is sound. Throws when the reply holds no JSON at all. */
+export function parseReadRecipe(text: string): ReadRecipe {
+  const raw = extractJSON<unknown>(text)
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const n = typeof o.servings === 'number' ? o.servings : typeof o.servings === 'string' && o.servings.trim() ? Number(o.servings) : NaN
+  return {
+    name: oneLine(o.name, 80),
+    // a recipe for 0 or for 300 is a misread, not a recipe
+    servings: Number.isFinite(n) && n >= 1 && n <= 64 ? Math.round(n) : undefined,
+    ingredients: parseIngredients(o.ingredients),
+    steps: parseSteps(o.steps),
+  }
+}
+
+/**
+ * "✨ Paste a recipe": one /api/ai call that turns pasted text into the
+ * ingredients and steps the app stores.
+ *
+ * This is the editor's only ✨, and it is here because the grocery list is
+ * built from ingredients (`groceryFromRecipes` in shared/kitchen.mjs): a recipe
+ * saved as a bare name can never put a line on it, and typing a shop's worth of
+ * rows by hand one "+ Ingredient" at a time is why thirty of them were bare.
+ * Nothing is saved — the fields fill in, and the cook reads them before saving.
+ */
+export async function readRecipe(text: string): Promise<ReadRecipe> {
+  const { system, prompt } = buildReadRecipePrompt(text)
+  return parseReadRecipe(await complete(system, prompt, 2048, true))
+}

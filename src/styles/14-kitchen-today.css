@@ -206,6 +206,22 @@
   border-radius: 8px;
   padding: 8px 10px;
 }
+/* Reading a pasted recipe, above the fields it fills in. */
+.recipe-paste {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.recipe-paste-foot {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.recipe-paste .chart-sub,
+.recipe-paste .warn {
+  margin: 8px 0 0;
+}
+
 .ing-row {
   display: grid;
   grid-template-columns: 4.5rem 5rem 1fr;
