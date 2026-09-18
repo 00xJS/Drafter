@@ -79,7 +79,7 @@ describe('with Mine on, a gift someone else in the household is buying still cou
     const mine: Task = { ...gift, id: 'm', title: 'Book a table', tags: [], ownerId: 'me' }
     const all = [theirs, mine]
     const args = {
-      store: { tasks: all },
+      store: { tasks: all, notes: [] },
       household: { myId: 'me', info: { household: { id: 'h' }, members: [{ userId: 'me' }, { userId: 'partner' }] } },
     } as unknown as Parameters<typeof useMineOnly>[0]
     // useMineOnly's own Mine filter, through one server render (no effects run)

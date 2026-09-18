@@ -1,10 +1,11 @@
+import { memberName } from '../../household'
 import type { PlannerCtx } from './ctx'
 import { Bills, Board, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
 
 /** Tasks: the list, the board, the bills and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, filteredTasks, inHousehold, mineOnly, setMineOnly } = p
+  const { store, household, projectMap, filteredTasks, filteredNotes, inHousehold, mineOnly, setMineOnly } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
   const { openTask, newTask, deleteTask, changeStatus, showToast } = p
 
@@ -23,11 +24,12 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             </button>
           ))}
         </span>
-        {/* whose tasks, not which lens — so a group beside the tablist,
+        {/* whose records, not which lens — so a group beside the tablist,
             not a tab; it narrows Today, the list and the board alike
-            (see filteredTasks) */}
+            (see filteredTasks), and on Notes it hides the ones a peer shared
+            (filteredNotes) */}
         {inHousehold && (
-          <span className="segmented mine-seg" role="group" aria-label="Whose tasks">
+          <span className="segmented mine-seg" role="group" aria-label={tasksTab === 'notes' ? 'Whose notes' : 'Whose tasks'}>
             <button type="button" className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
               Mine
             </button>
@@ -78,7 +80,11 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
           // notes of their own beside the project pads: the list, a page each,
           // and a delete that goes to Trash with the same Undo tasks have
-          notes={store.notes}
+          notes={filteredNotes}
+          allNotes={store.notes}
+          myId={household.myId}
+          inHousehold={inHousehold}
+          nameOf={id => memberName(household.info, id)}
           onSaveNote={note => store.upsert(note)}
           onDeleteNote={id => {
             const note = store.notes.find(x => x.id === id)

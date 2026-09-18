@@ -160,7 +160,8 @@ describe('one home project: the bar and its filter are gone', () => {
   it('keeps the switch out of the Tasks tablist, as a named group beside it', () => {
     // VoiceOver reads a tablist's children as tabs; Mine / Everyone are not
     expect(planner).toMatch(/<div className="people-tab-seg tasks-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
-    expect(planner).toMatch(/className="segmented mine-seg" role="group" aria-label="Whose tasks"/)
+    // it narrows the notes as well as the tasks now, so the label says which
+    expect(planner).toMatch(/className="segmented mine-seg" role="group" aria-label=\{tasksTab === 'notes' \? 'Whose notes' : 'Whose tasks'\}/)
   })
 
   it('says so on Home and Calendar when Mine is on, with the way off', () => {

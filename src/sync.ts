@@ -17,6 +17,18 @@ export interface SyncResult {
   stale: string[]
   /** Ids we pushed that the server had permanently purged; it did not re-insert them. */
   gone: string[]
+  /**
+   * Every note owned by SOMEONE ELSE that this account can see right now,
+   * whatever the cursor — the full set, not a delta. A cached peer note that is
+   * not in it was un-shared, and this is the only way a reader can learn: an
+   * invisible row cannot arrive in `items`, so silence would read as "nothing
+   * changed" and the note would sit in their list forever.
+   *
+   * Null when the server did not say (an older sync_posts, or the legacy array
+   * shape). Null means "no information", never "nothing visible" — a client
+   * that confused the two would empty its Notes list against an old server.
+   */
+  peerNotes: string[] | null
   /** True when the failure was an expired/invalid session rather than the network. */
   authError: boolean
   /**
@@ -29,7 +41,7 @@ export interface SyncResult {
 
 type RemoteRow = Item & { syncedAt?: string }
 
-const OFFLINE: Omit<SyncResult, 'authError'> = { items: null, rejected: [], reasons: {}, stale: [], gone: [], reportsRejections: false }
+const OFFLINE: Omit<SyncResult, 'authError'> = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, reportsRejections: false }
 
 function ids(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
@@ -51,14 +63,14 @@ function rows(list: unknown[]): RemoteRow[] {
 /**
  * Read a sync_posts answer in any shape production has spoken or will speak:
  * the legacy bare array of rows; `{ items, rejected }`; and
- * `{ items, rejected, stale, gone }`. A rejected entry may be a bare id or
+ * `{ items, rejected, stale, gone, peerNotes }`. A rejected entry may be a bare id or
  * `{ id, reason }`, and a `reasons` map is honoured too — whichever the server
  * sends, a reason is kept for Settings. Null for anything unrecognisable.
  */
 export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' | 'items'> & { items: Item[] }) | null {
   if (Array.isArray(data)) return { ...OFFLINE, items: rows(data) }
   if (!data || typeof data !== 'object') return null
-  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown }
+  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown; peerNotes?: unknown }
   const rejected: string[] = []
   const reasons: Record<string, string> = {}
   for (const entry of Array.isArray(obj.rejected) ? obj.rejected : []) {
@@ -81,6 +93,8 @@ export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' 
     reasons,
     stale: ids(obj.stale),
     gone: ids(obj.gone),
+    // only an array is an answer; a server that says nothing revokes nothing
+    peerNotes: Array.isArray(obj.peerNotes) ? ids(obj.peerNotes) : null,
     reportsRejections: true,
   }
 }

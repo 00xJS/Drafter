@@ -32,7 +32,31 @@ export function kindOf(data) {
  * Whether `readerId` may read a row of `kind` owned by `ownerId`, as far as the
  * kind goes: a personal kind is its owner's alone. Household membership is the
  * caller's own check (household_user_ids() in the policy).
+ *
+ * The kind is not the whole answer any more — a note is its owner's until they
+ * share it (v3.16) — so a reader holding the row should call readableRow.
  */
 export function readableKind(kind, ownerId, readerId) {
   return !PERSONAL_KINDS.has(kind ?? 'task') || (!!readerId && ownerId === readerId)
+}
+
+/**
+ * Whether `readerId` may read this row, kind AND record. Use this wherever the
+ * row itself is in hand; readableKind only answers the part a kind can answer.
+ *
+ * Everything the "household access" policy decides, for the readers that never
+ * meet it: the service key bypasses RLS, so the ICS feed, the nightly backup,
+ * the morning digest and the MCP server each apply this themselves. A peer's
+ * unshared note reaching any of them is the same leak as a peer's journal —
+ * the backup is one signed link away from whoever holds Admin.
+ *
+ * `shared` absent reads as not shared, which is every note written before v3.16.
+ */
+export function readableRow(data, ownerId, readerId) {
+  if (!!readerId && ownerId === readerId) return true
+  const kind = kindOf(data)
+  if (PERSONAL_KINDS.has(kind)) return false
+  // the one kind whose audience is per record rather than per kind
+  if (kind === 'note') return data?.shared === true
+  return true
 }

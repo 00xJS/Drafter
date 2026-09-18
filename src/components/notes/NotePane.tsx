@@ -3,7 +3,7 @@ import { Note } from '../../types'
 import { timeAgo } from '../../utils'
 import { ConfirmButton } from '../ConfirmButton'
 import { RichNotes } from '../RichNotes'
-import { createNoteSaver, draftOf, hasNoteText, NoteDraft, UNTITLED } from './model'
+import { createNoteSaver, draftOf, hasNoteText, noteIsMine, NoteDraft, UNTITLED } from './model'
 import { NoteTips } from './NoteTips'
 import { tipAttrs } from './tips'
 
@@ -19,6 +19,16 @@ interface Props {
   onBack(): void
   /** Task: the selected line becomes a task, in the note's project when it has one. */
   onCreateTask(title: string, projectId: string): void
+  /**
+   * The reader's account id, when this planner is shared with a household.
+   * Null or absent means there is nobody to share with, and the Share button
+   * stays away rather than offering a choice that has no audience.
+   */
+  myId?: string | null
+  /** True when this account is in a household; without one, sharing means nothing. */
+  inHousehold?: boolean
+  /** The name of whoever owns a note that is not yours, for the "shared by" line. */
+  ownerName?: string | null
 }
 
 /**
@@ -28,7 +38,7 @@ interface Props {
  * ongoing project, so nothing here asks what a note is about; a project an
  * older note was saved with stays on it, carried through every save.
  */
-export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask }: Props) {
+export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask, myId, inHousehold, ownerName }: Props) {
   const [draft, setDraft] = useState<NoteDraft>(() => draftOf(stored ?? note))
   const [dirty, setDirty] = useState(false)
   const [savedAt, setSavedAt] = useState<string | undefined>(undefined)
@@ -102,6 +112,11 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask 
 
   const hasText = hasNoteText(draft.body)
   const blank = !draft.title.trim() && !hasText
+  // Whose note this is decides what the header offers. Only the owner can
+  // share or un-share: the database agrees (a peer cannot write to a note they
+  // could not read), so a button here would be a lie the server refuses.
+  const mine = noteIsMine(stored ?? note, myId ?? null)
+  const shared = mine ? !!draft.shared : true
   const status = blank
     ? inStore
       ? 'Not saved while it is empty'
@@ -127,26 +142,54 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask 
           All notes
         </button>
         <span className="spacer" />
-        <button
-          type="button"
-          className={draft.pinned ? 'btn subtle note-pin on' : 'btn subtle note-pin'}
-          {...tipAttrs(draft.pinned ? 'Unpin: stop keeping it at the top of Notes' : 'Pin: keep it at the top of Notes')}
-          onClick={() => edit({ pinned: !draft.pinned }, true)}
-        >
-          {draft.pinned ? '📌 Unpin' : '📌 Pin'}
-        </button>
-        {onDelete && inStore && (
-          <ConfirmButton
-            className="btn subtle danger"
-            tip="Delete: move this note to Trash, where it can be restored"
-            onConfirm={() => {
-              saver.remove()
-              onBack()
-            }}
+        {/* The actions travel together. Measured at 375pt, "All notes" plus a
+            shared note's three buttons comes to more than the header is wide
+            once it is pinned ("Unpin" is the longest word here), and a group
+            that wraps within itself puts the overflow under the other actions
+            rather than under "All notes", where it read as a mistake. */}
+        <span className="note-head-actions">
+          {inHousehold &&
+            (mine ? (
+              <button
+                type="button"
+                className={shared ? 'btn subtle note-share on' : 'btn subtle note-share'}
+                aria-pressed={shared}
+                {...tipAttrs(
+                  shared
+                    ? 'Shared: everyone in your household can read this note. Press to keep it to yourself.'
+                    : 'Private: only you can read this note. Press to share it with your household.',
+                )}
+                onClick={() => edit({ shared: !shared }, true)}
+              >
+                {shared ? '👥 Shared' : '🔒 Private'}
+              </button>
+            ) : (
+              // not yours to share or un-share — said, not offered
+              <span className="note-shared-by" {...tipAttrs('Someone in your household shared this note with you. Only they can stop sharing it.')}>
+                👥 {ownerName ? `${ownerName}’s note` : 'Shared with you'}
+              </span>
+            ))}
+          <button
+            type="button"
+            className={draft.pinned ? 'btn subtle note-pin on' : 'btn subtle note-pin'}
+            {...tipAttrs(draft.pinned ? 'Unpin: stop keeping it at the top of Notes' : 'Pin: keep it at the top of Notes')}
+            onClick={() => edit({ pinned: !draft.pinned }, true)}
           >
-            Delete
-          </ConfirmButton>
-        )}
+            {draft.pinned ? '📌 Unpin' : '📌 Pin'}
+          </button>
+          {onDelete && inStore && (
+            <ConfirmButton
+              className="btn subtle danger"
+              tip="Delete: move this note to Trash, where it can be restored"
+              onConfirm={() => {
+                saver.remove()
+                onBack()
+              }}
+            >
+              Delete
+            </ConfirmButton>
+          )}
+        </span>
       </header>
       <input
         className="note-title-input"

@@ -6,6 +6,10 @@ import { editedLabel, matchesQuery, notesIndex } from './model'
 interface Props {
   notes: Note[]
   projects: Project[]
+  /** The reader's account id, so a row can say whose note it is. */
+  myId?: string | null
+  /** A member's display name, for "Maria" on their shared note. */
+  nameOf?(id: string | undefined): string | null
   /** The search, held by the view so All notes comes back to the same list. */
   query: string
   onQuery(q: string): void
@@ -21,8 +25,8 @@ interface Props {
  * ones on top (a pad has a Pin of its own), then newest first. A note's row
  * names no project: there is one ongoing project.
  */
-export function NotesIndex({ notes, projects, query, onQuery, onOpenNote, onOpenPad, onNewNote }: Props) {
-  const all = useMemo(() => notesIndex(notes, projects), [notes, projects])
+export function NotesIndex({ notes, projects, myId, nameOf, query, onQuery, onOpenNote, onOpenPad, onNewNote }: Props) {
+  const all = useMemo(() => notesIndex(notes, projects, '', { myId, nameOf }), [notes, projects, myId, nameOf])
   const shown = query.trim() ? all.filter(e => matchesQuery(query, e.title, e.text)) : all
   const byId = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
   const now = Date.now()
@@ -66,6 +70,14 @@ export function NotesIndex({ notes, projects, query, onQuery, onOpenNote, onOpen
                         )}
                         {project && <span className="pdot" style={{ background: project.color }} />}
                         <span className="note-row-title">{`${project?.emoji ? `${project.emoji} ` : ''}${e.title}`}</span>{' '}
+                        {/* private is the default, so only a shared note is marked — a
+                            badge on every row would say nothing. A pad is the project's
+                            and already carries its own tag. */}
+                        {e.kind === 'note' && e.shared && (
+                          <span className="note-row-share" title={e.sharedBy ? `${e.sharedBy} shared this note with you` : 'Shared with your household'}>
+                            👥 {e.sharedBy ?? 'Shared'}
+                          </span>
+                        )}{' '}
                         <span className="note-row-when">{editedLabel(e.updatedAt, now)}</span>
                       </span>{' '}
                       <span className="note-row-excerpt">{excerpt(e.text, 160) || 'No text yet'}</span>

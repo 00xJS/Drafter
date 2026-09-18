@@ -9,7 +9,7 @@
 // sweepPersonalPhotos), and hard-deletes purged tombstones past
 // TOMBSTONE_TTL_MS (peers have had time to see them).
 
-import { kindOf, readableKind } from '../../../shared/kinds.mjs'
+import { readableRow } from '../../../shared/kinds.mjs'
 import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mjs'
 import { keyHeaders } from './supabasekeys.mjs'
 
@@ -138,14 +138,15 @@ export function isSnapshotPath(path) {
  * The snapshot body, exactly as it is written. Pure, so tests can pin the shape.
  * runBackup hands each account only the rows it owns; the filter is the belt to
  * those braces. A snapshot is one signed link away from whoever holds Admin, so
- * another member's journal, reviews, calendars, habits or routines must never
- * ride in this account's file, even if a caller passes the household's rows.
+ * another member's journal, reviews, calendars, habits, routines or private
+ * notes must never ride in this account's file, even if a caller passes the
+ * household's rows.
  */
 export function buildSnapshot(userId, rows, exportedAt = new Date()) {
   return {
     exportedAt: new Date(exportedAt).toISOString(),
     userId,
-    items: (rows ?? []).filter(r => readableKind(kindOf(r?.data), r?.user_id, userId)).map(r => r.data),
+    items: (rows ?? []).filter(r => readableRow(r?.data, r?.user_id, userId)).map(r => r.data),
   }
 }
 

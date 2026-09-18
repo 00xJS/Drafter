@@ -841,6 +841,10 @@ export const TOOLS = [
       if (!name && !body) throw new Error('Give a title or some text: a blank note is never saved.')
       if (projectId) await db.fetchItem(String(projectId), 'project')
       const stamp = clock.iso()
+      // No `shared`, and no way to pass one: a note an agent writes is private,
+      // like every other new note, and deciding who else reads it is the
+      // person's. update_note carries whatever flag the stored note has, so an
+      // agent can edit a shared note without quietly un-sharing it either.
       /** @type {import('../src/types.js').Note} */
       const note = {
         kind: 'note',

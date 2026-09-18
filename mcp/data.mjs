@@ -12,7 +12,7 @@
 // stopped there.
 
 import { legacyPostToTask } from '../shared/domain.mjs'
-import { PERSONAL_KINDS, kindOf, readableKind } from '../shared/kinds.mjs'
+import { PERSONAL_KINDS, readableRow } from '../shared/kinds.mjs'
 
 export { PERSONAL_KINDS }
 
@@ -28,10 +28,11 @@ const POSTS = `${POSTS_ANY}&deleted=is.false`
 /**
  * The posts policy as `owner` meets it, applied again to what came back: the
  * owner's own rows and legacy unowned ones (user_id null) pass, anyone else's
- * only when the kind is shared with the household.
+ * only when the household shares that kind — and, for a note, only when its
+ * owner shared that note.
  */
 export function ownerMaySee(row, owner) {
-  return row?.user_id === null || readableKind(kindOf(row?.data), row?.user_id, owner)
+  return row?.user_id === null || readableRow(row?.data, row?.user_id, owner)
 }
 
 export class DataError extends Error {

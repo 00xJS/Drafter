@@ -1180,9 +1180,11 @@ begin
 end $$;
 
 -- ===== v3.13 notes (level-up) =====
--- 20260922000000_v3_13_notes: sync_posts takes kind = 'note', and a note is
--- shared with the household like a task — the owner stores one, a peer sees it
--- and may edit it, a stranger can do neither — and the sync canary covers it.
+-- 20260922000000_v3_13_notes: sync_posts takes kind = 'note'. A SHARED note is
+-- the household's like a task — the owner stores one, a peer sees it and may
+-- edit it, a stranger can do neither — and the sync canary covers it. Since
+-- v3.16 sharing is per note, so the note here carries the flag; v3.16 below
+-- covers the private case and un-sharing.
 
 -- ------------------------------------------------ v3.13-1. the owner stores a note
 begin;
@@ -1192,7 +1194,7 @@ do $$
 declare r jsonb;
 begin
   r := public.sync_posts('[
-    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall</p><p><img data-media=\"m-swatch\" alt=\"swatch\"></p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T09:00:00.000Z"}
+    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall</p><p><img data-media=\"m-swatch\" alt=\"swatch\"></p>","projectId":"p1","pinned":true,"shared":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T09:00:00.000Z"}
   ]'::jsonb, '2099-01-01');
   if jsonb_array_length(r -> 'rejected') <> 0 then
     raise exception 'FAIL v3.13-1: sync_posts rejected the owner''s note: %', r -> 'rejected';
@@ -1225,7 +1227,7 @@ begin
   end if;
   -- shared like a task: the peer's edit is a household edit, not a refused write
   r := public.sync_posts('[
-    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall, white for the ceiling</p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T10:00:00.000Z"}
+    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall, white for the ceiling</p>","projectId":"p1","pinned":true,"shared":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-12T10:00:00.000Z"}
   ]'::jsonb, '2099-01-01');
   if jsonb_array_length(r -> 'rejected') <> 0 then
     raise exception 'FAIL v3.13-2: the peer''s edit of a shared note was rejected: %', r -> 'rejected';
@@ -1750,5 +1752,126 @@ begin
   end if;
   select count(*) into fks from pg_constraint where conrelid = 'storage.objects'::regclass and contype = 'f';
   raise notice 'ok v3.14-7: the clean-up finds live, trashed and purged pieces by kind; Trash keeps its photo ids, Delete forever keeps none; nothing points into a deleted account''s folder; the service role deletes personal photos by name and nothing else (storage.objects has % foreign key(s) here, a stub; unverified on Supabase)', fks;
+end $$;
+commit;
+
+-- ===== v3.16 per-note sharing =====
+-- 20260925000000_v3_16_note_sharing: a note is its owner's until they share it.
+-- The policy decides, not the client, so nothing downstream can leak one by
+-- forgetting to filter — and sync_posts answers `peerNotes` so that the person
+-- already holding a copy learns when it is taken back. Un-sharing is invisible
+-- otherwise: a row a reader may no longer select is simply absent from their
+-- delta, which is what "nothing changed" looks like.
+
+-- --------------------------- v3.16-1. the owner's private note stays the owner's
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-diary","title":"Not for sharing","body":"<p>Only mine</p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"note","id":"note-false","title":"Explicitly not","body":"<p>Also mine</p>","shared":false,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.16-1: sync_posts rejected the owner''s own notes: %', r -> 'rejected';
+  end if;
+  r := public.sync_posts('[]'::jsonb, null);
+  select array_agg(x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
+  if not ('note-diary' = any(ids)) or not ('note-false' = any(ids)) then
+    raise exception 'FAIL v3.16-1: the owner must always read their own notes, saw %', ids;
+  end if;
+  -- peerNotes is about OTHER people's notes; the owner's own are never in it
+  if (r -> 'peerNotes') @> '["note-diary"]'::jsonb or (r -> 'peerNotes') @> '["note-paint"]'::jsonb then
+    raise exception 'FAIL v3.16-1: peerNotes named the caller''s own note: %', r -> 'peerNotes';
+  end if;
+  raise notice 'ok v3.16-1: a note with no flag, and one with shared:false, are the owner''s to read and nobody''s to see';
+end $$;
+commit;
+
+-- ---------------- v3.16-2. a peer reads the shared note and not the private ones
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if 'note-diary' = any(ids) or 'note-false' = any(ids) then
+    raise exception 'FAIL v3.16-2: a peer''s pull returned a private note, saw %', ids;
+  end if;
+  if not ('note-paint' = any(ids)) then
+    raise exception 'FAIL v3.16-2: a peer''s pull should still return the shared note, saw %', ids;
+  end if;
+  if (select count(*) from public.posts where id in ('note-diary', 'note-false')) <> 0 then
+    raise exception 'FAIL v3.16-2: a direct select shows the peer a private note';
+  end if;
+  -- the whole set of the owner's notes this peer may read, whatever the cursor
+  if not ((r -> 'peerNotes') @> '["note-paint"]'::jsonb) then
+    raise exception 'FAIL v3.16-2: peerNotes should name the shared note, got %', r -> 'peerNotes';
+  end if;
+  if (r -> 'peerNotes') @> '["note-diary"]'::jsonb or (r -> 'peerNotes') @> '["note-false"]'::jsonb then
+    raise exception 'FAIL v3.16-2: peerNotes named a private note, got %', r -> 'peerNotes';
+  end if;
+  -- a write onto a note it cannot read is refused, so a private note cannot be taken over
+  r := public.sync_posts('[{"kind":"note","id":"note-diary","title":"Mine now","body":"","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["note-diary"]'::jsonb then
+    raise exception 'FAIL v3.16-2: a peer''s write onto a private note should be rejected, got %', r;
+  end if;
+  -- and a peer may not un-share what is not theirs: the with check refuses it
+  r := public.sync_posts('[{"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage</p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-18T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["note-paint"]'::jsonb then
+    raise exception 'FAIL v3.16-2: a peer un-shared the owner''s note, got %', r;
+  end if;
+  raise notice 'ok v3.16-2: a peer reads the shared note only, is named it in peerNotes, and can neither take a private note nor un-share a shared one';
+end $$;
+commit;
+do $$
+begin
+  if (select data ->> 'title' from public.posts where id = 'note-diary') is distinct from 'Not for sharing' then
+    raise exception 'FAIL v3.16-2: the private note was changed by a peer';
+  end if;
+  if coalesce((select data ->> 'shared' from public.posts where id = 'note-paint'), 'false') <> 'true' then
+    raise exception 'FAIL v3.16-2: the shared note came back un-shared after the peer''s refused write';
+  end if;
+end $$;
+
+-- ------------------------------ v3.16-3. un-sharing reaches the peer holding it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-paint","title":"Paint colours","body":"<p>Sage for the hall</p>","projectId":"p1","pinned":true,"createdAt":"2026-09-12T09:00:00.000Z","updatedAt":"2026-09-18T13:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.16-3: the owner could not un-share their own note: %', r -> 'rejected';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  -- the delta a device with a cursor asks for: the un-shared note cannot be in
+  -- it, which is exactly why peerNotes has to be there
+  r := public.sync_posts('[]'::jsonb, '2026-09-18T00:00:00.000Z');
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if 'note-paint' = any(ids) then
+    raise exception 'FAIL v3.16-3: the un-shared note came back in the peer''s delta, saw %', ids;
+  end if;
+  if (r -> 'peerNotes') @> '["note-paint"]'::jsonb then
+    raise exception 'FAIL v3.16-3: peerNotes still names the un-shared note, got %', r -> 'peerNotes';
+  end if;
+  if (select count(*) from public.posts where id = 'note-paint') <> 0 then
+    raise exception 'FAIL v3.16-3: a direct select still shows the peer the un-shared note';
+  end if;
+  raise notice 'ok v3.16-3: un-sharing takes the note out of the peer''s reach, and peerNotes is how their cached copy finds out';
 end $$;
 commit;

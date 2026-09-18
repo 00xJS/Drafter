@@ -53,8 +53,9 @@ describe('notesIndex: one list of notes and project pads', () => {
 
   it('names a note by its title or "Untitled note", and a pad by its project, with the text on one line', () => {
     const [n, p] = notesIndex([note('n', { title: '', body: '<p>text only</p>', updatedAt: day(4) })], [project('p', { name: 'Hall', notesHtml: '<h2>Paint</h2><p>Sage</p>', updatedAt: day(3) })])
-    expect(n).toEqual({ key: 'note:n', kind: 'note', id: 'n', title: UNTITLED, text: 'text only', updatedAt: day(4), pinned: false, projectId: undefined })
-    expect(p).toEqual({ key: 'pad:p', kind: 'pad', id: 'p', title: 'Hall', text: 'Paint Sage', updatedAt: day(3), pinned: false, projectId: 'p' })
+    expect(n).toEqual({ key: 'note:n', kind: 'note', id: 'n', title: UNTITLED, text: 'text only', updatedAt: day(4), pinned: false, shared: false, sharedBy: undefined, projectId: undefined })
+    // a pad is the project's, and the household shares the project
+    expect(p).toEqual({ key: 'pad:p', kind: 'pad', id: 'p', title: 'Hall', text: 'Paint Sage', updatedAt: day(3), pinned: false, shared: true, projectId: 'p' })
   })
 
   it('carries what a note is about', () => {
@@ -135,7 +136,7 @@ describe('when a note is saved, and as what', () => {
 
   it('reads "Untitled note" back as an empty title, so saving it again keeps it untitled', () => {
     expect(draftOf(note('n', { title: UNTITLED }))).toMatchObject({ title: '' })
-    expect(draftOf(note('n', { title: 'Hall', pinned: true, projectId: 'p' }))).toEqual({ title: 'Hall', body: '<p>n text</p>', projectId: 'p', pinned: true })
+    expect(draftOf(note('n', { title: 'Hall', pinned: true, projectId: 'p' }))).toEqual({ title: 'Hall', body: '<p>n text</p>', projectId: 'p', pinned: true, shared: false })
     expect(noteToSave(note('n', { title: UNTITLED }), draftOf(note('n', { title: UNTITLED })))).toMatchObject({ title: UNTITLED })
   })
 })

@@ -4,3 +4,9 @@ export declare const SYNC_KINDS: ReadonlySet<string>
 export declare const PERSONAL_KINDS: ReadonlySet<string>
 export declare function kindOf(data: Record<string, unknown> | null | undefined): string
 export declare function readableKind(kind: string | null | undefined, ownerId: string | null | undefined, readerId: string | null | undefined): boolean
+/** Kind AND record: everything the posts policy decides, for readers that bypass RLS. */
+export declare function readableRow(
+  data: Record<string, unknown> | null | undefined,
+  ownerId: string | null | undefined,
+  readerId: string | null | undefined,
+): boolean

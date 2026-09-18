@@ -6,9 +6,14 @@ import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
 
 // kind 'note' (v3.13) through the server's readers, which all read with the
 // service key and so decide for themselves what a row is. A note is a page of
-// text shared with the household: it is backed up with its owner and reaches a
-// peer like a task, and the calendar feed and the morning digest have nothing
-// to say about it. None of them needed a change for that; this keeps it so.
+// text that is its owner's until they share it (v3.16): it is backed up with
+// its owner, reaches a peer only with `shared`, and the calendar feed and the
+// morning digest have nothing to say about it either way.
+//
+// Every reader here bypasses RLS, so the database's answer is no help to them
+// — each has to apply readableRow itself. A peer's private note in a backup is
+// the same leak as a peer's journal: a snapshot is one signed link away from
+// whoever holds Admin.
 
 const ME = '00000000-0000-0000-0000-00000000000a'
 const PEER = '00000000-0000-0000-0000-00000000000b'
@@ -49,10 +54,38 @@ describe('notes on the server', () => {
     expect(snap.items).toEqual([note('n1'), task('t1')])
   })
 
-  it('reach a household peer like a task, through the digest’s and the feed’s readers', () => {
-    const rows = [{ user_id: PEER, data: note('peer-note') }]
+  it('reach a household peer once it is shared, through the digest’s and the feed’s readers', () => {
+    const rows = [{ user_id: PEER, data: note('peer-note', { shared: true }) }]
     expect((visibleItemsFor(rows, ME, [PEER], ME) as { id: string }[]).map(i => i.id)).toEqual(['peer-note'])
     expect(readableItems(rows, ME).map(i => i.id)).toEqual(['peer-note'])
+  })
+
+  it('stay with their owner until then — absent `shared` is private, which every note written before v3.16 is', () => {
+    const rows = [
+      { user_id: PEER, data: note('peer-private') },
+      { user_id: PEER, data: note('peer-explicitly-not', { shared: false }) },
+      { user_id: PEER, data: note('peer-shared', { shared: true }) },
+      { user_id: ME, data: note('my-private') },
+    ]
+    expect((visibleItemsFor(rows, ME, [PEER], ME) as { id: string }[]).map(i => i.id)).toEqual(['peer-shared', 'my-private'])
+    expect(readableItems(rows, ME).map(i => i.id)).toEqual(['peer-shared', 'my-private'])
+  })
+
+  it('never ride in a peer’s backup: the snapshot is the one file a stranger could be handed', () => {
+    const rows = [
+      { user_id: PEER, data: note('peer-private') },
+      { user_id: PEER, data: note('peer-shared', { shared: true }) },
+      { user_id: ME, data: note('mine') },
+    ]
+    // a shared note is genuinely the household's, so it belongs in the reader's
+    // file the way a peer's task does; a private one must never appear
+    expect(buildSnapshot(ME, rows, new Date(at)).items.map(i => (i as { id: string }).id)).toEqual(['peer-shared', 'mine'])
+  })
+
+  it('and a truthy-looking value is not true: only the boolean shares a note', () => {
+    for (const shared of ['true', 1, {}, ['yes']]) {
+      expect(readableItems([{ user_id: PEER, data: note('n', { shared }) }], ME)).toEqual([])
+    }
   })
 
   it('never reach the calendar feed, whatever fields they carry', () => {

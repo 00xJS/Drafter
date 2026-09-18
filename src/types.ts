@@ -565,7 +565,13 @@ export interface Routine extends Owned {
  * A note: one titled page of rich text. Before notes existed each project had a
  * single pad (Project.notesHtml); those pads are never rewritten into notes —
  * the Notes screen lists each non-empty one beside these records and still
- * saves it to its project. Shared with the household, like tasks.
+ * saves it to its project.
+ *
+ * A note is YOURS until you share it. Notes used to be household-wide like
+ * tasks, which is the wrong default for the one place people write things down
+ * without deciding who they are for. `shared` is the whole of that decision,
+ * and the database enforces it: a peer's query cannot return a note without it
+ * (v3.16).
  */
 export interface Note extends Owned {
   kind: 'note'
@@ -578,6 +584,11 @@ export interface Note extends Owned {
   projectId?: string
   /** Kept at the top of the list. */
   pinned?: boolean
+  /**
+   * Visible to the rest of the household. Absent means no — a note is private
+   * until its owner says otherwise, and only its owner can say so.
+   */
+  shared?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string

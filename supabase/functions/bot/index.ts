@@ -87,25 +87,36 @@ async function scopeOf(admin: Admin): Promise<Scope> {
 /**
  * The posts policy as the owner meets it (migration 20260915): their own rows
  * and legacy unowned ones, and a household member's unless the kind is
- * personal. The same test decides what a read returns and which existing rows
- * a write may land on.
+ * personal — or, for a note, unless they shared it (v3.16, 20260925). The same
+ * test decides what a read returns and which existing rows a write may land on.
+ *
+ * `shared` arrives as a JSON boolean from a row's data and as the text 'true'
+ * when PostgREST projected it with ->>; both mean the same thing here.
  */
-function inScope(scope: Scope, userId: unknown, kind: unknown): boolean {
+function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown): boolean {
   if (userId === null || (scope.owner !== null && userId === scope.owner)) return true
-  return typeof userId === 'string' && scope.peers.includes(userId) && !PERSONAL_KINDS.has(typeof kind === 'string' ? kind : 'task')
+  if (!(typeof userId === 'string' && scope.peers.includes(userId))) return false
+  const k = typeof kind === 'string' ? kind : 'task'
+  if (PERSONAL_KINDS.has(k)) return false
+  if (k === 'note') return shared === true || shared === 'true'
+  return true
 }
 
 /** The same rule as a PostgREST filter, so `limit` counts only rows the bot may read. */
 function scopeFilter(scope: Scope): string {
+  // The note rule is deliberately NOT expressed here. This narrows the query;
+  // inScope decides, row by row, and is what every read is filtered through.
+  // A peer's unshared note may come back from the database and never leaves
+  // this function's caller.
   const branches = ['user_id.is.null']
   if (scope.owner) branches.push(`user_id.eq.${scope.owner}`)
   if (scope.peers.length) branches.push(`and(user_id.in.(${scope.peers.join(',')}),kind.not.in.(${[...PERSONAL_KINDS].join(',')}))`)
   return branches.join(',')
 }
 
-type Post = { id: string; kind?: unknown; deletedAt?: unknown }
+type Post = { id: string; kind?: unknown; deletedAt?: unknown; shared?: unknown }
 /** The rows already stored under a batch's ids: whose each one is, what kind, and whether it is in Trash. */
-type Stored = Map<string, { user_id: string | null; kind: string; deleted: boolean }>
+type Stored = Map<string, { user_id: string | null; kind: string; deleted: boolean; shared: unknown }>
 
 /** The posts in a write batch that carry an id. */
 function postsOf(incoming: unknown[]): Post[] {
@@ -117,10 +128,12 @@ async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
   const stored: Stored = new Map()
   // a page of ids per request keeps the query string short
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await admin.from('posts').select('id,user_id,kind,deleted').in('id', ids.slice(i, i + 100))
+    // `shared` decides a note's audience per record, so the stored flag is needed
+    // here as well as the kind — the whole row's data would be far heavier
+    const { data, error } = await admin.from('posts').select('id,user_id,kind,deleted,shared:data->shared').in('id', ids.slice(i, i + 100))
     if (error) throw new Error(error.message)
-    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string; deleted: boolean }[]) {
-      stored.set(r.id, { user_id: r.user_id, kind: r.kind, deleted: r.deleted === true })
+    for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string; deleted: boolean; shared: unknown }[]) {
+      stored.set(r.id, { user_id: r.user_id, kind: r.kind, deleted: r.deleted === true, shared: r.shared })
     }
   }
   return stored
@@ -134,8 +147,15 @@ async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
  * `rejected` like any refused write while the rest of the batch stores.
  */
 function refusedIds(scope: Scope, incoming: unknown[], stored: Stored): string[] {
-  const kinds = new Map(postsOf(incoming).map(p => [p.id, p.kind]))
-  return [...stored].filter(([id, r]) => !inScope(scope, r.user_id, r.kind) || !inScope(scope, r.user_id, kinds.get(id))).map(([id]) => id)
+  const writes = new Map(postsOf(incoming).map(p => [p.id, p]))
+  return [...stored]
+    .filter(
+      ([id, r]) =>
+        // the row as stored, and the row the write would leave behind: a peer's
+        // shared note may be edited, but not turned back into a private one
+        !inScope(scope, r.user_id, r.kind, r.shared) || !inScope(scope, r.user_id, writes.get(id)?.kind, writes.get(id)?.shared),
+    )
+    .map(([id]) => id)
 }
 
 /**
@@ -225,10 +245,14 @@ Deno.serve(async req => {
     // under the service role sync_posts echoes every row in the table, each with its ownerId
     const res = data as { items?: unknown; rejected?: unknown; stale?: unknown; gone?: unknown } | null
     if (!res || !Array.isArray(res.items)) return fail(502, 'unexpected sync_posts response')
-    const items = (res.items as ({ ownerId?: unknown; kind?: unknown } | null)[]).filter(i => i && inScope(scope, i.ownerId, i.kind))
+    const items = (res.items as ({ ownerId?: unknown; kind?: unknown; shared?: unknown } | null)[]).filter(i => i && inScope(scope, i.ownerId, i.kind, i.shared))
     const listed = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
     // stale: the write lost to a newer edit, and that copy is among the items;
-    // gone: the record was deleted for good, and the write was dropped
+    // gone: the record was deleted for good, and the write was dropped.
+    // sync_posts also answers `peerNotes`, and it is NOT forwarded: the service
+    // role bypasses RLS, so that list holds every note not the owner's,
+    // including ones nobody shared. Naming them would leak what inScope just
+    // filtered out of `items`. Never spread `res` here.
     return Response.json({ posts: { items, rejected: [...listed(res.rejected), ...refused], stale: listed(res.stale), gone: listed(res.gone) } })
   }
 
@@ -240,5 +264,5 @@ Deno.serve(async req => {
   if (error) return fail(500, error.message)
   // the filter does the scoping; checking each row again means a mistake in it can only narrow the answer
   const rows = (data ?? []) as { data: unknown; user_id: string | null; kind: string }[]
-  return Response.json({ posts: rows.filter(r => inScope(scope, r.user_id, r.kind)).map(r => r.data) })
+  return Response.json({ posts: rows.filter(r => inScope(scope, r.user_id, r.kind, (r.data as { shared?: unknown } | null)?.shared)).map(r => r.data) })
 })

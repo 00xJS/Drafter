@@ -27,8 +27,20 @@ export class FakeServer {
   calls: { outgoing: Item[]; since: string | null }[] = []
   /** Runs before each call is answered: where another device writes mid-round. */
   beforeAnswer: ((callNumber: number) => void | Promise<void>) | null = null
-  private rows = new Map<string, { data: Record<string, unknown>; updatedAt: string; syncedAt: string }>()
+  /** Whose session is asking. Everything seeded without an owner is theirs. */
+  caller = 'user-1'
+  private rows = new Map<string, { data: Record<string, unknown>; updatedAt: string; syncedAt: string; owner: string }>()
   private tick = 0
+
+  /**
+   * RLS, as far as these tests need it: your own rows always, a household
+   * peer's rows unless the row is an unshared note (v3.16). The real policy
+   * excludes the personal kinds too; nothing here turns on that.
+   */
+  private visible(r: { data: Record<string, unknown>; owner: string }): boolean {
+    if (r.owner === this.caller) return true
+    return r.data.kind !== 'note' || r.data.shared === true
+  }
 
   private stamp(): string {
     this.tick++
@@ -42,13 +54,26 @@ export class FakeServer {
   }
 
   seed(...items: Item[]): void {
-    for (const item of items) this.rows.set(item.id, { data: JSON.parse(JSON.stringify(item)), updatedAt: item.updatedAt, syncedAt: this.stamp() })
+    this.seedAs(this.caller, ...items)
+  }
+
+  /** Seed rows belonging to somebody else — a household peer. */
+  seedAs(owner: string, ...items: Item[]): void {
+    for (const item of items) this.rows.set(item.id, { data: JSON.parse(JSON.stringify(item)), updatedAt: item.updatedAt, syncedAt: this.stamp(), owner })
+  }
+
+  /** Edit a stored row in place, as its owner would from another device. */
+  patch(id: string, over: Record<string, unknown>): void {
+    const cur = this.rows.get(id)
+    if (!cur) throw new Error(`patch: no row ${id}`)
+    const data = { ...cur.data, ...over }
+    this.rows.set(id, { ...cur, data, updatedAt: (data.updatedAt as string) ?? cur.updatedAt, syncedAt: this.stamp() })
   }
 
   rpc = async (outgoing: Item[], since: string | null): Promise<SyncResult> => {
     const n = this.calls.push({ outgoing: JSON.parse(JSON.stringify(outgoing)), since })
     await this.beforeAnswer?.(n)
-    if (this.offline) return { items: null, rejected: [], reasons: {}, stale: [], gone: [], authError: false, reportsRejections: false }
+    if (this.offline) return { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, authError: false, reportsRejections: false }
     const rejected: unknown[] = []
     const stale: string[] = []
     const gone: string[] = []
@@ -66,14 +91,17 @@ export class FakeServer {
       delete raw.ownerId
       delete raw.syncedAt
       const cur = this.rows.get(id)
-      if (!cur || (raw.updatedAt as string) > cur.updatedAt) this.rows.set(id, { data: raw, updatedAt: raw.updatedAt as string, syncedAt: this.stamp() })
+      if (!cur || (raw.updatedAt as string) > cur.updatedAt) this.rows.set(id, { data: raw, updatedAt: raw.updatedAt as string, syncedAt: this.stamp(), owner: cur?.owner ?? this.caller })
       else stale.push(id)
     }
-    const out = [...this.rows.values()]
+    const readable = [...this.rows.values()].filter(r => this.visible(r))
+    const out = readable
       .filter(r => since === null || r.syncedAt > since || (this.shape === 'new' && stale.includes(r.data.id as string)))
       .sort((a, b) => a.syncedAt.localeCompare(b.syncedAt))
-      .map(r => ({ ...r.data, ownerId: 'user-1', syncedAt: r.syncedAt }))
-    const data = this.shape === 'legacy' ? out : this.shape === 'old' ? { items: out, rejected } : { items: out, rejected, stale, gone }
+      .map(r => ({ ...r.data, ownerId: r.owner, syncedAt: r.syncedAt }))
+    // the whole visible set, cursor or no cursor — how un-sharing reaches a reader
+    const peerNotes = readable.filter(r => r.owner !== this.caller && r.data.kind === 'note').map(r => r.data.id as string)
+    const data = this.shape === 'legacy' ? out : this.shape === 'old' ? { items: out, rejected } : { items: out, rejected, stale, gone, peerNotes }
     return { ...parseSyncResponse(data)!, authError: false }
   }
 }

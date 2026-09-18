@@ -5,7 +5,7 @@
 // feed.mjs (feed.d.mts) was picked up as a function called "feed.d" with no
 // handler — which is what stopped the deploy of 4297356. lib/ is not scanned.
 import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../../shared/domain.mjs'
-import { kindOf, readableKind } from '../../../shared/kinds.mjs'
+import { readableRow } from '../../../shared/kinds.mjs'
 import { keyHeaders } from './supabasekeys.mjs'
 
 const DAY = 86_400_000
@@ -19,13 +19,13 @@ export function withOwner(item, userId) {
 /**
  * Rows read with the service key, as `readerId` may see them: everything the
  * query returned (the reader's own rows and their household's) minus another
- * member's personal kinds — the kind clause of the posts policy, which the
+ * member's personal kinds and unshared notes — the posts policy, which the
  * service key bypasses. The feed only ever publishes tasks, projects and
  * entries, so a peer's journal could not reach a calendar anyway; nothing
  * downstream of this list should have to know that to stay safe.
  */
 export function readableItems(rows, readerId) {
-  return (rows ?? []).filter(r => r && readableKind(kindOf(r.data), r.user_id, readerId)).map(r => withOwner(legacyPostToTask(r.data), r.user_id))
+  return (rows ?? []).filter(r => r && readableRow(r.data, r.user_id, readerId)).map(r => withOwner(legacyPostToTask(r.data), r.user_id))
 }
 
 /** The day before a YYYY-MM-DD key. UTC arithmetic: a date key carries no time, so no DST applies. */

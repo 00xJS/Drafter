@@ -340,9 +340,12 @@ function household(): Row[] {
     at(null, { id: 'legacy-post', title: 'An old social post', body: 'hello', status: 'draft', platforms: ['x'] }),
     // shared with the household: the owner's agent may see a peer's chore
     at(PEER, { kind: 'task', id: 'peer-task', title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] }),
-    // notes are shared too, like tasks
-    at(PEER, { kind: 'note', id: 'peer-note', title: 'Holiday list', body: '<p>Shared with the household</p>', pinned: true }),
-    // personal: never the owner's agent's to read, not even by id
+    // a note is shared one at a time, and this one is (v3.16)
+    at(PEER, { kind: 'note', id: 'peer-note', title: 'Holiday list', body: '<p>Shared with the household</p>', pinned: true, shared: true }),
+    // personal: never the owner's agent's to read, not even by id.
+    // The note here carries no `shared`, which is what a note is until its
+    // owner says otherwise — so the sweep below proves no tool can reach it.
+    at(PEER, { kind: 'note', id: 'peer-private-note', title: `${SECRET} note`, body: `<p>${SECRET} — not shared with anyone</p>` }),
     at(PEER, { kind: 'habit', id: 'peer-a', name: `${SECRET} habit`, done: [today] }),
     at(PEER, { kind: 'routine', id: 'peer-b', name: `${SECRET} routine`, when: 'morning', steps: [{ id: 's1', text: SECRET }], ticks: [] }),
     at(PEER, { kind: 'review', id: 'peer-c', period: 'week', key: week, top: [`${SECRET} review`] }),

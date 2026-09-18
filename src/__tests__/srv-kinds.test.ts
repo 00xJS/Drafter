@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PERSONAL_KINDS, SYNC_KINDS, kindOf, readableKind } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS, SYNC_KINDS, kindOf, readableKind, readableRow } from '../../shared/kinds.mjs'
 import { visibleItemsFor } from '../../shared/digest.mjs'
 import { KINDS } from '../../netlify/functions/lib/datastats.mjs'
 import { KNOWN_KINDS } from '../schema'
@@ -86,12 +86,43 @@ describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
     expect([...PERSONAL_KINDS].filter(k => !SYNC_KINDS.has(k))).toEqual([])
   })
 
-  it('is what the digest hides from a household peer, and nothing more', () => {
+  it('is what the digest hides from a household peer, and — with an unshared note — nothing more', () => {
     const rows = [...SYNC_KINDS].map(kind => ({ user_id: 'peer', data: { kind, id: `peer-${kind}` } }))
     const seen = (visibleItemsFor(rows, 'me', ['me', 'peer'], 'me') as { kind: string }[]).map(i => i.kind)
-    expect(sorted(seen)).toEqual(sorted([...SYNC_KINDS].filter(k => !PERSONAL_KINDS.has(k))))
+    // 'note' is not a personal kind — a shared one is genuinely the
+    // household's — but a note carries its own audience, and these carry no
+    // `shared`, so none of them is this reader's to see (v3.16)
+    expect(sorted(seen)).toEqual(sorted([...SYNC_KINDS].filter(k => !PERSONAL_KINDS.has(k) && k !== 'note')))
     const mine = [...PERSONAL_KINDS].map(kind => ({ user_id: 'me', data: { kind, id: `me-${kind}` } }))
     expect(visibleItemsFor(mine, 'me', ['me', 'peer'], 'me')).toHaveLength(PERSONAL_KINDS.size)
+  })
+
+  it('leaves the note rule to the record: shared reaches a peer, and the kind list never mentions it', () => {
+    const shared = [{ user_id: 'peer', data: { kind: 'note', id: 'peer-note', shared: true } }]
+    expect((visibleItemsFor(shared, 'me', ['me', 'peer'], 'me') as { id: string }[]).map(i => i.id)).toEqual(['peer-note'])
+    expect(PERSONAL_KINDS.has('note')).toBe(false)
+  })
+})
+
+describe('readableRow is the whole posts policy, for the readers that bypass it', () => {
+  it('answers the kind question exactly as readableKind does', () => {
+    for (const kind of SYNC_KINDS) {
+      if (kind === 'note') continue
+      expect(readableRow({ kind }, 'peer', 'me'), kind).toBe(readableKind(kind, 'peer', 'me'))
+      expect(readableRow({ kind }, 'me', 'me'), kind).toBe(readableKind(kind, 'me', 'me'))
+    }
+  })
+
+  it('and the record question a kind cannot answer: a note is its owner’s until `shared` is true', () => {
+    expect(readableRow({ kind: 'note' }, 'peer', 'me')).toBe(false)
+    expect(readableRow({ kind: 'note', shared: true }, 'peer', 'me')).toBe(true)
+    // your own, always — the flag says who else may read it, not whether you may
+    expect(readableRow({ kind: 'note' }, 'me', 'me')).toBe(true)
+  })
+
+  it('matches the newest posts policy, which is where it is really enforced', () => {
+    const sql = newestFile(/create policy "household access" on public\.posts\b/)
+    expect(sql).toMatch(/<> 'note' or coalesce\(data ->> 'shared', 'false'\) = 'true'/)
   })
 })
 

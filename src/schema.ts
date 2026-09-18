@@ -786,6 +786,10 @@ export function sanitizeNote(raw: unknown): Note | null {
     body,
     projectId: idOrUndefined(r.projectId),
     pinned: r.pinned === true || undefined,
+    // This has to survive the whitelist. A build that dropped it would push the
+    // note back without it, and sync_posts overwrites `data` wholesale — so an
+    // older client could silently unshare, or reshare, a note nobody touched.
+    shared: r.shared === true || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

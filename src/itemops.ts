@@ -103,6 +103,37 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
 }
 
 /**
+ * The cached notes this account may no longer read, given the full list of
+ * peer-owned note ids the server just said it can see (`peerNotes`).
+ *
+ * A note is private until its owner shares it (v3.16), so un-sharing has to
+ * reach the person holding a copy. Nothing else in sync can tell them: a row
+ * they cannot select is simply absent from the answer, which is exactly what
+ * "nothing changed since your cursor" looks like. So the server states the
+ * whole set each round and anything of someone else's missing from it goes.
+ *
+ * Three guards, each of which is the difference between this and data loss:
+ *
+ * - `peerNotes` null means the server did not say — an older sync_posts, or the
+ *   legacy array shape. Nothing is dropped. Never read null as "none visible".
+ * - Only notes whose `ownerId` is another account. Your own notes are yours to
+ *   read whatever the flag says, and a note created here has no ownerId yet.
+ * - Never a dirty note. An edit that has not landed is not a ghost; if it was
+ *   un-shared mid-edit the push is refused and Settings offers Discard, which
+ *   is a visible outcome rather than words disappearing from the screen.
+ */
+export function revokedNotes(current: Item[], peerNotes: string[] | null, dirty: Set<string>, account: string | null): Set<string> {
+  const out = new Set<string>()
+  if (!peerNotes || !account) return out
+  const visible = new Set(peerNotes)
+  for (const i of current) {
+    if (i.kind !== 'note' || dirty.has(i.id)) continue
+    if (i.ownerId && i.ownerId !== account && !visible.has(i.id)) out.add(i.id)
+  }
+  return out
+}
+
+/**
  * Decide the outcome of one sync round.
  *
  * Cursor advances over `syncedAt` (server arrival) when the server provides it,

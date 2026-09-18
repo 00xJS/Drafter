@@ -6,7 +6,7 @@ import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people
 import { OPEN, bucketByDue, focusTasks } from './today.mjs'
 import { tonightLine } from './kitchen.mjs'
 import { placeCadenceStatus } from './places.mjs'
-import { PERSONAL_KINDS } from './kinds.mjs'
+import { readableRow } from './kinds.mjs'
 
 const DAY = 86_400_000
 /** Don't re-nag the same person (or place) more often than this. */
@@ -38,14 +38,15 @@ const dayKeyIn = (iso, tz) => localParts(iso, tz).day
 export function visibleItemsFor(rows, userId, peerIds, ownerId) {
   const visible = new Set([userId, ...(peerIds ?? [])])
   // Mirrors the posts policy: a peer's rows are visible except PERSONAL_KINDS
-  // (journal, review, calendar, habit, routine, and the wardrobe's garment, outfit
-  // and wear), which only their owner sees. ownerId
+  // (journal, review, calendar, habit, routine, meal and the wardrobe's garment,
+  // outfit and wear), which only their owner sees, and a note they have not
+  // shared, which is per record rather than per kind (readableRow). ownerId
   // rides along (as sync_posts does on read) so callers can tell whose row it is.
   return (rows ?? [])
     .filter(r => {
       if (r.user_id === userId) return true
       if (r.user_id === null) return userId === ownerId
-      return visible.has(r.user_id) && !PERSONAL_KINDS.has(r.data?.kind ?? 'task')
+      return visible.has(r.user_id) && readableRow(r.data, r.user_id, userId)
     })
     .map(r => ({ ...legacyPostToTask(r.data), ownerId: r.user_id ?? undefined }))
 }

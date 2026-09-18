@@ -40,8 +40,29 @@ export interface NoteEntry {
   updatedAt: string
   /** A pinned note, or a pad whose project has notesPinned. */
   pinned: boolean
+  /** A note its owner has shared with the household. A pad is the project's, so always true. */
+  shared: boolean
+  /** Someone else's note, shared with you: their name if the household knows it. Absent on your own. */
+  sharedBy?: string
   /** What a note is about, or the pad's own project. */
   projectId?: string
+}
+
+/** Who is reading, so the list can tell your notes from a peer's. Empty on a device with no household. */
+export interface NoteOwnership {
+  /** The reader's account id. Null or absent means "no household": every note is yours. */
+  myId?: string | null
+  /** A member's display name, for "shared by". */
+  nameOf?(id: string | undefined): string | null
+}
+
+/**
+ * Is this note the reader's own? A note created here has no ownerId until its
+ * first round trip, and a device with no household has no id to compare — both
+ * read as yours, which is what they are.
+ */
+export function noteIsMine(n: Note, myId: string | null): boolean {
+  return !myId || !n.ownerId || n.ownerId === myId
 }
 
 /** Every word of `query` appears in one of `fields`, in any case. An empty query matches everything. */
@@ -60,15 +81,29 @@ export function matchesQuery(query: string, ...fields: string[]): boolean {
  * most recently edited first. A pad's edit time is its project's; on a tie a
  * note comes before a pad, and pads go by id.
  */
-export function notesIndex(notes: Note[], projects: Project[], query = ''): NoteEntry[] {
-  const sorted = sortNotes(notes.filter(n => !n.deletedAt)).map(
-    (n): NoteEntry => ({ key: `note:${n.id}`, kind: 'note', id: n.id, title: n.title || UNTITLED, text: plain(n.body), updatedAt: n.updatedAt, pinned: !!n.pinned, projectId: n.projectId }),
-  )
+export function notesIndex(notes: Note[], projects: Project[], query = '', who: NoteOwnership = {}): NoteEntry[] {
+  const sorted = sortNotes(notes.filter(n => !n.deletedAt)).map((n): NoteEntry => {
+    const theirs = !noteIsMine(n, who.myId ?? null)
+    return {
+      key: `note:${n.id}`,
+      kind: 'note',
+      id: n.id,
+      title: n.title || UNTITLED,
+      text: plain(n.body),
+      updatedAt: n.updatedAt,
+      pinned: !!n.pinned,
+      // a note of someone else's can only be here because they shared it
+      shared: theirs || !!n.shared,
+      sharedBy: theirs ? (who.nameOf?.(n.ownerId) ?? 'Shared with you') : undefined,
+      projectId: n.projectId,
+    }
+  })
   const pads = projects
     .filter(p => p.status !== 'archived' && !p.deletedAt)
     .map(p => ({ p, html: noteHtml(p) }))
     .filter(({ html }) => hasNoteText(html))
-    .map(({ p, html }): NoteEntry => ({ key: `pad:${p.id}`, kind: 'pad', id: p.id, title: p.name, text: plain(html), updatedAt: p.updatedAt, pinned: !!p.notesPinned, projectId: p.id }))
+    // a pad belongs to the project, which the household shares; there is no pad to keep to yourself
+    .map(({ p, html }): NoteEntry => ({ key: `pad:${p.id}`, kind: 'pad', id: p.id, title: p.name, text: plain(html), updatedAt: p.updatedAt, pinned: !!p.notesPinned, shared: true, projectId: p.id }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
   const pinned = newestFirst(
     sorted.filter(e => e.pinned),
@@ -108,11 +143,13 @@ export interface NoteDraft {
   body: string
   projectId?: string
   pinned?: boolean
+  /** Shared with the household. Absent is private, which is what a new note is. */
+  shared?: boolean
 }
 
 /** A stored note as its screen shows it: "Untitled note" reads as an empty title with that as the placeholder. */
 export function draftOf(n: Note): NoteDraft {
-  return { title: n.title === UNTITLED ? '' : n.title, body: n.body, projectId: n.projectId, pinned: !!n.pinned }
+  return { title: n.title === UNTITLED ? '' : n.title, body: n.body, projectId: n.projectId, pinned: !!n.pinned, shared: !!n.shared }
 }
 
 /** A new note. It reaches the store only once it has a title or some text. */
@@ -128,10 +165,21 @@ export function blankNote(id: string, now: string): Note {
 export function noteToSave(base: Note, draft: NoteDraft): Note | null {
   const title = draft.title.trim()
   if (!title && !hasNoteText(draft.body)) return null
-  return { ...base, title: title || UNTITLED, body: draft.body, projectId: draft.projectId || undefined, pinned: draft.pinned || undefined, updatedAt: newerStamp(base.updatedAt) }
+  return {
+    ...base,
+    title: title || UNTITLED,
+    body: draft.body,
+    projectId: draft.projectId || undefined,
+    pinned: draft.pinned || undefined,
+    // absent rather than false: the flag the database reads is `shared = true`,
+    // and a row that carries `shared: false` says the same thing in more bytes
+    shared: draft.shared || undefined,
+    updatedAt: newerStamp(base.updatedAt),
+  }
 }
 
-const sameNote = (a: Note, b: Note) => a.title === b.title && a.body === b.body && (a.projectId || undefined) === (b.projectId || undefined) && !!a.pinned === !!b.pinned
+const sameNote = (a: Note, b: Note) =>
+  a.title === b.title && a.body === b.body && (a.projectId || undefined) === (b.projectId || undefined) && !!a.pinned === !!b.pinned && !!a.shared === !!b.shared
 
 export interface NoteSaverOptions {
   /** The note as opened: a stored note, or a new one the store has not seen. */

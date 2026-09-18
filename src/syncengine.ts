@@ -1,6 +1,6 @@
 import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, type SyncConflict } from './itemops'
+import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedNotes, type SyncConflict } from './itemops'
 import { applyLocalChoice, sameContent } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
@@ -768,7 +768,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       result = await rpc!(outgoing, pullSince(since))
     } catch (e) {
       console.error('Sync failed', e)
-      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], authError: false, reportsRejections: false }
+      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, authError: false, reportsRejections: false }
     }
     if (result.items !== null) return result
     publish({ syncInfo: { online: false, lastAt: state.syncInfo.lastAt, authError: result.authError, pending: pendingCount(), rejected: state.syncInfo.rejected } })
@@ -828,6 +828,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // from: an edit made while the request was in flight must survive it.
     const current = state.items
     const gone = new Set(result.gone)
+    // Notes of other people's that this account can no longer read: un-shared,
+    // or the household changed. They cannot arrive as items — an invisible row
+    // is indistinguishable from an unchanged one — so the server states the
+    // whole visible set and revokedNotes works out what is left over.
+    const revoked = revokedNotes(current, result.peerNotes, dirty, account)
     const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
       dirty,
       shadows,
@@ -836,6 +841,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     let next = decision.merged
     // purged for good on the server: removed here, never pushed again
     if (gone.size > 0 || removedMidRound.size > 0) next = next.filter(i => !gone.has(i.id) && !removedMidRound.has(i.id))
+    // dropped, not tombstoned: the note is alive and well, just not ours to read
+    if (revoked.size > 0) next = next.filter(i => !revoked.has(i.id))
     next = ensureProjects(purgeTombstones(next, clock))
     if (decision.cursor) writeCursor(decision.cursor, kv)
 
@@ -858,6 +865,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       failures.set(id, { id, reason: result.reasons[id] ?? prev?.reason, attempts, nextAt: clock + backoffMs(attempts), firstAt: prev?.firstAt ?? clock })
     }
     for (const id of gone) dirty.delete(id)
+    // revoked ids were never dirty (revokedNotes skips those), so there is no
+    // bookkeeping to clear — but the shadow of a note that has since been
+    // settled would linger, and pruneBookkeeping only looks at dirty ids
+    for (const id of revoked) shadows.delete(id)
 
     // The server now holds what we sent: that is the base for any edit still waiting.
     const remoteById = new Map(result.items!.map(r => [r.id, r]))
@@ -876,7 +887,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
     const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
     const changed =
-      decision.remerged.length > 0 || decision.settled.length > 0 || gone.size > 0 || removedMidRound.size > 0 || signature(next) !== signature(current)
+      decision.remerged.length > 0 ||
+      decision.settled.length > 0 ||
+      gone.size > 0 ||
+      revoked.size > 0 ||
+      removedMidRound.size > 0 ||
+      signature(next) !== signature(current)
     const items = changed ? next : current
     publish({
       items,

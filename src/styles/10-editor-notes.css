@@ -886,6 +886,23 @@
   border-radius: 999px;
   padding: 1px 8px;
 }
+/* Only a SHARED note is marked, so this is never on most rows: private is the
+   default and a badge on every row would say nothing. It sits between the
+   title and the time, and gives up its width first — the title is what a
+   person is reading the row for. */
+.note-row-share {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
 .notes-no-match {
   margin: 4px 0;
   color: var(--muted);
@@ -897,12 +914,77 @@
   }
 }
 
-/* one note */
+/* one note.
+   The header carries four controls now — back, share, pin and delete — and on
+   a phone they are thumbs, not a mouse. 4px put Unpin and Delete one mis-tap
+   apart, which was fine in a browser tab and is not fine in an app: "give
+   proper spacing between buttons now that we are on an application". So 8px
+   here, 10px under a finger, and a 44px-tall target there, which is the
+   smallest Apple's guidance allows. It wraps rather than squashes: at 375pt
+   the longest set of words ("All notes", "🔒 Private", "📌 Unpin", "Delete")
+   does not fit on one line, and a second line reads better than four
+   half-legible buttons. */
 .note-head {
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The pad's header has no gap of its own, so All notes carries a 12px margin
+   there (14-kitchen-today.css). Here the gap does that job, and the margin on
+   top of it was what tipped the row over: measured at 375pt the four buttons
+   came to 355px in a 351px header, so Delete wrapped onto a line of its own. */
+.note-head .notes-back {
+  margin-right: 0;
+}
+.note-head .btn {
+  white-space: nowrap;
+}
+/* Share, pin and delete as one block, right-aligned, wrapping within itself.
+   At 375pt with a note pinned they are ~9px too wide for one line; the button
+   that gives way then sits under the others instead of under All notes. */
+.note-head-actions {
+  display: flex;
+  /* grows so that when the group drops to a line of its own it still fills it,
+     and flex-end then keeps the buttons under the right edge rather than
+     stranding them under All notes */
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (pointer: coarse) {
+  .note-head,
+  .note-head-actions {
+    gap: 10px;
+  }
+  .note-head .btn {
+    min-height: 44px;
+  }
 }
 .note-pin.on {
   color: var(--accent-text);
+}
+/* Shared reads as on, the way a pin does; private is the resting state and is
+   left alone, because it is what every note is until its owner decides. */
+.note-share.on {
+  color: var(--accent-text);
+}
+/* Somebody else's note: a statement, not a control. Only its owner can stop
+   sharing it, so there is nothing here to press. */
+.note-shared-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 4px 10px;
 }
 /* a heading-sized field: two classes and the element outrank the phone's
    anti-zoom floor (16-zoom-guard.css), which would otherwise pin it at 16px;

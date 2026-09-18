@@ -28,5 +28,14 @@ export function useMineOnly({ store, household }: { store: Store; household: Ret
     return store.tasks
   }, [store.tasks, mineOnly, inHousehold, household.myId])
 
-  return { mineOnly, setMineOnly, inHousehold, filteredTasks }
+  // Mine / Everyone sits above the Notes segment too, and used to do nothing
+  // there — "I am not sure the mine vs everyone's section on the notes works".
+  // Now that a note is private until its owner shares it, the peers' notes in
+  // this list are exactly the ones they chose to share, and Mine hides them.
+  const filteredNotes = useMemo(() => {
+    if (mineOnly && inHousehold && household.myId) return store.notes.filter(n => !n.ownerId || n.ownerId === household.myId)
+    return store.notes
+  }, [store.notes, mineOnly, inHousehold, household.myId])
+
+  return { mineOnly, setMineOnly, inHousehold, filteredTasks, filteredNotes }
 }

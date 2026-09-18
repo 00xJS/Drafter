@@ -129,6 +129,18 @@ interface Props {
    * project pads it has always been. An open pad (`project`) wins either way.
    */
   notes?: Note[]
+  /**
+   * Every note, before Mine / Everyone narrowed `notes`. The palette can ask
+   * for a note the current filter hides; it opens rather than doing nothing.
+   * Defaults to `notes`.
+   */
+  allNotes?: Note[]
+  /** The reader's account id, when the planner is shared. Decides whose note each one is. */
+  myId?: string | null
+  /** True in a household of more than one; without one there is nobody to share with. */
+  inHousehold?: boolean
+  /** A member's display name, for "Maria's note". */
+  nameOf?(id: string | undefined): string | null
   /** Save a note (store.upsert). A new note is first saved once it has a title or some text. */
   onSaveNote?(n: Note): void
   /** Delete a note (store.remove: a tombstone Trash can restore), after the two-step confirm. */
@@ -138,7 +150,24 @@ interface Props {
   onOpenNoteDone?(): void
 }
 
-export function NotesView({ projects, project, getLatest, onSave, onSelectProject, onBack, onCreateTask, notes, onSaveNote, onDeleteNote, openNoteId, onOpenNoteDone }: Props) {
+export function NotesView({
+  projects,
+  project,
+  getLatest,
+  onSave,
+  onSelectProject,
+  onBack,
+  onCreateTask,
+  notes,
+  allNotes,
+  myId,
+  inHousehold,
+  nameOf,
+  onSaveNote,
+  onDeleteNote,
+  openNoteId,
+  onOpenNoteDone,
+}: Props) {
   /** The note on screen: a stored one, or a new one not saved yet. Local to Notes, like the pad the shell holds. */
   const [open, setOpen] = useState<Note | null>(null)
   /** The list's search, kept while a note is open so All notes comes back to the same list. */
@@ -155,7 +184,7 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
   const [askedId, setAskedId] = useState<string | undefined>(undefined)
   if (openNoteId !== askedId) {
     setAskedId(openNoteId)
-    const asked = openNoteId ? notes?.find(n => n.id === openNoteId) : undefined
+    const asked = openNoteId ? (allNotes ?? notes)?.find(n => n.id === openNoteId) : undefined
     if (asked) setOpen(asked)
   }
   useEffect(() => {
@@ -166,15 +195,35 @@ export function NotesView({ projects, project, getLatest, onSave, onSelectProjec
 
   if (notes) {
     if (open) {
-      return <NotePane key={open.id} note={open} stored={notes.find(n => n.id === open.id)} onSave={n => onSaveNote?.(n)} onDelete={onDeleteNote} onBack={() => setOpen(null)} onCreateTask={onCreateTask} />
+      // the stored copy comes from the full set: a note opened from the palette
+      // while Mine is on is not in `notes`, and without it every keystroke
+      // would save onto the copy the screen opened with
+      const stored = (allNotes ?? notes).find(n => n.id === open.id)
+      return (
+        <NotePane
+          key={open.id}
+          note={open}
+          stored={stored}
+          onSave={n => onSaveNote?.(n)}
+          onDelete={onDeleteNote}
+          onBack={() => setOpen(null)}
+          onCreateTask={onCreateTask}
+          myId={myId}
+          inHousehold={inHousehold}
+          ownerName={nameOf?.((stored ?? open).ownerId) ?? null}
+        />
+      )
     }
     return (
       <NotesIndex
         notes={notes}
         projects={projects}
+        myId={myId}
+        nameOf={nameOf}
         query={query}
         onQuery={setQuery}
         onOpenNote={id => setOpen(notes.find(n => n.id === id) ?? null)}
+
         onOpenPad={onSelectProject}
         onNewNote={
           onSaveNote
