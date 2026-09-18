@@ -124,17 +124,30 @@ describe('the release script', () => {
   // archive whatever build number happens to be committed — and App Store
   // Connect refuses a number it has already seen for this MARKETING_VERSION,
   // after the archive, the export and the upload have all run.
-  it('gives Xcode Cloud the two scripts it needs, both executable', () => {
+  it('keeps them beside App.xcodeproj, which is the only place Xcode Cloud looks', () => {
+    // "Custom build scripts reside in a directory named ci_scripts that's
+    // located in the same directory as your Xcode project or workspace."
+    // The project is at ios/App/, not the repo root, and a ci_scripts Xcode
+    // Cloud cannot find is not an error — it says nothing and goes straight on
+    // to package resolution, which then fails for want of node_modules and
+    // reads like a package problem. That is exactly what the first cloud build
+    // did, with these scripts sitting at the root.
+    const tracked = (path: string) => execFileSync('git', ['ls-files', '-s', path], { cwd: ROOT, encoding: 'utf8' })
     for (const name of ['ci_post_clone.sh', 'ci_pre_xcodebuild.sh']) {
-      const mode = execFileSync('git', ['ls-files', '-s', `ci_scripts/${name}`], { cwd: ROOT, encoding: 'utf8' })
-      expect(mode, `${name} is not tracked`).not.toBe('')
-      // Xcode Cloud skips a script that is not executable, silently
+      const mode = tracked(`ios/App/ci_scripts/${name}`)
+      expect(mode, `${name} is not tracked beside App.xcodeproj`).not.toBe('')
+      // A script without the executable bit is not skipped — Apple runs it as
+      // `zsh $filename` — but these carry `#!/bin/sh`, and being run under a
+      // different shell than the one they were written for is its own hazard.
       expect(mode.startsWith('100755'), `${name} is committed without the executable bit`).toBe(true)
     }
+    // Apple recognises one ci_scripts per repository, so a leftover at the root
+    // would make it undefined which is honoured.
+    expect(tracked('ci_scripts'), 'a second ci_scripts at the repo root').toBe('')
   })
 
   it('builds the web bundle in the cloud, because the target’s inputs are generated and gitignored', () => {
-    const post = read('../../ci_scripts/ci_post_clone.sh')
+    const post = read('../../ios/App/ci_scripts/ci_post_clone.sh')
     expect(post).toContain('npm ci')
     expect(post).toContain('npm run build:ios')
     // the three Resources inputs ios/.gitignore keeps out of the repo
@@ -146,10 +159,28 @@ describe('the release script', () => {
   })
 
   it('takes the build number from the cloud’s own counter, and leaves it alone without one', () => {
-    const pre = read('../../ci_scripts/ci_pre_xcodebuild.sh')
+    const pre = read('../../ios/App/ci_scripts/ci_pre_xcodebuild.sh')
     expect(pre).toContain('CI_BUILD_NUMBER')
     expect(pre).toMatch(/ios-build-number\.mjs --set/)
     const bump = read('../../scripts/ios-build-number.mjs')
     expect(bump, 'the script has no --set to give it').toContain('--set')
+  })
+
+  it('brings its own node, in both scripts and at the same version', () => {
+    // Each script is a shell of its own, so the PATH one exports is gone by the
+    // time the next runs — ci_pre_xcodebuild died with "node: command not
+    // found", exit 127, until it installed node itself. The two blocks are
+    // duplicated on purpose rather than sourced from a helper; this holds them
+    // together so they cannot drift.
+    const versions = ['ci_post_clone.sh', 'ci_pre_xcodebuild.sh'].map(name => {
+      const body = read(`../../ios/App/ci_scripts/${name}`)
+      // Homebrew is not a way to get node here: node@22 is keg-only so it never
+      // reaches PATH, and /opt/homebrew is the Apple-silicon prefix only.
+      expect(body, `${name} still installs node through Homebrew`).not.toMatch(/brew install/)
+      expect(body, `${name} does not verify the download`).toContain('SHASUMS256.txt')
+      return /NODE_VERSION=(\S+)/.exec(body)?.[1]
+    })
+    expect(versions[0]).toBeTruthy()
+    expect(versions[0], 'the two node blocks have drifted apart').toBe(versions[1])
   })
 })

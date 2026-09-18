@@ -9,3 +9,6 @@ dev-dist
 *.md
 !/README.md
 .claude/
+
+# Node the Xcode Cloud scripts download (ios/App/ci_scripts); never committed.
+/.drafter-ci/
