@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatMoney } from '../../bills'
 import { daysAgo, daysBetween, shortDay } from '../../kitchen'
 import { countOf } from '../../people'
@@ -66,12 +66,15 @@ function PieceRow({
   onOpen,
   onRetire,
   onWearToday,
+  onActed,
 }: {
   garment: Garment
   line: string
   onOpen(id: string): void
   onRetire(g: Garment): void
   onWearToday?(g: Garment): void
+  /** Told which card was acted in, so focus can be handed on once the row has gone. */
+  onActed(card: HTMLElement | null): void
 }) {
   return (
     <ListRow
@@ -83,11 +86,25 @@ function PieceRow({
       action={
         <span className="wardrobe-list-actions">
           {onWearToday && (
-            <button type="button" className="btn" onClick={() => onWearToday(garment)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={e => {
+                onActed(e.currentTarget.closest('.chart-card'))
+                onWearToday(garment)
+              }}
+            >
               Wear today
             </button>
           )}
-          <button type="button" className="btn subtle" onClick={() => onRetire(garment)}>
+          <button
+            type="button"
+            className="btn subtle"
+            onClick={e => {
+              onActed(e.currentTarget.closest('.chart-card'))
+              onRetire(garment)
+            }}
+          >
             Retire
           </button>
         </span>
@@ -115,6 +132,36 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
   const podium = mostWorn(garments, ix, 'all', 3).map(ranked)
   const rested = notWornLately(garments, ix)
   const never = neverWorn(garments, ix)
+
+  /**
+   * Where focus goes once a row has been acted on.
+   *
+   * Retire sets archivedAt and Wear today makes the piece worn, and both lists
+   * filter on exactly those — so the `<li>` holding the pressed button
+   * unmounts, and the browser drops focus to `<body>`. A keyboard reader is
+   * then back at the top of the document with nothing to say what happened.
+   *
+   * This has to wait for React to commit: doing it in the click handler, even
+   * behind a requestAnimationFrame, focuses the button that is about to go and
+   * lands on body anyway (measured). An effect runs after the new list is on
+   * the page, so the row it lands on is one that survived.
+   */
+  const acted = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const card = acted.current
+    if (!card) return
+    acted.current = null
+    // The CARD, not the list: a list that empties is replaced by its "nothing
+    // here" paragraph, and a detached <ul> has no card left to ask.
+    const next = card.querySelector<HTMLElement>('.wardrobe-list-row button')
+    const heading = card.querySelector<HTMLElement>('h3')
+    const to = next ?? heading
+    if (!to) return
+    // a heading is not focusable on its own; it is the right place to land when
+    // the list has just emptied, so it takes a tabindex for the moment
+    if (to === heading) to.tabIndex = -1
+    to.focus({ preventScroll: true })
+  })
   const months = wearsByMonth(ix, year, now)
   const report = wardrobeYearReport(garments, ix, year, now)
     .slice(0, 20)
@@ -189,6 +236,9 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
             onOpen={onOpenPiece}
             onRetire={onRetire}
             onWearToday={onWearToday}
+            onActed={card => {
+              acted.current = card
+            }}
           />
         )}
       />
@@ -207,6 +257,9 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
             onOpen={onOpenPiece}
             onRetire={onRetire}
             onWearToday={onWearToday}
+            onActed={card => {
+              acted.current = card
+            }}
           />
         )}
       />

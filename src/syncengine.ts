@@ -778,10 +778,21 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /**
    * What goes out: the dirty set (not "updatedAt > cursor") so late/offline
    * stamps still go out. A refused row waits out its backoff — except in a
-   * full exchange, which sends everything.
+   * full exchange, which sends everything this account may write.
+   *
+   * "May write" is the part that had to be said. A full exchange used to offer
+   * the WHOLE cache, household peers' rows included, and a device only drops
+   * those when Settings → Household is opened on it (retainMine). So a second
+   * device of an account that had left a household — the phone, another
+   * browser — still held the peers' rows, and its next Full resync (or the one
+   * a KINDS_EPOCH change triggers) pushed them all. The server refuses each
+   * one, and a refusal pins the row dirty: "n unsynced" forever, retried every
+   * round, for rows the account never touched and cannot write.
+   *
+   * A row that was never edited here has nothing to offer the server anyway.
    */
   function outgoingFor(since: string | null, clock: number): Item[] {
-    if (!since) return state.items
+    if (!since) return state.items.filter(p => !p.ownerId || !account || p.ownerId === account || dirty.has(p.id))
     return state.items.filter(p => dirty.has(p.id) && (failures.get(p.id)?.nextAt ?? 0) <= clock)
   }
 

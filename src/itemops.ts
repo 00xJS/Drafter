@@ -140,6 +140,7 @@ export function applySync(
   const staleSet = new Set(ctx.stale ?? [])
   const dirty = ctx.dirty ?? new Set<string>()
   const localById = new Map(current.map(c => [c.id, c]))
+  const remoteById = new Map((remote as Item[]).map(r => [r.id, r]))
   const superseded = new Set(sent.filter(s => (localById.get(s.id)?.updatedAt ?? '') > s.updatedAt).map(s => s.id))
 
   // Concurrent edits first: each decides the final version of its record.
@@ -199,6 +200,36 @@ export function applySync(
     merged = mergeItems(current, remote as Item[])
   }
   if (resolved.size > 0) merged = merged.map(i => resolved.get(i.id) ?? i)
+
+  /**
+   * A stamp the server rewrote is the server's, not ours.
+   *
+   * sync_posts refuses an updatedAt more than five minutes ahead of its own
+   * clock and stores `now()` instead. The echo then comes back with an EARLIER
+   * stamp than the copy we are still holding, so the merge — which keeps
+   * whichever is newer — keeps ours, and the two diverge permanently.
+   *
+   * That is not a cosmetic difference. A device whose clock runs fast writes
+   * 10:20 at 10:00, the server stores 10:00, and the device goes on believing
+   * 10:20. Another device edits the same record at 10:02 and wins on the
+   * server, quite correctly. When the fast device pulls that edit, 10:02 is
+   * not newer than 10:20, so it is dropped — and the cursor has already moved
+   * past it, so it is never offered again. The next edit here then overwrites
+   * the server with content that never contained it. Every peer edit made
+   * inside the skew window is lost, silently, for as long as the clock is out.
+   *
+   * So: when the server echoes back the row we sent, unchanged in content but
+   * under a stamp of its own, take its version. Only when nothing has been
+   * typed here since (`superseded`), and never over a row a concurrent-edit
+   * merge has already decided.
+   */
+  const clamped = new Map<string, Item>()
+  for (const s of sent) {
+    if (superseded.has(s.id) || resolved.has(s.id)) continue
+    const r = remoteById.get(s.id)
+    if (r && r.updatedAt < s.updatedAt && sameContent(norm(r), norm(s))) clamped.set(s.id, r)
+  }
+  if (clamped.size > 0) merged = merged.map(i => clamped.get(i.id) ?? i)
 
   let cursor = since
   for (const r of remote) {
