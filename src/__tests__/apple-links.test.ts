@@ -71,6 +71,17 @@ describe('the association file', () => {
     expect(header.slice(0, 220)).toContain('Content-Type = "application/json"')
   })
 
+  it('is allowed to appear in the build, because the team id is not a secret', () => {
+    // Netlify's scanner fails a build when an environment variable's value
+    // turns up in what was published. This one does by design — it is half of
+    // the appID Apple fetches — and the same ten characters are printed by
+    // `codesign -dv` on any copy of the app. It names an account; it authorises
+    // nothing.
+    expect(netlify).toContain('SECRETS_SCAN_OMIT_KEYS = "APPLE_TEAM_ID"')
+    // the whole scanner stays on: this is one key, not a blanket disable
+    expect(netlify).not.toContain('SECRETS_SCAN_ENABLED = "false"')
+  })
+
   it('404s when it has not been written, rather than answering with the app page', () => {
     // The catch-all turns any unknown path into index.html, and the header rule
     // above would then label that HTML application/json — so Apple fetched a

@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CAPACITOR_DEBUG</key>
+	<key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Drafter</string>
+	<string>Drafter</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,29 +20,93 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.drafter.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>drafter</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Drafter uses the camera to photograph clothes for your wardrobe, and photos for your notes and tasks.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Drafter uses your location only to show today's forecast on Home. It is kept on this iPhone and never synced.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
-    <false/>
-    <key>UISceneConfigurations</key>
-    <dict>
-      <key>UIWindowSceneSessionRoleApplication</key>
-      <array>
-        <dict>
-            <key>UISceneConfigurationName</key>
-            <string>Default Configuration</string>
-            <key>UISceneDelegateClassName</key>
-            <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-            <key>UISceneStoryboardFile</key>
-            <string>Main</string>
-        </dict>
-      </array>
-    </dict>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
 	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCompose</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Write today's line</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Journal</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>journal</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAdd</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>New task</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>new</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTask</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Plan my day</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>plan</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>tshirt</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Wardrobe</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>wardrobe</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeDate</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Today</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>today</string>
+		</dict>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -51,6 +115,8 @@
 	<array>
 		<string>armv7</string>
 	</array>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleDefault</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -64,87 +130,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- Settings → Appearance: no forced style. SceneDelegate sets the window's
-	     interface style from the app's own choice (light by default), and the
-	     status bar, keyboard, pickers and alerts follow the window. -->
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleDefault</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
-	<!-- Every web photo picker (Home → Wardrobe's Add clothing, a note's photo, a
-	     task's images) offers Take Photo on iPhone, and iOS ends the app on the
-	     spot when the camera opens without this key. -->
-	<key>NSCameraUsageDescription</key>
-	<string>Drafter uses the camera to photograph clothes for your wardrobe, and photos for your notes and tasks.</string>
-	<!-- The Enable weather button on Home asks WKWebView's navigator.geolocation,
-	     which iOS routes through this app's CoreLocation. Without this key the
-	     prompt never appears and the request just fails. -->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Drafter uses your location only to show today's forecast on Home. It is kept on this iPhone and never synced.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>app.drafter.ios</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>drafter</string>
-			</array>
-		</dict>
-	</array>
-	<!-- Long-press the Home Screen icon. Every type here is mapped to a drafter://
-	     route in SceneDelegate.url(for:); src/__tests__/links.test.ts keeps the two
-	     lists in step and checks each route still parses. iOS shows only an app's
-	     first four, so Today, where Plan my day opens too, comes last and is the
-	     one left off the menu. -->
-	<key>UIApplicationShortcutItems</key>
-	<array>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>journal</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Journal</string>
-			<key>UIApplicationShortcutItemSubtitle</key>
-			<string>Write today's line</string>
-			<key>UIApplicationShortcutItemIconType</key>
-			<string>UIApplicationShortcutIconTypeCompose</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>new</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>New task</string>
-			<key>UIApplicationShortcutItemIconType</key>
-			<string>UIApplicationShortcutIconTypeAdd</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>plan</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Plan my day</string>
-			<key>UIApplicationShortcutItemIconType</key>
-			<string>UIApplicationShortcutIconTypeTask</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>wardrobe</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Wardrobe</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>tshirt</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>today</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Today</string>
-			<key>UIApplicationShortcutItemIconType</key>
-			<string>UIApplicationShortcutIconTypeDate</string>
-		</dict>
-	</array>
 </dict>
 </plist>

@@ -2,6 +2,19 @@
   command = "npm run check"
   publish = "dist"
 
+  [build.environment]
+    # Netlify's secrets scanner fails a build when the value of an environment
+    # variable turns up in what was published. APPLE_TEAM_ID does, on purpose:
+    # it is half of the appID in /.well-known/apple-app-site-association, which
+    # only works by being fetched by Apple over the open internet.
+    #
+    # It is not a secret and cannot be one. The same ten characters are in the
+    # code signature of every build of the app — `codesign -dv` prints them
+    # from any copy — and in the association file of every site that supports
+    # Universal Links. It identifies a developer account; it authorises
+    # nothing on its own.
+    SECRETS_SCAN_OMIT_KEYS = "APPLE_TEAM_ID"
+
 [functions]
   node_bundler = "esbuild"
 
