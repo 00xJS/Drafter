@@ -193,6 +193,12 @@ export function nextOccurrence(task, uidFn) {
       ? { platforms: [...task.social.platforms], variants: task.social.variants ? { ...task.social.variants } : undefined }
       : undefined,
     recurrence: { ...task.recurrence },
+    // and carry who it is for, for the same reason the context above is
+    // carried: a private chore that comes round again is still private
+    // (v3.19), and this object is built field by field, so anything left off
+    // it defaults to the household's. The spawn is a NEW row, so the flag has
+    // to be on it — posts_private_flag only guards an existing one.
+    shared: task.shared,
     spawnedFrom: task.id,
   }
 }

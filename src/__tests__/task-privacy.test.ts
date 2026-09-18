@@ -3,7 +3,9 @@ import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
 import { feedFor, readableItems } from '../../netlify/functions/lib/feedrows.mjs'
 import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
 import { summarizeTask } from '../../mcp/tools.mjs'
+import { nextOccurrence } from '../../shared/domain.mjs'
 import { sanitizeTask } from '../schema'
+import { duplicateTask } from '../taskutils'
 import { formValues, initForm, mergeOnto } from '../taskform'
 import { Item, Task } from '../types'
 import { FakeServer, device, idle, ready } from './sync-fakes'
@@ -110,6 +112,36 @@ describe('the flag survives the round trip', () => {
     expect(sanitizeTask(task('t', { shared: true }))!.shared).toBeUndefined()
     // and a stray value is not the boolean
     expect(sanitizeTask(task('t', { shared: 'false' }))!.shared).toBeUndefined()
+  })
+})
+
+describe('a task made from a task', () => {
+  // Every other writer builds a NEW task, where the household's default is the
+  // right one. These two copy an existing one field by field, and a field left
+  // off the list is a field the copy does not have — which for `shared` means
+  // public. Notes never hit this: nothing duplicates or repeats a note.
+  it('a duplicate of a private task is private', () => {
+    const copy = duplicateTask(sanitizeTask(task('t', { shared: false }))!)
+    expect(copy.shared).toBe(false)
+    expect(copy.title).toBe('Bins out')
+  })
+
+  it('and a duplicate of the household’s task is still the household’s', () => {
+    expect(duplicateTask(sanitizeTask(task('t'))!).shared).toBeUndefined()
+  })
+
+  it('the next occurrence of a private repeating task is private', () => {
+    // the spawn is a NEW row, so the flag has to travel on it: the trigger that
+    // keeps a stored `false` only guards a row that already exists
+    const source = sanitizeTask(task('t', { shared: false, recurrence: { freq: 'weekly' }, status: 'done', completedAt: '2026-09-12T09:00:00.000Z' }))!
+    const next = nextOccurrence(source, () => 'spawn-id')
+    expect(next).not.toBeNull()
+    expect(next!.shared).toBe(false)
+  })
+
+  it('and the next occurrence of the household’s is still the household’s', () => {
+    const source = sanitizeTask(task('t', { recurrence: { freq: 'weekly' }, status: 'done', completedAt: '2026-09-12T09:00:00.000Z' }))!
+    expect(nextOccurrence(source, () => 'spawn-id')!.shared).toBeUndefined()
   })
 })
 

@@ -114,6 +114,13 @@ export function duplicateTask(source: Task): Task {
     estimateCost: source.estimateCost,
     blockedBy: source.blockedBy ? [...source.blockedBy] : undefined,
     assigneeId: source.assigneeId,
+    // A copy of a private task is private. This list is written out field by
+    // field, so a field left off it is a field the copy does not have — and an
+    // absent `shared` on a task means the HOUSEHOLD'S (v3.19). One press of
+    // Duplicate would have handed the other member the title, the description,
+    // the checklist, the attachments and the photos of something its owner had
+    // withheld, with nothing on screen saying the copy was public.
+    shared: source.shared,
     ownerId: source.ownerId,
   }
 }
