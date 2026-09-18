@@ -297,6 +297,14 @@ export function sanitizeTask(raw: unknown): Task | null {
     actualCost: money(r.actualCost),
     blockedBy: idList(r.blockedBy),
     assigneeId: idOrUndefined(r.assigneeId),
+    // This has to survive the whitelist, as a note's does and for a sharper
+    // reason: a build that dropped it would push the task back without it, and
+    // an absent flag on a task reads as SHARED. Only `false` is kept — a task
+    // nobody has withheld carries no flag at all, exactly as every task written
+    // before v3.19 does. `true` is written only to overturn a stored `false`
+    // (taskform.ts), and once the server has taken it there is nothing left to
+    // say, so it is not carried here.
+    shared: r.shared === false ? false : undefined,
     focusOn: dayKeyOnly(r.focusOn),
     focusBy: idOrUndefined(r.focusBy),
     ownerId: idOrUndefined(r.ownerId),

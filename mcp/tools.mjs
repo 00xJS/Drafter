@@ -117,6 +117,9 @@ export function summarizeTask(t) {
     recurrence: t.recurrence?.freq ?? null,
     peopleIds: t.peopleIds ?? [],
     placeId: t.placeId ?? null,
+    // who can see it, said the way the app's rows say it: a task is the
+    // household's unless its owner kept it to themselves (v3.19)
+    shared: t.shared !== false,
   }
 }
 
@@ -372,6 +375,8 @@ function summarizeNote(n) {
     title: n.title || UNTITLED,
     projectId: n.projectId ?? null,
     pinned: !!n.pinned,
+    // the other way round for a note: private until its owner shares it (v3.16)
+    shared: !!n.shared,
     excerpt: text.length > 160 ? `${text.slice(0, 160).trimEnd()}…` : text,
     updatedAt: n.updatedAt,
   }
@@ -595,6 +600,11 @@ export const TOOLS = [
       const needsLookup = projectId || peopleIds !== undefined || placeId !== undefined || placeName !== undefined
       const all = needsLookup ? await db.fetchAll({ kinds: ['project', 'person', 'place'] }) : []
       const ctx = resolveContext(all, { peopleIds, placeId, placeName })
+      // No `shared`, and no way to pass one — the mirror of create_note. A task
+      // an agent writes is the household's, like every other new task, and
+      // withholding one is the person's decision to make in the app.
+      // update_task reads the stored task and writes it back, so a private one
+      // it edits stays private.
       const task = {
         kind: 'task',
         id: newId(),

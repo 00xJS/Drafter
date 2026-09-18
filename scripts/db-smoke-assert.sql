@@ -2229,3 +2229,170 @@ begin
   raise notice 'ok v3.18-7: the backfill rebuilds every reference the trigger would have made (% rows), and adds nothing on a second run', added;
 end $$;
 commit;
+
+-- ===== v3.19 per-task privacy =====
+-- 20260928000000_v3_19_task_privacy: a task can be kept to yourself. The same
+-- mechanism as a shared note with the default the other way round — a task is
+-- the household's unless its owner withheld it — so the flag is absent on
+-- every task written before this, and only `shared:false` withholds one.
+--
+-- Three things are checked here that nothing above can check: the policy reads
+-- the two kinds with their own defaults, sync_posts answers `peerShared` for
+-- both while still answering `peerNotes` for the clients that only know that
+-- one, and posts_private_flag keeps a stored `false` when a write says nothing
+-- about the flag — which is what stops an older build, whose sanitizer drops
+-- the field it has never heard of, from publishing a private task by saving it.
+
+-- ------------------- v3.19-1. the household's by default, the owner's on request
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[
+    {"kind":"task","id":"tp-open","title":"Bins out","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"task","id":"tp-shut","title":"Present for them","description":"","status":"todo","priority":"normal","tags":[],"shared":false,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.19-1: sync_posts rejected the owner''s own tasks: %', r -> 'rejected';
+  end if;
+  r := public.sync_posts('[]'::jsonb, null);
+  select array_agg(x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
+  if not ('tp-open' = any(ids)) or not ('tp-shut' = any(ids)) then
+    raise exception 'FAIL v3.19-1: the owner must always read their own tasks, saw %', ids;
+  end if;
+  raise notice 'ok v3.19-1: a task with no flag and a task with shared:false are both the owner''s to read';
+end $$;
+commit;
+
+-- --------------- v3.19-2. a peer reads the household's task and not the private one
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if 'tp-shut' = any(ids) then
+    raise exception 'FAIL v3.19-2: a peer''s pull returned a private task, saw %', ids;
+  end if;
+  if not ('tp-open' = any(ids)) then
+    raise exception 'FAIL v3.19-2: a peer''s pull must still return the household''s tasks, saw %', ids;
+  end if;
+  if (select count(*) from public.posts where id = 'tp-shut') <> 0 then
+    raise exception 'FAIL v3.19-2: a direct select shows the peer a private task';
+  end if;
+  -- peerShared covers both per-record kinds; peerNotes still covers notes only
+  if not ((r -> 'peerShared') @> '["tp-open"]'::jsonb) then
+    raise exception 'FAIL v3.19-2: peerShared should name the readable task, got %', r -> 'peerShared';
+  end if;
+  if (r -> 'peerShared') @> '["tp-shut"]'::jsonb then
+    raise exception 'FAIL v3.19-2: peerShared named a private task, got %', r -> 'peerShared';
+  end if;
+  if (r -> 'peerNotes') @> '["tp-open"]'::jsonb then
+    raise exception 'FAIL v3.19-2: peerNotes is for notes alone, got %', r -> 'peerNotes';
+  end if;
+  -- a write onto a task it cannot read is refused, so a private task cannot be taken over
+  r := public.sync_posts('[{"kind":"task","id":"tp-shut","title":"Mine now","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["tp-shut"]'::jsonb then
+    raise exception 'FAIL v3.19-2: a peer''s write onto a private task should be rejected, got %', r;
+  end if;
+  -- and a peer may not withhold what is not theirs: the with check refuses it
+  r := public.sync_posts('[{"kind":"task","id":"tp-open","title":"Bins out","description":"","status":"todo","priority":"normal","tags":[],"shared":false,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["tp-open"]'::jsonb then
+    raise exception 'FAIL v3.19-2: a peer made the owner''s task private, got %', r;
+  end if;
+  raise notice 'ok v3.19-2: a peer reads the shared task only, is named it in peerShared, and can neither take a private task nor withhold a shared one';
+end $$;
+commit;
+do $$
+begin
+  if (select data ->> 'title' from public.posts where id = 'tp-shut') is distinct from 'Present for them' then
+    raise exception 'FAIL v3.19-2: the private task was changed by a peer';
+  end if;
+  if coalesce((select data ->> 'shared' from public.posts where id = 'tp-open'), 'true') <> 'true' then
+    raise exception 'FAIL v3.19-2: the household''s task came back private after the peer''s refused write';
+  end if;
+end $$;
+
+-- ------------- v3.19-3. a write that says nothing leaves a private task private
+-- The whole reason posts_private_flag exists. The app's sanitizers are
+-- whitelists, so a build that predates the field drops it, and sync_posts
+-- overwrites `data` wholesale: without this, the owner's own older phone would
+-- publish a private task the next time it saved one, silently, and the policy
+-- would have no reason to refuse a write onto the owner's own row.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  -- as an older client would send it: every field it knows, and no `shared`
+  r := public.sync_posts('[{"kind":"task","id":"tp-shut","title":"Present for them","description":"wrapped","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T14:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.19-3: the owner''s own edit was rejected: %', r -> 'rejected';
+  end if;
+  if (select data ->> 'shared' from public.posts where id = 'tp-shut') is distinct from 'false' then
+    raise exception 'FAIL v3.19-3: a write with no flag made a private task public: %', (select data from public.posts where id = 'tp-shut');
+  end if;
+  if (select data ->> 'description' from public.posts where id = 'tp-shut') is distinct from 'wrapped' then
+    raise exception 'FAIL v3.19-3: keeping the flag threw the edit away';
+  end if;
+  -- and saying so out loud is what hands it back, which is what the app writes
+  r := public.sync_posts('[{"kind":"task","id":"tp-shut","title":"Present for them","description":"wrapped","status":"todo","priority":"normal","tags":[],"shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T15:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.19-3: sharing it again was rejected: %', r -> 'rejected';
+  end if;
+  if (select data ->> 'shared' from public.posts where id = 'tp-shut') is distinct from 'true' then
+    raise exception 'FAIL v3.19-3: an explicit true did not overturn the stored false';
+  end if;
+  -- a note is NOT guarded this way: writing the flag out is how its owner un-shares it
+  r := public.sync_posts('[
+    {"kind":"note","id":"tp-note","title":"Shared note","body":"<p>hello</p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T15:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  r := public.sync_posts('[
+    {"kind":"note","id":"tp-note","title":"Shared note","body":"<p>hello</p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T16:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if (select data ? 'shared' from public.posts where id = 'tp-note') then
+    raise exception 'FAIL v3.19-3: the task guard was applied to a note, so un-sharing one no longer works';
+  end if;
+  raise notice 'ok v3.19-3: an absent flag keeps a private task private, an explicit true hands it back, and a note still un-shares by writing the flag out';
+end $$;
+commit;
+
+-- -------------- v3.19-4. an heir inherits the household's work, not the private
+-- another account about to leave for good, with one task of each kind of audience
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a8', 'leaver2@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-0000000000a8', 'member');
+insert into public.posts (id, updated_at, synced_at, data, user_id) values
+  ('l2-open', '2026-09-18T09:00:00.000Z', now(),
+   '{"kind":"task","id":"l2-open","title":"Bins","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}'::jsonb,
+   '00000000-0000-0000-0000-0000000000a8'),
+  ('l2-shut', '2026-09-18T09:00:00.000Z', now(),
+   '{"kind":"task","id":"l2-shut","title":"Their present","description":"","status":"todo","priority":"normal","tags":[],"shared":false,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}'::jsonb,
+   '00000000-0000-0000-0000-0000000000a8');
+insert into public.posts_history (id, updated_at, user_id, data, replaced_at) values
+  ('l2-shut', '2026-09-18T08:00:00.000Z', '00000000-0000-0000-0000-0000000000a8',
+   '{"kind":"task","id":"l2-shut","title":"Their present, draft","shared":false}'::jsonb, now());
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-0000000000a8', '00000000-0000-0000-0000-00000000000a');
+  if (select user_id from public.posts where id = 'l2-open') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.19-4: the household''s task should pass to the heir, got %', r;
+  end if;
+  if exists (select 1 from public.posts where id = 'l2-shut') then
+    raise exception 'FAIL v3.19-4: an heir inherited a task the account never shared, got %', r;
+  end if;
+  if exists (select 1 from public.posts_history where id = 'l2-shut') then
+    raise exception 'FAIL v3.19-4: the private task''s versions outlived it, where the heir''s household can read them';
+  end if;
+  raise notice 'ok v3.19-4: a private task is deleted with the personal rows, history and all, and the shared work still passes on: %', r;
+end $$;
+commit;

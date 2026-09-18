@@ -72,7 +72,9 @@ function splitTop(s: string): string[] {
 /** One condition of the scope filter the gateway builds: col.is.null, col.eq.x, col.neq.x, col.in.(…), col.not.in.(…), and(…) or or(…). */
 function holds(cond: string, r: any): boolean {
   if (cond.startsWith('and(')) return splitTop(cond.slice(4, -1)).every(c => holds(c, r))
-  // the note rule is a nested or() inside that and(): (kind.neq.note, data->>shared.eq.true)
+  // each per-record rule is a nested or() inside that and(): a note's
+  // (kind.neq.note, data->>shared.eq.true) and a task's
+  // (kind.neq.task, data->>shared.is.null, data->>shared.neq.false)
   if (cond.startsWith('or(')) return splitTop(cond.slice(3, -1)).some(c => holds(c, r))
   const [col, ...rest] = cond.split('.')
   const negate = rest[0] === 'not'
@@ -82,7 +84,11 @@ function holds(cond: string, r: any): boolean {
   let result: boolean
   if (op === 'is' && arg === 'null') result = v === null
   else if (op === 'eq') result = v !== null && String(v) === arg
-  else if (op === 'neq') result = v === null || String(v) !== arg
+  // SQL, not JavaScript: NULL is not unequal to anything, so a row whose
+  // `shared` is absent does NOT match neq.false. That is exactly why the task
+  // rule carries an is.null term of its own, and a stand-in that were lenient
+  // here would let a filter pass the tests and drop rows in production.
+  else if (op === 'neq') result = v !== null && String(v) !== arg
   else if (op === 'in') result = arg.replace(/^\(|\)$/g, '').split(',').includes(String(v))
   else throw new Error(`the stand-in has no operator ${op}`)
   return negate ? !result : result
@@ -246,6 +252,37 @@ describe('the gateway, run from its own source', () => {
     void call
     expect(idsOf(json.posts).sort()).toEqual(['mine', 'peer-open'])
     expect(JSON.stringify(json)).not.toContain('PEER-PRIVATE')
+  })
+
+  // v3.19 gives a task the same per-record audience, the other way round: the
+  // household's unless its owner withheld it. The gateway is again the whole
+  // enforcement, and here the filter has to let the ordinary tasks THROUGH —
+  // most carry no flag at all, and `neq.false` alone would drop every one.
+  it('hands an agent the household’s tasks and not the one a peer kept to themselves', async () => {
+    const { call } = gateway([
+      row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' }),
+      row(PEER, { kind: 'task', id: 'peer-open', title: 'Theirs', status: 'todo' }),
+      row(PEER, { kind: 'task', id: 'peer-true', title: 'Shared out loud', status: 'todo', shared: true }),
+      row(PEER, { kind: 'task', id: 'peer-shut', title: 'PEER-PRIVATE', status: 'todo', shared: false }),
+    ])
+    const { json } = await call({ action: 'list' })
+    expect(idsOf(json.posts).sort()).toEqual(['mine', 'peer-open', 'peer-true'])
+    expect(JSON.stringify(json)).not.toContain('PEER-PRIVATE')
+  })
+
+  it('refuses a write onto a peer’s private task, and one that would make a shared task private', async () => {
+    const { call } = gateway([
+      row(PEER, { kind: 'task', id: 'peer-shut', title: 'Theirs', status: 'todo', shared: false }),
+      row(PEER, { kind: 'task', id: 'peer-open', title: 'Theirs', status: 'todo' }),
+    ])
+    const { json } = await call({
+      action: 'sync',
+      posts: [
+        { kind: 'task', id: 'peer-shut', title: 'Mine now', status: 'todo', updatedAt: STAMP },
+        { kind: 'task', id: 'peer-open', title: 'Theirs', status: 'todo', shared: false, updatedAt: STAMP },
+      ],
+    })
+    expect((json.posts as { rejected: string[] }).rejected.sort()).toEqual(['peer-open', 'peer-shut'])
   })
 
   it('counts only readable rows against the limit, so a peer’s private notes cannot crowd out the answer', async () => {

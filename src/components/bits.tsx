@@ -24,6 +24,33 @@ export function PriorityMark({ priority, withLabel }: { priority: Priority; with
   )
 }
 
+/**
+ * Who can see this record, said on the row itself.
+ *
+ * Both states are marked, on tasks and on notes alike: "I want to see which
+ * tasks are shared vs which are private with a simple glance." Marking only
+ * the exception is quieter and was what the notes list did, but it cannot be
+ * glanced at — an unmarked row reads as "private" and as "nothing loaded yet"
+ * equally well, and the two kinds default opposite ways, so the same blank row
+ * would mean different things in two lists.
+ *
+ * `by` names the housemate whose record it is; without one the mark just says
+ * it is shared. Nothing is drawn outside a household, where there is nobody to
+ * share with and the answer is always the same.
+ */
+export function ShareMark({ shared, by, kind }: { shared: boolean; by?: string | null; kind: 'task' | 'note' }) {
+  const thing = kind === 'task' ? 'task' : 'note'
+  return shared ? (
+    <span className="share-mark is-shared" title={by ? `${by} shared this ${thing} with you` : `Everyone in your household can see this ${thing}`}>
+      <span aria-hidden="true">👥</span> {by ?? 'Shared'}
+    </span>
+  ) : (
+    <span className="share-mark is-private" title={`Private: only you can see this ${thing}`}>
+      <span aria-hidden="true">🔒</span> Private
+    </span>
+  )
+}
+
 export function DueBadge({ task }: { task: Task }) {
   if (!task.dueAt) return null
   const tone = dueTone(task)

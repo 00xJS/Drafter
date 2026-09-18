@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Note, Project } from '../../types'
 import { excerpt } from '../../utils'
+import { ShareMark } from '../bits'
 import { editedLabel, matchesQuery, notesIndex } from './model'
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   myId?: string | null
   /** A member's display name, for "Maria" on their shared note. */
   nameOf?(id: string | undefined): string | null
+  /** Drawn only in a household: alone there is nobody a note could be shared with. */
+  inHousehold?: boolean
   /** The search, held by the view so All notes comes back to the same list. */
   query: string
   onQuery(q: string): void
@@ -25,7 +28,7 @@ interface Props {
  * ones on top (a pad has a Pin of its own), then newest first. A note's row
  * names no project: there is one ongoing project.
  */
-export function NotesIndex({ notes, projects, myId, nameOf, query, onQuery, onOpenNote, onOpenPad, onNewNote }: Props) {
+export function NotesIndex({ notes, projects, myId, nameOf, inHousehold, query, onQuery, onOpenNote, onOpenPad, onNewNote }: Props) {
   const all = useMemo(() => notesIndex(notes, projects, '', { myId, nameOf }), [notes, projects, myId, nameOf])
   const shown = query.trim() ? all.filter(e => matchesQuery(query, e.title, e.text)) : all
   const byId = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
@@ -70,14 +73,11 @@ export function NotesIndex({ notes, projects, myId, nameOf, query, onQuery, onOp
                         )}
                         {project && <span className="pdot" style={{ background: project.color }} />}
                         <span className="note-row-title">{`${project?.emoji ? `${project.emoji} ` : ''}${e.title}`}</span>{' '}
-                        {/* private is the default, so only a shared note is marked — a
-                            badge on every row would say nothing. A pad is the project's
-                            and already carries its own tag. */}
-                        {e.kind === 'note' && e.shared && (
-                          <span className="note-row-share" title={e.sharedBy ? `${e.sharedBy} shared this note with you` : 'Shared with your household'}>
-                            <span aria-hidden="true">👥</span> {e.sharedBy ?? 'Shared'}
-                          </span>
-                        )}{' '}
+                        {/* Both states, as the task list marks both: the owner asked to
+                            tell shared from private at a glance, and an unmarked row
+                            cannot say which it is. A pad is the project's and already
+                            carries its own tag, so it keeps none. */}
+                        {e.kind === 'note' && inHousehold && <ShareMark kind="note" shared={e.shared} by={e.sharedBy} />}{' '}
                         <span className="note-row-when">{editedLabel(e.updatedAt, now)}</span>
                       </span>{' '}
                       <span className="note-row-excerpt">{excerpt(e.text, 160) || 'No text yet'}</span>

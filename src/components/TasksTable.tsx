@@ -5,7 +5,7 @@ import { migrateStored, STORAGE_VERSION } from '../schema'
 import { compareTasks } from '../taskutils'
 import { excerpt } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
-import { DueBadge, PriorityMark } from './bits'
+import { DueBadge, PriorityMark, ShareMark } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
@@ -16,13 +16,19 @@ interface Props {
   onDelete(t: Task): void
   onOpenTrash(): void
   trashCount: number
+  /** Drawn only in a household: alone there is nobody to share with. */
+  inHousehold?: boolean
+  /** The reader's own account id, so a housemate's row can be named. */
+  myId?: string | null
+  /** A member's display name, for "Maria" on a task of theirs. */
+  nameOf?(id: string | undefined): string | null
 }
 
 type SortKey = 'due' | 'priority' | 'updated'
 
 // No project column or chip, and a search that reads no project name: there is
 // one ongoing project, so it would say the same on every row.
-export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash, trashCount }: Props) {
+export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash, trashCount, inHousehold, myId, nameOf }: Props) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<TaskStatus | 'all' | 'open'>('open')
   const [priority, setPriority] = useState<Priority | 'all'>('all')
@@ -31,6 +37,11 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
   const [showAll, setShowAll] = useState(false)
   const jsonInput = useRef<HTMLInputElement>(null)
   const isNarrow = useMediaQuery('(max-width: 640px)')
+
+  // whose row it is, said on the row itself: 🔒 on the ones the other member
+  // cannot see, 👥 on the ones they can, with their name on rows of theirs
+  const mark = (t: Task) =>
+    inHousehold ? <ShareMark kind="task" shared={t.shared !== false} by={t.ownerId && t.ownerId !== myId ? (nameOf?.(t.ownerId) ?? 'Shared') : undefined} /> : null
 
   const toggleSort = (key: SortKey) => setSort(cur => (cur.key === key ? { key, dir: cur.dir === -1 ? 1 : -1 } : { key, dir: key === 'due' ? 1 : -1 }))
   const sortArrow = (key: SortKey) => (sort.key === key ? (sort.dir === -1 ? ' ▼' : ' ▲') : '')
@@ -177,6 +188,7 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
               </div>
               {t.title && t.description && <div className="row-body">{excerpt(t.description, 90)}</div>}
               <div className="mpost-meta">
+                {mark(t)}
                 <DueBadge task={t} />
                 <span className="spacer" />
                 <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
@@ -217,7 +229,8 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
                   <td>
                     <button type="button" className="row-open row-title">
                       {t.title || excerpt(t.description, 48) || 'Untitled'}
-                    </button>
+                    </button>{' '}
+                    {mark(t)}
                     {t.title && t.description && <div className="row-body">{excerpt(t.description, 70)}</div>}
                   </td>
                   <td>

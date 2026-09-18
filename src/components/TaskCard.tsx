@@ -2,18 +2,20 @@ import { STATUS_META, Task, TaskStatus, pickerStatuses } from '../types'
 import { excerpt } from '../utils'
 import { checklistProgress } from '../taskutils'
 import { parseGithubUrl } from '../github'
-import { DueBadge, PriorityMark } from './bits'
+import { DueBadge, PriorityMark, ShareMark } from './bits'
 
 interface Props {
   task: Task
   assignee?: string
+  /** Drawn only in a household: alone, every card would say the same thing. */
+  inHousehold?: boolean
   onOpen(t: Task): void
   /** When present, the card shows a one-tap status control (works on touch, unlike drag). */
   onStatus?(id: string, status: TaskStatus): void
 }
 
 // No project chip: there is one ongoing project, so it would say the same on every card.
-export function TaskCard({ task, assignee, onOpen, onStatus }: Props) {
+export function TaskCard({ task, assignee, inHousehold, onOpen, onStatus }: Props) {
   const check = checklistProgress(task)
   const gh = parseGithubUrl(task.githubUrl)
 
@@ -48,6 +50,10 @@ export function TaskCard({ task, assignee, onOpen, onStatus }: Props) {
       </div>
       {task.description && <div className="card-body">{excerpt(task.description)}</div>}
       <div className="card-meta">
+        {/* first, before the counts: who can see it is about the card itself,
+            not about what is in it. The People count below uses the same 👥,
+            which is why this one carries a word and that one a number. */}
+        {inHousehold && <ShareMark kind="task" shared={task.shared !== false} />}
         {assignee && (
           <span className="assignee" title={assignee}>
             {assignee

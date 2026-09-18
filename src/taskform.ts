@@ -38,6 +38,13 @@ export interface TaskForm {
   bill: Bill | undefined
   blockedBy: string[]
   assigneeId: string
+  /**
+   * Whether the household can see it. True is the default and what every task
+   * written before v3.19 means; false keeps it to its owner. Held as a plain
+   * boolean because the control is a plain choice — formValues turns it back
+   * into the flag the database reads.
+   */
+  shared: boolean
 }
 
 /** Which ✨ helper is running, if any (shared by the editor's sections). */
@@ -66,6 +73,7 @@ export function initForm(base: Task): TaskForm {
     bill: base.bill,
     blockedBy: base.blockedBy ?? [],
     assigneeId: base.assigneeId ?? '',
+    shared: base.shared !== false,
   }
 }
 
@@ -358,7 +366,7 @@ export function costsVisible(form: Pick<TaskForm, 'bill' | 'estimateCost' | 'act
 
 /** The form's current value for every editable field, in Task shape. */
 export function formValues(form: TaskForm, base: Task, persisted: boolean) {
-  const { title, description, projectId, status, priority, dueAt, completedAt, tags, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId } = form
+  const { title, description, projectId, status, priority, dueAt, completedAt, tags, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId, shared } = form
   return {
     title: title.trim(),
     description,
@@ -394,6 +402,15 @@ export function formValues(form: TaskForm, base: Task, persisted: boolean) {
     actualCost: money(actualCost),
     blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
     assigneeId: assigneeId || undefined,
+    // Both answers are written out loud, and only when they say something. A
+    // task nobody has withheld carries no flag, as every task before v3.19
+    // does; `false` withholds it; `true` appears ONLY to overturn a stored
+    // `false`, because to the database an absent flag now means "this writer
+    // has nothing to say about the audience" and it keeps what it has
+    // (posts_private_flag). That is what stops an older build, which strips
+    // the field it has never heard of, from quietly making a private task
+    // public the next time it saves one.
+    shared: shared ? (base.shared === false ? true : undefined) : false,
   }
 }
 
@@ -422,6 +439,7 @@ export function baseValues(base: Task) {
     actualCost: base.actualCost,
     blockedBy: base.blockedBy,
     assigneeId: base.assigneeId,
+    shared: base.shared,
   }
 }
 

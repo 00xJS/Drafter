@@ -164,10 +164,14 @@ describe('one home project: the bar and its filter are gone', () => {
     expect(planner).toMatch(/className="segmented mine-seg" role="group" aria-label=\{tasksTab === 'notes' \? 'Whose notes' : 'Whose tasks'\}/)
   })
 
-  it('says so on Home and Calendar when Mine is on, with the way off', () => {
-    // Mine survives a relaunch and the launch lands on Home, where there is
-    // no switch: a narrowed screen must never be a silent one
-    expect(planner).toMatch(/\{inHousehold && mineOnly && \(view === 'home' \|\| view === 'calendar'\) && \(\s*<button type="button" className="mine-note" onClick=\{\(\) => setMineOnly\(false\)\}>/)
+  it('keeps the Mine note off Home and Calendar: it belongs where the switch is', () => {
+    // It used to appear on both, on the grounds that a screen which opens
+    // already narrowed should say so. "The 'showing only your tasks' should
+    // only show on the tasks page when viewing tasks" — on a screen with no
+    // switch it reads as a warning about a setting made on purpose, and Mine /
+    // Everyone sits above the list it narrows and says which one is on.
+    expect(planner).not.toContain('Showing only your tasks')
+    expect(planner).not.toContain('mine-note')
   })
 
   it('starts a new user with a task: there is only the one home project', () => {

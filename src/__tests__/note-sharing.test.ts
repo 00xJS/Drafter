@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { revokedNotes } from '../itemops'
+import { revokedPeerRows } from '../itemops'
 import { sanitizeNote } from '../schema'
-import { parseSyncResponse } from '../sync'
+import { parseSyncResponse, peerVisibleByKind } from '../sync'
 import { Item, Note } from '../types'
 import { FakeServer, device, idle, ready } from './sync-fakes'
 
@@ -19,6 +19,9 @@ const ME = 'user-1'
 const PEER = 'user-2'
 const at = '2026-09-10T09:00:00.000Z'
 
+const peerTask = (id: string) =>
+  ({ kind: 'task', id, ownerId: PEER, title: id, status: 'todo', priority: 'normal', tags: [], description: '', createdAt: at, updatedAt: at }) as unknown as Item
+
 const note = (id: string, over: Partial<Note> = {}): Note => ({
   kind: 'note',
   id,
@@ -29,48 +32,69 @@ const note = (id: string, over: Partial<Note> = {}): Note => ({
   ...over,
 })
 
-describe('revokedNotes: what a round says this account may no longer hold', () => {
+/** The same visible set for both per-record kinds, as a v3.19 server answers. */
+const both = (list: string[] | null) => ({ note: list, task: list })
+
+describe('revokedPeerRows: what a round says this account may no longer hold', () => {
   const held = [note('mine', { ownerId: ME }), note('local'), note('theirs', { ownerId: PEER, shared: true })] as Item[]
 
   it('drops a peer’s note the server no longer lists', () => {
-    expect([...revokedNotes(held, [], new Set(), ME)]).toEqual(['theirs'])
+    expect([...revokedPeerRows(held, both([]), new Set(), ME)]).toEqual(['theirs'])
   })
 
   it('keeps it while the server still lists it', () => {
-    expect([...revokedNotes(held, ['theirs'], new Set(), ME)]).toEqual([])
+    expect([...revokedPeerRows(held, both(['theirs']), new Set(), ME)]).toEqual([])
   })
 
   it('never touches your own notes, listed or not — the flag says who ELSE may read them', () => {
     // 'mine' is owned here, 'local' has not round-tripped yet and so has no owner
-    expect([...revokedNotes(held, [], new Set(), ME)]).not.toContain('mine')
-    expect([...revokedNotes(held, [], new Set(), ME)]).not.toContain('local')
+    expect([...revokedPeerRows(held, both([]), new Set(), ME)]).not.toContain('mine')
+    expect([...revokedPeerRows(held, both([]), new Set(), ME)]).not.toContain('local')
   })
 
   it('never drops a note with an edit still waiting to go out', () => {
     // un-shared mid-edit, the push is refused and Settings offers Discard —
     // a visible outcome, rather than words vanishing off the screen
-    expect([...revokedNotes(held, [], new Set(['theirs']), ME)]).toEqual([])
+    expect([...revokedPeerRows(held, both([]), new Set(['theirs']), ME)]).toEqual([])
   })
 
   it('drops a note the server refused in the same breath, dirty or not', () => {
     // The refusal and the absence are the same answer: a row you cannot read
     // is one you can never write, so the edit is not pending, it is impossible.
-    expect([...revokedNotes(held, [], new Set(['theirs']), ME, new Set(['theirs']))]).toEqual(['theirs'])
+    expect([...revokedPeerRows(held, both([]), new Set(['theirs']), ME, new Set(['theirs']))]).toEqual(['theirs'])
   })
 
   it('drops nothing when the server did not say, which is how an older sync_posts answers', () => {
     // null is "no information". Reading it as "nothing is visible" would empty
     // the Notes list of every device that reached a server one deploy behind.
-    expect([...revokedNotes(held, null, new Set(), ME)]).toEqual([])
+    expect([...revokedPeerRows(held, both(null), new Set(), ME)]).toEqual([])
   })
 
   it('drops nothing before this device knows whose it is', () => {
-    expect([...revokedNotes(held, [], new Set(), null)]).toEqual([])
+    expect([...revokedPeerRows(held, both([]), new Set(), null)]).toEqual([])
   })
 
-  it('leaves every other kind alone, however it arrives', () => {
-    const rows = [{ kind: 'task', id: 't', ownerId: PEER, title: 't', status: 'todo', priority: 'normal', tags: [], description: '', createdAt: at, updatedAt: at }] as unknown as Item[]
-    expect([...revokedNotes(rows, [], new Set(), ME)]).toEqual([])
+  it('leaves every kind that has no per-record audience alone, however it arrives', () => {
+    const rows = [{ kind: 'person', id: 'p', ownerId: PEER, name: 'p', createdAt: at, updatedAt: at }] as unknown as Item[]
+    expect([...revokedPeerRows(rows, both([]), new Set(), ME)]).toEqual([])
+  })
+
+  // v3.19: the second per-record kind, and the one whose list can be missing
+  // while the other is present.
+  it('drops a peer’s task the server no longer lists, as it drops a note', () => {
+    const rows = [peerTask('t'), note('theirs', { ownerId: PEER, shared: true })] as Item[]
+    expect([...revokedPeerRows(rows, both([]), new Set(), ME)].sort()).toEqual(['t', 'theirs'])
+  })
+
+  it('keeps a peer’s task the server still lists', () => {
+    expect([...revokedPeerRows([peerTask('t')] as Item[], both(['t']), new Set(), ME)]).toEqual([])
+  })
+
+  it('drops NOTHING of a kind the server said nothing about', () => {
+    // a v3.16 server answers for notes alone. Reading its silence about tasks
+    // as "none of theirs are visible" would empty the household's board.
+    const rows = [peerTask('t'), note('theirs', { ownerId: PEER, shared: true })] as Item[]
+    expect([...revokedPeerRows(rows, { note: [], task: null }, new Set(), ME)]).toEqual(['theirs'])
   })
 })
 
@@ -79,11 +103,37 @@ describe('the answer carries it, or says nothing at all', () => {
     expect(parseSyncResponse({ items: [], rejected: [], peerNotes: ['a', 'b'] })!.peerNotes).toEqual(['a', 'b'])
   })
 
+  it('reads peerShared, which covers both per-record kinds', () => {
+    expect(parseSyncResponse({ items: [], rejected: [], peerShared: ['a', 'b'] })!.peerShared).toEqual(['a', 'b'])
+  })
+
   it('is null for a server that does not send it, and for the legacy array shape', () => {
     expect(parseSyncResponse({ items: [], rejected: [] })!.peerNotes).toBeNull()
+    expect(parseSyncResponse({ items: [], rejected: [] })!.peerShared).toBeNull()
     expect(parseSyncResponse([])!.peerNotes).toBeNull()
+    expect(parseSyncResponse([])!.peerShared).toBeNull()
     // an empty list is an answer, and a different one: nothing of theirs is visible
     expect(parseSyncResponse({ items: [], rejected: [], peerNotes: [] })!.peerNotes).toEqual([])
+  })
+})
+
+describe('which list speaks for which kind', () => {
+  it('peerShared speaks for both', () => {
+    expect(peerVisibleByKind({ peerShared: ['a'], peerNotes: null })).toEqual({ note: ['a'], task: ['a'] })
+  })
+
+  it('a v3.16 server speaks for notes and stays silent about tasks', () => {
+    // the window between the migration and the next iOS build: the phone's
+    // notes still revoke, and not one task of a housemate's is dropped
+    expect(peerVisibleByKind({ peerShared: null, peerNotes: ['a'] })).toEqual({ note: ['a'], task: null })
+  })
+
+  it('an older server still speaks for nothing', () => {
+    expect(peerVisibleByKind({ peerShared: null, peerNotes: null })).toEqual({ note: null, task: null })
+  })
+
+  it('prefers peerShared when both arrive, because it is the whole answer', () => {
+    expect(peerVisibleByKind({ peerShared: ['a', 'b'], peerNotes: ['a'] })).toEqual({ note: ['a', 'b'], task: ['a', 'b'] })
   })
 })
 

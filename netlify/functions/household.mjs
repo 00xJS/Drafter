@@ -154,21 +154,29 @@ const handler = async req => {
       const [hh] = await rest(`households?id=eq.${m.household_id}&select=created_by`)
       const ownerId = hh?.created_by ?? user.id
       // Kind is not the whole question any more. A note is its author's until
-      // they share it (v3.16), so "not a personal kind" would have handed every
-      // private note the leaving member ever wrote to the creator — where the
-      // app renders it, the feed publishes it and the nightly backup writes it
+      // they share it (v3.16) and a task is theirs once they withhold it
+      // (v3.19), so "not a personal kind" would have handed every private note
+      // and task the leaving member ever wrote to the creator — where the app
+      // renders it, the feed publishes it and the nightly backup writes it
       // into the creator's snapshot, which is the exact harm the paragraph
       // above describes. Worse, the member is out of the household by this
       // point, so the peer branch of the policy cannot reach it either: one
       // statement would disclose it to the creator AND lose it to its author.
-      // `or=(kind.neq.note,data->>shared.eq.true)` keeps a SHARED note moving
-      // — that is household work, like a task — and leaves the rest behind.
-      const shared = `kind=not.in.(${[...PERSONAL_KINDS].join(',')})&or=(kind.neq.note,data->>shared.eq.true)`
-      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&${shared}`, {
-        method: 'PATCH',
-        headers: { prefer: 'return=minimal' },
-        body: JSON.stringify({ user_id: ownerId }),
-      })
+      //
+      // Two statements, each with a filter that is one flat term list. The
+      // rule wants an AND of two ORs — no private note, no private task — and
+      // PostgREST can nest that, but a nested filter is a thing the stand-in
+      // in the tests has to imitate, and a stand-in that imitates it wrongly
+      // answers differently from the database while every test passes. So the
+      // notes are moved on their own instead, and each filter here says one
+      // simple thing. Nothing is lost in between: a row that has not moved yet
+      // is still its author's, which is the safe half.
+      const notPrivate = `or=(kind.neq.task,data->>shared.is.null,data->>shared.neq.false)`
+      const moveTo = { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: ownerId }) }
+      // everything the household shares, minus the notes, minus a private task
+      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&kind=not.in.(${[...PERSONAL_KINDS, 'note'].join(',')})&${notPrivate}`, moveTo)
+      // and the notes they did share, which are household work like a task
+      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&kind=eq.note&data->>shared=eq.true`, moveTo)
       // Nothing is stamped for the others to notice: user_settings has no
       // column for it, so that write failed every time. The app that asked
       // resyncs in full once this answers (Settings → Household); the others'

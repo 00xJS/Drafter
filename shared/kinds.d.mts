@@ -4,6 +4,10 @@ export declare const SYNC_KINDS: ReadonlySet<string>
 export declare const PERSONAL_KINDS: ReadonlySet<string>
 export declare function kindOf(data: Record<string, unknown> | null | undefined): string
 export declare function readableKind(kind: string | null | undefined, ownerId: string | null | undefined, readerId: string | null | undefined): boolean
+/** The kinds whose audience is per record, and what an absent `shared` means for each. */
+export declare const SHARED_BY_DEFAULT: Readonly<Record<string, boolean>>
+/** A record's own `shared` as the posts policy reads it, or null when it carries none. */
+export declare function sharedFlag(data: Record<string, unknown> | null | undefined): boolean | null
 /** Kind AND record: everything the posts policy decides, for readers that bypass RLS. */
 export declare function readableRow(
   data: Record<string, unknown> | null | undefined,

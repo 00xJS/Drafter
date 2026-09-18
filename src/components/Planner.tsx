@@ -130,7 +130,7 @@ export default function Planner() {
     ...focusActions,
   }
   // what the shell itself reads: the screen switch, the Mine note, pull to refresh, the toast
-  const { view, mineOnly, setMineOnly, inHousehold, manualSync, anyOpen, toast, setToast } = p
+  const { view, manualSync, anyOpen, toast, setToast } = p
 
   return (
     <div className="app">
@@ -154,14 +154,14 @@ export default function Planner() {
       <main className="content">
         {store.loaded && (
           <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
-            {/* Mine is remembered across launches and the switch lives on Tasks,
-                so a Home or Calendar that opens already narrowed says so — and
-                offers the way off — rather than quietly hiding the others' tasks */}
-            {inHousehold && mineOnly && (view === 'home' || view === 'calendar') && (
-              <button type="button" className="mine-note" onClick={() => setMineOnly(false)}>
-                Showing only your tasks · Show everyone
-              </button>
-            )}
+            {/* "The 'showing only your tasks' should only show on the tasks page
+                when viewing tasks." It used to appear on Home and on Calendar
+                too, where Mine is also in force — the reasoning was that a
+                screen which opens already narrowed should say so. It reads as
+                a warning about a setting the owner made on purpose, on two
+                screens that have no switch to change it, so it is gone: Mine /
+                Everyone sits above the list it narrows, on Tasks, and says
+                which one is on. */}
             {/* a screen whose chunk has not arrived holds its space, blank.
                 Moving between tabs is a transition, so a screen already up
                 stays up until the next one can replace it. */}

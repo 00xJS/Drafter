@@ -18,15 +18,25 @@ export interface SyncResult {
   /** Ids we pushed that the server had permanently purged; it did not re-insert them. */
   gone: string[]
   /**
-   * Every note owned by SOMEONE ELSE that this account can see right now,
-   * whatever the cursor — the full set, not a delta. A cached peer note that is
-   * not in it was un-shared, and this is the only way a reader can learn: an
-   * invisible row cannot arrive in `items`, so silence would read as "nothing
-   * changed" and the note would sit in their list forever.
+   * Every row owned by SOMEONE ELSE, of a kind whose audience is per record
+   * (note, task), that this account can see right now — whatever the cursor,
+   * the full set, not a delta. A cached peer row that is not in it was
+   * withheld, and this is the only way a reader can learn: an invisible row
+   * cannot arrive in `items`, so silence would read as "nothing changed" and
+   * the row would sit in their list forever.
    *
-   * Null when the server did not say (an older sync_posts, or the legacy array
-   * shape). Null means "no information", never "nothing visible" — a client
-   * that confused the two would empty its Notes list against an old server.
+   * Null when the server did not say (a sync_posts older than v3.19, or the
+   * legacy array shape). Null means "no information", never "nothing visible"
+   * — a client that confused the two would empty its lists against an old
+   * server.
+   */
+  peerShared: string[] | null
+  /**
+   * What a v3.16 server answers: the same set for NOTES ONLY. Kept because the
+   * two say different things — a note-only list holds no task ids at all, so
+   * reading one as the whole answer would revoke every peer task in the house.
+   * `peerVisibleByKind` is the one place that decides which list covers which
+   * kind; nothing else should read either field.
    */
   peerNotes: string[] | null
   /** True when the failure was an expired/invalid session rather than the network. */
@@ -41,7 +51,7 @@ export interface SyncResult {
 
 type RemoteRow = Item & { syncedAt?: string }
 
-const OFFLINE: Omit<SyncResult, 'authError'> = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, reportsRejections: false }
+const OFFLINE: Omit<SyncResult, 'authError'> = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerShared: null, peerNotes: null, reportsRejections: false }
 
 function ids(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
@@ -62,15 +72,16 @@ function rows(list: unknown[]): RemoteRow[] {
 
 /**
  * Read a sync_posts answer in any shape production has spoken or will speak:
- * the legacy bare array of rows; `{ items, rejected }`; and
- * `{ items, rejected, stale, gone, peerNotes }`. A rejected entry may be a bare id or
+ * the legacy bare array of rows; `{ items, rejected }`;
+ * `{ items, rejected, stale, gone, peerNotes }`; and the same with
+ * `peerShared`. A rejected entry may be a bare id or
  * `{ id, reason }`, and a `reasons` map is honoured too — whichever the server
  * sends, a reason is kept for Settings. Null for anything unrecognisable.
  */
 export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' | 'items'> & { items: Item[] }) | null {
   if (Array.isArray(data)) return { ...OFFLINE, items: rows(data) }
   if (!data || typeof data !== 'object') return null
-  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown; peerNotes?: unknown }
+  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown; peerNotes?: unknown; peerShared?: unknown }
   const rejected: string[] = []
   const reasons: Record<string, string> = {}
   for (const entry of Array.isArray(obj.rejected) ? obj.rejected : []) {
@@ -94,6 +105,7 @@ export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' 
     stale: ids(obj.stale),
     gone: ids(obj.gone),
     // only an array is an answer; a server that says nothing revokes nothing
+    peerShared: Array.isArray(obj.peerShared) ? ids(obj.peerShared) : null,
     peerNotes: Array.isArray(obj.peerNotes) ? ids(obj.peerNotes) : null,
     reportsRejections: true,
   }
@@ -168,4 +180,18 @@ export function purgeTombstone(kind: Item['kind'], id: string, now: string, dele
     default:
       return base
   }
+}
+
+/**
+ * Which list is authoritative for each per-record kind.
+ *
+ * A v3.19 server answers `peerShared`, which covers notes AND tasks; a v3.16
+ * one answers `peerNotes`, which covers notes alone and has nothing to say
+ * about tasks. Null is "no information" for that kind, and the caller revokes
+ * nothing — reading a note-only list as the whole answer would drop every task
+ * a housemate owns.
+ */
+export function peerVisibleByKind(r: Pick<SyncResult, 'peerShared' | 'peerNotes'>): { note: string[] | null; task: string[] | null } {
+  if (r.peerShared) return { note: r.peerShared, task: r.peerShared }
+  return { note: r.peerNotes, task: null }
 }

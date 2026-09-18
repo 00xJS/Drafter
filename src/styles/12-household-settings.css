@@ -16,21 +16,6 @@
 .mine-seg {
   margin-left: auto;
 }
-/* Home and Calendar when the household's Mine filter is on: the switch is on
-   Tasks, so this is the only sign the screen is narrowed — and the way off */
-.mine-note {
-  display: block;
-  margin: 0 0 12px;
-  padding: 6px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-}
 
 .error-hero .error-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

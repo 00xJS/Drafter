@@ -103,48 +103,53 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
 }
 
 /**
- * The cached notes this account may no longer read, given the full list of
- * peer-owned note ids the server just said it can see (`peerNotes`).
+ * The cached rows this account may no longer read, given the full list of
+ * peer-owned ids the server just said it can see, per kind (`peerVisibleByKind`).
  *
- * A note is private until its owner shares it (v3.16), so un-sharing has to
- * reach the person holding a copy. Nothing else in sync can tell them: a row
- * they cannot select is simply absent from the answer, which is exactly what
- * "nothing changed since your cursor" looks like. So the server states the
- * whole set each round and anything of someone else's missing from it goes.
+ * Two kinds decide their audience per record: a note is private until its
+ * owner shares it (v3.16), a task is the household's until its owner withholds
+ * it (v3.19). Either way the withholding has to reach the person holding a
+ * copy, and nothing else in sync can tell them: a row they cannot select is
+ * simply absent from the answer, which is exactly what "nothing changed since
+ * your cursor" looks like. So the server states the whole set each round and
+ * anything of someone else's missing from it goes.
  *
- * Three guards, each of which is the difference between this and data loss:
+ * Four guards, each of which is the difference between this and data loss:
  *
- * - `peerNotes` null means the server did not say — an older sync_posts, or the
- *   legacy array shape. Nothing is dropped. Never read null as "none visible".
- * - Only notes whose `ownerId` is another account. Your own notes are yours to
- *   read whatever the flag says, and a note created here has no ownerId yet.
- * - Never a dirty note, UNLESS the server just refused that very push. An edit
+ * - A kind whose list is null is left alone. Null means the server did not say
+ *   — an older sync_posts, the legacy array shape, or a v3.16 server that
+ *   knows about notes and not tasks. Never read null as "none visible".
+ * - Only rows whose `ownerId` is another account. Your own are yours to read
+ *   whatever the flag says, and a row created here has no ownerId yet.
+ * - Never a dirty row, UNLESS the server just refused that very push. An edit
  *   that has not landed is not a ghost. But a refusal is not a delay: the same
- *   answer that refused the write is the one that left the note out of
- *   `peerNotes`, and a row you cannot read is a row you can never write. So
- *   holding it costs the reader the un-share and gains them nothing.
+ *   answer that refused the write is the one that left the row out of the
+ *   list, and a row you cannot read is a row you can never write. So holding
+ *   it costs the reader the revocation and gains them nothing.
  *
  *   Without the `refused` half this deadlocks, and the round trip sustains it:
  *   the refusal puts the id back in `dirty`, `dirty` suppresses the drop, the
- *   undropped note is pushed again, and it is refused again. Nothing breaks
+ *   undropped row is pushed again, and it is refused again. Nothing breaks
  *   the loop — pruneBookkeeping only forgets ids whose record has left the
  *   list, and the record cannot leave while it is dirty. A reader who had
  *   pinned a note offline kept it, body and all, for good.
  */
-export function revokedNotes(
+export function revokedPeerRows(
   current: Item[],
-  peerNotes: string[] | null,
+  visible: { note: string[] | null; task: string[] | null },
   dirty: Set<string>,
   account: string | null,
   refused: ReadonlySet<string> = new Set(),
 ): Set<string> {
   const out = new Set<string>()
-  if (!peerNotes || !account) return out
-  const visible = new Set(peerNotes)
+  if (!account) return out
+  const seen: Partial<Record<string, Set<string>>> = {}
+  for (const [kind, list] of Object.entries(visible)) if (list) seen[kind] = new Set(list)
   for (const i of current) {
-    if (i.kind !== 'note') continue
+    const allowed = seen[i.kind]
+    if (!allowed) continue
     if (dirty.has(i.id) && !refused.has(i.id)) continue
-    if (i.ownerId && i.ownerId !== account && !visible.has(i.id)) out.add(i.id)
+    if (i.ownerId && i.ownerId !== account && !allowed.has(i.id)) out.add(i.id)
   }
   return out
 }

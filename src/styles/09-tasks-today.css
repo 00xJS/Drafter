@@ -515,3 +515,37 @@
   outline-offset: 1px;
 }
 
+
+/* Who can see a record, on its row in the task list, on a board card and in
+   the notes index. Both states are drawn (see ShareMark in bits.tsx), so the
+   quieter one has to stay quiet: private is the grey of a neutral badge and
+   shared borrows the indigo the household's own marks use. Every colour is a
+   token, so both themes follow. */
+.share-mark {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+}
+.share-mark.is-shared {
+  background: var(--tone-indigo-bg);
+  color: var(--tone-indigo);
+}
+.share-mark.is-private {
+  background: var(--tone-grey-bg);
+  color: var(--tone-grey);
+}
+/* in a table cell the mark sits after the title, on its own line when the
+   title is long, so a row never grows a second column's worth of width */
+td .share-mark,
+.row-title + .share-mark {
+  margin-top: 2px;
+  display: inline-block;
+}

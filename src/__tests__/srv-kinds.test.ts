@@ -120,9 +120,32 @@ describe('readableRow is the whole posts policy, for the readers that bypass it'
     expect(readableRow({ kind: 'note' }, 'me', 'me')).toBe(true)
   })
 
+  it('and the same question of a task, whose default is the other way round', () => {
+    // v3.19: household work unless its owner withheld it, so an absent flag —
+    // which is every task written before then — stays the household's
+    expect(readableRow({ kind: 'task' }, 'peer', 'me')).toBe(true)
+    expect(readableRow({ kind: 'task', shared: true }, 'peer', 'me')).toBe(true)
+    expect(readableRow({ kind: 'task', shared: false }, 'peer', 'me')).toBe(false)
+    expect(readableRow({ kind: 'task', shared: false }, 'me', 'me')).toBe(true)
+    // a legacy row with no kind at all is a task, and reads as one here too
+    expect(readableRow({ id: 'legacy' }, 'peer', 'me')).toBe(true)
+  })
+
+  it('is never more permissive than the policy, whatever a hand-written row carries', () => {
+    // the policy compares TEXT (`data ->> 'shared' = 'true'`), so a stray value
+    // is not 'true' and withholds a note; for a task anything that is not
+    // 'true' withholds it too. Erring this way can only hide a row, never
+    // serve one the database would not.
+    for (const stray of ['true', 'false', 1, 0, {}, ['yes']]) {
+      expect(readableRow({ kind: 'task', shared: stray }, 'peer', 'me'), String(stray)).toBe(false)
+      expect(readableRow({ kind: 'note', shared: stray }, 'peer', 'me'), String(stray)).toBe(false)
+    }
+  })
+
   it('matches the newest posts policy, which is where it is really enforced', () => {
     const sql = newestFile(/create policy "household access" on public\.posts\b/)
     expect(sql).toMatch(/<> 'note' or coalesce\(data ->> 'shared', 'false'\) = 'true'/)
+    expect(sql).toMatch(/<> 'task' or coalesce\(data ->> 'shared', 'true'\) = 'true'/)
   })
 })
 

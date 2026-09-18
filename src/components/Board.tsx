@@ -5,6 +5,8 @@ import { TaskCard } from './TaskCard'
 interface Props {
   tasks: Task[]
   members: { id: string; displayName: string }[]
+  /** Passed to every card: the share mark is drawn only in a household. */
+  inHousehold?: boolean
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
   onNew(s: TaskStatus): void
@@ -21,7 +23,7 @@ function sortForColumn(list: Task[], s: TaskStatus): Task[] {
 
 const DONE_CAP = 30
 
-export function Board({ tasks, members, onOpen, onStatus, onNew }: Props) {
+export function Board({ tasks, members, inHousehold, onOpen, onStatus, onNew }: Props) {
   return (
     <>
       {tasks.length === 0 && (
@@ -62,6 +64,7 @@ export function Board({ tasks, members, onOpen, onStatus, onNew }: Props) {
                     key={t.id}
                     task={t}
                     assignee={t.assigneeId ? members.find(m => m.id === t.assigneeId)?.displayName : undefined}
+                    inHousehold={inHousehold}
                     onOpen={onOpen}
                     onStatus={onStatus}
                   />

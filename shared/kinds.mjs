@@ -41,6 +41,19 @@ export function readableKind(kind, ownerId, readerId) {
 }
 
 /**
+ * The kinds whose audience is decided per RECORD rather than per kind, and
+ * what each one's `shared` means when it is absent.
+ *
+ * A note is the place things are written down before anyone decides who they
+ * are for, so it is private until its owner shares it (v3.16). A task is
+ * household work — the board, Today, the calendar and the ICS feed are built
+ * on both members seeing it — so it is the household's until its owner
+ * withholds it (v3.19). Absent means the default either way, which is what
+ * every row written before each change carries.
+ */
+export const SHARED_BY_DEFAULT = { note: false, task: true }
+
+/**
  * Whether `readerId` may read this row, kind AND record. Use this wherever the
  * row itself is in hand; readableKind only answers the part a kind can answer.
  *
@@ -50,13 +63,32 @@ export function readableKind(kind, ownerId, readerId) {
  * unshared note reaching any of them is the same leak as a peer's journal —
  * the backup is one signed link away from whoever holds Admin.
  *
- * `shared` absent reads as not shared, which is every note written before v3.16.
+ * `shared` absent reads as the kind's default: not shared for a note, shared
+ * for a task.
  */
 export function readableRow(data, ownerId, readerId) {
   if (!!readerId && ownerId === readerId) return true
   const kind = kindOf(data)
   if (PERSONAL_KINDS.has(kind)) return false
-  // the one kind whose audience is per record rather than per kind
-  if (kind === 'note') return data?.shared === true
+  // the kinds whose audience is per record rather than per kind
+  if (kind in SHARED_BY_DEFAULT) return sharedFlag(data) ?? SHARED_BY_DEFAULT[kind]
   return true
+}
+
+/**
+ * A record's own `shared`, or null when it carries none and the kind's default
+ * decides.
+ *
+ * Absent means absent the way the policy's coalesce means it, and a JSON null
+ * is absent too: `data ->> 'shared'` is NULL for both. Anything else must BE
+ * the boolean true to share. The policy compares text, so it would also accept
+ * the STRING "true" — this does not, deliberately, and the app never writes
+ * one. Erring that way can only withhold a row the database would have served;
+ * erring the other way would serve one the database withholds, and these are
+ * the readers that bypass the database entirely.
+ */
+export function sharedFlag(data) {
+  const flag = data?.shared
+  if (flag === undefined || flag === null) return null
+  return flag === true
 }

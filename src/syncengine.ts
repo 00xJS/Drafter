@@ -1,10 +1,10 @@
 import { Item, Note, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
-import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedNotes, type SyncConflict } from './itemops'
+import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedPeerRows, type SyncConflict } from './itemops'
 import { applyLocalChoice, sameContent } from '../shared/merge.mjs'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
-import { purgeTombstone, type SyncResult } from './sync'
+import { peerVisibleByKind, purgeTombstone, type SyncResult } from './sync'
 import {
   KINDS_KEY,
   clearSyncCursor,
@@ -703,7 +703,16 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       // dirty for good. The flag is not content: it is who the row is for, and
       // the tombstone has to say the same thing the row it replaces said.
       const raw = purgeTombstone(p.kind, p.id, newerStamp(p.updatedAt), deletedAt)
-      const tomb = sanitizeItem(p.kind === 'note' && (p as Note).shared ? { ...raw, shared: true } : raw)
+      // a private task says the same thing the other way round: the tombstone
+      // carries `false` so the server does not have to put it back (v3.19's
+      // posts_private_flag would), and the row we hold matches the row it holds
+      const tomb = sanitizeItem(
+        p.kind === 'note' && (p as Note).shared
+          ? { ...raw, shared: true }
+          : p.kind === 'task' && (p as Task).shared === false
+            ? { ...raw, shared: false }
+            : raw,
+      )
       return tomb ? { ...tomb, ownerId: p.ownerId } : p
     })
     commit(next, [...set].filter(id => next.some(p => p.id === id)))
@@ -775,7 +784,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       result = await rpc!(outgoing, pullSince(since))
     } catch (e) {
       console.error('Sync failed', e)
-      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, authError: false, reportsRejections: false }
+      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerShared: null, peerNotes: null, authError: false, reportsRejections: false }
     }
     if (result.items !== null) return result
     publish({ syncInfo: { online: false, lastAt: state.syncInfo.lastAt, authError: result.authError, pending: pendingCount(), rejected: state.syncInfo.rejected } })
@@ -835,15 +844,17 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // from: an edit made while the request was in flight must survive it.
     const current = state.items
     const gone = new Set(result.gone)
-    // Notes of other people's that this account can no longer read: un-shared,
-    // or the household changed. They cannot arrive as items — an invisible row
-    // is indistinguishable from an unchanged one — so the server states the
-    // whole visible set and revokedNotes works out what is left over.
-    // `result.rejected` is passed as well: a note the server refused in the same
-    // breath that left it out of peerNotes is not a pending edit, it is a note
-    // this account cannot write because it cannot read it. Holding it would
-    // deadlock — see revokedNotes.
-    const revoked = revokedNotes(current, result.peerNotes, dirty, account, new Set(result.rejected))
+    // Rows of other people's that this account can no longer read: a note they
+    // un-shared, a task they made private, or the household changed. They
+    // cannot arrive as items — an invisible row is indistinguishable from an
+    // unchanged one — so the server states the whole visible set and
+    // revokedPeerRows works out what is left over. Which set covers which kind
+    // is peerVisibleByKind's to say: a v3.16 server speaks for notes only.
+    // `result.rejected` is passed as well: a row the server refused in the same
+    // breath that left it out is not a pending edit, it is a row this account
+    // cannot write because it cannot read it. Holding it would deadlock — see
+    // revokedPeerRows.
+    const revoked = revokedPeerRows(current, peerVisibleByKind(result), dirty, account, new Set(result.rejected))
     const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
       dirty,
       shadows,
@@ -852,7 +863,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     let next = decision.merged
     // purged for good on the server: removed here, never pushed again
     if (gone.size > 0 || removedMidRound.size > 0) next = next.filter(i => !gone.has(i.id) && !removedMidRound.has(i.id))
-    // dropped, not tombstoned: the note is alive and well, just not ours to read
+    // dropped, not tombstoned: the row is alive and well, just not ours to read
     if (revoked.size > 0) next = next.filter(i => !revoked.has(i.id))
     next = ensureProjects(purgeTombstones(next, clock))
     if (decision.cursor) writeCursor(decision.cursor, kv)

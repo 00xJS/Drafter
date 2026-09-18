@@ -220,6 +220,7 @@ export function NotesView({
         projects={projects}
         myId={myId}
         nameOf={nameOf}
+        inHousehold={inHousehold}
         query={query}
         onQuery={setQuery}
         onOpenNote={id => setOpen(notes.find(n => n.id === id) ?? null)}

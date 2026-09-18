@@ -2,7 +2,7 @@ import { SetForm, TaskForm } from '../../taskform'
 import { PRIORITIES, PRIORITY_META, STATUS_META, Task, pickerStatuses } from '../../types'
 
 interface Props {
-  form: Pick<TaskForm, 'assigneeId' | 'status' | 'priority' | 'blockedBy'>
+  form: Pick<TaskForm, 'assigneeId' | 'status' | 'priority' | 'blockedBy' | 'shared'>
   set: SetForm
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
@@ -10,6 +10,8 @@ interface Props {
   candidates: Task[]
   /** This task's own id, never offered as its own blocker. */
   taskId: string
+  /** The reader's own account id, so "assigned to someone else" can be told from "assigned to me". */
+  myId?: string | null
 }
 
 /**
@@ -17,14 +19,27 @@ interface Props {
  * there is one home project, a new task takes one only from a preset, template
  * or Draft a plan, and a saved task keeps its own.
  */
-export function AssignFields({ form, set, members, candidates, taskId }: Props) {
-  const { assigneeId, status, priority, blockedBy } = form
+export function AssignFields({ form, set, members, candidates, taskId, myId }: Props) {
+  const { assigneeId, status, priority, blockedBy, shared } = form
+  // Whose job it is and who can see it are different questions, but one answer
+  // rules out the other: a task the other member is meant to do cannot be kept
+  // from them. Said and refused here rather than allowed and then undone by
+  // the server, which would look like the app losing an edit.
+  const theirs = !!assigneeId && !!myId && assigneeId !== myId
+  const assignee = theirs ? members.find(m => m.id === assigneeId)?.displayName : undefined
   return (
     <>
       {members.length > 1 && (
         <label className="field">
           <span>Who's doing it</span>
-          <select value={assigneeId} onChange={e => set({ assigneeId: e.target.value })}>
+          <select
+            value={assigneeId}
+            onChange={e => {
+              // handing it to the other member shares it: they cannot do a task they cannot see
+              const id = e.target.value
+              set(myId && id && id !== myId ? { assigneeId: id, shared: true } : { assigneeId: id })
+            }}
+          >
             <option value="">Anyone</option>
             {members.map(m => (
               <option key={m.id} value={m.id}>
@@ -33,6 +48,34 @@ export function AssignFields({ form, set, members, candidates, taskId }: Props) 
             ))}
           </select>
         </label>
+      )}
+
+      {members.length > 1 && (
+        <div className="field">
+          <span>Who can see it</span>
+          <div className="segmented">
+            <button type="button" className={shared ? 'seg on' : 'seg'} aria-pressed={shared} onClick={() => set({ shared: true })}>
+              👥 Shared
+            </button>
+            <button
+              type="button"
+              className={!shared ? 'seg on' : 'seg'}
+              aria-pressed={!shared}
+              disabled={theirs}
+              title={theirs ? `${assignee ?? 'The other member'} is doing this one, so it cannot be kept from them.` : undefined}
+              onClick={() => set({ shared: false })}
+            >
+              🔒 Private
+            </button>
+          </div>
+          <small className="muted">
+            {theirs
+              ? `${assignee ?? 'Someone else'} is doing this one — pick Anyone or yourself above to keep it private.`
+              : shared
+                ? 'Everyone in your household can see this task.'
+                : 'Only you can see this task — it stays out of their list, their board and their calendar.'}
+          </small>
+        </div>
       )}
 
       <div className="field">

@@ -48,12 +48,16 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onDelete={deleteTask}
           onOpenTrash={() => setTrashOpen(true)}
           trashCount={store.visibleItems.filter(i => i.deletedAt && !i.purged).length}
+          inHousehold={inHousehold}
+          myId={household.myId}
+          nameOf={id => memberName(household.info, id)}
         />
       )}
       {tasksTab === 'board' && (
         <Board
           tasks={filteredTasks}
           members={household.info?.members ?? []}
+          inHousehold={inHousehold}
           onOpen={openTask}
           onStatus={changeStatus}
           onNew={s => newTask({ status: s })}

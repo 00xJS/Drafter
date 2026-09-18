@@ -87,11 +87,15 @@ async function scopeOf(admin: Admin): Promise<Scope> {
 /**
  * The posts policy as the owner meets it (migration 20260915): their own rows
  * and legacy unowned ones, and a household member's unless the kind is
- * personal — or, for a note, unless they shared it (v3.16, 20260925). The same
- * test decides what a read returns and which existing rows a write may land on.
+ * personal — or unless the record itself decides. Two kinds do: a note is
+ * private until shared (v3.16, 20260925) and a task is the household's until
+ * withheld (v3.19, 20260928). The same test decides what a read returns and
+ * which existing rows a write may land on.
  *
  * `shared` arrives as a JSON boolean from a row's data and as the text 'true'
- * when PostgREST projected it with ->>; both mean the same thing here.
+ * or 'false' when PostgREST projected it with ->>; both spellings mean the
+ * same thing here, and anything else is the kind's default — which is how the
+ * policy's coalesce reads an absent flag too.
  */
 function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown): boolean {
   if (userId === null || (scope.owner !== null && userId === scope.owner)) return true
@@ -99,25 +103,33 @@ function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown)
   const k = typeof kind === 'string' ? kind : 'task'
   if (PERSONAL_KINDS.has(k)) return false
   if (k === 'note') return shared === true || shared === 'true'
+  if (k === 'task') return !(shared === false || shared === 'false')
   return true
 }
 
 /** The same rule as a PostgREST filter, so `limit` counts only rows the bot may read. */
 function scopeFilter(scope: Scope): string {
-  // The note rule belongs here as well as in inScope, because `list` applies
-  // its limit in the DATABASE. Leaving the rule to inScope alone meant the
+  // The per-record rules belong here as well as in inScope, because `list`
+  // applies its limit in the DATABASE. Leaving them to inScope alone meant the
   // limit counted rows that were then thrown away: a household whose other
   // member keeps a hundred private notes at the top of `updated_at desc`
   // would fill the whole page with them and the owner's agent would be told,
   // truthfully and uselessly, that there is nothing there. inScope stays as
   // the row-by-row backstop, so a mistake in this string can only narrow the
   // answer, never widen it.
+  //
+  // A task's term needs all three of its branches: `data->>shared` is NULL for
+  // the tasks that carry no flag, which is most of them, and `neq.false` on a
+  // NULL is NULL — not true — so without `is.null` every ordinary task of a
+  // housemate's would drop out of the page.
   const branches = ['user_id.is.null']
   if (scope.owner) branches.push(`user_id.eq.${scope.owner}`)
   if (scope.peers.length) {
     const peers = scope.peers.join(',')
     const kinds = [...PERSONAL_KINDS].join(',')
-    branches.push(`and(user_id.in.(${peers}),kind.not.in.(${kinds}),or(kind.neq.note,data->>shared.eq.true))`)
+    branches.push(
+      `and(user_id.in.(${peers}),kind.not.in.(${kinds}),or(kind.neq.note,data->>shared.eq.true),or(kind.neq.task,data->>shared.is.null,data->>shared.neq.false))`,
+    )
   }
   return branches.join(',')
 }

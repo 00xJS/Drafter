@@ -140,9 +140,9 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* Show all is the way out, so it reads as one, as .mine-note's way off does:
-   the accent's text colour at 600. .btn.subtle alone would give it the
-   line's own --text-2, and a hover of --surface-2, the line's own ground. */
+/* Show all is the way out, so it reads as one: the accent's text colour at
+   600. .btn.subtle alone would give it the line's own --text-2, and a hover of
+   --surface-2, the line's own ground. */
 .stats-narrowed > .btn {
   flex: none;
   color: var(--accent-text);

@@ -119,6 +119,17 @@ export interface Task extends Owned {
   /** Household member responsible (a Supabase user id). */
   assigneeId?: string
   /**
+   * Kept to yourself. A task is the HOUSEHOLD'S unless this says otherwise —
+   * the opposite default from a note, which is private until shared (v3.16).
+   * Household work is what a task is for, and every task written before v3.19
+   * was written to be seen, so absent means shared and only `false` withholds
+   * one. The database enforces it: a peer's query cannot return a task marked
+   * private, and a write that does not mention the flag leaves a stored
+   * `false` where it is (posts_private_flag), so an older build that has never
+   * heard of the field cannot make one public by saving it.
+   */
+  shared?: boolean
+  /**
    * The local day (YYYY-MM-DD) this task is in today's focus for — set by Plan
    * my day and Shut down. Past values are history and are never cleared, so a
    * finished task still reads as "2 of 3 done" on its day.

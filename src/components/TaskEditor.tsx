@@ -34,6 +34,8 @@ interface Props {
   onSavePerson?(p: Person): void
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
+  /** The reader's own account id, when the planner is shared with a household. */
+  myId?: string | null
   /** Open tasks that could block this one (same project preferred). */
   candidates: Task[]
   /** The freshest copy in the store — save() merges onto it so fields the user
@@ -60,6 +62,7 @@ export function TaskEditor({
   onSavePlace,
   onSavePerson,
   members,
+  myId,
   candidates,
   getLatest,
   onSave,
@@ -310,7 +313,7 @@ export function TaskEditor({
             </div>
 
             <aside className="editor-side">
-              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} />
+              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} />
               <DueFields form={form} set={set} />
               <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
               <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />

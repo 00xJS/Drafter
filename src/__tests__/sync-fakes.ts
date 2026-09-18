@@ -1,5 +1,5 @@
 // Test doubles for the sync engine: a sync_posts that keeps rows in memory and
-// answers in any of the three shapes production has spoken, and a device (an
+// answers in any of the shapes production has spoken, and a device (an
 // engine plus its own storage). Not a test file itself — vitest collects only
 // *.test.ts.
 import { vi } from 'vitest'
@@ -10,7 +10,10 @@ import { KINDS_EPOCH, createSyncEngine, type CacheRecord, type SyncStorage } fro
 import { KINDS_KEY } from '../syncstate'
 import { Item, Task } from '../types'
 
-export type ServerShape = 'new' | 'old' | 'legacy'
+export type ServerShape = 'new' | 'v316' | 'old' | 'legacy'
+
+/** The shapes that say what they refused: everything from v3.11 on. */
+const reportsRejections = (shape: ServerShape) => shape === 'new' || shape === 'v316'
 
 /**
  * sync_posts in memory, with the real rule: a row changes only when the
@@ -34,12 +37,15 @@ export class FakeServer {
 
   /**
    * RLS, as far as these tests need it: your own rows always, a household
-   * peer's rows unless the row is an unshared note (v3.16). The real policy
-   * excludes the personal kinds too; nothing here turns on that.
+   * peer's rows unless the record withholds itself — an unshared note (v3.16)
+   * or a task marked private (v3.19). The real policy excludes the personal
+   * kinds too; nothing here turns on that.
    */
   private visible(r: { data: Record<string, unknown>; owner: string }): boolean {
     if (r.owner === this.caller) return true
-    return r.data.kind !== 'note' || r.data.shared === true
+    if (r.data.kind === 'note') return r.data.shared === true
+    if (r.data.kind === 'task' || r.data.kind === undefined) return r.data.shared !== false
+    return true
   }
 
   private stamp(): string {
@@ -73,7 +79,7 @@ export class FakeServer {
   rpc = async (outgoing: Item[], since: string | null): Promise<SyncResult> => {
     const n = this.calls.push({ outgoing: JSON.parse(JSON.stringify(outgoing)), since })
     await this.beforeAnswer?.(n)
-    if (this.offline) return { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerNotes: null, authError: false, reportsRejections: false }
+    if (this.offline) return { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerShared: null, peerNotes: null, authError: false, reportsRejections: false }
     const rejected: unknown[] = []
     const stale: string[] = []
     const gone: string[] = []
@@ -81,10 +87,10 @@ export class FakeServer {
       const id = raw.id as string
       const why = this.refuse.get(id)
       if (why !== undefined) {
-        rejected.push(this.shape === 'new' ? { id, reason: why } : id)
+        rejected.push(reportsRejections(this.shape) ? { id, reason: why } : id)
         continue
       }
-      if (this.purgedForGood.has(id) && this.shape === 'new') {
+      if (this.purgedForGood.has(id) && reportsRejections(this.shape)) {
         gone.push(id)
         continue
       }
@@ -96,12 +102,23 @@ export class FakeServer {
     }
     const readable = [...this.rows.values()].filter(r => this.visible(r))
     const out = readable
-      .filter(r => since === null || r.syncedAt > since || (this.shape === 'new' && stale.includes(r.data.id as string)))
+      .filter(r => since === null || r.syncedAt > since || (reportsRejections(this.shape) && stale.includes(r.data.id as string)))
       .sort((a, b) => a.syncedAt.localeCompare(b.syncedAt))
       .map(r => ({ ...r.data, ownerId: r.owner, syncedAt: r.syncedAt }))
-    // the whole visible set, cursor or no cursor — how un-sharing reaches a reader
-    const peerNotes = readable.filter(r => r.owner !== this.caller && r.data.kind === 'note').map(r => r.data.id as string)
-    const data = this.shape === 'legacy' ? out : this.shape === 'old' ? { items: out, rejected } : { items: out, rejected, stale, gone, peerNotes }
+    // the whole visible set, cursor or no cursor — how withholding reaches a reader
+    const peerVisible = (kinds: string[]) => readable.filter(r => r.owner !== this.caller && kinds.includes(String(r.data.kind ?? 'task'))).map(r => r.data.id as string)
+    const peerNotes = peerVisible(['note'])
+    const peerShared = peerVisible(['note', 'task'])
+    // `shape: 'v316'` is a server that knows about notes and not tasks — the
+    // window between the database being migrated and a phone being rebuilt
+    const data =
+      this.shape === 'legacy'
+        ? out
+        : this.shape === 'old'
+          ? { items: out, rejected }
+          : this.shape === 'v316'
+            ? { items: out, rejected, stale, gone, peerNotes }
+            : { items: out, rejected, stale, gone, peerNotes, peerShared }
     return { ...parseSyncResponse(data)!, authError: false }
   }
 }

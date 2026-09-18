@@ -121,6 +121,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSavePlace={p => store.upsert(p)}
             onSavePerson={p => store.upsert(p)}
             members={inHousehold ? household.info!.members : []}
+            myId={household.myId}
             candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
             getLatest={id => store.tasks.find(x => x.id === id)}
             onSave={t => {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NotePane } from '../components/notes/NotePane'
 import { NotesIndex } from '../components/notes/NotesIndex'
+import { ShareMark } from '../components/bits'
 import { Note } from '../types'
 import { button, elements, press, settled, textOf } from './rendered'
 
@@ -101,17 +102,24 @@ describe('a note says whose it is, on the note', () => {
   })
 })
 
-describe('the list marks the shared ones', () => {
-  const list = (notes: Note[], nameOf?: (id: string | undefined) => string | null) =>
-    settled(NotesIndex, { notes, projects: [], myId: ME, nameOf, query: '', onQuery: noop, onOpenNote: noop, onOpenPad: noop })
+describe('the list says which is which', () => {
+  const list = (notes: Note[], nameOf?: (id: string | undefined) => string | null, inHousehold = true) =>
+    settled(NotesIndex, { notes, projects: [], myId: ME, nameOf, inHousehold, query: '', onQuery: noop, onOpenNote: noop, onOpenPad: noop })
 
+  // the words the row actually draws: each mark rendered through the component
+  // the row hands its props to, rather than a copy of its rules kept here
   const badges = (tree: ReturnType<typeof settled>) =>
     elements(tree)
-      .filter(e => e.type === 'span' && e.props.className === 'note-row-share')
-      .map(e => textOf(e.props.children).replace(/\s+/g, ' ').trim())
+      .filter(e => e.type === ShareMark)
+      .map(e => textOf(settled(ShareMark, e.props as Parameters<typeof ShareMark>[0])).replace(/\s+/g, ' ').trim())
 
-  it('marks a shared note and leaves a private one unmarked — private is the default, so a badge on every row says nothing', () => {
-    expect(badges(list([note('a', { ownerId: ME, shared: true }), note('b', { ownerId: ME })]))).toEqual(['👥 Shared'])
+  it('marks both states, so a row can be read at a glance instead of by its silence', () => {
+    // v3.16 marked only the shared ones, on the grounds that a badge on every
+    // row says nothing. It says something here: the owner asked to tell the
+    // two apart, and an unmarked row reads as "private" and "not loaded yet"
+    // equally well — the more so beside a task list where the default is the
+    // other way round.
+    expect(badges(list([note('a', { ownerId: ME, shared: true }), note('b', { ownerId: ME })]))).toEqual(['👥 Shared', '🔒 Private'])
   })
 
   it('names whoever shared a note with you', () => {
@@ -122,5 +130,9 @@ describe('the list marks the shared ones', () => {
   it('marks a peer’s note however the flag reads: it could not be in this list otherwise', () => {
     // the database would not have returned it, so what arrived is shared
     expect(badges(list([note('d', { ownerId: PEER })], () => 'Maria'))).toEqual(['👥 Maria'])
+  })
+
+  it('marks nothing at all outside a household, where there is nobody to share with', () => {
+    expect(badges(list([note('a', { ownerId: ME, shared: true }), note('b', { ownerId: ME })], undefined, false))).toEqual([])
   })
 })
