@@ -20,12 +20,21 @@ const vite = read('../../vite.config.ts')
 const netlify = read('../../netlify.toml')
 
 describe('the iOS entitlements', () => {
-  it('are off in the file Xcode signs, so a free team can still build', () => {
-    // this is what the signing expiry needs on a week where the membership has
-    // not cleared: a build that works today, with reminders and Face ID intact
-    expect(live).not.toContain('aps-environment')
-    expect(live).not.toContain('associated-domains')
+  it('is one of the two known states, never something hand-edited', () => {
+    // The file Xcode signs is either empty (a free personal team, which cannot
+    // provision push or associated domains — asking fails the build) or exactly
+    // the paid one, put there by `npm run ios:apple`. Anything else is a third
+    // state nobody chose, and the failure it causes arrives at archive time.
+    const paid = live.trim() === entitlements.trim()
+    const free = !live.includes('aps-environment') && !live.includes('associated-domains')
+    expect(paid || free, paid ? '' : 'App.entitlements is neither empty nor the paid file').toBe(true)
     expect(pkg.scripts['ios:apple']).toContain('App.paid.entitlements')
+  })
+
+  it('can be put back for a free team, which is what a lapsed membership needs', () => {
+    // `git checkout ios/App/App/App.entitlements` is the way back, so the empty
+    // version has to stay in git rather than being generated
+    expect(pkg.scripts['ios:apple']).toMatch(/^cp ios\/App\/App\/App\.paid\.entitlements ios\/App\/App\/App\.entitlements/)
   })
 
   it('asks for push, and for the domain the app is served from', () => {
