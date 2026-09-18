@@ -34,8 +34,16 @@ function doneMarks(tasks: readonly Task[]): Dated[] {
   return workDone(tasks).map(t => ({ at: t.completedAt as string }))
 }
 
-/** Every task that is finished WORK: done, not in Trash, and not a logged visit. */
-const workDone = (tasks: readonly Task[]): Task[] => tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt && !isVisit(t))
+/**
+ * Every task that is finished WORK: done, not in Trash, and not a logged visit.
+ *
+ * Exported because the lens draws the same quantity in more than one place,
+ * and every one of them has to read this and not spell it again. Two did spell
+ * it again — Overview's year grid and its Tasks sparkline — and both counted
+ * catch-ups as work, so a quiet month of seeing people was drawn as a busy
+ * month of finishing things, against the segment below that said otherwise.
+ */
+export const workDone = (tasks: readonly Task[]): Task[] => tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt && !isVisit(t))
 
 /** The day keys something was finished on, newest first: two tasks on one Saturday are one day. */
 export function doneDays(tasks: readonly Task[]): string[] {

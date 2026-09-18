@@ -1,6 +1,6 @@
 import { Suspense, useMemo, useState } from 'react'
 import { formatMoney } from '../bills'
-import { doneByPriority, doneByTag, doneMonths, habitReport, journalReport, moneyReport, taskReport } from '../lensstats'
+import { doneByPriority, doneByTag, doneMonths, habitReport, journalReport, moneyReport, taskReport, workDone } from '../lensstats'
 import { wardrobeCosts } from '../wardrobe'
 import { kitchenIndex, kitchenTiles } from '../kitchenstats'
 import { countOf } from '../people'
@@ -229,7 +229,10 @@ function Overview(p: Lens) {
   // exist, or the ring could read more than its own total.
   const livePlaces = useMemo(() => places.filter(pl => !pl.deletedAt), [places])
   const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, tasks, meals, now).length > 0).length, [livePlaces, tasks, meals, now])
-  const done = useMemo(() => monthBuckets(tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt).map(t => ({ at: t.completedAt as string })), year), [tasks, year])
+  // doneMonths, not a recount: the Tasks segment's own "Each month" bars are
+  // these twelve numbers, and this sparkline is the way into that segment —
+  // the two disagreed, because this one counted visits as work
+  const done = useMemo(() => doneMonths(tasks, year, now).months, [tasks, year, now])
   return (
     <>
       <section className="stats-section">
@@ -309,11 +312,20 @@ function Overview(p: Lens) {
 }
 
 /** Each day paired with how many tasks were finished on it. */
+/**
+ * Days with work finished, for the year grid — off `workDone`, which is the
+ * app's own rule for what counts.
+ *
+ * It used to take every done task, logged visits included, while the tiles and
+ * the streak line on the same card took `workDone`. So a grid cell lit for a
+ * get-together, its title read "1 task" for something that is not one, and the
+ * card said "1 day is the longest run there has been" above a grid showing
+ * three.
+ */
 function countsByDay(tasks: readonly Task[]): [string, number][] {
   const counts = new Map<string, number>()
-  for (const t of tasks) {
-    if (t.deletedAt || t.status !== 'done' || !t.completedAt) continue
-    const key = dateKey(new Date(t.completedAt))
+  for (const t of workDone(tasks)) {
+    const key = dateKey(new Date(t.completedAt as string))
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return [...counts]

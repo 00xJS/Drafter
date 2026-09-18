@@ -7,6 +7,10 @@
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
+import { PERSONAL_KINDS } from '../../shared/kinds.mjs'
+
+/** A user id has to look like one before it reaches a filter. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function env() {
   return { url: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
@@ -120,15 +124,41 @@ const handler = async req => {
     if (body.action === 'remove') {
       if (m.role !== 'owner') return Response.json({ error: 'Only the household owner can remove members.' }, { status: 403 })
       if (body.userId === user.id) return Response.json({ error: 'Use leave to remove yourself.' }, { status: 400 })
-      // Keep the household's shared work: re-attribute the removed member's rows to the owner.
+      // The id has to be a member of THIS household before anything of theirs
+      // is touched. Owning a household was the only check here, and the
+      // household-scoped DELETE below ran after the rows had already moved —
+      // so an id from outside the household reached the re-attribution, and
+      // every row that account owned changed hands.
+      const target = String(body.userId ?? '')
+      if (!UUID.test(target)) return Response.json({ error: 'Unknown member.' }, { status: 400 })
+      const inHousehold = await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${target}&select=user_id&limit=1`)
+      if (!inHousehold?.length) return Response.json({ error: 'That account is not in your household.' }, { status: 404 })
+      // Membership goes first: after this they are out, whatever the
+      // re-attribution does, and a failure there cannot leave them a member
+      // whose rows have already moved.
+      await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${target}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
+      // Keep the household's SHARED work: re-attribute it to the owner.
+      //
+      // Shared only. A personal kind belongs to one account even inside a
+      // household (PERSONAL_KINDS, shared/kinds.mjs), and this used to move
+      // every row the member owned — their journal, their wardrobe, their
+      // habits and reviews — into the creator's account, where the app
+      // rendered them, the ICS feed published them, the nightly backup wrote
+      // them into the creator's snapshot and the MCP tools could read them.
+      // The database already says the rule out loud: admin_prepare_user_deletion
+      // DELETES the personal rows before it hands the rest to an heir, "so an
+      // heir never inherits someone's clothes and what they wore, any more
+      // than their diary" (20260923000000_v3_14_wardrobe.sql). Leaving them
+      // with their owner is the gentler half of the same rule — the member
+      // keeps their own diary, and the household keeps its tasks.
       const [hh] = await rest(`households?id=eq.${m.household_id}&select=created_by`)
       const ownerId = hh?.created_by ?? user.id
-      await rest(`posts?user_id=eq.${encodeURIComponent(body.userId)}`, {
+      const shared = `kind=not.in.(${[...PERSONAL_KINDS].join(',')})`
+      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&${shared}`, {
         method: 'PATCH',
         headers: { prefer: 'return=minimal' },
         body: JSON.stringify({ user_id: ownerId }),
-      }).catch(() => {})
-      await rest(`household_members?household_id=eq.${m.household_id}&user_id=eq.${body.userId}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
+      })
       // Nothing is stamped for the others to notice: user_settings has no
       // column for it, so that write failed every time. The app that asked
       // resyncs in full once this answers (Settings → Household); the others'

@@ -1086,6 +1086,19 @@ function RecipeForm({
   const [emoji, setEmoji] = useState(recipe?.emoji ?? '')
   const [servings, setServings] = useState(recipe?.servings != null ? String(recipe.servings) : '4')
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(recipe?.ingredients.length ? recipe.ingredients : [newIngredient()])
+  /**
+   * What is TYPED in each quantity box, which is not the same thing as the
+   * number it will become.
+   *
+   * The box used to render `ing.qty` and parse every keystroke, so a decimal
+   * could not be typed at all: "0" parsed to 0 and rendered "0"; the "." made
+   * "0." which parses to 0, so React drove the box back to "0" and ate the
+   * point; "5" then landed as 5. A half cup was saved as five, and nothing
+   * said so — the grocery list just added up ten times the flour.
+   */
+  const [qtyText, setQtyText] = useState<Record<string, string>>(() =>
+    Object.fromEntries((recipe?.ingredients ?? []).map(i => [i.id, i.qty != null ? String(i.qty) : ''])),
+  )
   const [steps, setSteps] = useState((recipe?.steps ?? []).join('\n'))
   const [tags, setTags] = useState((recipe?.tags ?? []).join(', '))
   const [notes, setNotes] = useState(recipe?.notes ?? '')
@@ -1115,6 +1128,7 @@ function RecipeForm({
       if (found.servings) setServings(String(found.servings))
       if (found.ingredients.length) {
         const rows = found.ingredients.map(i => ({ ...newIngredient(), ...i }))
+        setQtyText(t => ({ ...t, ...Object.fromEntries(rows.map(r => [r.id, r.qty != null ? String(r.qty) : ''])) }))
         setIngredients(list => (list.every(i => !i.name.trim()) ? rows : [...list.filter(i => i.name.trim()), ...rows]))
       }
       if (found.steps.length) setSteps(s => (s.trim() ? `${s.trim()}\n${found.steps.join('\n')}` : found.steps.join('\n')))
@@ -1156,6 +1170,15 @@ function RecipeForm({
   }
 
   const setIng = (id: string, patch: Partial<RecipeIngredient>) => setIngredients(list => list.map(i => (i.id === id ? { ...i, ...patch } : i)))
+  /** A quantity a shopping list can add up: a real, positive, sane number, or nothing at all. */
+  const asQty = (text: string): number | undefined => {
+    const n = Number(text)
+    return text.trim() && Number.isFinite(n) && n > 0 && n <= 10_000 ? n : undefined
+  }
+  const typeQty = (id: string, text: string) => {
+    setQtyText(t => ({ ...t, [id]: text }))
+    setIng(id, { qty: asQty(text) })
+  }
 
   return (
     <Modal onClose={onClose}>
@@ -1216,8 +1239,9 @@ function RecipeForm({
               <input
                 className="ing-qty"
                 inputMode="decimal"
-                value={ing.qty ?? ''}
-                onChange={e => setIng(ing.id, { qty: e.target.value ? Number(e.target.value) : undefined })}
+                // the typed text, not the parsed number: see qtyText
+                value={qtyText[ing.id] ?? (ing.qty != null ? String(ing.qty) : '')}
+                onChange={e => typeQty(ing.id, e.target.value)}
                 placeholder="1"
               />
               <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" />
