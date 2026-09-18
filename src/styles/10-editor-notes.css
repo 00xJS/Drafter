@@ -890,19 +890,6 @@
    default and a badge on every row would say nothing. It sits between the
    title and the time, and gives up its width first — the title is what a
    person is reading the row for. */
-.note-row-share {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
 .notes-no-match {
   margin: 4px 0;
   color: var(--muted);

@@ -12,6 +12,8 @@ interface Props {
   taskId: string
   /** The reader's own account id, so "assigned to someone else" can be told from "assigned to me". */
   myId?: string | null
+  /** Whose task this is. A peer's is theirs to withhold, not yours. */
+  ownerId?: string | null
 }
 
 /**
@@ -19,14 +21,25 @@ interface Props {
  * there is one home project, a new task takes one only from a preset, template
  * or Draft a plan, and a saved task keeps its own.
  */
-export function AssignFields({ form, set, members, candidates, taskId, myId }: Props) {
+export function AssignFields({ form, set, members, candidates, taskId, myId, ownerId }: Props) {
   const { assigneeId, status, priority, blockedBy, shared } = form
   // Whose job it is and who can see it are different questions, but one answer
   // rules out the other: a task the other member is meant to do cannot be kept
   // from them. Said and refused here rather than allowed and then undone by
   // the server, which would look like the app losing an edit.
-  const theirs = !!assigneeId && !!myId && assigneeId !== myId
+  //
+  // The assignee has to still BE a member for that to hold. One who has left
+  // the household is nobody, and locking the control against a name that is
+  // not on the list any more left a task that could never be made private.
+  const theirs = !!assigneeId && !!myId && assigneeId !== myId && members.some(m => m.id === assigneeId)
   const assignee = theirs ? members.find(m => m.id === assigneeId)?.displayName : undefined
+  // Only the owner decides, and the database agrees: the `with check` half of
+  // the posts policy refuses a peer's write that withholds a row, so a button
+  // here would be a lie the server refuses — the task would sit dirty, retried
+  // for good, wearing a private badge nobody else could see. A peer's task
+  // says whose it is instead, exactly as a peer's note does.
+  const mine = !ownerId || !myId || ownerId === myId
+  const owner = mine ? undefined : members.find(m => m.id === ownerId)?.displayName
   return (
     <>
       {members.length > 1 && (
@@ -53,28 +66,38 @@ export function AssignFields({ form, set, members, candidates, taskId, myId }: P
       {members.length > 1 && (
         <div className="field">
           <span>Who can see it</span>
-          <div className="segmented">
-            <button type="button" className={shared ? 'seg on' : 'seg'} aria-pressed={shared} onClick={() => set({ shared: true })}>
-              👥 Shared
-            </button>
-            <button
-              type="button"
-              className={!shared ? 'seg on' : 'seg'}
-              aria-pressed={!shared}
-              disabled={theirs}
-              title={theirs ? `${assignee ?? 'The other member'} is doing this one, so it cannot be kept from them.` : undefined}
-              onClick={() => set({ shared: false })}
-            >
-              🔒 Private
-            </button>
-          </div>
-          <small className="muted">
-            {theirs
-              ? `${assignee ?? 'Someone else'} is doing this one — pick Anyone or yourself above to keep it private.`
-              : shared
-                ? 'Everyone in your household can see this task.'
-                : 'Only you can see this task — it stays out of their list, their board and their calendar.'}
-          </small>
+          {mine ? (
+            <>
+              <div className="segmented">
+                <button type="button" className={shared ? 'seg on' : 'seg'} aria-pressed={shared} onClick={() => set({ shared: true })}>
+                  👥 Shared
+                </button>
+                <button
+                  type="button"
+                  className={!shared ? 'seg on' : 'seg'}
+                  aria-pressed={!shared}
+                  disabled={theirs}
+                  title={theirs ? `${assignee ?? 'The other member'} is doing this one, so it cannot be kept from them.` : undefined}
+                  onClick={() => set({ shared: false })}
+                >
+                  🔒 Private
+                </button>
+              </div>
+              <small className="muted">
+                {theirs
+                  ? `${assignee ?? 'Someone else'} is doing this one — pick Anyone or yourself above to keep it private.`
+                  : shared
+                    ? 'Everyone in your household can see this task.'
+                    : 'Only you can see this task — it stays out of their list, their board and their calendar.'}
+              </small>
+            </>
+          ) : (
+            // said, not offered — the words on the screen are the accessible
+            // ones, so there is no aria-label and no tip to go with them
+            <small className="muted">
+              <span aria-hidden="true">👥</span> {owner ? `${owner}’s task` : 'Someone else’s task'} — only {owner ?? 'they'} can keep it to themselves.
+            </small>
+          )}
         </div>
       )}
 

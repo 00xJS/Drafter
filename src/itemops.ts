@@ -12,6 +12,15 @@ export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {
   for (const p of b) {
     const cur = byId.get(p.id)
     if (!cur || p.updatedAt > cur.updatedAt) byId.set(p.id, p)
+    // Whose a row is comes from the server (`user_id`), not from its content,
+    // so it can change without the stamp moving: removing a household member
+    // re-attributes their shared work to the creator, touching no `data` and
+    // no `updatedAt`. Keeping the older copy whole meant the device went on
+    // believing the row was the departed member's — and once a row's audience
+    // is decided per record (v3.19), a stale owner is not cosmetic: the
+    // revocation pass reads it, finds the row missing from the peer-visible
+    // set, and drops a row that is now the reader's own.
+    else if (cur.ownerId !== p.ownerId && p.ownerId !== undefined) byId.set(p.id, { ...cur, ownerId: p.ownerId })
   }
   return [...byId.values()]
 }

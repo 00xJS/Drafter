@@ -40,8 +40,13 @@ export function PriorityMark({ priority, withLabel }: { priority: Priority; with
  */
 export function ShareMark({ shared, by, kind }: { shared: boolean; by?: string | null; kind: 'task' | 'note' }) {
   const thing = kind === 'task' ? 'task' : 'note'
+  // Whose it is, said the way each kind means it. A note in your list is one
+  // its author CHOSE to share; a task of theirs is simply the household's,
+  // which they never had to decide — so "Maria shared this task with you"
+  // would credit a decision nobody made.
+  const whose = by ? (kind === 'task' ? `${by}’s task — everyone in your household can see it` : `${by} shared this note with you`) : `Everyone in your household can see this ${thing}`
   return shared ? (
-    <span className="share-mark is-shared" title={by ? `${by} shared this ${thing} with you` : `Everyone in your household can see this ${thing}`}>
+    <span className="share-mark is-shared" title={whose}>
       <span aria-hidden="true">👥</span> {by ?? 'Shared'}
     </span>
   ) : (

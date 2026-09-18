@@ -172,7 +172,17 @@ const handler = async req => {
       // simple thing. Nothing is lost in between: a row that has not moved yet
       // is still its author's, which is the safe half.
       const notPrivate = `or=(kind.neq.task,data->>shared.is.null,data->>shared.neq.false)`
-      const moveTo = { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: ownerId }) }
+      // `synced_at` moves with `user_id`, or the other devices never hear of
+      // it: a delta returns rows newer than the caller's cursor, and changing
+      // hands touches neither `data` nor `updated_at`. Their cached copies
+      // would go on naming the member who left as the owner until someone
+      // resynced in full — and since v3.19 reads that field to decide what a
+      // peer may still see, a stale owner is how a row goes missing.
+      const moveTo = {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({ user_id: ownerId, synced_at: new Date().toISOString() }),
+      }
       // everything the household shares, minus the notes, minus a private task
       await rest(`posts?user_id=eq.${encodeURIComponent(target)}&kind=not.in.(${[...PERSONAL_KINDS, 'note'].join(',')})&${notPrivate}`, moveTo)
       // and the notes they did share, which are household work like a task

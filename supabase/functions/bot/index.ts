@@ -103,7 +103,12 @@ function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown)
   const k = typeof kind === 'string' ? kind : 'task'
   if (PERSONAL_KINDS.has(k)) return false
   if (k === 'note') return shared === true || shared === 'true'
-  if (k === 'task') return !(shared === false || shared === 'false')
+  // Said positively, the way the policy says it: coalesce(->>'shared','true')
+  // = 'true' passes an ABSENT flag and the word true, and nothing else. Phrased
+  // as "not false" instead, any other value — a number, an object, a typo in a
+  // hand-written row — read as shared here while the database withheld it, and
+  // the gateway holds the service key, so its answer is the only one there is.
+  if (k === 'task') return shared === undefined || shared === null || shared === true || shared === 'true'
   return true
 }
 

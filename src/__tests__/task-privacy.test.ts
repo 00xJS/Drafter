@@ -4,6 +4,8 @@ import { feedFor, readableItems } from '../../netlify/functions/lib/feedrows.mjs
 import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
 import { summarizeTask } from '../../mcp/tools.mjs'
 import { nextOccurrence } from '../../shared/domain.mjs'
+import { planDayWrites } from '../focus'
+import { templateFromProject } from '../templates'
 import { sanitizeTask } from '../schema'
 import { duplicateTask } from '../taskutils'
 import { formValues, initForm, mergeOnto } from '../taskform'
@@ -106,12 +108,16 @@ describe('the flag survives the round trip', () => {
     // without it, and an absent flag on a task reads as SHARED. This is the
     // one direction where losing a field discloses something.
     expect(sanitizeTask(task('t', { shared: false }))!.shared).toBe(false)
+    // a task nobody has ever withheld carries no flag, exactly as every task
+    // written before v3.19 does
     expect(sanitizeTask(task('t'))!.shared).toBeUndefined()
-    // `true` is the default, so it is not carried: a task nobody has withheld
-    // looks exactly like every task written before v3.19
-    expect(sanitizeTask(task('t', { shared: true }))!.shared).toBeUndefined()
-    // and a stray value is not the boolean
+    // `true` is kept too, though the server reads it and absence alike: it is
+    // how this client says "share it again", and dropping it as a tidy-up is
+    // what let posts_private_flag hear silence instead — see below
+    expect(sanitizeTask(task('t', { shared: true }))!.shared).toBe(true)
+    // and a stray value is neither boolean
     expect(sanitizeTask(task('t', { shared: 'false' }))!.shared).toBeUndefined()
+    expect(sanitizeTask(task('t', { shared: 'true' }))!.shared).toBeUndefined()
   })
 })
 
@@ -183,6 +189,61 @@ describe('what the editor writes', () => {
   })
 })
 
+describe('saying "share it again" so that it sticks', () => {
+  // The review of v3.19 found this: the client could say it once, into the
+  // wind. sanitizeTask canonicalised the explicit `true` away as a tidy-up —
+  // the server reads absent and `true` alike — but absence is also what
+  // posts_private_flag reads as "keep the stored false". So any re-sanitize
+  // before the push landed (a reload, a three-way merge, Keep mine) turned the
+  // overturn back into silence, the server kept the task private, and the
+  // screen went on saying Shared.
+  it('survives the sanitizer, which the cache and the merge both run', () => {
+    expect(sanitizeTask(task('t', { shared: true }))!.shared).toBe(true)
+    expect(sanitizeTask(task('t', { shared: false }))!.shared).toBe(false)
+    expect(sanitizeTask(task('t'))!.shared).toBeUndefined()
+    // a round trip through the cache, as migrateStored does it on launch
+    const cached = JSON.parse(JSON.stringify(sanitizeTask(task('t', { shared: true }))))
+    expect(sanitizeTask(cached)!.shared).toBe(true)
+  })
+
+  it('and is still said on the SECOND save, when the local copy already reads shared', () => {
+    // keying the overturn off `base.shared === false` meant the next save went
+    // out flagless — and the server, which may still hold `false` if the first
+    // push never landed, took that as "keep it private"
+    const overturned = sanitizeTask(task('t', { shared: true }))!
+    const form = initForm(overturned)
+    expect(form.shared).toBe(true)
+    expect(formValues(form, overturned, true).shared).toBe(true)
+  })
+
+  it('but a task nobody ever withheld still carries no flag at all', () => {
+    const plain = sanitizeTask(task('t'))!
+    expect(formValues(initForm(plain), plain, true).shared).toBeUndefined()
+  })
+})
+
+describe('a private task is not published by the features that copy it elsewhere', () => {
+  const privateTask = () => sanitizeTask(task('t', { shared: false }))!
+
+  it('Plan my day writes no calendar block for one', () => {
+    // an `event` is the household's — there is no per-record audience on one —
+    // so the block would put the title on the other member's Calendar
+    const plan = { moves: [], focusIds: ['t'], blocks: [{ taskId: 't', start: '2026-09-12T09:00:00.000Z', end: '2026-09-12T10:00:00.000Z' }] }
+    const shared = planDayWrites([sanitizeTask(task('t'))!], plan as never, { today: '2026-09-12', myId: ME, now: new Date('2026-09-12T08:00:00.000Z'), newId: () => 'e1' })
+    expect(shared.events.map(e => e.title)).toEqual(['Bins out'])
+    const withheld = planDayWrites([privateTask()], plan as never, { today: '2026-09-12', myId: ME, now: new Date('2026-09-12T08:00:00.000Z'), newId: () => 'e1' })
+    expect(withheld.events).toEqual([])
+    // and it is still planned into the day, which is the part that is yours
+    expect(withheld.upserts.some(u => u.id === 't')).toBe(true)
+  })
+
+  it('Save as template leaves one out', () => {
+    const project = { kind: 'project', id: 'p1', name: 'Kitchen', status: 'active', createdAt: at, updatedAt: at } as never
+    const tpl = templateFromProject(project, [sanitizeTask(task('open', { title: 'Paint' }))!, privateTask()])
+    expect(tpl.tasks.map(t => t.title)).toEqual(['Paint'])
+  })
+})
+
 describe('withholding one, through the engine', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-09-10T10:00:00.000Z') })
@@ -234,6 +295,27 @@ describe('withholding one, through the engine', () => {
     expect(d.item('mine-open')).toBeDefined()
     expect(d.item('mine-shut')).toBeDefined()
     expect(d.item('peer-open')).toBeUndefined()
+  })
+
+  it('keeps a task that changed hands in the same round it was listed', async () => {
+    // Removing a member re-attributes their shared work to the household's
+    // creator. The corrected copy arrives in `items` saying the row is mine
+    // now, while the copy this round started from still says it is theirs —
+    // and the visible set lists only OTHER people's rows, so it is rightly not
+    // in it. Judging the stale copy dropped every re-homed row off the device,
+    // with no delta left to bring it back.
+    const server = serverFor(ME)
+    server.seedAs(PEER, peerTask('handed-over'))
+    const d = device(server)
+    await ready(d, ME)
+    expect(d.item('handed-over')).toBeDefined()
+
+    server.rehome('handed-over', ME)
+    await d.engine.sync()
+    await idle(d)
+
+    expect(d.item('handed-over'), 'it is the reader’s own row now, not one to revoke').toBeDefined()
+    expect(d.item('handed-over')!.ownerId).toBe(ME)
   })
 
   it('drops not one task of a peer’s against a server that speaks only of notes', async () => {

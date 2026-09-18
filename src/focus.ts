@@ -347,6 +347,12 @@ export function planDayWrites(tasks: Task[], r: DayPlanResult, c: { today: strin
     const end = Date.parse(b.end)
     const task = created.get(b.taskId) ?? d.next.get(b.taskId) ?? d.byId.get(b.taskId)
     if (!task || statusMoved(d, task.id) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue
+    // A private task gets no block. An `event` is the household's — there is no
+    // per-record audience on one — so writing the block would publish the title
+    // of a task its owner withheld, to the other member's Calendar and out to
+    // whatever calendars the feed reaches. The task still goes into the day's
+    // focus above; only the hour on a shared calendar is withheld with it.
+    if (task.shared === false) continue
     events.push({
       kind: 'event',
       id: c.newId(),

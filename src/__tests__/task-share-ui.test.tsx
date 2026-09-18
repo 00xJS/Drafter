@@ -82,6 +82,26 @@ describe('the control in the editor', () => {
     expect(elements(solo).filter(e => e.type === 'button').map(e => textOf(e.props.children))).not.toContain('🔒 Private')
   })
 
+  it('is not offered at all on a task of the housemate\'s: only its owner can withhold it', () => {
+    // the policy's `with check` refuses a peer's write that withholds a row, so
+    // a button here would be a lie the server refuses — the task would sit
+    // dirty, retried for good, wearing a private badge nobody else could see
+    const t = task('t1', { ownerId: PEER })
+    const tree = settled(AssignFields, {
+      form: initForm(t),
+      set: noop as Parameters<typeof AssignFields>[0]['set'],
+      members: MEMBERS,
+      candidates: [],
+      taskId: t.id,
+      myId: ME,
+      ownerId: PEER,
+    })
+    const words = elements(tree).filter(e => e.type === 'button').map(e => textOf(e.props.children))
+    expect(words).not.toContain('🔒 Private')
+    expect(words).not.toContain('👥 Shared')
+    expect(textOf(tree)).toContain('Maria’s task')
+  })
+
   it('refuses to withhold a task the other member is doing, and says who', () => {
     // whose job it is and who can see it are different questions, but one
     // answer rules out the other: they cannot do what they cannot see. Said
@@ -89,6 +109,13 @@ describe('the control in the editor', () => {
     const tree = fields({ assigneeId: PEER })
     expect(button(tree, '🔒 Private').props.disabled).toBe(true)
     expect(button(tree, '🔒 Private').props.title).toContain('Maria')
+  })
+
+  it('is offered again once the assignee has left the household', () => {
+    // a name that is not on the members list any more is nobody, and locking
+    // the control against it left a task that could never be made private
+    const tree = fields({ assigneeId: 'user-gone' })
+    expect(button(tree, '🔒 Private').props.disabled).toBeFalsy()
   })
 
   it('shares a task as it is handed to the other member', () => {

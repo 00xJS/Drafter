@@ -2396,3 +2396,43 @@ begin
   raise notice 'ok v3.19-4: a private task is deleted with the personal rows, history and all, and the shared work still passes on: %', r;
 end $$;
 commit;
+
+-- ===== v3.20: what the review of v3.19 found =====
+-- 20260929000000_v3_20_task_privacy_review: a task's versions are judged one by
+-- one, not only by what the task is today. A task private for a fortnight and
+-- shared yesterday kept every version written during that fortnight, each one
+-- carrying shared:false in its own data, and they all changed hands.
+-- a third account, with one task that is shared today and was not last week
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a9', 'leaver3@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-0000000000a9', 'member');
+-- shared today…
+insert into public.posts (id, updated_at, synced_at, data, user_id) values
+  ('l3-now-shared', '2026-09-18T12:00:00.000Z', now(),
+   '{"kind":"task","id":"l3-now-shared","title":"Party","description":"","status":"todo","priority":"normal","tags":[],"shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T12:00:00.000Z"}'::jsonb,
+   '00000000-0000-0000-0000-0000000000a9');
+-- …and the fortnight it was not
+insert into public.posts_history (id, updated_at, user_id, data, replaced_at) values
+  ('l3-now-shared', '2026-09-18T10:00:00.000Z', '00000000-0000-0000-0000-0000000000a9',
+   '{"kind":"task","id":"l3-now-shared","title":"Party — surprise for them","shared":false}'::jsonb, now()),
+  ('l3-now-shared', '2026-09-18T11:00:00.000Z', '00000000-0000-0000-0000-0000000000a9',
+   '{"kind":"task","id":"l3-now-shared","title":"Party","shared":true}'::jsonb, now());
+
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-00000000000a');
+  if (select user_id from public.posts where id = 'l3-now-shared') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.20-1: a task shared today should still pass to the heir, got %', r;
+  end if;
+  if exists (select 1 from public.posts_history h where h.id = 'l3-now-shared' and h.data ->> 'shared' = 'false') then
+    raise exception 'FAIL v3.20-1: the heir inherited a version written while the task was private';
+  end if;
+  if not exists (select 1 from public.posts_history h where h.id = 'l3-now-shared' and h.user_id = '00000000-0000-0000-0000-00000000000a') then
+    raise exception 'FAIL v3.20-1: the versions written while it was shared should pass on with it';
+  end if;
+  raise notice 'ok v3.20-1: a version is judged by the audience IT was written under, not by what the task is today: %', r;
+end $$;
+commit;

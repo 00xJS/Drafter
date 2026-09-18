@@ -130,7 +130,7 @@ export default function Planner() {
     ...taskActions,
     ...focusActions,
   }
-  // what the shell itself reads: the screen switch, the Mine note, pull to refresh, the toast
+  // what the shell itself reads: the screen switch, pull to refresh, the toast
   const { view, manualSync, anyOpen, toast, setToast } = p
 
   return (

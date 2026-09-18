@@ -854,12 +854,20 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // breath that left it out is not a pending edit, it is a row this account
     // cannot write because it cannot read it. Holding it would deadlock — see
     // revokedPeerRows.
-    const revoked = revokedPeerRows(current, peerVisibleByKind(result), dirty, account, new Set(result.rejected))
     const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
       dirty,
       shadows,
       stale: result.stale,
     })
+    // Judged on the MERGED list, not the one this round started from: whose a
+    // row is can change in the same answer that lists what is visible. When a
+    // member leaves, their shared work is re-attributed to the household's
+    // creator — so the corrected copy arrives in `items` saying the row is now
+    // yours, while the stale copy still says it is theirs and the visible set,
+    // which lists only OTHER people's rows, rightly leaves it out. Read the
+    // stale one and every re-homed task and note is dropped off the device,
+    // with no delta left to bring them back.
+    const revoked = revokedPeerRows(decision.merged, peerVisibleByKind(result), dirty, account, new Set(result.rejected))
     let next = decision.merged
     // purged for good on the server: removed here, never pushed again
     if (gone.size > 0 || removedMidRound.size > 0) next = next.filter(i => !gone.has(i.id) && !removedMidRound.has(i.id))
@@ -914,7 +922,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     for (const id of [...failures.keys()]) if (!dirty.has(id)) failures.delete(id)
     saveBookkeeping()
 
-    const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt).sort().join('|')
+    // Whose a row is belongs in here beside its stamp. Re-attributing a
+    // departing member's work changes `user_id` and touches neither `data` nor
+    // `updated_at`, so a signature of id and stamp alone called the round
+    // unchanged and published the list this device already had — throwing the
+    // merged copy, and the corrected owner with it, away. The device went on
+    // believing the row was the member's who left; since v3.19 the revocation
+    // pass reads that field, so it would then drop the row on the next round.
+    const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt + '@' + (p.ownerId ?? '')).sort().join('|')
     const changed =
       decision.remerged.length > 0 ||
       decision.settled.length > 0 ||

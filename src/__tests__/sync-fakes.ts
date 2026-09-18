@@ -68,6 +68,16 @@ export class FakeServer {
     for (const item of items) this.rows.set(item.id, { data: JSON.parse(JSON.stringify(item)), updatedAt: item.updatedAt, syncedAt: this.stamp(), owner })
   }
 
+  /**
+   * Hand a row to another account, as removing a household member does: the
+   * leaver's shared work is re-attributed to the household's creator.
+   */
+  rehome(id: string, owner: string): void {
+    const cur = this.rows.get(id)
+    if (!cur) throw new Error(`rehome: no row ${id}`)
+    this.rows.set(id, { ...cur, owner, syncedAt: this.stamp() })
+  }
+
   /** Edit a stored row in place, as its owner would from another device. */
   patch(id: string, over: Record<string, unknown>): void {
     const cur = this.rows.get(id)

@@ -403,14 +403,21 @@ export function formValues(form: TaskForm, base: Task, persisted: boolean) {
     blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
     assigneeId: assigneeId || undefined,
     // Both answers are written out loud, and only when they say something. A
-    // task nobody has withheld carries no flag, as every task before v3.19
-    // does; `false` withholds it; `true` appears ONLY to overturn a stored
-    // `false`, because to the database an absent flag now means "this writer
-    // has nothing to say about the audience" and it keeps what it has
-    // (posts_private_flag). That is what stops an older build, which strips
-    // the field it has never heard of, from quietly making a private task
-    // public the next time it saves one.
-    shared: shared ? (base.shared === false ? true : undefined) : false,
+    // task nobody has ever withheld carries no flag, as every task before
+    // v3.19 does; `false` withholds it; `true` says "share it again", because
+    // to the database an absent flag means "this writer has nothing to say
+    // about the audience" and it keeps what it has (posts_private_flag). That
+    // is what stops an older build, which strips the field it has never heard
+    // of, from quietly making a private task public the next time it saves one.
+    //
+    // `true` is written whenever the record CARRIES a flag at all, not only
+    // when it currently reads `false`. Keying it off `false` alone meant the
+    // second save of a task shared moments ago went out with no flag — by then
+    // the local copy said `true` — and the server, which may still hold
+    // `false` if the first push never landed, took the silence as "keep it
+    // private". The flag stays explicit for the life of a task that was once
+    // withheld; it costs five bytes and it is the only way to be sure.
+    shared: shared ? (base.shared === undefined ? undefined : true) : false,
   }
 }
 

@@ -90,6 +90,16 @@ describe('revokedPeerRows: what a round says this account may no longer hold', (
     expect([...revokedPeerRows([peerTask('t')] as Item[], both(['t']), new Set(), ME)]).toEqual([])
   })
 
+  it('judges a row on the copy that just arrived, not the one the round started from', () => {
+    // when a member leaves, their shared work is re-attributed to the
+    // household's creator: the corrected copy arrives saying the row is now
+    // yours, while the stale copy still says it is theirs and the visible set,
+    // which lists only OTHER people's rows, rightly leaves it out. Judge the
+    // stale one and every re-homed task and note is dropped off the device.
+    const rehomed = [{ ...peerTask('t'), ownerId: ME }] as Item[]
+    expect([...revokedPeerRows(rehomed, both([]), new Set(), ME)]).toEqual([])
+  })
+
   it('drops NOTHING of a kind the server said nothing about', () => {
     // a v3.16 server answers for notes alone. Reading its silence about tasks
     // as "none of theirs are visible" would empty the household's board.

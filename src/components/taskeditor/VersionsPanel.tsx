@@ -45,7 +45,13 @@ export function VersionsPanel({ task, getLatest, onCommit, onClose }: Props) {
 
   function restoreVersion(v: Task) {
     const current = getLatest(task.id) ?? task
-    onCommit({ ...v, id: current.id, updatedAt: newerStamp(current.updatedAt), ownerId: current.ownerId })
+    // Who can see it is the live row's, like whose it is: an old version was
+    // written under whatever audience applied then, and restoring the words of
+    // a draft is not a decision about who reads them. Without this, restoring a
+    // version from before v3.19 (no flag at all) would publish a task its owner
+    // had withheld, and restoring one from its private spell would withhold a
+    // task that is shared now — both silently, from a button labelled Restore.
+    onCommit({ ...v, id: current.id, updatedAt: newerStamp(current.updatedAt), ownerId: current.ownerId, shared: current.shared })
     onClose()
   }
 

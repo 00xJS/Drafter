@@ -147,7 +147,12 @@ describe('Household → remove and leave', () => {
     const body = await res.json()
     expect(body).not.toHaveProperty('householdEpoch')
     expect(body.members.map((m: { id: string }) => m.id)).toEqual([OWNER])
-    expect(calls.find(c => c.method === 'PATCH' && c.path === '/rest/v1/posts')?.body).toEqual({ user_id: OWNER })
+    // the stamp moves with the owner, or the other devices never hear of it:
+    // a delta returns rows newer than the caller's cursor, and changing hands
+    // touches neither `data` nor `updated_at`
+    const move = calls.find(c => c.method === 'PATCH' && c.path === '/rest/v1/posts')?.body as { user_id: string; synced_at: string }
+    expect(move.user_id).toBe(OWNER)
+    expect(Number.isFinite(Date.parse(move.synced_at))).toBe(true)
     expect(calls.some(c => c.method === 'DELETE' && c.path === '/rest/v1/household_members')).toBe(true)
     expect(settingsWrites()).toEqual([])
   })

@@ -215,7 +215,10 @@ export function templateFromProject(project: Project, tasks: Task[]): Template {
     description: project.description,
     durationDays: project.targetAt ? Math.max(1, offset(project.targetAt) ?? 1) : undefined,
     tasks: tasks
-      .filter(t => t.status !== 'canceled')
+      // A template is a household record with no audience of its own, so a
+      // private task cannot travel in one: its title, description, checklist
+      // and tags would be readable by everyone the template is.
+      .filter(t => t.status !== 'canceled' && t.shared !== false)
       .sort((a, b) => (a.dueAt ?? '9').localeCompare(b.dueAt ?? '9'))
       .map(t => ({
         title: t.title,

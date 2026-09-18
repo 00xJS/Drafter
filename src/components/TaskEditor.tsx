@@ -313,7 +313,7 @@ export function TaskEditor({
             </div>
 
             <aside className="editor-side">
-              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} />
+              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} ownerId={base.ownerId} />
               <DueFields form={form} set={set} />
               <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
               <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
