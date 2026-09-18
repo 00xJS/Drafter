@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -9,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 // could not provision push at all and the entitlements file was empty on purpose.
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 // The file Xcode signs, and the one waiting for the membership to clear. A
 // free personal team cannot provision push or associated domains — asking for
 // either fails the build — so the live file stays empty until then and
@@ -116,5 +118,38 @@ describe('the release script', () => {
     const bump = read('../../scripts/ios-build-number.mjs')
     expect(bump).not.toMatch(/writeFileSync[\s\S]*MARKETING_VERSION = \$/)
     expect(pbx).toContain('MARKETING_VERSION = 1.0;')
+  })
+
+  // Xcode Cloud never runs `npm run release:ios`, so without these it would
+  // archive whatever build number happens to be committed — and App Store
+  // Connect refuses a number it has already seen for this MARKETING_VERSION,
+  // after the archive, the export and the upload have all run.
+  it('gives Xcode Cloud the two scripts it needs, both executable', () => {
+    for (const name of ['ci_post_clone.sh', 'ci_pre_xcodebuild.sh']) {
+      const mode = execFileSync('git', ['ls-files', '-s', `ci_scripts/${name}`], { cwd: ROOT, encoding: 'utf8' })
+      expect(mode, `${name} is not tracked`).not.toBe('')
+      // Xcode Cloud skips a script that is not executable, silently
+      expect(mode.startsWith('100755'), `${name} is committed without the executable bit`).toBe(true)
+    }
+  })
+
+  it('builds the web bundle in the cloud, because the target’s inputs are generated and gitignored', () => {
+    const post = read('../../ci_scripts/ci_post_clone.sh')
+    expect(post).toContain('npm ci')
+    expect(post).toContain('npm run build:ios')
+    // the three Resources inputs ios/.gitignore keeps out of the repo
+    const ignore = read('../../ios/.gitignore')
+    for (const input of ['App/App/public', 'App/App/capacitor.config.json', 'App/App/config.xml']) {
+      expect(ignore, `${input} is no longer ignored — is this script still needed?`).toContain(input)
+    }
+    expect(post).toContain('ios/App/App/public/index.html')
+  })
+
+  it('takes the build number from the cloud’s own counter, and leaves it alone without one', () => {
+    const pre = read('../../ci_scripts/ci_pre_xcodebuild.sh')
+    expect(pre).toContain('CI_BUILD_NUMBER')
+    expect(pre).toMatch(/ios-build-number\.mjs --set/)
+    const bump = read('../../scripts/ios-build-number.mjs')
+    expect(bump, 'the script has no --set to give it').toContain('--set')
   })
 })

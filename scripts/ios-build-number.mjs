@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// Raise the iOS build number, in both build configurations.
+// Set the iOS build number, in both build configurations.
+//
+// With no argument it raises the stored number by one, which is what
+// `npm run release:ios` wants. With `--set <n>` it writes that number instead,
+// which is what Xcode Cloud wants: the cloud has its own build counter
+// (CI_BUILD_NUMBER) and it, not this file, is what App Store Connect has
+// already seen for the builds it produced.
 //
 // App Store Connect refuses an upload whose CURRENT_PROJECT_VERSION it has
 // already seen for this MARKETING_VERSION — and it refuses it AFTER the
@@ -24,10 +30,17 @@ if (found.length === 0) {
   process.exit(1)
 }
 
+const flag = process.argv.indexOf('--set')
+const asked = flag === -1 ? null : Number(process.argv[flag + 1])
+if (flag !== -1 && (!Number.isInteger(asked) || asked < 1)) {
+  console.error(`ios-build-number: --set wants a positive whole number, got ${process.argv[flag + 1]}`)
+  process.exit(1)
+}
+
 // every configuration moves to the same number: Debug and Release differing is
 // how you upload a build whose number is not the one you just raised
-const next = Math.max(...found) + 1
+const next = asked ?? Math.max(...found) + 1
 writeFileSync(path, pbx.replace(/CURRENT_PROJECT_VERSION = \d+;/g, `CURRENT_PROJECT_VERSION = ${next};`))
 
 const marketing = /MARKETING_VERSION = ([\d.]+);/.exec(pbx)?.[1] ?? '?'
-console.log(`ios-build-number: ${found.join(', ')} -> ${next} (version ${marketing}, ${found.length} configurations)`)
+console.log(`ios-build-number: ${found.join(', ')} -> ${next}${asked ? ' (set)' : ''} (version ${marketing}, ${found.length} configurations)`)
