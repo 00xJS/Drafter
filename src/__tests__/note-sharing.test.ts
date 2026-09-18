@@ -52,6 +52,12 @@ describe('revokedNotes: what a round says this account may no longer hold', () =
     expect([...revokedNotes(held, [], new Set(['theirs']), ME)]).toEqual([])
   })
 
+  it('drops a note the server refused in the same breath, dirty or not', () => {
+    // The refusal and the absence are the same answer: a row you cannot read
+    // is one you can never write, so the edit is not pending, it is impossible.
+    expect([...revokedNotes(held, [], new Set(['theirs']), ME, new Set(['theirs']))]).toEqual(['theirs'])
+  })
+
   it('drops nothing when the server did not say, which is how an older sync_posts answers', () => {
     // null is "no information". Reading it as "nothing is visible" would empty
     // the Notes list of every device that reached a server one deploy behind.
@@ -148,6 +154,39 @@ describe('un-sharing, through the engine', () => {
     expect(d.item('mine-shared')).toBeDefined()
     expect(d.item('mine-private')).toBeDefined()
     expect(d.item('peer-open')).toBeUndefined()
+  })
+
+  it('a peer note with an edit waiting is still let go once the server refuses that edit', async () => {
+    // The deadlock this closes: B pins A's shared note while offline, A
+    // un-shares it, B reconnects. The push is refused because the row is no
+    // longer B's to write; the refusal puts the id back in `dirty`; `dirty`
+    // used to suppress the drop; the undropped note is pushed again and
+    // refused again. Nothing broke the loop, so A's un-shared note stayed in
+    // B's list — body and all — for good.
+    const server = new FakeServer()
+    server.caller = ME
+    server.seedAs(PEER, note('peer-open', { shared: true }))
+    const d = device(server)
+    await ready(d, ME)
+    expect(d.item('peer-open')).toBeDefined()
+
+    // B edits it (dirty), and it cannot land: the owner has un-shared it
+    const held = d.item<Note>('peer-open')!
+    d.engine.upsert({ ...held, pinned: true, updatedAt: '2026-09-10T10:30:00.000Z' })
+    server.patch('peer-open', { shared: undefined, updatedAt: '2026-09-10T11:00:00.000Z' })
+    server.refuse.set('peer-open', 'not readable')
+
+    for (let round = 0; round < 3; round++) {
+      await d.engine.sync()
+      await idle(d)
+    }
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(d.item('peer-open'), 'the note is let go').toBeUndefined()
+    // and it leaves no "1 unsynced" behind for a record that is no longer here
+    expect(d.engine.inspect().dirty).not.toContain('peer-open')
+    expect(d.engine.getState().failures.map(f => f.id)).not.toContain('peer-open')
+    expect(d.snapshot()!.items.map(i => i.id)).not.toContain('peer-open')
   })
 
   it('without the drop the note stays forever — which is what makes this worth having', async () => {

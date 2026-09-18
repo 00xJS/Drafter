@@ -164,9 +164,16 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
                 {shared ? '👥 Shared' : '🔒 Private'}
               </button>
             ) : (
-              // not yours to share or un-share — said, not offered
-              <span className="note-shared-by" {...tipAttrs('Someone in your household shared this note with you. Only they can stop sharing it.')}>
-                👥 {ownerName ? `${ownerName}’s note` : 'Shared with you'}
+              // Not yours to share or un-share — said, not offered. tipAttrs is
+              // deliberately NOT used: it puts aria-label and data-tip on the
+              // element, and both are wasted here. A <span> with no role is not
+              // something aria-label names, the tip is raised by hover or
+              // keyboard focus and a span takes neither, and a finger never
+              // raises one at all — so the words would have reached nobody
+              // while overriding the ones that are actually on screen. The
+              // visible text is the accessible text; title is for a mouse.
+              <span className="note-shared-by" title="Someone in your household shared this note with you. Only they can stop sharing it.">
+                <span aria-hidden="true">👥</span> {ownerName ? `${ownerName}’s note` : 'Shared with you'}
               </span>
             ))}
           <button

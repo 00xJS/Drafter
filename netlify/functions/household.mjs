@@ -153,7 +153,17 @@ const handler = async req => {
       // keeps their own diary, and the household keeps its tasks.
       const [hh] = await rest(`households?id=eq.${m.household_id}&select=created_by`)
       const ownerId = hh?.created_by ?? user.id
-      const shared = `kind=not.in.(${[...PERSONAL_KINDS].join(',')})`
+      // Kind is not the whole question any more. A note is its author's until
+      // they share it (v3.16), so "not a personal kind" would have handed every
+      // private note the leaving member ever wrote to the creator — where the
+      // app renders it, the feed publishes it and the nightly backup writes it
+      // into the creator's snapshot, which is the exact harm the paragraph
+      // above describes. Worse, the member is out of the household by this
+      // point, so the peer branch of the policy cannot reach it either: one
+      // statement would disclose it to the creator AND lose it to its author.
+      // `or=(kind.neq.note,data->>shared.eq.true)` keeps a SHARED note moving
+      // — that is household work, like a task — and leaves the rest behind.
+      const shared = `kind=not.in.(${[...PERSONAL_KINDS].join(',')})&or=(kind.neq.note,data->>shared.eq.true)`
       await rest(`posts?user_id=eq.${encodeURIComponent(target)}&${shared}`, {
         method: 'PATCH',
         headers: { prefer: 'return=minimal' },

@@ -1,4 +1,4 @@
-import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
+import { Item, Note, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedNotes, type SyncConflict } from './itemops'
 import { applyLocalChoice, sameContent } from '../shared/merge.mjs'
@@ -696,7 +696,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     const deletedAt = new Date(now()).toISOString()
     const next = list.map(p => {
       if (!set.has(p.id) || p.purged) return p
-      const tomb = sanitizeItem(purgeTombstone(p.kind, p.id, newerStamp(p.updatedAt), deletedAt))
+      // A tombstone is content-free by design, which for a note meant it
+      // carried no `shared` — and v3.16's `with check` refuses a write onto
+      // somebody else's note that does not leave it shared. So "Delete
+      // forever" on a note a housemate shared was refused every round and sat
+      // dirty for good. The flag is not content: it is who the row is for, and
+      // the tombstone has to say the same thing the row it replaces said.
+      const raw = purgeTombstone(p.kind, p.id, newerStamp(p.updatedAt), deletedAt)
+      const tomb = sanitizeItem(p.kind === 'note' && (p as Note).shared ? { ...raw, shared: true } : raw)
       return tomb ? { ...tomb, ownerId: p.ownerId } : p
     })
     commit(next, [...set].filter(id => next.some(p => p.id === id)))
@@ -832,7 +839,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // or the household changed. They cannot arrive as items — an invisible row
     // is indistinguishable from an unchanged one — so the server states the
     // whole visible set and revokedNotes works out what is left over.
-    const revoked = revokedNotes(current, result.peerNotes, dirty, account)
+    // `result.rejected` is passed as well: a note the server refused in the same
+    // breath that left it out of peerNotes is not a pending edit, it is a note
+    // this account cannot write because it cannot read it. Holding it would
+    // deadlock — see revokedNotes.
+    const revoked = revokedNotes(current, result.peerNotes, dirty, account, new Set(result.rejected))
     const decision = applySync(current, outgoing, result.items!, since, result.rejected, result.reportsRejections, {
       dirty,
       shadows,
@@ -865,10 +876,17 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       failures.set(id, { id, reason: result.reasons[id] ?? prev?.reason, attempts, nextAt: clock + backoffMs(attempts), firstAt: prev?.firstAt ?? clock })
     }
     for (const id of gone) dirty.delete(id)
-    // revoked ids were never dirty (revokedNotes skips those), so there is no
-    // bookkeeping to clear — but the shadow of a note that has since been
-    // settled would linger, and pruneBookkeeping only looks at dirty ids
-    for (const id of revoked) shadows.delete(id)
+    // A revoked note leaves no bookkeeping behind. Usually there is none to
+    // clear, but a note revoked WHILE an edit of it was waiting has just been
+    // put back in `dirty` by the loop above, with a failure to show in
+    // Settings — for a record that is no longer in the list. Left there it
+    // would count towards "n unsynced" for good and, worse, suppress the very
+    // drop that got us here on every later round.
+    for (const id of revoked) {
+      dirty.delete(id)
+      failures.delete(id)
+      shadows.delete(id)
+    }
 
     // The server now holds what we sent: that is the base for any edit still waiting.
     const remoteById = new Map(result.items!.map(r => [r.id, r]))

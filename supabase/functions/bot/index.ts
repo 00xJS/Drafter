@@ -104,13 +104,21 @@ function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown)
 
 /** The same rule as a PostgREST filter, so `limit` counts only rows the bot may read. */
 function scopeFilter(scope: Scope): string {
-  // The note rule is deliberately NOT expressed here. This narrows the query;
-  // inScope decides, row by row, and is what every read is filtered through.
-  // A peer's unshared note may come back from the database and never leaves
-  // this function's caller.
+  // The note rule belongs here as well as in inScope, because `list` applies
+  // its limit in the DATABASE. Leaving the rule to inScope alone meant the
+  // limit counted rows that were then thrown away: a household whose other
+  // member keeps a hundred private notes at the top of `updated_at desc`
+  // would fill the whole page with them and the owner's agent would be told,
+  // truthfully and uselessly, that there is nothing there. inScope stays as
+  // the row-by-row backstop, so a mistake in this string can only narrow the
+  // answer, never widen it.
   const branches = ['user_id.is.null']
   if (scope.owner) branches.push(`user_id.eq.${scope.owner}`)
-  if (scope.peers.length) branches.push(`and(user_id.in.(${scope.peers.join(',')}),kind.not.in.(${[...PERSONAL_KINDS].join(',')}))`)
+  if (scope.peers.length) {
+    const peers = scope.peers.join(',')
+    const kinds = [...PERSONAL_KINDS].join(',')
+    branches.push(`and(user_id.in.(${peers}),kind.not.in.(${kinds}),or(kind.neq.note,data->>shared.eq.true))`)
+  }
   return branches.join(',')
 }
 

@@ -75,7 +75,7 @@ export function NotesIndex({ notes, projects, myId, nameOf, query, onQuery, onOp
                             and already carries its own tag. */}
                         {e.kind === 'note' && e.shared && (
                           <span className="note-row-share" title={e.sharedBy ? `${e.sharedBy} shared this note with you` : 'Shared with your household'}>
-                            👥 {e.sharedBy ?? 'Shared'}
+                            <span aria-hidden="true">👥</span> {e.sharedBy ?? 'Shared'}
                           </span>
                         )}{' '}
                         <span className="note-row-when">{editedLabel(e.updatedAt, now)}</span>

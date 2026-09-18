@@ -20,6 +20,35 @@ const OUTSIDER = '00000000-0000-0000-0000-00000000000c'
 let calls: { method: string; path: string; query: string; body?: unknown }[]
 let me: string
 let members: { user_id: string; role: string }[]
+/** The posts the fake database holds, so a PATCH can be seen to move some rows and not others. */
+let posts: { id: string; user_id: string; kind: string; data: Record<string, unknown> }[]
+
+/**
+ * PostgREST, as far as the three filter forms THIS endpoint sends:
+ * `user_id=eq.<uuid>`, `kind=not.in.(a,b,c)` and
+ * `or=(kind.neq.note,data->>shared.eq.true)`. It models nothing else on
+ * purpose — a stand-in that pretended to be general would quietly answer
+ * differently from the database. That the real syntax parses was checked
+ * against the live PostgREST, which is the half a stand-in cannot tell you.
+ */
+function matches(row: { user_id: string; kind: string; data: Record<string, unknown> }, q: URLSearchParams): boolean {
+  const user = q.get('user_id')
+  if (user && user !== `eq.${row.user_id}`) return false
+  const kind = q.get('kind')
+  const notIn = kind && /^not\.in\.\((.*)\)$/.exec(kind)
+  if (notIn && notIn[1].split(',').filter(Boolean).includes(row.kind)) return false
+  const or = q.get('or')
+  if (or) {
+    const terms = or.replace(/^\(|\)$/g, '').split(',')
+    const any = terms.some(t => {
+      if (t === 'kind.neq.note') return row.kind !== 'note'
+      if (t === 'data->>shared.eq.true') return row.data.shared === true || row.data.shared === 'true'
+      throw new Error(`the stand-in does not model the filter term ${t}`)
+    })
+    if (!any) return false
+  }
+  return true
+}
 
 beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -27,6 +56,14 @@ beforeEach(() => {
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   calls = []
   me = OWNER
+  posts = [
+    { id: 't1', user_id: MEMBER, kind: 'task', data: { kind: 'task', id: 't1' } },
+    { id: 'j1', user_id: MEMBER, kind: 'journal', data: { kind: 'journal', id: 'j1' } },
+    // the three states a note can be in, and only the shared one is household work
+    { id: 'n-private', user_id: MEMBER, kind: 'note', data: { kind: 'note', id: 'n-private' } },
+    { id: 'n-false', user_id: MEMBER, kind: 'note', data: { kind: 'note', id: 'n-false', shared: false } },
+    { id: 'n-shared', user_id: MEMBER, kind: 'note', data: { kind: 'note', id: 'n-shared', shared: true } },
+  ]
   members = [
     { user_id: OWNER, role: 'owner' },
     { user_id: MEMBER, role: 'member' },
@@ -58,7 +95,10 @@ beforeEach(() => {
         if (method === 'DELETE') return new Response(null, { status: 204 })
         return Response.json([{ id: HH, name: 'Home', created_by: OWNER }])
       }
-      if (url.pathname === '/rest/v1/posts' && method === 'PATCH') return new Response(null, { status: 204 })
+      if (url.pathname === '/rest/v1/posts' && method === 'PATCH') {
+        for (const row of posts) if (matches(row, q)) Object.assign(row, body)
+        return new Response(null, { status: 204 })
+      }
       throw new Error(`unexpected ${method} ${url}`)
     }),
   )
@@ -107,6 +147,25 @@ describe('Household → remove and leave', () => {
     expect(q.get('user_id')).toBe(`eq.${MEMBER}`)
     const excluded = (q.get('kind') ?? '').replace(/^not\.in\.\(|\)$/g, '').split(',').filter(Boolean)
     expect(new Set(excluded)).toEqual(PERSONAL_KINDS)
+    // and the rows themselves moved the way the filter says
+    expect(posts.filter(p => p.user_id === OWNER).map(p => p.id)).toEqual(['t1', 'n-shared'])
+    expect(posts.filter(p => p.user_id === MEMBER).map(p => p.id)).toEqual(['j1', 'n-private', 'n-false'])
+  })
+
+  // `note` is not a personal kind — a shared note IS household work and moves
+  // like a task. But since v3.16 a note is its author's until they share it,
+  // and "not a personal kind" handed every private note the leaving member had
+  // written to the household creator: into their Notes list, their ICS feed,
+  // their nightly backup and their MCP tools. The member was already out of
+  // the household by then, so the same statement lost it to its author too.
+  it('leaves a note its author never shared with its author, and moves one they did', async () => {
+    await post('remove', { userId: MEMBER })
+    const owned = (id: string) => posts.find(p => p.id === id)!.user_id
+    expect(owned('n-private'), 'a note with no flag is private and stays').toBe(MEMBER)
+    expect(owned('n-false'), 'an explicit shared:false stays too').toBe(MEMBER)
+    expect(owned('n-shared'), 'a shared note is household work and moves').toBe(OWNER)
+    expect(owned('t1'), 'a task still moves').toBe(OWNER)
+    expect(owned('j1'), 'a journal still stays').toBe(MEMBER)
   })
 
   // Owning SOME household was the only check on the id, and the

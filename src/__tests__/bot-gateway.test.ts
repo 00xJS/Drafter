@@ -23,13 +23,33 @@ type Answer = (incoming: Record<string, unknown>[]) => Record<string, unknown>
 
 const row = (user_id: string | null, data: Record<string, unknown>): Row => ({ id: String(data.id), user_id, data: { createdAt: STAMP, updatedAt: STAMP, ...data } })
 
-/** A column as PostgREST reads it: posts' kind and deleted are generated from the data; household_members rows are plain. */
+/**
+ * A column as PostgREST reads it: posts' kind and deleted are generated from
+ * the data; household_members rows are plain. `data->key` projects a JSON
+ * value and `data->>key` its text form — the gateway selects
+ * `shared:data->shared`, and a stand-in that answered undefined for that would
+ * make every stored note test as unshared. The next person to write "the bot
+ * may edit a peer's note the peer shared" would watch it fail and go looking
+ * for a bug in working code.
+ */
 function column(r: any, col: string): unknown {
   if (!('data' in r)) return r[col]
   if (col === 'kind') return typeof r.data.kind === 'string' ? r.data.kind : 'task'
   if (col === 'deleted') return 'deletedAt' in r.data
   if (col === 'status') return r.data.status
+  const json = /^data->(>?)([A-Za-z0-9_]+)$/.exec(col)
+  if (json) {
+    const v = r.data[json[2]]
+    // ->> is text: PostgREST gives the JSON boolean true back as the string "true"
+    return json[1] === '>' ? (v === undefined || v === null ? null : String(v)) : (v ?? null)
+  }
   return r[col]
+}
+
+/** `alias:expr` as a select item gives, as PostgREST does, the alias as the key. */
+function projected(item: string): { key: string; col: string } {
+  const at = item.indexOf(':')
+  return at === -1 ? { key: item, col: item } : { key: item.slice(0, at), col: item.slice(at + 1) }
 }
 
 /** A filter list split at its top-level commas: or=(a,b,and(c,d)). */
@@ -49,9 +69,11 @@ function splitTop(s: string): string[] {
   return out
 }
 
-/** One condition of the scope filter the gateway builds: col.is.null, col.eq.x, col.in.(…), col.not.in.(…) or and(…). */
+/** One condition of the scope filter the gateway builds: col.is.null, col.eq.x, col.neq.x, col.in.(…), col.not.in.(…), and(…) or or(…). */
 function holds(cond: string, r: any): boolean {
   if (cond.startsWith('and(')) return splitTop(cond.slice(4, -1)).every(c => holds(c, r))
+  // the note rule is a nested or() inside that and(): (kind.neq.note, data->>shared.eq.true)
+  if (cond.startsWith('or(')) return splitTop(cond.slice(3, -1)).some(c => holds(c, r))
   const [col, ...rest] = cond.split('.')
   const negate = rest[0] === 'not'
   const [op, ...args] = negate ? rest.slice(1) : rest
@@ -60,6 +82,7 @@ function holds(cond: string, r: any): boolean {
   let result: boolean
   if (op === 'is' && arg === 'null') result = v === null
   else if (op === 'eq') result = v !== null && String(v) === arg
+  else if (op === 'neq') result = v === null || String(v) !== arg
   else if (op === 'in') result = arg.replace(/^\(|\)$/g, '').split(',').includes(String(v))
   else throw new Error(`the stand-in has no operator ${op}`)
   return negate ? !result : result
@@ -99,7 +122,18 @@ function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<stri
       or: (filter: string) => ((out = out.filter(r => splitTop(filter).some(c => holds(c, r)))), q),
       order: () => q,
       limit: (n: number) => ((limit = n), q),
-      then: (resolve: (v: unknown) => unknown) => resolve({ data: out.slice(0, limit).map(r => Object.fromEntries(cols.map(c => [c, c === 'data' ? r.data : column(r, c)]))), error: null }),
+      then: (resolve: (v: unknown) => unknown) =>
+        resolve({
+          data: out.slice(0, limit).map(r =>
+            Object.fromEntries(
+              cols.map(c => {
+                const { key, col } = projected(c)
+                return [key, col === 'data' ? r.data : column(r, col)]
+              }),
+            ),
+          ),
+          error: null,
+        }),
     }
     return q
   }
@@ -194,6 +228,60 @@ describe('the gateway, run from its own source', () => {
     const { status, json } = await call({ action: 'list' })
     expect(status).toBe(200)
     expect(idsOf(json.posts).sort()).toEqual(['bins', 'mine'])
+  })
+
+  // A note is its author's until they share it (v3.16). The gateway runs as the
+  // service role, so RLS never sees it — inScope and scopeFilter are the whole
+  // enforcement, and nothing else stands between an agent and a private note.
+  it('never hands an agent a peer’s note the peer kept to themselves', async () => {
+    const { call, json } = await (async () => {
+      const g = gateway([
+        row(OWNER, { kind: 'note', id: 'mine', title: 'Mine', body: '<p>mine</p>' }),
+        row(PEER, { kind: 'note', id: 'peer-open', title: 'Theirs', body: '<p>shared</p>', shared: true }),
+        row(PEER, { kind: 'note', id: 'peer-shut', title: 'Private', body: '<p>PEER-PRIVATE</p>' }),
+        row(PEER, { kind: 'note', id: 'peer-false', title: 'Also private', body: '<p>PEER-PRIVATE</p>', shared: false }),
+      ])
+      return { call: g.call, json: (await g.call({ action: 'list' })).json }
+    })()
+    void call
+    expect(idsOf(json.posts).sort()).toEqual(['mine', 'peer-open'])
+    expect(JSON.stringify(json)).not.toContain('PEER-PRIVATE')
+  })
+
+  it('counts only readable rows against the limit, so a peer’s private notes cannot crowd out the answer', async () => {
+    // The limit is applied by the database. With the note rule left to inScope
+    // alone, a page of a peer's private notes came back, was thrown away, and
+    // the agent was told — truthfully and uselessly — that there was nothing.
+    const wall = Array.from({ length: 5 }, (_, i) => row(PEER, { kind: 'note', id: `p${i}`, title: `P${i}`, body: '<p>x</p>' }))
+    const { call } = gateway([...wall, row(OWNER, { kind: 'task', id: 'mine', title: 'Mine', status: 'todo' })])
+    const { json } = await call({ action: 'list', limit: 3 })
+    expect(idsOf(json.posts)).toEqual(['mine'])
+  })
+
+  it('refuses a write that would land on a peer’s private note, and one that would un-share a shared one', async () => {
+    const { call } = gateway([
+      row(PEER, { kind: 'note', id: 'peer-shut', title: 'Private', body: '<p>theirs</p>' }),
+      row(PEER, { kind: 'note', id: 'peer-open', title: 'Shared', body: '<p>theirs</p>', shared: true }),
+    ])
+    const { json } = await call({
+      action: 'sync',
+      posts: [
+        { kind: 'note', id: 'peer-shut', title: 'Mine now', body: '', shared: true, updatedAt: STAMP },
+        // the same shape BOTS.md documents, with no `shared`: it would make somebody else's note private
+        { kind: 'note', id: 'peer-open', title: 'Shared', body: '<p>edited</p>', updatedAt: STAMP },
+      ],
+    })
+    expect((json.posts as { rejected: string[] }).rejected.sort()).toEqual(['peer-open', 'peer-shut'])
+  })
+
+  it('lets an agent edit a peer’s shared note when the write keeps it shared', async () => {
+    const { call, synced } = gateway([row(PEER, { kind: 'note', id: 'peer-open', title: 'Shared', body: '<p>theirs</p>', shared: true })])
+    const { json } = await call({
+      action: 'sync',
+      posts: [{ kind: 'note', id: 'peer-open', title: 'Shared', body: '<p>edited</p>', shared: true, updatedAt: STAMP }],
+    })
+    expect((json.posts as { rejected: string[] }).rejected).toEqual([])
+    expect(synced[0].map(p => p.id)).toEqual(['peer-open'])
   })
 
   it('refuses a wrong token before it reads or writes anything', async () => {

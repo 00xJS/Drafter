@@ -118,16 +118,32 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
  *   legacy array shape. Nothing is dropped. Never read null as "none visible".
  * - Only notes whose `ownerId` is another account. Your own notes are yours to
  *   read whatever the flag says, and a note created here has no ownerId yet.
- * - Never a dirty note. An edit that has not landed is not a ghost; if it was
- *   un-shared mid-edit the push is refused and Settings offers Discard, which
- *   is a visible outcome rather than words disappearing from the screen.
+ * - Never a dirty note, UNLESS the server just refused that very push. An edit
+ *   that has not landed is not a ghost. But a refusal is not a delay: the same
+ *   answer that refused the write is the one that left the note out of
+ *   `peerNotes`, and a row you cannot read is a row you can never write. So
+ *   holding it costs the reader the un-share and gains them nothing.
+ *
+ *   Without the `refused` half this deadlocks, and the round trip sustains it:
+ *   the refusal puts the id back in `dirty`, `dirty` suppresses the drop, the
+ *   undropped note is pushed again, and it is refused again. Nothing breaks
+ *   the loop — pruneBookkeeping only forgets ids whose record has left the
+ *   list, and the record cannot leave while it is dirty. A reader who had
+ *   pinned a note offline kept it, body and all, for good.
  */
-export function revokedNotes(current: Item[], peerNotes: string[] | null, dirty: Set<string>, account: string | null): Set<string> {
+export function revokedNotes(
+  current: Item[],
+  peerNotes: string[] | null,
+  dirty: Set<string>,
+  account: string | null,
+  refused: ReadonlySet<string> = new Set(),
+): Set<string> {
   const out = new Set<string>()
   if (!peerNotes || !account) return out
   const visible = new Set(peerNotes)
   for (const i of current) {
-    if (i.kind !== 'note' || dirty.has(i.id)) continue
+    if (i.kind !== 'note') continue
+    if (dirty.has(i.id) && !refused.has(i.id)) continue
     if (i.ownerId && i.ownerId !== account && !visible.has(i.id)) out.add(i.id)
   }
   return out

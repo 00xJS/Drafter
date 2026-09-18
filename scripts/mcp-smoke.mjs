@@ -1008,9 +1008,16 @@ async function main() {
       peerRow('outfit', 'peer-6', { name: `${PEER_SECRET} outfit`, garmentIds: ['peer-5'] }),
       // a look has no text of its own, so the marker rides in its piece ids
       peerRow('wear', `wear~${today}~peer0001`, { date: today, garmentIds: ['peer-5', `${PEER_SECRET}-scarf`] }),
+      // A note is not a personal KIND — a shared one is household work — but
+      // since v3.16 it is private per record, and one with no `shared` is as
+      // much the peer's as their diary. Without a row here the sweep below
+      // proved nothing about the one kind whose audience is per record.
+      peerRow('note', 'peer-7', { title: `${PEER_SECRET} note`, body: `<p>${PEER_SECRET} — not shared with anyone</p>` }),
+      peerRow('note', 'peer-8', { title: 'Explicitly private', body: `<p>${PEER_SECRET} — shared:false</p>`, shared: false }),
     ]
-    seedRowsAsPeer([...peerPersonal, peerRow('task', 'peer-chore', { title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] })])
-    ok(peerPersonal.every(p => row(p.id)?.user_id === PEER), "the peer's habit, routine, review, calendar, journal, garment, outfit and look are stored under the peer")
+    const peerShared = peerRow('note', 'peer-9', { title: 'Holiday list', body: '<p>Shared with the household</p>', shared: true })
+    seedRowsAsPeer([...peerPersonal, peerShared, peerRow('task', 'peer-chore', { title: 'Peer chore: bins', description: '', status: 'todo', priority: 'normal', tags: [] })])
+    ok(peerPersonal.every(p => row(p.id)?.user_id === PEER), "the peer's habit, routine, review, calendar, journal, garment, outfit, look and private notes are stored under the peer")
 
     const peerTexts = []
     /** Any tool call, keeping what came back: the peer's marker must never be in it. */
@@ -1031,6 +1038,18 @@ async function main() {
     for (const [name, args] of reads) if ((await probe(name, args)).isError) failedReads.push(name)
     eq(failedReads.join(', '), '', 'every read tool answers with a peer in the household')
     eq(JSON.parse((await probe('list_tasks', { search: 'Peer chore' })).text).count, 1, "the peer's shared chore is still visible: household sharing is kept")
+    // A note's audience is per record, so both halves need saying: the shared
+    // one reaches the owner's agent, the private ones do not exist to it. The
+    // PEER_SECRET sweep below covers the leak; this covers the other mistake,
+    // which is hiding every note and calling it privacy.
+    const notes = JSON.parse((await probe('list_notes', {})).text)
+    ok(notes.notes.some(n => n.id === 'peer-9'), "the peer's SHARED note is household work and reaches the owner's agent")
+    ok(!notes.notes.some(n => n.id === 'peer-7' || n.id === 'peer-8'), 'neither of the peer\'s private notes is listed')
+    for (const id of ['peer-7', 'peer-8']) {
+      const got = await probe('get_note', { id })
+      ok(got.isError && /No note with id/.test(got.text), `get_note treats the peer's private note ${id} as missing, even by id`)
+    }
+    eq(JSON.parse((await probe('get_note', { id: 'peer-9' })).text).title, 'Holiday list', 'and reads the shared one by id')
     const lastWeek = JSON.parse((await probe('list_journal', { days: 7 })).text)
     ok(lastWeek.entries.every(e => e.id !== `journal~${today}~peer`), "list_journal leaves out the peer's entry for today")
 

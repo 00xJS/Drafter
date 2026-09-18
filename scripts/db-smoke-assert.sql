@@ -1875,3 +1875,106 @@ begin
   raise notice 'ok v3.16-3: un-sharing takes the note out of the peer''s reach, and peerNotes is how their cached copy finds out';
 end $$;
 commit;
+
+-- ===== v3.17 note transfers =====
+-- 20260926000000_v3_17_note_transfers: the two places a note's audience is
+-- decided by something other than the posts policy — an account being deleted,
+-- and a "Delete forever" tombstone.
+
+-- ---------------------- v3.17-1. an heir inherits the shared note, not the rest
+-- A member of the owner's household who is about to leave for good. ...000d was
+-- deleted back at step 14, so this needs an account of its own.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a7', 'leaver@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-0000000000a7', 'member');
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a7","role":"authenticated","email":"leaver@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"leaver-open","title":"Rota","body":"<p>Shared</p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"note","id":"leaver-shut","title":"Diary-ish","body":"<p>Mine</p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"note","id":"leaver-false","title":"Also mine","body":"<p>Mine</p>","shared":false,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"task","id":"leaver-task","title":"Bins","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.17-1: the leaver could not store their own rows: %', r -> 'rejected';
+  end if;
+  -- a second version of the shared note, so there is history to reason about
+  r := public.sync_posts('[
+    {"kind":"note","id":"leaver-open","title":"Rota","body":"<p>Shared, edited</p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T10:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.17-1: the leaver could not edit their own note: %', r -> 'rejected';
+  end if;
+end $$;
+commit;
+begin;
+set local role service_role;
+do $$
+declare r jsonb; n integer;
+begin
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-0000000000a7', '00000000-0000-0000-0000-00000000000a');
+  -- the two private notes are deleted, like a personal kind
+  select count(*) into n from public.posts where id in ('leaver-shut', 'leaver-false');
+  if n <> 0 then
+    raise exception 'FAIL v3.17-1: an heir inherited % note(s) their author never shared', n;
+  end if;
+  -- the shared note and the task pass to the heir, because both are household work
+  if (select user_id from public.posts where id = 'leaver-open') is distinct from '00000000-0000-0000-0000-00000000000a'
+     or (select user_id from public.posts where id = 'leaver-task') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.17-1: the shared note or the task did not reach the heir';
+  end if;
+  -- and no version of any note of theirs went with it: a draft's audience was never decided
+  select count(*) into n from public.posts_history where id in ('leaver-open', 'leaver-shut', 'leaver-false');
+  if n <> 0 then
+    raise exception 'FAIL v3.17-1: % note version(s) survived the deletion', n;
+  end if;
+  raise notice 'ok v3.17-1: an heir gets the shared note and the task, never a private note, and never a note''s drafts (%)', r;
+end $$;
+commit;
+
+-- ------------- v3.17-2. a purge tombstone that keeps the flag may still be written
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-purge","title":"To be purged","body":"<p>text</p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.17-2: the owner could not store the note: %', r -> 'rejected';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  -- What "Delete forever" writes: a content-free tombstone. Without the flag
+  -- the with check refuses it — the row would sit dirty on the peer's device
+  -- for good, which is what src/syncengine.ts purge() now prevents by copying
+  -- `shared` onto the tombstone.
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-purge","title":"","body":"","deletedAt":"2026-09-18T11:00:00.000Z","purged":true,"createdAt":"2026-09-18T11:00:00.000Z","updatedAt":"2026-09-18T11:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["note-purge"]'::jsonb then
+    raise exception 'FAIL v3.17-2: a flagless tombstone should be refused — that is the bug being guarded, got %', r;
+  end if;
+  -- the same tombstone, carrying the flag the row it replaces had
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-purge","title":"","body":"","shared":true,"deletedAt":"2026-09-18T11:00:00.000Z","purged":true,"createdAt":"2026-09-18T11:00:00.000Z","updatedAt":"2026-09-18T11:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.17-2: a peer could not purge a note its owner shared with them: %', r -> 'rejected';
+  end if;
+  raise notice 'ok v3.17-2: Delete forever on a shared note lands when its tombstone keeps the flag, and is refused without it';
+end $$;
+commit;
