@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- These need an Apple Developer Program membership; a free personal team
+	     cannot provision push, and the build fails with "Personal development
+	     teams do not support the Push Notifications capability". If you ever go
+	     back to free signing, empty this file again — local reminders and Face
+	     ID need no entitlement and are unaffected. -->
+
+	<!-- Push. `development` is the APNs sandbox, which is what a build run from
+	     Xcode onto a device talks to. TestFlight and the App Store use the
+	     production servers, and Xcode rewrites this to `production` when it
+	     archives for distribution, so this value is right for both. The server
+	     side must agree: set APNS_ENV=sandbox on Netlify only while you are
+	     testing from Xcode, and drop it for TestFlight (netlify/functions/lib/apns.mjs). -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Universal Links (applinks) open drafterz.netlify.app URLs in the app
+	     instead of Safari; Password AutoFill (webcredentials) lets the sign-in
+	     offer the password saved for the site. Both need
+	     /.well-known/apple-app-site-association served from that domain as
+	     application/json — the build writes it from APPLE_TEAM_ID (vite.config.ts)
+	     and netlify.toml gives it the content type. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:drafterz.netlify.app</string>
+		<string>webcredentials:drafterz.netlify.app</string>
+	</array>
+</dict>
+</plist>

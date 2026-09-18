@@ -9,11 +9,25 @@ import { describe, expect, it } from 'vitest'
 // could not provision push at all and the entitlements file was empty on purpose.
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
-const entitlements = read('../../ios/App/App/App.entitlements')
+// The file Xcode signs, and the one waiting for the membership to clear. A
+// free personal team cannot provision push or associated domains — asking for
+// either fails the build — so the live file stays empty until then and
+// `npm run ios:apple` swaps the paid one in.
+const entitlements = read('../../ios/App/App/App.paid.entitlements')
+const live = read('../../ios/App/App/App.entitlements')
+const pkg = JSON.parse(read('../../package.json')) as { scripts: Record<string, string> }
 const vite = read('../../vite.config.ts')
 const netlify = read('../../netlify.toml')
 
 describe('the iOS entitlements', () => {
+  it('are off in the file Xcode signs, so a free team can still build', () => {
+    // this is what the signing expiry needs on a week where the membership has
+    // not cleared: a build that works today, with reminders and Face ID intact
+    expect(live).not.toContain('aps-environment')
+    expect(live).not.toContain('associated-domains')
+    expect(pkg.scripts['ios:apple']).toContain('App.paid.entitlements')
+  })
+
   it('asks for push, and for the domain the app is served from', () => {
     expect(entitlements).toContain('<key>aps-environment</key>')
     expect(entitlements).toContain('applinks:drafterz.netlify.app')
