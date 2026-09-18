@@ -16,7 +16,8 @@
     "ios": "npm run build:ios && cap open ios",
     "db:smoke": "bash scripts/db-smoke.sh",
     "mcp:smoke": "node scripts/mcp-smoke.mjs",
-    "ios:apple": "cp ios/App/App/App.paid.entitlements ios/App/App/App.entitlements && echo \"Push, Universal Links and Password AutoFill are on. Sign with the PAID team in Xcode, or the build will fail.\""
+    "ios:apple": "cp ios/App/App/App.paid.entitlements ios/App/App/App.entitlements && echo \"Push, Universal Links and Password AutoFill are on. Sign with the PAID team in Xcode, or the build will fail.\"",
+    "release:ios": "node scripts/ios-build-number.mjs && npm run build:ios && cap open ios"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

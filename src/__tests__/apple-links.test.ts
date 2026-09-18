@@ -73,3 +73,28 @@ describe('the association file', () => {
     expect(netlify.indexOf('from = "/.well-known/apple-app-site-association"')).toBeLessThan(netlify.indexOf('from = "/*"'))
   })
 })
+
+describe('the release script', () => {
+  const pbx = read('../../ios/App/App.xcodeproj/project.pbxproj')
+
+  it('raises the build number before building, not after', () => {
+    // App Store Connect refuses a build number it has already seen, and refuses
+    // it AFTER the archive, export and upload have run — minutes spent to be
+    // told to change one integer
+    expect(pkg.scripts['release:ios']).toMatch(/^node scripts\/ios-build-number\.mjs && npm run build:ios/)
+  })
+
+  it('moves every configuration together', () => {
+    // Debug and Release drifting apart is how you upload a build whose number
+    // is not the one you just raised
+    const numbers = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => m[1])
+    expect(numbers.length).toBeGreaterThan(1)
+    expect(new Set(numbers).size).toBe(1)
+  })
+
+  it('leaves the version people read alone', () => {
+    const bump = read('../../scripts/ios-build-number.mjs')
+    expect(bump).not.toMatch(/writeFileSync[\s\S]*MARKETING_VERSION = \$/)
+    expect(pbx).toContain('MARKETING_VERSION = 1.0;')
+  })
+})
