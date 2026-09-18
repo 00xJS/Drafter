@@ -44,7 +44,18 @@ describe('the association file', () => {
   })
 
   it('is served as JSON, which Apple will not read it without', () => {
-    const rule = netlify.slice(netlify.indexOf('/.well-known/apple-app-site-association'))
-    expect(rule.slice(0, 200)).toContain('Content-Type = "application/json"')
+    const header = netlify.slice(netlify.indexOf('[[headers]]', netlify.indexOf('for = "/.well-known/apple-app-site-association"') - 40))
+    expect(header.slice(0, 220)).toContain('Content-Type = "application/json"')
+  })
+
+  it('404s when it has not been written, rather than answering with the app page', () => {
+    // The catch-all turns any unknown path into index.html, and the header rule
+    // above would then label that HTML application/json — so Apple fetched a
+    // valid-looking document that was not the association, and cached the
+    // failure. Worse than a 404, which is the honest answer.
+    const redirect = netlify.slice(netlify.indexOf('from = "/.well-known/apple-app-site-association"'))
+    expect(redirect.slice(0, 120)).toContain('status = 404')
+    // and it must come BEFORE the catch-all, or the catch-all wins
+    expect(netlify.indexOf('from = "/.well-known/apple-app-site-association"')).toBeLessThan(netlify.indexOf('from = "/*"'))
   })
 })

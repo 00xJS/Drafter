@@ -137,6 +137,18 @@
   to = "/cutout/not-found"
   status = 404
 
+# Apple's association file, by the same rule, and for a sharper reason. It is
+# written only when APPLE_TEAM_ID is set (vite.config.ts); without it the
+# catch-all below served the APP PAGE here, and the header rule then labelled
+# that HTML application/json — so Apple fetched a valid-looking document that
+# was not the association, and cached the failure. A 404 is the honest answer.
+# Netlify serves a real file ahead of an unforced redirect, so once the file
+# exists this rule never fires.
+[[redirects]]
+  from = "/.well-known/apple-app-site-association"
+  to = "/404.html"
+  status = 404
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
