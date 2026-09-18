@@ -13,6 +13,18 @@
 # CI_BUILD_NUMBER is the cloud's own counter and it only ever goes up, so it is
 # the right source here. The working copy is thrown away after the build; this
 # never reaches a commit.
+#
+# IT IS THE CLOUD'S COUNTER, NOT THE REPOSITORY'S, and it starts at 1 for a new
+# workflow. So the two ways of shipping do not mix by themselves: upload a build
+# by hand from Xcode (`npm run release:ios` raises the committed number, 5 -> 6
+# -> 7) and the cloud's first build is still 1, which App Store Connect has
+# already seen for this MARKETING_VERSION and refuses — after the archive and
+# the upload, as ever. Running on your own device is not an upload and collides
+# with nothing.
+#
+# Pick one: let the cloud do the uploading, or raise the workflow's build number
+# in App Store Connect above the highest you have uploaded by hand. This script
+# cannot tell which builds App Store Connect has seen, so it cannot pick for you.
 set -eu
 
 : "${CI_PRIMARY_REPOSITORY_PATH:?ci_pre_xcodebuild: CI_PRIMARY_REPOSITORY_PATH is unset — this script only runs under Xcode Cloud}"
