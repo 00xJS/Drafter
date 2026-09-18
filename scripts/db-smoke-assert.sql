@@ -1309,7 +1309,31 @@ begin;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
 insert into storage.objects (bucket_id, name, owner) values
-  ('media', 'bk-owner-photo', '00000000-0000-0000-0000-00000000000a');
+  ('media', 'bk-owner-photo', '00000000-0000-0000-0000-00000000000a'),
+  -- v3.18: a bare id is peer-readable only through a record that vouches for
+  -- it, so the pair here is the point — one photo sits in a task the household
+  -- shares, the other sits in nothing at all.
+  ('media', 'bk-in-task', '00000000-0000-0000-0000-00000000000a');
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"task","id":"task-with-photo","title":"Fix the shelf","description":"","status":"todo","priority":"normal","tags":[],"mediaIds":["bk-in-task"],"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.13-5: the task carrying a photo was rejected: %', r -> 'rejected';
+  end if;
+  if not exists (select 1 from public.post_media where post_id = 'task-with-photo' and media_id = 'bk-in-task') then
+    raise exception 'FAIL v3.13-5: the trigger did not index the task''s photo';
+  end if;
+  if (select added_by from public.post_media where media_id = 'bk-in-task') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.13-5: the reference was not attributed to the hand that wrote it';
+  end if;
+end $$;
 commit;
 begin;
 set local role service_role;
@@ -1326,10 +1350,14 @@ declare names text[];
 begin
   select coalesce(array_agg(name order by name), '{}') into names from storage.objects
    where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
-  if names <> array['bk-legacy-photo', 'bk-owner-photo'] then
-    raise exception 'FAIL v3.13-5: a household peer should see the owner''s photo and the legacy one, never a backup; saw %', names;
+  -- Both halves. bk-in-task is in a task the household shares, so the peer
+  -- reads it; bk-owner-photo is in no record at all, so since v3.18 it is its
+  -- uploader's alone — that blanket readability was the leak. Neither sees a
+  -- backup, and the ownerless legacy photo is unchanged.
+  if names <> array['bk-in-task', 'bk-legacy-photo'] then
+    raise exception 'FAIL v3.13-5: the peer should see the photo in the shared task and the legacy one, never a backup or an unreferenced photo; saw %', names;
   end if;
-  raise notice 'ok v3.13-5: a household peer sees the household''s photos but no backup';
+  raise notice 'ok v3.13-5: a peer reads a photo a shared record vouches for, not one in no record, and no backup';
 end $$;
 commit;
 
@@ -1356,8 +1384,10 @@ declare names text[];
 begin
   select coalesce(array_agg(name order by name), '{}') into names from storage.objects
    where bucket_id = 'media' and (name like 'bk-%' or name like 'backups/%');
-  if names <> array['bk-legacy-photo', 'bk-owner-photo'] then
-    raise exception 'FAIL v3.13-5: the owner should see their photo and the legacy one, not the backup; saw %', names;
+  -- the uploader reads their own whether a record vouches for them or not:
+  -- bk-owner-photo is in nothing, and it is still theirs
+  if names <> array['bk-in-task', 'bk-legacy-photo', 'bk-owner-photo'] then
+    raise exception 'FAIL v3.13-5: the owner should see both their photos and the legacy one, not the backup; saw %', names;
   end if;
   raise notice 'ok v3.13-5: the owner too reads backups only through Admin''s service-key download';
 end $$;
@@ -1585,6 +1615,18 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 insert into storage.objects (bucket_id, name, owner) values
   ('media', 'personal/00000000-0000-0000-0000-00000000000a/p1', '00000000-0000-0000-0000-00000000000a'),
   ('media', 'n1', '00000000-0000-0000-0000-00000000000a');
+-- Since v3.18 a bare id reaches a peer only through a record that vouches for
+-- it, so n1 goes into a note the owner shares — the case this block is about.
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"note-n1","title":"Shelf","body":"<p><img data-media=\"n1\"></p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.14-6: the note carrying n1 was rejected: %', r -> 'rejected';
+  end if;
+end $$;
 commit;
 -- written with the service key: no owner, like the daily snapshots
 begin;
@@ -1976,5 +2018,214 @@ begin
     raise exception 'FAIL v3.17-2: a peer could not purge a note its owner shared with them: %', r -> 'rejected';
   end if;
   raise notice 'ok v3.17-2: Delete forever on a shared note lands when its tombstone keeps the flag, and is refused without it';
+end $$;
+commit;
+
+-- ===== v3.18 a photo is as private as the record it is in =====
+-- 20260927000000_v3_18_note_photos: v3.16 made a note's TEXT private and left
+-- its pictures household-readable, because a note photo is a bare id in the
+-- media bucket and "household media select" granted every member every bare
+-- id. A trigger now indexes which media ids each record references and who put
+-- them there, and the policy asks whether the caller may read a record that
+-- vouches for the object. Nothing moves; no note body is rewritten.
+
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b7', 'photos@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-0000000000b7', 'member');
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'ph-private', '00000000-0000-0000-0000-00000000000a'),
+  ('media', 'ph-shared', '00000000-0000-0000-0000-00000000000a'),
+  ('media', 'ph-orphan', '00000000-0000-0000-0000-00000000000a');
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"ph-note-private","title":"Payslip","body":"<p><img data-media=\"ph-private\"></p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"},
+    {"kind":"note","id":"ph-note-shared","title":"Rota","body":"<p><img data-media=\"ph-shared\"></p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.18-1: the owner''s notes were rejected: %', r -> 'rejected';
+  end if;
+  if (select count(*) from public.post_media where media_id in ('ph-private', 'ph-shared')) <> 2 then
+    raise exception 'FAIL v3.18-1: the trigger did not index both photos';
+  end if;
+  -- ph-orphan is in no record, so nothing indexed it
+  if exists (select 1 from public.post_media where media_id = 'ph-orphan') then
+    raise exception 'FAIL v3.18-1: a photo in no record was indexed';
+  end if;
+  raise notice 'ok v3.18-1: the trigger indexes a record''s photos, and only a record''s photos';
+end $$;
+commit;
+
+-- ---------------------- v3.18-2. the peer reads the shared one and nothing else
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b7","role":"authenticated","email":"photos@example.test"}', true);
+do $$
+declare names text[]; n integer;
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects
+   where bucket_id = 'media' and name like 'ph-%';
+  if names <> array['ph-shared'] then
+    raise exception 'FAIL v3.18-2: the peer should read only the photo in the shared note, saw %', names;
+  end if;
+  -- THE BUG THIS CLOSES: before v3.18 every one of these was readable
+  if exists (select 1 from storage.objects where name = 'ph-private') then
+    raise exception 'FAIL v3.18-2: the private note''s photo is readable by a housemate';
+  end if;
+  -- and a housemate can no longer delete a photo out of someone's note
+  delete from storage.objects where name = 'ph-shared';
+  get diagnostics n = row_count;
+  if n <> 0 then
+    raise exception 'FAIL v3.18-2: a housemate deleted a photo out of the owner''s note';
+  end if;
+  raise notice 'ok v3.18-2: a housemate reads the shared note''s photo, not the private one, and deletes neither';
+end $$;
+commit;
+
+-- ------------- v3.18-3. a housemate cannot mint access by naming someone's id
+-- The attack added_by exists for. `authenticated` holds INSERT on public.posts
+-- and the with check only requires user_id in household_user_ids(), so a
+-- member can write rows directly over PostgREST — including rows attributed to
+-- someone else. Any scheme keying off the ROW's owner instead of the
+-- REFERENCE's author is mintable; this one is not.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b7","role":"authenticated","email":"photos@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"ph-note-theirs","title":"Mine","body":"<p><img data-media=\"ph-private\"></p>","shared":true,"createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.18-3: the housemate could not write their own note: %', r -> 'rejected';
+  end if;
+  -- the reference exists and is attributed to them, which is the point
+  if (select added_by from public.post_media where post_id = 'ph-note-theirs') is distinct from '00000000-0000-0000-0000-0000000000b7' then
+    raise exception 'FAIL v3.18-3: the reference was not attributed to the hand that wrote it';
+  end if;
+  if exists (select 1 from storage.objects where name = 'ph-private') then
+    raise exception 'FAIL v3.18-3: naming someone else''s photo in your own note granted you access to it';
+  end if;
+  raise notice 'ok v3.18-3: a reference counts only when its author uploaded the object — naming an id grants nothing';
+end $$;
+commit;
+
+-- -------------------- v3.18-4. un-sharing the note takes the photo with it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"note","id":"ph-note-shared","title":"Rota","body":"<p><img data-media=\"ph-shared\"></p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T10:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.18-4: the owner could not un-share their note: %', r -> 'rejected';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b7","role":"authenticated","email":"photos@example.test"}', true);
+do $$
+begin
+  if exists (select 1 from storage.objects where name = 'ph-shared') then
+    raise exception 'FAIL v3.18-4: un-sharing the note left its photo readable';
+  end if;
+  raise notice 'ok v3.18-4: un-sharing a note takes its photos with it, with nothing moved';
+end $$;
+commit;
+
+-- ------------- v3.18-5. cutting a photo out of a record drops its reference,
+-- and every field that can hold a media id is read
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  -- the four places a media id lives, each checked against the client:
+  -- a note's body, a project pad's notesHtml, a task's mediaIds, its attachments
+  ids := public.record_media_ids('{"body":"<p><img data-media=\"a1\"></p>"}'::jsonb);
+  if not (ids @> array['a1']) then raise exception 'FAIL v3.18-5: body not read'; end if;
+  ids := public.record_media_ids('{"notesHtml":"<p><img data-media=\"a2\"></p>"}'::jsonb);
+  if not (ids @> array['a2']) then raise exception 'FAIL v3.18-5: notesHtml not read'; end if;
+  ids := public.record_media_ids('{"mediaIds":["a3"]}'::jsonb);
+  if not (ids @> array['a3']) then raise exception 'FAIL v3.18-5: mediaIds not read'; end if;
+  ids := public.record_media_ids('{"attachments":[{"id":"a4","name":"x"}]}'::jsonb);
+  if not (ids @> array['a4']) then raise exception 'FAIL v3.18-5: attachments not read'; end if;
+  -- and a body may never name a path: no note can pull a peer's wardrobe photo
+  -- or a nightly backup into anyone's view by mentioning it
+  ids := public.record_media_ids('{"body":"<p><img data-media=\"personal/00000000-0000-0000-0000-00000000000b/mine\"><img data-media=\"backups/x/y.json\"></p>"}'::jsonb);
+  if array_length(ids, 1) is not null then
+    raise exception 'FAIL v3.18-5: a body named a path and it was indexed: %', ids;
+  end if;
+
+  -- cutting the photo out of the note drops the reference in the same statement
+  r := public.sync_posts('[
+    {"kind":"note","id":"ph-note-private","title":"Payslip","body":"<p>the photo is gone</p>","createdAt":"2026-09-18T09:00:00.000Z","updatedAt":"2026-09-18T11:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.18-5: the edit was rejected: %', r -> 'rejected';
+  end if;
+  if exists (select 1 from public.post_media where post_id = 'ph-note-private' and media_id = 'ph-private') then
+    raise exception 'FAIL v3.18-5: the reference outlived the photo being cut out';
+  end if;
+  raise notice 'ok v3.18-5: every field that can hold a media id is read, a path never is, and cutting a photo out drops its reference';
+end $$;
+commit;
+
+-- ----------- v3.18-6. the uploader keeps their own, referenced or not
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare names text[];
+begin
+  select coalesce(array_agg(name order by name), '{}') into names from storage.objects
+   where bucket_id = 'media' and name like 'ph-%';
+  if names <> array['ph-orphan', 'ph-private', 'ph-shared'] then
+    raise exception 'FAIL v3.18-6: the uploader should read all three of their own, saw %', names;
+  end if;
+  raise notice 'ok v3.18-6: your own photos stay yours to read, in a record or in none';
+end $$;
+commit;
+
+-- ----------- v3.18-7. the backfill, on rows that were written before it
+-- The migration runs this against an empty table in a fresh cluster, so it
+-- would otherwise ship untested — and if it is wrong, every photo in every
+-- record written before v3.18 goes peer-invisible on push and stays that way
+-- until that record is next edited.
+begin;
+set local role service_role;
+do $$
+declare added integer; n integer;
+begin
+  select count(*) into n from public.post_media;
+  if n = 0 then
+    raise exception 'FAIL v3.18-7: nothing to back-fill from — the trigger tests above should have left rows';
+  end if;
+  -- as if v3.18 had just been applied to a database already full of records
+  delete from public.post_media;
+  added := public.post_media_backfill();
+  if added <> n then
+    raise exception 'FAIL v3.18-7: the backfill found % of the % references the trigger had indexed', added, n;
+  end if;
+  -- and it only ever adds, so the repair is safe to run twice
+  if public.post_media_backfill() <> 0 then
+    raise exception 'FAIL v3.18-7: running the backfill twice wrote rows the second time';
+  end if;
+  -- the photo in the shared note is reachable again, which is the point
+  if not exists (select 1 from public.post_media where media_id = 'ph-shared') then
+    raise exception 'FAIL v3.18-7: the backfill lost a note photo';
+  end if;
+  raise notice 'ok v3.18-7: the backfill rebuilds every reference the trigger would have made (% rows), and adds nothing on a second run', added;
 end $$;
 commit;
