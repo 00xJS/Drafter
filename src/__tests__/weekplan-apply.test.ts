@@ -148,12 +148,14 @@ describe('its one Undo', () => {
     const undo = applyWeekPlanWrites(s.ports, w)
     const catchUp = w.created[0].id
     const made = w.review!.next.id
-    expect(s.log).toEqual(['upsert task late', 'board late', 'status drop wishlist', `upsert task ${catchUp}`, 'saveMeals meal~2026-09-13~dinner', `upsert review ${made}`])
+    // the member is in the id: a meal is one row each now, so two people in a
+    // household cannot write the same row and replace each other's plan
+    expect(s.log).toEqual(['upsert task late', 'board late', 'status drop wishlist', `upsert task ${catchUp}`, 'saveMeals meal~2026-09-13~dinner~me', `upsert review ${made}`])
 
     s.log.length = 0
     undo()
     expect(s.log).toContain(`remove ${catchUp}`)
-    expect(s.log).toContain('clearMeals meal~2026-09-13~dinner')
+    expect(s.log).toContain('clearMeals meal~2026-09-13~dinner~me')
     expect(s.log).toContain(`remove ${made}`)
     // the moved task is back as it was, stamped to win over the plan's own write
     const back = s.live().find(t => t.id === 'late')!

@@ -3,7 +3,7 @@ import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared
 import type { MealHistory } from '../../shared/weekplan.mjs'
 import { weekDayKeys } from '../../shared/weeks.mjs'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
-import { cookedIndex, visitIndex, daysAgo, daysBetween, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
+import { cookedIndex, visitIndex, daysAgo, daysBetween, mealAt, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
 import { dateKey } from '../utils'
 import { aiFailureKind } from './AskSheet'
@@ -162,7 +162,7 @@ export function choiceFromSuggestion(s: MealSuggestion, ids: Record<string, { ki
  */
 export function mealsForPicks(
   picks: readonly MealPick[],
-  d: { recipes: Recipe[]; places: Place[]; meals: Meal[]; createRecipe(name: string): Recipe; now: Date },
+  d: { recipes: Recipe[]; places: Place[]; meals: Meal[]; createRecipe(name: string): Recipe; now: Date; myId?: string | null },
 ): { meals: Meal[]; created: Recipe[] } {
   const stamp = d.now.toISOString()
   const taken = new Set(d.meals.filter(m => !m.deletedAt).map(m => `${m.date}|${m.slot}`))
@@ -191,7 +191,9 @@ export function mealsForPicks(
     }
     if (!fields) continue
     taken.add(`${date}|${slot}`)
-    out.push({ kind: 'meal', id: mealId(date, slot), date, slot, ...fields, createdAt: stamp, updatedAt: stamp })
+    // a day that already has a row of mine keeps its id, legacy or not
+    const had = mealAt(d.meals, date, slot, d.myId)
+    out.push({ kind: 'meal', id: had?.id ?? mealId(date, slot, d.myId), date, slot, ...fields, createdAt: stamp, updatedAt: stamp })
   }
   return { meals: out, created }
 }

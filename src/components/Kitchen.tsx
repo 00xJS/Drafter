@@ -56,6 +56,12 @@ type RecipeView = 'all' | 'lately'
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
 
 interface Props {
+  /**
+   * The signed-in account, null in local mode. A meal and a week's grocery
+   * list are one row per member, so their ids carry it: without it two people
+   * in a household write the same row and one plan replaces the other.
+   */
+  myId?: string | null
   recipes: Recipe[]
   meals: Meal[]
   groceries: GroceryList[]
@@ -88,7 +94,7 @@ interface Props {
   onOpenDayConsumed?(): void
 }
 
-export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
+export function Kitchen({ myId = null, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(() => {
@@ -135,7 +141,12 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
 
   const week = useMemo(() => weekRange(anchor), [anchor])
   const weekMeals = useMemo(() => mealsForWeek(meals, week.start), [meals, week.start])
-  const grocery = groceries.find(g => g.weekKey === week.key && !g.deletedAt)
+  // MY row for the week. A week's list is one row per member now, so picking
+  // whichever came first would show — and edit — someone else's.
+  const weekLists = useMemo(() => groceries.filter(g => g.weekKey === week.key && !g.deletedAt), [groceries, week.key])
+  const grocery = useMemo(() => weekLists.find(g => !myId || !g.ownerId || g.ownerId === myId), [weekLists, myId])
+  // everyone's, for the one list the shop is done from
+  const householdLists = weekLists
   const cooked = useMemo(() => cookedIndex(recipes, meals, today), [recipes, meals, today])
   // and when each place was last gone to, beside it under Eat out
   const visited = useMemo(() => visitIndex(places, tasks ?? [], meals), [places, tasks, meals])
@@ -171,7 +182,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
   const cookingMeal = cooking?.mealId ? meals.find(m => m.id === cooking.mealId) : undefined
 
   const persistGroceries = (nextMeals: Meal[], dates: string[], nextRecipes = recipes) => {
-    for (const g of groceriesForMealDates(nextMeals, nextRecipes, groceries, dates)) onSave(g)
+    for (const g of groceriesForMealDates(nextMeals, nextRecipes, groceries, dates, undefined, myId)) onSave(g)
   }
   const persistRecipe = (r: Recipe) => {
     const nextRecipes = [...recipes.filter(x => x.id !== r.id), r]
@@ -193,7 +204,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
    * nothing uses and nobody edited, and rebuilds the list again.
    */
   const applyMealPlan = (picks: MealPick[]): { count: number; undo(): void } | null => {
-    const { meals: planned, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date() })
+    const { meals: planned, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
     if (planned.length === 0) return null
     for (const m of planned) onSaveMeal(m)
     const dates = planned.map(m => m.date)
@@ -209,7 +220,7 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
           const now = cur.recipes.find(x => x.id === r.id)
           if (now && now.updatedAt === r.updatedAt && !rest.some(m => mealRecipeIds(m).includes(r.id))) cur.onSave({ ...now, deletedAt: new Date().toISOString(), updatedAt: newerStamp(now.updatedAt) })
         }
-        for (const g of groceriesForMealDates(rest, cur.recipes, cur.groceries, dates)) cur.onSave(g)
+        for (const g of groceriesForMealDates(rest, cur.recipes, cur.groceries, dates, undefined, myId)) cur.onSave(g)
       },
     }
   }
@@ -406,6 +417,8 @@ export function Kitchen({ recipes, meals, groceries, places, onSave, onDelete, o
 
       {seg === 'grocery' && (
         <GroceryPane
+          myId={myId}
+          householdLists={householdLists}
           week={week}
           meals={weekMeals}
           recipes={recipes}
@@ -603,6 +616,8 @@ function GroceryPane({
   meals,
   recipes,
   grocery,
+  householdLists,
+  myId,
   onShift,
   onSave,
 }: {
@@ -610,6 +625,15 @@ function GroceryPane({
   meals: Meal[]
   recipes: Recipe[]
   grocery?: GroceryList
+  /**
+   * Every member's list for this week, mine included. The pane EDITS mine and
+   * SHOWS all of them as one list: a week is one row each now, which is what
+   * stopped two people overwriting each other, but a shopping list you cannot
+   * both read is not a shared shopping list.
+   */
+  householdLists?: readonly GroceryList[]
+  /** Whose list this is: a week's list is one row per member, so a new one carries the member. */
+  myId?: string | null
   onShift(delta: number): void
   onSave(g: GroceryList): void
 }) {
@@ -623,10 +647,25 @@ function GroceryPane({
   // a Removed row with Restore until the view is cleaned, so the next line is
   // not pulled up under the thumb that just confirmed the ✕.
   const [gone, setGone] = useState<ReadonlySet<string>>(() => new Set<string>())
-  const list = grocery ?? buildGroceryList(week.key, meals, recipes, null)
-  const shown = visibleGroceryLines(list.items, filter, ticked, gone)
-  const held = heldGroceryLines(list.items, filter, ticked)
-  const removed = removedGroceryLines(list.items)
+  const list = grocery ?? buildGroceryList(week.key, meals, recipes, null, undefined, myId)
+  /**
+   * The lines the shop is done from: mine, then everyone else's in the
+   * household, each remembering the row it came from so a tick writes back to
+   * the right one. Two rows can hold the same ingredient — you both planned
+   * something with onions — and they stay two lines rather than being summed,
+   * because guessing that 2 + 1 onions is 3 onions for one trolley is exactly
+   * the sort of quiet arithmetic that sends you home with too much.
+   */
+  const all = useMemo(() => {
+    const rows = householdLists?.length ? householdLists : [list]
+    const mineFirst = [...rows].sort((a, b) => Number(!!b.ownerId === false) - Number(!!a.ownerId === false))
+    return mineFirst.flatMap(row => row.items.map(line => ({ line, row })))
+  }, [householdLists, list])
+  const ownerOf = useMemo(() => new Map(all.map(({ line, row }) => [line.id, row])), [all])
+  const items = all.map(({ line }) => line)
+  const shown = visibleGroceryLines(items, filter, ticked, gone)
+  const held = heldGroceryLines(items, filter, ticked)
+  const removed = removedGroceryLines(items)
   // a line taken off the list is in none of these, All included
   const counts = groceryCounts(list.items)
 
@@ -637,8 +676,18 @@ function GroceryPane({
   }, [week.key])
 
   const patch = (next: GroceryList) => onSave({ ...next, updatedAt: newerStamp(next.updatedAt) })
-  const patchLine = (id: string, change: (line: GroceryLine) => GroceryLine) =>
-    patch({ ...list, items: list.items.map(i => (i.id === id ? change(i) : i)) })
+  /**
+   * Change a line on the row that holds it, which is not always mine.
+   *
+   * The shop is done from one list; the lines behind it belong to whoever
+   * planned the meal that wanted them. Ticking Maria's onions has to write to
+   * Maria's row — a household peer may write a grocery row, so this is allowed
+   * — and writing it to mine would have ticked nothing at all.
+   */
+  const patchLine = (id: string, change: (line: GroceryLine) => GroceryLine) => {
+    const row = ownerOf.get(id) ?? list
+    patch({ ...row, items: row.items.map(i => (i.id === id ? change(i) : i)) })
+  }
 
   const setState = (id: string, state: GroceryState) => {
     void haptic('light') // eyes-free confirmation: the row deliberately does not move
@@ -678,7 +727,7 @@ function GroceryPane({
     if (!name) return
     // add_grocery_item's rule: a name already on the list goes back to Need
     // rather than in twice, and one that was removed comes back
-    patch({ ...list, id: groceryId(week.key), weekKey: week.key, items: addGroceryItem(list.items, { name }, uid).items })
+    patch({ ...list, id: list.id ?? groceryId(week.key, myId), weekKey: week.key, items: addGroceryItem(list.items, { name }, uid).items })
     setManual('')
   }
 

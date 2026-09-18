@@ -62,7 +62,9 @@ type Admin = ReturnType<typeof adminClient>
  * src/store.ts, shared/digest.mjs and mcp/server.mjs use. An edge function
  * cannot import shared/, so src/__tests__/mcp.test.ts holds this copy to theirs.
  */
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear'])
+// Deno cannot reach shared/kinds.mjs from here, so this is the one deliberate
+// second copy of that list — keep it in step (src/__tests__/srv-kinds.test.ts checks).
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'meal'])
 
 /** The owner the bot acts as, and the other members of the owner's households. */
 type Scope = { owner: string | null; peers: string[] }

@@ -13,6 +13,7 @@ import {
   cookedRecipeIds as sharedCookedRecipeIds,
   groceryId as sharedGroceryId,
   ingredientKey as sharedIngredientKey,
+  mealAt as sharedMealAt,
   mealId as sharedMealId,
   mealLabel as sharedMealLabel,
   mealRecipeIds as sharedMealRecipeIds,
@@ -29,8 +30,11 @@ import type { GroceryAddOutcome, MealMain } from '../shared/kitchen.mjs'
 // so an agent adding "milk" through the MCP server and the Kitchen tab produce
 // the same list, and count the same dinners as cooked.
 
-export const groceryId = (weekKey: string): string => sharedGroceryId(weekKey)
-export const mealId = (date: string, slot: MealSlot): string => sharedMealId(date, slot)
+export const groceryId = (weekKey: string, userId?: string | null): string => sharedGroceryId(weekKey, userId)
+export const mealId = (date: string, slot: MealSlot, userId?: string | null): string => sharedMealId(date, slot, userId)
+/** The row a member writes for a day and slot — a tombstone included — found by day, not by a computed id. */
+export const mealAt = (meals: readonly { kind: string }[], date: string, slot: MealSlot, userId?: string | null): Meal | null =>
+  sharedMealAt(meals, date, slot, userId)
 export const ingredientKey = (name: string, unit?: string): string => sharedIngredientKey(name, unit)
 export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
 /** The recipes these meals cook, sides included: what a grocery list is built from. */
@@ -49,8 +53,8 @@ export const mealLabel = (meal: Pick<Meal, 'title'> & Partial<Meal>): string => 
  * A slot's meal with a new main, keeping its notes, and its sides while it is
  * still cooked (shared/kitchen.mjs has the rule; MCP's plan_meal follows it too).
  */
-export const mealWithMain = (prev: Meal | null | undefined, at: { date: string; slot: MealSlot }, main: MealMain, now = new Date().toISOString()): Meal =>
-  sharedMealWithMain(prev, at, main, now)
+export const mealWithMain = (prev: Meal | null | undefined, at: { date: string; slot: MealSlot }, main: MealMain, now = new Date().toISOString(), owner: string | null = null): Meal =>
+  sharedMealWithMain(prev, at, main, now, owner)
 
 const dishKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
 
@@ -242,8 +246,8 @@ export function recipeByName(name: string | null | undefined, recipes: Recipe[])
 }
 
 /** Build or refresh a week's list. Keeps have/done/manual lines the user already set. */
-export const buildGroceryList = (weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString()): GroceryList =>
-  sharedBuildGroceryList(weekKey, meals, recipes, prev ?? null, now)
+export const buildGroceryList = (weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString(), owner: string | null = null): GroceryList =>
+  sharedBuildGroceryList(weekKey, meals, recipes, prev ?? null, now, owner)
 
 export function mealsInRange(meals: Meal[], start: Date, end: Date): Meal[] {
   const from = dateKey(start)
@@ -308,9 +312,13 @@ export function groceriesForMealDates(
   groceries: GroceryList[],
   dates: string[],
   now = new Date().toISOString(),
+  owner: string | null = null,
 ): GroceryList[] {
+  // the member's own row for the week: a week has one each now, and rebuilding
+  // from someone else's would hand them your lines
+  const mine = (g: GroceryList) => !owner || !g.ownerId || g.ownerId === owner
   return weeksForDates(dates).map(({ key, start }) =>
-    buildGroceryList(key, mealsForWeek(meals, start), recipes, groceries.find(g => g.weekKey === key), now),
+    buildGroceryList(key, mealsForWeek(meals, start), recipes, groceries.find(g => g.weekKey === key && mine(g)), now, owner),
   )
 }
 

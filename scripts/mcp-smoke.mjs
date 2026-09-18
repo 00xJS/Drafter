@@ -749,11 +749,14 @@ async function main() {
     const d = new Date()
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     const planned = await call('plan_meal', { date: today, recipeName: 'Pasta', notes: 'Double it' })
-    const mealRow = row(`meal~${today}~dinner`)
-    eq(mealRow?.kind, 'meal', 'plan_meal stored the meal')
+    // v3.15: a meal and a week's list are one row PER MEMBER, so their ids
+    // carry the caller — two people planning the same slot used to write the
+    // same row and one plan replaced the other
+    const mealRow = row(`meal~${today}~dinner~${OWNER}`)
+    eq(mealRow?.kind, 'meal', 'plan_meal stored the meal under the caller')
     eq(mealRow.data.recipeId, 'pasta', 'the meal points at the recipe')
     eq(mealRow.user_id, OWNER, 'the meal belongs to the owner')
-    const groceryRow = row(`grocery~${planned.weekKey}`)
+    const groceryRow = row(`grocery~${planned.weekKey}~${OWNER}`)
     eq(groceryRow?.kind, 'grocery', 'plan_meal stored the grocery list in the same round')
     eq(groceryRow.user_id, OWNER, 'the grocery list belongs to the owner')
     eq(groceryRow.data.items?.length, 2, "the list holds both of the recipe's ingredients")
@@ -768,15 +771,15 @@ async function main() {
       y.setDate(y.getDate() - 1)
       return `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
     })()
-    const groceriesBefore = (row(`grocery~${planned.weekKey}`).data.items ?? []).length
+    const groceriesBefore = (row(`grocery~${planned.weekKey}~${OWNER}`).data.items ?? []).length
     const outMeal = await call('plan_meal', { date: yesterday, out: true, placeName: 'Nopi' })
     eq(outMeal.planned.out, true, 'plan_meal recorded a bought meal')
     eq(outMeal.planned.placeId, place.id, 'the bought meal points at the place')
-    const outRow = row(`meal~${yesterday}~dinner`)
+    const outRow = row(`meal~${yesterday}~dinner~${OWNER}`)
     eq(outRow?.kind, 'meal', 'the bought meal is stored as a meal row')
     eq(outRow.data.out, true, 'the stored meal is marked as eaten out')
     eq(outRow.data.recipeId, undefined, 'a bought meal carries no recipe')
-    eq((row(`grocery~${planned.weekKey}`).data.items ?? []).length, groceriesBefore, 'a bought meal adds nothing to the grocery list')
+    eq((row(`grocery~${planned.weekKey}~${OWNER}`).data.items ?? []).length, groceriesBefore, 'a bought meal adds nothing to the grocery list')
     const afterEating = await call('list_places', {})
     const nopiAfter = afterEating.places.find(p => p.id === place.id)
     eq(nopiAfter?.mealsHereAllTime, 1, 'list_places counts the meal eaten there')
@@ -801,19 +804,19 @@ async function main() {
     ok(refusedBoth && /cooked|bought/i.test(refusedBoth), 'a meal cannot be both cooked and bought')
 
     await call('add_grocery_item', { name: 'Milk', qty: 2, unit: 'l', date: today })
-    const withMilk = row(`grocery~${planned.weekKey}`).data.items ?? []
+    const withMilk = row(`grocery~${planned.weekKey}~${OWNER}`).data.items ?? []
     const milk = withMilk.find(i => i.name === 'Milk')
     ok(milk, 'add_grocery_item stored a hand-added line')
     eq(milk.manual, true, 'the hand-added line is marked manual')
     eq(milk.state, 'need', 'the hand-added line starts as need')
 
     await call('set_grocery_state', { name: 'Milk', state: 'done', date: today })
-    eq(row(`grocery~${planned.weekKey}`).data.items.find(i => i.name === 'Milk')?.state, 'done', 'set_grocery_state ticked the stored line')
+    eq(row(`grocery~${planned.weekKey}~${OWNER}`).data.items.find(i => i.name === 'Milk')?.state, 'done', 'set_grocery_state ticked the stored line')
 
     // ---- a line taken off the list (the app's ✕) stays off it
     // No tool takes a line off — the Kitchen tab does — so the removal is stored
     // the way the app stores it: the whole list through sync_posts, stamped newer.
-    const groceryKey = `grocery~${planned.weekKey}`
+    const groceryKey = `grocery~${planned.weekKey}~${OWNER}`
     const beforeOff = row(groceryKey).data
     seedRows([
       {
@@ -835,7 +838,7 @@ async function main() {
     eq(tomatoes[0].state, 'need', 'the restored line is back as need')
 
     const week = await call('get_week_meals', { date: today })
-    ok(week.meals.some(m => m.id === `meal~${today}~dinner`), 'get_week_meals sees the meal it planned')
+    ok(week.meals.some(m => m.id === `meal~${today}~dinner~${OWNER}`), 'get_week_meals sees the meal it planned')
     ok(week.grocery?.items?.length >= 3, 'get_week_meals returns the week grocery list')
 
     // ----------------------------------------------------------------- notes

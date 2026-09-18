@@ -6,6 +6,7 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
   return (
     <Kitchen
+      myId={store.myId}
       recipes={store.recipes}
       meals={store.meals}
       groceries={store.groceries}

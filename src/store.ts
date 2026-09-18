@@ -33,6 +33,12 @@ export interface FailedSync extends SyncFailure {
 }
 
 export interface Store {
+  /**
+   * The signed-in account, or null in local mode. A record whose id has to be
+   * this member's alone — a meal, a week's grocery list — is built with it, so
+   * two people in one household never write the same row.
+   */
+  myId: string | null
   /** Live tasks (tombstoned ones filtered out) — what every view renders. */
   tasks: Task[]
   /** Live projects. */
@@ -310,6 +316,7 @@ export function useItems(myId: string | null = null): Store {
   }, [snap.failures, items])
 
   return {
+    myId,
     tasks,
     projects,
     calendars,

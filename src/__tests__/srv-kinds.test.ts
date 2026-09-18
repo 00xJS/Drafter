@@ -20,6 +20,12 @@ const migrations = readdirSync(dir)
   .map(f => ({ f, sql: readFileSync(dir + f, 'utf8') }))
 const sorted = (xs: Iterable<string>) => [...xs].sort()
 
+/** The newest migration whose text matches `declares`. */
+function newestFile(declares: RegExp): string {
+  for (const { sql } of [...migrations].reverse()) if (declares.test(sql)) return sql
+  throw new Error(`no migration matches ${declares}`)
+}
+
 /** The quoted kinds in the newest migration matching `declares`, taken from the first group of `list`. */
 function newest(declares: RegExp, list: RegExp): string[] {
   for (const { f, sql } of [...migrations].reverse()) {
@@ -40,14 +46,23 @@ describe('SYNC_KINDS is every kind the server stores', () => {
 })
 
 describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
-  it('matches the newest posts policy and posts_history policy', () => {
+  it('matches the newest posts policy', () => {
     const posts = newest(/create policy "household access" on public\.posts\b/, /create policy "household access" on public\.posts\b[\s\S]*?not in \(([^)]*)\)/)
-    const history = newest(
-      /create policy "household history select" on public\.posts_history/,
-      /create policy "household history select" on public\.posts_history[\s\S]*?not in \(([^)]*)\)/,
-    )
     expect(sorted(posts)).toEqual(sorted(PERSONAL_KINDS))
-    expect(sorted(history)).toEqual(sorted(PERSONAL_KINDS))
+  })
+
+  it('does not apply to posts_history, which is the owner\'s alone', () => {
+    // A version's audience cannot be decided after the fact without re-deciding
+    // every version — share a note edited privately for a fortnight and each
+    // draft would go with it — and VersionsPanel.tsx fetches this table straight
+    // from the client with the reader's JWT. So there is no kind list here any
+    // more: your own rows, and nothing else.
+    const sql = newestFile(/create policy "household history select" on public\.posts_history/)
+    const policy = sql.slice(sql.indexOf('create policy "household history select"'))
+    const body = policy.slice(0, policy.indexOf(';') + 1)
+    expect(body).toContain('using (user_id = auth.uid())')
+    expect(body).not.toContain('household_user_ids')
+    expect(body).not.toContain('not in (')
   })
 
   it('matches what account deletion treats as personal', () => {

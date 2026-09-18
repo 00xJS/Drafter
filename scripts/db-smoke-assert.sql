@@ -77,13 +77,17 @@ declare r jsonb; ids text[];
 begin
   r := public.sync_posts('[]'::jsonb, null);
   select array_agg(x ->> 'id' order by x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
-  if not (ids @> array['t1','p1','mum','nopi','pasta','meal~2026-09-08~dinner','grocery~2026-W37','tpl1']) then
+  -- grocery is here and meal is not: a week's shopping list is shared (one row
+  -- per member, but everyone reads them), while a meal plan is the member's own
+  -- since v3.15 — the ids carried no owner, so two people planning the same
+  -- slot wrote the same row and one plan replaced the other
+  if not (ids @> array['t1','p1','mum','nopi','pasta','grocery~2026-W37','tpl1']) then
     raise exception 'FAIL 3: peer should see the shared kinds, saw %', ids;
   end if;
-  if ids && array['journal~2026-09-08~a1','rev1','cal1'] then
-    raise exception 'FAIL 3: peer must not see the owner''s journal, review or calendar, saw %', ids;
+  if ids && array['journal~2026-09-08~a1','rev1','cal1','meal~2026-09-08~dinner'] then
+    raise exception 'FAIL 3: peer must not see the owner''s journal, review, calendar or meals, saw %', ids;
   end if;
-  if (select count(*) from public.posts where id in ('journal~2026-09-08~a1','rev1','cal1')) <> 0 then
+  if (select count(*) from public.posts where id in ('journal~2026-09-08~a1','rev1','cal1','meal~2026-09-08~dinner')) <> 0 then
     raise exception 'FAIL 3: direct select leaks a personal row to the peer';
   end if;
   raise notice 'ok 3: peer sees % shared rows and no personal ones', array_length(ids, 1);
@@ -197,13 +201,18 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
 do $$
 begin
+  -- Since v3.15 an edit history is the owner's alone, shared kinds included.
+  -- A version's audience cannot be decided after the fact without re-deciding
+  -- every version — share a note edited privately for a fortnight and each
+  -- draft goes with it — and the Versions panel reads this table straight from
+  -- the client with the reader's own JWT.
   if (select count(*) from public.posts_history where id = 'journal~2026-09-08~a1') <> 0 then
     raise exception 'FAIL 8: a peer can read the owner''s journal history';
   end if;
-  if (select count(*) from public.posts_history where id = 't1' and reason is null) <> 1 then
-    raise exception 'FAIL 8: a peer should still see shared history';
+  if (select count(*) from public.posts_history where id = 't1') <> 0 then
+    raise exception 'FAIL 8: a peer can read the owner''s history for a SHARED row';
   end if;
-  raise notice 'ok 8: history follows the same scope';
+  raise notice 'ok 8: history is the owner''s alone';
 end $$;
 commit;
 
@@ -657,13 +666,28 @@ begin;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
 do $$
+declare r jsonb;
 begin
-  if (select count(*) from public.posts_history where id = 'lu-t1' and reason = 'lost') <> 1 then
-    raise exception 'FAIL v3.11-1: a household peer should see a shared task''s lost version, like its other history';
+  -- Since v3.15 history is the owner's alone, so the owner's lost version of a
+  -- SHARED task is not the peer's to read either.
+  if (select count(*) from public.posts_history where id = 'lu-t1' and reason = 'lost') <> 0 then
+    raise exception 'FAIL v3.11-1: a peer can read the owner''s lost version of a shared task';
   end if;
   if (select count(*) from public.posts_history where id = 'journal~2026-09-10~lu') <> 0 then
     raise exception 'FAIL v3.11-1: a peer can read the owner''s lost journal line';
   end if;
+  -- What must still work: posts_history_record_loss stamps the LOSER, so a
+  -- member's own lost edit stays theirs and "Keep mine" can still offer it
+  -- back. On a row of the peer's own, so nothing else in this file counts it.
+  perform public.sync_posts('[{"kind":"task","id":"pl-t1","title":"Peer''s task","status":"todo","priority":"normal","createdAt":"2026-09-10T10:00:00.000Z","updatedAt":"2026-09-10T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  r := public.sync_posts('[{"kind":"task","id":"pl-t1","title":"Peer''s older try","status":"todo","priority":"normal","createdAt":"2026-09-10T10:00:00.000Z","updatedAt":"2026-09-10T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (r -> 'stale') is distinct from '["pl-t1"]'::jsonb then
+    raise exception 'FAIL v3.15: the peer''s older push should be stale, got %', r - 'items';
+  end if;
+  if (select count(*) from public.posts_history h where h.id = 'pl-t1' and h.reason = 'lost' and h.data ->> 'title' = 'Peer''s older try') <> 1 then
+    raise exception 'FAIL v3.15: a member must still be able to read the edit THEY lost';
+  end if;
+  raise notice 'ok v3.15: history is the owner''s, and a loser still keeps their own lost edit';
 end $$;
 commit;
 begin;
@@ -1206,10 +1230,12 @@ begin
   if jsonb_array_length(r -> 'rejected') <> 0 then
     raise exception 'FAIL v3.13-2: the peer''s edit of a shared note was rejected: %', r -> 'rejected';
   end if;
-  if (select count(*) from public.posts_history where id = 'note-paint') <> 1 then
-    raise exception 'FAIL v3.13-2: the peer should read the note''s history, as a task''s';
+  -- Since v3.15 the history belongs to the owner: the peer may read and edit
+  -- the shared note itself, but not the versions it was before.
+  if (select count(*) from public.posts_history where id = 'note-paint') <> 0 then
+    raise exception 'FAIL v3.13-2: the peer can read the owner''s note history';
   end if;
-  raise notice 'ok v3.13-2: a peer sees the owner''s note, edits it, and reads its history';
+  raise notice 'ok v3.13-2: a peer sees the owner''s note and edits it, but not its past';
 end $$;
 commit;
 do $$

@@ -4,7 +4,7 @@ import type { Store } from '../../store'
 import { planDayWrites, restoreSnapshots, shutdownWrites, type DayWrites, type ShutdownResult, type ShutdownWrites, type StatusMove } from '../../focus'
 import { closeDay, reopenDay } from '../../dayclose'
 import { localDayKey, shiftDayKey } from '../../journal'
-import { mealId } from '../../kitchen'
+import { mealAt, mealId } from '../../kitchen'
 import { uid } from '../../utils'
 import { newerStamp } from '../../itemops'
 import { rememberWeekPlanDismissed } from '../../weekplanstore'
@@ -132,12 +132,13 @@ export function weekPlanWrites(
   const stamp = o.now.toISOString()
   const meals: Meal[] = []
   for (const d of a.dinners) {
-    const id = mealId(d.date, 'dinner')
-    const slot = s.items.find((i): i is Meal => i.kind === 'meal' && i.id === id)
+    // by day and slot, not by a computed id: the id carries the member now, so
+    // a legacy row (which has no member in it) would never be found by one
+    const slot = mealAt(s.items, d.date, 'dinner', o.myId)
     if (slot && !slot.deletedAt) continue
     meals.push({
       kind: 'meal',
-      id,
+      id: slot?.id ?? mealId(d.date, 'dinner', o.myId),
       date: d.date,
       slot: 'dinner',
       title: d.title,
@@ -282,7 +283,7 @@ export function useFocusActions(deps: Deps) {
   const { store, household, showToast } = deps
 
   /** The slot's record as stored, a tombstone included, so a new plan for it is stamped newer and wins the merge. */
-  const slotRecord = (dayKey: string, slot: MealSlot) => store.allItems.find((i): i is Meal => i.kind === 'meal' && i.id === mealId(dayKey, slot))
+  const slotRecord = (dayKey: string, slot: MealSlot) => mealAt(store.allItems, dayKey, slot, household.myId) ?? undefined
 
   const applyDayPlan = (r: PlanDayApply) => {
     const now = new Date()

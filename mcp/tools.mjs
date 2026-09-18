@@ -20,7 +20,7 @@ import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK
 import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
-import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealId, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
+import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealAt, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
 import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
 import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
 import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
@@ -1144,7 +1144,7 @@ export const TOOLS = [
       },
       required: ['date'],
     },
-    async run({ date, slot, recipeId, recipeName, title, out, placeName, notes, sides } = {}, { db, clock }) {
+    async run({ date, slot, recipeId, recipeName, title, out, placeName, notes, sides } = {}, { db, clock, userId }) {
       const day = String(date ?? '').trim()
       assertDayKey(day)
       const when = slot ? oneOf(slot, MEAL_SLOTS, 'slot') : 'dinner'
@@ -1172,12 +1172,13 @@ export const TOOLS = [
       const sideList = sides === undefined || sides === null ? null : resolveSides(recipes, sides, recipe?.id)
       if (sideList?.length && eatingOut) throw new Error('A bought meal has no sides: sides go with a meal you cook.')
       if (sideList?.length && when === 'breakfast') throw new Error('Sides go with a cooked lunch or dinner.')
-      const id = mealId(day, when)
-      const existing = all.find(i => i.kind === 'meal' && i.id === id)
+      // by day and slot, not by a computed id: a meal is one row per member
+      // now, and a legacy row (which has no member in it) would never be found
+      const existing = mealAt(all, day, when, userId)
       const stamp = clock.iso()
       // built on what is in the slot, by the app's own rule: its notes stay,
       // and its sides while it is still cooked, less the new main
-      const meal = mealWithMain(existing, { date: day, slot: when }, { recipeId: recipe?.id, out: eatingOut, placeId: eatingOut ? place?.id : undefined, title: label }, stamp)
+      const meal = mealWithMain(existing, { date: day, slot: when }, { recipeId: recipe?.id, out: eatingOut, placeId: eatingOut ? place?.id : undefined, title: label }, stamp, userId)
       if (notes) {
         const clean = String(notes).trim()
         if (clean) meal.notes = clean
@@ -1189,9 +1190,12 @@ export const TOOLS = [
       }
       // planning a meal writes the grocery list in the same round, or the shop list never leaves this device
       const weekKey = groceryWeekFor(day)
-      const weekMeals = [...mealsInWeekOf(all.filter(i => i.kind === 'meal' && i.id !== id), day), meal]
-      const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey) ?? null
-      const grocery = buildGroceryList(weekKey, weekMeals, recipes, prev, newerStamp(prev?.updatedAt))
+      // the caller's own meals for the week, with the one just written in place
+      // of whatever was in its slot; a week's list is one row per member too
+      const ownsIt = m => !userId || !m.ownerId || m.ownerId === userId
+      const weekMeals = [...mealsInWeekOf(all.filter(i => i.kind === 'meal' && i.id !== meal.id && ownsIt(i)), day), meal]
+      const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey && ownsIt(i)) ?? null
+      const grocery = buildGroceryList(weekKey, weekMeals, recipes, prev, newerStamp(prev?.updatedAt), userId)
       assertStored(await db.syncWrite([meal, grocery]), [meal, grocery])
       return {
         planned: summarizeMeal(meal),
@@ -1234,19 +1238,20 @@ export const TOOLS = [
       },
       required: ['name'],
     },
-    async run({ name, qty, unit, date } = {}, { db, clock, newId }) {
+    async run({ name, qty, unit, date } = {}, { db, clock, newId, userId }) {
       const clean = String(name ?? '').trim()
       if (!clean) throw new Error('name must not be empty')
       const day = date ? String(date).trim() : clock.todayKey()
       assertDayKey(day)
       const weekKey = weekKeyOf(day)
       const all = await db.fetchAll({ kinds: ['grocery', 'meal', 'recipe'] })
-      const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey) ?? null
-      const list = prev ?? buildGroceryList(weekKey, mealsInWeekOf(all.filter(i => i.kind === 'meal'), day), all.filter(i => i.kind === 'recipe'), null, clock.iso())
+      const mine = g => !userId || !g.ownerId || g.ownerId === userId
+      const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey && mine(i)) ?? null
+      const list = prev ?? buildGroceryList(weekKey, mealsInWeekOf(all.filter(i => i.kind === 'meal'), day), all.filter(i => i.kind === 'recipe'), null, clock.iso(), userId)
       // the Kitchen tab's add box runs the same rule: never twice, and a removed line comes back
       const { items, outcome } = addGroceryItem(list.items ?? [], { name: clean, qty, unit }, newId)
       list.items = items
-      list.id = groceryId(weekKey)
+      list.id = prev?.id ?? groceryId(weekKey, userId)
       list.updatedAt = newerStamp(prev?.updatedAt)
       await db.writeItem(list)
       const added = outcome === 'merged' ? 'merged into an existing line' : outcome === 'restored' ? 'restored a line that had been taken off the list' : clean

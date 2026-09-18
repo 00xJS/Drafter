@@ -4,8 +4,46 @@
 import { newerStamp } from './domain.mjs'
 import { weekDayKeys, weekKeyOf } from './weeks.mjs'
 
-export const groceryId = weekKey => `grocery~${weekKey}`
-export const mealId = (date, slot) => `meal~${date}~${slot}`
+/**
+ * A meal's row, and a week's grocery row, belong to ONE member.
+ *
+ * They used to be `meal~<date>~<slot>` and `grocery~<week>`, with nobody in
+ * them — and `posts` is keyed on `id` alone, so those were one row per day and
+ * one row per week for the WHOLE household. When two people planned the same
+ * slot their devices wrote the same id; sync_posts keeps the first owner but
+ * takes the newer `data`, so one person's lunch silently replaced the other's
+ * in the same row. That is what "Maria's lunches were mine" was.
+ *
+ * With the member in the id there is a row each and nothing to collide. A
+ * legacy row is never renamed — renaming is a data migration AND a sync
+ * problem, because another device still holds the old id in its cache and
+ * would push it straight back. Instead the writers below keep the id of the
+ * row they are editing (`prev.id`), so a day that already has a legacy row
+ * goes on using it and only new days get a per-member id.
+ *
+ * `userId` is null in local mode, where there is one member and nothing to
+ * collide with; the ids are then exactly what they always were.
+ */
+export const groceryId = (weekKey, userId) => (userId ? `grocery~${weekKey}~${userId}` : `grocery~${weekKey}`)
+export const mealId = (date, slot, userId) => (userId ? `meal~${date}~${slot}~${userId}` : `meal~${date}~${slot}`)
+
+/** The household-wide ids used before members had their own rows. Still read, never written afresh. */
+export const legacyGroceryId = weekKey => `grocery~${weekKey}`
+export const legacyMealId = (date, slot) => `meal~${date}~${slot}`
+
+/**
+ * The row `userId` writes for this day and slot: theirs, or a legacy row of
+ * theirs from before members had their own.
+ *
+ * A tombstone counts. Both callers want one — a new plan for a slot that was
+ * cleared has to be stamped newer than the tombstone to win the merge, and it
+ * can only do that if it finds it. Looking the row up by a computed id, which
+ * is what they did before, stops working the moment the id carries a member.
+ */
+export function mealAt(meals, date, slot, userId) {
+  const mine = m => !userId || !m.ownerId || m.ownerId === userId
+  return (meals ?? []).find(m => m.kind === 'meal' && m.date === date && m.slot === slot && mine(m)) ?? null
+}
 
 /** Enough sides for any plate; a longer list is somebody's mistake, not a dinner. */
 export const MAX_SIDES = 8
@@ -62,10 +100,12 @@ export function mealLabel(meal) {
  * @param {{ date: string, slot: string }} at
  * @param {{ recipeId?: string, out?: boolean, placeId?: string, title: string }} main
  * @param {string} now
+ * @param {string|null} [owner] the member the row belongs to; only used when there is no prev
  */
-export function mealWithMain(prev, { date, slot }, main, now) {
+export function mealWithMain(prev, { date, slot }, main, now, owner = null) {
   const live = prev && !prev.deletedAt ? prev : null
-  const next = { ...(live ?? {}), kind: 'meal', id: mealId(date, slot), date, slot, title: main.title }
+  // prev.id, not a fresh one: a day that already has a row keeps it, legacy id and all
+  const next = { ...(live ?? {}), kind: 'meal', id: prev?.id ?? mealId(date, slot, owner), date, slot, title: main.title }
   delete next.recipeId
   delete next.out
   delete next.placeId
@@ -124,7 +164,7 @@ export function recipesUsed(meals, recipes) {
  * line no planned recipe needs any more is kept too, flag and all — dropping
  * it would bring it back the next time that recipe is planned.
  */
-export function buildGroceryList(weekKey, meals, recipes, prev = null, now = new Date().toISOString()) {
+export function buildGroceryList(weekKey, meals, recipes, prev = null, now = new Date().toISOString(), owner = null) {
   const merged = mergeIngredients(recipesUsed(meals, recipes))
   const prevByKey = new Map((prev?.items ?? []).map(line => [ingredientKey(line.name, line.unit), line]))
   const items = merged.map(row => {
@@ -151,7 +191,7 @@ export function buildGroceryList(weekKey, meals, recipes, prev = null, now = new
   items.sort((a, b) => a.name.localeCompare(b.name))
   return {
     kind: 'grocery',
-    id: groceryId(weekKey),
+    id: prev?.id ?? groceryId(weekKey, owner),
     weekKey,
     items,
     createdAt: prev?.createdAt ?? now,
