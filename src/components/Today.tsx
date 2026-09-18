@@ -59,8 +59,6 @@ import type { SyncAlarm } from '../syncalarm'
 
 interface Props {
   tasks: Task[]
-  /** Unfiltered tasks — visits are counted across every project. */
-  allTasks: Task[]
   people: Person[]
   /** Only places with a cadence can appear; the rest are never nudged. */
   places: Place[]
@@ -529,7 +527,6 @@ function plannedLabel(dueAt?: string): string {
 
 export function Today({
   tasks,
-  allTasks,
   people,
   places,
   reviews,
@@ -592,7 +589,7 @@ export function Today({
    * on the day before.
    */
   const todayKey = useDayKey()
-  const weekly = useMemo(() => doneByWeek(allTasks), [allTasks])
+  const weekly = useMemo(() => doneByWeek(tasks), [tasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
   const isSunday = new Date().getDay() === 0
   /**
@@ -651,13 +648,13 @@ export function Today({
   const peopleNudges = useMemo(
     () => {
       // your own events that have happened count as seeing the people on them, as on People
-      const seen = seenTasks(allTasks, entries)
+      const seen = seenTasks(tasks, entries)
       // peopleToNudge, not a filter here: the rule about who Today asks after
       // — the drifting, then a couple nobody has logged at all — lives with
       // the rest of the people rules
       return peopleToNudge(people.map(p => personStats(p, seen)))
     },
-    [people, allTasks, entries],
+    [people, tasks, entries],
   )
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
   // A meal eaten out there counts as going, as it does on Places.
@@ -665,13 +662,13 @@ export function Today({
     const now = new Date()
     const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
     for (const place of places) {
-      const s = placeCadenceStatus(place, allTasks, now, meals)
+      const s = placeCadenceStatus(place, tasks, now, meals)
       if (s.status === 'due' || s.status === 'overdue') out.push({ place, status: s.status, reason: s.reason, daysSince: s.daysSince ?? 0 })
     }
     return out
       .sort((a, b) => (a.status === b.status ? b.daysSince - a.daysSince : a.status === 'overdue' ? -1 : 1))
       .slice(0, 4)
-  }, [places, allTasks, meals])
+  }, [places, tasks, meals])
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
@@ -909,7 +906,7 @@ export function Today({
         </section>
       )}
 
-      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={new Date()} meals={meals} recipes={recipes} places={places} tasks={allTasks} onPlan={onPlanMeal} />}
+      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={new Date()} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />}
 
       {sundayDraft?.summary && (
         <section className="chart-card week-review-ready">
@@ -1047,7 +1044,7 @@ export function Today({
           </header>
           <ul className="dash-list event-list">
             {occasions.map(o => {
-              const gift = plannedGift(o.person.id, o.kind, o.at, allTasks)
+              const gift = plannedGift(o.person.id, o.kind, o.at, tasks)
               return (
                 <li key={`${o.person.id}-${o.kind}`} className="event-row">
                   <span className="person-avatar small" style={{ background: o.person.color }}>

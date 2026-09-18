@@ -173,7 +173,6 @@ describe('today’s focus on Today (B4)', () => {
     const ts = tasks()
     const props: ComponentProps<typeof Today> = {
       tasks: ts,
-      allTasks: ts,
       people: [],
       places: [],
       reviews: [review],

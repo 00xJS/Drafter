@@ -47,12 +47,6 @@ interface Props {
   onOpenPerson(person: Person): void
   /** Open a day on the Calendar, its day sheet up. Without it the month's days are only pictures. */
   onOpenDay?(day: string): void
-  /**
-   * Mine is on in a household. These figures still count everyone's visits,
-   * as the list does, but the Calendar a day opens shows only your tasks, so
-   * the month says so, as Places → Stats does.
-   */
-  mineOnCalendar?: boolean
   /** The clock the figures are read from; the tests hand one in. */
   now?: Date
 }
@@ -170,7 +164,7 @@ function GroupsCard({ shown, seen, now }: { shown: readonly PersonStats[]; seen:
  * while they narrow it, a line under the chips says so, with Show all. Drawn
  * with the Stats kit.
  */
-export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, mineOnCalendar = false, now: clock }: Props) {
+export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, now: clock }: Props) {
   const theme = useTheme()
   // read at one instant, and again when the records change, as the list's figures are
   const { now, seen, all } = useMemo(() => {
@@ -279,7 +273,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
             title="Who you saw"
             today={todayKey}
             // people are the household's, so these are everyone's visits, while the Calendar a day opens follows Mine
-            sub={(y, m) => `Each day’s people · ${countOf(daysInMonth(byDay, y, m, todayKey), 'day')} with someone${mineOnCalendar ? ' · counting everyone, though Mine keeps the Calendar to your tasks' : ''}`}
+            sub={(y, m) => `Each day’s people · ${countOf(daysInMonth(byDay, y, m, todayKey), 'day')} with someone`}
             day={key => {
               const on = key <= todayKey ? byDay.get(key) : undefined
               if (!on) return { what: 'nobody seen' }

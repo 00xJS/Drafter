@@ -63,8 +63,9 @@ function renderToday(over: Partial<ComponentProps<typeof Today>> = {}) {
   // the journal card asks the viewport how wide it is; a static render has none
   if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
   const props: ComponentProps<typeof Today> = {
-    tasks: [bins],
-    allTasks: [bins, july],
+    // one list now (v3.19 removed Mine / Everyone): the July visit the place
+    // cadence reads sits in it beside the chore that keeps Today off its welcome page
+    tasks: [bins, july],
     people: [],
     places: [nopi],
     reviews: [],

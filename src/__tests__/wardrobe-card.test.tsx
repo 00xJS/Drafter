@@ -101,7 +101,6 @@ describe('where the card sits on Today', () => {
     const focus = tasks ?? [task('garage', { title: 'Sort the garage', focusOn: TODAY, focusBy: 'me' })]
     const props: ComponentProps<typeof Today> = {
       tasks: focus,
-      allTasks: focus,
       people: [],
       places: [],
       reviews: [],

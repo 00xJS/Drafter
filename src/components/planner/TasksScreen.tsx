@@ -5,7 +5,7 @@ import { TASKS_TABS } from './routes'
 
 /** Tasks: the list, the board, the bills and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, filteredTasks, filteredNotes, inHousehold, mineOnly, setMineOnly } = p
+  const { store, household, projectMap, inHousehold } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
   const { openTask, newTask, deleteTask, changeStatus, showToast } = p
 
@@ -24,25 +24,11 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             </button>
           ))}
         </span>
-        {/* whose records, not which lens — so a group beside the tablist,
-            not a tab; it narrows Today, the list and the board alike
-            (see filteredTasks), and on Notes it hides the ones a peer shared
-            (filteredNotes) */}
-        {inHousehold && (
-          <span className="segmented mine-seg" role="group" aria-label={tasksTab === 'notes' ? 'Whose notes' : 'Whose tasks'}>
-            <button type="button" className={mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(true)}>
-              Mine
-            </button>
-            <button type="button" className={!mineOnly ? 'seg on' : 'seg'} onClick={() => setMineOnly(false)}>
-              Everyone
-            </button>
-          </span>
-        )}
       </div>
       {tasksTab === 'list' && (
         <TasksTable
           store={store}
-          tasks={filteredTasks}
+          tasks={store.tasks}
           onOpen={openTask}
           onNew={newTask}
           onDelete={deleteTask}
@@ -55,7 +41,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
       )}
       {tasksTab === 'board' && (
         <Board
-          tasks={filteredTasks}
+          tasks={store.tasks}
           members={household.info?.members ?? []}
           inHousehold={inHousehold}
           onOpen={openTask}
@@ -84,7 +70,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
           // notes of their own beside the project pads: the list, a page each,
           // and a delete that goes to Trash with the same Undo tasks have
-          notes={filteredNotes}
+          notes={store.notes}
           allNotes={store.notes}
           myId={household.myId}
           inHousehold={inHousehold}

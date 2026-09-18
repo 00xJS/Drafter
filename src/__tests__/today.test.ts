@@ -66,6 +66,8 @@ describe("swipe bands: what letting go would do, and when it's worth a buzz", ()
 
 const today = readFileSync(fileURLToPath(new URL('../components/Today.tsx', import.meta.url)), 'utf8')
 const planner = plannerSource()
+const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8')
+const tasksScreen = src('components/planner/TasksScreen.tsx')
 
 describe("Today's first screen", () => {
   it('gives every task section an anchor for the tiles to jump to', () => {
@@ -143,25 +145,33 @@ describe('one home project: the bar and its filter are gone', () => {
     expect(planner).toMatch(/forgetRetiredKeys\(\)/)
   })
 
-  it('has no project bar, and no view narrowed to one project', () => {
+  it('has no project bar, and no view narrowed at all', () => {
     expect(planner).not.toMatch(/project-bar|pchip/)
     expect(planner).not.toMatch(/projects=\{filterProject/)
     expect(planner.match(/projects=\{store\.projects\}/g)!.length).toBeGreaterThanOrEqual(4)
-    // the only narrowing left is the household's Mine / Everyone
-    expect(planner).toMatch(/const filteredTasks = useMemo\(\(\) => \{[\s\S]*?return store\.tasks\s*\}, \[store\.tasks, mineOnly, inHousehold, household\.myId\]\)/)
+    // and no narrowing of any kind: every screen is handed the store's own lists
+    expect(planner).not.toMatch(/filteredTasks|filteredNotes|mineOnly/)
     expect(planner).not.toMatch(/showProject/)
   })
 
-  it('keeps Mine / Everyone, at the right of the Tasks segment row', () => {
-    expect(planner).toMatch(/className="people-tab-seg tasks-seg"[\s\S]{0,900}\{inHousehold && \([\s\S]{0,80}className="segmented mine-seg"/)
-    expect([...planner.matchAll(/localStorage\.setItem\('drafter:mine-only'/g)]).toHaveLength(1)
+  it('has no Mine / Everyone anywhere: who a task is for is the task\'s own flag now', () => {
+    // "I dont want the mine/everyone filter at the top, lets remove that I
+    // think the last session had built it wrong". It narrowed by ASSIGNEE
+    // while reading as though it answered who could SEE a record — and since
+    // v3.19 that second question has a real control, on the record, which the
+    // database enforces. A switch that answers neither question well is worse
+    // than none: it hid the household's work with no sign on the screen.
+    expect(planner).not.toMatch(/mine-seg|mineOnly|setMineOnly|mine-only/)
+    expect(tasksScreen).not.toMatch(/Mine|Everyone|Whose tasks|Whose notes/)
+    // the switch's saved value is retired, so a device left on Mine is freed
+    expect(src('retiredkeys.ts')).toContain("'drafter:mine-only'")
   })
 
-  it('keeps the switch out of the Tasks tablist, as a named group beside it', () => {
-    // VoiceOver reads a tablist's children as tabs; Mine / Everyone are not
-    expect(planner).toMatch(/<div className="people-tab-seg tasks-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
-    // it narrows the notes as well as the tasks now, so the label says which
-    expect(planner).toMatch(/className="segmented mine-seg" role="group" aria-label=\{tasksTab === 'notes' \? 'Whose notes' : 'Whose tasks'\}/)
+  it('keeps the Tasks tablist to its four lenses, with nothing beside it', () => {
+    expect(tasksScreen).toMatch(/<div className="people-tab-seg tasks-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
+    // the list, the board, the bills and the notes read the store directly
+    expect(tasksScreen).toMatch(/tasks=\{store\.tasks\}/)
+    expect(tasksScreen).toMatch(/notes=\{store\.notes\}/)
   })
 
   it('keeps the Mine note off Home and Calendar: it belongs where the switch is', () => {

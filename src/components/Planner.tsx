@@ -27,7 +27,6 @@ import { useCalendarSync } from './planner/useCalendarSync'
 import { useDeepLinks } from './planner/useDeepLinks'
 import { useFocusActions } from './planner/useFocusActions'
 import { useLifeActions } from './planner/useLifeActions'
-import { useMineOnly } from './planner/useMineOnly'
 import { useNativeShell } from './planner/useNativeShell'
 import { useListFilters } from './planner/useListFilters'
 import { useNavigation } from './planner/useNavigation'
@@ -40,7 +39,9 @@ import { useToast } from './planner/useToast'
 export default function Planner() {
   const household = useHousehold()
   const store = useItems(household.myId)
-  const mine = useMineOnly({ store, household })
+  // More than one account shares this planner: what decides whether a record
+  // says who can see it. Nothing narrows the lists any more — see ctx.ts.
+  const inHousehold = !!household.info?.household && (household.info?.members.length ?? 0) > 1
 
   // the multi-project bar is gone; a filter a device saved before the update
   // must not silently hide tasks, so it is dropped rather than read
@@ -117,7 +118,7 @@ export default function Planner() {
     household,
     projectMap,
     paletteCommands: buildPaletteCommands(nav, overlays),
-    ...mine,
+    inHousehold,
     ...nav,
     ...listFilters,
     ...toaster,

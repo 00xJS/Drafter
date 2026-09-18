@@ -6,7 +6,6 @@ import type { useCalendarSync } from './useCalendarSync'
 import type { useListFilters } from './useListFilters'
 import type { useFocusActions } from './useFocusActions'
 import type { useLifeActions } from './useLifeActions'
-import type { useMineOnly } from './useMineOnly'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useOwner } from './useOwner'
@@ -26,8 +25,19 @@ export type PlannerCtx = {
   household: ReturnType<typeof useHousehold>
   projectMap: ReturnType<typeof projectById>
   paletteCommands: Command[]
-} & ReturnType<typeof useMineOnly> &
-  ReturnType<typeof useNavigation> &
+  /**
+   * More than one account shares this planner. It decides whether a record
+   * says who can see it — alone there is nobody to share with, so every mark
+   * and every control would say the same thing.
+   *
+   * There is no Mine / Everyone here any more. Whose job a task is (its
+   * assignee) and who can see it (v3.19's `shared`) are different questions,
+   * and the switch answered the first while looking like it answered the
+   * second: "I think the last session had built it wrong". Sharing is now the
+   * one control, on the record, where it can be seen and changed.
+   */
+  inHousehold: boolean
+} & ReturnType<typeof useNavigation> &
   ReturnType<typeof useListFilters> &
   ReturnType<typeof useToast> &
   ReturnType<typeof useCalendarSync> &

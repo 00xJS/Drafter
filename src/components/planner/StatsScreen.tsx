@@ -31,7 +31,7 @@ import type { AreaProps } from '../StatsLens'
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
   const { store, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
-  const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter, inHousehold, mineOnly } = p
+  const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
   const { openPerson, openPlace, openCalendarDay, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
   // What the wardrobe's figures are read from. Wardrobe.tsx works these out for
@@ -49,10 +49,6 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
     onPeopleFilter: setPeopleFilter,
     placeFilter,
     onPlaceFilter: setPlaceFilter,
-    // with Mine on in a household the Calendar a day opens shows only your
-    // tasks, while these count everyone's visits — the same note People's own
-    // Stats carry
-    mineOnCalendar: inHousehold && mineOnly,
     onOpenPerson: person => openPerson(person.id),
     onOpenPlace: place => openPlace(place.id),
     onOpenDay: openCalendarDay,

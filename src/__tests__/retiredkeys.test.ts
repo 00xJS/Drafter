@@ -35,11 +35,17 @@ describe('a project filter saved before the bar went away', () => {
   })
 
   it('leaves the preferences that survived alone', () => {
-    localStorage.setItem('drafter:mine-only', '1')
     localStorage.setItem('drafter:tasks-tab', 'notes')
     forgetRetiredKeys()
-    expect(localStorage.getItem('drafter:mine-only')).toBe('1')
     expect(localStorage.getItem('drafter:tasks-tab')).toBe('notes')
+  })
+
+  it('drops a Mine / Everyone left on Mine, which would keep hiding the household with no switch to turn it off', () => {
+    // the switch went in v3.19: who a task is FOR is the record's own flag now
+    localStorage.setItem('drafter:mine-only', '1')
+    forgetRetiredKeys()
+    expect(localStorage.getItem('drafter:mine-only')).toBeNull()
+    expect(RETIRED_KEYS).toContain('drafter:mine-only')
   })
 
   it('names the retired filter key exactly once', () => {

@@ -195,7 +195,6 @@ describe('the Inbox goes by the date, not the project', () => {
     function renderToday(tasks: Task[]): string {
       const props: ComponentProps<typeof Today> = {
         tasks,
-        allTasks: tasks,
         projects: [LIFE],
         people: [],
         places: [],

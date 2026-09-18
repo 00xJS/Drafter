@@ -31,7 +31,7 @@ import { button, elements, press, propsOf, rendered, settled, type El } from './
 // People → Places → Stats. Every figure it shows is read off the rows' own
 // stats (placeStats), so each is held here to the list's own count of the
 // same thing — with nothing, with one place, with ties, under each kind chip,
-// and whatever tasks the list is handed (Mine / Everyone narrows neither) —
+// and whatever tasks the list is handed (nothing narrows them) —
 // and then the view is drawn on the server, empty and full. vitest runs in
 // node, so a press is a call of the handler the view hands its kit; the kit's
 // own drawing is stats-kit.test. Last, the ways in from the shell, and the
@@ -394,11 +394,11 @@ describe('Meals out', () => {
   })
 })
 
-describe('Mine / Everyone narrows neither the list nor its Stats: places are the household’s', () => {
+describe('nothing narrows the list or its Stats: places are the household’s', () => {
   // my partner's walk in the park and my dinner at Nopi, both done
   const theirs = outing('park', at(2026, 9, 5), [], { ownerId: 'partner', assigneeId: 'partner' })
   const mine = outing('nopi', at(2026, 9, 6), [], { ownerId: 'me' })
-  /** useMineOnly's narrowing, signed in as `me`. */
+  /** What Mine / Everyone used to hide (v3.19 removed it): kept as a second set of rows to agree with. */
   const narrowed = (ts: Task[]) => ts.filter(t => (t.assigneeId ? t.assigneeId === 'me' : t.ownerId === 'me' || !t.ownerId))
 
   it('hands Stats the records the list is handed, every task among them', () => {
@@ -407,8 +407,9 @@ describe('Mine / Everyone narrows neither the list nor its Stats: places are the
     const stats = screen.slice(from, screen.indexOf('/>', from))
     for (const prop of ['places={store.places}', 'people={store.people}', 'tasks={store.tasks}', 'meals={store.meals}']) expect(stats).toContain(prop)
     expect(screen).not.toContain('filteredTasks')
-    // …and says whether Mine is narrowing the Calendar its days open
-    expect(stats).toContain('mineOnCalendar={inHousehold && mineOnly}')
+    // and there is no narrowing left to say anything about
+    expect(stats).not.toContain('mineOnCalendar')
+    expect(screen).not.toContain('mineOnly')
   })
 
   it('counts a household member’s outing beside yours, as the rows do', () => {
@@ -503,9 +504,10 @@ describe('Places → Stats, drawn', () => {
     expect(view({ onOpenDay: undefined })).not.toContain('<button type="button" class="photo-cal-day"')
   })
 
-  it('says, with Mine on in a household, that the month counts everyone though the Calendar it opens shows only your tasks', () => {
+  it('says what the month counts, with no caveat: the Calendar it opens holds the same outings', () => {
+    // the caveat existed for Mine / Everyone, which is gone (v3.19)
+    expect(view()).toContain('Each day’s places · 4 outings on 3 days')
     expect(view()).not.toContain('Mine keeps the Calendar')
-    expect(view({ mineOnCalendar: true })).toContain('Each day’s places · 4 outings on 3 days · counting everyone, though Mine keeps the Calendar to your tasks')
   })
 
   it('shows three of a busy day’s places as emoji, then "+n"', () => {

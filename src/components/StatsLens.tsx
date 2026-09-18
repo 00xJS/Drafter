@@ -82,7 +82,6 @@ export interface AreaProps {
   onPeopleFilter(f: PersonFilter): void
   placeFilter: PlaceFilter
   onPlaceFilter(f: PlaceFilter): void
-  mineOnCalendar: boolean
   onOpenPerson(p: Person): void
   onOpenPlace(p: Place): void
   onOpenDay(day: string): void
@@ -149,7 +148,6 @@ export function StatsLens(p: StatsLensProps) {
               onSaw={a.onSaw}
               onOpenPerson={a.onOpenPerson}
               onOpenDay={a.onOpenDay}
-              mineOnCalendar={a.mineOnCalendar}
             />
           )}
           {tab === 'places' && (
@@ -164,7 +162,6 @@ export function StatsLens(p: StatsLensProps) {
               onPlan={a.onPlanAt}
               onOpenPerson={a.onOpenPerson}
               onOpenDay={a.onOpenDay}
-              mineOnCalendar={a.mineOnCalendar}
             />
           )}
           {tab === 'kitchen' && <KitchenStats recipes={p.recipes} meals={p.meals} groceries={p.groceries} places={p.places} onOpenRecipe={a.onOpenRecipe} onGoDay={a.onGoMealDay} />}

@@ -413,17 +413,17 @@ describe('what People → Stats is handed', () => {
     return screen.slice(from, screen.indexOf('/>', from))
   }
 
-  it('is what the list reads: every task whoever logged it, and your own events; Mine / Everyone narrows neither', () => {
+  it('is what the list reads: every task whoever logged it, and your own events; nothing narrows either', () => {
     for (const prop of ['people={store.people}', 'tasks={store.tasks}', 'entries={store.events}']) {
       expect(element('PeopleStats'), prop).toContain(prop)
       expect(element('People'), prop).toContain(prop)
     }
-    // Mine / Everyone narrows no count: nothing on the tab is handed filteredTasks and the list never reads Mine;
-    // Stats reads it only to say the Calendar a day opens follows it, as Places → Stats does
+    // Nothing narrows a count, and nothing is left that could: Mine / Everyone
+    // was removed in v3.19 — who a task is FOR is now the record's own flag,
+    // decided on the task and enforced by the database, not a list filter.
     expect(screen).not.toMatch(/filteredTasks/)
-    expect(element('People')).not.toMatch(/mineOnly/)
-    expect(element('PeopleStats').match(/mineOnly/g)).toHaveLength(1)
-    expect(element('PeopleStats')).toContain('mineOnCalendar={inHousehold && mineOnly}')
+    expect(screen).not.toMatch(/mineOnly/)
+    expect(element('PeopleStats')).not.toMatch(/mineOnCalendar/)
   })
 
   it('is nothing personal: no journal, habits, routines or wardrobe', () => {
@@ -692,9 +692,12 @@ describe('its styles', () => {
   })
 })
 
-describe('with Mine on in a household', () => {
-  it('says the month of faces counts everyone, though the Calendar a day opens shows only your tasks, as Places → Stats does', () => {
+describe('the month of faces needs no caveat any more', () => {
+  it('counts the same days the Calendar it opens shows', () => {
+    // It used to carry one: Mine / Everyone could narrow the Calendar to your
+    // own tasks while these figures counted the household's. The switch is
+    // gone (v3.19), so the two agree and the line says only what it counts.
+    expect(cardOf(stats(), 'Who you saw')).toMatch(/with someone<\/p>/)
     expect(stats()).not.toContain('Mine keeps the Calendar')
-    expect(cardOf(stats({ mineOnCalendar: true }), 'Who you saw')).toMatch(/with someone · counting everyone, though Mine keeps the Calendar to your tasks<\/p>/)
   })
 })

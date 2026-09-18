@@ -69,7 +69,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
 
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, paletteCommands, inHousehold, showToast, filteredTasks, allEvents } = p
+  const { store, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
   const { setView, goTasksTab, setNotesProjectId, openPlace, openPerson, openJournal, openNote, setKitchenRecipe, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, adminGroup, isOwner } = p
@@ -270,7 +270,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       {sheet?.kind === 'day' && (
         <Layer name="Plan my day">
           <PlanDaySheet
-            tasks={filteredTasks}
+            tasks={store.tasks}
             projects={store.projects}
             reviews={store.reviews}
             events={allEvents}
@@ -295,7 +295,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       {sheet?.kind === 'shutdown' && (
         <Layer name="Shut down">
           <ShutdownSheet
-            tasks={filteredTasks}
+            tasks={store.tasks}
             projects={store.projects}
             reviews={store.reviews}
             routines={store.routines}

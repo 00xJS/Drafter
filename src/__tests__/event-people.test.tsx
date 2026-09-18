@@ -213,7 +213,6 @@ describe('a past event of your own counts toward the People figures', () => {
     if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
     const props: ComponentProps<typeof Today> = {
       tasks: [],
-      allTasks: [],
       people: [mum],
       places: [],
       reviews: [],
@@ -257,7 +256,7 @@ describe('a past event of your own counts toward the People figures', () => {
     const august: Task = { ...logged(lunch, ['mum']), id: 'august', completedAt: new Date(2026, 7, 1, 12).toISOString() }
     // something on the list, or Today is the welcome page
     const bins: Task = { kind: 'task', id: 'bins', title: 'Put the bins out', description: '', status: 'todo', priority: 'normal', createdAt: STAMP, updatedAt: STAMP, tags: [] }
-    const nudges = (entries: CalendarEntry[]) => sectionAt(renderToday({ tasks: [bins], allTasks: [bins, august], entries }), 'class="chart-card people-nudges"')
+    const nudges = (entries: CalendarEntry[]) => sectionAt(renderToday({ tasks: [bins, august], entries }), 'class="chart-card people-nudges"')
     expect(nudges([])).toContain('Mum')
     expect(nudges([])).toContain('Overdue')
     expect(nudges([lunch])).toBe('')

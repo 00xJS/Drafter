@@ -8,7 +8,7 @@ import { HOME_TABS } from './routes'
 
 /** Home: the day, the week's look-back, the journal and the wardrobe, four segments of one tab. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, filteredTasks, allEvents, sourceMap, showToast } = p
+  const { store, household, allEvents, sourceMap, showToast } = p
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
@@ -42,8 +42,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
       </div>
       {homeTab === 'today' && (
         <Today
-          tasks={filteredTasks}
-          allTasks={store.tasks}
+          tasks={store.tasks}
           people={store.people}
           places={store.places}
           reviews={store.reviews}

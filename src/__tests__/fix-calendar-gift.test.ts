@@ -1,9 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useMineOnly } from '../components/planner/useMineOnly'
+import { describe, expect, it } from 'vitest'
 import { plannedGift } from '../people'
 import { Task } from '../types'
 
@@ -43,7 +40,7 @@ describe("the calendar's day sheet knows a gift is already planned", () => {
     const start = calendar.indexOf('const { person, kind } = item.occasion')
     expect(start).toBeGreaterThan(-1)
     const row = calendar.slice(start, calendar.indexOf("if (item.kind === 'event')", start))
-    expect(row).toMatch(/const gift = plannedGift\(person\.id, kind, sheetDay, allTasks \?\? tasks\)/)
+    expect(row).toMatch(/const gift = plannedGift\(person\.id, kind, sheetDay, tasks\)/)
     expect(row).toMatch(/\{gift \? \([\s\S]*?onOpen\(gift\)[\s\S]*?Gift planned[\s\S]*?\) : \([\s\S]*?onPlanOccasion\(person, kind, at\)[\s\S]*?Plan a gift/)
   })
 
@@ -56,39 +53,30 @@ describe("the calendar's day sheet knows a gift is already planned", () => {
   })
 })
 
-describe('with Mine on, a gift someone else in the household is buying still counts', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('gives the gift rule every task, and every grid and list the Mine list', () => {
+describe('a gift someone else in the household is buying still counts', () => {
+  // This suite was written when Mine / Everyone could narrow the Calendar's
+  // tasks to your own, which lost a partner's gift and made the sheet offer a
+  // second one. The switch is gone (v3.19: who a task is FOR is the record's
+  // own flag, not a list filter), so there is one list again — and the rule
+  // the day sheet asks must read it, not a subset of it.
+  it('hands the Calendar one list of tasks, and the gift rule reads it', () => {
     const open = screen.indexOf('<Calendar')
     const tag = screen.slice(open, screen.indexOf('/>', open))
-    expect(tag).toMatch(/\stasks=\{filteredTasks\}/)
-    expect(tag).toMatch(/\sallTasks=\{store\.tasks\}/)
-    // the day buckets the month and week grids and the sheet's rows read are still built from `tasks`
+    expect(tag).toMatch(/\stasks=\{store\.tasks\}/)
+    // no second list any more: nothing narrows what the Calendar is given
+    expect(tag).not.toMatch(/allTasks/)
+    expect(calendar).not.toMatch(/\ballTasks\b/)
+    // the day buckets the month and week grids and the sheet's rows read
     expect(calendar).toMatch(/tasks: tasksByDay\(tasks\)/)
-    // `allTasks` is declared, taken, and read in one place: the gift rule, falling back to `tasks`
-    const code = calendar.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-    expect(code.match(/\ballTasks\b/g)).toHaveLength(3)
+    expect(calendar).toMatch(/const gift = plannedGift\(person\.id, kind, sheetDay, tasks\)/)
   })
 
-  it("finds a partner's gift among every task, where the Mine list has lost it", () => {
-    vi.stubGlobal('localStorage', { getItem: (key: string) => (key === 'drafter:mine-only' ? '1' : null), setItem: () => {} })
+  it("finds a partner's gift, which is a task of theirs shared with the household", () => {
     const theirs: Task = { ...gift, ownerId: 'partner', assigneeId: 'partner' }
     const mine: Task = { ...gift, id: 'm', title: 'Book a table', tags: [], ownerId: 'me' }
-    const all = [theirs, mine]
-    const args = {
-      store: { tasks: all, notes: [] },
-      household: { myId: 'me', info: { household: { id: 'h' }, members: [{ userId: 'me' }, { userId: 'partner' }] } },
-    } as unknown as Parameters<typeof useMineOnly>[0]
-    // useMineOnly's own Mine filter, through one server render (no effects run)
-    const Probe = () => createElement('i', null, useMineOnly(args).filteredTasks.map(t => t.id).join(','))
-    const shown = renderToStaticMarkup(createElement(Probe)).replace(/<\/?i>/g, '').split(',')
-    expect(shown).toEqual(['m'])
-    const mineOnly = all.filter(t => shown.includes(t.id))
-    // what the sheet asked before, and what it asks now
-    expect(plannedGift('sam', 'birthday', birthday, mineOnly)).toBeNull()
-    expect(plannedGift('sam', 'birthday', birthday, all)?.id).toBe('g')
+    expect(plannedGift('sam', 'birthday', birthday, [theirs, mine])?.id).toBe('g')
+    // and one they kept to themselves is not in this list at all — the server
+    // never sent it (v3.19), so the sheet offers to plan a gift, as it should
+    expect(plannedGift('sam', 'birthday', birthday, [mine])).toBeNull()
   })
 })

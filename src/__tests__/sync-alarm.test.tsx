@@ -81,7 +81,6 @@ describe('the banner on Today', () => {
     renderToStaticMarkup(
       <Today
         tasks={[task]}
-        allTasks={[task]}
         people={[]}
         places={[]}
         reviews={[]}
@@ -134,7 +133,7 @@ describe('the banner on Today', () => {
     const banner = html.indexOf('class="sync-alarm"')
     expect(banner).toBeGreaterThan(html.indexOf('class="today-head"'))
     expect(banner).toBeLessThan(html.indexOf('class="chart-card briefing"'))
-    const empty = renderToday({ tasks: [], allTasks: [], syncAlarm: alarm })
+    const empty = renderToday({ tasks: [], syncAlarm: alarm })
     expect(empty).toContain('Welcome to your planner')
     expect(empty.indexOf('class="sync-alarm"')).toBeLessThan(empty.indexOf('Welcome to your planner'))
   })

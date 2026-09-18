@@ -33,12 +33,6 @@ interface Props {
   onOpenPerson?(person: Person): void
   /** The Calendar on a day: the month calendar's days open it. */
   onOpenDay?(day: string): void
-  /**
-   * Mine is on in a household. These figures still count everyone's outings,
-   * as the list does, but the Calendar a day opens shows only your tasks, so
-   * the month calendar says so.
-   */
-  mineOnCalendar?: boolean
   /** The clock the figures are read from; the tests hand one in. */
   now?: Date
 }
@@ -101,7 +95,7 @@ function PlaceListRow({ place, line, onOpen, onPlan }: { place: Place; line: str
  * off the rows' own stats (src/placestats.ts), so it agrees with the list, and
  * drawn with the Stats kit (components/stats).
  */
-export function PlacesStats({ places, people, tasks, meals, filter, onFilter, onOpenPlace, onPlan, onOpenPerson, onOpenDay, mineOnCalendar = false, now: handed }: Props) {
+export function PlacesStats({ places, people, tasks, meals, filter, onFilter, onOpenPlace, onPlan, onOpenPerson, onOpenDay, now: handed }: Props) {
   const theme = useTheme()
   // One clock for the day. PeopleScreen re-renders with every Planner render
   // (a sync, a toast, a record changed on another device), so each figure is
@@ -183,9 +177,10 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
     const outings = outingsByMonth(stats, y, now).months[m - 1]
     const prefix = `${y}-${String(m).padStart(2, '0')}`
     const out = [...days.keys()].filter(k => k.startsWith(prefix)).length
-    const line = outings ? `Each day’s places · ${countOf(outings, 'outing')} on ${countOf(out, 'day')}` : 'Each day’s places · no outings'
-    // places are the household's, so these are everyone's outings, while the Calendar a day opens follows Mine
-    return mineOnCalendar ? `${line} · counting everyone, though Mine keeps the Calendar to your tasks` : line
+    // No caveat any more: Mine / Everyone is gone, so the Calendar a day opens
+    // holds the same outings these figures count — everyone's, minus whatever
+    // a housemate kept to themselves, which is not in either.
+    return outings ? `Each day’s places · ${countOf(outings, 'outing')} on ${countOf(out, 'day')}` : 'Each day’s places · no outings'
   }
 
   return (
