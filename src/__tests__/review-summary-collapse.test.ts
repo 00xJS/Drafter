@@ -1,14 +1,75 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
-import { wordCount } from '../components/Review'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Review, wordCount } from '../components/Review'
+import type { Review as ReviewRecord } from '../types'
+import { button, elements, settled, textOf } from './rendered'
 
 // The summary card had no way to shut it. That did not matter while a summary
 // was 150 words; it mattered a great deal the week one came back as 600 words
 // of the model talking to itself, sitting between the week's figures and
 // everything the week actually held.
+//
+// These used to be substring greps of Review.tsx, which is no test at all: a
+// review of the whole app pointed out that changing `onClick={toggleSummary}`
+// to `onClick={() => {}}` left every assertion passing while the button did
+// nothing. They drive the component now.
 
-const source = readFileSync(fileURLToPath(new URL('../components/Review.tsx', import.meta.url)), 'utf8')
+const T0 = '2026-09-13T00:00:00.000Z'
+const SUMMARY =
+  'You finished eight things this week, which is more than it probably felt like. The report for Invitation Homes slipped again.\n\n- Get the report sent\n- Book the oil change'
+
+const saved: ReviewRecord = {
+  kind: 'review',
+  id: 'rev-1',
+  period: 'week',
+  key: '2026-W37',
+  top: [],
+  summary: SUMMARY,
+  createdAt: T0,
+  updatedAt: T0,
+}
+
+const noop = () => {}
+const props = {
+  tasks: [],
+  projects: [],
+  people: [],
+  reviews: [saved],
+  journal: [],
+  places: [],
+  habits: [],
+  onSaveReview: noop,
+  onOpen: noop,
+  onStatus: noop,
+  onReschedule: noop,
+  onNew: noop,
+}
+
+let store: Record<string, string>
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  // inside the week the saved review belongs to, so the page opens on it
+  vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'))
+  store = {}
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => store[k] ?? null,
+    setItem: (k: string, v: string) => {
+      store[k] = v
+    },
+  })
+  vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }), setTimeout: () => 0 })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+const view = (act?: (tree: ReturnType<typeof settled>) => void) =>
+  settled(Review, props as unknown as Parameters<typeof Review>[0], act as (tree: unknown) => void)
+
+const toggle = (tree: ReturnType<typeof settled>) =>
+  elements(tree).find(e => e.type === 'button' && String(e.props.className ?? '').includes('review-summary-toggle'))
 
 describe('wordCount', () => {
   it('counts words, not characters, and reads nothing as nothing', () => {
@@ -20,29 +81,35 @@ describe('wordCount', () => {
 })
 
 describe('the summary card', () => {
-  it('has a toggle that says which way it goes', () => {
-    expect(source).toContain('aria-expanded={summaryOpen}')
-    expect(source).toContain("{summaryOpen ? 'Hide' : 'Show'}")
+  it('shows the summary, open, with a Hide that says which way it goes', () => {
+    const tree = view()
+    expect(textOf(tree)).toContain('The report for Invitation Homes slipped again.')
+    const t = toggle(tree)
+    expect(t?.props['aria-expanded']).toBe(true)
+    expect(textOf(t)).toBe('Hide')
   })
 
-  it('keeps the choice on the device, and opens by default', () => {
-    expect(source).toContain("const SUMMARY_KEY = 'drafter:review-summary'")
-    // `!== '0'`, not `=== '1'`: a reader who has never touched it sees the summary
-    expect(source).toContain("localStorage.getItem(SUMMARY_KEY) !== '0'")
+  it('puts the summary away when Hide is pressed, and says how much is behind it', () => {
+    const shut = view(tree => (toggle(tree)!.props.onClick as () => void)())
+    expect(textOf(shut)).not.toContain('The report for Invitation Homes slipped again.')
+    expect(toggle(shut)?.props['aria-expanded']).toBe(false)
+    expect(textOf(toggle(shut))).toBe('Show')
+    expect(textOf(shut)).toContain(`${wordCount(SUMMARY)} words, hidden`)
   })
 
-  it('never hides an error behind it — that is the one thing worth reading', () => {
-    // the toggle is drawn only when there is no error, and the body is the
-    // error or, only when open, the summary
-    expect(source).toContain('{!error && (')
-    expect(source).toMatch(/error \? <p className="warn">\{error\}<\/p> : summaryOpen &&/)
+  it('remembers the choice on this device', () => {
+    view(tree => (toggle(tree)!.props.onClick as () => void)())
+    expect(store['drafter:review-summary']).toBe('0')
   })
 
-  it('opens itself when a summary is asked for, so the button is never a no-op', () => {
-    expect(source).toContain('if (!summaryOpen) toggleSummary()')
+  it('opens by default for a reader who has never touched it', () => {
+    expect(toggle(view())?.props['aria-expanded']).toBe(true)
+    // and stays shut for one who has
+    store['drafter:review-summary'] = '0'
+    expect(toggle(view())?.props['aria-expanded']).toBe(false)
   })
 
-  it('says how much is behind it while it is shut', () => {
-    expect(source).toContain("`${wordCount(summary)} ${wordCount(summary) === 1 ? 'word' : 'words'}, hidden`")
+  it('still offers to write one, whether the card is open or shut', () => {
+    expect(() => button(view(), '✨ Rewrite summary')).not.toThrow()
   })
 })

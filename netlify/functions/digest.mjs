@@ -38,6 +38,7 @@ import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
+import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -236,11 +237,15 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   }
   if (!(await writeReview(claim, userId, { handOver: true }))) return answer(existing)
 
+  const prompt = `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${habitSection}${journalSection}\n\n120–220 words. Begin with the review's first sentence.`
+
   const ai = await settleWithin(
     complete({
-      system:
-        'You write a warm, candid personal review — like a good friend who is also organised. Plain text, short paragraphs and "-" bullets only, no headings, no markdown emphasis. Be specific: name the tasks and people. Celebrate real progress, be honest about what slipped, and end with two or three things that would matter most next. When the journal explains why the week went the way it did, say so in the writer\'s own terms. Never invent anything not in the data.',
-      prompt: `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${habitSection}${journalSection}\n\nWrite the review in 120–220 words.`,
+      // REVIEW_SYSTEM, not a second wording: this writes the same review the
+      // ✨ button does, and the two briefs had drifted apart — this one was
+      // still the rule-heavy original the model got stuck weighing.
+      system: REVIEW_SYSTEM,
+      prompt,
       maxTokens: 900,
       // nobody is waiting on it: a second NVIDIA key takes it first, and the owner's own requests keep the main one
       background: true,
@@ -250,9 +255,32 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   )
   if (ai.error || !ai.text?.trim()) return answer(claim)
 
+  /**
+   * The thinking guard, on the one path nobody watches.
+   *
+   * NVIDIA's default model reasons before it answers, and when the budget runs
+   * out in the reasoning that is what comes back. In the app a bad answer is in
+   * front of someone who can press the button again; here it is written
+   * straight into the review, on a Sunday, unasked — which is exactly how a
+   * week's review came to be 3,625 characters of the model working out how to
+   * write one. Ask once more without the reasoning, and if that is thinking
+   * too, leave the summary unwritten: the claim alone still lets them press ✨
+   * themselves, and no summary is better than that one.
+   */
+  let text = ai.text.trim()
+  if (looksLikeThinking(text, REVIEW_SYSTEM)) {
+    const retry = await settleWithin(
+      complete({ system: `${REVIEW_SYSTEM}\n\n${NO_THINKING}`, prompt, maxTokens: 2048, background: true }),
+      left(),
+      { error: 'the run ran out of time' },
+    )
+    text = retry.error ? '' : (retry.text ?? '').trim()
+    if (!text || looksLikeThinking(text, REVIEW_SYSTEM)) return answer(claim)
+  }
+
   // just after the claim, not now: reflections or a Top 3 saved while the
   // model was asked are newer, so they stand and the summary is not written
-  const review = { ...claim, summary: ai.text.trim(), updatedAt: justAfter(claim.updatedAt) }
+  const review = { ...claim, summary: text, updatedAt: justAfter(claim.updatedAt) }
   return (await writeReview(review, userId)) ? answer(review, true) : answer(claim)
 }
 

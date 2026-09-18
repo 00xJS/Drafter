@@ -529,10 +529,17 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
   const tie = (a, b) => cmp(a.title, b.title) || cmp(a.kind, b.kind) || cmp(a.id, b.id)
   const planned = new Set(meals.filter(m => m.date === dayKey).map(m => m.slot))
   const used = new Set()
-  return slots.map(slot => {
-    if (planned.has(slot)) return { slot, missing: false, ideas: [] }
+  const rows = slots.map(slot => ({ slot, missing: !planned.has(slot), ideas: [] }))
+
+  /**
+   * Top a slot up from the candidates still going. `onlyFitting` is the whole
+   * point of the two passes below: every slot gets first refusal on what
+   * actually suits it, before anything is handed out on suitability alone.
+   */
+  const fill = (row, onlyFitting) => {
+    const { slot } = row
     const keyOf = c => `idea:${dayKey}:${slot}:${c.kind}:${c.id}`
-    const open = candidates.filter(c => !used.has(`${c.kind}:${c.id}`) && !skip.has(keyOf(c)))
+    const open = candidates.filter(c => !used.has(`${c.kind}:${c.id}`) && !skip.has(keyOf(c)) && (!onlyFitting || fits(c, slot)))
     const suits = (a, b) => Number(fits(b, slot)) - Number(fits(a, slot))
     const popular = open.filter(c => c.count > 0).sort((a, b) => suits(a, b) || b.count - a.count || tie(a, b))
     const longAgo = open.filter(c => c.total >= 2).sort((a, b) => suits(a, b) || cmp(a.last, b.last) || tie(a, b))
@@ -542,16 +549,25 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
     ]
     const at = [0, 0]
     const chosen = new Set()
-    const ideas = []
-    for (let turn = 0; ideas.length < IDEAS_PER_SLOT && (at[0] < popular.length || at[1] < longAgo.length); turn = 1 - turn) {
+    for (let turn = 0; row.ideas.length < IDEAS_PER_SLOT && (at[0] < popular.length || at[1] < longAgo.length); turn = 1 - turn) {
       const [list, how] = lists[turn]
       while (at[turn] < list.length && chosen.has(list[at[turn]])) at[turn]++
       if (at[turn] >= list.length) continue
       const c = list[at[turn]++]
       chosen.add(c)
       used.add(`${c.kind}:${c.id}`)
-      ideas.push({ key: keyOf(c), kind: c.kind, id: c.id, title: c.title, why: ideaWhy(c, how, dayKey) })
+      row.ideas.push({ key: keyOf(c), kind: c.kind, id: c.id, title: c.title, why: ideaWhy(c, how, dayKey) })
     }
-    return { slot, missing: true, ideas }
-  })
+  }
+
+  // Two passes, because one greedy pass let the first slot empty the board.
+  //
+  // `suits` only ever REORDERS a slot's list — it does not drop anything — so
+  // with the usual shape of a kitchen (dinners, and nothing tagged for lunch)
+  // the lunch slot took all three dinner candidates, marked them used, and the
+  // Dinner group underneath rendered nothing at all. Now every slot takes what
+  // fits it first, and only then do the leftovers go round again.
+  for (const row of rows) if (row.missing) fill(row, true)
+  for (const row of rows) if (row.missing) fill(row, false)
+  return rows
 }

@@ -51,22 +51,27 @@ const ideas = (list: Row[], o: { slots?: ('breakfast' | 'lunch' | 'dinner')[]; d
 const show = (slot: { ideas: { kind: string; id: string; why: string }[] }) => slot.ideas.map(i => [i.kind, i.id, i.why])
 
 describe('mealIdeasFor', () => {
-  it('alternates popular and longest-ago for lunch, leaning to cafés and quick recipes', () => {
+  // Every slot takes what SUITS it before anything is handed out on
+  // suitability alone. Lunch used to be filled first and completely, from the
+  // whole board — `suits` only reorders a slot's list, it never drops anything
+  // — so a kitchen of dinners gave lunch four dinner recipes and left the
+  // Dinner group with nothing at all to render.
+  it('gives lunch what suits lunch: the café and the soup, not the evening food', () => {
     const [lunch] = ideas(items())
     expect(lunch.slot).toBe('lunch')
     expect(lunch.missing).toBe(true)
     expect(show(lunch)).toEqual([
       ['place', 'pret', 'Been 4× in six months'],
       ['recipe', 'soup', 'Not cooked in 4 months'],
-      ['recipe', 'pasta', 'Cooked 6× in six months'],
-      ['recipe', 'stew', 'Not cooked in 11 months'],
     ])
   })
 
-  it('never offers dinner what lunch already offered, and says when you last went', () => {
+  it('keeps the evening food for dinner, and never offers a slot what another already has', () => {
     const [lunch, dinner] = ideas(items())
     expect(dinner.slot).toBe('dinner')
     expect(show(dinner)).toEqual([
+      ['recipe', 'pasta', 'Cooked 6× in six months'],
+      ['recipe', 'stew', 'Not cooked in 11 months'],
       ['recipe', 'curry', 'Cooked 3× in six months'],
       ['place', 'nopi', "Haven't been since 3 May"],
     ])
@@ -86,9 +91,13 @@ describe('mealIdeasFor', () => {
   })
 
   it('fills in behind a dismissed idea', () => {
+    // dismissing the café leaves lunch the one other thing that suits it
     const [lunch] = ideas(items(), { dismissed: [`idea:${DAY}:lunch:place:pret`] })
-    expect(lunch.ideas.map(i => i.id)).toEqual(['soup', 'stew', 'pasta', 'nopi'])
+    expect(lunch.ideas.map(i => i.id)).toEqual(['soup'])
     expect(lunch.ideas[0].key).toBe(`idea:${DAY}:lunch:recipe:soup`)
+    // and a slot with several closes up behind the one that went
+    const [, dinner] = ideas(items(), { dismissed: [`idea:${DAY}:dinner:recipe:pasta`] })
+    expect(dinner.ideas.map(i => i.id)).toEqual(['curry', 'stew', 'nopi'])
   })
 
   it('breaks ties by name, and is the same whatever order the records come in', () => {

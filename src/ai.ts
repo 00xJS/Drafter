@@ -4,12 +4,17 @@ import { personStats, seenTasks } from './people'
 import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './types'
 import { dateKey } from './utils'
 import { mealHistory } from '../shared/weekplan.mjs'
+import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../shared/ai.mjs'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
 
 class AIError extends Error {}
+
+// the app and the Sunday digest share these (shared/ai.mjs); re-exported so a
+// reader of this file finds them where the calls are
+export { looksLikeThinking }
 
 /** One call to the proxy. Returns the model's text, which may be empty. */
 async function request(system: string, prompt: string, maxTokens: number, json: boolean): Promise<string> {
@@ -34,40 +39,6 @@ async function request(system: string, prompt: string, maxTokens: number, json: 
   const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
   return typeof text === 'string' ? text : ''
 }
-
-/** Words long enough that an answer never repeats a run of them by accident. */
-const ECHO_RUN = 6
-
-const flatten = (s: string): string =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-
-/**
- * Whether a plain-text reply is the model thinking rather than answering.
- *
- * A reasoning model restates its brief before it works — "We need to produce a
- * personal review, warm, candid… no headings… 120-220 words" — and when the
- * budget runs out there, that is what comes back. It is prose, so nothing about
- * its shape gives it away; what gives it away is that it quotes the
- * instructions, which an answer has no reason to do. So: flatten both, and look
- * for any run of six words from the brief inside the reply.
- *
- * Untagged thinking that quotes nothing gets through, and should: a rule loose
- * enough to catch it would throw away real answers.
- */
-export function looksLikeThinking(text: string, system: string): boolean {
-  const said = flatten(text)
-  const brief = flatten(system).split(' ')
-  if (!said || brief.length < ECHO_RUN) return false
-  for (let i = 0; i + ECHO_RUN <= brief.length; i++) {
-    if (said.includes(brief.slice(i, i + ECHO_RUN).join(' '))) return true
-  }
-  return false
-}
-
-const NO_THINKING = 'Reply with the finished text only — no reasoning, no commentary, and do not restate these instructions.'
 
 async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
   let text = await request(system, prompt, maxTokens, json)
@@ -380,13 +351,10 @@ export async function summarizeReview(input: {
   // on rules — what not to head, what not to emphasise — and the model spent
   // its whole budget weighing them ("is 'Completed:' a heading?") without ever
   // reaching the review. Say the job first, the format once, and stop.
+  // REVIEW_SYSTEM is shared with the Sunday draft, which writes the same review
+  // without anyone watching.
   return complete(
-    // Worded so that nothing in it is a phrase the review itself would use:
-    // the guard that catches thinking (`looksLikeThinking`) works by spotting
-    // the brief quoted back, and a brief that says "the two or three things
-    // that matter most next" invites the review to say exactly that and be
-    // sent back for it.
-    'You are writing someone their own review of the period, in the second person: warm, candid, a good friend who is also organised. Name the tasks and the people. Say what went well, say plainly what slipped, and finish by naming the few things worth doing first. Where their journal explains how the period went, use their own words for it. Use only what is below — invent nothing, and leave out anything they did not do.\n\nPlain prose in short paragraphs, with "-" bullets where a list reads better. No headings, no bold, no italics. Write only the review.',
+    REVIEW_SYSTEM,
     `Period: this ${input.period} (${input.label})\n\nLast ${input.period}'s Top 3:\n${last}\n\nCompleted:\n${list(input.done)}\n\nSlipped (due but not done):\n${list(input.slipped)}\n\nAlready planned for next ${input.period}:\n${list(input.upcoming)}\n\nPeople seen:\n${list(input.people)}\n\nPlaces went:\n${list(input.places ?? [])}${input.habits?.length ? `\n\nHabits:\n${list(input.habits)}` : ''}\n\nMy journal this ${input.period}:\n${list(input.journal ?? [])}\n\nMy own reflections:\n${input.reflections || '(none written)'}\n\n120–220 words. Begin with the review's first sentence.`,
     900,
   )

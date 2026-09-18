@@ -99,8 +99,11 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
   return (
     <div className="posts-view">
       <div className="toolbar">
-        <input className="search" placeholder="Search tasks…" value={q} onChange={e => setQ(e.target.value)} />
-        <select value={status} onChange={e => setStatus(e.target.value as TaskStatus | 'all' | 'open')}>
+        <input className="search" aria-label="Search tasks" placeholder="Search tasks…" value={q} onChange={e => setQ(e.target.value)} />
+        {/* named, like every other control here: without a label a screen
+            reader reads only the current option — "Open, combo box" — which
+            says nothing about what it filters */}
+        <select aria-label="Filter by status" value={status} onChange={e => setStatus(e.target.value as TaskStatus | 'all' | 'open')}>
           <option value="open">Open</option>
           <option value="all">All statuses</option>
           {statusChoices.map(s => (
@@ -109,7 +112,7 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
             </option>
           ))}
         </select>
-        <select value={priority} onChange={e => setPriority(e.target.value as Priority | 'all')}>
+        <select aria-label="Filter by priority" value={priority} onChange={e => setPriority(e.target.value as Priority | 'all')}>
           <option value="all">Any priority</option>
           {PRIORITIES.map(p => (
             <option key={p} value={p}>
@@ -152,7 +155,7 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
       {notice && (
         <div className="notice">
           {notice}
-          <button className="btn subtle" onClick={() => setNotice('')}>
+          <button type="button" className="btn subtle" aria-label="Dismiss" onClick={() => setNotice('')}>
             ✕
           </button>
         </div>

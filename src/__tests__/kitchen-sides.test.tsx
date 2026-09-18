@@ -186,9 +186,13 @@ describe('a side had is had', () => {
     expect(cookedLine(idx, 'salad')).toBe('Last cooked 3 weeks ago · 3 times')
     const plan = proposeWeek(items, { todayKey: TODAY, now: noon })!
     expect(plan.dinners.find(d => d.recipeId === 'salad')?.why).toBe('Cooked 3× in six months · last 21 days ago')
-    // still offered and ranked as the meal it has been — twice — but had three weeks ago, not in June
-    const [lunch] = mealIdeasFor(items, { dayKey: TODAY, now: noon })
-    expect(lunch.ideas.map(i => [i.id, i.why])).toEqual([
+    // still offered and ranked as the meal it has been — twice — but had three
+    // weeks ago, not in June. Under Dinner: all three are dinner recipes, and a
+    // slot takes what suits it before anything else, so lunch is left with
+    // nothing to say and its group is not drawn at all (openMealIdeas).
+    const [lunch, dinner] = mealIdeasFor(items, { dayKey: TODAY, now: noon })
+    expect(lunch.ideas).toEqual([])
+    expect(dinner.ideas.map(i => [i.id, i.why])).toEqual([
       ['chilli', 'Cooked 3× in six months'],
       ['salad', 'Not cooked in 3 weeks'],
       ['curry', 'Cooked 1× in six months'],

@@ -234,6 +234,15 @@
 .swipe-handle:focus-visible {
   opacity: 1;
 }
+/* A touch screen never matches :hover and a tap does not raise
+   :focus-visible, so on the phone — the app's main surface — the handle was
+   drawn fully transparent on every row. The gesture it exists to make
+   discoverable was the only way to reach the tray. */
+@media (hover: none) {
+  .swipe-handle {
+    opacity: 1;
+  }
+}
 .swipe-handle:hover {
   color: var(--text-2);
   background: var(--surface-2);
