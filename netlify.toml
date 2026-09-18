@@ -168,6 +168,17 @@
   [headers.values]
     Cache-Control = "no-cache"
 
+# Apple fetches this exact path, with no extension, and will not read it unless
+# it is served as JSON. It is written at build time from APPLE_TEAM_ID
+# (vite.config.ts); with that variable unset no file exists and this rule is a
+# no-op. iOS caches what it fetches, so a change here can take a reinstall to
+# be seen.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "no-cache"
+
 [[headers]]
   for = "/sw-push.js"
   [headers.values]

@@ -12,6 +12,39 @@ import { VitePWA } from 'vite-plugin-pwa'
 // deploy id, else the commit, else the time of a local build.
 const BUILD_ID = process.env.DEPLOY_ID || process.env.COMMIT_REF || `local-${Date.now().toString(36)}`
 
+/**
+ * Apple's site association file, written from APPLE_TEAM_ID.
+ *
+ * Universal Links (a drafterz.netlify.app URL opening in the app rather than
+ * Safari) and Password AutoFill both need /.well-known/apple-app-site-association
+ * served from the site as JSON, naming <team>.<bundle>. The team id is not a
+ * secret but it is per-account, so it comes from the environment rather than
+ * being committed — and without it NO file is emitted at all, which is the
+ * right failure: a half-written association is worse than none, because iOS
+ * caches what it fetches and a wrong appID silently stops links working.
+ *
+ * The matching capability is in ios/App/App/App.entitlements.
+ */
+const APPLE_TEAM_ID = (process.env.APPLE_TEAM_ID ?? '').trim()
+const APPLE_BUNDLE_ID = (process.env.APPLE_BUNDLE_ID ?? 'app.drafter.ios').trim()
+
+const appleSiteAssociation = (): Plugin => ({
+  name: 'drafter-apple-app-site-association',
+  apply: 'build',
+  generateBundle() {
+    if (!APPLE_TEAM_ID) return
+    const appID = `${APPLE_TEAM_ID}.${APPLE_BUNDLE_ID}`
+    const body = {
+      applinks: {
+        details: [{ appIDs: [appID], components: [{ '/': '/', comment: "Drafter's links all sit on the root with a query: ?view=, ?task=, ?saw=, ?plan=" }] }],
+      },
+      webcredentials: { apps: [appID] },
+    }
+    // no extension: Apple fetches this exact path
+    this.emitFile({ type: 'asset', fileName: '.well-known/apple-app-site-association', source: `${JSON.stringify(body, null, 2)}\n` })
+  },
+})
+
 const buildStamp = (): Plugin => ({
   name: 'drafter-build-stamp',
   apply: 'build',
@@ -72,6 +105,7 @@ export default defineConfig({
     react(),
     cutoutRuntime(),
     buildStamp(),
+    appleSiteAssociation(),
     VitePWA({
       registerType: 'autoUpdate',
       // the app registers the worker itself and watches for deploys (src/appupdate.ts)

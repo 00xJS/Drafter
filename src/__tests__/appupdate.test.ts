@@ -81,7 +81,9 @@ describe('wired into the build and the host', () => {
     expect(vite).toMatch(/const BUILD_ID = process\.env\.DEPLOY_ID \|\| process\.env\.COMMIT_REF \|\|/)
     expect(vite).toMatch(/attrs: \{ name: 'drafter-build', content: BUILD_ID \}/)
     expect(vite).toMatch(/fileName: 'version\.json'/)
-    expect(vite).toMatch(/buildStamp\(\),\s*VitePWA\(/)
+    // the stamp is emitted before the PWA plugin reads the bundle; another
+    // asset-emitting plugin may sit between them (appleSiteAssociation)
+    expect(vite).toMatch(/buildStamp\(\),[\s\S]{0,80}VitePWA\(/)
     expect(precache).toMatch(/dist\/version\.json is missing/)
     expect(precache).toMatch(/does not match/)
   })
