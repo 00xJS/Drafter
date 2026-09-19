@@ -23,6 +23,144 @@
   font-weight: 600;
   color: var(--text-2);
 }
+.kitchen-week-head {
+  justify-content: center;
+  gap: 10px;
+}
+.kitchen-week-head h2 {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.kitchen-recipes-head {
+  align-items: flex-start;
+}
+.kitchen-recipes-head .chart-sub {
+  margin: 2px 0 0;
+}
+.kitchen-recipe-compose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kitchen-recipe-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 16px;
+}
+.recipe-includes {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recipe-includes-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.recipe-includes .segmented {
+  flex-wrap: wrap;
+}
+.kitchen-recipe-q {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+}
+.recipe-book {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.recipe-group h3 {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+@media (min-width: 720px) {
+  .recipe-book .recipe-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
+.recipe-suggest-inline {
+  margin: 18px 0 0;
+}
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 12px;
+  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
+}
+.week-strip-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 10px 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.week-strip-day.today {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.week-strip-dow {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-2);
+  line-height: 1;
+}
+.week-strip-day.today .week-strip-dow {
+  color: var(--accent-text);
+}
+.week-strip-day.set {
+  background: var(--accent-soft);
+}
+.week-strip-day.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.meal-day-extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kitchen-empty {
+  padding: 20px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.kitchen-empty p {
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+.kitchen-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.recipe-card > .btn,
+.recipe-card-edit {
+  flex: none;
+  margin-left: auto;
+}
 .recipe-list,
 .meal-week,
 .grocery-list {
@@ -46,6 +184,32 @@
 }
 .recipe-card {
   cursor: pointer;
+  align-items: center;
+  min-height: 56px;
+  padding: 10px 12px;
+}
+.recipe-card:hover {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+.recipe-card .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+.recipe-card .dash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipe-card .recipe-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+.recipe-emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+  margin-top: 2px;
 }
 .recipe-preview {
   display: block;
@@ -132,12 +296,17 @@
 }
 .today-head {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px 16px;
 }
 .today-head h2 {
   margin: 0;
   font-size: 1.35rem;
+}
+.today-wardrobe {
+  flex: none;
 }
 .week-review-excerpt {
   margin: 0 4px 12px;
@@ -146,7 +315,6 @@
   white-space: pre-wrap;
 }
 .recipe-emoji {
-  font-size: 1.4rem;
   flex: none;
 }
 .meal-day {
@@ -472,13 +640,13 @@
 .meal-slot .meal-side-pick {
   flex: 1 1 180px;
 }
-/* All | Not lately above the recipe list */
+/* All | Not lately beside the recipe search */
 .recipe-view-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin: 0;
 }
 .recipe-view-hint {
   color: var(--muted);
@@ -490,6 +658,13 @@
   margin-top: 2px;
   font-size: 0.75rem;
   color: var(--text-2);
+}
+.recipe-on-plan {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-text);
 }
 .recipe-cook-history {
   margin: -6px 0 12px;
@@ -513,7 +688,7 @@
   color: var(--text-2);
 }
 
-@media (max-width: 640px) {
+  @media (max-width: 640px) {
   /* the label has the whole first line on a phone: nothing to line up with */
   .meal-sides {
     padding-left: 0;
@@ -592,7 +767,7 @@
 }
 
 .recipe-suggest {
-  margin-bottom: 12px;
+  margin: 18px 0 0;
 }
 .recipe-suggest .chart-head {
   flex-wrap: wrap;

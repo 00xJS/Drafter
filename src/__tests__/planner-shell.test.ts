@@ -30,7 +30,7 @@ describe('the tabs and segments say where you are', () => {
   it('gives the calendar mode control tabs that say which one is on', () => {
     const modes = calendar.slice(calendar.indexOf('className="segmented cal-mode"'), calendar.indexOf('</div>'))
     expect(modes).toMatch(/role="tablist" aria-label="Calendar mode"/)
-    for (const mode of ['month', 'week', 'timeline']) expect(modes).toMatch(new RegExp(`type="button" role="tab" aria-selected=\\{calMode === '${mode}'\\}`))
+    for (const mode of ['month', 'week', 'day']) expect(modes).toMatch(new RegExp(`type="button" role="tab" aria-selected=\\{calMode === '${mode}'\\}`))
   })
 
   it('makes People / Places a tablist, like Home and Tasks', () => {

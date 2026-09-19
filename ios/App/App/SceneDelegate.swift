@@ -14,6 +14,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Bumped on every resign-active so the delayed uncover queued by an earlier
     /// activation cannot strip a cover that a later one has just put up.
     private var coverGeneration = 0
+    /// A Home Screen quick action that launched a cold start. Held here until
+    /// the bridge's view appears — not in a local `var` the appear closure
+    /// would capture and then mutate, which Swift warns about.
+    private var pendingShortcut: UIApplicationShortcutItem?
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: .capacitorViewDidAppear, object: nil)
+    }
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
@@ -90,13 +98,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func deliverAfterViewDidAppear(_ shortcutItem: UIApplicationShortcutItem) {
-        var token: NSObjectProtocol?
-        token = NotificationCenter.default.addObserver(forName: .capacitorViewDidAppear, object: nil, queue: .main) { [weak self] _ in
-            if let token {
-                NotificationCenter.default.removeObserver(token)
-            }
-            self?.deliver(shortcutItem)
-        }
+        NotificationCenter.default.removeObserver(self, name: .capacitorViewDidAppear, object: nil)
+        pendingShortcut = shortcutItem
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleBridgeViewDidAppear),
+            name: .capacitorViewDidAppear,
+            object: nil
+        )
+    }
+
+    @objc private func handleBridgeViewDidAppear() {
+        NotificationCenter.default.removeObserver(self, name: .capacitorViewDidAppear, object: nil)
+        guard let item = pendingShortcut else { return }
+        pendingShortcut = nil
+        deliver(item)
     }
 
     // MARK: - App Switcher privacy cover

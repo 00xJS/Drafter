@@ -331,6 +331,24 @@
   min-height: 44px;
 }
 
+/* the Day tab: the same day as the sheet, on the page */
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.cal-day-work {
+  display: flex;
+  justify-content: center;
+  padding: 10px 14px 0;
+}
+.cal-day .cal-sheet-body {
+  overflow: visible;
+}
+
 /* --- phones: one day card at a time, and a full-height day sheet --- */
 
 /* Laptop widths get four days a row (Sun–Wed, then Thu–Sat) so each card keeps

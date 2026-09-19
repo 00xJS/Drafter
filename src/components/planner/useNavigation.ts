@@ -99,7 +99,7 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  /** …the Calendar's Month · Week · Timeline: its three buttons, and nothing else. */
+  /** …the Calendar's Month · Week · Day: its three buttons, and nothing else. */
   const setCalMode = (mode: CalendarMode) => {
     goCalMode(mode)
     try {
@@ -215,9 +215,6 @@ export function useNavigation() {
   const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
   const openCalendarDay = (day: string) => {
     setCalendarOpenDay(day)
-    // the Timeline has no day to open; the month has, for this visit only:
-    // the next tab tap and the next launch reopen the Timeline, which stays the one remembered
-    if (calMode === 'timeline') goCalMode('month')
     setView('calendar')
   }
 

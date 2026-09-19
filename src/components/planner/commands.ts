@@ -71,7 +71,7 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
     { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
     // on the mode last chosen, as a tab tap opens it, not one a day from a Stats view left for its visit
-    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week timeline', run: () => goView('calendar') },
+    { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week day', run: () => goView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => goPeople('people') },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => goPeople('places') },
     // Every figure in the app lives in the Stats lens, so every "… stats" row

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 // There is one ongoing project — the owner's LIFE project — so Home and the
 // Week review leave projects out entirely: no progress cards, no "stalled"
 // flags, no project chips on the task rows, and nothing that starts a second
-// project. Projects still exist for the Timeline and search.
+// project. Projects still exist on a calendar day and in search.
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 const today = read('../components/Today.tsx')

@@ -53,7 +53,7 @@ export function useOverlays() {
       preset,
       capture: opts?.capture ?? !!(preset?.title || preset?.link),
     })
-  // there is one ongoing project, edited from its Timeline bar and from search;
+  // there is one ongoing project, edited from a calendar day and from search;
   // nothing opens the editor on a blank one to start a second
   const openProject = (project: Project) => setProjectEditor({ project })
 

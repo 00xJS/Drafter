@@ -3,8 +3,9 @@ import type { IconName } from '../Icon'
 // Each tab that shows the same data more than one way holds those ways as
 // segments instead of splitting into peer tabs — except Home, which IS the
 // day. Week, Journal and Wardrobe still live on Home as pages you open from
-// today's cards (a link or the palette too), not as a four-way switch beside
-// Today. Tasks holds the list, board, bills and notes; People holds Places.
+// today's cards (a link, the palette, or the pinned Wardrobe on Today), not
+// as a four-way switch beside Today. Tasks holds the list, board, bills and
+// notes; People holds Places.
 // Desktop and phone then land on the identical six tabs.
 //
 // Five of them are nouns — things you add to. Stats is the sixth and is not a
@@ -17,8 +18,8 @@ import type { IconName } from '../Icon'
 // Still no More drawer.
 export type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen' | 'stats'
 export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen', 'stats']
-export type CalendarMode = 'month' | 'week' | 'timeline'
-export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
+export type CalendarMode = 'month' | 'week' | 'day'
+export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'day']
 export type PeopleTab = 'people' | 'places'
 /** Home's pages: the day, plus the week / journal / wardrobe opened from it. */
 export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe'
@@ -105,8 +106,8 @@ export interface Toast {
 // Notes, a day opened from People → Stats or Places → Stats) moves the
 // segment for that visit alone, so a template's new tasks shown on the Board
 // cannot leave Tasks opening there, the People tab cannot get pinned to
-// Places by one search result, and one day tapped in Stats cannot move the
-// Calendar off the Timeline.
+// Places by one search result, and one day tapped in Stats cannot change
+// the Calendar's Month · Week · Day.
 export const storedTasksTab = (): TasksTab => {
   try {
     const t = localStorage.getItem(TASKS_TAB_KEY)
@@ -122,11 +123,11 @@ export const storedPeopleTab = (): PeopleTab => {
     return 'people'
   }
 }
-/** The Calendar's Month · Week · Timeline, as last chosen on its three buttons (a day opened from Stats does not count); the month otherwise. */
+/** The Calendar's Month · Week · Day, as last chosen on its three buttons (a day opened from Stats does not count); the month otherwise. A saved Timeline from before Day was the third tab is the month. */
 export const storedCalMode = (): CalendarMode => {
   try {
-    const saved = localStorage.getItem(CAL_MODE_KEY) as CalendarMode | null
-    return saved && CALENDAR_MODES.includes(saved) ? saved : 'month'
+    const saved = localStorage.getItem(CAL_MODE_KEY)
+    return saved === 'week' || saved === 'day' ? saved : 'month'
   } catch {
     return 'month'
   }
@@ -171,9 +172,9 @@ export const KITCHEN_TAB_KEY = 'drafter:kitchen-tab'
 export const storedKitchenTab = (): KitchenTab => {
   try {
     const saved = localStorage.getItem(KITCHEN_TAB_KEY)
-    return KITCHEN_TABS.find(t => t.key === saved)?.key ?? 'recipes'
+    return KITCHEN_TABS.find(t => t.key === saved)?.key ?? 'week'
   } catch {
-    return 'recipes'
+    return 'week'
   }
 }
 /** Links to a Kitchen segment, as `?view=wardrobe-stats` is one to the Wardrobe's: `?view=kitchen-stats`

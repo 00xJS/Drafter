@@ -55,7 +55,7 @@ import type { SyncAlarm } from '../syncalarm'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
 // and no project chips — a bar that never fills and a chip on every row would
-// say nothing. Projects live on the Timeline and in search.
+// say nothing. Projects live on a calendar day and in search.
 
 interface Props {
   tasks: Task[]
@@ -791,6 +791,21 @@ export function Today({
             {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
+        {onOpenWardrobe && (
+          <button
+            type="button"
+            className="btn today-wardrobe"
+            onClick={() =>
+              onOpenWardrobe(
+                garments && canDress(garments)
+                  ? { tab: 'outfit', date: todayKey }
+                  : { tab: 'clothes', add: true },
+              )
+            }
+          >
+            Wardrobe
+          </button>
+        )}
       </header>
       {alarm}
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}

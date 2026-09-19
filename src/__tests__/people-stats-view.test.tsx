@@ -592,31 +592,33 @@ describe('a day of the month opens on the Calendar', () => {
     expect(screen).toContain('onOpenDayConsumed={() => setCalendarOpenDay(null)}')
   })
 
-  it('on the month for that visit only: the Timeline stays remembered, and the next tab tap reopens it', () => {
-    const { at, writes } = journey({ [CAL_MODE_KEY]: 'timeline' }, [
-      nav => nav.openCalendarDay('2026-09-12'),
-      nav => nav.goView('people'),
-      nav => nav.goView('calendar'),
-      // the Month / Week / Timeline buttons are what is remembered
-      nav => nav.setCalMode('week'),
-      nav => nav.goView('home'),
-      nav => nav.goView('calendar'),
-    ])
-    expect(at[0].calMode).toBe('timeline')
-    expect(at[1]).toMatchObject({ view: 'calendar', calMode: 'month', day: '2026-09-12' })
-    expect(at[3]).toMatchObject({ view: 'calendar', calMode: 'timeline' })
-    expect(at[4].calMode).toBe('week')
-    expect(at[6]).toMatchObject({ view: 'calendar', calMode: 'week' })
-    // the Calendar's own buttons and nothing else: no Kitchen, People or Tasks memory is touched
-    expect(writes).toEqual([[CAL_MODE_KEY, 'week']])
+  it('the Day tab is the day itself, not a sheet over a grid', () => {
+    const out = calendar({ view: 'day' })
+    expect(out).toContain('class="cal-day"')
+    expect(out).toContain('This day’s tasks, events and meals')
+    expect(out).not.toContain('cal-grid')
+    expect(out).not.toContain('role="dialog"')
   })
 
-  it('leaves a month or a week as it was', () => {
-    for (const mode of ['month', 'week'] as const) {
+  it('leaves a month, a week or a day as it was', () => {
+    for (const mode of ['month', 'week', 'day'] as const) {
       const { at, writes } = journey({ [CAL_MODE_KEY]: mode }, [nav => nav.openCalendarDay('2026-09-12')])
       expect(at[1]).toMatchObject({ view: 'calendar', calMode: mode, day: '2026-09-12' })
       expect(writes).toEqual([])
     }
+  })
+
+  it('remembers a mode picked on the Calendar’s own buttons', () => {
+    const { at, writes } = journey({ [CAL_MODE_KEY]: 'day' }, [
+      nav => nav.openCalendarDay('2026-09-12'),
+      nav => nav.setCalMode('week'),
+      nav => nav.goView('home'),
+      nav => nav.goView('calendar'),
+    ])
+    expect(at[1]).toMatchObject({ view: 'calendar', calMode: 'day', day: '2026-09-12' })
+    expect(at[2].calMode).toBe('week')
+    expect(at[4]).toMatchObject({ view: 'calendar', calMode: 'week' })
+    expect(writes).toEqual([[CAL_MODE_KEY, 'week']])
   })
 })
 

@@ -213,8 +213,11 @@ describe('Kitchen', () => {
   }
 
   it('offers recipe ideas on the Recipes screen', () => {
-    vi.stubGlobal('localStorage', fakeStorage())
-    expect(renderToStaticMarkup(<Kitchen {...props} />)).toContain('✨ Suggest recipes I’d like')
+    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'recipes' }))
+    const recipes = renderToStaticMarkup(<Kitchen {...props} />)
+    expect(recipes).toContain('✨ Suggest recipes I’d like')
+    expect(recipes).toContain('Paste a recipe')
+    expect(recipes).toContain('Tap a dish to cook it')
   })
 
   it('offers to plan a week with empty dinners, and not one that is planned', () => {
@@ -223,6 +226,11 @@ describe('Kitchen', () => {
     expect(empty).toContain('meal-plan-cta')
     expect(empty).toContain('Plan this week’s meals')
     expect(empty).toMatch(/Nothing planned yet|still to plan/)
+    expect(empty).toContain('aria-label="Dinners this week"')
+    expect(empty).toContain('+ Breakfast')
+    expect(empty).toContain('+ Lunch')
+    expect(empty).not.toContain('aria-label="Breakfast on')
+    expect(empty.match(/<li id="meal-day-[^"]+"/g)).toHaveLength(1)
     const planned = weekDayKeys(dateKey(new Date())).map(d => meal(d, 'dinner', { recipeId: 'id-fav', title: 'Lasagne' }))
     expect(renderToStaticMarkup(<Kitchen {...props} meals={planned} />)).not.toContain('meal-plan-cta')
   })

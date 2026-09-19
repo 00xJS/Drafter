@@ -11,7 +11,7 @@ export function Calendars(ctx: SettingsCtx) {
       <h3>Calendars</h3>
       <p className="field-hint">
         Subscribe to your Google or iCloud calendars (birthdays, holidays, family) and their events show up on
-        the Month view, the Timeline, and Today's <em>Coming up</em> list — read-only, with a one-tap prep task.
+        the Month, Week and Day views, and Today's <em>Coming up</em> list — read-only, with a one-tap prep task.
       </p>
       <GoogleCalendar {...ctx} />
       <OutlookCalendars {...ctx} />

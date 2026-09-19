@@ -102,7 +102,7 @@ describe('calendar rows mark a place you know', () => {
 
   it('the day sheet’s event rows read the same line', () => {
     const src = read('../components/Calendar.tsx')
-    const row = src.slice(src.indexOf("if (item.kind === 'event') {\n                  const ev = item.event"))
+    const row = src.slice(src.indexOf("if (item.kind === 'event') {\n                const ev = item.event"))
     expect(row).toMatch(/<span className="cal-row-meta">\{itemMeta\(item\)\}<\/span>/)
   })
 })

@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Today } from '../components/Today'
+import type { WardrobeOpen } from '../components/planner/useNavigation'
 import { WardrobeCard } from '../components/wardrobe/WardrobeCard'
 import type { Garment, GarmentType, Outfit, Task, Wear } from '../types'
 import type { Forecast } from '../weather'
@@ -93,13 +94,13 @@ describe('where the card sits on Today', () => {
 
   const task = (id: string, over: Partial<Task> = {}): Task => ({ kind: 'task', id, title: `Task ${id}`, description: '', status: 'todo', priority: 'normal', tags: [], createdAt: T0, updatedAt: T0, ...over })
 
-  function today(hour: number, withWardrobe = true, tasks?: Task[], garments = wardrobe) {
+  function todayProps(hour: number, withWardrobe = true, tasks?: Task[], garments = wardrobe, over: Partial<ComponentProps<typeof Today>> = {}): ComponentProps<typeof Today> {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 14, hour))
     // the journal card asks the viewport how wide it is; a static render has none
     if (typeof window === 'undefined') vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
     const focus = tasks ?? [task('garage', { title: 'Sort the garage', focusOn: TODAY, focusBy: 'me' })]
-    const props: ComponentProps<typeof Today> = {
+    return {
       tasks: focus,
       people: [],
       places: [],
@@ -136,14 +137,37 @@ describe('where the card sits on Today', () => {
       onDeleteRoutine: noop,
       myId: 'me',
       ...(withWardrobe ? { garments, outfits: [], wears: [], onLogWear: noop, onOpenWardrobe: noop } : {}),
+      ...over,
     }
-    return renderToStaticMarkup(<Today {...props} />)
+  }
+  function today(hour: number, withWardrobe = true, tasks?: Task[], garments = wardrobe) {
+    return renderToStaticMarkup(<Today {...todayProps(hour, withWardrobe, tasks, garments)} />)
   }
 
   it('leaves Today as it was when the shell passes no wardrobe', () => {
     const html = today(9, false)
     expect(html).toContain('id="today-focus"')
     expect(html).not.toContain('wardrobe-card')
+    expect(html).not.toContain('today-wardrobe')
+  })
+
+  it('pins Wardrobe on Today so you can walk in and flip looks', () => {
+    const html = today(9)
+    expect(html).toContain('class="btn today-wardrobe"')
+    expect(html).toContain('>Wardrobe</button>')
+    // even before the wardrobe can dress you: the pin is the door, the card is the log
+    const bare = today(9, true, undefined, [piece('tee', 'top')])
+    expect(bare).toContain('today-wardrobe')
+    expect(bare).not.toContain('wardrobe-card')
+  })
+
+  it('opens Outfit on today from the pin, or Clothes when the wardrobe cannot dress you yet', () => {
+    const seen: WardrobeOpen[] = []
+    press(settled(Today, todayProps(9, true, undefined, wardrobe, { onOpenWardrobe: o => seen.push(o ?? {}) })), 'Wardrobe')
+    expect(seen).toEqual([{ tab: 'outfit', date: TODAY }])
+    seen.length = 0
+    press(settled(Today, todayProps(9, true, undefined, [piece('tee', 'top')], { onOpenWardrobe: o => seen.push(o ?? {}) })), 'Wardrobe')
+    expect(seen).toEqual([{ tab: 'clothes', add: true }])
   })
 
   it('sits straight under the focus card in the morning', () => {

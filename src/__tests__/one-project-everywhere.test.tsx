@@ -19,7 +19,7 @@ import { plannerSource, sheetSource } from './source'
 
 // There is one ongoing project — the owner's LIFE — so no task row names it,
 // nothing starts a second one, and nothing asks which project something
-// belongs to. The one project is still edited from its Timeline bar and from
+// belongs to. The one project is still edited from a calendar day and from
 // search (one-project-pages.test.ts covers Home and the Week review).
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
@@ -95,9 +95,9 @@ describe('nothing starts a second project', () => {
     for (const f of ['../components/NotesView.tsx', '../components/Roadmap.tsx']) expect(read(f), f).not.toMatch(/onNewProject|\+ New project/)
   })
 
-  it('still opens the one project from its Timeline bar and from search', () => {
-    expect(read('../components/planner/CalendarScreen.tsx')).toMatch(/<Roadmap [^>]*onOpenProject=\{openProject\}/)
-    expect(read('../components/Roadmap.tsx')).toMatch(/className=\{row\.inferred \? 'rm-bar inferred' : 'rm-bar'\}[\s\S]{0,200}onClick=\{\(\) => onOpenProject\(row\.project\)\}/)
+  it('still opens the one project from a calendar day and from search', () => {
+    expect(read('../components/planner/CalendarScreen.tsx')).toContain('onOpenProject={openProject}')
+    expect(read('../components/Calendar.tsx')).toMatch(/onOpenProject\(project\)/)
     expect(read('../components/planner/Overlays.tsx')).toContain('onOpenProject={openProject}')
   })
 

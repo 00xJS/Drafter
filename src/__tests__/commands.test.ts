@@ -39,7 +39,7 @@ interface ShellState {
   sheets: Sheet[]
 }
 
-/** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from a Stats view left, the Timeline remembered; in each, People's and Places' switches are on different halves. */
+/** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from a Stats view left, the Day remembered; in each, People's and Places' switches are on different halves. */
 const STARTS: ShellState[] = [
   {
     view: 'kitchen',
@@ -53,7 +53,7 @@ const STARTS: ShellState[] = [
     rememberedPeople: 'places',
     rememberedPeopleView: 'list',
     rememberedPlacesView: 'stats',
-    rememberedCal: 'timeline',
+    rememberedCal: 'day',
     rememberedKitchen: 'grocery',
     rememberedStats: 'money',
     journalDate: null,

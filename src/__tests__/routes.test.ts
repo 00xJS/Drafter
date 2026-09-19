@@ -57,7 +57,7 @@ describe('six tabs, the same on the phone and the desktop', () => {
   it('keeps the segments each tab holds', () => {
     expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'wardrobe'])
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
-    expect(CALENDAR_MODES).toEqual(['month', 'week', 'timeline'])
+    expect(CALENDAR_MODES).toEqual(['month', 'week', 'day'])
   })
 
   it('gives People and Places each a List · Stats switch inside its segment, never a tab of its own', () => {
@@ -260,7 +260,7 @@ describe('the remembered segment', () => {
       withStorage({ [CAL_MODE_KEY]: mode })
       expect(storedCalMode()).toBe(mode)
     }
-    for (const other of ['board', 'stats', '']) {
+    for (const other of ['board', 'stats', '', 'timeline']) {
       withStorage({ [CAL_MODE_KEY]: other })
       expect(storedCalMode()).toBe('month')
     }

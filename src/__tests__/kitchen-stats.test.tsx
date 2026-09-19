@@ -587,12 +587,11 @@ describe('Kitchen’s fourth segment', () => {
     const week = plan(tree).props.week as { key: string }
     expect(week.key).toBe(weekKeyOf('2026-09-01'))
     expect(storage.setItem).not.toHaveBeenCalled()
-    // that day, not the top of its week: scrolled to by its id, and framed
+    // that day only: the strip is the week, the pickers are the open letter
     expect(plan(tree).props.focusDay).toBe('2026-09-01')
     const out = html(tree)
     expect(out).toContain('<li id="meal-day-2026-09-01" class="meal-day picked">')
-    expect(out.match(/<li id="meal-day-[^"]+" class="meal-day[^"]*"/g)).toHaveLength(7)
-    expect(out.match(/ picked"/g)).toHaveLength(1)
+    expect(out.match(/<li id="meal-day-[^"]+"/g)).toHaveLength(1)
     // moving off the week, or off the segment, lets it go
     const goDay = (t: ReactNode) => propsOf(t, KitchenStats).onGoDay('2026-09-01')
     const shifted = afterActs(Kitchen, props, [goDay, t => (plan(t).props.onShift as (d: number) => void)(1)])
@@ -624,7 +623,7 @@ describe('the ways to it', () => {
       ['grocery', 'Grocery'],
       ['stats', 'Stats'],
     ])
-    for (const [saved, tab] of [['stats', 'stats'], ['grocery', 'grocery'], ['nonsense', 'recipes'], [null, 'recipes']] as const) {
+    for (const [saved, tab] of [['stats', 'stats'], ['grocery', 'grocery'], ['nonsense', 'week'], [null, 'week']] as const) {
       vi.stubGlobal('localStorage', { getItem: (k: string) => (k === KITCHEN_TAB_KEY ? saved : null) })
       expect(storedKitchenTab()).toBe(tab)
     }
@@ -633,7 +632,7 @@ describe('the ways to it', () => {
         throw new Error('blocked')
       },
     })
-    expect(storedKitchenTab()).toBe('recipes')
+    expect(storedKitchenTab()).toBe('week')
     expect(VIEW_TO_KITCHEN).toEqual({ 'kitchen-stats': 'stats' })
     for (const name of Object.keys(VIEW_TO_KITCHEN)) expect(VIEWS as string[]).not.toContain(name)
     expect(kitchenTabOfView('kitchen-stats')).toBe('stats')

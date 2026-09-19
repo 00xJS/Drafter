@@ -190,7 +190,7 @@ export function OutlookCalendars({ store, calendars, microsoftSync }: SettingsCt
             </>
           )}
           <p className="field-hint">
-            Outlook events show on the Month view, the Timeline and Today. Mirroring writes open, dated tasks into a Drafter
+            Outlook events show on the Month, Week and Day views and Today. Mirroring writes open, dated tasks into a Drafter
             calendar there, and moving one in Outlook moves its due date back here.
           </p>
         </>

@@ -19,6 +19,10 @@ import {
   mealWithSide,
   mealWithoutSide,
   notLately,
+  recipeHasInclude,
+  recipeIncludeChips,
+  recipeIncludes,
+  recipeMatchesQuery,
   recipesUsed,
   tonightDinner,
 } from '../kitchen'
@@ -407,7 +411,7 @@ describe('the recipe list', () => {
   }
 
   it('says on each recipe when it was last cooked and how often', () => {
-    vi.stubGlobal('localStorage', fakeStorage())
+    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'recipes' }))
     const html = renderToStaticMarkup(<Kitchen {...props} />)
     expect(html).toContain('<span class="recipe-cooked">Last cooked 2 days ago · 2 times</span>')
     expect(html).toContain('<span class="recipe-cooked">Last cooked 6 weeks ago · 1 time</span>')
@@ -415,15 +419,46 @@ describe('the recipe list', () => {
     expect(html).toContain('aria-pressed="true">All 5</button>')
     // Chilli was last cooked six weeks ago, but it is on for Tuesday
     expect(html).toContain('aria-pressed="false">Not lately 1</button>')
+    expect(html).toContain('>On the plan</h3>')
+    expect(html).toContain('>Cooked lately</h3>')
+    expect(html).toContain('>Not lately</h3>')
+    expect(html).toContain('On Tue 15 Sep')
+    expect(html).toContain('recipe-mark')
+    expect(html).not.toContain('recipe-emoji')
+    expect(html).not.toContain('No yield set')
   })
 
   it('"Not lately" lists only what has not been cooked in a month and is not planned, longest ago first', () => {
-    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-recipes': 'lately' }))
+    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'recipes', 'drafter:kitchen-recipes': 'lately' }))
     const html = renderToStaticMarkup(<Kitchen {...props} />)
     expect([...html.matchAll(/<span class="dash-title">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Pho'])
     expect(html).toContain('aria-pressed="true">Not lately 1</button>')
     expect(html).toContain('Not cooked in a month and not planned, longest ago first')
     expect(html).not.toContain('Recipes you might like')
+  })
+
+  it('offers Includes chips for chicken, beef and the rest of what is actually on a dish', () => {
+    expect(recipeIncludes(curry)).toEqual(['Chicken'])
+    expect(recipeIncludes(recipe('t', 'Tacos', { ingredients: [ing('chicken breast')], tags: ['freezer'] }))).toEqual(['Chicken', 'freezer'])
+    expect(recipeHasInclude(recipe('b', 'Pie', { tags: ['beef'] }), 'Beef')).toBe(true)
+    expect(recipeIncludes(recipe('n', 'Beefy Nachos'))).toEqual(['Beef'])
+    expect(recipeIncludes(recipe('s', 'Steak Salad'))).toEqual(['Beef'])
+    expect(recipeIncludes(recipe('e', 'Stew', { ingredients: [ing('eggplant')] }))).toEqual([])
+    expect(recipeMatchesQuery(curry, 'chicken')).toBe(true)
+    expect(recipeMatchesQuery(rice, 'basmati')).toBe(true)
+    expect(recipeMatchesQuery(rice, 'chicken')).toBe(false)
+    expect(recipeIncludeChips(recipes)).toEqual([
+      { label: 'Beans', count: 1 },
+      { label: 'Chicken', count: 1 },
+      { label: 'Rice', count: 1 },
+    ])
+    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'recipes' }))
+    const html = renderToStaticMarkup(<Kitchen {...props} />)
+    expect(html).toContain('id="recipe-includes-label">Includes</span>')
+    expect(html).toContain('aria-pressed="true">Any</button>')
+    expect(html).toContain('>Chicken 1</button>')
+    expect(html).toContain('>Rice 1</button>')
+    expect(html).toContain('>Beans 1</button>')
   })
 })
 

@@ -705,12 +705,12 @@ describe('the shell’s ways into Places → Stats', () => {
     expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{[^}]*setView\('people'\)[^}]*if \(id\) goInnerView\('places', 'list'\)\n\s*\}/)
   })
 
-  it('opens a day of the month on the Calendar with its sheet up, off the Timeline for that visit only', () => {
+  it('opens a day of the month on the Calendar with its sheet up, without changing Month · Week · Day', () => {
     expect(screen).toContain('onOpenDay={openCalendarDay}')
-    expect(nav).toMatch(/const openCalendarDay = \(day: string\) => \{\s*setCalendarOpenDay\(day\)[\s\S]*?if \(calMode === 'timeline'\) goCalMode\('month'\)\s*setView\('calendar'\)/)
+    expect(nav).toMatch(/const openCalendarDay = \(day: string\) => \{\s*setCalendarOpenDay\(day\)\s*setView\('calendar'\)/)
     expect(calendarScreen).toContain('openDay={calendarOpenDay}')
     expect(calendarScreen).toContain('onOpenDayConsumed={() => setCalendarOpenDay(null)}')
-    expect(calendar).toMatch(/setCursor\(day\)\s*setSheetDay\(day\)\s*\}\s*onOpenDayConsumed\?\.\(\)/)
+    expect(calendar).toMatch(/setCursor\(day\)\s*if \(view !== 'day'\) setSheetDay\(day\)/)
   })
 
   it('remembers the Calendar’s mode from its three buttons alone, as the other segments are remembered', () => {
@@ -719,7 +719,7 @@ describe('the shell’s ways into Places → Stats', () => {
     // no effect saving whatever the mode last became
     expect(nav).not.toMatch(/\}, \[calMode\]\)/)
     expect(nav).toMatch(/if \(v === 'calendar'\) goCalMode\(storedCalMode\(\)\)/)
-    expect(calendarScreen.match(/onClick=\{\(\) => setCalMode\('(month|week|timeline)'\)\}/g)).toHaveLength(3)
+    expect(calendarScreen.match(/onClick=\{\(\) => setCalMode\('(month|week|day)'\)\}/g)).toHaveLength(3)
   })
 })
 
@@ -738,20 +738,15 @@ describe('a day opened from Stats leaves the Calendar’s remembered mode alone'
     return { nav: navOf(settled(NavProbe, {}, tree => act(navOf(tree)))), saved }
   }
 
-  it('opens the month off the Timeline for that visit, and leaves the Timeline you chose saved', () => {
-    const { nav, saved } = after('timeline', n => n.openCalendarDay('2026-09-12'))
-    expect(nav).toMatchObject({ view: 'calendar', calMode: 'month', calendarOpenDay: '2026-09-12' })
-    expect(saved.get(CAL_MODE_KEY)).toBe('timeline')
+  it('leaves Day as it is, since the day has itself to open', () => {
+    const { nav, saved } = after('day', n => n.openCalendarDay('2026-09-12'))
+    expect(nav).toMatchObject({ view: 'calendar', calMode: 'day', calendarOpenDay: '2026-09-12' })
+    expect(saved.get(CAL_MODE_KEY)).toBe('day')
   })
 
-  it('reopens on the Timeline at the next Calendar tab tap, and at the next launch', () => {
-    const { nav } = after('timeline', n => {
-      n.openCalendarDay('2026-09-12')
-      n.goView('calendar')
-    })
-    expect(nav.calMode).toBe('timeline')
+  it('a saved Timeline from before Day was the third tab opens as the month', () => {
     storage({ [CAL_MODE_KEY]: 'timeline' })
-    expect(navOf(settled(NavProbe, {})).calMode).toBe('timeline')
+    expect(navOf(settled(NavProbe, {})).calMode).toBe('month')
   })
 
   it('leaves Week as it is, since the week has days to open too', () => {

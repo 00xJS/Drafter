@@ -160,7 +160,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             getLatest={id => store.projects.find(x => x.id === id)}
             onSave={p => {
               // the editor only ever opens on the existing project, from its
-              // Timeline bar, a milestone in a calendar day or search; saving
+              // a milestone in a calendar day or search; saving
               // closes it and leaves the person where they were
               store.upsert(p)
               setProjectEditor(null)

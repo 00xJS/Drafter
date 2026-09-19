@@ -204,6 +204,13 @@ describe('Home Screen quick actions', () => {
     expect(items.slice(0, 4).map(i => i.type)).toEqual(['journal', 'new', 'plan', 'wardrobe'])
   })
 
+  it('holds a cold-start quick action on the scene until the bridge appears', () => {
+    expect(swift).toContain('deliverAfterViewDidAppear')
+    expect(swift).toContain('#selector(handleBridgeViewDidAppear)')
+    expect(swift).toContain('.capacitorViewDidAppear')
+    expect(swift).not.toMatch(/var token: NSObjectProtocol\?/)
+  })
+
   it('maps every advertised type to a drafter:// route', () => {
     expect([...routes.keys()].sort()).toEqual(items.map(i => i.type).sort())
   })

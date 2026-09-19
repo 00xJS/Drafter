@@ -208,6 +208,81 @@ export function notLately(recipes: readonly Recipe[], ix: CookedIndex): Recipe[]
 }
 
 /**
+ * Proteins and staples the cookbook can open by: a name, a tag, or an
+ * ingredient that mentions one. Short words stay whole ("egg" is not eggplant);
+ * longer ones take a prefix so "chicken breast" and "beefy" still count.
+ */
+const INCLUDE_RULES = [
+  { key: 'chicken', label: 'Chicken', mode: 'prefix' },
+  { key: 'beef', label: 'Beef', mode: 'prefix' },
+  { key: 'steak', label: 'Beef', mode: 'prefix' },
+  { key: 'pork', label: 'Pork', mode: 'prefix' },
+  { key: 'turkey', label: 'Turkey', mode: 'prefix' },
+  { key: 'fish', label: 'Fish', mode: 'word' },
+  { key: 'salmon', label: 'Fish', mode: 'prefix' },
+  { key: 'tuna', label: 'Fish', mode: 'word' },
+  { key: 'shrimp', label: 'Shrimp', mode: 'prefix' },
+  { key: 'pasta', label: 'Pasta', mode: 'prefix' },
+  { key: 'spaghetti', label: 'Pasta', mode: 'prefix' },
+  { key: 'rice', label: 'Rice', mode: 'word' },
+  { key: 'bean', label: 'Beans', mode: 'word' },
+  { key: 'cheese', label: 'Cheese', mode: 'prefix' },
+  { key: 'egg', label: 'Eggs', mode: 'word' },
+  { key: 'tofu', label: 'Tofu', mode: 'prefix' },
+] as const
+
+const INCLUDE_EDGE = '(^|[^\\p{L}\\p{N}])'
+
+function mentionsInclude(hay: string, rule: (typeof INCLUDE_RULES)[number]): boolean {
+  const body = rule.mode === 'word' ? `${rule.key}s?(?=$|[^\\p{L}\\p{N}])` : rule.key
+  return new RegExp(`${INCLUDE_EDGE}${body}`, 'iu').test(hay)
+}
+
+function recipeHaystack(recipe: Recipe): string {
+  return [recipe.name, ...recipe.tags, ...recipe.ingredients.map(i => i.name)].join('\n')
+}
+
+/** What a recipe includes, for the cookbook's Chicken / Beef / … chips. A tag that is not one of those is its own chip. */
+export function recipeIncludes(recipe: Recipe): string[] {
+  const hay = recipeHaystack(recipe)
+  const keys = new Set<string>()
+  for (const rule of INCLUDE_RULES) {
+    if (mentionsInclude(hay, rule)) keys.add(rule.label)
+  }
+  for (const tag of recipe.tags) {
+    const t = tag.trim()
+    if (!t) continue
+    const fold = INCLUDE_RULES.find(r => r.key === t.toLowerCase() || r.label.toLowerCase() === t.toLowerCase())
+    keys.add(fold?.label ?? t)
+  }
+  return [...keys]
+}
+
+export function recipeHasInclude(recipe: Recipe, label: string): boolean {
+  return recipeIncludes(recipe).some(k => k.toLowerCase() === label.toLowerCase())
+}
+
+/** The Includes chips: only what at least one recipe actually has, commonest first. */
+export function recipeIncludeChips(recipes: readonly Recipe[]): { label: string; count: number }[] {
+  const counts = new Map<string, number>()
+  for (const recipe of recipes) {
+    for (const key of recipeIncludes(recipe)) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+/** Name, tags, or an ingredient — so typing "chicken" finds a dish you have only listed it on. */
+export function recipeMatchesQuery(recipe: Recipe, q: string): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  if (recipe.name.toLowerCase().includes(needle)) return true
+  if (recipe.tags.some(t => t.toLowerCase().includes(needle))) return true
+  return recipe.ingredients.some(i => i.name.toLowerCase().includes(needle))
+}
+
+/**
  * Where Swap moves in a slot's cycle of choices (its pick, then the
  * alternatives): the first after `current` that no other ticked slot has, so a
  * week never gets one dish twice. Null when every other choice is taken. Both

@@ -4,8 +4,10 @@ import {
   GroceryLine,
   GroceryList,
   GroceryState,
+  MEAL_SLOT_META,
   MEAL_SLOTS,
   Meal,
+  MealSlot,
   MealSide,
   Place,
   PlaceCategory,
@@ -20,8 +22,13 @@ import {
   buildGroceryList,
   cookStepsRecipeId,
   cookedIndex, visitIndex,
+  daysBetween,
   mealsForSlot,
+  mealIsShared,
+  mealLabel,
   cookedLine,
+  NOT_LATELY_DAYS,
+  shortDay,
   cookedSummary,
   groceriesForMealDates,
   groceryCounts,
@@ -32,6 +39,9 @@ import {
   mealsForWeek,
   newIngredient,
   notLately,
+  recipeHasInclude,
+  recipeIncludeChips,
+  recipeMatchesQuery,
   parseCookSteps,
   removeGroceryLine,
   removedGroceryLines,
@@ -40,6 +50,7 @@ import {
   visibleGroceryLines,
 } from '../kitchen'
 import type { CookedIndex, VisitIndex } from '../kitchen'
+import { dishMark } from '../kitchenstats'
 import { RECIPE_TEXT_HINT, readRecipe } from '../ai'
 import { useDayKey } from '../useDayKey'
 import { haptic } from '../native'
@@ -54,6 +65,88 @@ import type { CalendarEntry, CalendarEvent, Task } from '../types'
 
 /** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month and not on the plan, longest ago first. */
 type RecipeView = 'all' | 'lately'
+
+type RecipeGroup = { title: string; items: Recipe[] }
+
+/** A dish's own emoji, or its first letters — never the default plate on every row. */
+function RecipeMark({ recipe }: { recipe: Recipe }) {
+  return (
+    <span className="kitchen-dish thumb-40 recipe-mark" aria-hidden="true">
+      {dishMark(recipe.name, recipe.emoji)}
+    </span>
+  )
+}
+
+/**
+ * The cookbook, when you have not searched or filtered: what's already on a
+ * meal, what you cooked this month, and the rest you have not made lately.
+ */
+function groupRecipes(list: Recipe[], cooked: CookedIndex): RecipeGroup[] {
+  const planned: Recipe[] = []
+  const recent: Recipe[] = []
+  const rest: Recipe[] = []
+  for (const recipe of list) {
+    const row = cooked.byId.get(recipe.id)
+    if (row?.nextPlanned) planned.push(recipe)
+    else if (row?.lastCooked && daysBetween(row.lastCooked, cooked.dayKey) < NOT_LATELY_DAYS) recent.push(recipe)
+    else rest.push(recipe)
+  }
+  planned.sort((a, b) => {
+    const left = cooked.byId.get(a.id)?.nextPlanned ?? ''
+    const right = cooked.byId.get(b.id)?.nextPlanned ?? ''
+    return left.localeCompare(right) || a.name.localeCompare(b.name)
+  })
+  recent.sort((a, b) => {
+    const left = cooked.byId.get(a.id)?.lastCooked ?? ''
+    const right = cooked.byId.get(b.id)?.lastCooked ?? ''
+    return right.localeCompare(left) || a.name.localeCompare(b.name)
+  })
+  rest.sort((a, b) => a.name.localeCompare(b.name))
+  return [
+    planned.length ? { title: 'On the plan', items: planned } : null,
+    recent.length ? { title: 'Cooked lately', items: recent } : null,
+    rest.length ? { title: 'Not lately', items: rest } : null,
+  ].filter((group): group is RecipeGroup => group !== null)
+}
+
+function RecipeCard({
+  recipe,
+  cooked,
+  today,
+  onCook,
+  onEdit,
+}: {
+  recipe: Recipe
+  cooked: CookedIndex
+  today: string
+  onCook(recipe: Recipe): void
+  onEdit(recipe: Recipe): void
+}) {
+  const next = cooked.byId.get(recipe.id)?.nextPlanned
+  return (
+    <li className="recipe-card" onClick={() => onCook(recipe)}>
+      <RecipeMark recipe={recipe} />
+      <div className="dash-main">
+        <button type="button" className="row-open">
+          <span className="dash-title">{recipe.name}</span>
+        </button>
+        <span className="recipe-cooked">{cookedLine(cooked, recipe.id)}</span>
+        {next && <span className="recipe-on-plan">On {shortDay(next, today)}</span>}
+      </div>
+      <button
+        type="button"
+        className="btn subtle recipe-card-edit"
+        onClick={e => {
+          e.stopPropagation()
+          onEdit(recipe)
+        }}
+      >
+        Edit
+      </button>
+    </li>
+  )
+}
+
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
 
 interface Props {
@@ -121,12 +214,13 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   // the recipe form, and where Save and Cancel go back to: the list, cook mode
   // on the recipe, or the side open over its main. Cook mode stays set while
   // its recipe is edited, so it comes back with its meal's sides and its ticks.
-  const [editing, setEditing] = useState<{ recipe: Recipe | 'new'; from: 'list' | 'cook' | 'side' } | null>(null)
+  const [editing, setEditing] = useState<{ recipe: Recipe | 'new'; from: 'list' | 'cook' | 'side'; paste?: boolean } | null>(null)
   // cook mode: the recipe, and the meal it was opened from, whose sides it offers
   const [cooking, setCooking] = useState<{ recipe: Recipe; mealId?: string } | null>(null)
   // a side opened from cook mode: drawn over the main, which stays open underneath with its ticks
   const [cookingSide, setCookingSide] = useState<Recipe | null>(null)
   const [q, setQ] = useState('')
+  const [include, setInclude] = useState<string | null>(null)
   const [planningMeals, setPlanningMeals] = useState(false)
 
   /**
@@ -156,12 +250,13 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   // and when each place was last gone to, beside it under Eat out
   const visited = useMemo(() => visitIndex(places, tasks ?? [], meals), [places, tasks, meals])
   const latelyCount = useMemo(() => notLately(recipes, cooked).length, [recipes, cooked])
+  const includeChips = useMemo(() => recipeIncludeChips(recipes), [recipes])
+  const activeInclude = include && includeChips.some(c => c.label === include) ? include : null
 
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    const found = needle ? recipes.filter(r => r.name.toLowerCase().includes(needle) || r.tags.some(t => t.toLowerCase().includes(needle))) : recipes
+    const found = recipes.filter(r => recipeMatchesQuery(r, q) && (!activeInclude || recipeHasInclude(r, activeInclude)))
     return recipeView === 'lately' ? notLately(found, cooked) : found
-  }, [recipes, q, recipeView, cooked])
+  }, [recipes, q, recipeView, cooked, activeInclude])
 
   const setTab = (s: KitchenTab) => {
     setSeg(s)
@@ -300,30 +395,120 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
 
       {seg === 'recipes' && (
         <>
-          <div className="people-toolbar">
-            <h2>Recipes</h2>
-            <input className="filter-q" value={q} onChange={e => setQ(e.target.value)} placeholder="Search recipes" />
-            <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
-              + Recipe
-            </button>
+          <div className="people-toolbar kitchen-recipes-head">
+            <div>
+              <h2>Recipes</h2>
+              <p className="chart-sub">Tap a dish to cook it.</p>
+            </div>
+            <div className="kitchen-recipe-compose">
+              <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', paste: true })}>
+                Paste a recipe
+              </button>
+              <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
+                + Recipe
+              </button>
+            </div>
           </div>
           {recipes.length > 0 && (
-            <div className="recipe-view-row">
-              {/* "Not lately" answers "what haven't we had in a while": never
-                  cooked, or not in a month, and not already planned, longest
-                  ago first */}
-              <span className="segmented" role="group" aria-label="Which recipes">
-                <button className={recipeView === 'all' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'all'} onClick={() => changeRecipeView('all')}>
-                  All {recipes.length}
-                </button>
-                <button className={recipeView === 'lately' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'lately'} onClick={() => changeRecipeView('lately')}>
-                  Not lately {latelyCount}
-                </button>
-              </span>
-              {recipeView === 'lately' && <small className="recipe-view-hint">Not cooked in a month and not planned, longest ago first</small>}
+            <div className="kitchen-recipe-tools">
+              <input className="filter-q kitchen-recipe-q" value={q} onChange={e => setQ(e.target.value)} placeholder="Search recipes" aria-label="Search recipes" />
+              <div className="recipe-view-row">
+                {/* "Not lately" answers "what haven't we had in a while": never
+                    cooked, or not in a month, and not already planned, longest
+                    ago first */}
+                <span className="segmented" role="group" aria-label="Which recipes">
+                  <button className={recipeView === 'all' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'all'} onClick={() => changeRecipeView('all')}>
+                    All {recipes.length}
+                  </button>
+                  <button className={recipeView === 'lately' ? 'seg on' : 'seg'} aria-pressed={recipeView === 'lately'} onClick={() => changeRecipeView('lately')}>
+                    Not lately {latelyCount}
+                  </button>
+                </span>
+                {recipeView === 'lately' && <small className="recipe-view-hint">Not cooked in a month and not planned, longest ago first</small>}
+              </div>
+              {includeChips.length > 0 && (
+                <div className="recipe-includes">
+                  <span className="recipe-includes-label" id="recipe-includes-label">
+                    Includes
+                  </span>
+                  <span className="segmented" role="group" aria-labelledby="recipe-includes-label">
+                    <button type="button" className={!activeInclude ? 'seg on' : 'seg'} aria-pressed={!activeInclude} onClick={() => setInclude(null)}>
+                      Any
+                    </button>
+                    {includeChips.map(c => (
+                      <button
+                        key={c.label}
+                        type="button"
+                        className={activeInclude === c.label ? 'seg on' : 'seg'}
+                        aria-pressed={activeInclude === c.label}
+                        onClick={() => setInclude(activeInclude === c.label ? null : c.label)}
+                      >
+                        {c.label} {c.count}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              )}
             </div>
           )}
-          {!q.trim() && recipeView === 'all' && (
+          {filtered.length === 0 ? (
+            q.trim() ? (
+              <p className="empty">No recipe matches that.</p>
+            ) : activeInclude ? (
+              <p className="empty">
+                {recipeView === 'lately' ? 'Nothing not lately includes ' : 'No recipe includes '}
+                {activeInclude}.
+              </p>
+            ) : recipeView === 'lately' && recipes.length > 0 ? (
+              <p className="empty">Everything here was cooked in the last month or is on the plan.</p>
+            ) : (
+              <div className="kitchen-empty">
+                <p>Save a dish you cook at home — type it, or paste one you already have.</p>
+                <div className="kitchen-empty-actions">
+                  <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', paste: true })}>
+                    Paste a recipe
+                  </button>
+                  <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
+                    + Recipe
+                  </button>
+                </div>
+              </div>
+            )
+          ) : recipeView === 'all' && !q.trim() ? (
+            <div className="recipe-book">
+              {groupRecipes(filtered, cooked).map(group => (
+                <section key={group.title} className="recipe-group">
+                  <h3>{group.title}</h3>
+                  <ul className="recipe-list">
+                    {group.items.map(r => (
+                      <RecipeCard
+                        key={r.id}
+                        recipe={r}
+                        cooked={cooked}
+                        today={today}
+                        onCook={cook}
+                        onEdit={r => setEditing({ recipe: r, from: 'list' })}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <ul className="recipe-list">
+              {filtered.map(r => (
+                <RecipeCard
+                  key={r.id}
+                  recipe={r}
+                  cooked={cooked}
+                  today={today}
+                  onCook={cook}
+                  onEdit={r => setEditing({ recipe: r, from: 'list' })}
+                />
+              ))}
+            </ul>
+          )}
+          {!q.trim() && !activeInclude && recipeView === 'all' && recipes.length > 0 && (
             <RecipeSuggestions
               recipes={recipes}
               meals={meals}
@@ -332,51 +517,6 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
                 cook(r)
               }}
             />
-          )}
-          {filtered.length === 0 ? (
-            <p className="empty">
-              {recipeView === 'lately' && recipes.length > 0 && !q.trim()
-                ? 'Everything here was cooked in the last month or is on the plan.'
-                : 'Save dishes you cook at home. Plan them onto the week, then build a grocery list from what’s for dinner.'}
-            </p>
-          ) : (
-            <ul className="recipe-list">
-              {filtered.map(r => (
-                <li key={r.id} className="recipe-card" onClick={() => cook(r)}>
-                  <span className="recipe-emoji">{r.emoji || '🍽️'}</span>
-                  <div className="dash-main">
-                    <button type="button" className="row-open">
-                      <span className="dash-title">{r.name}</span>
-                    </button>
-                    <span className="dash-meta">
-                      {r.servings ? `${r.servings} servings` : 'No yield set'}
-                      {r.ingredients.length > 0 && ` · ${r.ingredients.length} ingredient${r.ingredients.length === 1 ? '' : 's'}`}
-                      {r.steps?.length ? ` · ${r.steps.length} step${r.steps.length === 1 ? '' : 's'}` : ''}
-                      {r.tags.length > 0 && ` · ${r.tags.join(', ')}`}
-                    </span>
-                    <span className="recipe-cooked">{cookedLine(cooked, r.id)}</span>
-                    {r.ingredients.length > 0 && (
-                      <span className="recipe-preview">
-                        {r.ingredients
-                          .slice(0, 4)
-                          .map(i => i.name)
-                          .join(' · ')}
-                        {r.ingredients.length > 4 ? '…' : ''}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    className="btn subtle"
-                    onClick={e => {
-                      e.stopPropagation()
-                      setEditing({ recipe: r, from: 'list' })
-                    }}
-                  >
-                    Edit
-                  </button>
-                </li>
-              ))}
-            </ul>
           )}
         </>
       )}
@@ -482,6 +622,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
       {editing && (
         <RecipeForm
           recipe={editing.recipe === 'new' ? undefined : editing.recipe}
+          pasteFirst={!!editing.paste}
           onSave={r => {
             persistRecipe(r)
             setEditing(null)
@@ -557,34 +698,77 @@ function WeekPlan({
     d.setDate(d.getDate() + i)
     return d
   })
+  const keys = days.map(dateKey)
   // dinners still to plan from today on: a past night is not worth proposing
-  const emptyDinners = days.map(dateKey).filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
-  // a day opened from Stats lands on screen, clear of the sticky bar (its scroll margin), not at the week's top
+  const emptyDinners = keys.filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
+  // Breakfast and lunch stay put away until a day has one, or you ask for it —
+  // otherwise the week is 21 empty dropdowns and dinner is the one that matters.
+  const [extraSlots, setExtraSlots] = useState<Record<string, MealSlot[]>>({})
+  // One day at a time. The strip is the week; the pickers are only for the
+  // letter you have open, so a slide across the list cannot change Tuesday
+  // while you meant to look at Friday.
+  const land = (want: string | null | undefined) => (want && keys.includes(want) ? want : keys.includes(today) ? today : keys[0])
+  const [picked, setPicked] = useState(() => land(focusDay))
+  const swipeFrom = useRef<number | null>(null)
   useEffect(() => {
-    if (!focusDay) return
-    const t = window.setTimeout(() => document.getElementById(`meal-day-${focusDay}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
-    return () => window.clearTimeout(t)
-  }, [focusDay])
+    setPicked(land(focusDay))
+    // week.start is the week on screen; a new week or a Stats day replaces the open letter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week.start, focusDay])
+  const dinnerOn = (key: string) => {
+    const { mine, theirs } = mealsForSlot(meals, key, 'dinner', myId)
+    const shown = mine ?? theirs.find(mealIsShared) ?? theirs[0]
+    return shown ? mealLabel(shown) : ''
+  }
+  const showSlot = (key: string, slot: MealSlot, mine?: Meal, theirs: Meal[] = []) =>
+    slot === 'dinner' || !!mine || theirs.length > 0 || (extraSlots[key] ?? []).includes(slot)
+  const stepDay = (dir: -1 | 1) => {
+    const i = keys.indexOf(picked)
+    const next = keys[i + dir]
+    if (next) setPicked(next)
+  }
+  const pickedDate = days[keys.indexOf(picked)] ?? days[0]
+  const hidden = (['breakfast', 'lunch'] as const).filter(slot => {
+    const { mine, theirs } = mealsForSlot(meals, picked, slot, myId)
+    return !showSlot(picked, slot, mine, theirs)
+  })
   return (
     <>
-      <div className="people-toolbar">
-        <h2>This week’s meals</h2>
+      <div className="people-toolbar kitchen-week-head">
         <button className="btn" onClick={() => onShift(-1)} aria-label="Previous week">
           ‹
         </button>
-        <span className="kitchen-week-label">{week.label}</span>
+        <h2>{week.label}</h2>
         <button className="btn" onClick={() => onShift(1)} aria-label="Next week">
           ›
         </button>
       </div>
-      <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. Who sees this is Just me or Household — Household puts it on their week as a task. If they already shared a slot, that is the meal; you do not set it again.</p>
+      <nav className="week-strip" aria-label="Dinners this week">
+        {days.map(d => {
+          const key = dateKey(d)
+          const dish = dinnerOn(key)
+          const dow = d.toLocaleDateString(undefined, { weekday: 'short' })
+          return (
+            <button
+              key={key}
+              type="button"
+              className={'week-strip-day' + (key === today ? ' today' : '') + (key === picked ? ' picked' : '') + (dish ? ' set' : '')}
+              aria-label={`${dow}${dish ? ` ${dish}` : key < today ? ', no dinner' : ', not planned'}`}
+              aria-pressed={key === picked}
+              onClick={() => setPicked(key)}
+            >
+              <span className="week-strip-dow">{d.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
+            </button>
+          )
+        })}
+      </nav>
       {onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0) && (
         <div className="meal-plan-cta">
           <p>
             <strong>
               {emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}
             </strong>
-            <small>Build the week together: picks from what you cook most, or ask the assistant when you can’t decide.</small>
+            <small>Picks from what you cook most, or ask the assistant when you can’t decide.</small>
           </p>
           <button className="btn primary" onClick={onPlan}>
             Plan this week’s meals
@@ -592,41 +776,66 @@ function WeekPlan({
         </div>
       )}
       <ul className="meal-week">
-        {days.map(d => {
-          const key = dateKey(d)
-          return (
-            <li key={key} id={`meal-day-${key}`} className={'meal-day' + (key === today ? ' today' : '') + (key === focusDay ? ' picked' : '')}>
-              <div className="meal-day-head">
-                <strong>{d.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
-                <span>{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-              </div>
-              {MEAL_SLOTS.map(slot => {
-                const { mine, theirs } = mealsForSlot(meals, key, slot, myId)
-                return (
-                <MealSlotRow
+        <li
+          key={picked}
+          id={`meal-day-${picked}`}
+          className={'meal-day' + (picked === today ? ' today' : '') + ' picked'}
+          onTouchStart={e => {
+            swipeFrom.current = e.changedTouches[0].clientX
+          }}
+          onTouchEnd={e => {
+            const from = swipeFrom.current
+            swipeFrom.current = null
+            if (from == null) return
+            const dx = e.changedTouches[0].clientX - from
+            if (Math.abs(dx) < 48) return
+            stepDay(dx < 0 ? 1 : -1)
+          }}
+        >
+          <div className="meal-day-head">
+            <strong>{pickedDate.toLocaleDateString(undefined, { weekday: 'long' })}</strong>
+            <span>{pickedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+          </div>
+          {MEAL_SLOTS.map(slot => {
+            const { mine, theirs } = mealsForSlot(meals, picked, slot, myId)
+            if (!showSlot(picked, slot, mine, theirs)) return null
+            return (
+            <MealSlotRow
+              key={slot}
+              date={picked}
+              slot={slot}
+              meal={mine}
+              theirs={theirs}
+              nameOf={nameOf}
+              inHousehold={inHousehold}
+              myId={myId}
+              recipes={recipes}
+              places={places}
+              cooked={cooked}
+              visited={visited}
+              onSave={onSaveMeal}
+              onClear={onClearMeal}
+              onCreatePlace={onCreatePlace}
+              onCreateRecipe={onCreateRecipe}
+              onOpenRecipe={onOpenRecipe}
+            />
+            )
+          })}
+          {hidden.length > 0 && (
+            <div className="meal-day-extras">
+              {hidden.map(slot => (
+                <button
                   key={slot}
-                  date={key}
-                  slot={slot}
-                  meal={mine}
-                  theirs={theirs}
-                  nameOf={nameOf}
-                  inHousehold={inHousehold}
-                  myId={myId}
-                  recipes={recipes}
-                  places={places}
-                  cooked={cooked}
-                  visited={visited}
-                  onSave={onSaveMeal}
-                  onClear={onClearMeal}
-                  onCreatePlace={onCreatePlace}
-                  onCreateRecipe={onCreateRecipe}
-                  onOpenRecipe={onOpenRecipe}
-                />
-                )
-              })}
-            </li>
-          )
-        })}
+                  type="button"
+                  className="btn subtle"
+                  onClick={() => setExtraSlots(m => ({ ...m, [picked]: [...(m[picked] ?? []), slot] }))}
+                >
+                  + {MEAL_SLOT_META[slot].label}
+                </button>
+              ))}
+            </div>
+          )}
+        </li>
       </ul>
     </>
   )
@@ -1143,11 +1352,14 @@ export function RecipeCook({
 
 function RecipeForm({
   recipe,
+  pasteFirst,
   onSave,
   onDelete,
   onClose,
 }: {
   recipe?: Recipe
+  /** Open on Paste a recipe — the list's Paste door, not a blank form first. */
+  pasteFirst?: boolean
   onSave(r: Recipe): void
   onDelete?(id: string): void
   onClose(): void
@@ -1172,7 +1384,7 @@ function RecipeForm({
   const [steps, setSteps] = useState((recipe?.steps ?? []).join('\n'))
   const [tags, setTags] = useState((recipe?.tags ?? []).join(', '))
   const [notes, setNotes] = useState(recipe?.notes ?? '')
-  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(Boolean(pasteFirst) && !recipe)
   const [paste, setPaste] = useState('')
   const [reading, setReading] = useState(false)
   const [readErr, setReadErr] = useState('')
@@ -1262,7 +1474,7 @@ function RecipeForm({
             <>
               <label className="field">
                 <span>Paste a recipe</span>
-                <textarea rows={6} value={paste} onChange={e => setPaste(e.target.value)} placeholder={RECIPE_TEXT_HINT} autoFocus />
+                <textarea rows={6} value={paste} onChange={e => setPaste(e.target.value)} placeholder={RECIPE_TEXT_HINT} autoFocus={pasteOpen} />
               </label>
               <div className="recipe-paste-foot">
                 <button className="btn primary" disabled={reading || !paste.trim()} onClick={readPaste}>
@@ -1295,7 +1507,7 @@ function RecipeForm({
           </label>
           <label className="field">
             <span>Name</span>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus={!pasteOpen} />
           </label>
           <label className="field" style={{ maxWidth: 90 }}>
             <span>Servings</span>
@@ -1333,7 +1545,8 @@ function RecipeForm({
         </label>
         <label className="field">
           <span>Tags</span>
-          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="quick, chicken, freezer" />
+          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="chicken, beef, freezer" />
+          <small className="field-hint">The cookbook can open just the chicken ones, or any other tag you add.</small>
         </label>
         <label className="field">
           <span>Notes</span>

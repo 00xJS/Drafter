@@ -121,7 +121,7 @@
 
 /* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal/
    Wardrobe, Tasks' List/Board/Bills/Notes, People/Places, Kitchen's Recipes/
-   This week/Grocery/Stats, the calendar's Month/Week/Timeline) become a filled
+   This week/Grocery/Stats, the calendar's Month/Week/Day) become a filled
    track with a raised thumb that stretches the width, the way UISegmentedControl
    does — not a row of separate buttons. Since 2026-09-15 the web gets the same
    track from 04-table-modal.css, and the Stats lens's nine-segment track scrolls
@@ -326,6 +326,11 @@
     min-width: 0;
     width: 100%;
   }
+  .native .people-toolbar.kitchen-week-head > h2 {
+    flex: 1 1 auto;
+    width: auto;
+    text-align: center;
+  }
 
   .native .swipe-face,
   .native .dash-list li,
@@ -334,6 +339,11 @@
     padding: 12px 8px;
   }
 
+  .native .week-strip-day {
+    min-height: var(--touch);
+    padding: 10px 4px;
+    border-radius: 12px;
+  }
   .native .recipe-card,
   .native .meal-day,
   .native .grocery-line {

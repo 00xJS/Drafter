@@ -230,7 +230,7 @@ describe('a remembered segment may not hijack a destination', () => {
   })
 
   it('reaches the review as a page on Home, not a tab of its own', () => {
-    // Home is the day; Week, Journal and Wardrobe open from its cards
+    // Home is the day; Week, Journal and Wardrobe open from its cards or the pin
     expect(planner).toMatch(/homeTab === 'week' && \(/)
     expect(planner).toMatch(/<Review/)
     expect(planner).not.toMatch(/view === 'review'/)

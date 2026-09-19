@@ -215,6 +215,23 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
 
   if (mine.length === 0 && shown.length === 0) return null
 
+  // No pending ideas: a single button under the list tools, not a card that
+  // pushes every real recipe down the first screen.
+  if (shown.length === 0) {
+    return (
+      <div className="recipe-suggest-inline">
+        <button type="button" className="btn" onClick={ask} disabled={busy || mine.length === 0}>
+          {busy ? 'Thinking…' : '✨ Suggest recipes I’d like'}
+        </button>
+        {message && (
+          <p className="ask-note" role="status">
+            {message}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <section className="chart-card recipe-suggest" aria-labelledby={headId}>
       <header className="chart-head">
@@ -223,7 +240,7 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
           <p className="chart-sub">Close cousins of what you already cook. Accept to add one; delete to never see it again.</p>
         </div>
         <button type="button" className="btn" onClick={ask} disabled={busy || mine.length === 0}>
-          {busy ? 'Thinking…' : shown.length > 0 ? '✨ More ideas' : '✨ Suggest recipes I’d like'}
+          {busy ? 'Thinking…' : '✨ More ideas'}
         </button>
       </header>
       {message && (

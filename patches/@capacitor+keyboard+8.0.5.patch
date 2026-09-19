@@ -1,0 +1,14 @@
+diff --git a/node_modules/@capacitor/keyboard/ios/Sources/KeyboardPlugin/Keyboard.m b/node_modules/@capacitor/keyboard/ios/Sources/KeyboardPlugin/Keyboard.m
+index 54a6694..9dd1885 100644
+--- a/node_modules/@capacitor/keyboard/ios/Sources/KeyboardPlugin/Keyboard.m
++++ b/node_modules/@capacitor/keyboard/ios/Sources/KeyboardPlugin/Keyboard.m
+@@ -45,7 +45,9 @@ typedef enum : NSUInteger {
+ 
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wprotocol"
++#pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
+ // suppressing warnings of the type: "Class 'KeyboardPlugin' does not conform to protocol 'CAPBridgedPlugin'"
++// and "Auto property synthesis will not synthesize property 'identifier'/'jsName'/'pluginMethods'"
+ // protocol conformance for this class is implemented by a macro and clang isn't detecting that
+ @implementation KeyboardPlugin
+ 
