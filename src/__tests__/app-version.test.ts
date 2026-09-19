@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bumpVersion, formatVersion, parseVersion } from '../../scripts/app-version.mjs'
+import { bumpVersion, formatVersion, parseVersion } from '../../shared/appversion.mjs'
 import { APP_VERSION } from '../appversion'
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
