@@ -2,7 +2,7 @@
   "name": "drafter",
   "description": "Home journal and planner: Home, Tasks, Calendar, People and Kitchen, with habits, routines, a weekly review, a command palette and an iOS shell",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,7 +17,10 @@
     "db:smoke": "bash scripts/db-smoke.sh",
     "mcp:smoke": "node scripts/mcp-smoke.mjs",
     "ios:apple": "cp ios/App/App/App.paid.entitlements ios/App/App/App.entitlements && echo \"Push, Universal Links and Password AutoFill are on. Sign with the PAID team in Xcode, or the build will fail.\"",
-    "release:ios": "node scripts/ios-build-number.mjs && npm run build:ios && cap open ios"
+    "version:patch": "node scripts/app-version.mjs --patch",
+    "version:minor": "node scripts/app-version.mjs --minor",
+    "version:major": "node scripts/app-version.mjs --major",
+    "release:ios": "node scripts/ios-release.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

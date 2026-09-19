@@ -39,10 +39,10 @@ export interface TaskForm {
   blockedBy: string[]
   assigneeId: string
   /**
-   * Whether the household can see it. True is the default and what every task
-   * written before v3.19 means; false keeps it to its owner. Held as a plain
-   * boolean because the control is a plain choice — formValues turns it back
-   * into the flag the database reads.
+   * Whether the household can see it. A brand-new task starts false; a task
+   * written before the private default (no flag) starts true, which is what
+   * the database still reads for those rows. formValues turns the choice
+   * back into the flag the database stores.
    */
   shared: boolean
 }

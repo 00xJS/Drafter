@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// Everything that needs the paid Apple Developer Program sits in one place —
-// Admin → Apple, and the README's "When you join" list — with the steps to build
-// it, and the optional integrations read as optional rather than as faults.
+// The paid Apple Developer Program sits in one place — Admin → Apple, and the
+// README's iPhone list — with the steps still left, and the optional
+// integrations read as optional rather than as faults.
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
 const admin = read('../components/Admin.tsx')
@@ -43,7 +43,7 @@ describe('the paid Apple Developer Program in one place', () => {
   })
 
   it('keeps the same list in the README', () => {
-    const list = readme.slice(readme.indexOf('### When you join the Apple Developer Program'))
+    const list = readme.slice(readme.indexOf('### iPhone and the Apple Developer Program'))
     for (const s of ['APNS_KEY_ID', 'apple-app-site-association.example.json', 'webcredentials:drafterz.netlify.app', 'TestFlight']) expect(list, s).toContain(s)
   })
 })

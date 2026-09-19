@@ -10,8 +10,14 @@ import {
   groceryCounts,
   heldGroceryLines,
   ingredientKey,
+  cookTaskFor,
+  cookTaskId,
+  platesOn,
+  tonightDinner,
   mealId,
+  mealIsShared,
   mealsByDay,
+  mealsForSlot,
   mergeIngredients,
   parseCookSteps,
   removeGroceryLine,
@@ -168,6 +174,53 @@ describe('shared week keys', () => {
     expect(mealsInWeekOf(meals, '2026-09-09').map(m => m.title)).toEqual(['Sunday roast', 'Soup'])
     expect(tonightLine(meals, [], '2026-09-06')).toBe('Tonight: Sunday roast')
     expect(tonightLine(meals, [], '2026-09-07')).toBeNull()
+  })
+})
+
+describe('mealsForSlot keeps two household dinners apart', () => {
+  const mine: Meal = { kind: 'meal', id: mealId('2026-09-18', 'dinner', 'me'), date: '2026-09-18', slot: 'dinner', title: 'Pasta', ownerId: 'me', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }
+  const hers: Meal = { kind: 'meal', id: mealId('2026-09-18', 'dinner', 'maria'), date: '2026-09-18', slot: 'dinner', title: 'Tacos', ownerId: 'maria', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }
+
+  it('edits mine and names hers', () => {
+    expect(mealsForSlot([mine, hers], '2026-09-18', 'dinner', 'me')).toEqual({ mine, theirs: [hers] })
+    expect(mealsForSlot([hers], '2026-09-18', 'dinner', 'me')).toEqual({ mine: undefined, theirs: [hers] })
+  })
+
+  it('hides a slot she kept to herself', () => {
+    expect(mealsForSlot([{ ...hers, shared: false }], '2026-09-18', 'dinner', 'me')).toEqual({ mine: undefined, theirs: [] })
+  })
+
+  it('writes a shared cook task for breakfast, lunch or dinner', () => {
+    const t = cookTaskFor(hers)
+    expect(t.id).toBe(cookTaskId(hers.id))
+    expect(t.title).toBe('Cook dinner: Tacos')
+    expect(t.shared).toBe(true)
+    expect(t.tags).toContain('meal')
+    expect(mealIsShared(hers)).toBe(false)
+    expect(mealIsShared({ ...hers, shared: true })).toBe(true)
+    const lunch = cookTaskFor({ ...hers, slot: 'lunch', title: 'Soup' })
+    expect(lunch.title).toBe('Cook lunch: Soup')
+    const oats = cookTaskFor({ ...hers, slot: 'breakfast', title: 'Oats', out: true })
+    expect(oats.title).toBe('Eat breakfast: Oats')
+  })
+})
+
+describe('platesOn is every slot on the day', () => {
+  it('lists breakfast, lunch and dinner in that order, and tonightDinner still prefers dinner', () => {
+    const meal = (date: string, slot: Meal['slot'], title: string): Meal => ({
+      kind: 'meal',
+      id: mealId(date, slot),
+      date,
+      slot,
+      title,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    const meals = [meal('2026-09-08', 'lunch', 'Soup'), meal('2026-09-08', 'dinner', 'Pasta'), meal('2026-09-08', 'breakfast', 'Oats')]
+    const day = new Date(2026, 8, 8, 12)
+    expect(platesOn(meals, [], day).map(p => p.meal.title)).toEqual(['Oats', 'Soup', 'Pasta'])
+    expect(tonightDinner(meals, [], day)?.meal.title).toBe('Pasta')
+    expect(platesOn([meal('2026-09-09', 'dinner', 'Curry')], [], day)).toEqual([])
   })
 })
 

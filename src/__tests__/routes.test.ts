@@ -117,7 +117,7 @@ describe('six tabs, the same on the phone and the desktop', () => {
     expect(read('__proto__')).toBe('overview')
   })
 
-  it('gives the wardrobe a segment on Home, never a tab of its own', () => {
+  it('gives the wardrobe a page on Home, never a tab of its own', () => {
     expect(VIEWS).toHaveLength(6)
     expect(VIEWS as string[]).not.toContain('wardrobe')
     expect(HOME_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')

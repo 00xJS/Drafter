@@ -280,15 +280,69 @@ export function dinnerOn(meals: Meal[], day: Date): Meal | undefined {
 }
 
 /**
+ * One slot on one day: the row this member writes, and everyone else's plans
+ * for the same slot. Two people can both plan Friday dinner without sharing
+ * an id; Kitchen edits `mine` and names `theirs`.
+ */
+export function mealsForSlot(meals: readonly Meal[], date: string, slot: MealSlot, myId?: string | null): { mine?: Meal; theirs: Meal[] } {
+  const on = meals.filter(m => !m.deletedAt && m.date === date && m.slot === slot)
+  const mine = mealAt(on, date, slot, myId) ?? undefined
+  // A peer's private slot stays off this list. Absent `shared` is the week's
+  // food (v3.21), and only an explicit `false` withholds it.
+  return { mine, theirs: on.filter(m => m.id !== mine?.id && m.shared !== false) }
+}
+
+/** The household task a shared breakfast, lunch or dinner writes. */
+export const cookTaskId = (mealId: string): string => `task~cook~${mealId}`
+
+const SLOT_HOUR: Record<MealSlot, number> = { breakfast: 8, lunch: 12, dinner: 18 }
+
+/** Only an explicit Share writes the task — a meal on the week is not enough. */
+export const mealIsShared = (meal: Pick<Meal, 'shared'>): boolean => meal.shared === true
+
+export function cookTaskFor(meal: Meal, now = new Date().toISOString()): Task {
+  const [y, mo, d] = meal.date.split('-').map(Number)
+  const hour = SLOT_HOUR[meal.slot] ?? 18
+  const due = Number.isFinite(y) ? new Date(y, mo - 1, d, hour, 0, 0).toISOString() : now
+  const verb = meal.out ? 'Eat' : 'Cook'
+  const when = meal.slot
+  return {
+    kind: 'task',
+    id: cookTaskId(meal.id),
+    title: `${verb} ${when}: ${mealLabel(meal)}`,
+    description: 'Planned in Kitchen for the household.',
+    status: 'todo',
+    priority: 'normal',
+    dueAt: due,
+    createdAt: now,
+    updatedAt: now,
+    tags: ['meal'],
+    placeId: meal.out ? meal.placeId : undefined,
+    shared: true,
+  }
+}
+
+/**
  * Tonight's meal, its recipe and the recipes of its sides. Today and the
  * briefing strip read it, so it lives here rather than in the Kitchen view,
  * which can then load on its own.
  */
+export function plateFor(meal: Meal, recipes: Recipe[]): { meal: Meal; recipe?: Recipe; sides: Recipe[] } {
+  const sides = mealSides(meal).flatMap(s => recipes.filter(r => s.recipeId && r.id === s.recipeId).slice(0, 1))
+  return { meal, recipe: recipes.find(r => r.id === meal.recipeId), sides }
+}
+
 export function tonightDinner(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe; sides: Recipe[] } | null {
   const meal = dinnerOn(meals, day)
   if (!meal) return null
-  const sides = mealSides(meal).flatMap(s => recipes.filter(r => s.recipeId && r.id === s.recipeId).slice(0, 1))
-  return { meal, recipe: recipes.find(r => r.id === meal.recipeId), sides }
+  return plateFor(meal, recipes)
+}
+
+/** Every planned slot on that day, in breakfast / lunch / dinner order — Today
+ *  shows the day's food here so Kitchen is the week plan, not a second today. */
+export function platesOn(meals: Meal[], recipes: Recipe[], day = new Date()): { meal: Meal; recipe?: Recipe; sides: Recipe[] }[] {
+  const key = dateKey(day)
+  return (mealsByDay(meals).get(key) ?? []).filter(m => !m.deletedAt).map(m => plateFor(m, recipes))
 }
 
 /** Unique Sunday-start weeks that contain these YYYY-MM-DD meal dates. */

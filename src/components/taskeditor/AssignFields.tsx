@@ -88,7 +88,7 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
                   ? `${assignee ?? 'Someone else'} is doing this one — pick Anyone or yourself above to keep it private.`
                   : shared
                     ? 'Everyone in your household can see this task.'
-                    : 'Only you can see this task — it stays out of their list, their board and their calendar.'}
+                    : 'Only you can see this task — share it to put it on their list, board and calendar.'}
               </small>
             </>
           ) : (

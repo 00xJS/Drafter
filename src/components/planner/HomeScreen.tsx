@@ -4,9 +4,10 @@ import { JournalView } from '../Journal'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
 import { Review, Wardrobe } from './lazy'
-import { HOME_TABS } from './routes'
 
-/** Home: the day, the week's look-back, the journal and the wardrobe, four segments of one tab. */
+/** Home is the day. Week, Journal and Wardrobe open from its cards (and from
+ *  a link or the palette) as a page with a way back — not as peer tabs that
+ *  split the same 18 hours four ways. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { store, household, allEvents, sourceMap, showToast } = p
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
@@ -16,30 +17,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { syncAlarm, dismissSyncAlarm, setAdminOpen } = p
   return (
     <>
-      {/* one Home across four segments: the day, the week’s look-back, the
-          journal and what you wear — Today’s dashboard is the base */}
-      <div className="people-tab-seg home-seg" role="tablist" aria-label="Home view">
-        <span className="segmented">
-          {HOME_TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={homeTab === t.key}
-              className={homeTab === t.key ? 'seg on' : 'seg'}
-              onClick={() => {
-                setHomeTab(t.key)
-                // the journal opens on today’s line, not the list above it
-                if (t.key === 'journal') setJournalOpenDate(localDayKey())
-                // and the wardrobe on today’s composer, whatever way in came before
-                if (t.key === 'wardrobe') setWardrobeOpen(null)
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </span>
-      </div>
+      {homeTab !== 'today' && (
+        <button type="button" className="btn subtle notes-back" onClick={() => setHomeTab('today')}>
+          Today
+        </button>
+      )}
       {homeTab === 'today' && (
         <Today
           tasks={store.tasks}

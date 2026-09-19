@@ -2,11 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- These need an Apple Developer Program membership; a free personal team
-	     cannot provision push, and the build fails with "Personal development
-	     teams do not support the Push Notifications capability". If you ever go
-	     back to free signing, empty this file again — local reminders and Face
-	     ID need no entitlement and are unaffected. -->
+	<!-- Paid Apple Developer Program: push and associated domains. A free
+	     personal team cannot provision these — the build would fail with
+	     "Personal development teams do not support the Push Notifications
+	     capability". Local reminders and Face ID need no entitlement. -->
 
 	<!-- Push. `development` is the APNs sandbox, which is what a build run from
 	     Xcode onto a device talks to. TestFlight and the App Store use the

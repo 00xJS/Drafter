@@ -77,17 +77,16 @@ declare r jsonb; ids text[];
 begin
   r := public.sync_posts('[]'::jsonb, null);
   select array_agg(x ->> 'id' order by x ->> 'id') into ids from jsonb_array_elements(r -> 'items') x;
-  -- grocery is here and meal is not: a week's shopping list is shared (one row
-  -- per member, but everyone reads them), while a meal plan is the member's own
-  -- since v3.15 — the ids carried no owner, so two people planning the same
-  -- slot wrote the same row and one plan replaced the other
-  if not (ids @> array['t1','p1','mum','nopi','pasta','grocery~2026-W37','tpl1']) then
+  -- grocery and meal are both here: one row per member, everyone reads them.
+  -- v3.15 hid meals after two plans overwrote the same id; the id now carries
+  -- the member, and v3.21 lets a peer see the dinner (FAIL v3.21-1 pins that).
+  if not (ids @> array['t1','p1','mum','nopi','pasta','grocery~2026-W37','tpl1','meal~2026-09-08~dinner']) then
     raise exception 'FAIL 3: peer should see the shared kinds, saw %', ids;
   end if;
-  if ids && array['journal~2026-09-08~a1','rev1','cal1','meal~2026-09-08~dinner'] then
-    raise exception 'FAIL 3: peer must not see the owner''s journal, review, calendar or meals, saw %', ids;
+  if ids && array['journal~2026-09-08~a1','rev1','cal1'] then
+    raise exception 'FAIL 3: peer must not see the owner''s journal, review or calendar, saw %', ids;
   end if;
-  if (select count(*) from public.posts where id in ('journal~2026-09-08~a1','rev1','cal1','meal~2026-09-08~dinner')) <> 0 then
+  if (select count(*) from public.posts where id in ('journal~2026-09-08~a1','rev1','cal1')) <> 0 then
     raise exception 'FAIL 3: direct select leaks a personal row to the peer';
   end if;
   raise notice 'ok 3: peer sees % shared rows and no personal ones', array_length(ids, 1);
@@ -2436,3 +2435,6 @@ begin
   raise notice 'ok v3.20-1: a version is judged by the audience IT was written under, not by what the task is today: %', r;
 end $$;
 commit;
+
+-- v3.21-1 is held by FAIL 3 above: the peer's sync includes meal~2026-09-08~dinner
+-- the way it includes the grocery list. Journal, review and calendar stay hidden.

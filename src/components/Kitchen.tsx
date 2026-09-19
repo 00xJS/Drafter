@@ -20,6 +20,7 @@ import {
   buildGroceryList,
   cookStepsRecipeId,
   cookedIndex, visitIndex,
+  mealsForSlot,
   cookedLine,
   cookedSummary,
   groceriesForMealDates,
@@ -62,6 +63,10 @@ interface Props {
    * in a household write the same row and one plan replaces the other.
    */
   myId?: string | null
+  /** A household member's display name, for "Maria planned dinner". */
+  nameOf?(id: string | undefined): string | null
+  /** Share on a breakfast, lunch or dinner — nobody to share with when this is off. */
+  inHousehold?: boolean
   recipes: Recipe[]
   meals: Meal[]
   groceries: GroceryList[]
@@ -94,7 +99,7 @@ interface Props {
   onOpenDayConsumed?(): void
 }
 
-export function Kitchen({ myId = null, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
+export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(() => {
@@ -380,6 +385,9 @@ export function Kitchen({ myId = null, recipes, meals, groceries, places, onSave
         <WeekPlan
           week={week}
           meals={weekMeals}
+          myId={myId}
+          nameOf={nameOf}
+          inHousehold={inHousehold}
           recipes={recipes}
           places={places}
           cooked={cooked}
@@ -503,6 +511,9 @@ export function Kitchen({ myId = null, recipes, meals, groceries, places, onSave
 function WeekPlan({
   week,
   meals,
+  myId,
+  nameOf,
+  inHousehold,
   recipes,
   places,
   cooked,
@@ -519,6 +530,9 @@ function WeekPlan({
 }: {
   week: { key: string; start: Date; end: Date; label: string }
   meals: Meal[]
+  myId?: string | null
+  nameOf?(id: string | undefined): string | null
+  inHousehold?: boolean
   recipes: Recipe[]
   places: Place[]
   /** When each recipe was last cooked, beside it in the pickers. */
@@ -563,7 +577,7 @@ function WeekPlan({
           ›
         </button>
       </div>
-      <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. These also show on the calendar.</p>
+      <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. Share any slot with the household — either of you can — and it shows on their week as a task.</p>
       {onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0) && (
         <div className="meal-plan-cta">
           <p>
@@ -586,12 +600,18 @@ function WeekPlan({
                 <strong>{d.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                 <span>{d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
               </div>
-              {MEAL_SLOTS.map(slot => (
+              {MEAL_SLOTS.map(slot => {
+                const { mine, theirs } = mealsForSlot(meals, key, slot, myId)
+                return (
                 <MealSlotRow
                   key={slot}
                   date={key}
                   slot={slot}
-                  meal={meals.find(m => m.date === key && m.slot === slot)}
+                  meal={mine}
+                  theirs={theirs}
+                  nameOf={nameOf}
+                  inHousehold={inHousehold}
+                  myId={myId}
                   recipes={recipes}
                   places={places}
                   cooked={cooked}
@@ -602,7 +622,8 @@ function WeekPlan({
                   onCreateRecipe={onCreateRecipe}
                   onOpenRecipe={onOpenRecipe}
                 />
-              ))}
+                )
+              })}
             </li>
           )
         })}

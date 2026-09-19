@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { newerStamp } from '../../shared/domain.mjs'
 import { MEAL_SLOT_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
-import { CookedIndex, MealMain, VisitIndex, lastCookedShort, lastWentShort, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
+import { CookedIndex, MealMain, VisitIndex, lastCookedShort, lastWentShort, mealIsShared, mealLabel, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
 import { placeByName, placeEmoji, placeFor } from '../places'
 import { ConfirmButton } from './ConfirmButton'
 import { PlaceKindChooser } from './PlaceKindChooser'
@@ -94,6 +95,10 @@ export function MealSlotRow({
   date,
   slot,
   meal,
+  theirs,
+  nameOf,
+  inHousehold,
+  myId,
   recipes,
   places,
   cooked,
@@ -108,6 +113,12 @@ export function MealSlotRow({
   date: string
   slot: MealSlot
   meal?: Meal
+  /** Other household members' plans for this slot. Named, not edited. */
+  theirs?: Meal[]
+  nameOf?(id: string | undefined): string | null
+  /** A household slot can be shared as a task the other member can do. */
+  inHousehold?: boolean
+  myId?: string | null
   recipes: Recipe[]
   /** Somewhere a bought meal can come from; also what makes it count as an outing. */
   places: Place[]
@@ -151,7 +162,16 @@ export function MealSlotRow({
    * meal there is built on, not replaced: its notes stay, and its sides stay
    * while it is still cooked (mealWithMain).
    */
-  const write = (main: MealMain) => onSave(mealWithMain(meal, { date, slot }, main))
+  const write = (main: MealMain) => {
+    const next = mealWithMain(meal, { date, slot }, main)
+    // A new household meal stays yours until someone taps Share. A slot that
+    // already has an answer keeps the one it has, including a v3.21 meal with
+    // no flag — that one is already on the other person's week.
+    if (inHousehold && next.shared === undefined && !meal) next.shared = false
+    onSave(next)
+  }
+  const mine = !meal?.ownerId || !myId || meal.ownerId === myId
+  const share = (m: Meal, shared: boolean) => onSave({ ...m, shared, updatedAt: newerStamp(m.updatedAt) })
   const pick = (value: string) => {
     if (value.startsWith('r:')) {
       const r = recipes.find(x => x.id === value.slice(2))
@@ -280,6 +300,40 @@ export function MealSlotRow({
           </optgroup>
         </select>
       )}
+      {theirs && theirs.length > 0 && (
+        <ul className="meal-household" aria-label="Household plans">
+          {theirs.map(m => (
+            <li key={m.id}>
+              {nameOf?.(m.ownerId) ?? 'Household'}: {mealLabel(m)}
+              {inHousehold &&
+                (mealIsShared(m) ? (
+                  <span className="meal-share-mark">👥 Shared</span>
+                ) : (
+                  <button type="button" className="btn subtle meal-share" onClick={() => share(m, true)}>
+                    Share
+                  </button>
+                ))}
+            </li>
+          ))}
+        </ul>
+      )}
+      {inHousehold && meal &&
+        (mine ? (
+          <button
+            type="button"
+            className={mealIsShared(meal) ? 'btn subtle meal-share on' : 'btn subtle meal-share'}
+            aria-pressed={mealIsShared(meal)}
+            onClick={() => share(meal, !mealIsShared(meal))}
+          >
+            {mealIsShared(meal) ? '👥 Shared' : 'Share'}
+          </button>
+        ) : mealIsShared(meal) ? (
+          <span className="meal-share-mark">👥 Shared</span>
+        ) : (
+          <button type="button" className="btn subtle meal-share" onClick={() => share(meal, true)}>
+            Share
+          </button>
+        ))}
       {meal?.recipeId && onOpenRecipe && (
         <button
           className="btn subtle"

@@ -2,14 +2,6 @@
 .people-tab-seg {
   margin: 4px 0 14px;
 }
-/* the household's Mine / Everyone sits at the right of the Tasks segment row
-   (.mine-seg pushes it there); on a narrow phone it wraps under the segments */
-.tasks-seg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 /* the pad's way back to the index, left of the title */
 .notes-back {
   margin-right: 12px;
@@ -269,6 +261,11 @@
   margin: 0 4px 12px;
   font-size: 1.05rem;
   font-weight: 600;
+}
+.today-plate + .today-plate {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
 }
 .muted {
   color: var(--muted);

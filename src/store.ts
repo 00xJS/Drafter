@@ -80,8 +80,8 @@ export interface Store {
   /**
    * Everything I may see: allItems minus other household members' personal
    * records (PERSONAL_KINDS: journal, review, calendar, habit, routine and the
-   * wardrobe). Trash, JSON export and counts use this so a peer's deleted diary
-   * never shows up in my bin.
+   * wardrobe). Meals are the household's, like the grocery list. Trash, JSON
+   * export and counts use this so a peer's deleted diary never shows up in my bin.
    */
   visibleItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
@@ -217,8 +217,11 @@ export function useItems(myId: string | null = null): Store {
     [items],
   )
   const meals = useMemo(
-    () => items.filter((i): i is Meal => i.kind === 'meal' && !i.deletedAt).sort((a, b) => a.date.localeCompare(b.date)),
-    [items],
+    () =>
+      items
+        .filter((i): i is Meal => i.kind === 'meal' && !i.deletedAt && (!i.ownerId || !myId || i.ownerId === myId || i.shared !== false))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [items, myId],
   )
   const groceries = useMemo(
     () => items.filter((i): i is GroceryList => i.kind === 'grocery' && !i.deletedAt),

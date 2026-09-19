@@ -1,12 +1,15 @@
+import { memberName } from '../../household'
 import type { PlannerCtx } from './ctx'
 import { Kitchen } from './lazy'
 
 /** Kitchen: recipes, the week's meals, the grocery list and the figures. */
 export function KitchenScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
+  const { store, household, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
   return (
     <Kitchen
       myId={store.myId}
+      nameOf={id => memberName(household.info, id)}
+      inHousehold={p.inHousehold}
       recipes={store.recipes}
       meals={store.meals}
       groceries={store.groceries}

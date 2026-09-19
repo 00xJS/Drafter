@@ -5,37 +5,20 @@ import { describe, expect, it } from 'vitest'
 
 // Universal Links and Password AutoFill need three things to agree: the
 // capability in the entitlements, an association file Apple can fetch as JSON
-// from the site, and the same <team>.<bundle> in both. They arrived together
-// with the Apple Developer Program membership; before it, a free personal team
-// could not provision push at all and the entitlements file was empty on purpose.
+// from the site, and the same <team>.<bundle> in both. The Apple Developer
+// Program membership is on, so the file Xcode signs is the paid entitlements.
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
-// The file Xcode signs, and the one waiting for the membership to clear. A
-// free personal team cannot provision push or associated domains — asking for
-// either fails the build — so the live file stays empty until then and
-// `npm run ios:apple` swaps the paid one in.
 const entitlements = read('../../ios/App/App/App.paid.entitlements')
 const live = read('../../ios/App/App/App.entitlements')
-const pkg = JSON.parse(read('../../package.json')) as { scripts: Record<string, string> }
+const pkg = JSON.parse(read('../../package.json')) as { version: string; scripts: Record<string, string> }
 const vite = read('../../vite.config.ts')
 const netlify = read('../../netlify.toml')
 
 describe('the iOS entitlements', () => {
-  it('is one of the two known states, never something hand-edited', () => {
-    // The file Xcode signs is either empty (a free personal team, which cannot
-    // provision push or associated domains — asking fails the build) or exactly
-    // the paid one, put there by `npm run ios:apple`. Anything else is a third
-    // state nobody chose, and the failure it causes arrives at archive time.
-    const paid = live.trim() === entitlements.trim()
-    const free = !live.includes('aps-environment') && !live.includes('associated-domains')
-    expect(paid || free, paid ? '' : 'App.entitlements is neither empty nor the paid file').toBe(true)
-    expect(pkg.scripts['ios:apple']).toContain('App.paid.entitlements')
-  })
-
-  it('can be put back for a free team, which is what a lapsed membership needs', () => {
-    // `git checkout ios/App/App/App.entitlements` is the way back, so the empty
-    // version has to stay in git rather than being generated
+  it('is the paid file, the one Xcode signs', () => {
+    expect(live.trim()).toBe(entitlements.trim())
     expect(pkg.scripts['ios:apple']).toMatch(/^cp ios\/App\/App\/App\.paid\.entitlements ios\/App\/App\/App\.entitlements/)
   })
 
@@ -99,11 +82,15 @@ describe('the association file', () => {
 describe('the release script', () => {
   const pbx = read('../../ios/App/App.xcodeproj/project.pbxproj')
 
-  it('raises the build number before building, not after', () => {
+  it('raises the version people read, then the build number, then builds', () => {
     // App Store Connect refuses a build number it has already seen, and refuses
     // it AFTER the archive, export and upload have run — minutes spent to be
-    // told to change one integer
-    expect(pkg.scripts['release:ios']).toMatch(/^node scripts\/ios-build-number\.mjs && npm run build:ios/)
+    // told to change one integer. The marketing version is raised first so a
+    // phone install is never another anonymous 1.0.
+    expect(pkg.scripts['release:ios']).toBe('node scripts/ios-release.mjs')
+    const release = read('../../scripts/ios-release.mjs')
+    expect(release.indexOf('app-version.mjs')).toBeLessThan(release.indexOf('ios-build-number.mjs'))
+    expect(release.indexOf('ios-build-number.mjs')).toBeLessThan(release.indexOf('build:ios'))
   })
 
   it('moves every configuration together', () => {
@@ -114,10 +101,13 @@ describe('the release script', () => {
     expect(new Set(numbers).size).toBe(1)
   })
 
-  it('leaves the version people read alone', () => {
+  it('leaves the version people read to app-version.mjs', () => {
     const bump = read('../../scripts/ios-build-number.mjs')
     expect(bump).not.toMatch(/writeFileSync[\s\S]*MARKETING_VERSION = \$/)
-    expect(pbx).toContain('MARKETING_VERSION = 1.0;')
+    const names = [...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].map(m => m[1])
+    expect(names.length).toBeGreaterThan(1)
+    expect(new Set(names).size).toBe(1)
+    expect(pkg.version).toBe(names[0])
   })
 
   // Xcode Cloud never runs `npm run release:ios`, so without these it would

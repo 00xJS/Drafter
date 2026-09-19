@@ -168,7 +168,7 @@ describe('one home project: the bar and its filter are gone', () => {
   })
 
   it('keeps the Tasks tablist to its four lenses, with nothing beside it', () => {
-    expect(tasksScreen).toMatch(/<div className="people-tab-seg tasks-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
+    expect(tasksScreen).toMatch(/<div className="people-tab-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
     // the list, the board, the bills and the notes read the store directly
     expect(tasksScreen).toMatch(/tasks=\{store\.tasks\}/)
     expect(tasksScreen).toMatch(/notes=\{store\.notes\}/)
@@ -224,16 +224,18 @@ describe('a remembered segment may not hijack a destination', () => {
     expect(planner).not.toMatch(/const openPlace[\s\S]{0,240}setPeopleTab\(/)
   })
 
-  it('sends "Open review" to Home’s Week segment', () => {
+  it('sends "Open review" to the week page on Home, not a peer tab', () => {
     expect(planner).toMatch(/onOpenReview=\{\(\) => setHomeTab\('week'\)\}/)
   })
 
-  it('reaches the review as Home’s Week segment, not a tab of its own', () => {
-    // Today, Review and the Journal are three segments of one Home tab now
+  it('reaches the review as a page on Home, not a tab of its own', () => {
+    // Home is the day; Week, Journal and Wardrobe open from its cards
     expect(planner).toMatch(/homeTab === 'week' && \(/)
     expect(planner).toMatch(/<Review/)
     expect(planner).not.toMatch(/view === 'review'/)
     expect(planner).not.toMatch(/view === 'today'/)
+    expect(planner).not.toMatch(/HOME_TABS\.map/)
+    expect(planner).toMatch(/className="btn subtle notes-back"/)
   })
 
   it('re-reads the remembered half when a tab bar is tapped', () => {

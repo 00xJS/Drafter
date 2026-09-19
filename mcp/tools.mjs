@@ -600,11 +600,10 @@ export const TOOLS = [
       const needsLookup = projectId || peopleIds !== undefined || placeId !== undefined || placeName !== undefined
       const all = needsLookup ? await db.fetchAll({ kinds: ['project', 'person', 'place'] }) : []
       const ctx = resolveContext(all, { peopleIds, placeId, placeName })
-      // No `shared`, and no way to pass one — the mirror of create_note. A task
-      // an agent writes is the household's, like every other new task, and
-      // withholding one is the person's decision to make in the app.
+      // Private until someone shares it, the same as a task from + New task.
+      // There is no `shared` argument — that decision stays in the app.
       // update_task reads the stored task and writes it back, so a private one
-      // it edits stays private.
+      // it edits stays private, and a shared one stays shared.
       const task = {
         kind: 'task',
         id: newId(),
@@ -624,6 +623,7 @@ export const TOOLS = [
         recurrence: recurrence ? { freq: oneOf(recurrence, RECURRENCE_FREQS, 'recurrence') } : undefined,
         peopleIds: ctx.peopleIds,
         placeId: ctx.placeId,
+        shared: false,
       }
       if (task.status === 'done') task.completedAt = stamp
       if (task.projectId) {

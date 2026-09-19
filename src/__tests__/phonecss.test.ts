@@ -694,3 +694,32 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(rule(floor!.body, sel)).toMatch(/min-height:\s*44px/)
   })
 })
+
+describe('native shell: iPhone proportions, not web estimates', () => {
+  const narrow = narrowBlocks()
+
+  it('names the 44pt floor once and uses it for chrome and buttons', () => {
+    expect(rule(bare, '.native')).toMatch(/--touch:\s*44px/)
+    expect(rule(bare, '.native .icon-btn')).toMatch(/width:\s*var\(--touch\)/)
+    expect(rule(bare, '.native .icon-btn')).toMatch(/height:\s*var\(--touch\)/)
+    expect(rule(bare, '.native .new-post-btn')).toMatch(/width:\s*var\(--touch\)/)
+    expect(rule(bare, '.native .btn')).toMatch(/min-height:\s*var\(--touch\)/)
+    expect(rule(bare, '.native .sync-btn')).toMatch(/min-height:\s*var\(--touch\)/)
+  })
+
+  it('keeps the native phone bar at the same 61px the web phone bar measures, around a 44px control', () => {
+    const phone = narrow.find(b => /--topbar-h/.test(rule(b.body, '.native')))
+    expect(phone, 'native overrides --topbar-h on the phone, not on :root').toBeTruthy()
+    // 8 + 44 + 8 + the 1px border. A scale term would lie: the + and the
+    // icon buttons are fixed squares now, so the bar does not grow.
+    expect(rule(phone!.body, '.native')).toMatch(/--topbar-h:\s*calc\(17px \+ 44px\)/)
+    const web = narrow.find(b => /--topbar-h/.test(rule(b.body, ':root')))
+    expect(barHeight(rule(web!.body, ':root'), 1)).toBe(61)
+  })
+
+  it('uses the 34pt large title, not a scaled body heading', () => {
+    expect(rule(bare, '.native .today-head h2,.native .view-title,.native .people-toolbar h2')).toMatch(
+      /font-size:\s*34px/,
+    )
+  })
+})

@@ -16,7 +16,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
     <>
       {/* one workspace, four lenses on the same project data — the list,
           the board, the bills and the project notes */}
-      <div className="people-tab-seg tasks-seg">
+      <div className="people-tab-seg">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
             <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>

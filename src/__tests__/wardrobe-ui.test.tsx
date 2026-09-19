@@ -586,13 +586,14 @@ describe('Home → Wardrobe', () => {
       <Wardrobe garments={[...tops, ...bottoms]} outfits={[]} wears={[]} onSave={noop} onRemove={noop} onRestore={noop} showToast={noop} open={open} onOpenConsumed={noop} />,
     )
 
-  it('is Home’s fourth segment, and opens on the composer', () => {
+  it('opens from the day, with a way back, on the composer', () => {
     at10()
     const store = { garments: [...tops, ...bottoms], outfits: [], wears: [], upsert: noop, remove: noop, restore: noop }
     const p = { store, household: { myId: null }, homeTab: 'wardrobe', wardrobeOpen: null, setHomeTab: noop, setJournalOpenDate: noop, setWardrobeOpen: noop, openWardrobe: noop, showToast: noop } as unknown as PlannerCtx
     const html = renderToStaticMarkup(<HomeScreen p={p} />)
     const tabs = [...html.matchAll(/role="tab" aria-selected="(true|false)" class="seg(?: on)?">([^<]+)</g)].map(m => `${m[2]}${m[1] === 'true' ? '*' : ''}`)
-    expect(tabs).toEqual(['Today', 'Week', 'Journal', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
+    expect(html).toContain('>Today</button>')
+    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('aria-label="Tops"')
     expect(html).toContain('Add clothing')
   })

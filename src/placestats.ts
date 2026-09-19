@@ -7,8 +7,8 @@ import { dateKey } from './utils'
 // PlaceStats the list's rows are (placeStats, over outingsAt), so a done task
 // there and a past meal eaten out there are one outing each, a meal still to
 // come is none, and a figure here agrees with the same figure on a row. The
-// view hands in the tasks and meals the list is handed, so Mine / Everyone
-// narrows neither: places are the household's. The list's kind chip and find
+// view hands in the tasks and meals the list is handed. Places are the
+// household's. The list's kind chip and find
 // box narrow the places before anything is counted, by the list's own rule
 // (placeMatcher), so each figure counts only the rows the list shows. What
 // counts by the calendar — this year, this month, a year's months, a day —

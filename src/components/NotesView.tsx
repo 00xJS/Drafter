@@ -130,9 +130,7 @@ interface Props {
    */
   notes?: Note[]
   /**
-   * Every note, before Mine / Everyone narrowed `notes`. The palette can ask
-   * for a note the current filter hides; it opens rather than doing nothing.
-   * Defaults to `notes`.
+   * Every note the palette can open. Defaults to `notes`.
    */
   allNotes?: Note[]
   /** The reader's account id, when the planner is shared. Decides whose note each one is. */

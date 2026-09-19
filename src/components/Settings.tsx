@@ -6,6 +6,7 @@ import type { HouseholdInfo } from '../household'
 import type { SettingsCtx } from './settings/context'
 import { Modal, ModalHead } from './Modal'
 import { useFeedInfo } from './settings/useFeedInfo'
+import { About } from './settings/About'
 import { AdminLink } from './settings/AdminLink'
 import { Appearance } from './settings/Appearance'
 import { Assistants } from './settings/Assistants'
@@ -40,7 +41,7 @@ const SETTINGS_GROUPS: SettingsGroupDef[] = [
   { key: 'appearance', label: 'Appearance', sections: [Appearance] },
   { key: 'household', label: 'Household', needsAccount: true, sections: [Household, Account] },
   { key: 'assistants', label: 'Assistants', needsAccount: true, sections: [Assistants] },
-  { key: 'data', label: 'Data', sections: [Sync, EmailIn, Templates, AdminLink] },
+  { key: 'data', label: 'Data', sections: [Sync, EmailIn, Templates, AdminLink, About] },
 ]
 
 interface Props {

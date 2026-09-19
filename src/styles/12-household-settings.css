@@ -340,7 +340,7 @@
   display: block;
 }
 
-/* Admin → Apple: the steps for when the paid Apple team exists */
+/* Admin → Apple: the remaining paid-team steps (APNs, TestFlight) */
 .apple-steps {
   margin: 0.6rem 0 1.1rem;
   padding-left: 1.3rem;

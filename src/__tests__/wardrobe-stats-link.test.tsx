@@ -182,7 +182,8 @@ describe('?view=wardrobe-stats, through the shell', () => {
     for (const raw of ['/?view=wardrobe-stats', 'drafter://open?view=wardrobe-stats']) {
       const nav = walk([(_, link) => link(raw)])
       expect(nav, raw).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: { tab: 'stats' } })
-      expect(home(nav).tabs, raw).toEqual(['Today', 'Week', 'Journal', 'Wardrobe*', 'Outfit', 'Clothes', 'Stats*'])
+      expect(home(nav).html, raw).toContain('>Today</button>')
+      expect(home(nav).tabs, raw).toEqual(['Outfit', 'Clothes', 'Stats*'])
     }
   })
 
@@ -191,23 +192,25 @@ describe('?view=wardrobe-stats, through the shell', () => {
     const nav = walk([(_, link) => link('/?view=wardrobe')])
     expect(nav).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: null })
     const { html, tabs } = home(nav)
-    expect(tabs).toEqual(['Today', 'Week', 'Journal', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
+    expect(html).toContain('>Today</button>')
+    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('Today · Mon 14 Sep')
   })
 
-  it('opens Stats for that visit only: back on Home, the Wardrobe segment opens on today’s composer', () => {
+  it('opens Stats for that visit only: back on the day, opening the wardrobe lands on today’s composer', () => {
     at10()
     const nav = walk([
       (_, link) => link('/?view=wardrobe-stats'),
       // the Wardrobe took it and let it go, through the hand-off HomeScreen gives it
       n => propsOf(HomeScreen({ p: ctx(n) }), LazyWardrobe).onOpenConsumed(),
-      // a tap on the Home tab, then one on the Wardrobe segment
+      // a tap on the Home tab is the day; the wardrobe is opened from there, not a peer tab
       n => n.goView('home'),
-      n => press(HomeScreen({ p: ctx(n) }), 'Wardrobe'),
+      n => n.openWardrobe(),
     ])
-    expect(nav).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: null })
+    expect(nav).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: {} })
     const { html, tabs } = home(nav)
-    expect(tabs).toEqual(['Today', 'Week', 'Journal', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
+    expect(html).toContain('>Today</button>')
+    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('Today · Mon 14 Sep')
   })
 })

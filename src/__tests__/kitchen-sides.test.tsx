@@ -330,6 +330,23 @@ describe('the meal slot row', () => {
     expect(row({ slot: 'lunch', meal: meal(DAY, 'lunch', { recipeId: 'pho', title: 'Pho' }) })).toContain('>+ Side</button>')
   })
 
+  it('names another household member\'s plan on the slot, and leaves the picker for yours', () => {
+    const hers = meal(DAY, 'dinner', { id: 'meal~2026-09-17~dinner~maria', title: 'Tacos', ownerId: 'maria' })
+    const html = row({ theirs: [hers], nameOf: id => (id === 'maria' ? 'Maria' : null) })
+    expect(html).toContain('aria-label="Household plans"')
+    expect(html).toContain('Maria: Tacos')
+    expect(html).toContain('meal-slot-label')
+  })
+
+  it('offers Share on breakfast, lunch and dinner so either member can set it', () => {
+    const mine = meal(DAY, 'breakfast', { title: 'Oats' })
+    const hers = meal(DAY, 'lunch', { id: 'meal~2026-09-17~lunch~maria', title: 'Soup', ownerId: 'maria' })
+    const html = row({ slot: 'breakfast', meal: mine, theirs: [hers], inHousehold: true, myId: 'me', nameOf: id => (id === 'maria' ? 'Maria' : null) })
+    expect(html).toContain('>Share</button>')
+    expect(html).toContain('Maria: Soup')
+    expect(row({ slot: 'dinner', meal: { ...mine, slot: 'dinner', shared: true }, inHousehold: true, myId: 'me' })).toContain('👥 Shared')
+  })
+
   it('offers no side on a breakfast, a bought meal, an empty slot or a planning sheet’s Pick…', () => {
     expect(row({ slot: 'breakfast', meal: meal(DAY, 'breakfast', { recipeId: 'pho', title: 'Pho' }) })).not.toContain('+ Side')
     const bought = row({ meal: meal(DAY, 'dinner', { out: true, title: 'Eating out', sides: [{ title: 'Chips' }] }) })

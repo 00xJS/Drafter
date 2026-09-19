@@ -1,7 +1,8 @@
 import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type Person, type Place, type PlaceCategory, type Recipe } from '../../types'
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendars'
-import { mealWrites } from '../../kitchen'
+import { newerStamp } from '../../../shared/domain.mjs'
+import { cookTaskFor, cookTaskId, mealIsShared, mealWrites } from '../../kitchen'
 import { newPlace } from '../../places'
 import { uid } from '../../utils'
 import type { useOverlays } from './useOverlays'
@@ -11,6 +12,8 @@ interface Deps {
   store: Store
   showToast: ReturnType<typeof useToast>['showToast']
   newTask: ReturnType<typeof useOverlays>['newTask']
+  /** A shared breakfast, lunch or dinner writes a household cook task. */
+  inHousehold?: boolean
 }
 
 /** The grocery lists once `rows` are written: each rebuilt list replaces its week's. */
@@ -24,7 +27,7 @@ function afterWrites(lists: GroceryList[], rows: (Meal | GroceryList)[]): Grocer
  * dishes named on the fly, visits and outings logged with an undo, and the
  * tasks that plan them.
  */
-export function useLifeActions({ store, showToast, newTask }: Deps) {
+export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps) {
   /**
    * A place created while planning a meal, of the kind picked there: somewhere
    * you ate for the first time gets tracked from the meal picker, instead of a
@@ -72,6 +75,16 @@ export function useLifeActions({ store, showToast, newTask }: Deps) {
       for (const row of rows) store.upsert(row)
       meals = [...meals.filter(x => x.id !== m.id), m]
       lists = afterWrites(lists, rows)
+      const cookId = cookTaskId(m.id)
+      const had = store.tasks.find(t => t.id === cookId)
+      if (inHousehold && mealIsShared(m)) {
+        if (!had || (had.status !== 'done' && had.status !== 'canceled')) {
+          const draft = cookTaskFor(m, had?.createdAt)
+          store.upsert(had ? { ...had, title: draft.title, dueAt: draft.dueAt, placeId: draft.placeId, updatedAt: newerStamp(had.updatedAt), shared: true } : draft)
+        }
+      } else if (had && had.status !== 'done' && had.status !== 'canceled') {
+        store.remove(had.id)
+      }
     }
   }
   const clearMeals = (ids: string[]) => {
@@ -81,6 +94,8 @@ export function useLifeActions({ store, showToast, newTask }: Deps) {
       const rows = mealWrites(null, id, meals, store.recipes, lists)
       for (const row of rows) store.upsert(row)
       store.remove(id)
+      const cook = store.tasks.find(t => t.id === cookTaskId(id))
+      if (cook && cook.status !== 'done' && cook.status !== 'canceled') store.remove(cook.id)
       meals = meals.filter(x => x.id !== id)
       lists = afterWrites(lists, rows)
     }

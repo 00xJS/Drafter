@@ -14,9 +14,8 @@
 // raises it first so that cannot happen.
 //
 // The number is Apple's build, not a version anyone reads: it only has to go
-// up. MARKETING_VERSION (1.0) is the one shown in the App Store and on the
-// TestFlight card, and this never touches it — raise that by hand when a
-// release deserves a new name.
+// up. MARKETING_VERSION (1.0.1) is the one shown in Settings, TestFlight and
+// the App Store — scripts/app-version.mjs raises that; this never touches it.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

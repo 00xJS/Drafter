@@ -562,6 +562,7 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     // what goes with a cooked main; a bought meal has none
     sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
+    shared: r.shared === true ? true : r.shared === false ? false : undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

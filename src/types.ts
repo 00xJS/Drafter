@@ -119,14 +119,12 @@ export interface Task extends Owned {
   /** Household member responsible (a Supabase user id). */
   assigneeId?: string
   /**
-   * Kept to yourself. A task is the HOUSEHOLD'S unless this says otherwise —
-   * the opposite default from a note, which is private until shared (v3.16).
-   * Household work is what a task is for, and every task written before v3.19
-   * was written to be seen, so absent means shared and only `false` withholds
-   * one. The database enforces it: a peer's query cannot return a task marked
-   * private, and a write that does not mention the flag leaves a stored
-   * `false` where it is (posts_private_flag), so an older build that has never
-   * heard of the field cannot make one public by saving it.
+   * Who in the household can see it. A new task is private (`false`) until
+   * someone shares it, the same as a note. Tasks written before that default
+   * carry no flag: the database still reads those as shared, so the board
+   * does not empty. Only `true` shares one out loud; `false` withholds it.
+   * posts_private_flag keeps a stored `false` when a write omits the field,
+   * so an older build cannot publish a private task by saving it.
    */
   shared?: boolean
   /**
@@ -414,7 +412,7 @@ export interface MealSide {
   title: string
 }
 
-/** A meal planned for a calendar day. One record per day+slot. */
+/** A meal planned for a calendar day. One record per member per day+slot. */
 export interface Meal extends Owned {
   kind: 'meal'
   id: string
@@ -438,6 +436,14 @@ export interface Meal extends Owned {
    */
   sides?: MealSide[]
   notes?: string
+  /**
+   * Shared with the household as a plan they can do. Breakfast, lunch and
+   * dinner all use this: absent means the week can still see it (every meal
+   * written before the option existed), and only `true` writes the cook task.
+   * `false` keeps the slot to its owner. Either member can turn sharing on;
+   * only the owner can turn it off.
+   */
+  shared?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string

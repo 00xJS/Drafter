@@ -154,6 +154,13 @@ describe('a task made from a task', () => {
 describe('what the editor writes', () => {
   const base = (over: Partial<Task> = {}): Task => sanitizeTask(task('t', over))!
 
+  it('a brand-new task is private until its owner shares it', () => {
+    const blank: Task = { kind: 'task', id: 'n', title: '', description: '', status: 'todo', priority: 'normal', tags: [], createdAt: at, updatedAt: at, shared: false }
+    expect(initForm(blank).shared).toBe(false)
+    expect(formValues(initForm(blank), blank, false).shared).toBe(false)
+    expect(formValues({ ...initForm(blank), shared: true }, blank, false).shared).toBe(true)
+  })
+
   it('writes nothing at all while the task is shared, which is what most tasks are', () => {
     const t = base()
     expect(formValues(initForm(t), t, true).shared).toBeUndefined()

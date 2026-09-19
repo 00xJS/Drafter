@@ -86,6 +86,9 @@ export function TaskEditor({
         createdAt: now,
         updatedAt: now,
         tags: [],
+        // A new task is yours until you share it, the same as a note. A preset
+        // can still say otherwise (a cook task, a job for the other member).
+        shared: false,
         ...preset,
       }
     )

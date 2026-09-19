@@ -41,7 +41,7 @@ Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — 
 ### Kitchen
 
 - **Recipes** with steps, a cook mode that keeps the screen awake, and when you last cooked each.
-- **This week** plans breakfast, lunch and dinner, cooked or eaten out, and every meal shows on the calendar. **Grocery** builds the list from the plan.
+- **This week** plans breakfast, lunch and dinner, cooked or eaten out, and every meal shows on the calendar. In a household, Share on any slot puts it on the other person's week as a task — either of you can turn that on. **Grocery** builds the list from the plan.
 - **Plan this week's meals** proposes dinners for the empty nights, and ✨ suggests recipes like the ones you cook.
 - **Stats** shows:
   - your most cooked recipes, home-cooked streaks, and a month calendar of dinners;
@@ -120,18 +120,18 @@ The smoke tests aren't part of `check`, since Netlify has no Postgres. Run `db:s
 - **Web.** Netlify builds `main` with `npm run check`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (the publishable key, `sb_publishable_…`), `SUPABASE_SERVICE_KEY` (the secret key, `sb_secret_…`, for the server features) and `NVIDIA_API_KEY`, with `ANTHROPIC_API_KEY` as the optional backup; the legacy anon and service_role keys still work until the project turns them off; the rest (a second NVIDIA key, GitHub, Google, Outlook, push, email, APNs) are optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin.
 - **Database.** The owner applies migrations with `supabase db push` before deploying code that needs them. A new kind of record must be on the sync allow-list first, or the server refuses it.
 - **Bot.** `supabase functions deploy bot` (add `--use-api` if Docker isn't running), with `BOT_TOKEN` set as a Supabase secret.
-- **iPhone.** `npm run ios`, then Run in Xcode. Free signing lasts 7 days, and the app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
+- **iPhone.** `npm run ios`, then Run in Xcode. The app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
 - **Checks.** Admin → Integrations has **Test AI**, **Send test push** and **Preview my digest**; Admin → Data shows what the database holds, and an hourly sync check puts a banner on the owner's Today if the server refuses a kind of record.
 
-### When you join the Apple Developer Program
+### iPhone and the Apple Developer Program
 
-These need the paid program ($99 a year). The same list is in the app under Admin → Apple.
+The membership is on. Entitlements already ask for push, Universal Links and Password AutoFill, and the live site serves the association file (written at build time from `APPLE_TEAM_ID`). The same list is in the app under Admin → Apple.
 
-1. **Sign with the paid team** in Xcode and note its Team ID. The bundle ID stays `app.drafter.ios`.
-2. **Push through Apple (APNs).** Create an APNs key (a `.p8`). On Netlify set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID=app.drafter.ios`, plus `APNS_ENV=sandbox` for Xcode builds. Add `aps-environment` to `ios/App/App/App.entitlements`, run `npm run ios`, then Settings → Reminders → *Enable on this device*.
-3. **Universal Links.** Copy `ios/apple-app-site-association.example.json` to `public/.well-known/apple-app-site-association` (no extension) with your Team ID, serve it as JSON with a `netlify.toml` header rule, and add `applinks:drafterz.netlify.app` under Associated Domains.
-4. **Password AutoFill.** Add `webcredentials:drafterz.netlify.app` under Associated Domains.
-5. **TestFlight and the App Store.** `npm run build:ios`, then in Xcode *Product → Archive → Distribute App → App Store Connect*.
+1. **Sign with the paid team** in Xcode. The bundle ID stays `app.drafter.ios`.
+2. **Push through Apple (APNs).** Create an APNs key (a `.p8`) if you have not. On Netlify set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID=app.drafter.ios`, plus `APNS_ENV=sandbox` for Xcode builds. `App.entitlements` already has `aps-environment`. Run `npm run ios`, then Settings → Reminders → *Enable on this device*.
+3. **Universal Links.** The association file is written from `APPLE_TEAM_ID` (see `ios/apple-app-site-association.example.json` for the shape). `netlify.toml` serves it as JSON, and `applinks:drafterz.netlify.app` is on the entitlements.
+4. **Password AutoFill.** `webcredentials:drafterz.netlify.app` is on the same entitlements.
+5. **TestFlight and the App Store.** `npm run release:ios` raises the version people read (`1.0.1`, then `1.0.2`…) and Apple's build number, rebuilds, and opens Xcode. Then *Product → Archive → Distribute App → App Store Connect*. Use `npm run release:ios -- --minor` or `--major` for `1.1.0` / `2.0.0`, or `--keep` to only raise the build number. Settings → Data → About shows `Drafter 1.0.1 (7)` on a phone so installs can be told apart. `npm run build:ios` rebuilds without changing either number.
 6. **Later builds.** A Home Screen widget and a share extension, neither built yet.
 
 ## Garment cut-out
@@ -140,7 +140,6 @@ The cut-out runs on the device: Apple's Vision on iOS 17 and later, and elsewher
 
 ## Later
 
-- The paid Apple items above.
 - Places nearby-now ("I'm here"), which needs the location permission and a native build.
 
 ---

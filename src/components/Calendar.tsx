@@ -16,7 +16,7 @@ import {
   weekLabel,
   workByDay,
 } from '../calgrid'
-import { cookedIndex, visitIndex, mealLabel, mealsByDay } from '../kitchen'
+import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot } from '../kitchen'
 import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
@@ -40,6 +40,10 @@ interface Props {
   projectMap: Map<string, Project>
   people: Person[]
   meals: Meal[]
+  /** Whose slot we edit; a peer's dinner for the same night is named beside it. */
+  myId?: string | null
+  nameOf?(id: string | undefined): string | null
+  inHousehold?: boolean
   /** For the day sheet's meal pickers: what you can cook, and where you can eat. */
   recipes: Recipe[]
   places: Place[]
@@ -119,6 +123,9 @@ export function Calendar({
   projectMap,
   people,
   meals,
+  myId,
+  nameOf,
+  inHousehold,
   recipes,
   places,
   events,
@@ -607,7 +614,7 @@ export function Calendar({
                   // Today's rule, not a copy of it: an open gift task near
                   // this day means the gift is in hand, so open that one
                   // rather than offering to plan a second — whoever in the
-                  // household is buying it, so with Mine on too
+                  // household is buying it
                   const gift = plannedGift(person.id, kind, sheetDay, tasks)
                   return (
                     <li key={item.id} className="cal-row">
@@ -731,13 +738,19 @@ export function Calendar({
 
           <section className="cal-sheet-eating" aria-label="Meals">
             <h3 className="cal-sheet-eating-head">Eating</h3>
-            {MEAL_SLOTS.map(slot => (
+            {MEAL_SLOTS.map(slot => {
+              const { mine, theirs } = mealsForSlot(meals, dateKey(sheetDay), slot, myId)
+              return (
               <MealSlotRow
                 onCreateRecipe={onCreateRecipe}
                 key={slot}
                 date={dateKey(sheetDay)}
                 slot={slot}
-                meal={meals.find(m => m.date === dateKey(sheetDay) && m.slot === slot && !m.deletedAt)}
+                meal={mine}
+                theirs={theirs}
+                nameOf={nameOf}
+                inHousehold={inHousehold}
+                myId={myId}
                 recipes={recipes}
                 cooked={cooked}
                 visited={visited}
@@ -746,7 +759,8 @@ export function Calendar({
                 onClear={onClearMeal}
                 onCreatePlace={onCreatePlace}
               />
-            ))}
+              )
+            })}
           </section>
 
           <footer className="cal-sheet-foot">

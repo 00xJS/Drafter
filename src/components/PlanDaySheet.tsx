@@ -205,7 +205,7 @@ export function FocusPicker({
 }
 
 interface Props {
-  /** The tasks the planner shows (Mine / Everyone applied). */
+  /** The tasks the planner shows. */
   tasks: Task[]
   projects: Project[]
   reviews: Review[]

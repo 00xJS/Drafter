@@ -19,10 +19,8 @@ import type { AreaProps } from '../StatsLens'
  * business knowing — the lists' filters, the writes, the ways into a record —
  * is gathered here and handed over as one `areas` prop.
  *
- * Mine / Everyone narrows Home, the Calendar and Tasks; it narrows nothing
- * here, for the same reason it narrows neither People's Stats nor the
- * Kitchen's: whose figures these are was never in question. So the lens reads
- * store.tasks rather than the filtered list.
+ * Whose figures these are was never in question, so the lens reads
+ * store.tasks — the same list Home, the Calendar and Tasks now read.
  *
  * Events are store.events, the ones written here — the same list People's own
  * Stats count seeing someone by. A subscribed calendar's entries are someone

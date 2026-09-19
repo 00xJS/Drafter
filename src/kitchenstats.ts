@@ -26,10 +26,9 @@ import { dateKey } from './utils'
  *   Calendar colours every meal by it, a plan by the way it is planned, so
  *   a meal is one colour there and here.
  *
- * Kitchen has no Mine / Everyone: its recipes, meals and grocery lists are
- * the household's and the tab shows all of them, so nothing here reads who
- * planned what. Only the kitchen's own kinds count; anything else handed in
- * counts for nothing.
+ * Recipes, meals and grocery lists are the household's and the tab shows
+ * all of them, so nothing here reads who planned what. Only the kitchen's
+ * own kinds count; anything else handed in counts for nothing.
  */
 
 /** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named. */

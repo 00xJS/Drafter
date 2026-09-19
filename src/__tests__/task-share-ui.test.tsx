@@ -3,11 +3,12 @@ import { AssignFields } from '../components/taskeditor/AssignFields'
 import { Board } from '../components/Board'
 import { ShareMark } from '../components/bits'
 import { TaskCard } from '../components/TaskCard'
+import { TaskEditor } from '../components/TaskEditor'
 import { TasksTable } from '../components/TasksTable'
 import { initForm } from '../taskform'
 import { Store } from '../store'
 import { Task } from '../types'
-import { button, elements, press, settled, textOf } from './rendered'
+import { button, elements, press, propsOf, settled, textOf } from './rendered'
 
 // "I want to see which tasks are shared vs which are private with a simple
 // glance at a task." Driven rather than grepped: the control has to reach the
@@ -56,7 +57,23 @@ describe('the control in the editor', () => {
     })
   }
 
-  it('reads Shared for a task nobody has withheld, which is what a task is', () => {
+  it('opens a brand-new task as Private', () => {
+    const tree = settled(TaskEditor, {
+      projects: [],
+      people: [],
+      members: MEMBERS,
+      myId: ME,
+      candidates: [],
+      getLatest: () => undefined,
+      onSave: noop,
+      onCommit: noop,
+      onDelete: noop,
+      onClose: noop,
+    })
+    expect(propsOf(tree, AssignFields).form.shared).toBe(false)
+  })
+
+  it('reads Shared for a task nobody has withheld, which is every task written before the private default', () => {
     expect(button(fields(), '👥 Shared').props['aria-pressed']).toBe(true)
     expect(button(fields(), '🔒 Private').props['aria-pressed']).toBe(false)
   })

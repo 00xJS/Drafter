@@ -1,9 +1,10 @@
+import { memberName } from '../../household'
 import type { PlannerCtx } from './ctx'
 import { Calendar, Roadmap } from './lazy'
 
 /** Calendar: the month and week grids, or the projects' timeline. */
 export function CalendarScreen({ p }: { p: PlannerCtx }) {
-  const { store, projectMap, allEvents, sourceMap, calMode, setCalMode, calendarOpenDay, setCalendarOpenDay } = p
+  const { store, household, projectMap, allEvents, sourceMap, calMode, setCalMode, calendarOpenDay, setCalendarOpenDay } = p
   const { openTask, newTask, openProject, setEventEditor, setAttendance, reschedule, openWardrobe } = p
   const { saveMeal, clearMeal, createPlaceInline, createRecipeInline, planForEvent, planOccasion } = p
   return (
@@ -24,11 +25,14 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
           view={calMode}
           tasks={store.tasks}
           // every task, for the day sheet's "Gift planned" alone: a gift someone
-          // else in the household is buying still covers the day under Mine
+          // else in the household is buying still covers the day
           projects={store.projects}
           projectMap={projectMap}
           people={store.people}
           meals={store.meals}
+          myId={household.myId}
+          nameOf={id => memberName(household.info, id)}
+          inHousehold={p.inHousehold}
           recipes={store.recipes}
           places={store.places}
           onSaveMeal={saveMeal}

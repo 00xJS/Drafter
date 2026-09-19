@@ -1,9 +1,11 @@
 import type { IconName } from '../Icon'
 
 // Each tab that shows the same data more than one way holds those ways as
-// segments instead of splitting into peer tabs: Home holds the day, the week,
-// the journal and the wardrobe; Tasks holds the list, board, bills and notes;
-// People holds Places. Desktop and phone then land on the identical six tabs.
+// segments instead of splitting into peer tabs — except Home, which IS the
+// day. Week, Journal and Wardrobe still live on Home as pages you open from
+// today's cards (a link or the palette too), not as a four-way switch beside
+// Today. Tasks holds the list, board, bills and notes; People holds Places.
+// Desktop and phone then land on the identical six tabs.
 //
 // Five of them are nouns — things you add to. Stats is the sixth and is not a
 // noun but a lens: the only tab you never put anything into, reading across
@@ -18,7 +20,7 @@ export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen', 
 export type CalendarMode = 'month' | 'week' | 'timeline'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'timeline']
 export type PeopleTab = 'people' | 'places'
-/** Home's four segments: today's dashboard, the weekly look-back, the journal, and what you wear. */
+/** Home's pages: the day, plus the week / journal / wardrobe opened from it. */
 export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe'
 export const HOME_TABS: { key: HomeTab; label: string }[] = [
   { key: 'today', label: 'Today' },
@@ -75,9 +77,9 @@ export const VIEW_ICONS: Record<View, IconName> = {
   stats: 'stats',
 }
 
-/** Phone tab bar: the same six tabs as the desktop, no catch-all. Home carries
- *  the day, week, journal and wardrobe; Tasks the board, bills and notes. Stats
- *  sits in the middle, between the things you plan and the things you keep. */
+/** Phone tab bar: the same six tabs as the desktop, no catch-all. Home is the
+ *  day; Tasks holds the board, bills and notes. Stats sits in the middle,
+ *  between the things you plan and the things you keep. */
 export const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
   { id: 'home', icon: 'home', label: 'Home' },
   { id: 'calendar', icon: 'calendar', label: 'Calendar' },

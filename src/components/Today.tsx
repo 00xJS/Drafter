@@ -21,7 +21,7 @@ import {
   TaskStatus,
   Wear,
 } from '../types'
-import { mealLabel, tonightDinner } from '../kitchen'
+import { mealLabel, platesOn, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
@@ -670,6 +670,7 @@ export function Today({
       .slice(0, 4)
   }, [places, tasks, meals])
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
+  const plates = useMemo(() => platesOn(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
     const now = Date.now()
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
@@ -867,42 +868,48 @@ export function Today({
         </p>
       )}
 
-      {dinner && (
+      {plates.length > 0 && (
         <section className="chart-card kitchen-tonight">
           <header className="chart-head">
             <div>
-              <h3>{dinner.meal.slot === 'dinner' ? 'Tonight’s dinner' : `Today’s ${MEAL_SLOT_META[dinner.meal.slot].label.toLowerCase()}`}</h3>
-              <p className="chart-sub">
-                {dinner.meal.out
-                  ? 'Eating out — nothing to cook'
-                  : dinner.recipe
-                    ? `${[dinner.recipe, ...dinner.sides].reduce((n, r) => n + r.ingredients.length, 0)} ingredients`
-                    : 'Planned on the Kitchen tab'}
-              </p>
+              <h3>
+                {plates.length === 1 && plates[0].meal.slot === 'dinner'
+                  ? 'Tonight’s dinner'
+                  : plates.length === 1
+                    ? `Today’s ${MEAL_SLOT_META[plates[0].meal.slot].label.toLowerCase()}`
+                    : 'Today’s meals'}
+              </h3>
+              <p className="chart-sub">On the day — the week is planned in Kitchen</p>
             </div>
             <button className="btn subtle" onClick={onOpenKitchen}>
-              Kitchen
+              This week
             </button>
           </header>
-          <p className="kitchen-tonight-title">
-            {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'} {mealLabel(dinner.meal)}
-          </p>
-          {dinner.recipe && (
-            <p className="chart-sub kitchen-tonight-ings">
-              {dinner.recipe.ingredients
-                .slice(0, 6)
-                .map(i => i.name)
-                .join(' · ')}
-              {dinner.recipe.ingredients.length > 6 ? '…' : ''}
-            </p>
-          )}
-          {dinner.recipe && (
-            <div className="ai-row" style={{ padding: '0 4px 12px' }}>
-              <button className="btn primary" onClick={() => onCookRecipe(dinner.recipe!)}>
-                Cook
-              </button>
+          {plates.map(plate => (
+            <div key={plate.meal.id} className="today-plate">
+              <p className="kitchen-tonight-title">
+                {plate.meal.out ? '🥡' : plate.recipe?.emoji || '🍽️'}{' '}
+                {plates.length > 1 ? `${MEAL_SLOT_META[plate.meal.slot].label} · ` : ''}
+                {mealLabel(plate.meal)}
+              </p>
+              {plate.recipe && (
+                <p className="chart-sub kitchen-tonight-ings">
+                  {plate.recipe.ingredients
+                    .slice(0, 6)
+                    .map(i => i.name)
+                    .join(' · ')}
+                  {plate.recipe.ingredients.length > 6 ? '…' : ''}
+                </p>
+              )}
+              {plate.recipe && (
+                <div className="ai-row" style={{ padding: '0 4px 12px' }}>
+                  <button className="btn primary" onClick={() => onCookRecipe(plate.recipe!)}>
+                    Cook
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </section>
       )}
 

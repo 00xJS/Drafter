@@ -12,10 +12,7 @@ import { dateKey } from './utils'
 // here and the same number on a row can never disagree: days seen, never
 // events unless it says events; the rows' 30- and 90-day windows, back from
 // now; the people the list's group chip and find box leave (personMatcher).
-// Mine / Everyone narrows Home, the Calendar and Tasks, never whom you have
-// seen, so it narrows nothing here either, as it narrows nothing on the list
-// or in Today's nudges. Nothing personal is read: no journal, habits or
-// wardrobe reach these figures.
+// Nothing personal is read: no journal, habits or wardrobe reach these figures.
 
 /** The group chips: everyone, or one group's people, as on the list. */
 export type GroupFilter = 'all' | PersonGroup

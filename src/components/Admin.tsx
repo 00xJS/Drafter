@@ -684,15 +684,15 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
           )}
         </section>
 
-        {/* Everything that needs the paid Apple Developer Program, in one place
-            with the steps to build it; the README's "When you join the Apple
-            Developer Program" has the same list. */}
+        {/* The paid Apple Developer Program is on. Entitlements already ask for
+            push, Universal Links and Password AutoFill; the live site serves the
+            association file. This list is what is left to finish, and matches
+            the README's iPhone section. */}
         <section className="settings-section g-apple">
-          <h3>Apple Developer Program — when you join</h3>
+          <h3>Apple Developer Program</h3>
           <p className="field-hint">
-            Everything here needs the paid Apple Developer Program ($99 a year), and none of it is needed today. The iPhone app is signed with a free personal team,
-            installs for a week at a time, reminds you on the device instead of through push, and opens links from digests and invites in Safari. Face ID lock needs
-            none of this. When you join, work down the list.
+            The membership is on. The app is signed for push, Universal Links and Password AutoFill, and the live site already serves the association file. Face ID
+            and on-device reminders already work. Sign with the paid team in Xcode, then finish push and TestFlight below.
           </p>
           <ol className="apple-steps">
             <li>

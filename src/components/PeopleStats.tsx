@@ -30,7 +30,7 @@ import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podiu
 
 interface Props {
   people: Person[]
-  /** Every task, as the list reads them: Mine / Everyone never narrows whom you have seen. */
+  /** Every task, as the list reads them. */
   tasks: Task[]
   /** Your own calendar entries: one that has happened with people on it counts as seeing them, as on the list. */
   entries?: CalendarEntry[]
@@ -272,7 +272,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
           <MonthCalendar
             title="Who you saw"
             today={todayKey}
-            // people are the household's, so these are everyone's visits, while the Calendar a day opens follows Mine
+            // people are the household's, so these are everyone's visits
             sub={(y, m) => `Each day’s people · ${countOf(daysInMonth(byDay, y, m, todayKey), 'day')} with someone`}
             day={key => {
               const on = key <= todayKey ? byDay.get(key) : undefined

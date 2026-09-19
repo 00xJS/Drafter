@@ -20,14 +20,22 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* --- Large title. The page heading reads big, heavy and tight, the way a
-   native navigation title's large state does, instead of as body-sized text. */
+/* HIG tap floor. Every control below reads this so a 36/40/29 mix cannot
+   creep back in as three different guesses. */
+.native {
+  --touch: 44px;
+}
+
+/* --- Large title. iOS Large Title is 34pt bold with tight tracking — 1.7rem
+   of the 16px root was 27px, which is why the heading still read as a web
+   page title rather than a navigation large state. */
 .native .today-head h2,
-.native .view-title {
-  font-size: 1.7rem;
-  font-weight: 800;
-  letter-spacing: -0.021em;
-  line-height: 1.12;
+.native .view-title,
+.native .people-toolbar h2 {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
 /* --- Card sheets. On the phone the editors were already full-height panels;
@@ -101,6 +109,14 @@
 .native .tabs-compact {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   box-shadow: inset 0 1px 0 var(--tabbar-edge);
+  /* 8pt side inset so six labels are not flush with the glass edge. Height
+     stays the phone bar's 56px token: only the icons grow, from 24 to 26. */
+  padding: 6px max(8px, var(--safe-r)) calc(4px + env(safe-area-inset-bottom)) max(8px, var(--safe-l));
+}
+.native .tabs-compact .tab-icon,
+.native .tabs-compact .tab-icon svg {
+  width: 26px;
+  height: 26px;
 }
 
 /* --- iOS segmented controls. The in-tab switchers (Home's Today/Week/Journal/
@@ -111,9 +127,7 @@
    track from 04-table-modal.css, and the Stats lens's nine-segment track scrolls
    (.seg-scroll) rather than stretching; these rules refine the shell's own.
    Scoped to those container classes so the grocery, settings and other
-   segmented controls keep their own shape. The household's Mine / Everyone shares the Tasks row
-   (.tasks-seg), so on iOS it becomes a second full-width track on its own line,
-   consistent with the switchers above it. */
+   segmented controls keep their own shape. */
 .native .people-tab-seg .segmented,
 .native .segmented.cal-mode {
   display: flex;
@@ -128,11 +142,15 @@
 .native .segmented.cal-mode .seg {
   flex: 1 1 0;
   min-width: 0;
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--text-2);
   border-radius: 9px;
-  padding: 8px 10px;
+  padding: 0 10px;
   text-align: center;
   font-weight: 600;
 }
@@ -225,5 +243,151 @@
     color: var(--accent-text);
     border-color: var(--accent-ring);
     opacity: 0.7;
+  }
+}
+
+/* --- iPhone proportions. The web phone rules size chrome for a 375pt
+   browser: 36px icon buttons, a 40px +, 7px-padded ~36px .btn, a 29px
+   sync pill and 12px gutters. On a real phone those read as estimates.
+   These match HIG — 44pt targets, 16pt gutters, 34pt large titles —
+   and only under html.native, so the website is unchanged. */
+@media (max-width: 640px) {
+  .native {
+    /* 8 + 44 + 8 + the 1px border. Header controls are now a fixed 44px
+       square / pill, so the token no longer has to race a growing .btn. */
+    --topbar-h: calc(17px + 44px);
+  }
+
+  .native .topbar {
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top)) max(16px, var(--safe-r)) 8px max(16px, var(--safe-l));
+  }
+
+  .native .btn {
+    min-height: var(--touch);
+    padding: 10px 16px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .native .btn.primary:active {
+    background: var(--accent-hover);
+  }
+
+  /* after .btn so padding: 0 wins the 0,2,0 tie */
+  .native .icon-btn {
+    width: var(--touch);
+    height: var(--touch);
+    padding: 0;
+    border-radius: 12px;
+  }
+  .native .icon-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .native .new-post-btn {
+    width: var(--touch);
+    height: var(--touch);
+    padding: 0;
+    border-radius: 14px;
+  }
+  .native .new-post-plus,
+  .native .new-post-plus svg {
+    font-size: 22px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .native .sync-btn {
+    min-height: var(--touch);
+    padding: 0 12px;
+  }
+
+  .native .content {
+    padding: 16px;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 20px);
+  }
+
+  .native .people-tab-seg {
+    margin: 8px 0 16px;
+  }
+
+  /* Large title takes the first row; ‹ week › and other chrome wrap
+     under it instead of squeezing the heading into three ragged lines. */
+  .native .people-toolbar {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .native .people-toolbar > h2,
+  .native .people-toolbar > div:first-child {
+    flex: 1 0 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .native .swipe-face,
+  .native .dash-list li,
+  .native .event-list .event-row {
+    min-height: var(--touch);
+    padding: 12px 8px;
+  }
+
+  .native .recipe-card,
+  .native .meal-day,
+  .native .grocery-line {
+    min-height: var(--touch);
+    padding: 14px 16px;
+    border-radius: 12px;
+  }
+
+  .native .meal-slot {
+    min-height: var(--touch);
+    gap: 10px;
+  }
+  .native .meal-slot select {
+    min-height: var(--touch);
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .native input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']):not([type='color']),
+  .native select {
+    min-height: var(--touch);
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+  .native textarea {
+    min-height: 88px;
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .native .modal-head {
+    min-height: var(--touch);
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .native .modal-head h2 {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .native .modal-body {
+    padding: 16px;
+  }
+  .native .modal-foot {
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  /* the composer is 4px taller once its buttons are 44, so the toast that
+     clears it needs the same 4px or it sits on "+ Look" */
+  .native .wardrobe-actions {
+    margin-inline: -16px;
+    padding: 8px 16px;
+  }
+  html.native:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 68px);
   }
 }
