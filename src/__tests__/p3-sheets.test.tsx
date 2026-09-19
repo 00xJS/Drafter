@@ -238,9 +238,7 @@ describe('today’s focus on Today (B4)', () => {
     expect(due).toContain('Peer pick')
     expect(due).not.toContain('Sort the garage')
     expect(due).toContain('+ 1 in today’s focus')
-    const next = sectionAt(html, 'class="chart-card next-up"')
-    expect(next).not.toContain('Sort the garage')
-    expect(next).toContain('in today’s focus')
+    expect(html).not.toContain('class="chart-card next-up"')
     // the tile counts the day, focus and all
     expect(html).toMatch(/Due today<\/div><div class="stat-value">3</)
   })
@@ -373,21 +371,22 @@ describe('Plan my day (B2)', () => {
     renderToStaticMarkup(
       <PlanDaySheet tasks={tasks()} projects={[]} reviews={[]} events={[]} today={TODAY} now={new Date(2026, 8, 14, 9)} myId="me" onApply={noop} onClose={noop} {...over} />,
     )
-  const current = (html: string) => /aria-current="step"><span class="plan-step-n" aria-hidden="true">(\d)<\/span>(\w+)/.exec(html)?.slice(1)
-
-  it('is a named dialog that starts on what is overdue', () => {
+  it('is a named dialog that picks today’s three, not a second day planner', () => {
     const html = sheet()
     expect(html).toContain('role="dialog"')
     expect(html).toContain('Plan my day')
-    expect(current(html)).toEqual(['1', 'Overdue'])
-    expect(html).toContain('Renew passport')
-    for (const s of ['All → today', 'All → tomorrow', 'Tomorrow', 'Next week', 'Wishlist']) expect(html).toContain(s)
-    expect(html).toContain('Next: Focus')
+    expect(html).toContain('Home is the day')
+    expect(html).toContain('modal-head-compose')
+    expect(html).toContain('>Cancel</button>')
+    expect(html).toContain('>Done</button>')
+    expect(html).not.toContain('aria-current="step"')
+    expect(html).not.toContain('All → today')
+    expect(html).not.toContain('>Meals<')
+    expect(html).toContain('overdue 4d')
   })
 
-  it('opens on Focus when asked, with your picks on top and the rest grouped below', () => {
+  it('opens with your picks on top and the rest grouped below', () => {
     const html = sheet({ initialStep: 'focus' })
-    expect(current(html)).toEqual(['2', 'Focus'])
     const picks = html.slice(html.indexOf('<ol class="plan-picks">'), html.indexOf('</ol>', html.indexOf('<ol class="plan-picks">')))
     expect(picks).toContain('Sort the garage')
     expect(picks).not.toContain('Peer pick')
@@ -395,30 +394,23 @@ describe('Plan my day (B2)', () => {
     expect(html).toContain('Done already: Call the bank')
     expect(html).toContain('Due today')
     expect(html).toContain('Put the bins out')
-    expect(html).toContain('placeholder="+ New task for today"')
+    expect(html).not.toContain('placeholder="+ New task for today"')
+    expect(sheet({ onNewForToday: noop })).toContain('+ New task for today')
   })
 
-  it('falls back to Focus when there is nothing overdue', () => {
-    expect(current(sheet({ tasks: tasks().filter(t => t.id !== 'late'), initialStep: 'overdue' }))).toEqual(['1', 'Focus'])
-  })
-
-  it('suggests an hour for each pick, or keeps the block it already has', () => {
+  it('offers time under the picks, off until you choose a block', () => {
     const fresh = sheet({ initialStep: 'time', mirroring: true })
     expect(fresh).toContain('Blocks show as busy on your connected calendars.')
-    expect(fresh).toMatch(/aria-pressed="true">1 hour</)
-    expect(fresh).toContain('9am–10am')
+    expect(fresh).toMatch(/aria-pressed="true">No block</)
+    expect(fresh).toContain('>1 hour<')
     const kept = sheet({ initialStep: 'time', entries: [block] })
-    expect(kept).toMatch(/aria-pressed="true">Keep as is</)
     expect(kept).toContain('Already blocked 10am–11am')
     expect(kept).not.toContain('Blocks show as busy')
   })
 
-  it('adds a Meals step when lunch or dinner is empty', () => {
-    const html = sheet({ ...kitchen(), initialStep: 'meals' })
-    expect(current(html)).toEqual(['4', 'Meals'])
-    for (const s of ['Pasta', 'Soup', 'Pret']) expect(html).toContain(s)
-    // no kitchen, no step
-    expect(sheet()).not.toContain('>Meals<')
+  it('leaves meals on Home — the sheet never grows a Meals step', () => {
+    expect(sheet({ ...kitchen(), initialStep: 'meals' })).not.toContain('>Meals<')
+    expect(sheet({ ...kitchen() })).not.toContain('Pasta')
   })
 })
 
@@ -490,7 +482,9 @@ describe('Shut down (B3)', () => {
     expect(html).toContain('placeholder="One line about today…"')
     expect(html).toContain('A good day')
     expect(html).toContain('aria-checked="true"')
-    expect(sheet({ routines: [] })).toContain('No evening routine yet')
+    expect(sheet({ routines: [] })).toContain('No evening routine yet — add one from the Routines card on Home.')
+    expect(html).toContain('This closes Home for today')
+    expect(html).toContain('modal-head-compose')
   })
 
   it('lists the leftovers with your unfinished focus kept for tomorrow, and a way to move them all', () => {

@@ -634,6 +634,13 @@ describe('notes as plain text', () => {
 })
 
 describe('notes, focus and the week plan over MCP', () => {
+  it('create_task writes a private task, the same as + New task', async () => {
+    const sent = serveHousehold(household())
+    const out = (await tool('create_task').run({ title: 'Buy bulbs', projectId: 'p1' }, ctxFor())) as { created: { shared: boolean } }
+    expect(out.created.shared).toBe(false)
+    expect(sent[0]).toMatchObject({ kind: 'task', title: 'Buy bulbs', shared: false })
+  })
+
   it('create_note stores the app\'s shape, and never a blank note', async () => {
     const sent = serveHousehold(household())
     const out = (await tool('create_note').run({ text: 'Just a thought' }, ctxFor())) as { created: Record<string, unknown> }

@@ -16,6 +16,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
     <>
       {/* one workspace, four lenses on the same project data — the list,
           the board, the bills and the project notes */}
+      <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, board, bills and notes.</p>
       <div className="people-tab-seg">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (

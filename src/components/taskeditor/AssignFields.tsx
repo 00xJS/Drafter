@@ -14,6 +14,9 @@ interface Props {
   myId?: string | null
   /** Whose task this is. A peer's is theirs to withhold, not yours. */
   ownerId?: string | null
+  /** New-task essentials: who it's for and who can see it. Status, priority
+   *  and blockers wait behind More details. */
+  essentials?: boolean
 }
 
 /**
@@ -21,7 +24,7 @@ interface Props {
  * there is one home project, a new task takes one only from a preset, template
  * or Draft a plan, and a saved task keeps its own.
  */
-export function AssignFields({ form, set, members, candidates, taskId, myId, ownerId }: Props) {
+export function AssignFields({ form, set, members, candidates, taskId, myId, ownerId, essentials = false }: Props) {
   const { assigneeId, status, priority, blockedBy, shared } = form
   // Whose job it is and who can see it are different questions, but one answer
   // rules out the other: a task the other member is meant to do cannot be kept
@@ -101,6 +104,8 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
         </div>
       )}
 
+      {!essentials && (
+        <>
       <div className="field">
         <span>Status</span>
         <div className="segmented wrap">
@@ -161,6 +166,8 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
             </span>
           )}
         </label>
+      )}
+        </>
       )}
     </>
   )

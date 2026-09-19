@@ -58,7 +58,7 @@ Every figure the app keeps, in one tab. Nothing here sends you to another tab to
 
 ### Wardrobe
 
-Home's fourth segment.
+Clothes and looks, opened from Home — not a tab of its own.
 
 - **Add clothing** from photos, each cut out onto white on the device and checked by you (Looks good, Use original or Retake). A piece can have a back photo and be marked for Work, Days off or Anytime.
 - **Outfit** dresses a day by swiping through tops, bottoms, outerwear and shoes, and knows a work day from a day off. **Surprise me** deals a look, **Wearing this** logs it, and you can plan up to a year ahead (a plan counts only once it's worn).
@@ -125,7 +125,7 @@ The smoke tests aren't part of `check`, since Netlify has no Postgres. Run `db:s
 
 ### iPhone and the Apple Developer Program
 
-The membership is on. Entitlements already ask for push, Universal Links and Password AutoFill, and the live site serves the association file (written at build time from `APPLE_TEAM_ID`). The same list is in the app under Admin → Apple.
+The membership is on. Entitlements already ask for push, Universal Links and Password AutoFill, and the live site serves the association file (written at build time from `APPLE_TEAM_ID`). Admin → Integrations shows whether iOS push (APNs) is configured.
 
 1. **Sign with the paid team** in Xcode. The bundle ID stays `app.drafter.ios`.
 2. **Push through Apple (APNs).** Create an APNs key (a `.p8`) if you have not. On Netlify set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID=app.drafter.ios`, plus `APNS_ENV=sandbox` for Xcode builds. `App.entitlements` already has `aps-environment`. Run `npm run ios`, then Settings → Reminders → *Enable on this device*.

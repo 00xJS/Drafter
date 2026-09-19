@@ -352,9 +352,13 @@
        line; wrapping puts Save on its own row instead of pushing it off the
        edge. Phone-only: a desktop sheet is wide enough that both rows already
        fit, and wrapping (or a minimum gap in a space-between row) there would
-       change layout no reader asked to change. */
+       change layout no reader asked to change. Compose heads stay one row:
+       Cancel and Save shrink before they wrap onto the scrolling body. */
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .modal-head-compose {
+    flex-wrap: nowrap;
   }
   .modal-foot {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));

@@ -283,6 +283,11 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             meals={store.meals}
             recipes={store.recipes}
             places={store.places}
+            onNewForToday={() => {
+              const d = new Date()
+              d.setHours(18, 0, 0, 0)
+              newTask({ dueAt: d.toISOString(), focusOn: today, focusBy: household.myId ?? undefined })
+            }}
             onApply={r => {
               closeSheet()
               applyDayPlan(r)

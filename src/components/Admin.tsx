@@ -8,7 +8,6 @@ const GROUPS: { key: AdminGroup; label: string }[] = [
   { key: 'data', label: 'Data' },
   { key: 'backups', label: 'Backups' },
   { key: 'integrations', label: 'Integrations' },
-  { key: 'apple', label: 'Apple' },
 ]
 type Group = AdminGroup
 
@@ -544,6 +543,15 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
 
           {status ? (
             <>
+              <HealthCard title="iOS push (APNs)" piece={status.apns} optional>
+                {!status.apns.configured && (
+                  <p className="field-hint">
+                    Set <code>APNS_KEY_ID</code>, <code>APNS_TEAM_ID</code>, <code>APNS_PRIVATE_KEY</code> and <code>APNS_BUNDLE_ID</code> on Netlify. Optional{' '}
+                    <code>APNS_ENV=sandbox</code> for builds run from Xcode.
+                  </p>
+                )}
+              </HealthCard>
+
               <HealthCard title="Web push (VAPID)" piece={status.vapid} optional>
                 {!status.vapid.configured && (
                   <p className="field-hint">
@@ -682,50 +690,6 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
           ) : (
             <p className="field-hint">Checking integrations…</p>
           )}
-        </section>
-
-        {/* The paid Apple Developer Program is on. Entitlements already ask for
-            push, Universal Links and Password AutoFill; the live site serves the
-            association file. This list is what is left to finish, and matches
-            the README's iPhone section. */}
-        <section className="settings-section g-apple">
-          <h3>Apple Developer Program</h3>
-          <p className="field-hint">
-            The membership is on. The app is signed for push, Universal Links and Password AutoFill, and the live site already serves the association file. Face ID
-            and on-device reminders already work. Sign with the paid team in Xcode, then finish push and TestFlight below.
-          </p>
-          <ol className="apple-steps">
-            <li>
-              <strong>Sign with the paid team.</strong> In Xcode, open <code>ios/App</code>, choose the App target → <em>Signing &amp; Capabilities</em> and pick the team.
-              Note its 10-character Team ID; the bundle ID stays <code>app.drafter.ios</code>.
-            </li>
-            <li>
-              <strong>iOS push (APNs).</strong> In the developer site, <em>Certificates, IDs &amp; Profiles → Keys</em>, create a key with Apple Push Notifications
-              service and download the .p8. On Netlify set <code>APNS_KEY_ID</code>, <code>APNS_TEAM_ID</code>, <code>APNS_PRIVATE_KEY</code> (the .p8 contents) and{' '}
-              <code>APNS_BUNDLE_ID</code> = <code>app.drafter.ios</code>, plus <code>APNS_ENV=sandbox</code> for builds run from Xcode. Add <code>aps-environment</code>{' '}
-              to <code>ios/App/App/App.entitlements</code> (<code>development</code>, or <code>production</code> for TestFlight and the App Store), run{' '}
-              <code>npm run ios</code>, then on the iPhone: Settings → Reminders → <em>Enable on this device</em>. The morning digest and due-task nudges then arrive
-              with the app closed.
-            </li>
-            <li>
-              <strong>Universal Links.</strong> Copy <code>ios/apple-app-site-association.example.json</code> to{' '}
-              <code>public/.well-known/apple-app-site-association</code> (no extension) with the Team ID in place of <code>TEAMID</code>, add a{' '}
-              <code>netlify.toml</code> header rule serving that path as <code>application/json</code>, and add the Associated Domains capability with{' '}
-              <code>applinks:drafterz.netlify.app</code>. Links in digests, invites and emails then open the app instead of Safari.
-            </li>
-            <li>
-              <strong>Password AutoFill.</strong> The same file's <code>webcredentials</code> entry, plus <code>webcredentials:drafterz.netlify.app</code> under Associated
-              Domains, lets iCloud Keychain offer your saved password on the sign-in screen.
-            </li>
-            <li>
-              <strong>TestFlight and the App Store.</strong> No more reinstalling every week: <code>npm run build:ios</code>, then in Xcode <em>Product → Archive →
-              Distribute App → App Store Connect</em>, and add yourself as a TestFlight tester.
-            </li>
-            <li>
-              <strong>Later builds.</strong> A Home Screen widget and a share extension each need their own Swift target and the paid team; neither is built yet.
-            </li>
-          </ol>
-          {status && <HealthCard title="iOS push (APNs)" piece={status.apns} optional />}
         </section>
 
         {error && <p className="warn">{error}</p>}

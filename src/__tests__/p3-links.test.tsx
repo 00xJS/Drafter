@@ -171,6 +171,7 @@ describe('Today is handed the routines (B4)', () => {
       'entries={store.events}',
       "onPlanDay={step => openSheet({ kind: 'day', step })}",
       "onShutDown={() => openSheet({ kind: 'shutdown' })}",
+      'onOpenTasks={() => setView(\'tasks\')}',
       "onPlanWeek={() => openSheet({ kind: 'week' })}",
       'onDeferFromFocus={deferFromFocus}',
       'onPlanMeal={planMealIdea}',

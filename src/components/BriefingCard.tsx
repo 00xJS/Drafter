@@ -59,8 +59,8 @@ export interface BriefingCta {
 }
 
 const CTA_META: Record<BriefingCta['label'], { glyph: string; sub: string }> = {
-  'Plan my day': { glyph: '☀️', sub: 'Pick today’s three' },
-  'Shut down': { glyph: '🌙', sub: 'Wrap up, set tomorrow' },
+  'Plan my day': { glyph: '☀️', sub: 'Today’s three on Home' },
+  'Shut down': { glyph: '🌙', sub: 'Close this day' },
   'Day closed': { glyph: '✓', sub: 'See you tomorrow' },
 }
 

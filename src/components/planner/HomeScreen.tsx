@@ -5,6 +5,13 @@ import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
 import { Review, Wardrobe } from './lazy'
 
+/** A Home + New task is due this evening, so it lands on the day, not the Inbox. */
+function todayEveningIso(): string {
+  const d = new Date()
+  d.setHours(18, 0, 0, 0)
+  return d.toISOString()
+}
+
 /** Home is the day. Week, Journal and Wardrobe open from its cards (and from
  *  a link or the palette) as a page with a way back — not as peer tabs that
  *  split the same 18 hours four ways. */
@@ -42,7 +49,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onStatus={changeStatus}
           onDefer={defer}
           onDeferAll={deferAll}
-          onNew={newTask}
+          onNew={preset => newTask(preset ?? { dueAt: todayEveningIso() })}
+          onOpenTasks={() => setView('tasks')}
           meals={store.meals}
           recipes={store.recipes}
           onOpenKitchen={() => setView('kitchen')}

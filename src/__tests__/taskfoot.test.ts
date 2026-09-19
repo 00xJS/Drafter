@@ -3,10 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { sheetSource } from './source'
 
-// At 375pt the task editor's footer — Delete, Duplicate, the ⌘↩ hint, Cancel,
-// Save — wrapped Save onto a second row. On a phone the keyboard hint means
-// nothing, so it goes. The "in <project>" note that sat beside it is gone on
-// every screen: there is one ongoing project, so it said the same on every task.
+// Cancel and Save live in the compose head so they cannot wrap onto the
+// scrolling body. The foot is Delete / Duplicate on a saved task only; the
+// ⌘↩ hint stays there and still hides on a phone. The "in <project>" note
+// is gone: there is one ongoing project, so it said the same on every task.
 
 const editor = readFileSync(fileURLToPath(new URL('../components/TaskEditor.tsx', import.meta.url)), 'utf8')
 

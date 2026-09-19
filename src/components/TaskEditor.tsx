@@ -253,13 +253,17 @@ export function TaskEditor({
   }
 
   const project = projects.find(p => p.id === form.projectId)
+  // A blank new task is title, due and who can see it. Everything else —
+  // description, checklist, people, photos, repeat — waits behind More
+  // details. A bill, or any saved task, opens already expanded.
+  const [details, setDetails] = useState(() => persisted || costsVisible(initForm(base), base))
 
   return (
     // Modal owns Escape, the backdrop and focus; both close through
     // requestClose, which asks before throwing away unsaved changes
     <Modal
       onClose={requestClose}
-      className="modal wide"
+      className="modal wide task-editor"
       panelRef={modalRef}
       onKeyDown={e => {
         const target = e.target as HTMLElement
@@ -271,14 +275,14 @@ export function TaskEditor({
         }
       }}
     >
-        <ModalHead title={task ? 'Edit task' : 'New task'}>
-          <button className="btn primary modal-head-save" onClick={save}>
+        <ModalHead title={task ? 'Edit task' : 'New task'} variant="compose">
+          <button type="button" className="btn primary" onClick={save}>
             Save
           </button>
         </ModalHead>
 
         <div className="modal-body">
-          <div className="editor-grid">
+          <div className={details ? 'editor-grid' : undefined}>
             <div className="editor-main">
               <label className="field">
                 <span>Title</span>
@@ -301,68 +305,77 @@ export function TaskEditor({
               )}
               {aiBusy === 'capture' && !captureProposal && <p className="muted">Parsing capture…</p>}
 
-              <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
-              <DescriptionLinks form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
-              <ChecklistField
-                checklist={form.checklist}
-                onType={onType}
-                onStep={onStep}
-                addChecks={addChecks}
-                title={title}
-                description={description}
-                aiBusy={aiBusy}
-                onBreakDown={() => runAI('checklist')}
-              />
+              {!details && (
+                <>
+                  <DueFields form={form} set={set} />
+                  <AssignFields form={form} set={set} members={members} candidates={[]} taskId={base.id} myId={myId} ownerId={base.ownerId} essentials />
+                </>
+              )}
+
+              {details && (
+                <>
+                  <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
+                  <DescriptionLinks form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
+                  <ChecklistField
+                    checklist={form.checklist}
+                    onType={onType}
+                    onStep={onStep}
+                    addChecks={addChecks}
+                    title={title}
+                    description={description}
+                    aiBusy={aiBusy}
+                    onBreakDown={() => runAI('checklist')}
+                  />
+                </>
+              )}
             </div>
 
-            <aside className="editor-side">
-              <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} ownerId={base.ownerId} />
-              <DueFields form={form} set={set} />
-              <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
-              <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
-              <Images mediaIds={form.mediaIds} set={set} />
-              <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
-            </aside>
+            {details && (
+              <aside className="editor-side">
+                <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} ownerId={base.ownerId} />
+                <DueFields form={form} set={set} />
+                <BillCost form={form} set={set} showCosts={costsVisible(form, base)} />
+                <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
+                <Images mediaIds={form.mediaIds} set={set} />
+                <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
+              </aside>
+            )}
           </div>
 
-          {/* the foot of the form, full width: how often it comes round and its
-              tags, then the Activity feed, then earlier versions */}
-          <div className="editor-bottom">
-            <div className="editor-bottom-row">
-              <RepeatField freq={form.freq} set={set} />
-              <TagsField form={form} set={set} aiBusy={aiBusy} onSuggestTags={() => runAI('tags')} />
+          {details ? (
+            <div className="editor-bottom">
+              <div className="editor-bottom-row">
+                <RepeatField freq={form.freq} set={set} />
+                <TagsField form={form} set={set} aiBusy={aiBusy} onSuggestTags={() => runAI('tags')} />
+              </div>
+
+              {aiError && <p className="warn">{aiError}</p>}
+
+              <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
+
+              {task && <VersionsPanel task={task} getLatest={getLatest} onCommit={onCommit} onClose={onClose} />}
             </div>
-
-            {aiError && <p className="warn">{aiError}</p>}
-
-            <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
-
-            {task && <VersionsPanel task={task} getLatest={getLatest} onCommit={onCommit} onClose={onClose} />}
-          </div>
+          ) : (
+            <button type="button" className="btn subtle editor-more" onClick={() => setDetails(true)}>
+              More details
+            </button>
+          )}
         </div>
 
-        <footer className="modal-foot">
-          {task && (
-            <>
-              <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
-                Delete
-              </ConfirmButton>
-              {onDuplicate && (
-                <button type="button" className="btn subtle" onClick={duplicate}>
-                  Duplicate
-                </button>
-              )}
-            </>
-          )}
-          <span className="spacer" />
-          <small className="muted task-foot-note">⌘↩ to save</small>
-          <button className="btn" onClick={requestClose}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
-        </footer>
+        {task && (
+          <footer className="modal-foot">
+            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
+              Delete
+            </ConfirmButton>
+            {onDuplicate && (
+              <button type="button" className="btn subtle" onClick={duplicate}>
+                Duplicate
+              </button>
+            )}
+            <span className="spacer" />
+            <small className="muted task-foot-note">⌘↩ to save</small>
+          </footer>
+        )}
     </Modal>
   )
 }

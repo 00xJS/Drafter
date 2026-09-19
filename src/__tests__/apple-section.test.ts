@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// The paid Apple Developer Program sits in one place — Admin → Apple, and the
-// README's iPhone list — with the steps still left, and the optional
-// integrations read as optional rather than as faults.
+// Apple signing is done. Admin no longer walks through the paid-team
+// checklist; iOS push health sits with the other host integrations.
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
 const admin = read('../components/Admin.tsx')
@@ -16,20 +15,18 @@ const section = (cls: string) => {
   return admin.slice(start, admin.indexOf('</section>', start))
 }
 
-describe('the paid Apple Developer Program in one place', () => {
-  it('gives Admin one Apple section with every paid-only step and the live APNs status', () => {
-    expect(admin).toMatch(/\{ key: 'apple', label: 'Apple' \}/)
-    expect(admin).not.toContain('g-domains')
-    const apple = section('g-apple')
-    for (const s of ['Sign with the paid team', 'iOS push (APNs)', 'APNS_KEY_ID', 'aps-environment', 'Universal Links', 'applinks:drafterz.netlify.app', 'Password AutoFill', 'webcredentials:drafterz.netlify.app', 'TestFlight', 'widget']) {
-      expect(apple, s).toContain(s)
-    }
-    expect(apple).toMatch(/<HealthCard title="iOS push \(APNs\)" piece=\{status\.apns\} optional \/>/)
-    expect(section('g-integrations')).not.toContain('iOS push (APNs)')
+describe('Apple is signed; Admin no longer has a setup tab for it', () => {
+  it('drops the Apple group and keeps APNs health on Integrations', () => {
+    expect(admin).not.toMatch(/\{ key: 'apple', label: 'Apple' \}/)
+    expect(admin).not.toContain('g-apple')
+    expect(admin).not.toContain('apple-steps')
+    const integrations = section('g-integrations')
+    expect(integrations).toContain('iOS push (APNs)')
+    expect(integrations).toMatch(/<HealthCard title="iOS push \(APNs\)" piece=\{status\.apns\} optional/)
   })
 
   it('reads the optional integrations as optional, with their setup folded away', () => {
-    for (const title of ['Web push \\(VAPID\\)', 'Google Calendar', 'Outlook / Microsoft 365', 'GitHub', 'Digest email \\(Resend\\)']) {
+    for (const title of ['iOS push \\(APNs\\)', 'Web push \\(VAPID\\)', 'Google Calendar', 'Outlook / Microsoft 365', 'GitHub', 'Digest email \\(Resend\\)']) {
       expect(admin).toMatch(new RegExp(`<HealthCard title="${title}" piece=\\{status\\.\\w+\\} optional`))
     }
     expect(admin).toContain("'Optional — off'")
@@ -42,8 +39,10 @@ describe('the paid Apple Developer Program in one place', () => {
     expect(aasa.webcredentials.apps).toEqual(['TEAMID.app.drafter.ios'])
   })
 
-  it('keeps the same list in the README', () => {
+  it('keeps the iPhone list in the README, not in Admin', () => {
     const list = readme.slice(readme.indexOf('### iPhone and the Apple Developer Program'))
     for (const s of ['APNS_KEY_ID', 'apple-app-site-association.example.json', 'webcredentials:drafterz.netlify.app', 'TestFlight']) expect(list, s).toContain(s)
+    expect(list).toContain('Admin → Integrations')
+    expect(list).not.toContain('Admin → Apple')
   })
 })

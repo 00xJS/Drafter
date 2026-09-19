@@ -93,15 +93,33 @@ describe('the task editor', () => {
     // the ✨ button goes with the tags; the side column has neither field now
     expect(at('✨ Suggest tags')).toBeGreaterThan(at('class="field tags-field"'))
     expect(html.slice(0, at('</aside>'))).not.toMatch(/<span>(Repeat|Tags)/)
-    // a new task has no versions: Activity is the last section
-    const fresh = render()
-    expect(fresh.lastIndexOf('class="field')).toBe(fresh.indexOf('class="field activity"'))
+  })
+
+  it('opens a new task as title, due and who — the rest waits behind More details', () => {
+    const html = render()
+    expect(html).toContain('modal-head-compose')
+    expect(html).toContain('>Cancel</button>')
+    expect(html).toContain('>New task</h2>')
+    expect(html).toContain('>Save</button>')
+    expect(html).not.toContain('aria-label="Close"')
+    expect(html).not.toContain('✕')
+    expect(html).toContain('<span>Title</span>')
+    expect(html).toContain('<span>Due</span>')
+    expect(html).toContain('>More details</button>')
+    expect(html).not.toContain('<span>Checklist')
+    expect(html).not.toContain('<span>Status</span>')
+    expect(html).not.toContain('class="field activity"')
+    expect(html).not.toContain('⌘↩ to save')
+    // one Save, in the head — a second one in the foot is what overlapped the
+    // title when the phone header wrapped
+    expect(html.match(/>Save<\/button>/g)).toHaveLength(1)
   })
 
   it('offers People for adding someone new only when it can save them', () => {
-    expect(render()).not.toContain('counts as seeing them')
-    expect(render({ people: [sam] })).toContain('placeholder="Search people to add…"')
-    const adding = render({ onSavePerson: noop })
+    const saved = { task: task() }
+    expect(render(saved)).not.toContain('counts as seeing them')
+    expect(render({ ...saved, people: [sam] })).toContain('placeholder="Search people to add…"')
+    const adding = render({ ...saved, onSavePerson: noop })
     expect(adding).toContain('counts as seeing them')
     expect(adding).toContain('placeholder="Search or add a person…"')
   })

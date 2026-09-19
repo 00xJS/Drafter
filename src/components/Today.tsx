@@ -26,7 +26,7 @@ import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
-import { NextUp, defaultReviewAnchor, doneByWeek, isVisit, nextUp, weekRange, shiftRange } from '../review'
+import { defaultReviewAnchor, doneByWeek, isVisit, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendars'
 import { workDaysOf } from '../calgrid'
@@ -127,6 +127,8 @@ interface Props {
   onOpenSyncCheck?(): void
   /** Hides the banner on this device while this run of failures goes on, for twelve hours. */
   onDismissSyncAlarm?(): void
+  /** The backlog lives on Tasks — Home is only the day. */
+  onOpenTasks?(): void
 }
 
 /**
@@ -576,6 +578,7 @@ export function Today({
   syncAlarm,
   onOpenSyncCheck,
   onDismissSyncAlarm,
+  onOpenTasks,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -638,12 +641,6 @@ export function Today({
   const focus = useMemo(() => focusTasks(tasks, todayKey, myId), [tasks, todayKey, myId])
   const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
   const blocks = useMemo(() => blocksOn(entries, todayKey), [entries, todayKey])
-  const { upNext, upNextInFocus } = useMemo(() => {
-    const pinned = top3.filter((_, i) => !topDone[i])
-    const all: NextUp[] = nextUp(tasks, projects, 6, new Date(), pinned)
-    if (focusIds.size === 0) return { upNext: all, upNextInFocus: 0 }
-    return { upNext: nextUp(tasks, projects, 6, new Date(), pinned, focusIds), upNextInFocus: all.filter(n => focusIds.has(n.task.id)).length }
-  }, [tasks, projects, top3, topDone, focusIds])
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
   const peopleNudges = useMemo(
     () => {
@@ -749,11 +746,7 @@ export function Today({
       sub: s.late.length ? `${s.late.length} already past` : 'Due before midnight',
       tasks: s.today,
     },
-    { key: 'week', title: 'This week', sub: 'Due in the next 7 days', tasks: s.week },
-    { key: 'doing', title: 'In progress, no date', sub: 'Started but not scheduled', tasks: s.doing },
-    { key: 'blocked', title: 'Blocked', sub: 'Waiting on something — worth a nudge?', tasks: s.blocked },
     { key: 'inbox', title: 'Inbox', sub: 'Captured, not yet triaged — give each a date', tasks: s.inbox },
-    { key: 'stale', title: 'Going stale', sub: `To-dos untouched for ${STALE_DAYS}+ days with no date`, tasks: s.stale },
   ]
   const sections = leaveOutFocus(everySection, focusIds)
 
@@ -843,8 +836,8 @@ export function Today({
           sub={s.late.length ? `${s.late.length} already past` : undefined}
           onJump={jump('today')}
         />
-        <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" className="kpi-extra" onJump={jump('week')} />
-        <StatTile label="Open" value={String(s.open.length)} sub="to do, doing or blocked" className="kpi-wide" />
+        <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" className="kpi-extra" onJump={onOpenTasks ?? undefined} />
+        <StatTile label="Open" value={String(s.open.length)} sub="the rest is on Tasks" className="kpi-wide" onJump={onOpenTasks ?? undefined} />
         <div className="stat-tile kpi-extra">
           <div className="stat-label">Done this week</div>
           <div className="stat-value">
@@ -976,28 +969,13 @@ export function Today({
         </section>
       )}
 
-      {upNext.length > 0 && (
-        <section className="chart-card next-up">
-          <header className="chart-head">
-            <div>
-              <h3>Next up</h3>
-              <p className="chart-sub">Ranked across every open task, dated or not</p>
-            </div>
-          </header>
-          <ul className="dash-list tlist">
-            {upNext.map(({ task, reason }) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                reason={reason}
-                onOpen={onOpen}
-                onStatus={onStatus}
-                onDefer={onDefer}
-              />
-            ))}
-          </ul>
-          {upNextInFocus > 0 && <p className="board-more focus-more">+ {upNextInFocus} in today’s focus</p>}
-        </section>
+      {onOpenTasks && (
+        <p className="board-more">
+          <button type="button" className="btn subtle" onClick={onOpenTasks}>
+            All tasks
+          </button>
+          {' — the list, board and bills live there. Home is this day.'}
+        </p>
       )}
 
       {sections.length === 0 ? (

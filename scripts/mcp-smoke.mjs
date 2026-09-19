@@ -708,6 +708,7 @@ async function main() {
     eq(taskRow.data.placeId, place.id, 'placeName resolved to the saved place id')
     eq(taskRow.data.projectId, project.id, 'the task landed in the project')
     eq(taskRow.user_id, OWNER, 'the task belongs to the owner')
+    eq(taskRow.data.shared, false, 'create_task writes a private task, the same as + New task')
 
     const updated = (await call('update_task', { id: task.id, status: 'doing', addChecklist: ['Book a table', 'Buy flowers'] })).updated
     const updatedRow = row(task.id)
@@ -1160,7 +1161,15 @@ async function main() {
     ok(peerTools.includes('create_task') && !peerTools.includes('list_journal'), 'a token without journal access lists no journal tools')
     const peerMade = JSON.parse((await callHttp(peerTok.token, 'create_task', { title: 'Peer via the endpoint' })).text).created
     eq(row(peerMade.id)?.user_id, PEER, "a task created with the peer's token belongs to the peer, not the owner")
-    eq(JSON.parse((await callHttp(peerTok.token, 'list_tasks', { search: 'Dinner with Mum' })).text).count, 1, "the peer sees the owner's shared task: household sharing holds")
+    // create_task is private (v3.23). Household sharing still holds for a task
+    // the owner actually shared — the same rule as a shared note.
+    seedRows([{
+      kind: 'task', id: 'owner-shared-roast', title: 'Sunday roast',
+      description: '', status: 'todo', priority: 'normal', tags: [],
+      shared: true, createdAt: seedStamp, updatedAt: seedStamp,
+    }])
+    eq(JSON.parse((await callHttp(peerTok.token, 'list_tasks', { search: 'Dinner with Mum' })).text).count, 0, "the peer does not see the owner's private task")
+    eq(JSON.parse((await callHttp(peerTok.token, 'list_tasks', { search: 'Sunday roast' })).text).count, 1, "the peer sees the owner's shared task: household sharing holds")
     const peerJournal = await callHttp(peerTok.token, 'list_journal', {})
     ok(peerJournal.isError && /Settings → Assistants/.test(peerJournal.text), 'the journal is refused to a token without journal access')
     const peerProbe = await callHttp(peerTok.token, 'get_task', { id: journalId })

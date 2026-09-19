@@ -123,7 +123,7 @@ export function fetchAdminMe(): Promise<{ isOwner: boolean }> {
 }
 
 /** Admin's sections, in its own order; Users is where it opens unless another is asked for. */
-export type AdminGroup = 'users' | 'data' | 'backups' | 'integrations' | 'apple'
+export type AdminGroup = 'users' | 'data' | 'backups' | 'integrations'
 
 /** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
 export interface SyncCheck {

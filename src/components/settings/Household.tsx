@@ -28,8 +28,8 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
     <section className="settings-section g-household">
       <h3>Household</h3>
       <p className="field-hint">
-        Share the planner with the people you live with: everyone in the household sees the same projects, tasks,
-        notes and people, can assign tasks to each other, and keeps their own calendars, reminders and reviews.
+        Share the planner with the people you live with. Journal, wardrobe and habits stay on each account. Tasks,
+        notes and meals are private until someone shares them; shared work can be assigned either way.
       </p>
       <div className="check-add">
         <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your name as others see it" />

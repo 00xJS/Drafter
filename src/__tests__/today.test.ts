@@ -80,7 +80,7 @@ describe("Today's first screen", () => {
     expect(today).toMatch(/shown\.has\(key\)\s*\?/)
     expect(today).toMatch(/onJump=\{jump\('overdue'\)\}/)
     expect(today).toMatch(/onJump=\{jump\('today'\)\}/)
-    expect(today).toMatch(/onJump=\{jump\('week'\)\}/)
+    expect(today).toMatch(/onJump=\{onOpenTasks \?\? undefined\}/)
   })
 
   it('keeps the reporting-only tiles off the phone', () => {
@@ -167,7 +167,8 @@ describe('one home project: the bar and its filter are gone', () => {
     expect(src('retiredkeys.ts')).toContain("'drafter:mine-only'")
   })
 
-  it('keeps the Tasks tablist to its four lenses, with nothing beside it', () => {
+  it('keeps the Tasks tablist to its four lenses, and says the day is on Home', () => {
+    expect(tasksScreen).toContain('The day is on Home.')
     expect(tasksScreen).toMatch(/<div className="people-tab-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
     // the list, the board, the bills and the notes read the store directly
     expect(tasksScreen).toMatch(/tasks=\{store\.tasks\}/)

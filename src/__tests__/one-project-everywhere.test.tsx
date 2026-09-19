@@ -243,17 +243,18 @@ describe('the Inbox goes by the date, not the project', () => {
       expect(read('../components/Today.tsx')).not.toMatch(/give each a project|!t\.projectId/)
     })
 
-    it('moves an old one on to Going stale: each is listed in exactly one section, and each count says so', () => {
+    it('leaves a stale undated to-do off Home — the backlog is Tasks', () => {
       const html = renderToday([fresh, old])
       expect(listsHolding(html, 'Fresh LIFE to-do')).toEqual(['inbox'])
-      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual([])
       expect(html).toContain('Inbox <span class="board-count">1</span>')
-      expect(html).toContain('Going stale <span class="board-count">1</span>')
+      expect(html).not.toContain('id="today-stale"')
+      expect(html).not.toContain('Going stale')
     })
 
     it('with only stale to-dos there is no Inbox at all', () => {
       const html = renderToday([old])
-      expect(listsHolding(html, 'Old LIFE to-do')).toEqual(['stale'])
+      expect(listsHolding(html, 'Old LIFE to-do')).toEqual([])
       expect(html).not.toContain('id="today-inbox"')
     })
   })

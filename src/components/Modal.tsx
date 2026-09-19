@@ -168,11 +168,32 @@ export function Modal({
 
 /**
  * The title bar every editor already had: the heading (which names the
- * dialog), then any actions (a Save), then ✕. The iOS card sheet hangs its
- * grab handle off `.modal-head`.
+ * dialog), then any actions (a Save), then ✕. `variant="compose"` is the
+ * iOS write sheet: Cancel, the title, then Save — no ✕, and it cannot wrap
+ * those three onto the scrolling body. The card sheet hangs its grab handle
+ * off `.modal-head`.
  */
-export function ModalHead({ title, children }: { title: ReactNode; children?: ReactNode }) {
+export function ModalHead({
+  title,
+  children,
+  variant = 'default',
+}: {
+  title: ReactNode
+  children?: ReactNode
+  variant?: 'default' | 'compose'
+}) {
   const modal = useContext(ModalContext)
+  if (variant === 'compose') {
+    return (
+      <header className="modal-head modal-head-compose">
+        <button type="button" className="btn subtle modal-head-cancel" onClick={modal?.onClose}>
+          Cancel
+        </button>
+        <h2 id={modal?.titleId}>{title}</h2>
+        {children}
+      </header>
+    )
+  }
   return (
     <header className="modal-head">
       <h2 id={modal?.titleId}>{title}</h2>

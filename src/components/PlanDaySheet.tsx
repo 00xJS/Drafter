@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
-import { CalendarEntry, CalendarEvent, MEAL_SLOT_META, Meal, MealSlot, OPEN_STATUSES, Place, Project, Recipe, Review, Task } from '../types'
+import type { ReactNode } from 'react'
+import { OPEN_STATUSES } from '../types'
+import type { CalendarEntry, CalendarEvent, Meal, MealSlot, Place, Project, Recipe, Review, Task } from '../types'
 import { MAX_FOCUS, blocksOn, focusCandidates, freeSlots } from '../focus'
 import type { DayMove, DayPlanResult, FocusCandidate, FocusGroup } from '../focus'
 import { focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
-import { compareTasks, dayOffset } from '../taskutils'
-import { clock, uid } from '../utils'
-import { DueBadge } from './bits'
+import { clock } from '../utils'
 import { Modal, ModalHead } from './Modal'
-import { openMealIdeas } from './MealIdeasCard'
 
 export type PlanStep = 'overdue' | 'focus' | 'time' | 'meals'
 export type MoveTo = DayMove['to']
@@ -26,13 +24,10 @@ export interface PlanDayApply extends DayPlanResult {
   meals: MealChoice[]
 }
 
-const STEP_LABEL: Record<PlanStep, string> = { overdue: 'Overdue', focus: 'Focus', time: 'Time', meals: 'Meals' }
 const MOVE_LABEL: Record<MoveTo, string> = { today: 'Today', tomorrow: 'Tomorrow', nextweek: 'Next week', wishlist: 'Wishlist', done: 'Done' }
 const GROUP_ORDER: FocusGroup[] = ['carried', 'dueToday', 'weekTop', 'nextUp']
 const TODAY_GROUPS: Record<FocusGroup, string> = { carried: 'Carried over', dueToday: 'Due today', weekTop: 'This week’s 3', nextUp: 'Next up' }
-const OVERDUE_MOVES: readonly MoveTo[] = ['today', 'tomorrow', 'nextweek', 'wishlist', 'done']
 const DURATIONS = [30, 60, 90] as const
-const DEFAULT_MINUTES = 60
 const MINUTE_MS = 60_000
 
 const durationLabel = (m: number) => (m === 30 ? '30 min' : m === 60 ? '1 hour' : m === 90 ? '1½ hours' : `${m} min`)
@@ -221,19 +216,22 @@ interface Props {
   initialStep?: PlanStep
   /** Mirroring to Google or Outlook is on: blocks will show there as busy. */
   mirroring?: boolean
-  /** For the Meals step; without all three it is never offered. */
+  /** For the Meals step; without all three it is never offered. Kept so an
+   *  older caller still type-checks — meals are planned on Home / Kitchen. */
   meals?: Meal[]
   recipes?: Recipe[]
   places?: Place[]
+  /** Open the real new-task sheet, due today, instead of a second composer. */
+  onNewForToday?(): void
   onApply(r: PlanDayApply): void
   onClose(): void
 }
 
 /**
- * "Plan my day": what's overdue gets a new day, up to three things become
- * today's focus, each can have a block of time, and an empty lunch or dinner
- * can be decided. It writes nothing — Done hands the whole plan to the planner,
- * which applies it with one Undo. Done with nothing changed just closes.
+ * "Plan my day": pick today’s three on Home. Overdue, meals and a blank
+ * capture already live on the day — this sheet only names the focus and,
+ * optionally, a block of time. It writes nothing until Done, which the
+ * planner applies with one Undo. Done with nothing changed just closes.
  */
 export function PlanDaySheet({
   tasks,
@@ -246,9 +244,7 @@ export function PlanDaySheet({
   myId,
   initialStep,
   mirroring = false,
-  meals,
-  recipes,
-  places,
+  onNewForToday,
   onApply,
   onClose,
 }: Props) {
@@ -256,52 +252,17 @@ export function PlanDaySheet({
   const [at] = useState(now)
   const live = useMemo(() => tasks.filter(t => !t.deletedAt), [tasks])
   const byId = useMemo(() => new Map(live.map(t => [t.id, t])), [live])
-  // the same set as Today's Overdue section
-  const overdue = useMemo(
-    () => live.filter(t => OPEN_STATUSES.includes(t.status) && !!t.dueAt && dayOffset(t.dueAt, at) < 0).sort(compareTasks),
-    [live, at],
-  )
   const focusNow = useMemo(() => focusTasks(live, today, myId), [live, today, myId])
   const [initialPicks] = useState(() => focusTasks(tasks, today, myId).filter(t => OPEN_STATUSES.includes(t.status)).map(t => t.id))
   const existing = useMemo(() => blocksOn(entries ?? [], today), [entries, today])
-  const mealGroups = useMemo(
-    () => (meals && recipes && places ? openMealIdeas([...meals, ...recipes, ...places, ...live], today, at) : []),
-    [meals, recipes, places, live, today, at],
-  )
 
-  const [moves, setMoves] = useState<Record<string, MoveTo>>({})
   const [picks, setPicks] = useState<string[]>(initialPicks)
-  const [created, setCreated] = useState<{ id: string; title: string }[]>([])
-  const [draft, setDraft] = useState('')
   const [limit, setLimit] = useState(false)
   const [choices, setChoices] = useState<Record<string, BlockChoice>>({})
-  const [timeSeen, setTimeSeen] = useState(initialStep === 'time')
-  const [mealPick, setMealPick] = useState<Partial<Record<MealSlot, string>>>({})
 
-  const steps: PlanStep[] = [...(overdue.length ? (['overdue'] as PlanStep[]) : []), 'focus', 'time', ...(mealGroups.length ? (['meals'] as PlanStep[]) : [])]
-  const [asked, setAsked] = useState<PlanStep>(() => initialStep ?? steps[0])
-  const step: PlanStep = steps.includes(asked) ? asked : 'focus'
-  const index = steps.indexOf(step)
-  const go = (s: PlanStep) => {
-    setAsked(s)
-    if (s === 'time') setTimeSeen(true)
-  }
-
-  const movedToday = new Set(Object.keys(moves).filter(id => moves[id] === 'today'))
-  // moved to another day or off the list: not today's focus, whatever it was
-  const gone = new Set(Object.keys(moves).filter(id => moves[id] !== 'today'))
-  const openPicks = picks.filter(id => !gone.has(id))
-  const titleOf = (id: string) => byId.get(id)?.title || created.find(n => n.id === id)?.title || 'Untitled'
-  const offered = focusCandidates({ tasks: live, projects, reviews, today, now: at, myId, movedToday }).filter(c => !gone.has(c.task.id) && !picks.includes(c.task.id))
-
-  const setMove = (id: string, to: MoveTo | undefined) =>
-    setMoves(m => {
-      const next = { ...m }
-      if (to) next[id] = to
-      else delete next[id]
-      return next
-    })
-  const setAll = (to: MoveTo) => setMoves(m => ({ ...m, ...Object.fromEntries(overdue.map(t => [t.id, to])) }))
+  const openPicks = picks
+  const titleOf = (id: string) => byId.get(id)?.title || 'Untitled'
+  const offered = focusCandidates({ tasks: live, projects, reviews, today, now: at, myId }).filter(c => !picks.includes(c.task.id))
 
   const add = (id: string) => {
     if (picks.includes(id)) return
@@ -311,224 +272,108 @@ export function PlanDaySheet({
   }
   const remove = (id: string) => {
     setPicks(p => p.filter(x => x !== id))
-    setCreated(c => c.filter(n => n.id !== id))
-    setLimit(false)
-  }
-  const addNew = (e: FormEvent) => {
-    e.preventDefault()
-    const title = draft.trim().slice(0, 140)
-    if (!title) return
-    if (openPicks.length >= MAX_FOCUS) return setLimit(true)
-    const id = uid()
-    setCreated(c => [...c, { id, title }])
-    setPicks(p => [...p, id])
-    setDraft('')
     setLimit(false)
   }
 
-  const choiceOf = (id: string): BlockChoice => choices[id] ?? { minutes: existing.has(id) ? 0 : DEFAULT_MINUTES, option: 0 }
+  const choiceOf = (id: string): BlockChoice => choices[id] ?? { minutes: 0, option: 0 }
   const setChoice = (id: string, c: BlockChoice) => setChoices(cs => ({ ...cs, [id]: c }))
   const planned = planBlocks(events, today, at, openPicks.map(id => ({ taskId: id, choice: choiceOf(id) })))
 
   const result: PlanDayApply = {
-    moves: Object.keys(moves).map(id => ({ id, to: moves[id] })),
+    moves: [],
     focusIds: openPicks,
-    // blocks are only proposed once the Time step has been seen: Done from Focus adds no time
-    blocks: timeSeen
-      ? openPicks.flatMap(id => {
-          const b = planned.get(id)?.block
-          return b ? [{ taskId: id, title: titleOf(id), start: b.start.toISOString(), end: b.end.toISOString() }] : []
-        })
-      : [],
-    newTasks: created.filter(n => openPicks.includes(n.id)),
-    meals: mealGroups.flatMap(g => {
-      const idea = g.ideas.find(i => i.key === mealPick[g.slot])
-      return idea ? [{ dayKey: today, slot: g.slot, idea }] : []
+    blocks: openPicks.flatMap(id => {
+      const b = planned.get(id)?.block
+      return b ? [{ taskId: id, title: titleOf(id), start: b.start.toISOString(), end: b.end.toISOString() }] : []
     }),
+    newTasks: [],
+    meals: [],
   }
   const sameFocus = openPicks.length === initialPicks.length && openPicks.every(id => initialPicks.includes(id))
-  const dirty = result.moves.length > 0 || !sameFocus || result.blocks.length > 0 || (result.newTasks?.length ?? 0) > 0 || result.meals.length > 0
+  const dirty = !sameFocus || result.blocks.length > 0
   const done = focusNow.filter(t => t.status === 'done')
+  void initialStep
 
   return (
-    // a stray tap on the backdrop must not throw a half-made plan away; ✕ and Escape still close
     <Modal onClose={onClose} className="modal narrow plan-sheet" closeOnBackdrop={!dirty}>
-      <ModalHead title="Plan my day" />
-      <nav className="plan-steps" aria-label="Steps">
-        <ol>
-          {steps.map((s, i) => (
-            <li key={s}>
-              <button type="button" className={s === step ? 'plan-step on' : 'plan-step'} aria-current={s === step ? 'step' : undefined} onClick={() => go(s)}>
-                <span className="plan-step-n" aria-hidden>
-                  {i + 1}
-                </span>
-                {STEP_LABEL[s]}
-              </button>
-            </li>
-          ))}
-        </ol>
-      </nav>
-
-      <div className="modal-body">
-        {step === 'overdue' && (
-          <section className="plan-section">
-            <p className="plan-lead">
-              {overdue.length} overdue — give each a new day, or let it go. Anything left alone stays as it is.
-            </p>
-            <div className="plan-bulk">
-              <button type="button" className="btn" onClick={() => setAll('today')}>
-                All → today
-              </button>
-              <button type="button" className="btn" onClick={() => setAll('tomorrow')}>
-                All → tomorrow
-              </button>
-            </div>
-            <ul className="plan-list">
-              {overdue.map(t => (
-                <li key={t.id} className="plan-row">
-                  <div className="plan-row-main">
-                    <span className="plan-task-title">{t.title || 'Untitled'}</span>
-                    <DueBadge task={t} />
-                  </div>
-                  <MoveChips title={t.title} value={moves[t.id]} options={OVERDUE_MOVES} onChange={to => setMove(t.id, to)} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {step === 'focus' && (
-          <FocusPicker
-            heading="Today’s focus"
-            picks={openPicks.map(id => ({ id, title: titleOf(id), isNew: created.some(n => n.id === id) }))}
-            doneLine={done.length ? `Done already: ${done.map(t => t.title || 'Untitled').join(' · ')}` : undefined}
-            limit={limit}
-            candidates={offered}
-            groupLabel={TODAY_GROUPS}
-            emptyHint="Up to three things that would make today a good day."
-            onAdd={add}
-            onRemove={remove}
-          >
-            <form className="plan-new" onSubmit={addNew}>
-              <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="+ New task for today" aria-label="New task for today" maxLength={140} />
-              <button type="submit" className="btn" disabled={!draft.trim()}>
-                Add
-              </button>
-            </form>
-          </FocusPicker>
-        )}
-
-        {step === 'time' && (
-          <section className="plan-section">
-            {openPicks.length === 0 ? (
-              <p className="plan-empty">Pick today’s focus first, then give each one some time.</p>
-            ) : (
-              <>
-                <p className="plan-lead">Optional: a block of time for each, in the free stretches of your day.</p>
-                {mirroring && <p className="plan-hint">Blocks show as busy on your connected calendars.</p>}
-                <ul className="plan-list">
-                  {openPicks.map(id => {
-                    const title = titleOf(id)
-                    const choice = choiceOf(id)
-                    const p = planned.get(id)
-                    const had = existing.get(id)
-                    return (
-                      <li key={id} className="plan-row">
-                        <span className="plan-task-title">{title}</span>
-                        <div className="segmented plan-durations" role="group" aria-label={`How long for “${title}”`}>
-                          {DURATIONS.map(m => (
-                            <button key={m} type="button" className={choice.minutes === m ? 'seg on' : 'seg'} aria-pressed={choice.minutes === m} onClick={() => setChoice(id, { minutes: m, option: 0 })}>
-                              {durationLabel(m)}
-                            </button>
-                          ))}
-                          <button type="button" className={choice.minutes === 0 ? 'seg on' : 'seg'} aria-pressed={choice.minutes === 0} onClick={() => setChoice(id, { minutes: 0, option: 0 })}>
-                            {had ? 'Keep as is' : 'No block'}
-                          </button>
-                        </div>
-                        {choice.minutes > 0 &&
-                          (p && p.options.length > 0 ? (
-                            <div className="segmented plan-options" role="group" aria-label={`When for “${title}”`}>
-                              {p.options.map((o, i) => {
-                                const on = p.block?.start.getTime() === o.start.getTime()
-                                return (
-                                  <button key={o.start.getTime()} type="button" className={on ? 'seg on' : 'seg'} aria-pressed={on} onClick={() => setChoice(id, { minutes: choice.minutes, option: i })}>
-                                    {spanLabel(o)}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <p className="plan-empty">No free {durationLabel(choice.minutes)} left today.</p>
-                          ))}
-                        {had && (
-                          <p className="plan-hint">
-                            Already blocked {spanLabel(had)}
-                            {choice.minutes > 0 ? ' — this adds another' : ''}
-                          </p>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </>
-            )}
-          </section>
-        )}
-
-        {step === 'meals' && (
-          <section className="plan-section">
-            <p className="plan-lead">Nothing planned yet. Pick one for later, or leave it.</p>
-            {mealGroups.map(g => (
-              <div key={g.slot} className="plan-group">
-                <h4 className="plan-group-label">{MEAL_SLOT_META[g.slot].label}</h4>
-                <ul className="plan-cands">
-                  {g.ideas.map(idea => {
-                    const on = mealPick[g.slot] === idea.key
-                    return (
-                      <li key={idea.key}>
-                        <button
-                          type="button"
-                          className={on ? 'plan-cand on' : 'plan-cand'}
-                          aria-pressed={on}
-                          onClick={() => setMealPick(m => ({ ...m, [g.slot]: on ? undefined : idea.key }))}
-                        >
-                          <span className="plan-cand-plus" aria-hidden>
-                            {on ? '✓' : '+'}
-                          </span>
-                          <span className="plan-cand-text">
-                            <span className="plan-task-title">
-                              {idea.kind === 'place' && <span aria-hidden>🥡 </span>}
-                              {idea.title}
-                            </span>
-                            <span className="plan-cand-why">{idea.why}</span>
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ))}
-          </section>
-        )}
-      </div>
-
-      <footer className="modal-foot">
-        {index > 0 && (
-          <button type="button" className="btn" onClick={() => go(steps[index - 1])}>
-            Back
-          </button>
-        )}
-        <span className="spacer" />
-        {index < steps.length - 1 && (
-          <button type="button" className="btn" onClick={() => go(steps[index + 1])}>
-            Next: {STEP_LABEL[steps[index + 1]]}
-          </button>
-        )}
+      <ModalHead title="Plan my day" variant="compose">
         <button type="button" className="btn primary" onClick={() => (dirty ? onApply(result) : onClose())}>
           Done
         </button>
-      </footer>
+      </ModalHead>
+
+      <div className="modal-body">
+        <p className="plan-lead">Home is the day. Pick up to three things that would make today a good day. Overdue and meals stay on Home.</p>
+        <FocusPicker
+          heading="Today’s focus"
+          picks={openPicks.map(id => ({ id, title: titleOf(id) }))}
+          doneLine={done.length ? `Done already: ${done.map(t => t.title || 'Untitled').join(' · ')}` : undefined}
+          limit={limit}
+          candidates={offered}
+          groupLabel={TODAY_GROUPS}
+          emptyHint="Up to three things that would make today a good day."
+          onAdd={add}
+          onRemove={remove}
+        >
+          {onNewForToday && (
+            <button type="button" className="btn subtle editor-more" onClick={onNewForToday}>
+              + New task for today
+            </button>
+          )}
+        </FocusPicker>
+
+        {openPicks.length > 0 && (
+          <section className="plan-section">
+            <h3 className="plan-h">Time</h3>
+            <p className="plan-lead">Optional: a block in the free stretches of the day.</p>
+            {mirroring && <p className="plan-hint">Blocks show as busy on your connected calendars.</p>}
+            <ul className="plan-list">
+              {openPicks.map(id => {
+                const title = titleOf(id)
+                const choice = choiceOf(id)
+                const p = planned.get(id)
+                const had = existing.get(id)
+                return (
+                  <li key={id} className="plan-row">
+                    <span className="plan-task-title">{title}</span>
+                    <div className="segmented plan-durations" role="group" aria-label={`How long for “${title}”`}>
+                      {DURATIONS.map(m => (
+                        <button key={m} type="button" className={choice.minutes === m ? 'seg on' : 'seg'} aria-pressed={choice.minutes === m} onClick={() => setChoice(id, { minutes: m, option: 0 })}>
+                          {durationLabel(m)}
+                        </button>
+                      ))}
+                      <button type="button" className={choice.minutes === 0 ? 'seg on' : 'seg'} aria-pressed={choice.minutes === 0} onClick={() => setChoice(id, { minutes: 0, option: 0 })}>
+                        {had ? 'Keep as is' : 'No block'}
+                      </button>
+                    </div>
+                    {choice.minutes > 0 &&
+                      (p && p.options.length > 0 ? (
+                        <div className="segmented plan-options" role="group" aria-label={`When for “${title}”`}>
+                          {p.options.map((o, i) => {
+                            const on = p.block?.start.getTime() === o.start.getTime()
+                            return (
+                              <button key={o.start.getTime()} type="button" className={on ? 'seg on' : 'seg'} aria-pressed={on} onClick={() => setChoice(id, { minutes: choice.minutes, option: i })}>
+                                {spanLabel(o)}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="plan-empty">No free {durationLabel(choice.minutes)} left today.</p>
+                      ))}
+                    {had && (
+                      <p className="plan-hint">
+                        Already blocked {spanLabel(had)}
+                        {choice.minutes > 0 ? ' — this adds another' : ''}
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )}
+      </div>
     </Modal>
   )
 }

@@ -373,6 +373,11 @@
     font-size: 17px;
     font-weight: 600;
   }
+  .native .modal-head-compose .modal-head-cancel,
+  .native .modal-head-compose > .btn.primary,
+  .native .editor-more {
+    min-height: var(--touch);
+  }
   .native .modal-body {
     padding: 16px;
   }

@@ -62,10 +62,10 @@ interface Props {
 }
 
 /**
- * "Shut down": the evening routine, today in a line (the same journal entry
- * Today's card edits, mood included), what is left over, and tomorrow's three.
- * Routine ticks and the journal save as they always do; the leftovers' moves
- * and tomorrow's focus go to the planner through onApply, with one Undo.
+ * Close Home for today: the evening routine, today's line (the same journal
+ * Home's card edits), leftovers of this day, and tomorrow's three waiting on
+ * Home in the morning. Routine ticks and the journal save as they always do;
+ * leftovers and tomorrow's focus go through onApply, with one Undo.
  */
 export function ShutdownSheet({
   tasks,
@@ -136,14 +136,19 @@ export function ShutdownSheet({
   return (
     // routine ticks and the journal are saved as they are made; only the choices below wait for Close the day
     <Modal onClose={onClose} className="modal narrow plan-sheet shutdown-sheet" closeOnBackdrop={!dirty}>
-      <ModalHead title="Shut down" />
+      <ModalHead title="Shut down" variant="compose">
+        <button type="button" className="btn primary" onClick={() => onApply(result)}>
+          Close the day
+        </button>
+      </ModalHead>
       <div className="modal-body">
+        <p className="plan-lead">This closes Home for today. Leftovers move on; tomorrow’s three are waiting on Home in the morning.</p>
         <section className="plan-section">
           <h3 className="plan-h">Evening routine</h3>
           {evening.length > 0 ? (
             <RoutineTicks routines={evening} today={today} onSave={onSaveRoutine} />
           ) : (
-            <p className="plan-empty">No evening routine yet — add one from the Routines card on Today.</p>
+            <p className="plan-empty">No evening routine yet — add one from the Routines card on Home.</p>
           )}
         </section>
 
@@ -208,12 +213,6 @@ export function ShutdownSheet({
           onRemove={remove}
         />
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <button type="button" className="btn primary" onClick={() => onApply(result)}>
-          Close the day
-        </button>
-      </footer>
     </Modal>
   )
 }

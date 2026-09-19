@@ -151,6 +151,28 @@
   font-size: 1rem;
 }
 
+/* Compose sheets (New task): Cancel | title | Save on one row, never wrap. */
+.modal-head-compose {
+  display: grid;
+  grid-template-columns: minmax(4.75rem, auto) minmax(0, 1fr) minmax(4.75rem, auto);
+  align-items: center;
+  gap: 8px;
+}
+.modal-head-compose h2 {
+  justify-self: center;
+  text-align: center;
+}
+.modal-head-compose .modal-head-cancel {
+  justify-self: start;
+}
+.modal-head-compose > .btn.primary {
+  justify-self: end;
+}
+
+.editor-more {
+  align-self: flex-start;
+}
+
 .modal-body {
   padding: 16px 20px;
   display: flex;
