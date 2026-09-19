@@ -48,9 +48,9 @@ import {
   restoreGroceryLine,
   serialiseCookSteps,
   visibleGroceryLines,
+  dishMark,
 } from '../kitchen'
 import type { CookedIndex, VisitIndex } from '../kitchen'
-import { dishMark } from '../kitchenstats'
 import { RECIPE_TEXT_HINT, readRecipe } from '../ai'
 import { useDayKey } from '../useDayKey'
 import { haptic } from '../native'

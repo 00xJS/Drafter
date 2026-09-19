@@ -208,22 +208,7 @@ export function neverCooked(ix: KitchenIndex): Recipe[] {
   return notLately(ix.recipes, ix.cooked).filter(r => !ix.cooked.byId.get(r.id)?.lastCooked)
 }
 
-/**
- * A dish as a day of the calendar or a thumbnail shows it: its recipe's emoji,
- * else the first letters of its name — "CC" for Chicken curry, "La" for
- * Lasagne — and the Recipes list's plate for a name with no letters at all.
- */
-export function dishMark(name: string, emoji?: string): string {
-  const own = emoji?.trim()
-  if (own) return own
-  const words = name
-    .split(/\s+/)
-    .map(w => w.match(/[\p{L}\p{N}]/gu) ?? [])
-    .filter(letters => letters.length > 0)
-  if (words.length === 0) return '🍽️'
-  if (words.length === 1) return words[0][0].toUpperCase() + (words[0][1] ?? '').toLowerCase()
-  return (words[0][0] + words[1][0]).toUpperCase()
-}
+export { dishMark } from './kitchen'
 
 // ---- the days --------------------------------------------------------------------
 

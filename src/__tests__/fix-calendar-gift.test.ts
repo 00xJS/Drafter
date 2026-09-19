@@ -40,8 +40,8 @@ describe("the calendar's day sheet knows a gift is already planned", () => {
     const start = calendar.indexOf('const { person, kind } = item.occasion')
     expect(start).toBeGreaterThan(-1)
     const row = calendar.slice(start, calendar.indexOf("if (item.kind === 'event')", start))
-    expect(row).toMatch(/const gift = plannedGift\(person\.id, kind, sheetDay, tasks\)/)
-    expect(row).toMatch(/\{gift \? \([\s\S]*?onOpen\(gift\)[\s\S]*?Gift planned[\s\S]*?\) : \([\s\S]*?onPlanOccasion\(person, kind, at\)[\s\S]*?Plan a gift/)
+    expect(row).toMatch(/const gift = plannedGift\(person\.id, kind, day, tasks\)/)
+    expect(row).toMatch(/\{gift \? \([\s\S]*?onOpen\(gift\)[\s\S]*?Gift planned[\s\S]*?\) : \([\s\S]*?onPlanOccasion\(person, kind, day\)[\s\S]*?Plan a gift/)
   })
 
   it('finds the gift for the day the sheet shows', () => {
@@ -68,7 +68,7 @@ describe('a gift someone else in the household is buying still counts', () => {
     expect(calendar).not.toMatch(/\ballTasks\b/)
     // the day buckets the month and week grids and the sheet's rows read
     expect(calendar).toMatch(/tasks: tasksByDay\(tasks\)/)
-    expect(calendar).toMatch(/const gift = plannedGift\(person\.id, kind, sheetDay, tasks\)/)
+    expect(calendar).toMatch(/const gift = plannedGift\(person\.id, kind, day, tasks\)/)
   })
 
   it("finds a partner's gift, which is a task of theirs shared with the household", () => {

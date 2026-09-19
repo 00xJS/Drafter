@@ -636,7 +636,7 @@ describe('the Calendar shows a day’s look', () => {
 
   it('in the day sheet too, above its rows, and the shell passes what it needs', () => {
     const src = read('../components/Calendar.tsx')
-    expect(src).toMatch(/<div className="cal-sheet-body">\s*\{lookLine\(sheetDay\)\}/)
+    expect(src).toMatch(/<div className="cal-sheet-body">\s*\{lookLine\(day\)\}/)
     expect(src).toMatch(/<\/div>\s*\{lookLine\(d\)\}\s*\{items\.length > 0 && <ul className="cal-daylist">/)
     const screen = read('../components/planner/CalendarScreen.tsx')
     for (const prop of ['garments={store.garments}', 'wears={store.wears}', 'onOpenWardrobe={openWardrobe}']) expect(screen).toContain(prop)
