@@ -153,6 +153,7 @@ export function MealSlotRow({
   const [newName, setNewName] = useState('')
   // the kind of somewhere new: none until picked, so Save waits for it
   const [newCategory, setNewCategory] = useState<PlaceCategory | undefined>()
+  const [ownPlan, setOwnPlan] = useState(false)
   const meta = MEAL_SLOT_META[slot]
   const slotName = meta.label.toLowerCase()
   /**
@@ -164,7 +165,7 @@ export function MealSlotRow({
    */
   const write = (main: MealMain) => {
     const next = mealWithMain(meal, { date, slot }, main)
-    // A new household meal stays yours until someone taps Share. A slot that
+    // A new household meal stays Just me until you pick Household. A slot that
     // already has an answer keeps the one it has, including a v3.21 meal with
     // no flag — that one is already on the other person's week.
     if (inHousehold && next.shared === undefined && !meal) next.shared = false
@@ -242,110 +243,120 @@ export function MealSlotRow({
     return e ? `${e} ` : ''
   }
   const current = meal ? (meal.out ? (meal.placeId ? `p:${meal.placeId}` : 'out') : meal.recipeId ? `r:${meal.recipeId}` : '') : ''
+  // A dinner they already shared is tonight's dinner. The empty picker made it
+  // look like the slot still needed an answer, and Share sat on both rows.
+  const household = !meal ? theirs?.find(mealIsShared) : undefined
+  const extras = (theirs ?? []).filter(m => m.id !== household?.id)
+  const showPicker = !!meal || ownPlan || !household
+  const who = (id: string | undefined) => nameOf?.(id) || 'Household'
   return (
     <div className={'meal-slot' + (slot === 'dinner' ? ' dinner' : '')}>
       <span className="meal-slot-label">
         {meta.emoji} {meta.label}
       </span>
-      {recipes.length === 0 && places.length === 0 && !onCreateRecipe ? (
-        <span className="muted">Add a recipe first</span>
-      ) : (
-        <select
-          value={current}
-          onChange={e => {
-            if (e.target.value === 'new') {
-              setNewCategory(undefined)
-              setAdd('place')
-              return
-            }
-            if (e.target.value === 'new-recipe') {
-              setAdd('recipe')
-              return
-            }
-            setAdd(null)
-            if (!e.target.value) {
-              if (meal) onClear(meal.id)
-              return
-            }
-            pick(e.target.value)
-          }}
-          aria-label={`${meta.label} on ${date}`}
-        >
-          <option value="">—</option>
-          {(recipes.length > 0 || onCreateRecipe) && (
-            <optgroup label="Cook">
-              {onCreateRecipe && <option value="new-recipe">➕ Something new…</option>}
-              {recipes.map(r => (
-                <option key={r.id} value={`r:${r.id}`}>
-                  {r.emoji ? `${r.emoji} ` : ''}
-                  {r.name}
-                  {/* when each was last cooked, to choose by — but not on the one
-                      chosen: the closed picker is the day's dinner on the week,
-                      and "Curry · 3 weeks ago" there would read as that night */}
-                  {`r:${r.id}` === current ? '' : when(r)}
+      {household && !showPicker && (
+        <div className="meal-household-plan">
+          <strong>{mealLabel(household)}</strong>
+          <small className="muted">{who(household.ownerId)} shared this with the household</small>
+          <button type="button" className="btn subtle" onClick={() => setOwnPlan(true)}>
+            Plan my own
+          </button>
+        </div>
+      )}
+      {showPicker &&
+        (recipes.length === 0 && places.length === 0 && !onCreateRecipe ? (
+          <span className="muted">Add a recipe first</span>
+        ) : (
+          <select
+            value={current}
+            onChange={e => {
+              if (e.target.value === 'new') {
+                setNewCategory(undefined)
+                setAdd('place')
+                return
+              }
+              if (e.target.value === 'new-recipe') {
+                setAdd('recipe')
+                return
+              }
+              setAdd(null)
+              if (!e.target.value) {
+                if (meal) onClear(meal.id)
+                setOwnPlan(false)
+                return
+              }
+              pick(e.target.value)
+            }}
+            aria-label={`${meta.label} on ${date}`}
+          >
+            <option value="">—</option>
+            {(recipes.length > 0 || onCreateRecipe) && (
+              <optgroup label="Cook">
+                {onCreateRecipe && <option value="new-recipe">➕ Something new…</option>}
+                {recipes.map(r => (
+                  <option key={r.id} value={`r:${r.id}`}>
+                    {r.emoji ? `${r.emoji} ` : ''}
+                    {r.name}
+                    {/* when each was last cooked, to choose by — but not on the one
+                        chosen: the closed picker is the day's dinner on the week,
+                        and "Curry · 3 weeks ago" there would read as that night */}
+                    {`r:${r.id}` === current ? '' : when(r)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="Eat out">
+              <option value="new">➕ Somewhere new…</option>
+              <option value="out">🥡 Out, no place</option>
+              {foodFirst(places).map(p => (
+                <option key={p.id} value={`p:${p.id}`}>
+                  {p.emoji ? `${p.emoji} ` : '🥡 '}
+                  {p.name}
+                  {visited && `p:${p.id}` !== current ? ` · ${lastWentShort(visited, p.id)}` : ''}
                 </option>
               ))}
             </optgroup>
-          )}
-          <optgroup label="Eat out">
-            <option value="new">➕ Somewhere new…</option>
-            <option value="out">🥡 Out, no place</option>
-            {foodFirst(places).map(p => (
-              <option key={p.id} value={`p:${p.id}`}>
-                {p.emoji ? `${p.emoji} ` : '🥡 '}
-                {p.name}
-                {visited && `p:${p.id}` !== current ? ` · ${lastWentShort(visited, p.id)}` : ''}
-              </option>
-            ))}
-          </optgroup>
-        </select>
-      )}
-      {theirs && theirs.length > 0 && (
+          </select>
+        ))}
+      {extras.length > 0 && (
         <ul className="meal-household" aria-label="Household plans">
-          {theirs.map(m => (
+          {extras.map(m => (
             <li key={m.id}>
-              {nameOf?.(m.ownerId) ?? 'Household'}: {mealLabel(m)}
-              {inHousehold &&
-                (mealIsShared(m) ? (
-                  <span className="meal-share-mark">👥 Shared</span>
-                ) : (
-                  <button type="button" className="btn subtle meal-share" onClick={() => share(m, true)}>
-                    Share
-                  </button>
-                ))}
+              {who(m.ownerId)}: {mealLabel(m)}
+              {mealIsShared(m) && <small className="muted"> · shared with the household</small>}
             </li>
           ))}
         </ul>
       )}
-      {inHousehold && meal &&
-        (mine ? (
-          <button
-            type="button"
-            className={mealIsShared(meal) ? 'btn subtle meal-share on' : 'btn subtle meal-share'}
-            aria-pressed={mealIsShared(meal)}
-            onClick={() => share(meal, !mealIsShared(meal))}
-          >
-            {mealIsShared(meal) ? '👥 Shared' : 'Share'}
-          </button>
-        ) : mealIsShared(meal) ? (
-          <span className="meal-share-mark">👥 Shared</span>
-        ) : (
-          <button type="button" className="btn subtle meal-share" onClick={() => share(meal, true)}>
-            Share
-          </button>
-        ))}
-      {meal?.recipeId && onOpenRecipe && (
+      {inHousehold && meal && mine && (
+        <div className="meal-audience" role="group" aria-label={`Who sees ${slotName} on ${date}`}>
+          <span className="muted">Who sees this</span>
+          <span className="segmented meal-audience-seg">
+            <button type="button" className={!mealIsShared(meal) ? 'seg on' : 'seg'} aria-pressed={!mealIsShared(meal)} onClick={() => share(meal, false)}>
+              Just me
+            </button>
+            <button type="button" className={mealIsShared(meal) ? 'seg on' : 'seg'} aria-pressed={mealIsShared(meal)} onClick={() => share(meal, true)}>
+              Household
+            </button>
+          </span>
+          <small className="field-hint">
+            {mealIsShared(meal) ? 'On their week too, and as a cook task.' : 'Only on your week.'}
+          </small>
+        </div>
+      )}
+      {(showPicker ? meal : household)?.recipeId && onOpenRecipe && (
         <button
           className="btn subtle"
           onClick={() => {
-            const r = recipes.find(x => x.id === meal.recipeId)
-            if (r) onOpenRecipe(r, meal)
+            const shown = showPicker ? meal : household
+            const r = shown?.recipeId ? recipes.find(x => x.id === shown.recipeId) : undefined
+            if (r && shown) onOpenRecipe(r, shown)
           }}
         >
           Cook
         </button>
       )}
-      {meal?.out && <span className="meal-out-chip">🥡 Out</span>}
+      {(showPicker ? meal : household)?.out && <span className="meal-out-chip">🥡 Out</span>}
       {canSide && (
         <button
           type="button"

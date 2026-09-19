@@ -8,7 +8,7 @@ import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
-import { Admin, AskSheet, AttendancePicker, EventEditor, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { Admin, AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
 
 /** The zone "today" and every day in the planning sheets are read in. */
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -73,7 +73,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { setView, goTasksTab, setNotesProjectId, openPlace, openPerson, openJournal, openNote, setKitchenRecipe, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, adminGroup, isOwner } = p
-  const { openTask, newTask, openProject, sawThem, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
+  const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { calendars, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
   const today = localDayKey()
@@ -329,6 +329,29 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       {sheet?.kind === 'week' && (
         <Layer name="Plan next week">
           <WeekPlanLayer p={p} />
+        </Layer>
+      )}
+
+      {sheet?.kind === 'imhere' && (
+        <Layer name="I'm here">
+          <ImHereSheet
+            places={store.places}
+            people={store.people}
+            onSavePlace={p => store.upsert(p)}
+            onLog={(place, peopleIds, note, here) => {
+              closeSheet()
+              if (here && place.lat == null && place.lon == null) {
+                store.upsert({ ...place, lat: here.lat, lon: here.lon, updatedAt: newerStamp(place.updatedAt) })
+              }
+              logOuting({
+                at: new Date().toISOString(),
+                title: note || `At ${place.name}`,
+                placeId: place.id,
+                peopleIds,
+              })
+            }}
+            onClose={closeSheet}
+          />
         </Layer>
       )}
 

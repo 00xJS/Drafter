@@ -53,13 +53,14 @@ export const ShutdownSheet = preloadable(() => import('../ShutdownSheet').then(m
 // Plan next week (Home → Week, Today on a Sunday, the palette, ?plan=week) and Ask Drafter (the palette)
 export const WeekPlanSheet = preloadable(() => import('../WeekPlanSheet').then(m => m.WeekPlanSheet), 'WeekPlanSheet')
 export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskSheet), 'AskSheet')
+export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => m.ImHereSheet), 'ImHereSheet')
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   home: [Review.preload, Wardrobe.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
-  people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload],
+  people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload],
   kitchen: [Kitchen.preload, KitchenStats.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
   stats: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
@@ -67,7 +68,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

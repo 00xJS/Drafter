@@ -5,7 +5,7 @@ import { ListStatsSwitch } from './ListStatsSwitch'
 /** People, with Places as its second segment; each segment has its own List · Stats. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
-  const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay } = p
+  const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, openSheet } = p
   // Each list's find box and chip. They live on the shell (useListFilters), not
   // here, because the Stats lens draws these same two Stats in its own tab: a
   // second pair there would let one figure read two ways on one device. A chip
@@ -81,6 +81,7 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               openId={placeOpenId}
               onOpenConsumed={() => setPlaceOpenId(null)}
               onNewTask={preset => newTask(preset)}
+              onImHere={() => openSheet({ kind: 'imhere' })}
             />
           )}
         </>

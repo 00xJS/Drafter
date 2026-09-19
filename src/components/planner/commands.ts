@@ -55,6 +55,7 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // the week ahead, and a question about your own planner: typed for, not offered empty
     { id: 'plan-week', label: 'Plan next week', icon: 'review', quick: false, keywords: 'week ahead meals dinners catch up sunday', run: () => openSheet({ kind: 'week' }) },
     { id: 'ask', label: 'Ask Drafter', icon: 'search', quick: false, keywords: 'question answer ai assistant', run: () => openSheet({ kind: 'ask' }) },
+    { id: 'im-here', label: "I'm here", icon: 'people', quick: false, keywords: 'nearby now outing visit log place with where', run: () => openSheet({ kind: 'imhere' }) },
     // today's look, and a piece to add: typed for too. A photo picker has to open
     // inside the tap itself, and the palette runs through a lazy chunk first, so
     // Add clothing lands on the sheet's big photo target rather than the picker.

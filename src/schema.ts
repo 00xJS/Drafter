@@ -67,6 +67,7 @@ import { MAX_SIDES } from '../shared/kitchen.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
 import { isDayKey } from '../shared/weeks.mjs'
+import { tidyCoords } from './geo'
 import { sanitizeHtml } from './richtext'
 
 // Hand-rolled validation instead of a schema library: JSON backups and pre-v3
@@ -453,6 +454,7 @@ export function sanitizePlace(raw: unknown): Place | null {
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   const cadence = Number(r.cadenceDays)
+  const pin = tidyCoords({ lat: r.lat, lon: r.lon })
   return {
     kind: 'place',
     id,
@@ -466,6 +468,7 @@ export function sanitizePlace(raw: unknown): Place | null {
     // a place saved before these existed has neither, and reads as it did
     address: tidyPlaceAddress(r.address),
     aliases: tidyPlaceAliases(r.aliases, name),
+    ...(pin ? { lat: pin.lat, lon: pin.lon } : {}),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

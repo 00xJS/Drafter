@@ -316,6 +316,12 @@ export interface Place extends Owned {
   notes?: string
   /** Where it is, on one line ("21 Warwick St, London"). Open in Maps searches it, and an event whose location holds it is at this place. */
   address?: string
+  /**
+   * A pin from "I'm here" or the editor's Pin this spot. Optional: a place
+   * is still a place with only a name. Both ends or neither; five decimals.
+   */
+  lat?: number
+  lon?: number
   /** Other names it goes by ("Pret" for Pret A Manger): an event's location, a question or an assistant finds the place by any of them. */
   aliases?: string[]
   createdAt: string

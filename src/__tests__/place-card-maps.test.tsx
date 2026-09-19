@@ -67,6 +67,7 @@ describe('the place editor', () => {
     const html = text(renderToStaticMarkup(<PlaceForm place={place({ address: '21 Warwick St, London', aliases: ['NOPI Soho', 'Ottolenghi'] })} onSave={noop} onClose={noop} />))
     // your own address is not this place's, so the browser is asked not to offer it for either
     expect(html).toContain('<span>Address <small>(optional)</small></span><input placeholder="e.g. 21 Warwick St, London" autoComplete="off" value="21 Warwick St, London"/>')
+    expect(html).toContain('Pin this spot')
     expect(html).toContain('<span>Other names <small>(optional, separated by commas)</small></span><input placeholder="e.g. Franco&#x27;s Pizzeria, Francos" autoComplete="off" value="NOPI Soho, Ottolenghi"/>')
   })
 
@@ -81,6 +82,7 @@ describe('the place editor', () => {
     const save = src.slice(src.indexOf('const save = () => {'), src.indexOf('onClose()\n  }'))
     expect(save).toContain('address: tidyPlaceAddress(address),')
     expect(save).toContain('aliases: placeAliasesFromText(aliases, name.trim()),')
+    expect(save).toContain('...(pin ? { lat: pin.lat, lon: pin.lon } : {}),')
     expect(save).toContain('updatedAt: place ? newerStamp(place.updatedAt) : now,')
   })
 })

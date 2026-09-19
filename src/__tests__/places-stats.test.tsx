@@ -689,7 +689,7 @@ describe('the shell’s ways into Places → Stats', () => {
 
   it('loads it lazily, with the People tab’s other chunks', () => {
     expect(lazy).toContain("import('../PlacesStats')")
-    expect(lazy).toMatch(/people: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload\]/)
+    expect(lazy).toMatch(/people: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload\]/)
     expect(screen).toMatch(/import \{ People, PeopleStats, Places, PlacesStats \} from '\.\/lazy'/)
   })
 

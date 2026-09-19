@@ -23,13 +23,30 @@
   align-items: baseline;
   gap: 0 0.5rem;
 }
-.meal-share,
-.meal-share-mark {
-  font-size: 0.8rem;
-  white-space: nowrap;
+.meal-household-plan {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
 }
-.meal-share.on {
+.meal-household-plan strong {
   font-weight: 600;
+}
+.meal-audience {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  width: 100%;
+}
+.meal-audience .field-hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.meal-audience-seg {
+  flex: none;
 }
 .outing-meal {
   /* no task behind it, so it must not look clickable like the rows beside it */

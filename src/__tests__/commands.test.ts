@@ -194,15 +194,18 @@ describe('the palette’s own commands', () => {
     expect(run('new-bill').newTasks).toEqual([[{ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }]])
   })
 
-  it('opens Plan next week and Ask Drafter over wherever you are, typed for rather than offered', () => {
+  it('opens Plan next week, Ask Drafter and I\'m here over wherever you are, typed for rather than offered', () => {
     for (const start of STARTS) {
       const week = run('plan-week', start)
       expect(week.sheets).toEqual([{ kind: 'week' }])
       expect(week.view).toBe(start.view)
       expect(run('ask', start).sheets).toEqual([{ kind: 'ask' }])
+      expect(run('im-here', start).sheets).toEqual([{ kind: 'imhere' }])
+      expect(run('im-here', start).view).toBe(start.view)
     }
     expect(commands.find(c => c.id === 'plan-week')?.quick).toBe(false)
     expect(commands.find(c => c.id === 'ask')?.keywords).toMatch(/question/)
+    expect(commands.find(c => c.id === 'im-here')?.keywords).toMatch(/nearby/)
   })
 
   it('opens Settings where you are', () => {

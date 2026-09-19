@@ -39,8 +39,14 @@ export function prefersAppleMaps(nav: { userAgent?: string; platform?: string } 
   return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(nav.userAgent ?? '') || /^(Mac|iPhone|iPad|iPod)/i.test(nav.platform ?? '')
 }
 
-/** Open in Maps: a search for the place's address when it has one, else for its name. */
-export function mapsUrl(place: Pick<Place, 'name' | 'address'>, apple: boolean): string {
+/** Open in Maps: the pin when it has one, else a search for the address, else the name. */
+export function mapsUrl(place: Pick<Place, 'name' | 'address' | 'lat' | 'lon'>, apple: boolean): string {
+  if (place.lat != null && place.lon != null) {
+    const ll = `${place.lat},${place.lon}`
+    return apple
+      ? `https://maps.apple.com/?ll=${ll}&q=${encodeURIComponent(place.name.trim() || ll)}`
+      : `https://www.google.com/maps/search/?api=1&query=${ll}`
+  }
   const query = encodeURIComponent(place.address?.trim() || place.name.trim())
   return apple ? `https://maps.apple.com/?q=${query}` : `https://www.google.com/maps/search/?api=1&query=${query}`
 }
@@ -142,7 +148,7 @@ export function placeSearch(query: string, places: readonly Place[]): { name: st
  * it here, and the kind is required — there is none to fall back on, so a place
  * is never filed under one nobody chose.
  */
-export function newPlace(name: string, category: PlaceCategory, opts: { id: string; color: string; now: Date; address?: string }): Place {
+export function newPlace(name: string, category: PlaceCategory, opts: { id: string; color: string; now: Date; address?: string; lat?: number; lon?: number }): Place {
   const stamp = opts.now.toISOString()
   const address = tidyPlaceAddress(opts.address)
   return {
@@ -152,6 +158,7 @@ export function newPlace(name: string, category: PlaceCategory, opts: { id: stri
     category,
     color: opts.color,
     ...(address ? { address } : {}),
+    ...(opts.lat != null && opts.lon != null ? { lat: opts.lat, lon: opts.lon } : {}),
     createdAt: stamp,
     updatedAt: stamp,
   }

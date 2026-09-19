@@ -351,6 +351,12 @@
     padding: 10px 12px;
     border-radius: 10px;
   }
+  .native .meal-household-plan {
+    gap: 8px 12px;
+  }
+  .native .meal-audience {
+    gap: 8px 12px;
+  }
 
   .native input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']):not([type='color']),
   .native select {

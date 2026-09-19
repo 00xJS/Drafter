@@ -82,6 +82,14 @@ describe('sanitizePlace', () => {
     expect(sanitizePlace(place())?.cadenceDays).toBeUndefined()
   })
 
+  it('keeps a pin as both ends, rounded, and drops a half-pin or a reading off the earth', () => {
+    expect(sanitizePlace(place({ lat: 51.51321, lon: -0.13654 }))).toMatchObject({ lat: 51.51321, lon: -0.13654 })
+    expect(sanitizePlace(place({ lat: 51.5132149, lon: -0.136549 }))).toMatchObject({ lat: 51.51321, lon: -0.13655 })
+    expect(sanitizePlace(place({ lat: 51.5 }))?.lat).toBeUndefined()
+    expect(sanitizePlace(place({ lat: 200, lon: 0 }))?.lat).toBeUndefined()
+    expect(sanitizePlace(place())?.lat).toBeUndefined()
+  })
+
   it('keeps a tombstone with a blank name so deletes still sync', () => {
     const p = sanitizePlace({
       kind: 'place',
@@ -618,6 +626,15 @@ describe('Open in Maps', () => {
     expect(google).toBe('https://www.google.com/maps/search/?api=1&query=Franco%20%26%20Sons')
     expect(new URL(google).searchParams.get('query')).toBe('Franco & Sons')
     expect(mapsUrl({ name: ' Nopi ', address: '   ' }, true)).toBe('https://maps.apple.com/?q=Nopi')
+  })
+
+  it('opens the pin when the place has one, ahead of the address', () => {
+    expect(mapsUrl({ name: 'Nopi', address: '21 Warwick St, London', lat: 51.51321, lon: -0.13654 }, true)).toBe(
+      'https://maps.apple.com/?ll=51.51321,-0.13654&q=Nopi',
+    )
+    expect(mapsUrl({ name: 'Nopi', lat: 51.51321, lon: -0.13654 }, false)).toBe(
+      'https://www.google.com/maps/search/?api=1&query=51.51321,-0.13654',
+    )
   })
 
   it('uses Apple Maps on an iPhone, an iPad or a Mac, and Google Maps elsewhere', () => {

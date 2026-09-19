@@ -386,8 +386,10 @@ describe('the sheets in the shell', () => {
 
   it('renders each planning sheet from its lazy chunk, in a Layer of its own', () => {
     expect(overlays).toMatch(/import \{[^}]*\bPlanDaySheet\b[^}]*\bShutdownSheet\b[^}]*\} from '\.\/lazy'/)
+    expect(overlays).toMatch(/import \{[^}]*\bImHereSheet\b[^}]*\} from '\.\/lazy'/)
     expect(overlays).toMatch(/\{sheet\?\.kind === 'day' && \(\s*<Layer name="Plan my day">\s*<PlanDaySheet\b/)
     expect(overlays).toMatch(/\{sheet\?\.kind === 'shutdown' && \(\s*<Layer name="Shut down">\s*<ShutdownSheet\b/)
+    expect(overlays).toMatch(/\{sheet\?\.kind === 'imhere' && \(\s*<Layer name="I'm here">\s*<ImHereSheet\b/)
   })
 
   it('keeps pull to refresh off while a sheet is open', () => {

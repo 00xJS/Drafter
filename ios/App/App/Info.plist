@@ -42,7 +42,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Drafter uses your location only to show today's forecast on Home. It is kept on this iPhone and never synced.</string>
+	<string>Drafter uses your location to show today's forecast and to log which of your places you are at. The forecast stays on this iPhone. A pin on a place is saved with that place.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

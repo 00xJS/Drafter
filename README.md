@@ -31,7 +31,7 @@ Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — 
 ### People and Places
 
 - Give each person a rhythm ("every 2 weeks"). Done tasks, past events and one-tap logs count as seeing them, and Today says who's due a catch-up. Birthdays and anniversaries come with **Plan a gift**.
-- **Places** (restaurants, cafés, bars, the outdoors and more) track when you last went, how often and with whom; a meal eaten out counts. A return rhythm nudges you, and ✨ **Where should we go?** suggests outings.
+- **Places** (restaurants, cafés, bars, the outdoors and more) track when you last went, how often and with whom; a meal eaten out counts. A return rhythm nudges you, and ✨ **Where should we go?** suggests outings. **I'm here** uses the phone's location to offer nearby saved places, then who you are with; the first log pins the spot so the next visit finds it.
 - **Stats** in each (switch **List · Stats**) follow the list's search and chips, and show:
   - who you see and where you go most, streaks, and a month calendar;
   - each month of the year;
@@ -41,7 +41,7 @@ Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — 
 ### Kitchen
 
 - **Recipes** with steps, a cook mode that keeps the screen awake, and when you last cooked each.
-- **This week** plans breakfast, lunch and dinner, cooked or eaten out, and every meal shows on the calendar. In a household, Share on any slot puts it on the other person's week as a task — either of you can turn that on. **Grocery** builds the list from the plan.
+- **This week** plans breakfast, lunch and dinner, cooked or eaten out, and every meal shows on the calendar. In a household, Who sees this is Just me or Household — Household puts it on the other person's week as a task. If they already shared a slot, that is the meal. **Grocery** builds the list from the plan.
 - **Plan this week's meals** proposes dinners for the empty nights, and ✨ suggests recipes like the ones you cook.
 - **Stats** shows:
   - your most cooked recipes, home-cooked streaks, and a month calendar of dinners;
@@ -67,7 +67,7 @@ Clothes and looks, opened from Home — not a tab of its own.
 
 ### Search and Ask Drafter
 
-**Cmd/Ctrl+K** (or 🔍) jumps to any tab, runs commands (New task, Plan my day, Shut down, Add clothing…) and searches tasks, notes, people, places, the journal and your clothes. Enter opens a new task with its date, people and tags read from what you typed; Shift+Enter (**Capture** on a phone) drops it in the Inbox.
+**Cmd/Ctrl+K** (or 🔍) jumps to any tab, runs commands (New task, Plan my day, Shut down, I'm here, Add clothing…) and searches tasks, notes, people, places, the journal and your clothes. Enter opens a new task with its date, people and tags read from what you typed; Shift+Enter (**Capture** on a phone) drops it in the Inbox.
 
 **Ask Drafter** answers questions about your own planner ("when did I last see Mum?"). It finds the matching records on the device, shows them as sources, and one ✨ call answers from those alone.
 
@@ -137,10 +137,6 @@ The membership is on. Entitlements already ask for push, Universal Links and Pas
 ## Garment cut-out
 
 The cut-out runs on the device: Apple's Vision on iOS 17 and later, and elsewhere MediaPipe's interactive segmenter with the MagicTouch model (about 17.5 MB, downloaded once on the web). Credits: MediaPipe Tasks Vision 1.0.1 (© Google LLC, Apache-2.0, https://github.com/google-ai-edge/mediapipe) and the MediaPipe MagicTouch interactive segmentation model v1 (© Google LLC, Apache-2.0, [model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf)). `/cutout/LICENSE`, `/cutout/NOTICE` and `/cutout/THIRD_PARTY_LICENSES` ship beside them, the last covering the BSD, MIT and MPL-2.0 libraries in the WASM runtime; `public/cutout/NOTICE` lists every component. Nothing AGPL, non-commercial or paid is used.
-
-## Later
-
-- Places nearby-now ("I'm here"), which needs the location permission and a native build.
 
 ---
 

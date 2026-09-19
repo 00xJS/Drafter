@@ -7,9 +7,9 @@ import type { PlanStep } from '../PlanDaySheet'
  * The planning sheet over the screen. There is one slot, so opening a sheet
  * replaces whichever was up. Each kind is a render in Overlays.tsx inside its
  * own Layer and a chunk in lazy.ts: Plan my day, Shut down, Plan next week,
- * and Ask Drafter (on the palette's Ask row's question, or empty).
+ * Ask Drafter (on the palette's Ask row's question, or empty), and I'm here.
  */
-export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { kind: 'week' } | { kind: 'ask'; question?: string }
+export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { kind: 'week' } | { kind: 'ask'; question?: string } | { kind: 'imhere' }
 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {

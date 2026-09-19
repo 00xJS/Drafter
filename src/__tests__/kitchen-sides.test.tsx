@@ -338,13 +338,36 @@ describe('the meal slot row', () => {
     expect(html).toContain('meal-slot-label')
   })
 
-  it('offers Share on breakfast, lunch and dinner so either member can set it', () => {
+  it('offers Just me / Household on your meal, not a Share toggle', () => {
     const mine = meal(DAY, 'breakfast', { title: 'Oats' })
-    const hers = meal(DAY, 'lunch', { id: 'meal~2026-09-17~lunch~maria', title: 'Soup', ownerId: 'maria' })
-    const html = row({ slot: 'breakfast', meal: mine, theirs: [hers], inHousehold: true, myId: 'me', nameOf: id => (id === 'maria' ? 'Maria' : null) })
-    expect(html).toContain('>Share</button>')
-    expect(html).toContain('Maria: Soup')
-    expect(row({ slot: 'dinner', meal: { ...mine, slot: 'dinner', shared: true }, inHousehold: true, myId: 'me' })).toContain('👥 Shared')
+    const html = row({ slot: 'breakfast', meal: mine, inHousehold: true, myId: 'me' })
+    expect(html).toContain('Who sees this')
+    expect(html).toContain('Just me')
+    expect(html).toContain('Household')
+    expect(html).toContain('Only on your week.')
+    expect(html).not.toContain('>Share</button>')
+    expect(row({ slot: 'dinner', meal: { ...mine, slot: 'dinner', shared: true }, inHousehold: true, myId: 'me' })).toContain('On their week too, and as a cook task.')
+  })
+
+  it('treats a dinner they shared as the slot, and hides the empty picker', () => {
+    const hers = meal(DAY, 'dinner', { id: 'meal~2026-09-17~dinner~maria', title: 'Tacos', ownerId: 'maria', shared: true })
+    const html = row({ theirs: [hers], inHousehold: true, myId: 'me', nameOf: id => (id === 'maria' ? 'Maria' : null) })
+    expect(html).toContain('Tacos')
+    expect(html).toContain('Maria shared this with the household')
+    expect(html).toContain('Plan my own')
+    expect(html).not.toContain(`aria-label="Dinner on ${DAY}"`)
+    expect(html).not.toContain('>Share</button>')
+    expect(html).not.toContain('Who sees this')
+  })
+
+  it('names a leftover household plan without offering Share on it', () => {
+    const mine = meal(DAY, 'dinner', { title: 'Pasta' })
+    const hers = meal(DAY, 'dinner', { id: 'meal~2026-09-17~dinner~maria', title: 'Tacos', ownerId: 'maria', shared: true })
+    const html = row({ meal: mine, theirs: [hers], inHousehold: true, myId: 'me', nameOf: id => (id === 'maria' ? 'Maria' : null) })
+    expect(html).toContain('Maria: Tacos')
+    expect(html).toContain('shared with the household')
+    expect(html).toContain('Who sees this')
+    expect(html).not.toContain('>Share</button>')
   })
 
   it('offers no side on a breakfast, a bought meal, an empty slot or a planning sheet’s Pick…', () => {

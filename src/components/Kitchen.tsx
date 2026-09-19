@@ -65,7 +65,7 @@ interface Props {
   myId?: string | null
   /** A household member's display name, for "Maria planned dinner". */
   nameOf?(id: string | undefined): string | null
-  /** Share on a breakfast, lunch or dinner — nobody to share with when this is off. */
+  /** Just me / Household on a breakfast, lunch or dinner — nobody to share with when this is off. */
   inHousehold?: boolean
   recipes: Recipe[]
   meals: Meal[]
@@ -577,7 +577,7 @@ function WeekPlan({
           ›
         </button>
       </div>
-      <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. Share any slot with the household — either of you can — and it shows on their week as a task.</p>
+      <p className="field-hint">Dinner is the default. Breakfast and lunch are optional. Who sees this is Just me or Household — Household puts it on their week as a task. If they already shared a slot, that is the meal; you do not set it again.</p>
       {onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0) && (
         <div className="meal-plan-cta">
           <p>

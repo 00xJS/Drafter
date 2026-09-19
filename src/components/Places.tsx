@@ -31,6 +31,7 @@ import {
 import { SEEN_META } from '../people'
 import { OutingIdea, OutingInput, suggestOuting } from '../ai'
 import { Bars } from './bits'
+import { requestDevicePosition, tidyCoords } from '../geo'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -51,6 +52,8 @@ interface Props {
   onOpenConsumed?(): void
   /** Turn an outing idea into a task. */
   onNewTask?(preset: Partial<Task>): void
+  /** Places toolbar: open the I'm here sheet over the planner. */
+  onImHere?(): void
   /**
    * The kind chip and find box. The shell holds them rather than the
    * list, so Places → Stats counts the rows they leave and List → Stats →
@@ -97,6 +100,8 @@ export function PlaceForm({
   const [address, setAddress] = useState(place?.address ?? '')
   // one box, the names separated by commas: a name rarely holds a comma, an address often does
   const [aliases, setAliases] = useState((place?.aliases ?? []).join(', '))
+  const [pin, setPin] = useState(() => tidyCoords(place ?? {}))
+  const [pinning, setPinning] = useState(false)
   const save = () => {
     if (!name.trim() || !category) return
     const now = new Date().toISOString()
@@ -111,10 +116,17 @@ export function PlaceForm({
       notes: notes.trim() || undefined,
       address: tidyPlaceAddress(address),
       aliases: placeAliasesFromText(aliases, name.trim()),
+      ...(pin ? { lat: pin.lat, lon: pin.lon } : {}),
       createdAt: place?.createdAt ?? now,
       updatedAt: place ? newerStamp(place.updatedAt) : now,
     })
     onClose()
+  }
+  const pinHere = async () => {
+    setPinning(true)
+    const here = await requestDevicePosition()
+    setPinning(false)
+    if (here) setPin(here)
   }
   return (
     <Modal onClose={onClose} className="modal narrow">
@@ -146,6 +158,17 @@ export function PlaceForm({
           </span>
           {/* autofill would offer your own address, which is not this place's */}
           <input value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. 21 Warwick St, London" autoComplete="off" />
+          <div className="check-add" style={{ marginTop: 8 }}>
+            <button type="button" className="btn" disabled={pinning} onClick={() => void pinHere()}>
+              {pinning ? 'Finding you…' : pin ? 'Update pin' : 'Pin this spot'}
+            </button>
+            {pin && (
+              <button type="button" className="btn subtle" onClick={() => setPin(undefined)}>
+                Clear pin
+              </button>
+            )}
+          </div>
+          {pin && <small className="field-hint">Pinned so I&apos;m here can find this place next time.</small>}
         </label>
         <label className="field">
           <span>
@@ -449,7 +472,7 @@ export function outingIdeaTask(idea: OutingIdea, place: Place | undefined, peopl
 /** "Mum", "Mum and Sam", "Mum, Sam and Jo". */
 const namesOf = (ps: Person[]) => (ps.length < 2 ? (ps[0]?.name ?? '') : `${ps.slice(0, -1).map(p => p.name).join(', ')} and ${ps[ps.length - 1].name}`)
 
-export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, meals, filter, onFilter }: Props) {
+export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, onImHere, meals, filter, onFilter }: Props) {
   const [editing, setEditing] = useState<{ place?: Place } | null>(null)
   const [logging, setLogging] = useState<Place | null>(null)
   // the kind chip that is on: once a kind's last place has gone, All, as on Stats
@@ -543,6 +566,11 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
         {places.length > 0 && (
           <button className="btn" disabled={ideasBusy} onClick={getIdeas} title="Ideas drawn from your own places">
             {ideasBusy ? 'Thinking…' : '✨ Where should we go?'}
+          </button>
+        )}
+        {onImHere && (
+          <button className="btn" onClick={onImHere} title="Log where you are, and who you are with">
+            I&apos;m here
           </button>
         )}
         <button className="btn primary" onClick={() => setEditing({})}>
