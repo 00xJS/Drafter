@@ -359,7 +359,8 @@ describe('runBackup reads every live record, however many there are', () => {
       expect(Object.keys(written)).toContain('ct')
       expect(JSON.stringify(written)).not.toContain('Chore 1')
       const opened = await unwrapSnapshot(written, 'a passphrase the host holds')
-      expect(opened.items.some((i: { id?: string }) => i.id === 't-00001')).toBe(true)
+      // Snapshot.items is unknown[]: the envelope is opaque until it is opened
+      expect(opened.items.some(i => (i as { id?: string }).id === 't-00001')).toBe(true)
     } finally {
       delete process.env.BACKUP_PASSPHRASE
     }
