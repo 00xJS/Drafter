@@ -100,6 +100,10 @@ export default defineConfig({
     // agent worktrees live under .claude/worktrees and carry their own copy of
     // every test; a run from the checkout must not collect theirs too
     exclude: [...configDefaults.exclude, '.claude/**', 'dist/**'],
+    // the build host carries the site's real environment (Netlify runs `npm run
+    // check` with BACKUP_PASSPHRASE set); setup.ts decides what a test sees
+    // rather than letting it inherit whatever the machine happens to hold
+    setupFiles: ['./src/__tests__/setup.ts'],
   },
   plugins: [
     react(),

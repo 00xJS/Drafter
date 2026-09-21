@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { garmentMediaIds, isPersonalMediaOf, mediaIdsOf, personalFolder } from '../../shared/media.mjs'
 import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, TRASH_KEEPS_PHOTOS_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
+import { unwrapSnapshot } from '../backupcrypto'
 
 // Wardrobe photos are private, under personal/<user id>/ in the media bucket,
 // and nothing used to clear them out: a replaced photo, a piece aged out of
@@ -326,6 +327,11 @@ describe('runBackup reads every live record, however many there are', () => {
   }
 
   it('pages past max_rows, and the snapshot keeps its shape', async () => {
+    // the shape of an UNencrypted snapshot: this host holds no
+    // BACKUP_PASSPHRASE (src/__tests__/setup.ts decides that, rather than
+    // leaving it to whichever machine is running — Netlify's build carries the
+    // real one, which is how this assertion first failed in production)
+    expect(process.env.BACKUP_PASSPHRASE).toBeUndefined()
     posts.push(...Array.from({ length: 2345 }, (_, n) => task(n)))
     const report = await runBackup(NOW)
     const snapshot = snapshots.get(`backups/${A}/2026-09-14.json`)!
@@ -337,6 +343,26 @@ describe('runBackup reads every live record, however many there are', () => {
     expect(report.users.find(u => u.userId === A)?.items).toBe(2347)
     // 2,349 live rows across both accounts: 1,000, 1,000 and 349
     expect(calls.filter(c => c.startsWith('GET /rest/v1/posts?select=id,data,user_id&deleted=is.false'))).toHaveLength(3)
+  })
+
+  it('encrypts what it writes when the host holds a passphrase, and it opens again', async () => {
+    // wrapSnapshot is unit-tested on its own (backup-encryption.test.ts); this
+    // is the path the nightly job actually takes — runBackup → backupUser →
+    // wrapSnapshot → the bucket — which nothing covered until the Netlify
+    // build failed and showed it running for the first time.
+    process.env.BACKUP_PASSPHRASE = 'a passphrase the host holds'
+    try {
+      posts.push(task(1))
+      const report = await runBackup(NOW)
+      expect(report.encrypted).toBe(true)
+      const written = snapshots.get(`backups/${A}/2026-09-14.json`)!
+      expect(Object.keys(written)).toContain('ct')
+      expect(JSON.stringify(written)).not.toContain('Chore 1')
+      const opened = await unwrapSnapshot(written, 'a passphrase the host holds')
+      expect(opened.items.some((i: { id?: string }) => i.id === 't-00001')).toBe(true)
+    } finally {
+      delete process.env.BACKUP_PASSPHRASE
+    }
   })
 
   it('writes no snapshot at all when the read cannot be finished, rather than a short one', async () => {
