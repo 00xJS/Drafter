@@ -70,6 +70,11 @@
   position: relative;
   padding-top: 22px;
   border-bottom-color: var(--hairline);
+  /* the bar is the grab handle's, so a drag down it is the sheet's gesture
+     (Modal's useSheetDrag) and not the body's scroll. Without this the
+     scroller claims the drag a few pixels in, fires pointercancel, and the
+     sheet springs back from wherever it had got to. */
+  touch-action: none;
 }
 .native .modal-head::before {
   content: '';

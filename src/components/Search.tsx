@@ -297,7 +297,10 @@ export function Search({
         aria-controls={hits.length > 0 ? listId : undefined}
         aria-activedescendant={hits[cursor] ? optionId(cursor) : undefined}
         value={q}
-        placeholder="Search or jump to anything — a task, a view, a person… or type to create"
+        /* short enough to fit a phone: at 402pt the long form was cut
+           mid-word ("…a view, a perso"), and the list below it already shows
+           what this does — New task, Plan my day, a view, a person */
+        placeholder="Search or jump to anything…"
         onChange={e => setQ(e.target.value)}
         onKeyDown={e => {
           if (e.key === 'ArrowDown') {

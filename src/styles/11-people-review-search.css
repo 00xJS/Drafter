@@ -296,7 +296,9 @@
 }
 .search-palette {
   width: 640px;
-  max-width: 100%;
+  /* a gutter on a phone, where 100% put the panel's edges against the screen's
+     while every other surface in the app keeps one */
+  max-width: min(100%, calc(100vw - 24px));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, ReactNode, Ref } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, PointerEvent as ReactPointerEvent, ReactNode, Ref } from 'react'
 import { createModalStack, pickReturn, wrapFocus } from '../modalstack'
 
 /** Every open dialog, topmost last. One per page, like the focus it looks after. */
@@ -166,12 +166,88 @@ export function Modal({
   )
 }
 
+/** A press on one of these is that control's, not the sheet's. */
+const HEAD_CONTROL = 'button, a, input, select, textarea, [contenteditable]:not([contenteditable="false"])'
+/** How far down a sheet has to be dragged to be let go of. */
+const DISMISS_PX = 88
+/** ...or less than that, thrown fast enough (px per ms). */
+const FLING = 0.5
+const FLING_PX = 24
+
+/**
+ * Drag the sheet down to close it, from its title bar.
+ *
+ * The card sheet has drawn a grab handle since the proportions pass — the
+ * pill at the top of every modal under `.native` — and nothing has ever read
+ * a drag on it. A handle is the one piece of iOS furniture that means exactly
+ * one thing, so drawing it and ignoring the gesture is the sheet telling the
+ * truth about what it is and lying about what it does.
+ *
+ * Only on the phone, because only there is the handle drawn; only downward,
+ * so a drag can never lift the sheet off the top of the screen; and never
+ * from a control in the bar, or Cancel and ✕ would take a press and a tiny
+ * wobble as a drag instead of a tap.
+ */
+function useSheetDrag(onClose?: () => void): (e: ReactPointerEvent<HTMLElement>) => void {
+  const close = useRef(onClose)
+  close.current = onClose
+  return useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    if (!document.documentElement.classList.contains('native')) return
+    if (e.target instanceof Element && e.target.closest(HEAD_CONTROL)) return
+    const head = e.currentTarget
+    const panel = head.closest<HTMLElement>('[role="dialog"]')
+    if (!panel) return
+    const startY = e.clientY
+    const startT = e.timeStamp
+    let dy = 0
+    let last = startY
+    let lastT = startT
+    head.setPointerCapture(e.pointerId)
+    // the entrance animation owns `transform` until it is done; taking the
+    // sheet over means taking that off, or the two write the same property
+    panel.style.animation = 'none'
+    panel.style.transition = 'none'
+    panel.style.willChange = 'transform'
+
+    const move = (ev: PointerEvent) => {
+      dy = Math.max(0, ev.clientY - startY)
+      // a sheet dragged UP goes nowhere, but it should still feel held
+      panel.style.transform = `translateY(${dy}px)`
+      if (ev.clientY !== last) {
+        last = ev.clientY
+        lastT = ev.timeStamp
+      }
+    }
+    const end = (ev: PointerEvent) => {
+      head.removeEventListener('pointermove', move)
+      head.removeEventListener('pointerup', end)
+      head.removeEventListener('pointercancel', end)
+      panel.style.willChange = ''
+      const ms = Math.max(1, ev.timeStamp - lastT)
+      const thrown = dy > FLING_PX && (ev.clientY - last) / ms > FLING
+      if (dy > DISMISS_PX || thrown) {
+        close.current?.()
+        return
+      }
+      // back where it was. Reduce Motion (01-base.css blanket-disables
+      // animation, not inline transitions) gets it there at once.
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+      panel.style.transition = still ? 'none' : 'transform 0.24s cubic-bezier(0.32, 0.72, 0, 1)'
+      panel.style.transform = ''
+    }
+    head.addEventListener('pointermove', move)
+    head.addEventListener('pointerup', end)
+    head.addEventListener('pointercancel', end)
+  }, [])
+}
+
 /**
  * The title bar every editor already had: the heading (which names the
  * dialog), then any actions (a Save), then ✕. `variant="compose"` is the
  * iOS write sheet: Cancel, the title, then Save — no ✕, and it cannot wrap
  * those three onto the scrolling body. The card sheet hangs its grab handle
- * off `.modal-head`.
+ * off `.modal-head`, and reads a drag on it (useSheetDrag).
  */
 export function ModalHead({
   title,
@@ -183,9 +259,10 @@ export function ModalHead({
   variant?: 'default' | 'compose'
 }) {
   const modal = useContext(ModalContext)
+  const onPointerDown = useSheetDrag(modal?.onClose)
   if (variant === 'compose') {
     return (
-      <header className="modal-head modal-head-compose">
+      <header className="modal-head modal-head-compose" onPointerDown={onPointerDown}>
         <button type="button" className="btn subtle modal-head-cancel" onClick={modal?.onClose}>
           Cancel
         </button>
@@ -195,7 +272,7 @@ export function ModalHead({
     )
   }
   return (
-    <header className="modal-head">
+    <header className="modal-head" onPointerDown={onPointerDown}>
       <h2 id={modal?.titleId}>{title}</h2>
       {children}
       <button className="btn subtle" onClick={modal?.onClose} aria-label="Close">

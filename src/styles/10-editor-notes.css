@@ -948,6 +948,16 @@
     min-height: 44px;
   }
 }
+/* On a phone the group always drops to a line of its own (the measurements
+   above), and flex-end then held all three against the right edge with 92pt
+   of empty line to the left of them — stranded at the other end instead of
+   under "All notes", but stranded. With a whole line to themselves they
+   spread across it, which is neither (v3.28). */
+@media (max-width: 640px) {
+  .note-head-actions {
+    justify-content: space-between;
+  }
+}
 .note-pin.on {
   color: var(--accent-text);
 }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { createModalStack, isComposing, pickReturn, wrapFocus } from '../modalstack'
 
@@ -199,5 +200,43 @@ describe('focus goes back where it came from', () => {
     await Promise.resolve()
     expect(seen).toBe('second')
     expect(stack.handoff()).toBeNull()
+  })
+})
+
+/*
+ * Drag the sheet down to close it.
+ *
+ * The gesture itself is pointer events on a real WKWebView, which this suite
+ * has no DOM for; it was driven in the simulator instead — a long drag closes
+ * the sheet, a short one springs it back, and ✕ still takes a tap. What is
+ * worth holding here is the wiring, because every part of it is invisible and
+ * any one of them silently turns the handle back into a decoration.
+ */
+describe('the grab handle is a handle', () => {
+  const modal = readFileSync(new URL('../components/Modal.tsx', import.meta.url), 'utf8')
+  const shell = readFileSync(new URL('../styles/19-native-shell.css', import.meta.url), 'utf8')
+
+  it('reads a press on the title bar, in both of its shapes', () => {
+    expect(modal.match(/<header className="modal-head[^"]*" onPointerDown=\{onPointerDown\}>/g)).toHaveLength(2)
+  })
+
+  it('leaves the bar to the sheet rather than to the body that scrolls under it', () => {
+    // without this the scroller claims the drag and fires pointercancel a few
+    // pixels in, and the sheet springs back from wherever it had got to
+    expect(shell).toMatch(/\.native \.modal-head \{[^}]*touch-action: none/s)
+  })
+
+  it('draws the handle only where the drag is read, and reads it only where it is drawn', () => {
+    expect(shell).toMatch(/\.native \.modal-head::before/)
+    expect(modal).toMatch(/documentElement\.classList\.contains\('native'\)/)
+  })
+
+  it('lets a control in the bar have its own press: Cancel and ✕ are taps, not drags', () => {
+    expect(modal).toMatch(/e\.target\.closest\(HEAD_CONTROL\)/)
+    expect(modal).toMatch(/const HEAD_CONTROL = 'button, a, input, select, textarea/)
+  })
+
+  it('never lifts the sheet off the top of the screen', () => {
+    expect(modal).toMatch(/dy = Math\.max\(0, ev\.clientY - startY\)/)
   })
 })
