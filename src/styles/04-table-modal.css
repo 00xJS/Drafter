@@ -12,6 +12,25 @@
   min-width: 220px;
 }
 
+/* On a phone the tasks toolbar wraps onto three lines, and every one of them
+   used to stop short of the right edge: the invisible .spacer landed at the
+   end of the filter line and ate the slack there, which pushed "Log something
+   done" onto a line of its own where it sat two-thirds short (v3.28). With the
+   spacer out of the way the priority filter grows into the gap, and the action
+   takes the full width it already occupies a line for. */
+@media (max-width: 640px) {
+  .posts-view > .toolbar > .spacer {
+    display: none;
+  }
+  .posts-view > .toolbar > select[aria-label='Filter by priority'] {
+    flex: 1;
+    min-width: 0;
+  }
+  .posts-view > .toolbar > .btn:last-child {
+    flex: 1 0 100%;
+  }
+}
+
 .notice {
   display: flex;
   align-items: center;
@@ -257,6 +276,27 @@ textarea {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+/* A filter row with as many chips as there is data for it — the kinds of
+   place in use, the ingredients the recipes have in common. No track fits a
+   count that changes, and wrapping put one chip on a second line with
+   three-quarters of the width empty beside it, so on a phone the row keeps
+   one line and scrolls, the way Today's pages do (v3.28). */
+@media (max-width: 640px) {
+  .kind-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+  .kind-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .kind-chips > .seg {
+    flex: none;
+    scroll-snap-align: start;
+  }
 }
 
 .seg {

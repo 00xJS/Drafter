@@ -440,6 +440,13 @@
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
+  /* An odd number of them left the last one in the left column with the right
+     half of the row empty beside it — five on the weekly review, one tile
+     short of a rectangle. With no partner it takes the row, so every card
+     edge down the page lines up (v3.28). */
+  .kpi-row > .stat-tile:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
 
   /* Today's first screen is ~590px on a 375pt phone and five tiles ate half of
      it. The two that only report — "This week" and the sparkline — move off the

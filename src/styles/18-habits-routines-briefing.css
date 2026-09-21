@@ -782,3 +782,33 @@ span.routine-name:hover {
 .briefing-tile.briefing-theirs .briefing-main {
   font-weight: 500;
 }
+
+@media (max-width: 640px) {
+  /* The greeting and the weather picker keep one line. The picker wrapped
+     under "Good morning, Joseph" and sat there at nearly full width, reading
+     as a form field dropped into the card rather than a control belonging to
+     the heading beside it (v3.28). */
+  .briefing > .chart-head {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .briefing > .chart-head > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .briefing > .chart-head h3 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* It reads large for a setting, but it stays that way on purpose: the zoom
+     guard (16-zoom-guard.css) floors every field at 16px because a focused
+     one under that zooms WKWebView to ~115% with no gesture that undoes it,
+     and .native's 44pt floor gives it the height. Both outrank anything
+     written here, and both are worth more than the two points of polish. */
+  .briefing-weather-pick {
+    flex: none;
+    max-width: 48%;
+  }
+}

@@ -64,16 +64,15 @@ export function Bills({
 
   return (
     <div className="bills">
-      <div className="people-toolbar">
-        <h2>Bills</h2>
+      <div className="period-bar bills-period">
         <button className="btn" onClick={() => shift(-1)} aria-label="Previous month">
           ‹
         </button>
-        <span className="bills-month">{cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span>
+        <span className="bills-month period-label">{cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span>
         <button className="btn" onClick={() => shift(1)} aria-label="Next month">
           ›
         </button>
-        <button className="btn primary" onClick={onNew}>
+        <button className="btn primary period-end" onClick={onNew}>
           + Bill
         </button>
       </div>

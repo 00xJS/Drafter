@@ -270,3 +270,37 @@
   outline: none;
 }
 
+
+/* ---- The period bar: ‹ what you are looking at › ------------------------
+   Seven screens hand-rolled this row — the calendar's month, the review's
+   week, the journal's week, the kitchen's week twice, the grocery's week and
+   the bills' month — and every one of them left-aligned the label with the
+   forward arrow stranded mid-screen and dead space after it. One shape now:
+   arrows at the two ends, the label filling and centred between them, the
+   whole thing the width of the page. */
+.period-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.period-bar > .btn {
+  flex: none;
+}
+/* the label, whatever element a screen uses for it */
+.period-bar > h2,
+.period-bar > .period-label {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+/* a trailing action ("Today", "This week") keeps its own size at the end */
+.period-bar > .period-end {
+  flex: none;
+}

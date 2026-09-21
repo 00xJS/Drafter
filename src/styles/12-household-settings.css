@@ -515,6 +515,21 @@
   color: var(--text-2);
 }
 
+/* Settings is a column of one-off actions, and every button had sized itself
+   to its own words: "Sign out" at 87pt under "Change your password" at 172pt
+   under "Save name" at 103pt, a ragged edge running down the whole sheet. On
+   a phone they take the width they are given, the way the phone's own
+   settings do; two that share a row still share it (v3.28). */
+@media (max-width: 640px) {
+  .settings-section > .btn {
+    width: 100%;
+  }
+  .settings-section > .check-add > .btn,
+  .settings-section > .sync-line > .btn {
+    flex: 1 1 auto;
+  }
+}
+
 /* Admin → Data's Integration health, folded away (v3.25). Its <summary> holds
    an <h3> so the heading still reads as one; the marker sits with it rather
    than on a line of its own. */

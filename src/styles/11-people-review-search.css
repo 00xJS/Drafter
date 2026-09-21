@@ -2,6 +2,20 @@
 .people {
   margin-bottom: 20px;
 }
+/* A .spacer pushes the actions right, which is what a one-line toolbar wants
+   and the opposite of what a wrapped one gets: on a phone the title takes the
+   first line, the spacer lands at the head of the second and shoves "Where
+   should we go?" and "I'm here" against the right edge with a gap beside
+   them. The actions share the line they already have instead (v3.28). */
+@media (max-width: 640px) {
+  .people-toolbar > .spacer {
+    display: none;
+  }
+  .people-toolbar > .btn {
+    flex: 1 1 auto;
+  }
+}
+
 .people .toolbar {
   margin-bottom: 12px;
   align-items: flex-start;
@@ -474,8 +488,9 @@
 }
 
 /* ----- People → Stats (PeopleStats): the Stats kit's cards, each person a face.
-   List · Stats keeps the small-button shape, as the wardrobe's Outfit · Clothes
-   · Stats does: the native track is scoped to the tab-level switchers. */
+   List · Stats is a track like every other exclusive switch; it shares the row
+   with the segment's add button, so it takes the slack rather than a fixed
+   width and the row has no hole in the middle of it. */
 .list-stats-bar {
   display: flex;
   align-items: center;
@@ -483,6 +498,8 @@
   margin-bottom: 10px;
 }
 .list-stats-seg {
+  flex: 1 1 auto;
+  min-width: 0;
   flex-wrap: nowrap;
 }
 .list-stats-action {
@@ -1183,4 +1200,36 @@
   max-height: 40vh;
   resize: none;
   line-height: 1.45;
+}
+/* The shell gives every textarea 88px so a note or a description opens with
+   room to write in. A chat composer is the one textarea that should not: it
+   opened three lines tall and empty, under a thread with one message in it,
+   which is not what a message box looks like anywhere else on the phone. It
+   starts at one line and grows to 40vh, as it always did on the web. */
+.native .chat-composer textarea {
+  min-height: var(--touch);
+}
+
+/* Review's three rows (v3.28): the period switch, the range it is on, and
+   what you can do with it. Each is its own line, so none of them squeezes
+   another at 402pt. */
+.review-period {
+  margin-bottom: 8px;
+}
+/* the two things you can do with the week share its line rather than stopping
+   52pt short of the right edge */
+@media (max-width: 640px) {
+  .review-actions > .btn {
+    flex: 1 1 auto;
+  }
+}
+.review-range {
+  margin-bottom: 10px;
+}
+.review-range .period-label {
+  font-size: calc(1.0625rem * var(--type-scale));
+  font-weight: 700;
+}
+.review-actions {
+  gap: 8px;
 }

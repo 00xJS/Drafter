@@ -431,7 +431,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
                   <span className="recipe-includes-label" id="recipe-includes-label">
                     Includes
                   </span>
-                  <span className="segmented" role="group" aria-labelledby="recipe-includes-label">
+                  <span className="segmented kind-chips" role="group" aria-labelledby="recipe-includes-label">
                     <button type="button" className={!activeInclude ? 'seg on' : 'seg'} aria-pressed={!activeInclude} onClick={() => setInclude(null)}>
                       Any
                     </button>
@@ -734,7 +734,7 @@ function WeekPlan({
   })
   return (
     <>
-      <div className="people-toolbar kitchen-week-head">
+      <div className="period-bar kitchen-week-head">
         <button className="btn" onClick={() => onShift(-1)} aria-label="Previous week">
           ‹
         </button>
@@ -967,10 +967,12 @@ function GroceryPane({
     <>
       <div className="people-toolbar">
         <h2>Grocery list</h2>
+      </div>
+      <div className="period-bar kitchen-grocery-week">
         <button className="btn" onClick={() => onShift(-1)} aria-label="Previous week">
           ‹
         </button>
-        <span className="kitchen-week-label">{week.label}</span>
+        <span className="kitchen-week-label period-label">{week.label}</span>
         <button className="btn" onClick={() => onShift(1)} aria-label="Next week">
           ›
         </button>

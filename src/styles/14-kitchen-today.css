@@ -6,6 +6,17 @@
 .notes-back {
   margin-right: 12px;
 }
+/* The app's three back controls — Notes' "All notes", Home's "Today" above
+   Week/Journal/Chat/Notes/Wardrobe, and the note pane's. Drawn as a bare
+   `.btn subtle` they were a grey word floating above the page with nothing to
+   say it went anywhere back; the chevron is what iOS puts there, and putting
+   it here rather than in three components keeps them the same control. */
+.notes-back::before {
+  content: '\2039';
+  margin-right: 4px;
+  font-size: 1.15em;
+  line-height: 1;
+}
 .people-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -78,9 +89,8 @@
   text-transform: uppercase;
   color: var(--muted);
 }
-.recipe-includes .segmented {
-  flex-wrap: wrap;
-}
+/* (`.segmented` already wraps; the rule that restated it here only outranked
+   .kind-chips' one-line scroll on a phone, so it is gone.) */
 .kitchen-recipe-q {
   flex: 1 1 12rem;
   min-width: 0;
@@ -153,6 +163,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+/* "+ Breakfast" and "+ Lunch" sat clustered at the left of the card with
+   nearly half its width empty beside them. They share the line instead. */
+@media (max-width: 640px) {
+  .meal-day-extras > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }
 .kitchen-empty {
   padding: 20px 16px;
@@ -341,12 +359,23 @@
     flex: 1 0 100%;
     justify-content: flex-start;
   }
-  /* Natural width, not `flex: 1` — five of them wrap to 4 + 1 at 402pt, and a
-     stretched button alone on the second row reads as a mistake. Left-aligned
-     at their own size, a wrapped group reads as a wrapped group. */
+  /* One line that scrolls, rather than 4 + 1 with Wardrobe orphaned beneath.
+     Five of them do not fit at 402pt at any padding worth having, and a
+     ragged second row was the first thing the eye landed on under the date. */
+  .today-pages {
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+  .today-pages::-webkit-scrollbar {
+    display: none;
+  }
   .today-pages .btn {
-    flex: 0 1 auto;
-    padding-inline: 12px;
+    flex: none;
+    padding-inline: 14px;
+    scroll-snap-align: start;
   }
 }
 .week-review-excerpt {
@@ -1078,3 +1107,24 @@
   }
 }
 
+
+/* Kitchen's two period bars sit under their heading rather than beside it:
+   a week range and two arrows do not share a line with a large title at
+   402pt without one of them being squeezed to nothing. */
+.kitchen-week-head,
+.kitchen-grocery-week {
+  margin-bottom: 12px;
+}
+/* "Build from this week" is 163pt of the 402 on its own, which left the week
+   it builds from reading "Sep 20 – Se…" beside it. On a phone it takes a line
+   of its own, full width — it is the primary action here, so a wide target
+   for it is the right shape anyway — and the range gets the line above
+   intact (v3.28). */
+@media (max-width: 640px) {
+  .kitchen-grocery-week {
+    flex-wrap: wrap;
+  }
+  .kitchen-grocery-week > .btn.primary {
+    flex: 1 0 100%;
+  }
+}

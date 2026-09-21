@@ -429,3 +429,16 @@
 .stats-lens > .stats-section:nth-child(n + 4) {
   animation-delay: 0.12s;
 }
+
+/* On a phone the window switch spans the page like the tab track above it.
+   The 320px cap it shares with the desktop left it stopping at 86% of the
+   line, just short of the full-width track directly above — which reads as a
+   control that failed to finish rather than one sized on purpose. The cap
+   still earns its keep on a wide page, where three words stretched across
+   1200px would look worse (v3.28). */
+@media (max-width: 640px) {
+  .stats-window > .segmented {
+    width: 100%;
+    max-width: none;
+  }
+}

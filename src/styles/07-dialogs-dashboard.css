@@ -235,6 +235,21 @@
   pointer-events: none;
 }
 
+/* On a phone that pill measured 26x22pt — half the 44pt floor every other
+   control on the board meets, and the only way to move a card without a
+   mouse to drag with. The select is already an invisible overlay, so it can
+   reach past the pill to a full 44 square while the pill itself stays the
+   quiet glyph it is: the target grows, the card does not (v3.28). */
+@media (max-width: 640px) {
+  .card-status {
+    width: 28px;
+    height: 28px;
+  }
+  .card-status select {
+    inset: -8px;
+  }
+}
+
 .board-more {
   font-size: 0.75rem;
   color: var(--muted);

@@ -128,7 +128,21 @@
    (.seg-scroll) rather than stretching; these rules refine the shell's own.
    Scoped to those container classes so the grocery, settings and other
    segmented controls keep their own shape. */
+/* Every tab-level switch takes the iOS track. Listing them one container at a
+   time is what went wrong: the wardrobe's Outfit · Clothes · Stats, the
+   grocery's filters, the Stats window and Finance's Bills · Paydays ·
+   Accounts each stayed a row of loose web buttons while People · Places and
+   the calendar's modes were proper controls — the same kind of thing drawn two
+   ways on one phone (v3.28). So the first selector is the <Segmented>
+   component itself: anything built from it is a track here by construction,
+   and the container names below are only the hand-rolled ones left. A
+   scrolling track (the Stats lens's nine) opts out, because segments that
+   stretch cannot also scroll. */
+.native .segmented.seg-track:not(.seg-scroll),
 .native .people-tab-seg .segmented,
+.native .wardrobe-bar .segmented,
+.native .grocery-filter-row .segmented,
+.native .stats-window .segmented,
 .native .segmented.cal-mode {
   display: flex;
   width: 100%;
@@ -138,7 +152,11 @@
   background: var(--surface-2);
   border: 1px solid var(--hairline);
 }
+.native .segmented.seg-track:not(.seg-scroll) .seg,
 .native .people-tab-seg .segmented .seg,
+.native .wardrobe-bar .segmented .seg,
+.native .grocery-filter-row .segmented .seg,
+.native .stats-window .segmented .seg,
 .native .segmented.cal-mode .seg {
   flex: 1 1 0;
   min-width: 0;
@@ -154,7 +172,11 @@
   text-align: center;
   font-weight: 600;
 }
+.native .segmented.seg-track:not(.seg-scroll) .seg.on,
 .native .people-tab-seg .segmented .seg.on,
+.native .wardrobe-bar .segmented .seg.on,
+.native .grocery-filter-row .segmented .seg.on,
+.native .stats-window .segmented .seg.on,
 .native .segmented.cal-mode .seg.on {
   /* the raised neutral thumb, brand-tinted text — iOS form, Drafter colour */
   background: var(--surface);

@@ -836,18 +836,18 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
           do: once Sunday came round, last Tuesday was only reachable through
           the search box (v3.24). */}
       <section className="journal-week" aria-label={thisWeek ? 'This week' : `Week of ${weekLabel}`}>
-        <div className="journal-week-nav">
+        <div className="journal-week-nav period-bar">
           <button type="button" className="btn" onClick={() => stepWeek(-1)} aria-label="Previous week">
             ‹
           </button>
-          <span className="journal-week-label" aria-live="polite">
+          <span className="journal-week-label period-label" aria-live="polite">
             {thisWeek ? 'This week' : weekLabel}
           </span>
           <button type="button" className="btn" onClick={() => stepWeek(1)} disabled={thisWeek} aria-label="Next week">
             ›
           </button>
           {!thisWeek && (
-            <button type="button" className="btn" onClick={() => setWeekAnchor(today)}>
+            <button type="button" className="btn period-end" onClick={() => setWeekAnchor(today)}>
               This week
             </button>
           )}

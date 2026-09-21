@@ -228,6 +228,26 @@
 .cal-work-edit-label {
   color: var(--muted);
 }
+/* The badge keeps its own outline everywhere it stands alone, but inside the
+   Edit button it was a bordered pill inside a bordered pill — a control drawn
+   inside a control. It gives up the outline and keeps the colour, which is
+   the part that says which kind of day this is. */
+.cal-work-edit > .cal-work-badge {
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+/* On the day page and the day sheet this is the row's only control, and at
+   2px of padding it was a 26pt target for it. It takes the same 44pt floor as
+   every other button on a phone. */
+.cal-day-work .cal-work-edit,
+.cal-day-work .cal-work-set,
+.cal-sheet-head .cal-work-edit,
+.cal-sheet-head .cal-work-set {
+  min-height: var(--touch);
+  padding: 6px 16px;
+  font-size: calc(0.8125rem * var(--type-scale));
+}
 
 /* the editor */
 .event-kind {
@@ -490,4 +510,10 @@
     flex: 1;
     width: auto;
   }
+}
+
+/* Bills' own period bar: the month between its arrows, + Bill at the end.
+   "Bills" as a heading went with it — the segment above already says so. */
+.bills-period {
+  margin-bottom: 12px;
 }

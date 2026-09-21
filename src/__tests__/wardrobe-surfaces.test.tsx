@@ -645,10 +645,13 @@ describe('the Calendar shows a day’s look', () => {
   })
 
   it('outlines Today like the arrows, and the title flexes so › sits with it on the right', () => {
-    expect(render('day')).toContain('<button class="btn">Today</button>')
+    // `period-end`: Today is the bar's trailing action now (v3.28)
+    expect(render('day')).toContain('<button class="btn period-end">Today</button>')
     const title = /\.cal-toolbar h2 \{([^}]*)\}/.exec(read('../styles/03-board-calendar.css'))![1]
     expect(title).toMatch(/flex:\s*1/)
     expect(title).toMatch(/min-width:\s*0/)
+    // and the month sits between the arrows rather than shoved to the left
+    expect(title).toMatch(/text-align:\s*center/)
   })
 
   it('paints Off and a holiday as their own work badges', () => {

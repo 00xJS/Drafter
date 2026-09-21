@@ -259,28 +259,38 @@ export function Review({
 
   return (
     <div className="insights review">
-      <div className="toolbar">
-        <span className="segmented">
-          <button className={period === 'week' ? 'seg on' : 'seg'} onClick={() => setPeriod('week')}>
+      {/* Three rows, not one of eight children. At 402pt that single row wrapped
+          into a shape where ‹ sat above the title and › beside it, the range
+          ran off the line, and the two actions landed wherever there was
+          space. What you are looking at, then how to move it, then what you
+          can do with it (v3.28). */}
+      <div className="people-tab-seg review-period">
+        <span className="segmented" role="tablist" aria-label="Week or month">
+          <button type="button" role="tab" aria-selected={period === 'week'} className={period === 'week' ? 'seg on' : 'seg'} onClick={() => setPeriod('week')}>
             Week
           </button>
-          <button className={period === 'month' ? 'seg on' : 'seg'} onClick={() => setPeriod('month')}>
+          <button type="button" role="tab" aria-selected={period === 'month'} className={period === 'month' ? 'seg on' : 'seg'} onClick={() => setPeriod('month')}>
             Month
           </button>
         </span>
+      </div>
+      <div className="period-bar review-range">
         <button className="btn" onClick={() => setAnchor(shiftRange(range, -1).start)} aria-label="Previous">
           ‹
         </button>
-        <h2 className="view-title">
+        <h2 className="period-label">
           {range.label} {isCurrent && <small className="muted">(so far)</small>}
         </h2>
         <button className="btn" onClick={() => setAnchor(shiftRange(range, 1).start)} aria-label="Next">
           ›
         </button>
-        <button className="btn subtle" onClick={() => setAnchor(new Date())}>
-          This {period}
-        </button>
-        <span className="spacer" />
+        {!isCurrent && (
+          <button className="btn period-end" onClick={() => setAnchor(new Date())}>
+            This {period}
+          </button>
+        )}
+      </div>
+      <div className="toolbar review-actions">
         {onPlanWeek && (
           <button className={planWeekIsPrimary(new Date()) ? 'btn primary' : 'btn'} onClick={onPlanWeek}>
             Plan next week

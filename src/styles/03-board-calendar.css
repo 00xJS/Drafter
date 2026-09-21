@@ -115,12 +115,19 @@
   margin-bottom: 12px;
 }
 
+/* Centred, not start-aligned: the bar is a period bar now (02-chrome.css),
+   so the month sits between its two arrows rather than shoved left with ›
+   stranded mid-screen. flex/min-width stay — they are what let › and Today
+   keep the right-hand end. */
 .cal-toolbar h2 {
   flex: 1;
   min-width: 0;
   margin: 0;
   font-size: 1.0625rem;
-  text-align: start;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cal-hint {
@@ -256,5 +263,46 @@
   font-size: 12px;
   color: var(--muted);
   padding-left: 2px;
+  /* ~51pt of column is not enough for "+2 more", which broke after the number
+     and left "more" sitting alone on a second line under it (v3.28) */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+
+/* ---- The month grid on a phone -----------------------------------------
+   Seven columns of 402pt leaves ~51pt a day. The time was `flex: none`
+   inside an `overflow: hidden` pill, so it was hard-clipped mid-glyph:
+   "12:00 PN", "Offi", "Hom". Nothing about that reads as deliberate.
+
+   So on a phone a month cell names WHAT, not when. The title takes the
+   width and ellipsises honestly; the time is dropped, because at 51pt it
+   fills the pill and leaves nothing to say which thing it is — and the day
+   sheet, one tap away, gives both. */
+@media (max-width: 640px) {
+  .cal-cell .cal-pill-time {
+    display: none;
+  }
+  .cal-cell .cal-pill {
+    display: block;
+  }
+  /* Two lines still — they hold about twice the name one does — but broken
+     BETWEEN words. The base rule's `overflow-wrap: anywhere` split names down
+     the middle at 51pt ("Antho / ny &…", "Pokem / on G…"); `break-word` breaks
+     at a space when it can and only cuts a word that could not fit a line of
+     its own. */
+  .cal-cell .cal-pill-title {
+    overflow-wrap: break-word;
+  }
+  /* the glyph alone says home, office, off or holiday; the words do not fit
+     and were being clipped mid-letter */
+  .cal-cell .cal-work-words {
+    display: none;
+  }
+  .cal-cell .cal-work-badge {
+    max-width: 100%;
+    justify-content: center;
+    padding-inline: 4px;
+  }
+}

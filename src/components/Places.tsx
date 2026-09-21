@@ -679,7 +679,7 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
       ) : (
         <>
           <div className="people-controls">
-            <span className="segmented" style={{ flexWrap: 'wrap' }}>
+            <span className="segmented kind-chips">
               <button className={category === 'all' ? 'seg on' : 'seg'} onClick={() => onFilter({ ...filter, category: 'all' })}>
                 All <span className="board-count">{allStats.length}</span>
               </button>

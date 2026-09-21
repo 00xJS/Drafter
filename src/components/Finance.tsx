@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Segmented } from './stats/Segmented'
 import { formatMoney, isPayday, monthlyCost, monthlyIncome, monthlySpare } from '../bills'
 import { balanceOn, cashRunway, countable, firstShortfall, isLiability, isLiquid, latestBalance, moneyTotals, withBalance } from '../finance'
 import { newerStamp } from '../itemops'
@@ -200,20 +201,7 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
     <div className="bills finance">
       <div className="people-toolbar">
         <h2>Finance</h2>
-        <span className="segmented" role="tablist" aria-label="Finance view">
-          {SEGMENTS.map(seg => (
-            <button
-              key={seg.key}
-              type="button"
-              role="tab"
-              aria-selected={segment === seg.key}
-              className={segment === seg.key ? 'seg on' : 'seg'}
-              onClick={() => setSegment(seg.key)}
-            >
-              {seg.label}
-            </button>
-          ))}
-        </span>
+        <Segmented items={SEGMENTS} value={segment} onChange={k => setSegment(k)} label="Finance view" />
       </div>
 
       <MoneyStrip tasks={tasks} accounts={accounts} />

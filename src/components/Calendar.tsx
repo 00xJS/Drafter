@@ -218,9 +218,16 @@ export function Calendar({
         title={`${words}${hours ? ' · ' + hours : ''}`}
         aria-label={`${words}${hours ? ', ' + hours : ''}`}
       >
-        {meta.emoji} {whose ? `${whose} · ` : ''}
-        {meta.short}
-        {hours ? ` ${hours}` : ''}
+        {meta.emoji}
+        {/* wrapped so a month cell can keep the glyph and drop the words: at
+            51pt a day there is no room for "🏢 Office 08:30–16:30", and the
+            words were being hard-clipped mid-letter ("Off|", "Hor") */}
+        <span className="cal-work-words">
+          {' '}
+          {whose ? `${whose} · ` : ''}
+          {meta.short}
+          {hours ? ` ${hours}` : ''}
+        </span>
       </span>
     )
   }
@@ -635,7 +642,7 @@ export function Calendar({
 
   return (
     <div className="calendar">
-      <div className="cal-toolbar">
+      <div className="cal-toolbar period-bar">
         <button className="btn" onClick={() => shift(-1)} aria-label={`Previous ${shiftBy}`}>
           ‹
         </button>
@@ -643,7 +650,7 @@ export function Calendar({
         <button className="btn" onClick={() => shift(1)} aria-label={`Next ${shiftBy}`}>
           ›
         </button>
-        <button className="btn" onClick={() => setCursor(dayStart(new Date()))}>
+        <button className="btn period-end" onClick={() => setCursor(dayStart(new Date()))}>
           Today
         </button>
         <span className="cal-hint">

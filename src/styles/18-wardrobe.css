@@ -716,12 +716,18 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The looks share the row rather than sitting at a fixed 70px: four of them
+   left ~50pt of dead space against the right edge of the card on a phone,
+   which read as the row having been cut short (v3.28). They grow to fill and
+   stop at 104px, so a wide desktop card keeps them thumbnail-sized. */
 .wardrobe-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 70px;
+  flex: 1 1 70px;
+  min-width: 70px;
+  max-width: 104px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1785,10 +1791,24 @@ button.photo-cal-day:focus-visible {
     margin-bottom: 6px;
   }
   /* the day line keeps to one line at 375pt, logged or not: the two rows and
-     the bar under them have to fit above the tab bar */
+     the bar under them have to fit above the tab bar.
+     ‹ and › sit at the ends of that line with the date centred between
+     them, as they do on every other period bar in the app — all three were
+     packed against the left edge with 196pt of empty row beside them, so the
+     › read as a button stranded in the middle of the page (v3.28). When the
+     day carries a Logged/Planned badge it keeps the end, and › sits in from
+     it, the way Today does on the calendar. */
   .wardrobe-day {
     gap: 4px;
     margin-bottom: 2px;
+    flex-wrap: nowrap;
+  }
+  .wardrobe-day > .wardrobe-step {
+    flex: none;
+  }
+  .wardrobe-day > .wardrobe-day-mid {
+    flex: 1;
+    align-items: center;
   }
   .wardrobe-day-pick {
     padding-inline: 2px;

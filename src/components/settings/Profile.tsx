@@ -145,10 +145,11 @@ export function Profile({ household, supabaseOn }: SettingsCtx) {
         />
       </label>
       <div className="check-add">
+        {/* which account this is belongs to Account, directly below, and said
+            it twice on one screen when it was here too (v3.28) */}
         <button className="btn primary" disabled={busy || name.trim() === (me?.displayName ?? '')} onClick={saveName}>
           Save name
         </button>
-        {email && <small className="muted">Signed in as {email}</small>}
       </div>
 
       <PasswordFields busy={busy} run={run} setError={setError} say={say} />

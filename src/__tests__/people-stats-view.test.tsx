@@ -7,6 +7,7 @@ import { Calendar } from '../components/Calendar'
 import { People } from '../components/People'
 import { PeopleStats } from '../components/PeopleStats'
 import { ListStatsSwitch } from '../components/planner/ListStatsSwitch'
+import { Segmented } from '../components/stats/Segmented'
 import { CAL_MODE_KEY, INNER_VIEW_KEYS, PEOPLE_TAB_KEY, type CalendarMode, type InnerView, type PeopleTab, type View } from '../components/planner/routes'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
 import { useNavigation } from '../components/planner/useNavigation'
@@ -440,15 +441,17 @@ describe('what People → Stats is handed', () => {
 })
 
 describe('List · Stats', () => {
-  it('is the wardrobe’s kind of switch: two tabs of small buttons', () => {
+  it('is a track, like every other switch between views that exclude each other', () => {
     const onChange = vi.fn()
     expect(html(<ListStatsSwitch label="People list or stats" value="list" onChange={onChange} />)).toBe(
-      '<div class="list-stats-bar"><span class="segmented list-stats-seg" role="tablist" aria-label="People list or stats"><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span></div>',
+      '<div class="list-stats-bar"><span class="segmented seg-track list-stats-seg" role="tablist" aria-label="People list or stats" style="--seg-n:2;--seg-i:0"><span class="seg-thumb" aria-hidden="true"></span><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span></div>',
     )
     expect(html(<ListStatsSwitch label="People list or stats" value="list" onChange={onChange} action={<button type="button" className="btn primary">+ Add person</button>} />)).toBe(
-      '<div class="list-stats-bar"><span class="segmented list-stats-seg" role="tablist" aria-label="People list or stats"><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span><span class="list-stats-action"><button type="button" class="btn primary">+ Add person</button></span></div>',
+      '<div class="list-stats-bar"><span class="segmented seg-track list-stats-seg" role="tablist" aria-label="People list or stats" style="--seg-n:2;--seg-i:0"><span class="seg-thumb" aria-hidden="true"></span><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span><span class="list-stats-action"><button type="button" class="btn primary">+ Add person</button></span></div>',
     )
-    press(ListStatsSwitch({ label: 'People list or stats', value: 'list', onChange }), 'Stats')
+    // the buttons are the shared track's now, so the press goes through it
+    const tree = ListStatsSwitch({ label: 'People list or stats', value: 'list', onChange })
+    press(settled(Segmented<InnerView>, propsOf<ComponentProps<typeof Segmented<InnerView>>>(tree, Segmented<InnerView>)), 'Stats')
     expect(onChange).toHaveBeenCalledWith('stats')
   })
 
