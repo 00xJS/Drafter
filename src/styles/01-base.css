@@ -140,6 +140,12 @@
   --tabbar-edge: rgba(15, 17, 21, 0.08);
   /* phone chrome: everything that floats measures itself off these */
   --tabbar-h: 56px;
+  /* The smallest a thing you tap may be. Apple's floor, and the size the iOS
+     shell has always given a button (19-native-shell.css, which set this
+     itself until it moved here). On the web it applies below 640px — the same
+     thumb is on the same glass, whether the bundle is in an app or in Safari,
+     and a 30px button is a miss either way. */
+  --touch: 44px;
   /* The sticky .topbar's own height, safe area excluded: 10px + its tallest
      control + 10px + the 1px border. On the desktop that control is a ~35px
      .btn; on a phone it is the 40px .new-post-btn, so the phone block below

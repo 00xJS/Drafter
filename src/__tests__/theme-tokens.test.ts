@@ -32,7 +32,7 @@ const dark = block(":root[data-theme='dark']")
 const props = (b: Record<string, string>) => Object.keys(b).filter(k => k.startsWith('--'))
 
 /** Tokens that are not colours; they live on the bare :root only. */
-const NON_COLOUR = ['--type-scale', '--radius-sm', '--radius', '--radius-lg', '--radius-xl', '--tabbar-h', '--topbar-h', '--fab-size', '--safe-b', '--safe-l', '--safe-r', '--keyboard-h']
+const NON_COLOUR = ['--type-scale', '--radius-sm', '--radius', '--radius-lg', '--radius-xl', '--tabbar-h', '--touch', '--topbar-h', '--fab-size', '--safe-b', '--safe-l', '--safe-r', '--keyboard-h']
 
 /** Colours that are the same in both themes, declared once on :root, at the value dark has always painted. */
 const FIXED: Record<string, string> = {

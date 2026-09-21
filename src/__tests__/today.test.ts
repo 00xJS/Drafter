@@ -169,7 +169,11 @@ describe('one home project: the bar and its filter are gone', () => {
 
   it('keeps the Tasks tablist to its four lenses, and says the day is on Home', () => {
     expect(tasksScreen).toContain('The day is on Home.')
-    expect(tasksScreen).toMatch(/<div className="people-tab-seg">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
+    // `with-trash`: the Trash sits on this row now (v3.28), outside the
+    // segmented track so it never reads as a fifth lens
+    expect(tasksScreen).toMatch(/<div className="people-tab-seg with-trash">\s*<span className="segmented" role="tablist" aria-label="Tasks view">/)
+    expect(tasksScreen).toContain('<Icon name="trash" size={18} />')
+    expect(tasksScreen).not.toContain('Import / Export')
     // the list, the board, the bills and the notes read the store directly
     expect(tasksScreen).toMatch(/tasks=\{store\.tasks\}/)
     expect(tasksScreen).toMatch(/notes=\{store\.notes\}/)

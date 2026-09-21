@@ -4,7 +4,6 @@ import { isValidElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TasksEmpty, TasksTable } from '../components/TasksTable'
-import type { Store } from '../store'
 import { Task } from '../types'
 
 // The Tasks list used to say "No tasks match." for every empty list — a
@@ -23,7 +22,7 @@ afterEach(() => {
 /** The list as it first opens (the Open filter, no search). It asks matchMedia for its phone layout; node has none, so this is the desktop table. */
 function list(tasks: Task[]): string {
   vi.stubGlobal('window', { matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop }) })
-  return renderToStaticMarkup(<TasksTable store={{} as Store} tasks={tasks} onOpen={noop} onNew={noop} onDelete={noop} onOpenTrash={noop} trashCount={0} />)
+  return renderToStaticMarkup(<TasksTable tasks={tasks} onOpen={noop} onNew={noop} onDelete={noop} />)
 }
 
 const empty = (over: Partial<Parameters<typeof TasksEmpty>[0]> = {}) =>

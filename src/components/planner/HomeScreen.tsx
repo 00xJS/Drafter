@@ -19,7 +19,7 @@ function todayEveningIso(): string {
  *  a link or the palette) as a page with a way back — not as peer tabs that
  *  split the same 18 hours four ways. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, allEvents, sourceMap, showToast } = p
+  const { store, household, allEvents, sourceMap, showToast, goTasksTab } = p
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
@@ -121,6 +121,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onSnooze={snooze}
           // Home → Chat, and what this device has not shown you of it yet
           onOpenChat={() => setHomeTab('chat')}
+          // the notes are a Tasks segment; Home is a second way in, not a move
+          onOpenNotes={() => {
+            goTasksTab('notes')
+            setView('tasks')
+          }}
           unread={unreadSince(store.messages, chatSeenAt, household.myId)}
         />
       )}

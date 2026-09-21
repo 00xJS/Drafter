@@ -330,6 +330,22 @@
 .today-wardrobe {
   flex: none;
 }
+
+@media (max-width: 640px) {
+  /* Five pages at a 44pt touch size do not fit beside the date at 375pt —
+     Wardrobe ran off the edge the moment Notes joined them (v3.28). Their own
+     full-width row, wrapping, so every one of them is visible and reachable;
+     a horizontal scroller would have hidden the last one behind a gesture
+     nobody is told about. */
+  .today-pages {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+  }
+  .today-pages .btn {
+    flex: 1 1 auto;
+    padding-inline: 8px;
+  }
+}
 .week-review-excerpt {
   margin: 0 4px 12px;
   color: var(--text-2);

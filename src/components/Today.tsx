@@ -137,6 +137,13 @@ interface Props {
   onOpenTasks?(): void
   /** Home → Chat: the household's thread and the assistant's. Without it there is no button. */
   onOpenChat?(): void
+  /**
+   * The notes. They live on Tasks as a segment and were easy to miss there —
+   * "it seems like it is buried on the tasks page & could be overlooked" — so
+   * Home names them beside the other pages it opens (v3.28). The segment on
+   * Tasks stays: this is a second door, not a move.
+   */
+  onOpenNotes?(): void
   /** Messages from the other member this device has not shown you yet. */
   unread?: number
   // ---- putting a nudge off (v3.24). Optional: without both, nothing shows an ×.
@@ -657,6 +664,7 @@ export function Today({
   snoozes = NO_SNOOZES,
   onSnooze,
   onOpenChat,
+  onOpenNotes,
   unread = 0,
 }: Props) {
   /**
@@ -911,6 +919,11 @@ export function Today({
             <button type="button" className="btn today-page" onClick={onOpenChat}>
               Chat
               {unread > 0 && <span className="board-count">{unread}</span>}
+            </button>
+          )}
+          {onOpenNotes && (
+            <button type="button" className="btn today-page" onClick={onOpenNotes}>
+              Notes
             </button>
           )}
           {onOpenWardrobe && (

@@ -340,3 +340,17 @@ export function pullSince(cursor: string | null): string | null {
   if (!Number.isFinite(t)) return cursor
   return new Date(t - 10_000).toISOString()
 }
+
+/**
+ * Whether a deleted row belongs in the Trash — the ONE rule, read by the Trash
+ * itself and by the count on its button (TasksScreen). They disagreed once:
+ * the badge said two while the list said empty.
+ *
+ * Here rather than beside the view, because the count is drawn in the first
+ * load and the Trash is a lazy chunk; importing the component for a predicate
+ * would pull the whole dialog into the launch (lazyload.test.ts).
+ *
+ * A purged tombstone has no content left to restore. A snooze and a chat turn
+ * are states rather than records — nobody came here to put a nudge back off.
+ */
+export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat'

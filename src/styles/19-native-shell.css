@@ -23,7 +23,7 @@
 /* HIG tap floor. Every control below reads this so a 36/40/29 mix cannot
    creep back in as three different guesses. */
 .native {
-  --touch: 44px;
+  /* --touch now lives on :root (01-base.css), so the web honours it too */
 }
 
 /* --- Large title. iOS Large Title is 34pt bold with tight tracking — 1.7rem

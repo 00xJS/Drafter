@@ -16,6 +16,7 @@ import { Account, Household } from './settings/Household'
 import { Profile } from './settings/Profile'
 import { Lock } from './settings/Lock'
 import { Reminders } from './settings/Reminders'
+import { ImportExport } from './settings/ImportExport'
 import { Sync } from './settings/Sync'
 import { Templates } from './settings/Templates'
 
@@ -51,7 +52,7 @@ const SETTINGS_GROUPS: SettingsGroupDef[] = [
   { key: 'reminders', label: 'Reminders', advanced: true, sections: [Reminders] },
   { key: 'calendars', label: 'Calendars', advanced: true, sections: [Calendars] },
   { key: 'assistants', label: 'Assistants', needsAccount: true, advanced: true, sections: [Assistants] },
-  { key: 'data', label: 'Data', advanced: true, sections: [Sync, EmailIn, Templates, AdminLink, About] },
+  { key: 'data', label: 'Data', advanced: true, sections: [Sync, ImportExport, EmailIn, Templates, AdminLink, About] },
 ]
 
 interface Props {

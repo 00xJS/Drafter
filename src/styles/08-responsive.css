@@ -614,3 +614,51 @@
   }
 }
 
+
+/* ---- One button size on a phone -----------------------------------------
+   The iOS shell has floored a button at --touch since the proportions pass;
+   the web build never did, so the same screen in Safari drew ~30px buttons —
+   "make them wider so they are not small buttons", and "lets make sure the
+   buttons are similar". This is `.native .btn`'s rule, applied by width
+   instead of by shell, so a thumb meets the same target either way.
+
+   Width, not `.native`: the two are the same glass. A desktop pointer keeps
+   the compact button it has always had. */
+@media (max-width: 640px) {
+  .btn {
+    min-height: var(--touch);
+    padding: 10px 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* an icon is not a word: it must not be squeezed by the flex box it now
+     sits in, or a 20px glyph paints at 8 */
+  .btn svg {
+    flex: none;
+  }
+  /* AFTER .btn, so `padding: 0` wins the 0,1,0 tie on source order — the same
+     ordering .native .icon-btn relies on (19-native-shell.css). A square that
+     inherited .btn's padding above shrinks its own glyph instead of growing. */
+  .icon-btn {
+    width: var(--touch);
+    height: var(--touch);
+    padding: 0;
+  }
+  /* the small square affordances keep their own shape — they are already
+     --touch wide and would become lozenges under the padding above */
+  .nudge-x,
+  .chat-unsend,
+  .cal-sheet-nav,
+  .cal-sheet-close {
+    padding-inline: 8px;
+  }
+  /* a button sitting inside a line of prose is a link in button's clothing;
+     giving it a 44px box would break the sentence it is part of */
+  p > .btn.subtle,
+  .person-journal .btn,
+  .empty .btn {
+    min-height: 0;
+    padding: 6px 10px;
+  }
+}

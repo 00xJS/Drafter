@@ -1,4 +1,5 @@
 import { Item, Project, STATUS_META, Task } from '../types'
+import { inTrash } from '../itemops'
 import { htmlToText } from '../richtext'
 import { excerpt, fmtDateTime, timeAgo } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
@@ -68,11 +69,7 @@ function kindLabel(kind: Item['kind']): string {
 
 /** Everything deleted in the last 90 days, restorable with one click. */
 export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props) {
-  // a purged tombstone has no content left to restore, and a snooze is a state
-  // rather than a record: nobody came here to put a nudge back off again
-  const deleted = items
-    .filter(i => i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat')
-    .sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
+  const deleted = items.filter(inTrash).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
   const label = (i: Item) =>
     i.kind === 'task'
       ? i.title || excerpt(i.description, 50) || 'Untitled task'

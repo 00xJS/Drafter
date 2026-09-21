@@ -699,7 +699,11 @@ describe('native shell: iPhone proportions, not web estimates', () => {
   const narrow = narrowBlocks()
 
   it('names the 44pt floor once and uses it for chrome and buttons', () => {
-    expect(rule(bare, '.native')).toMatch(/--touch:\s*44px/)
+    // --touch moved to :root in v3.28 so the WEB honours it below 640px too:
+    // the same thumb is on the same glass whether the bundle is in the app or
+    // in Safari, and the web build was drawing ~30px buttons. Still named once.
+    expect(rule(bare, ':root')).toMatch(/--touch:\s*44px/)
+    expect(rule(bare, '.native')).not.toMatch(/--touch:\s*44px/)
     expect(rule(bare, '.native .icon-btn')).toMatch(/width:\s*var\(--touch\)/)
     expect(rule(bare, '.native .icon-btn')).toMatch(/height:\s*var\(--touch\)/)
     expect(rule(bare, '.native .new-post-btn')).toMatch(/width:\s*var\(--touch\)/)

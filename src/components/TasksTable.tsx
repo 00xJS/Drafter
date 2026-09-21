@@ -1,7 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { BOARD_STATUSES, PRIORITIES, PRIORITY_META, Priority, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
-import { Store } from '../store'
-import { migrateStored, STORAGE_VERSION } from '../schema'
 import { compareTasks } from '../taskutils'
 import { excerpt } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
@@ -9,13 +7,10 @@ import { DueBadge, PriorityMark, ShareMark } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 
 interface Props {
-  store: Store
   tasks: Task[]
   onOpen(t: Task): void
   onNew(preset?: Partial<Task>): void
   onDelete(t: Task): void
-  onOpenTrash(): void
-  trashCount: number
   /** Drawn only in a household: alone there is nobody to share with. */
   inHousehold?: boolean
   /** The reader's own account id, so a housemate's row can be named. */
@@ -28,14 +23,13 @@ type SortKey = 'due' | 'priority' | 'updated'
 
 // No project column or chip, and a search that reads no project name: there is
 // one ongoing project, so it would say the same on every row.
-export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash, trashCount, inHousehold, myId, nameOf }: Props) {
+export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, nameOf }: Props) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<TaskStatus | 'all' | 'open'>('open')
   const [priority, setPriority] = useState<Priority | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'due', dir: 1 })
   const [notice, setNotice] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const jsonInput = useRef<HTMLInputElement>(null)
   const isNarrow = useMediaQuery('(max-width: 640px)')
 
   // whose row it is, said on the row itself: 🔒 on the ones the other member
@@ -68,43 +62,18 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
     return leftover.length ? [...BOARD_STATUSES, ...leftover] : BOARD_STATUSES
   }, [tasks])
 
-  function exportJSON() {
-    const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.visibleItems }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `drafter-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function onJSONFile(file: File) {
-    try {
-      const migrated = migrateStored(JSON.parse(await file.text()))
-      if (!migrated) throw new Error('expected a Drafter backup (array, {version, posts} or {version, items})')
-      const s = store.importItems(migrated)
-      setNotice(`JSON import: ${s.added} new, ${s.updated} updated, ${s.unchanged} unchanged.`)
-    } catch (e) {
-      setNotice(`JSON import failed: ${(e as Error).message}`)
-    }
-  }
-
+  /**
+   * What the toolbar keeps. Import and Export JSON went to Settings → Data
+   * (v3.28): at 375pt they took the only free slot on the row and hid the
+   * Trash behind an "Import / Export" menu, so the one control anybody
+   * actually reaches for was the one you could not see. Moving data in and
+   * out is a once-a-year thing and belongs where the other data controls are;
+   * the Trash is now an icon on the segment row above (TasksScreen).
+   */
   const actions = (
-    <>
-      <button className="btn" onClick={() => onNew({ status: 'done', completedAt: new Date().toISOString() })}>
-        Log something done
-      </button>
-      <button className="btn" onClick={() => jsonInput.current?.click()}>
-        Import JSON
-      </button>
-      <button className="btn" onClick={exportJSON}>
-        Export JSON
-      </button>
-      <button className="btn" onClick={onOpenTrash}>
-        Trash{trashCount > 0 ? ` (${trashCount})` : ''}
-      </button>
-    </>
+    <button className="btn" onClick={() => onNew({ status: 'done', completedAt: new Date().toISOString() })}>
+      Log something done
+    </button>
   )
 
   return (
@@ -142,25 +111,7 @@ export function TasksTable({ store, tasks, onOpen, onNew, onDelete, onOpenTrash,
           </span>
         )}
         <span className="spacer" />
-        {isNarrow ? (
-          <details className="action-menu">
-            <summary className="btn">Import / Export ▾</summary>
-            <div className="action-menu-items">{actions}</div>
-          </details>
-        ) : (
-          actions
-        )}
-        <input
-          ref={jsonInput}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          onChange={e => {
-            const f = e.target.files?.[0]
-            if (f) onJSONFile(f)
-            e.target.value = ''
-          }}
-        />
+        {actions}
       </div>
 
       {notice && (

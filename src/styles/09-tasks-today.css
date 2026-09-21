@@ -570,3 +570,25 @@ td .share-mark,
   margin-top: 2px;
   display: inline-block;
 }
+
+/* The Trash, on the Tasks segment row (v3.28). An icon rather than a word so
+   the four segments keep the width they need at 375pt, and outside the
+   segmented track so it never reads as a fifth segment. Not `.icon-btn`: that
+   is a fixed square, and this holds a glyph AND the count beside it. */
+.people-tab-seg.with-trash {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.people-tab-seg.with-trash .segmented {
+  flex: 1;
+  min-width: 0;
+}
+.tasks-trash {
+  flex: none;
+  gap: 5px;
+  padding-inline: 10px;
+}
+.tasks-trash .board-count {
+  font-variant-numeric: tabular-nums;
+}
