@@ -979,17 +979,57 @@
    on the right, theirs on the left, a heading whenever the day changes, and a
    composer pinned under them. Nothing here knows which thread it is — the
    difference between them is what is in the records, not how a line looks. */
+/* A chat screen, not a page with bubbles on it. The column is as tall as
+   what is left of the viewport under the top bar, so the composer sits at the
+   BOTTOM of the screen even when two lines have been said — a composer
+   floating halfway up an empty page is the single thing that read as a web
+   form. The thread is pushed down to meet it (`margin-top: auto`), the way
+   every message app stacks from the bottom. */
 .chat {
   display: flex;
   flex-direction: column;
+  min-height: calc(100dvh - var(--topbar-h) - 24px);
+}
+.chat-what {
+  margin: 0 0 4px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+}
+.chat-seg {
+  margin-bottom: 8px;
+}
+/* the four openers ride in one sideways row rather than four stacked lines */
+.chat-prompts {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  margin: 0 -4px;
+  padding-inline: 4px;
+  scroll-snap-type: x proximity;
+}
+.chat-prompts::-webkit-scrollbar {
+  display: none;
+}
+.chat-prompts .toggle {
+  flex: none;
+  scroll-snap-align: start;
 }
 .chat-thread {
   list-style: none;
-  margin: 8px 0 12px;
+  /* auto, so a short thread sits just above the composer instead of clinging
+     to the segmented control with a screen of blank under it */
+  margin: auto 0 12px;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* the empty state and the opener block sit with the thread, not above it */
+.chat-intro,
+.chat > .empty {
+  margin-top: auto;
 }
 .chat-day {
   align-self: center;
@@ -1020,13 +1060,20 @@
 .chat-bubble {
   display: block;
   padding: 8px 12px;
-  border-radius: var(--radius-lg);
+  /* an iOS bubble is round except where it meets its speaker */
+  border-radius: 18px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  line-height: 1.45;
+  line-height: 1.35;
   /* a pasted paragraph keeps its line breaks; a long word still wraps */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.chat-line.mine .chat-bubble {
+  border-bottom-right-radius: 6px;
+}
+.chat-line.theirs .chat-bubble {
+  border-bottom-left-radius: 6px;
 }
 .chat-line.mine .chat-bubble {
   background: var(--accent);
@@ -1036,12 +1083,24 @@
 .chat-line.drafter .chat-bubble {
   background: var(--surface);
 }
+/* Shown on the last line of a run and on hover, not stamped under every
+   bubble: a column of times down the thread is the web-form tell. */
 .chat-at {
   display: block;
-  margin-top: 4px;
-  opacity: 0.7;
+  margin-top: 2px;
+  opacity: 0;
   font-size: calc(0.68rem * var(--type-scale));
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: 0;
+  overflow: hidden;
+  transition: opacity 120ms ease;
+}
+.chat-line:last-of-type .chat-at,
+.chat-line:hover .chat-at,
+.chat-line:focus-within .chat-at {
+  opacity: 0.65;
+  height: auto;
 }
 /* the × on your own line: only where the pointer is, so a thread reads as
    words rather than as a column of delete buttons */
@@ -1075,6 +1134,11 @@
   align-self: center;
   margin: 4px 0;
 }
+/* Pinned to the bottom, with the thread scrolling under it. `bottom` clears
+   the phone's tab bar and its safe area — sticky to 0 alone parks it behind
+   the bar, which is what clipped the Assistant's box in half. No
+   --keyboard-h term anywhere near it: that is a signal, not an inset, and
+   resize:'native' has already shortened the WebView (01-base.css). */
 .chat-composer {
   position: sticky;
   bottom: 0;
@@ -1083,6 +1147,35 @@
   align-items: flex-end;
   padding: 8px 0;
   background: var(--bg);
+}
+@media (max-width: 640px) {
+  /* The chat owns its own clearance of the tab bar, so `.content`'s does not
+     apply twice — and so the composer can stick to `bottom: 0`. A sticky
+     bottom OFFSET lifts the element off its flow position and back over
+     whatever precedes it, which is what buried the empty state under the
+     composer; the clearance belongs INSIDE the bar, as padding. */
+  .content:has(.chat) {
+    padding-bottom: 0;
+  }
+  /* --topbar-h is the bar's own height; the bar ALSO carries the top safe
+     area as padding (19-native-shell.css), so a column sized without that
+     term overshoots by the notch and the page scrolls the segmented control
+     off the top. --touch is the "Today" back button Home draws above every
+     page it opens. The composer carries the tab bar's clearance itself, so
+     there is no --tabbar-h term here.
+
+     Erring SHORT is deliberate: a few pixels spare leave the composer a
+     fraction high, which nobody sees, while a few too many scroll the
+     controls off the top, which everybody does. */
+  .chat {
+    min-height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-top, 0px) - var(--touch) - 24px);
+  }
+  .chat-composer {
+    /* the thread runs under it, so it needs a ground and an edge of its own */
+    margin: 0 -12px;
+    padding: 8px 12px calc(var(--tabbar-h) + var(--safe-b) + 8px);
+    border-top: 1px solid var(--hairline);
+  }
 }
 .chat-composer textarea {
   flex: 1;

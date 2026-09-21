@@ -341,9 +341,12 @@
     flex: 1 0 100%;
     justify-content: flex-start;
   }
+  /* Natural width, not `flex: 1` — five of them wrap to 4 + 1 at 402pt, and a
+     stretched button alone on the second row reads as a mistake. Left-aligned
+     at their own size, a wrapped group reads as a wrapped group. */
   .today-pages .btn {
-    flex: 1 1 auto;
-    padding-inline: 8px;
+    flex: 0 1 auto;
+    padding-inline: 12px;
   }
 }
 .week-review-excerpt {

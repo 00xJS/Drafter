@@ -362,6 +362,14 @@
   .briefing-tile {
     flex: 1 1 calc(50% - 4px);
   }
+  /* A tile with no second line — an Off or a holiday, which has no hours to
+     name — is half the width of the row and as TALL as whatever sits beside
+     it, so its glyph and label were marooned in the top-left of a big box.
+     Centre the ones that have nothing under the label; a tile that does keep
+     its lines flush left, where a block of two reads properly. */
+  .briefing-tile:not(:has(.briefing-sub)) {
+    justify-content: center;
+  }
 }
 
 /* ==========================================================================

@@ -211,7 +211,7 @@ function AssistantThread({
             Ask Drafter about your own week. It reads your planner on this device and only sends the handful of records your question is about — and it cannot change
             anything.
           </p>
-          <div className="platform-toggles">
+          <div className="chat-prompts">
             {CHAT_PROMPTS.map(p => (
               <button key={p} type="button" className="toggle" disabled={busy} onClick={() => void send(p)}>
                 {p}
@@ -320,17 +320,11 @@ export function Chat({
 
   return (
     <section className="chat">
-      <div className="toolbar people-toolbar">
-        <div>
-          <h2 className="view-title">Chat</h2>
-          <p className="chart-sub">
-            {side === 'household' ? 'You and the people you live with.' : 'You and Drafter, about your own planner. Nobody else can read this.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="list-stats-bar">
-        <span className="segmented list-stats-seg" role="tablist" aria-label="Which chat">
+      {/* The tab-level track People · Places uses, so the two halves of the
+          chat read as one control rather than as two small web buttons; the
+          native shell draws it as an iOS segmented control (19-native-shell). */}
+      <div className="people-tab-seg chat-seg">
+        <span className="segmented" role="tablist" aria-label="Which chat">
           <button type="button" role="tab" aria-selected={side === 'household'} className={side === 'household' ? 'seg on' : 'seg'} onClick={() => onSide('household')}>
             Household
           </button>
@@ -339,6 +333,11 @@ export function Chat({
           </button>
         </span>
       </div>
+      {/* one quiet line, not a heading and a paragraph: a chat screen's job is
+          the thread and the box you type in */}
+      <p className="chat-what">
+        {side === 'household' ? 'You and the people you live with.' : 'Only you can read this. Drafter cannot change anything.'}
+      </p>
 
       {side === 'household' ? (
         <HouseholdThread
