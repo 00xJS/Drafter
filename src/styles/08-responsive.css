@@ -204,7 +204,31 @@
   }
   .event-list .event-row .event-actions {
     flex: 0 0 100%;
-    justify-content: flex-start;
+    /* at the right end of the line they are given, not the left: parked left
+       they sat under the avatar with two-thirds of the row empty past them,
+       and away from the thumb that presses them (v3.28) */
+    justify-content: flex-end;
+  }
+
+  /* "Coming up" is the one card here that never needed the stacking. It
+     carries Plan and × — about 110pt of the 370 — where People carries
+     "Saw them" + "Plan something" + × at ~275pt and Occasions two full
+     phrases; it was only swept up by `.event-list` when it gained an × of
+     its own (v3.24). Stacked, it read as a staircase: the title, the date
+     under it, then two buttons on a third line. It keeps one line, with the
+     actions at the right, and the title gives way first if a long one ever
+     needs it to. */
+  .coming-up .event-list .event-row {
+    flex-wrap: nowrap;
+  }
+  .coming-up .event-list .event-row .event-actions {
+    flex: none;
+    margin-left: auto;
+  }
+  .coming-up .event-list .event-row .dash-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .event-list .event-row .dash-title {
     white-space: normal;
