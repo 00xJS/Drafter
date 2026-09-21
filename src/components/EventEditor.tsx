@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode } from '../types'
+import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode, isWorkingMode } from '../types'
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
@@ -9,7 +9,8 @@ import { PeoplePicker } from './PeoplePicker'
 // The one thing a task cannot express: a block of time with a start AND an end.
 // Everything else on the calendar marks a moment (a due time, a meal, an
 // occasion); this reserves a slot. A work day is the same record with a place
-// attached — home or the office — and its start and end are the working hours.
+// attached — home or the office, and their working hours, or Off / a holiday
+// as the whole day.
 
 /** 'YYYY-MM-DDTHH:MM' in local time, which is what <input type="datetime-local"> speaks. */
 function toLocalInput(iso: string): string {
@@ -163,6 +164,25 @@ export function EventEditor({
 
   const saveWork = (mode: WorkMode) => {
     const name = title.trim() || WORK_MODE_META[mode].label
+    if (!isWorkingMode(mode)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(workDay)) {
+        setError('Pick a day.')
+        return
+      }
+      if (!entry && repeatDays.length > 0) {
+        const days = expandWorkDays(workDay, repeatDays, repeatWeeks, '09:00', '17:00')
+        if (days.length === 0) {
+          setError('None of those weekdays fall in that range.')
+          return
+        }
+        onSave(days.map(d => build({ title: name, start: d.day, end: nextDayKey(d.day), allDay: true }, false)))
+        onClose()
+        return
+      }
+      onSave([build({ title: name, start: workDay, end: nextDayKey(workDay), allDay: true }, true)])
+      onClose()
+      return
+    }
     const f = from.slice(0, 5)
     const t = to.slice(0, 5)
     if (!/^\d{2}:\d{2}$/.test(f) || !/^\d{2}:\d{2}$/.test(t)) {
@@ -254,8 +274,8 @@ export function EventEditor({
         {work ? (
           <>
             <div className="field">
-              <span>Where</span>
-              <div className="segmented" role="group" aria-label="Where you are working">
+              <span>The day</span>
+              <div className="segmented" role="group" aria-label="What kind of day">
                 {WORK_MODES.map(m => (
                   <button key={m} type="button" className={work === m ? 'seg on' : 'seg'} aria-pressed={work === m} onClick={() => setWork(m)}>
                     {WORK_MODE_META[m].emoji} {WORK_MODE_META[m].short}
@@ -269,16 +289,18 @@ export function EventEditor({
               <input type="date" value={workDay} onChange={e => setWorkDay(e.target.value)} />
             </label>
 
-            <div className="work-hours">
-              <label className="field">
-                <span>From</span>
-                <input type="time" value={from} onChange={e => setFrom(e.target.value)} />
-              </label>
-              <label className="field">
-                <span>To</span>
-                <input type="time" value={to} onChange={e => setTo(e.target.value)} />
-              </label>
-            </div>
+            {isWorkingMode(work) && (
+              <div className="work-hours">
+                <label className="field">
+                  <span>From</span>
+                  <input type="time" value={from} onChange={e => setFrom(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>To</span>
+                  <input type="time" value={to} onChange={e => setTo(e.target.value)} />
+                </label>
+              </div>
+            )}
 
             {!entry && (
               <div className="field">

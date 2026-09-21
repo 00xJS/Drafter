@@ -3,10 +3,14 @@ import { excerpt } from '../utils'
 import { checklistProgress } from '../taskutils'
 import { parseGithubUrl } from '../github'
 import { DueBadge, PriorityMark, ShareMark } from './bits'
+import { MemberFace } from './MemberFace'
 
 interface Props {
   task: Task
   assignee?: string
+  /** Their picture and account id, so the chip is their face rather than two letters (v3.25). */
+  assigneeAvatar?: string | null
+  assigneeId?: string
   /** Drawn only in a household: alone, every card would say the same thing. */
   inHousehold?: boolean
   onOpen(t: Task): void
@@ -15,7 +19,7 @@ interface Props {
 }
 
 // No project chip: there is one ongoing project, so it would say the same on every card.
-export function TaskCard({ task, assignee, inHousehold, onOpen, onStatus }: Props) {
+export function TaskCard({ task, assignee, assigneeAvatar, assigneeId, inHousehold, onOpen, onStatus }: Props) {
   const check = checklistProgress(task)
   const gh = parseGithubUrl(task.githubUrl)
 
@@ -56,12 +60,7 @@ export function TaskCard({ task, assignee, inHousehold, onOpen, onStatus }: Prop
         {inHousehold && <ShareMark kind="task" shared={task.shared !== false} />}
         {assignee && (
           <span className="assignee" title={assignee}>
-            {assignee
-              .split(/[\s@._-]+/)
-              .filter(Boolean)
-              .slice(0, 2)
-              .map(s => s[0]!.toUpperCase())
-              .join('')}
+            <MemberFace name={assignee} avatar={assigneeAvatar} id={assigneeId} size={22} />
           </span>
         )}
         {check && (

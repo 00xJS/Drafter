@@ -764,3 +764,13 @@ span.routine-name:hover {
 }
 /* ===== end PHASE 3 ===== */
 
+
+/* The briefing strip's tile for another member's work day (v3.24): the same
+   tile, quieter, because it states where somebody else is rather than
+   anything you have to act on. */
+.briefing-tile.briefing-theirs {
+  opacity: 0.82;
+}
+.briefing-tile.briefing-theirs .briefing-main {
+  font-weight: 500;
+}

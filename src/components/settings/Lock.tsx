@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { appLockEnabled, authenticateAppLock, checkAppLock, isNative, setAppLockEnabled } from '../../native'
 import { useAsyncAction } from './useAsyncAction'
 
-/** Reminders → Lock this iPhone: Face ID, Touch ID or the passcode after you leave the app. The app only. */
+/** Appearance → Lock this iPhone: Face ID, Touch ID or the passcode after you leave the app. The app only. */
 export function Lock() {
   const [lockOn, setLockOn] = useState(appLockEnabled())
   const [lockLabel, setLockLabel] = useState('Face ID')
@@ -19,7 +19,7 @@ export function Lock() {
 
   if (!isNative()) return null
   return (
-    <section className="settings-section g-reminders">
+    <section className="settings-section g-appearance">
       <h3>Lock this iPhone</h3>
       <p className="field-hint">
         After you leave the app, {lockLabel} is required to see your planner again. Stays on this device — it does

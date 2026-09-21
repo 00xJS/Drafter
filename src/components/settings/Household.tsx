@@ -4,15 +4,15 @@ import { clearLocalData } from '../../idb'
 import { disablePush } from '../../push'
 import { getSupabase } from '../../supabase'
 import { ConfirmButton } from '../ConfirmButton'
+import { MemberFace } from '../MemberFace'
 import { useSignOut } from '../SignOutGuard'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
-/** Household: who shares this planner, invitations either way, and your name as they see it. */
+/** Household: who shares this planner, and invitations either way. Your own name and picture are under You. */
 export function Household({ store, household, supabaseOn }: SettingsCtx) {
   const [hhName, setHhName] = useState('')
   const [invite, setInvite] = useState('')
-  const [displayName, setDisplayName] = useState(household.info?.me.displayName ?? '')
   const { busy: hhBusy, error: hhError, run } = useAsyncAction()
   const runHh = (fn: () => Promise<unknown>) =>
     run(async () => {
@@ -31,12 +31,6 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
         Share the planner with the people you live with. Journal, wardrobe and habits stay on each account. Tasks,
         notes and meals are private until someone shares them; shared work can be assigned either way.
       </p>
-      <div className="check-add">
-        <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your name as others see it" />
-        <button className="btn" disabled={hhBusy} onClick={() => runHh(() => householdAction('me', { displayName }))}>
-          Save name
-        </button>
-      </div>
       {(household.info?.invites ?? []).length > 0 && (
         <ul className="cal-sources">
           {household.info!.invites!.map(inv => (
@@ -67,7 +61,7 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
           <ul className="cal-sources">
             {household.info.members.map(m => (
               <li key={m.id} className="cal-source">
-                <span className="assignee">{m.displayName.slice(0, 2).toUpperCase()}</span>
+                <MemberFace name={m.displayName} avatar={m.avatar} id={m.id} size={28} />
                 <span className="cal-source-name">
                   {m.displayName} <small>· {m.email}{m.role === 'owner' ? ' · owner' : ''}{m.id === household.myId ? ' · you' : ''}</small>
                 </span>
@@ -103,7 +97,7 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
   )
 }
 
-/** Household → Account: who is signed in here, and signing out (which wipes this device's copy). */
+/** You → Account: who is signed in here, and signing out (which wipes this device's copy). */
 export function Account({ supabaseOn, onClose, store }: SettingsCtx) {
   const [accountEmail, setAccountEmail] = useState('')
   // stop notifications and wipe the local copy BEFORE dropping the session,
@@ -125,7 +119,7 @@ export function Account({ supabaseOn, onClose, store }: SettingsCtx) {
 
   if (!supabaseOn) return null
   return (
-    <section className="settings-section g-household">
+    <section className="settings-section g-you">
       <h3>Account</h3>
       <p>{accountEmail ? `Signed in as ${accountEmail}.` : 'Signed in.'}</p>
       <button className="btn" disabled={signOut.busy} onClick={signOut.start}>

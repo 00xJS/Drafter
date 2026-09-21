@@ -40,8 +40,20 @@ function componentSource(name: string): string | undefined {
 }
 
 describe('Settings groups: one registry, every group drawn and styled', () => {
-  it('reads the six groups, in nav order', () => {
-    expect(registry.map(g => g.key)).toEqual(['calendars', 'reminders', 'appearance', 'household', 'assistants', 'data'])
+  it('reads the seven groups, in nav order, with You first', () => {
+    // You is first because it is what a second member opens Settings for
+    // (v3.25); the four after Household are folded behind "More…" until asked
+    // for, so the dialog opens on three chips rather than six.
+    expect(registry.map(g => g.key)).toEqual(['you', 'appearance', 'household', 'reminders', 'calendars', 'assistants', 'data'])
+  })
+
+  it('folds the groups that are not about you behind More…', () => {
+    const advanced = [...shell.matchAll(/\{\s*key:\s*'([\w-]+)'[^}]*?advanced:\s*true/g)].map(m => m[1])
+    expect(advanced).toEqual(['reminders', 'calendars', 'assistants', 'data'])
+    // the group you are ON stays in the nav even while it is folded away,
+    // or landing on it from a link would leave nothing showing as selected
+    expect(shell).toContain("(!g.advanced || more || g.key === group)")
+    expect(shell).toContain('More…')
   })
 
   it('gives every group sections that each draw settings-section g-<key>', () => {

@@ -176,7 +176,8 @@ export function paramsOf(raw: string): { host: string; params: URLSearchParams }
     const u = new URL(raw, base)
     const host = u.hostname || u.host || ''
     // A link into the app's own origin has no drafter:// host to scope on. Under
-    // the iOS shell the page origin is capacitor://localhost, so a notification's
+    // the iOS shell the page origin is capacitor://drafter (capacitor://localhost
+    // before v3.25), so a notification's
     // `/?task=…` used to resolve to the host "localhost" — which parseLink treats
     // as an unknown drafter:// host and ignores, killing every reminder tap.
     if (host && sameOrigin(u, base)) return { host: '', params: u.searchParams }

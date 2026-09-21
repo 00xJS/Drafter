@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
+import { siteOrigin } from '../api'
 
 interface Props {
   onBack?: () => void
@@ -16,8 +17,29 @@ export function Login({ onBack, connecting = false }: Props) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** "Check your inbox" after a reset was asked for; cleared by typing again. */
+  const [sent, setSent] = useState('')
   // a copy with no backend (local mode) has no account to sign in to, so there is nothing to connect
   const noAccount = connecting && !isSupabaseConfigured()
+
+  /**
+   * Ask Supabase to email a recovery link. The reply is deliberately the same
+   * whether or not that address has an account: this form is public, and a
+   * different answer for a real one turns it into a way to find out who has
+   * one. The link comes back to this site and App shows SetPassword.
+   */
+  async function forgot() {
+    const sb = getSupabase()
+    const to = email.trim()
+    if (!sb || !to) return setError('Type your email address first, then tap this again.')
+    setBusy(true)
+    setError('')
+    // the hosted site, never the shell's own origin: a capacitor:// URL is
+    // not somewhere Supabase can send anyone back to
+    await sb.auth.resetPasswordForEmail(to, { redirectTo: siteOrigin() })
+    setBusy(false)
+    setSent(`If ${to} has an account, a link to set a new password is on its way. It can take a minute.`)
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -44,7 +66,17 @@ export function Login({ onBack, connecting = false }: Props) {
           <>
             <label className="field">
               <span>Email</span>
-              <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus required />
+              <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={e => {
+                setEmail(e.target.value)
+                setSent('')
+              }}
+              autoFocus
+              required
+            />
             </label>
             <label className="field">
               <span>Password</span>
@@ -57,11 +89,15 @@ export function Login({ onBack, connecting = false }: Props) {
               />
             </label>
             {error && <p className="warn">{error}</p>}
+            {sent && <p className="sync-ok">{sent}</p>}
             <button className="btn primary login-btn" type="submit" disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
+            <button type="button" className="btn subtle login-forgot" disabled={busy} onClick={forgot}>
+              Forgot your password?
+            </button>
             <p className="field-hint">
-              Accounts are created in the Supabase dashboard (Authentication → Users) — there is no public sign-up.
+              There is no public sign-up: the person who runs this planner creates the accounts.
             </p>
           </>
         )}

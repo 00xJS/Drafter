@@ -445,13 +445,27 @@ describe('List · Stats', () => {
     expect(html(<ListStatsSwitch label="People list or stats" value="list" onChange={onChange} />)).toBe(
       '<div class="list-stats-bar"><span class="segmented list-stats-seg" role="tablist" aria-label="People list or stats"><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span></div>',
     )
+    expect(html(<ListStatsSwitch label="People list or stats" value="list" onChange={onChange} action={<button type="button" className="btn primary">+ Add person</button>} />)).toBe(
+      '<div class="list-stats-bar"><span class="segmented list-stats-seg" role="tablist" aria-label="People list or stats"><button type="button" role="tab" aria-selected="true" class="seg on">List</button><button type="button" role="tab" aria-selected="false" class="seg">Stats</button></span><span class="list-stats-action"><button type="button" class="btn primary">+ Add person</button></span></div>',
+    )
     press(ListStatsSwitch({ label: 'People list or stats', value: 'list', onChange }), 'Stats')
     expect(onChange).toHaveBeenCalledWith('stats')
   })
 
+  it('opens the add form from that row, and no longer draws the button under the title', () => {
+    const props = { people: [], tasks: [], filter: NO_PERSON_FILTER, onFilter: noop, onSave: noop, onDelete: noop, onLogVisit: noop, onPlan: noop, onOpenTask: noop }
+    expect(html(<People {...props} />)).not.toContain('+ Add person')
+    expect(html(<People {...props} />)).not.toContain('Add a person')
+    expect(html(<People {...props} openAdd />)).toContain('Add a person')
+  })
+
   it('sits in the People segment, remembered for it alone, with Stats loaded on demand', () => {
     const screen = source('components/planner/PeopleScreen.tsx')
-    expect(screen).toContain("<ListStatsSwitch label=\"People list or stats\" value={innerViews.people} onChange={v => setInnerView('people', v)} />")
+    expect(screen).toContain('<ListStatsSwitch')
+    expect(screen).toContain('label="People list or stats"')
+    expect(screen).toContain("onChange={v => setInnerView('people', v)}")
+    expect(screen).toContain('+ Add person')
+    expect(source('components/People.tsx')).not.toContain('+ Add person')
     expect(screen).toMatch(/innerViews\.people === 'stats' \? \(\s*<PeopleStats/)
     expect(screen).toContain("import { People, PeopleStats, Places, PlacesStats } from './lazy'")
     expect(source('components/planner/lazy.ts')).toContain("import('../PeopleStats')")
@@ -687,6 +701,7 @@ describe('its styles', () => {
     expect(block.length).toBeGreaterThan(0)
     expect(block.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
     expect(css).not.toMatch(/\.people-tab-seg[^{}]*\.list-stats/)
+    expect(css).toMatch(/\.list-stats-action \{[^}]*margin-left: auto/)
     // the chips wrap and the table scrolls in its own box, so 375pt never scrolls sideways
     expect(css).toMatch(/\.people-controls \{[^}]*flex-wrap: wrap/)
     // a group's days stay whole beside its name, so its bar ends with the share alone

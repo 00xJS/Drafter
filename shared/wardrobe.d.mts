@@ -34,7 +34,7 @@ export declare function logLook(
   day: string,
   pieces: readonly string[],
   records: readonly Garment[],
-  opts?: { another?: boolean; shown?: ReadonlySet<string>; now?: string; rand?: () => string; planned?: boolean; note?: string },
+  opts?: { another?: boolean; wearId?: string; shown?: ReadonlySet<string>; now?: string; rand?: () => string; planned?: boolean; note?: string },
 ): LookLog
 
 export declare function pieceKey(ids: readonly string[]): string

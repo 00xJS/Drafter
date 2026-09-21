@@ -1,5 +1,7 @@
 // Place rules shared by the web app and the MCP server. Dependency-free ESM.
 
+import { ownVisit } from './people.mjs'
+
 /**
  * The kinds of place, in the order the app offers them. One list for the app
  * and the MCP server: a category added here is one an assistant can save and
@@ -183,14 +185,22 @@ const middayOf = dateKey => `${dateKey}T12:00:00.000Z`
  * FUTURE: next Friday's booking is a plan, not a visit, so it must not reset a
  * cadence or inflate a count. Meals are optional so every existing caller keeps
  * working unchanged.
+ *
+ * `myId` narrows it to YOUR outings (v3.24). The list of places is the
+ * household's — one favourite café — but going there is not something both
+ * members did because one of them did. A logged outing is whoever logged it's
+ * (ownVisit). A meal is the exception, and deliberately: a meal SHARED with
+ * the household is the evening you both ate out, so it counts for both, while
+ * a meal kept to yourself counts for you alone. `shared` absent reads as
+ * shared, which is every meal written before v3.22.
  */
-export function outingsAt(placeId, tasks, meals = [], now = new Date()) {
+export function outingsAt(placeId, tasks, meals = [], now = new Date(), myId = null) {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
   const fromTasks = (tasks ?? [])
-    .filter(t => t && !t.deletedAt && t.status === 'done' && t.completedAt && t.placeId === placeId)
+    .filter(t => t && !t.deletedAt && t.status === 'done' && t.completedAt && t.placeId === placeId && ownVisit(t, myId))
     .map(t => ({ kind: 'task', task: t, at: t.completedAt }))
   const fromMeals = (meals ?? [])
-    .filter(m => m && !m.deletedAt && m.out === true && m.placeId === placeId && m.date)
+    .filter(m => m && !m.deletedAt && m.out === true && m.placeId === placeId && m.date && (m.shared !== false || ownVisit(m, myId)))
     .map(m => ({ kind: 'meal', meal: m, at: middayOf(m.date) }))
     .filter(v => Date.parse(v.at) <= nowMs)
   return [...fromTasks, ...fromMeals].sort((a, b) => b.at.localeCompare(a.at))
@@ -202,11 +212,11 @@ export function outingsAt(placeId, tasks, meals = [], now = new Date()) {
  * never set a rhythm for must never read as due or overdue on Today or in the
  * digest. Same 1× due / 1.5× overdue thresholds as people once a cadence is set.
  */
-export function placeCadenceStatus(place, tasks, now = new Date(), meals = []) {
+export function placeCadenceStatus(place, tasks, now = new Date(), meals = [], myId = null) {
   const cadence = Number(place?.cadenceDays)
   if (!Number.isFinite(cadence) || cadence <= 0) return { status: 'none', reason: '' }
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
-  const lastAt = outingsAt(place.id, tasks, meals, now)[0]?.at
+  const lastAt = outingsAt(place.id, tasks, meals, now, myId)[0]?.at
   if (!lastAt) {
     return { status: 'never', reason: `No outings yet — you aimed for every ${cadence} days`, cadenceDays: cadence }
   }

@@ -27,6 +27,12 @@ interface Props {
   habits: Habit[]
   /** Your own calendar entries: one that has happened with people on it counts under People. */
   entries?: CalendarEntry[]
+  /**
+   * Whose week this is. Who you saw and where you went are each member's own
+   * (v3.24): a fortnight in which the other member saw their mother twice used
+   * to read here as though you had, which is how the separation was noticed.
+   */
+  myId?: string | null
   onSaveReview(r: ReviewRecord): void
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
@@ -130,6 +136,7 @@ export function Review({
   places,
   habits,
   entries = NO_ENTRIES,
+  myId,
   onSaveReview,
   onOpen,
   onStatus,
@@ -143,7 +150,7 @@ export function Review({
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
-  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries), [range, tasks, projects, people, places, entries])
+  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries, myId), [range, tasks, projects, people, places, entries, myId])
   // what you wore in the period, counted in days as the Stats are: each day's
   // look, and the piece worn on the most of them
   const pieces = useMemo(() => liveById(garments), [garments])

@@ -55,13 +55,24 @@ function kindLabel(kind: Item['kind']): string {
       return 'Outfit'
     case 'wear':
       return 'Outfit worn'
+    case 'snooze':
+      return 'Nudge put off'
+    case 'message':
+      return 'Message'
+    case 'chat':
+      return 'Chat'
+    case 'account':
+      return 'Account'
   }
 }
 
 /** Everything deleted in the last 90 days, restorable with one click. */
 export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props) {
-  // a purged tombstone has no content left to restore
-  const deleted = items.filter(i => i.deletedAt && !i.purged).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
+  // a purged tombstone has no content left to restore, and a snooze is a state
+  // rather than a record: nobody came here to put a nudge back off again
+  const deleted = items
+    .filter(i => i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat')
+    .sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))
   const label = (i: Item) =>
     i.kind === 'task'
       ? i.title || excerpt(i.description, 50) || 'Untitled task'
@@ -83,7 +94,13 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                       ? i.name || pieces(i.garmentIds.length)
                       : i.kind === 'wear'
                         ? `${i.date} · ${pieces(i.garmentIds.length)}`
-                        : i.name
+                        : i.kind === 'snooze'
+                          ? `${i.target} put off`
+                          : i.kind === 'message'
+                            ? i.body || 'A message'
+                            : i.kind === 'chat'
+                              ? i.text || 'A chat turn'
+                              : i.name
   return (
     <Modal onClose={onClose}>
       <ModalHead title="Trash" />

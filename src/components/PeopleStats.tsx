@@ -49,6 +49,12 @@ interface Props {
   onOpenDay?(day: string): void
   /** The clock the figures are read from; the tests hand one in. */
   now?: Date
+  /**
+   * Whose log these figures count. The address book is the household's; the
+   * record of who saw whom is each member's own (v3.24), so every figure here
+   * reads only the visits this account wrote or was handed.
+   */
+  myId?: string | null
 }
 
 const NO_ENTRIES: CalendarEntry[] = []
@@ -164,13 +170,13 @@ function GroupsCard({ shown, seen, now }: { shown: readonly PersonStats[]; seen:
  * while they narrow it, a line under the chips says so, with Show all. Drawn
  * with the Stats kit.
  */
-export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, now: clock }: Props) {
+export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFilter, onSaw, onOpenPerson, onOpenDay, now: clock, myId }: Props) {
   const theme = useTheme()
   // read at one instant, and again when the records change, as the list's figures are
   const { now, seen, all } = useMemo(() => {
     const at = clock ?? new Date()
-    return { now: at, ...peopleSeen(people, tasks, entries, at) }
-  }, [people, tasks, entries, clock])
+    return { now: at, ...peopleSeen(people, tasks, entries, at, myId) }
+  }, [people, tasks, entries, clock, myId])
   const todayKey = dateKey(now)
   const thisYear = now.getFullYear()
   const { group } = filter

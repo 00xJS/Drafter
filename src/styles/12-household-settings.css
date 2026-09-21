@@ -1,17 +1,14 @@
 /* household */
+/* The chip a card wears for whoever it is for. It holds a MemberFace now
+   (v3.25) — their picture, or their initials on their own colour — so the
+   chip itself is only the slot: no ground of its own, or a photo would sit
+   on an accent ring it does not fill. */
 .assignee {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
-  /* initials drawn to a fixed circle, like .person-avatar above */
-  font-size: 10px;
-  font-weight: 700;
   flex: none;
+  line-height: 0;
 }
 
 .error-hero .error-detail {
@@ -327,6 +324,7 @@
 .settings-body .settings-section {
   display: none;
 }
+.settings-body.showing-you .g-you,
 .settings-body.showing-calendars .g-calendars,
 .settings-body.showing-reminders .g-reminders,
 .settings-body.showing-appearance .g-appearance,
@@ -334,8 +332,7 @@
 .settings-body.showing-assistants .g-assistants,
 .settings-body.showing-data .g-data,
 .settings-body.showing-users .g-users,
-.settings-body.showing-backups .g-backups,
-.settings-body.showing-integrations .g-integrations {
+.settings-body.showing-backups .g-backups {
   display: block;
 }
 
@@ -457,3 +454,78 @@
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
 
+
+/* Settings → You (v3.25): your picture beside what you can change about it,
+   and the two password boxes as their own block so Cancel sits with them. */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.profile-face {
+  flex: none;
+}
+.profile-face-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+.profile-face-actions .field-hint {
+  flex: 1 0 100%;
+  margin: 0;
+}
+.profile-password {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+/* A member's face, everywhere one is drawn (MemberFace): their picture, or
+   their initials on a colour keyed to their account id. Sized by the caller —
+   28px on a chip, 72px on the profile card — so only the round, the crop and
+   the centring live here. */
+.member-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 999px;
+  object-fit: cover;
+  /* on the member's own colour, which is the same in both themes — the ink
+     .person-avatar uses over exactly this palette */
+  color: var(--on-user-color);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+}
+
+/* "More…" in the Settings nav: the same chip as a group, dimmed, because it
+   opens the rest of the list rather than a page of its own. */
+.settings-more {
+  color: var(--text-2);
+}
+
+/* Admin → Data's Integration health, folded away (v3.25). Its <summary> holds
+   an <h3> so the heading still reads as one; the marker sits with it rather
+   than on a line of its own. */
+.admin-integrations > details > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+.admin-integrations > details > summary h3 {
+  display: inline;
+  margin: 0;
+}
+.admin-integrations > details[open] > summary {
+  margin-bottom: 8px;
+}

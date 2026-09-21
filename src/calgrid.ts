@@ -2,7 +2,7 @@
 // shows, and what lands on each of them. Kept out of the component so the
 // bucketing and the week ranges can be tested without a DOM.
 import { entryToEvent, eventDayKeys } from './calendars'
-import { CalendarEntry, CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task } from './types'
+import { CalendarEntry, CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task, isWorkingMode } from './types'
 import { dateKey } from './utils'
 
 /** A dated project moment: the project's own target, or one of its milestones. */
@@ -123,14 +123,15 @@ export function workByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]>
 }
 
 /**
- * The days your own work-day entries fall on — the Calendar's work badge
- * (workByDay), from your entries alone: a household member's work day is not
- * yours. An entry with no owner is this device's own (local mode); one with
- * an owner counts only once this device knows who you are, so a signed-in
- * device still waiting on the household never takes a partner's for yours.
+ * The days you are working — home or the office, not Off or a holiday. The
+ * Calendar's badge (workByDay) still shows every kind; the wardrobe only
+ * dresses for work on these. A household member's work day is not yours. An
+ * entry with no owner is this device's own (local mode); one with an owner
+ * counts only once this device knows who you are, so a signed-in device still
+ * waiting on the household never takes a partner's for yours.
  */
 export function workDaysOf(entries: readonly CalendarEntry[], myId?: string | null): Set<string> {
-  const mine = entries.filter(e => !e.deletedAt && e.work && (!e.ownerId || e.ownerId === myId))
+  const mine = entries.filter(e => !e.deletedAt && isWorkingMode(e.work) && (!e.ownerId || e.ownerId === myId))
   return new Set(workByDay(mine.map(entryToEvent)).keys())
 }
 

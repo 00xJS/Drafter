@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { CalendarEntry, CalendarSource, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Task, TaskStatus, Template, Wear } from './types'
+import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet } from './idb'
@@ -75,6 +75,10 @@ export interface Store {
   outfits: Outfit[]
   /** What you wore (personal): newest day first, a day's latest look first. */
   wears: Wear[]
+  snoozes: Snooze[]
+  messages: Message[]
+  chat: ChatTurn[]
+  accounts: Account[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
   /**
@@ -310,6 +314,33 @@ export function useItems(myId: string | null = null): Store {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, myId],
   )
+  // Accounts you keep a balance for. The household's, like a bill: two people
+  // who share the rent share the picture. An archived one stays in the list;
+  // the views that total money leave it out.
+  const accounts = useMemo(
+    () => items.filter((i): i is Account => i.kind === 'account' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
+    [items],
+  )
+  // The household's chat, oldest first — the id carries the instant, so the
+  // list sorts on it alone and needs no clock of its own.
+  const messages = useMemo(
+    () => items.filter((i): i is Message => i.kind === 'message' && !i.deletedAt).sort((a, b) => a.id.localeCompare(b.id)),
+    [items],
+  )
+  // Your side of the assistant conversation and its answers. Personal, like
+  // the journal: what you ask Drafter is not household business.
+  const chat = useMemo(
+    () => items.filter((i): i is ChatTurn => i.kind === 'chat' && !i.deletedAt && isMine(i)).sort((a, b) => a.id.localeCompare(b.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
+  // Nudges you have put off. Personal, like the journal: a peer's "not this
+  // fortnight" is theirs, and never silences the nudge on this device.
+  const snoozes = useMemo(
+    () => items.filter((i): i is Snooze => i.kind === 'snooze' && !i.deletedAt && isMine(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, myId],
+  )
   const failures = useMemo(() => {
     const byId = new Map(items.map(i => [i.id, i]))
     return snap.failures.map(f => {
@@ -339,6 +370,10 @@ export function useItems(myId: string | null = null): Store {
     garmentsInTrash,
     outfits,
     wears,
+    snoozes,
+    messages,
+    chat,
+    accounts,
     allItems: items,
     visibleItems,
     loaded: snap.loaded,

@@ -33,15 +33,29 @@
   text-align: center;
 }
 .kitchen-recipes-head {
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
 }
 .kitchen-recipes-head .chart-sub {
   margin: 2px 0 0;
 }
-.kitchen-recipe-compose {
+/* Paste on the left, + Recipe on the right: each half of the row, not two
+   chips tucked beside the title. The empty list uses the same pair. */
+.kitchen-recipe-compose,
+.kitchen-empty-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  width: 100%;
+}
+.kitchen-recipe-compose .btn,
+.kitchen-empty-actions .btn {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 .kitchen-recipe-tools {
   display: flex;
@@ -151,10 +165,7 @@
   color: var(--text-2);
 }
 .kitchen-empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  margin-top: 4px;
 }
 .recipe-card > .btn,
 .recipe-card-edit {
@@ -305,6 +316,17 @@
   margin: 0;
   font-size: 1.35rem;
 }
+/* Week · Journal · Wardrobe: the pages Home opens (v3.24). One group so they
+   stay together on the right of the heading and wrap as a unit at 375pt,
+   rather than one of the three dropping under the date on its own. */
+.today-pages {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.today-page,
 .today-wardrobe {
   flex: none;
 }

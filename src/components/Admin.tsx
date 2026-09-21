@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
+import { siteOrigin } from '../api'
+import { unwrapSnapshot, type Snapshot } from '../backupcrypto'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 
@@ -7,7 +9,6 @@ const GROUPS: { key: AdminGroup; label: string }[] = [
   { key: 'users', label: 'Users' },
   { key: 'data', label: 'Data' },
   { key: 'backups', label: 'Backups' },
-  { key: 'integrations', label: 'Integrations' },
 ]
 type Group = AdminGroup
 
@@ -149,6 +150,11 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
   const [resetPassword, setResetPassword] = useState('')
   const [linkOut, setLinkOut] = useState('')
   const [copied, setCopied] = useState(false)
+  /** The account a reset mail has just gone to, so the note under it names them. */
+  const [sentTo, setSentTo] = useState('')
+  /** A snapshot fetched for reading, and its contents once they can be read. */
+  const [opened, setOpened] = useState<{ path: string; raw: unknown; snapshot: Snapshot | null; error?: string } | null>(null)
+  const [passphrase, setPassphrase] = useState('')
   const busy = pending !== ''
 
   const refreshUsers = () =>
@@ -191,6 +197,36 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
     }
   }
 
+  /**
+   * Read a snapshot back. The server never decrypts one (see
+   * netlify/functions/lib/backupcrypto.mjs), so the file is fetched through
+   * its signed link and opened here, with a passphrase that stays in this
+   * browser. A snapshot written before encryption was turned on opens with no
+   * passphrase at all.
+   */
+  const readSnapshot = (path: string) =>
+    runNamed(path, async () => {
+      const r = await adminAction<{ url: string }>('downloadBackup', { path })
+      const data: unknown = await fetch(r.url).then(res => res.json())
+      setPassphrase('')
+      try {
+        setOpened({ path, raw: data, snapshot: await unwrapSnapshot(data, '') })
+      } catch {
+        // encrypted, or unreadable: either way the passphrase box is next
+        setOpened({ path, raw: data, snapshot: null })
+      }
+    })
+
+  const openSnapshot = async () => {
+    if (!opened) return
+    try {
+      setOpened({ ...opened, snapshot: await unwrapSnapshot(opened.raw, passphrase), error: undefined })
+      setPassphrase('')
+    } catch (e) {
+      setOpened({ ...opened, error: (e as Error).message })
+    }
+  }
+
   const download = (path: string) =>
     runNamed(path, async () => {
       const r = await adminAction<{ url: string }>('downloadBackup', { path })
@@ -216,13 +252,15 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
 
         <section className="settings-section g-users">
           <h3>Accounts</h3>
-          <p className="field-hint">Create or invite people who will use this planner. Household sharing still happens in each person’s Settings.</p>
+          <p className="field-hint">Who can sign in to this planner, and their passwords. Household sharing still happens in each person’s own Settings.</p>
 
           <div className="admin-health">
             <p className="sync-line">
               <strong>Site owner</strong>
               <span className={status?.owner.configured ? 'sync-ok' : 'warn'}>{status ? (status.owner.email ?? 'Not set') : 'Checking…'}</span>
             </p>
+            {/* the long version only when it is not set up, or on request:
+                once it works, this is a line, not a page (v3.25) */}
             {status && !status.owner.configured ? (
               <p className="field-hint">
                 Nothing owner-scoped works until <code>app_config.owner_email</code> exists — every session is refused read and write on <code>posts</code>, and this panel
@@ -230,16 +268,19 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
                 <code>{'{"key":"owner_email","value":"you@example.com"}'}</code>.
               </p>
             ) : (
-              <p className="field-hint">
-                Owner-only actions compare your session email against <code>app_config.owner_email</code>. Handing ownership over means rewriting that row with the
-                service-role key — there is deliberately no in-app way to do it.
-              </p>
+              <details className="admin-optional">
+                <summary>How ownership works</summary>
+                <p className="field-hint">
+                  Owner-only actions compare your session email against <code>app_config.owner_email</code>. Handing ownership over means rewriting that row with the
+                  service-role key — there is deliberately no in-app way to do it.
+                </p>
+              </details>
             )}
           </div>
 
-          <h4>Create account</h4>
+          <h4>Add someone</h4>
           <div className="check-add">
-            <input value={createEmail} onChange={e => setCreateEmail(e.target.value)} placeholder="Email" type="email" />
+            <input value={createEmail} onChange={e => setCreateEmail(e.target.value)} placeholder="Their email" type="email" />
             <input value={createPassword} onChange={e => setCreatePassword(e.target.value)} placeholder="Temporary password" type="text" autoComplete="off" />
             <button
               className="btn primary"
@@ -256,47 +297,111 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
               Create
             </button>
           </div>
+          <details className="admin-optional">
+            <summary>Invite them instead</summary>
+            <p className="field-hint">Makes a one-time link that sets up their account when they open it, so there is no temporary password to pass on.</p>
+            <div className="check-add">
+              <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="Their email" type="email" />
+              <button
+                className="btn"
+                disabled={busy || !inviteEmail.trim()}
+                onClick={() =>
+                  run(async () => {
+                    const r = await adminAction<{ actionLink: string | null }>('inviteUser', { email: inviteEmail })
+                    setInviteEmail('')
+                    if (r.actionLink) await copyLink(r.actionLink)
+                    await refreshUsers()
+                  })
+                }
+              >
+                Generate invite link
+              </button>
+            </div>
+          </details>
 
-          <h4>Invite by email</h4>
+          <h4>Reset someone's password</h4>
+          <p className="field-hint">
+            Pick the account, then send them the email. Most of the time that is the whole job — they follow the link, choose a password and are signed in. The link is
+            shown underneath as well, for when mail is not set up or has not arrived.
+          </p>
           <div className="check-add">
-            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="Email" type="email" />
+            <label className="people-sort">
+              Account
+              <select value={resetEmail} onChange={e => setResetEmail(e.target.value)}>
+                <option value="">Choose…</option>
+                {(users ?? []).map(u => (
+                  <option key={u.id} value={u.email}>
+                    {u.email}
+                    {isOwnerRow(u) ? ' (owner)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
-              className="btn"
-              disabled={busy || !inviteEmail.trim()}
+              className="btn primary"
+              disabled={busy || !resetEmail.trim()}
               onClick={() =>
                 run(async () => {
-                  const r = await adminAction<{ actionLink: string | null }>('inviteUser', { email: inviteEmail })
-                  setInviteEmail('')
+                  const r = await adminAction<{ actionLink?: string | null; mode: string }>('resetPassword', {
+                    email: resetEmail,
+                    send: true,
+                    // the link has to come back to the hosted site, not to
+                    // whatever Site URL the Supabase project was set up with —
+                    // and never to the iOS shell's own capacitor:// origin
+                    redirectTo: siteOrigin(),
+                  })
+                  setSentTo(resetEmail)
                   if (r.actionLink) await copyLink(r.actionLink)
-                  await refreshUsers()
                 })
               }
             >
-              Generate invite link
+              Send reset email
             </button>
-          </div>
-
-          <h4>Reset password</h4>
-          <div className="check-add">
-            <input value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="Email" type="email" />
-            <input value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder="New password (optional)" type="text" autoComplete="off" />
             <button
               className="btn"
               disabled={busy || !resetEmail.trim()}
               onClick={() =>
                 run(async () => {
-                  const payload: Record<string, unknown> = { email: resetEmail }
-                  if (resetPassword.trim()) payload.password = resetPassword
-                  const r = await adminAction<{ actionLink?: string | null; mode: string }>('resetPassword', payload)
-                  setResetPassword('')
+                  const r = await adminAction<{ actionLink?: string | null }>('resetPassword', { email: resetEmail })
+                  setSentTo('')
                   if (r.actionLink) await copyLink(r.actionLink)
-                  else setLinkOut(r.mode === 'set' ? `Password updated for ${resetEmail}.` : '')
                 })
               }
             >
-              {resetPassword.trim() ? 'Set password' : 'Recovery link'}
+              Link only
             </button>
           </div>
+          {sentTo && (
+            <p className="sync-ok">
+              Sent to {sentTo}. If nothing arrives, Supabase has no SMTP set up — its built-in sender only allows a few an hour and is not meant for real use. Set SMTP
+              under Project Settings → Authentication → SMTP, and add this site to the allowed redirect URLs. The link below works either way.
+            </p>
+          )}
+
+          <details className="admin-optional">
+            <summary>Set a password myself</summary>
+            <p className="field-hint">
+              Types a password straight onto the account, with no email and no link. For when somebody is standing next to you; tell it to them out loud and have them
+              change it under Settings → You.
+            </p>
+            <div className="check-add">
+              <input value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder="New password" type="text" autoComplete="off" />
+              <button
+                className="btn"
+                disabled={busy || !resetEmail.trim() || resetPassword.trim().length < 8}
+                onClick={() =>
+                  run(async () => {
+                    await adminAction('resetPassword', { email: resetEmail, password: resetPassword })
+                    setResetPassword('')
+                    setSentTo('')
+                    setLinkOut(`Password set for ${resetEmail}.`)
+                  })
+                }
+              >
+                Set it
+              </button>
+            </div>
+          </details>
 
           {linkOut && (
             <div className="copy-row">
@@ -309,12 +414,15 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
             </div>
           )}
 
-          <h4>Users</h4>
-          <p className="field-hint">
-            Deleting an account hands their shared records (tasks, projects, people, places, the kitchen, events) to you and deletes their personal ones (journal,
-            reviews, calendar subscriptions, habits, routines) together with their history. Backup snapshots already taken are left as they are. Disable instead if you
-            only want to lock someone out.
-          </p>
+          <h4>Accounts on this site</h4>
+          <details className="admin-optional">
+            <summary>What Disable and Delete each do</summary>
+            <p className="field-hint">
+              Deleting an account hands their shared records (tasks, projects, people, places, the kitchen, events) to you and deletes their personal ones (journal,
+              reviews, calendar subscriptions, habits, routines, snoozes) together with their history. Backup snapshots already taken are left as they are. Disable
+              instead if you only want to lock someone out.
+            </p>
+          </details>
           {users ? (
             <ul className="cal-sources admin-users">
               {users.map(u => (
@@ -437,6 +545,20 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
             A snapshot is one JSON object per account in the private <code>media</code> bucket at <code>backups/&lt;user id&gt;/&lt;date&gt;.json</code>. The scheduled
             daily job and the button below run the identical pass, so “Back up now” writes exactly what the schedule would have.
           </p>
+          <div className={backupReport && backupReport.encrypted === false ? 'admin-health admin-alarm' : 'admin-health'}>
+            <p className="sync-line">
+              <strong>Encryption</strong>
+              <span className={backupReport?.encrypted ? 'sync-ok' : 'muted'}>
+                {backupReport === null ? 'Run a backup to see' : backupReport.encrypted ? 'AES-256-GCM' : 'Off — snapshots are plain JSON'}
+              </span>
+            </p>
+            <p className="field-hint">
+              A snapshot holds everything one account has, journal included. With <code>BACKUP_PASSPHRASE</code> set on Netlify each one is encrypted before it is
+              written, with a fresh salt, so the service key and a signed link are no longer enough to read anybody's. <strong>The passphrase is the only way back
+              in</strong> — the server never keeps a copy it could decrypt with, so losing it means losing every snapshot written after it was set. Keep it where you
+              keep the other keys, and read one back with <em>Read it</em> below once, now, rather than the night you need it.
+            </p>
+          </div>
 
           {backups ? (
             <>
@@ -511,8 +633,11 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
                           {f.date}
                           <small> · {bytes(f.size)}</small>
                         </span>
+                        <button className="btn subtle" disabled={busy} onClick={() => readSnapshot(f.path)}>
+                          {pending === f.path ? 'Fetching…' : 'Read it'}
+                        </button>
                         <button className="btn subtle" disabled={busy} onClick={() => download(f.path)}>
-                          {pending === f.path ? 'Signing…' : 'Download'}
+                          Download
                         </button>
                       </li>
                     ))}
@@ -527,6 +652,60 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
                   </a>
                 </div>
               )}
+              {opened && (
+                <div className="admin-health">
+                  <p className="sync-line">
+                    <strong>{opened.path}</strong>
+                    <span className={opened.snapshot ? 'sync-ok' : 'warn'}>{opened.snapshot ? `${opened.snapshot.items.length} records` : 'Encrypted'}</span>
+                  </p>
+                  {opened.snapshot ? (
+                    <>
+                      <p className="field-hint">
+                        Written {when(opened.snapshot.exportedAt)}. This was decrypted here, in this browser — the passphrase was not sent anywhere.
+                      </p>
+                      <div className="check-add">
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            const url = URL.createObjectURL(new Blob([JSON.stringify(opened.snapshot, null, 2)], { type: 'application/json' }))
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `${opened.path.split('/').pop()?.replace(/\.json$/, '') ?? 'snapshot'}-readable.json`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                        >
+                          Save the readable copy
+                        </button>
+                        <button className="btn subtle" onClick={() => setOpened(null)}>
+                          Close
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="field-hint">Type the passphrase this host encrypts with (<code>BACKUP_PASSPHRASE</code> on Netlify). It stays in this browser.</p>
+                      <div className="check-add">
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          value={passphrase}
+                          placeholder="Backup passphrase"
+                          onChange={e => setPassphrase(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && openSnapshot()}
+                        />
+                        <button className="btn primary" disabled={!passphrase} onClick={openSnapshot}>
+                          Open it
+                        </button>
+                        <button className="btn subtle" onClick={() => setOpened(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {opened.error && <p className="warn">{opened.error}</p>}
+                </div>
+              )}
               <p className="field-hint">Download links are signed for five minutes; the bucket itself stays private.</p>
             </>
           ) : (
@@ -534,11 +713,14 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
           )}
         </section>
 
-        <section className="settings-section g-integrations">
-          <h3>Integration health</h3>
+        <section className="settings-section g-data admin-integrations">
+          <details>
+            <summary>
+              <h3>Integration health</h3>
+            </summary>
           <p className="field-hint">
-            Host environment setup. Values never leave the server — only configured / missing names are shown here. The Test buttons make a real call and report the
-            latency or the error.
+            Host environment setup, set up once and then left alone — which is why it folds away here rather than holding a tab of its own. Values never leave the
+            server; only configured / missing names are shown. The Test buttons make a real call and report the latency or the error.
           </p>
 
           {status ? (
@@ -690,6 +872,7 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
           ) : (
             <p className="field-hint">Checking integrations…</p>
           )}
+          </details>
         </section>
 
         {error && <p className="warn">{error}</p>}

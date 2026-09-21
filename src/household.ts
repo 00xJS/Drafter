@@ -9,6 +9,12 @@ export interface Member {
   id: string
   email: string
   displayName: string
+  /**
+   * The id of their picture in the media bucket, or null (v3.25). A bare id,
+   * never under personal/: the picture exists to be seen by the other member,
+   * on a task you handed them.
+   */
+  avatar?: string | null
   role: string
   joinedAt: string
 }
@@ -19,7 +25,7 @@ export interface HouseholdInvite {
 }
 
 export interface HouseholdInfo {
-  me: { id: string; email: string; displayName: string | null }
+  me: { id: string; email: string; displayName: string | null; avatar?: string | null }
   household: { id: string; name: string; created_by: string | null } | null
   members: Member[]
   /** Invitations waiting for me to accept. Joining is never automatic. */

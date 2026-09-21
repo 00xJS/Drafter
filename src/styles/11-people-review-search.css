@@ -485,6 +485,10 @@
 .list-stats-seg {
   flex-wrap: nowrap;
 }
+.list-stats-action {
+  margin-left: auto;
+  flex: none;
+}
 .people-stats {
   display: flex;
   flex-direction: column;
@@ -969,3 +973,121 @@
   }
 }
 
+
+/* ---- Chat (v3.26) --------------------------------------------------------
+   Two threads, drawn the same way: the household's and the assistant's. Yours
+   on the right, theirs on the left, a heading whenever the day changes, and a
+   composer pinned under them. Nothing here knows which thread it is — the
+   difference between them is what is in the records, not how a line looks. */
+.chat {
+  display: flex;
+  flex-direction: column;
+}
+.chat-thread {
+  list-style: none;
+  margin: 8px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-day {
+  align-self: center;
+  margin: 10px 0 2px;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+}
+.chat-line {
+  display: flex;
+  flex-direction: column;
+  max-width: min(80%, 40rem);
+  gap: 2px;
+}
+.chat-line.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.chat-line.theirs {
+  align-self: flex-start;
+}
+.chat-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+}
+.chat-bubble {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  line-height: 1.45;
+  /* a pasted paragraph keeps its line breaks; a long word still wraps */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-line.mine .chat-bubble {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.chat-line.drafter .chat-bubble {
+  background: var(--surface);
+}
+.chat-at {
+  display: block;
+  margin-top: 4px;
+  opacity: 0.7;
+  font-size: calc(0.68rem * var(--type-scale));
+  font-variant-numeric: tabular-nums;
+}
+/* the × on your own line: only where the pointer is, so a thread reads as
+   words rather than as a column of delete buttons */
+.chat-unsend {
+  align-self: flex-end;
+  padding: 0 6px;
+  opacity: 0;
+}
+.chat-line:hover .chat-unsend,
+.chat-unsend:focus-visible {
+  opacity: 1;
+}
+.chat-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-thinking {
+  align-self: flex-start;
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.chat-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.chat-older {
+  align-self: center;
+  margin: 4px 0;
+}
+.chat-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px 0;
+  background: var(--bg);
+}
+.chat-composer textarea {
+  flex: 1;
+  min-height: var(--touch, 40px);
+  max-height: 40vh;
+  resize: none;
+  line-height: 1.45;
+}

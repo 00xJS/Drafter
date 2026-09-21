@@ -264,6 +264,27 @@
   align-items: center;
   justify-content: flex-end;
 }
+
+/* Putting a nudge off (v3.24). The × is a square the same height as the
+   buttons beside it, so a row of actions still reads as one row; the durations
+   that replace it are the same square, four across, and fit inside the width
+   the × already had plus the gap. */
+.nudge-x {
+  min-width: var(--touch, 34px);
+  padding-inline: 8px;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.nudge-snooze {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.nudge-snooze-opt {
+  min-width: 34px;
+  padding-inline: 6px;
+  font-variant-numeric: tabular-nums;
+}
 .review-top-row {
   display: flex;
   gap: 8px;

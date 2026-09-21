@@ -64,7 +64,7 @@ type Admin = ReturnType<typeof adminClient>
  */
 // Deno cannot reach shared/kinds.mjs from here, so this is the one deliberate
 // second copy of that list — keep it in step (src/__tests__/srv-kinds.test.ts checks).
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear'])
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
 
 /** The owner the bot acts as, and the other members of the owner's households. */
 type Scope = { owner: string | null; peers: string[] }

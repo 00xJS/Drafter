@@ -325,4 +325,19 @@ describe('the briefing states only the facts the day has', () => {
     expect(facts.work).toEqual({ label: 'In the office', short: 'Office', emoji: '🏢', hours: '' })
     expect(facts.events).toBeUndefined()
   })
+
+  it('reads Off and a holiday as the day’s kind, still without hours', () => {
+    expect(briefingFacts([ev({ id: 'pto', start: '2026-09-10', end: '2026-09-11', allDay: true, work: 'off' })], [], now).work).toEqual({
+      label: 'PTO / Off',
+      short: 'Off',
+      emoji: '🌴',
+      hours: '',
+    })
+    expect(briefingFacts([ev({ id: 'hol', start: '2026-09-10', end: '2026-09-11', allDay: true, work: 'holiday' })], [], now).work).toEqual({
+      label: 'Holiday',
+      short: 'Holiday',
+      emoji: '🎉',
+      hours: '',
+    })
+  })
 })

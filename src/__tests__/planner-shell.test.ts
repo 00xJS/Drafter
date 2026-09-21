@@ -42,9 +42,13 @@ describe('the tabs and segments say where you are', () => {
   })
 
   it('gives People and Places each their own List · Stats tablist, the wardrobe’s small switch, remembered by its buttons', () => {
-    expect(people).toContain(`<ListStatsSwitch label="People list or stats" value={innerViews.people} onChange={v => setInnerView('people', v)} />`)
-    expect(people).toContain(`<ListStatsSwitch label="Places list or stats" value={innerViews.places} onChange={v => setInnerView('places', v)} />`)
-    expect(people.match(/<ListStatsSwitch /g)).toHaveLength(2)
+    expect(people).toContain('label="People list or stats"')
+    expect(people).toContain("onChange={v => setInnerView('people', v)}")
+    expect(people).toContain('+ Add person')
+    expect(people).toContain('label="Places list or stats"')
+    expect(people).toContain("onChange={v => setInnerView('places', v)}")
+    expect(people).toContain('+ Add place')
+    expect(people.match(/<ListStatsSwitch/g)).toHaveLength(2)
     // outside .people-tab-seg, whose native track is the tab-level segments' own
     const seg = people.indexOf('<div className="people-tab-seg">')
     expect(people.slice(seg, people.indexOf('</div>', seg))).not.toContain('ListStatsSwitch')

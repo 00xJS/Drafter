@@ -11,7 +11,9 @@ export const Calendar = preloadable(() => import('../Calendar').then(m => m.Cale
 export const Roadmap = preloadable(() => import('../Roadmap').then(m => m.Roadmap), 'Roadmap')
 export const TasksTable = preloadable(() => import('../TasksTable').then(m => m.TasksTable), 'TasksTable')
 export const Board = preloadable(() => import('../Board').then(m => m.Board), 'Board')
-export const Bills = preloadable(() => import('../Bills').then(m => m.Bills), 'Bills')
+// Tasks → Finance: the month of bills, the paydays and the accounts. Bills.tsx
+// is drawn inside it, so the two share one chunk rather than shipping twice.
+export const Finance = preloadable(() => import('../Finance').then(m => m.Finance), 'Finance')
 export const NotesView = preloadable(() => import('../NotesView').then(m => m.NotesView), 'NotesView')
 export const People = preloadable(() => import('../People').then(m => m.People), 'People')
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
@@ -25,6 +27,10 @@ export const Kitchen = preloadable(() => import('../Kitchen').then(m => m.Kitche
 // the Kitchen imports from here and a finger on the Kitchen tab warms too
 export const KitchenStats = preloadable(() => import('../kitchen/KitchenStats').then(m => m.KitchenStats), 'KitchenStats')
 export const Review = preloadable(() => import('../Review').then(m => m.Review), 'Review')
+// Home → Chat: the household's thread and the assistant's, and the retrieval
+// the assistant runs on this device (ask.ts) — the biggest module either of
+// them touches, and one nobody who never opens the chat should download.
+export const Chat = preloadable(() => import('../Chat').then(m => m.Chat), 'Chat')
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
 // Only Today's card and the thumbnails it draws stay in the Planner chunk.
 export const Wardrobe = preloadable(() => import('../wardrobe/Wardrobe').then(m => m.Wardrobe), 'Wardrobe')
@@ -57,8 +63,8 @@ export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => 
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, Wardrobe.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
-  tasks: [TasksTable.preload, Board.preload, Bills.preload, NotesView.preload],
+  home: [Review.preload, Wardrobe.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
+  tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
   people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload],
   kitchen: [Kitchen.preload, KitchenStats.preload],
@@ -68,7 +74,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Bills, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, Chat, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

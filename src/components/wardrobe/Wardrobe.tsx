@@ -65,6 +65,10 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   const [sheet, setSheet] = useState<SheetMode | null>(() => sheetFor(open))
   /** A saved outfit a way in asked for, until the composer has put it in its rows. */
   const [pending, setPending] = useState<string[] | null>(() => outfitFor(open, outfits))
+  /** A look of the day, or a new change, from Today; consumed once like pending. */
+  const [lookFocus, setLookFocus] = useState<{ wearId?: string; another?: true } | null>(() =>
+    open?.wearId ? { wearId: open.wearId } : open?.another ? { another: true } : null,
+  )
   const byId = useMemo(() => liveById(garments), [garments])
   /** Every piece this device has, Trash included: a log reads each one's slot here. */
   const records = useMemo(() => [...garments, ...inTrash], [garments, inTrash])
@@ -96,6 +100,8 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     if (s) setSheet(s)
     const ids = outfitFor(open, outfits)
     if (ids) setPending(ids)
+    if (open.wearId) setLookFocus({ wearId: open.wearId })
+    else if (open.another) setLookFocus({ another: true })
     onOpenConsumed()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -111,18 +117,19 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
    * `another`), else a new look does. A day still to come is planned; a plan
    * logged on its day, or after, is confirmed worn.
    */
-  const logDay = (d: string, pieces: readonly string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string }) => {
+  const logDay = (d: string, pieces: readonly string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string; wearId?: string }) => {
     const planned = d > todayKey
-    const was = lastOf(looksOn(wears, d))
+    const was = opts.wearId ? looksOn(wears, d).find(w => w.id === opts.wearId) : lastOf(looksOn(wears, d))
     const log = logLook(wears, d, pieces, records, { ...opts, planned })
     const added = 'remove' in log.undo
     commit(log, planned ? (added ? `Planned for ${shortDay(d, todayKey)}` : 'Plan updated') : added || was?.planned ? loggedOn(d) : 'Look updated')
   }
-  const removeLook = (d: string) => {
-    const latest = lastOf(looksOn(wears, d))
-    if (!latest) return
-    onRemove(latest.id)
-    showToast(latest.planned ? 'Plan removed' : 'Look removed', () => onRestore([latest.id]))
+  const removeLook = (d: string, wearId?: string) => {
+    const looks = looksOn(wears, d)
+    const target = wearId ? looks.find(w => w.id === wearId) : lastOf(looks)
+    if (!target) return
+    onRemove(target.id)
+    showToast(target.planned ? 'Plan removed' : 'Look removed', () => onRestore([target.id]))
   }
   const saveCombo = (pieces: readonly string[]) => {
     const { outfit, reused } = saveOutfit(outfits, pieces)
@@ -220,6 +227,8 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           }}
           pending={pending}
           onPendingUsed={() => setPending(null)}
+          focus={lookFocus}
+          onFocusConsumed={() => setLookFocus(null)}
         />
       )}
       {tab === 'clothes' && <Clothes garments={garments} ix={ix} onAdd={type => setSheet({ kind: 'add', type })} onOpen={id => setSheet({ kind: 'edit', id })} />}

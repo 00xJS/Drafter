@@ -116,14 +116,14 @@
 }
 
 .cal-toolbar h2 {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 1.0625rem;
-  min-width: 160px;
-  text-align: center;
+  text-align: start;
 }
 
 .cal-hint {
-  margin-left: auto;
   color: var(--muted);
   font-size: 0.75rem;
 }

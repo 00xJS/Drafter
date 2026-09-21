@@ -1,5 +1,7 @@
 import { startTransition, useState } from 'react'
 import type { GarmentType, Recipe } from '../../types'
+import type { ChatSide } from '../Chat'
+import { readChatSeen, writeChatSeen } from '../../chat'
 import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
@@ -32,7 +34,17 @@ import {
  * type) or on one, and a saved outfit to put in the composer's rows. Consumed
  * once by the segment, like journalOpenDate, so no entry point pins it.
  */
-export type WardrobeOpen = { tab?: WardrobeTab; date?: string; add?: GarmentType | true; garmentId?: string; outfitId?: string }
+export type WardrobeOpen = {
+  tab?: WardrobeTab
+  date?: string
+  add?: GarmentType | true
+  garmentId?: string
+  outfitId?: string
+  /** Open Outfit on this look of the day. */
+  wearId?: string
+  /** Start a new look on that day — the next change, not an edit of the latest. */
+  another?: true
+}
 
 /**
  * Where the shell is: the tab, the segment inside each tab, and the one-shot
@@ -141,6 +153,25 @@ export function useNavigation() {
     if (tab) goStatsTab(tab)
     setView('stats')
   }
+  /**
+   * Which half of Home → Chat is showing: the household's thread or the
+   * assistant's. Remembered for the visit, not saved — landing on the
+   * assistant when you meant to answer the person you live with is worse
+   * than one extra tap (v3.26).
+   */
+  const [chatSide, setChatSide] = useState<ChatSide>('household')
+  /**
+   * The newest household message this DEVICE has shown you, for the badge on
+   * Home's Chat button. Per device on purpose: a phone and a laptop each count
+   * what they have not put in front of you, and a mark that synced would clear
+   * the badge on the wrong screen.
+   */
+  const [chatSeenAt, setChatSeenAt] = useState(readChatSeen)
+  const markChatSeen = (at: string) => {
+    if (!at || at === chatSeenAt) return
+    setChatSeenAt(at)
+    writeChatSeen(at)
+  }
   /** A journal day to open for editing (from search or a link); consumed by the view. */
   const [journalOpenDate, setJournalOpenDate] = useState<string | null>(null)
   /** A place row to expand (from search); consumed by the Places view. */
@@ -160,6 +191,27 @@ export function useNavigation() {
     setView('people')
     // the card it opens is on the list, whichever half the segment was left on
     if (id) goInnerView('people', 'list')
+  }
+  /**
+   * "+ Add person" / "+ Add place", asked for on the List · Stats row and
+   * consumed once by the view, exactly as personOpenId is. Held here rather
+   * than on the tab so the tab holds no state of its own (the filters moved
+   * out for the same reason), and so the palette and a link can reach the add
+   * form too. Either one lands on the list: the form is over the rows.
+   */
+  const [addPerson, setAddPerson] = useState(false)
+  const [addPlace, setAddPlace] = useState(false)
+  const addAPerson = () => {
+    setAddPerson(true)
+    goPeopleTab('people')
+    setView('people')
+    goInnerView('people', 'list')
+  }
+  const addAPlace = () => {
+    setAddPlace(true)
+    goPeopleTab('places')
+    setView('people')
+    goInnerView('places', 'list')
   }
   /** A segment's Stats, for this visit only: a tab tap opens the view last chosen.
    *  Reached by ?view=people-stats and ?view=places-stats alone — the links that
@@ -243,6 +295,10 @@ export function useNavigation() {
     setTasksTab,
     setPeopleTab,
     goView,
+    chatSide,
+    setChatSide,
+    chatSeenAt,
+    markChatSeen,
     journalOpenDate,
     setJournalOpenDate,
     placeOpenId,
@@ -251,6 +307,12 @@ export function useNavigation() {
     personOpenId,
     setPersonOpenId,
     openPerson,
+    addPerson,
+    setAddPerson,
+    addAPerson,
+    addPlace,
+    setAddPlace,
+    addAPlace,
     openJournal,
     kitchenRecipe,
     setKitchenRecipe,

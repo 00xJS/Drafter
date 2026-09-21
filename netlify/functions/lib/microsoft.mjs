@@ -429,8 +429,8 @@ export function graphEntryBody(entry, site, opts = {}) {
     // always sent, empty once cleared: a PATCH keeps what its body leaves out (see googleEntryBody)
     location: { displayName: entry.location || '' },
     isAllDay: !!entry.allDay,
-    // home is "working elsewhere", Outlook's own status for exactly this; the office is free
-    showAs: entry.work === 'home' ? 'workingElsewhere' : entry.work ? 'free' : 'busy',
+    // home is "working elsewhere"; the office is free; Off and a holiday are out of office
+    showAs: entry.work === 'home' ? 'workingElsewhere' : entry.work === 'office' ? 'free' : entry.work ? 'oof' : 'busy',
     isReminderOn: opts.remind === true,
     start: entry.allDay ? { dateTime: `${entry.start}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.start), timeZone: 'UTC' },
     end: entry.allDay ? { dateTime: `${entry.end}T00:00:00`, timeZone: 'UTC' } : { dateTime: graphStamp(entry.end), timeZone: 'UTC' },

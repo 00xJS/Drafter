@@ -25,9 +25,9 @@ function ago(n: number): string {
 }
 const piece = (id: string, type: GarmentType, over: Partial<Garment> = {}): Garment => ({ kind: 'garment', id, name: id, type, createdAt: T0, updatedAt: T0, ...over })
 let looks = 0
-const look = (date: string, garmentIds: string[]): Wear => {
+const look = (date: string, garmentIds: string[], over: Partial<Wear> = {}): Wear => {
   looks++
-  return { kind: 'wear', id: `wear~${date}~${String(looks).padStart(10, '0')}`, date, garmentIds, createdAt: `${date}T08:00:00.000Z`, updatedAt: `${date}T08:00:00.000Z` }
+  return { kind: 'wear', id: `wear~${date}~${String(looks).padStart(10, '0')}`, date, garmentIds, createdAt: `${date}T08:00:00.000Z`, updatedAt: `${date}T08:00:00.000Z`, ...over }
 }
 const outfit = (id: string, garmentIds: string[], name?: string): Outfit => ({ kind: 'outfit', id, name, garmentIds, createdAt: T0, updatedAt: T0 })
 
@@ -68,13 +68,32 @@ describe('the Today card', () => {
     expect(card()).toContain('>Pick…</button>')
   })
 
-  it('is one line with Change once today has a look', () => {
+  it('is one line with Change once today has a look, and + Look for the next change', () => {
     const html = card({ wears: [look(ago(1), ['shirt', 'chinos']), look(TODAY, ['tee', 'jeans'])] })
     expect(html).toContain('class="chart-card wardrobe-card logged"')
     expect(html).toContain('tee + jeans')
     expect(html).toContain('>Change</button>')
+    expect(html).toContain('aria-label="Another look"')
+    expect(html).toContain('>+ Look</button>')
+    expect(html).not.toContain('wardrobe-card-stack')
     expect(html).not.toContain('What are you wearing?')
     expect(chips(html)).toBe(0)
+  })
+
+  it('keeps earlier looks on the day under the one you are wearing', () => {
+    const morning = look(TODAY, ['tee', 'jeans'], { note: 'Morning' })
+    const evening = look(TODAY, ['shirt', 'chinos'])
+    const html = card({ wears: [morning, evening] })
+    expect(html).toContain('wardrobe-card-stack')
+    expect(html).toContain('Morning')
+    expect(html).toContain('tee + jeans')
+    expect(html).toContain('shirt + chinos')
+    expect(html).toContain('Going out')
+    const onOpen = vi.fn<CardProps['onOpen']>()
+    press(settled(WardrobeCard, cardProps({ wears: [morning, evening], onOpen })), 'Another look')
+    expect(onOpen).toHaveBeenCalledWith({ tab: 'outfit', date: TODAY, another: true })
+    press(settled(WardrobeCard, cardProps({ wears: [morning, evening], onOpen })), 'Morning · tee + jeans')
+    expect(onOpen).toHaveBeenCalledWith({ tab: 'outfit', date: TODAY, wearId: morning.id })
   })
 
   it('asks "Forgot yesterday?" before noon only, when yesterday is empty and an earlier day is not', () => {
@@ -153,7 +172,8 @@ describe('where the card sits on Today', () => {
 
   it('pins Wardrobe on Today so you can walk in and flip looks', () => {
     const html = today(9)
-    expect(html).toContain('class="btn today-wardrobe"')
+    // one of Week · Journal · Wardrobe in the header now (v3.24), still its own class
+    expect(html).toContain('today-wardrobe')
     expect(html).toContain('>Wardrobe</button>')
     // even before the wardrobe can dress you: the pin is the door, the card is the log
     const bare = today(9, true, undefined, [piece('tee', 'top')])

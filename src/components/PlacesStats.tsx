@@ -16,6 +16,12 @@ interface Props {
   people: Person[]
   /** The tasks the list is handed: every one, as places are the household's. */
   tasks: Task[]
+  /**
+   * Whose outings these figures count. The list of places is the household's;
+   * going to one is not something both members did because one of them did
+   * (v3.24). A meal shared with the household still counts for both.
+   */
+  myId?: string | null
   /** Meals eaten out at a place count as outings there, as they do on the list. */
   meals: Meal[]
   /**
@@ -95,7 +101,7 @@ function PlaceListRow({ place, line, onOpen, onPlan }: { place: Place; line: str
  * off the rows' own stats (src/placestats.ts), so it agrees with the list, and
  * drawn with the Stats kit (components/stats).
  */
-export function PlacesStats({ places, people, tasks, meals, filter, onFilter, onOpenPlace, onPlan, onOpenPerson, onOpenDay, now: handed }: Props) {
+export function PlacesStats({ places, people, tasks, meals, filter, onFilter, onOpenPlace, onPlan, onOpenPerson, onOpenDay, now: handed, myId }: Props) {
   const theme = useTheme()
   // One clock for the day. PeopleScreen re-renders with every Planner render
   // (a sync, a toast, a record changed on another device), so each figure is
@@ -114,7 +120,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
   const kind = kindOn(places, filter.category)
   const typed = filter.q.trim()
   const shown = useMemo(() => places.filter(placeMatcher(places, filter)), [places, filter])
-  const stats = useMemo(() => shown.map(p => placeStats(p, tasks, people, now, meals)), [shown, tasks, people, now, meals])
+  const stats = useMemo(() => shown.map(p => placeStats(p, tasks, people, now, meals, myId)), [shown, tasks, people, now, meals, myId])
   const figures = useMemo(
     () => ({
       tiles: placesTiles(stats, now),

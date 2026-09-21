@@ -572,6 +572,8 @@ describe('the Calendar shows a day’s look', () => {
     expect(lines[1]).toContain('<span class="muted">Wearing</span> Navy tee + Black jeans')
     expect(lines[1]).toContain('<span class="cal-look-more">2 looks</span>')
     expect(lines[1]).toMatch(/aria-label="Wearing Navy tee \+ Black jeans, and 1 more look: open the wardrobe on [^"]+"/)
+    // two looks: one thumb each, not the latest look's pieces
+    expect(lines[1].match(/class="garment-photo"/g)).toHaveLength(2)
   })
 
   // a look can be planned a year ahead, and the Calendar never showed one
@@ -640,6 +642,19 @@ describe('the Calendar shows a day’s look', () => {
     expect(src).toMatch(/<\/div>\s*\{lookLine\(d\)\}\s*\{items\.length > 0 && <ul className="cal-daylist">/)
     const screen = read('../components/planner/CalendarScreen.tsx')
     for (const prop of ['garments={store.garments}', 'wears={store.wears}', 'onOpenWardrobe={openWardrobe}']) expect(screen).toContain(prop)
+  })
+
+  it('outlines Today like the arrows, and the title flexes so › sits with it on the right', () => {
+    expect(render('day')).toContain('<button class="btn">Today</button>')
+    const title = /\.cal-toolbar h2 \{([^}]*)\}/.exec(read('../styles/03-board-calendar.css'))![1]
+    expect(title).toMatch(/flex:\s*1/)
+    expect(title).toMatch(/min-width:\s*0/)
+  })
+
+  it('paints Off and a holiday as their own work badges', () => {
+    const css = read('../styles/17-meals-work-bills.css')
+    expect(css).toMatch(/\.cal-work-badge\.off \{[^}]*--tone-orange/)
+    expect(css).toMatch(/\.cal-work-badge\.holiday \{[^}]*--tone-amber/)
   })
 })
 

@@ -108,8 +108,8 @@ export interface EntryLike {
   notes?: string
   deletedAt?: string
   updatedAt?: string
-  /** Present on a work day: where it is spent. */
-  work?: 'home' | 'office'
+  /** Present on a work day: home, the office, Off, or a holiday. */
+  work?: 'home' | 'office' | 'off' | 'holiday'
   [key: string]: unknown
 }
 

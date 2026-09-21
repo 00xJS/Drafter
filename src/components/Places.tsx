@@ -47,9 +47,18 @@ interface Props {
   onLogOuting(place: Place, atIso: string, note: string, peopleIds: string[]): void
   onPlan(place: Place): void
   onOpenTask(t: Task): void
+  /**
+   * Whose outings this list reads. The places are the household's; going to
+   * one is each member's own (v3.24). A meal shared with the household counts
+   * for both, because that is the evening you both ate out.
+   */
+  myId?: string | null
   /** A row to expand on arrival (from search); consumed once. */
   openId?: string | null
   onOpenConsumed?(): void
+  /** Open the add form from the List · Stats row; consumed once. */
+  openAdd?: boolean
+  onAddConsumed?(): void
   /** Turn an outing idea into a task. */
   onNewTask?(preset: Partial<Task>): void
   /** Places toolbar: open the I'm here sheet over the planner. */
@@ -472,8 +481,8 @@ export function outingIdeaTask(idea: OutingIdea, place: Place | undefined, peopl
 /** "Mum", "Mum and Sam", "Mum, Sam and Jo". */
 const namesOf = (ps: Person[]) => (ps.length < 2 ? (ps[0]?.name ?? '') : `${ps.slice(0, -1).map(p => p.name).join(', ')} and ${ps[ps.length - 1].name}`)
 
-export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, onNewTask, onImHere, meals, filter, onFilter }: Props) {
-  const [editing, setEditing] = useState<{ place?: Place } | null>(null)
+export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOuting, onPlan, onOpenTask, openId: wantOpen, onOpenConsumed, openAdd, onAddConsumed, onNewTask, onImHere, meals, filter, onFilter }: Props) {
+  const [editing, setEditing] = useState<{ place?: Place } | null>(() => (openAdd ? {} : null))
   const [logging, setLogging] = useState<Place | null>(null)
   // the kind chip that is on: once a kind's last place has gone, All, as on Stats
   const category = kindOn(places, filter.category)
@@ -481,6 +490,8 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
   const [sortChoice, setSortChoice] = useState<SortKey | null>(null)
   const sort: SortKey = sortChoice ?? (places.some(p => p.cadenceDays) ? 'attention' : 'recent')
   const [openId, setOpenId] = useState<string | null>(null)
+  /** The whole list folded away, as on People. Not remembered. */
+  const [listShut, setListShut] = useState(false)
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
   const [ideasBusy, setIdeasBusy] = useState(false)
   const [ideasError, setIdeasError] = useState('')
@@ -500,8 +511,14 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
     onOpenConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOpen])
+  useEffect(() => {
+    if (!openAdd) return
+    setEditing({})
+    onAddConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAdd])
 
-  const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals)), [places, tasks, people, meals])
+  const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals, myId)), [places, tasks, people, meals, myId])
 
   // who you go out with most, first: the With row offers them, "+ Who" everyone
   const company = useMemo(
@@ -573,9 +590,6 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
             I&apos;m here
           </button>
         )}
-        <button className="btn primary" onClick={() => setEditing({})}>
-          + Add place
-        </button>
       </div>
 
       {(ideas || ideasError) && (
@@ -691,12 +705,27 @@ export function Places({ places, people, tasks, onSave, onDelete, onLogOuting, o
               </select>
             </label>
             <span className="spacer" />
-            <button className="btn subtle" onClick={() => setOpenId(null)} disabled={!openId}>
-              Collapse
+            {/* as on People: Collapse shuts the open row and is only there when
+                one is, and Hide list folds the whole list. Neither is ever a
+                greyed-out button that reads as broken. */}
+            {openId && (
+              <button className="btn" onClick={() => setOpenId(null)}>
+                Collapse card
+              </button>
+            )}
+            <button className="btn" aria-expanded={!listShut} onClick={() => setListShut(v => !v)}>
+              {listShut ? `Show ${shown.length} place${shown.length === 1 ? '' : 's'}` : 'Hide list'}
             </button>
           </div>
 
-          {shown.length === 0 ? (
+          {listShut ? (
+            <p className="empty">
+              {shown.length} place{shown.length === 1 ? '' : 's'} hidden.{' '}
+              <button type="button" className="btn subtle" onClick={() => setListShut(false)}>
+                Show them
+              </button>
+            </p>
+          ) : shown.length === 0 ? (
             <p className="empty">Nothing matches.</p>
           ) : (
             <ul className="people-list">

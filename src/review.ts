@@ -94,7 +94,7 @@ export const isVisit = (t: Task): boolean => sharedIsVisit(t)
 const inRange = (iso: string | undefined, r: Range) => sharedInRange(iso, r.start, r.end)
 
 /** `entries` are your own calendar entries: one that has happened with people on it counts as seeing them. */
-export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = [], entries: CalendarEntry[] = []): ReviewData {
+export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = [], entries: CalendarEntry[] = [], myId?: string | null): ReviewData {
   const nowMs = now.getTime()
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
@@ -106,14 +106,16 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const overdueNow = open.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   // as on the People page: your own past events count, read as the visits they
   // amount to. Only names and titles are shown here, so none is ever opened as a task.
-  const peopleSeen = sharedPeopleSeen(people, seenTasks(tasks, entries, now), range, dateKey)
+  // `myId` is what keeps the recap yours: a fortnight in which the other member
+  // saw their mother twice used to read here as though you had (v3.24).
+  const peopleSeen = sharedPeopleSeen(people, seenTasks(tasks, entries, now, myId), range, dateKey)
   const seenEvents = new Map<string, { at: string }>()
   for (const p of peopleSeen) for (const t of p.visits) seenEvents.set(t.id, { at: t.completedAt! })
   const seen = { days: visitDays([...seenEvents.values()]).length, events: seenEvents.size }
   const placesWent = places
     // task outings only: this row lists the visits you logged, and a takeaway
     // has no task to open. Eating out is counted on the place's own card.
-    .map(p => ({ place: p, visits: outingsAt(p.id, tasks).flatMap(v => (v.kind === 'task' && inRange(v.at, range) ? [v.task] : [])) }))
+    .map(p => ({ place: p, visits: outingsAt(p.id, tasks, [], now, myId).flatMap(v => (v.kind === 'task' && inRange(v.at, range) ? [v.task] : [])) }))
     .filter(x => x.visits.length > 0)
     .sort((a, b) => b.visits.length - a.visits.length)
   const projectRows = projects

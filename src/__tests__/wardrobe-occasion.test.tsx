@@ -126,6 +126,12 @@ describe('the day’s occasion', () => {
     expect(workDaysOf([], ME).size).toBe(0)
   })
 
+  it('never dresses for work on an Off day or a holiday, though the Calendar still badges them', () => {
+    const away = [workEntry('pto', '2026-09-24', { work: 'off', title: 'PTO / Off', allDay: true, start: '2026-09-24', end: '2026-09-25' }), workEntry('hol', '2026-09-25', { work: 'holiday', title: 'Holiday', allDay: true, start: '2026-09-25', end: '2026-09-26' })]
+    expect(workDaysOf(away, ME).size).toBe(0)
+    expect([...workByDay(away.map(entryToEvent)).keys()].sort()).toEqual(['2026-09-24', '2026-09-25'])
+  })
+
   it('takes no owned entry for yours until this device knows who you are', () => {
     // signed in, the household not read yet: a partner's office day is not yours
     expect(workDaysOf([workEntry('w-peer', '2026-09-17', { ownerId: PEER })], null).size).toBe(0)

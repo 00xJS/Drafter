@@ -17,6 +17,8 @@ export function greeting(hour: number, name?: string): string {
 
 export interface BriefingFacts {
   work?: { label: string; short: string; emoji: string; hours: string }
+  /** The other members working today, named: "Maria · Home 09:00–17:00". */
+  theirWork?: { whose: string; short: string; emoji: string; hours: string }[]
   events?: { count: number; first?: string }
   habits?: { done: number; due: number }
 }
@@ -26,16 +28,32 @@ export interface BriefingFacts {
  * present when there is one, so an empty day shows the greeting alone. Work
  * days are a property of the day, not an event, so they are split out of the
  * count exactly as the calendar keeps them off the day's pills.
+ *
+ * `myId` is what makes the work tile YOURS (v3.24). Two people in a household
+ * keep different hours, and this took whichever work day it found first —
+ * "currently my work hours are hers". Theirs are still shown, beside yours,
+ * with the name on them, because knowing the other person is in the office is
+ * most of the reason to look.
  */
-export function briefingFacts(events: CalendarEvent[], habits: Habit[], now: Date): BriefingFacts {
+export function briefingFacts(events: CalendarEvent[], habits: Habit[], now: Date, myId?: string | null, nameOf?: (id: string | undefined) => string | null): BriefingFacts {
   const todayKey = dateKey(now)
   const today = events.filter(e => eventDayKeys(e).includes(todayKey))
   const out: BriefingFacts = {}
+  // an entry with no owner has not synced yet, so it is this device's own
+  const mine = (e: CalendarEvent) => !e.ownerId || !myId || e.ownerId === myId
+  const hoursOf = (e: CalendarEvent) => (e.allDay ? '' : `${clock(e.start)}–${clock(e.end)}`)
 
-  const w = today.find(e => e.work)
+  const w = today.find(e => e.work && mine(e))
   if (w?.work) {
     const meta = WORK_MODE_META[w.work]
-    out.work = { label: meta.label, short: meta.short, emoji: meta.emoji, hours: w.allDay ? '' : `${clock(w.start)}–${clock(w.end)}` }
+    out.work = { label: meta.label, short: meta.short, emoji: meta.emoji, hours: hoursOf(w) }
+  }
+  const theirs = today.filter(e => e.work && !mine(e))
+  if (theirs.length > 0) {
+    out.theirWork = theirs.map(e => {
+      const meta = WORK_MODE_META[e.work!]
+      return { whose: nameOf?.(e.ownerId) ?? 'Household', short: meta.short, emoji: meta.emoji, hours: hoursOf(e) }
+    })
   }
 
   // all-day first, then by start — the same order the calendar draws a day in
@@ -86,11 +104,17 @@ export function BriefingCard({
   now,
   name,
   cta,
+  myId,
+  nameOf,
 }: {
   events: CalendarEvent[]
   habits: Habit[]
   dinner: ReturnType<typeof tonightDinner>
   now: Date
+  /** Whose work day the work tile is. Without it the first work day of the day is taken, as before v3.24. */
+  myId?: string | null
+  /** A household member's display name, for the tiles that say whose work day they are. */
+  nameOf?: (id: string | undefined) => string | null
   /** Who to greet; the first name is used. Absent, the greeting stands alone. */
   name?: string
   /**
@@ -163,14 +187,14 @@ export function BriefingCard({
     }
   }
 
-  const facts = briefingFacts(events, habits, now)
+  const facts = briefingFacts(events, habits, now, myId, nameOf)
   const weather = forecast ? describeCode(forecast.code) : null
   // Named in the tile's title only: the picker above already shows it, and on
   // a 375px phone the sub-line has room for the high, the low and the rain,
   // not for "San Francisco, CA" as well — a third line there makes the weather
   // tile taller than its neighbour and the strip stops being quiet.
   const place = cityById(cache.city)?.name ?? 'Your location'
-  const hasTiles = !!(cta || forecast || facts.work || facts.events || facts.habits || dinner)
+  const hasTiles = !!(cta || forecast || facts.work || facts.theirWork?.length || facts.events || facts.habits || dinner)
   const ctaMeta = cta ? CTA_META[cta.label] : null
   const ctaBody = cta && ctaMeta && (
     <>
@@ -258,6 +282,19 @@ export function BriefingCard({
               </span>
             </li>
           )}
+          {(facts.theirWork ?? []).map(t => (
+            <li key={`${t.whose}-${t.short}`} className="briefing-tile briefing-theirs" title={`${t.whose} · ${t.short}${t.hours ? ` · ${t.hours}` : ''}`}>
+              <span className="briefing-glyph" aria-hidden>
+                {t.emoji}
+              </span>
+              <span className="briefing-text">
+                <span className="briefing-main">
+                  {t.whose} · {t.short}
+                </span>
+                {t.hours && <span className="briefing-sub">{t.hours}</span>}
+              </span>
+            </li>
+          ))}
           {facts.events && (
             <li className="briefing-tile">
               <span className="briefing-text">

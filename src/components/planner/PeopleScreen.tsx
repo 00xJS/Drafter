@@ -4,7 +4,7 @@ import { ListStatsSwitch } from './ListStatsSwitch'
 
 /** People, with Places as its second segment; each segment has its own List · Stats. */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
+  const { store, household, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, openSheet } = p
   // Each list's find box and chip. They live on the shell (useListFilters), not
   // here, because the Stats lens draws these same two Stats in its own tab: a
@@ -12,6 +12,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
   // pressed on the List, on this segment's Stats or on the lens's is pressed on
   // all three.
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
+  // the add one-shots live on the shell with the other one-shots (useNavigation)
+  const { addPerson, setAddPerson, addAPerson, addPlace, setAddPlace, addAPlace } = p
   return (
     <>
       <div className="people-tab-seg">
@@ -39,7 +41,16 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
       {peopleTab === 'places' ? (
         <>
           {/* remembered as the segments are: chosen here, and nowhere else */}
-          <ListStatsSwitch label="Places list or stats" value={innerViews.places} onChange={v => setInnerView('places', v)} />
+          <ListStatsSwitch
+            label="Places list or stats"
+            value={innerViews.places}
+            onChange={v => setInnerView('places', v)}
+            action={
+              <button type="button" className="btn primary" onClick={addAPlace}>
+                + Add place
+              </button>
+            }
+          />
           {innerViews.places === 'stats' ? (
             <PlacesStats
               // the records the list is handed, so each figure agrees with its row
@@ -54,12 +65,16 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               onPlan={planAt}
               onOpenPerson={person => openPerson(person.id)}
               onOpenDay={openCalendarDay}
+              // whose log these figures count (v3.24)
+              myId={household.myId}
             />
           ) : (
             <Places
               places={store.places}
               people={store.people}
               tasks={store.tasks}
+              // whose outings the rows count (v3.24)
+              myId={household.myId}
               meals={store.meals}
               filter={placeFilter}
               onFilter={setPlaceFilter}
@@ -80,6 +95,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               onOpenTask={openTask}
               openId={placeOpenId}
               onOpenConsumed={() => setPlaceOpenId(null)}
+              openAdd={addPlace}
+              onAddConsumed={() => setAddPlace(false)}
               onNewTask={preset => newTask(preset)}
               onImHere={() => openSheet({ kind: 'imhere' })}
             />
@@ -88,7 +105,16 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
       ) : (
         <>
           {/* remembered as the segments are: chosen here, and nowhere else */}
-          <ListStatsSwitch label="People list or stats" value={innerViews.people} onChange={v => setInnerView('people', v)} />
+          <ListStatsSwitch
+            label="People list or stats"
+            value={innerViews.people}
+            onChange={v => setInnerView('people', v)}
+            action={
+              <button type="button" className="btn primary" onClick={addAPerson}>
+                + Add person
+              </button>
+            }
+          />
           {innerViews.people === 'stats' ? (
             <PeopleStats
               // what the list reads, and nothing personal: every figure agrees with a row
@@ -103,6 +129,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               // the podium, the bars and the lists open a person's card on the list
               onOpenPerson={person => openPerson(person.id)}
               onOpenDay={openCalendarDay}
+              // whose log these figures count (v3.24)
+              myId={household.myId}
             />
           ) : (
             <People
@@ -110,6 +138,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               places={store.places}
               tasks={store.tasks}
               entries={store.events}
+              // whose log the rows count (v3.24)
+              myId={household.myId}
               journal={store.journal}
               filter={peopleFilter}
               onFilter={setPeopleFilter}
@@ -130,6 +160,8 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               // a person picked in search (or Ask, or a reminder) arrives with their card open
               openId={personOpenId}
               onOpenConsumed={() => setPersonOpenId(null)}
+              openAdd={addPerson}
+              onAddConsumed={() => setAddPerson(false)}
             />
           )}
         </>

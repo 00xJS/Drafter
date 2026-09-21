@@ -97,8 +97,9 @@ export function feedFor(items, site, tz, myId) {
       // day INCLUSIVE and re-adds the day itself, so step back one
       endDate: e.allDay ? prevDayKey(e.end) : undefined,
       description: e.notes,
-      // a work day is working hours, not a meeting: publish it as free time
-      transparent: !!e.work,
+      // home and the office are working hours: publish them as free time. Off
+      // and a holiday stay busy, like any other event.
+      transparent: e.work === 'home' || e.work === 'office',
       url: site,
     })
   }

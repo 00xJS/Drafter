@@ -224,8 +224,8 @@ export function driftedFrom(s: PlaceStats): boolean {
  * carrying it, plus past meals marked as eaten out there. Open tasks,
  * tombstones and FUTURE meals are ignored (rule in shared/places.mjs).
  */
-export function outingsAt(placeId: string, tasks: Task[], meals: Meal[] = [], now: Date = new Date()): Outing[] {
-  return sharedOutingsAt(placeId, tasks, meals, now) as Outing[]
+export function outingsAt(placeId: string, tasks: Task[], meals: Meal[] = [], now: Date = new Date(), myId?: string | null): Outing[] {
+  return sharedOutingsAt(placeId, tasks, meals, now, myId) as Outing[]
 }
 
 export interface Companion {
@@ -287,10 +287,10 @@ export function companionsAt(placeId: string, people: Person[], tasks: Task[]): 
     .slice(0, 5)
 }
 
-export function placeStats(place: Place, tasks: Task[], people: Person[], now: Date = new Date(), meals: Meal[] = []): PlaceStats {
-  const visits = outingsAt(place.id, tasks, meals, now)
+export function placeStats(place: Place, tasks: Task[], people: Person[], now: Date = new Date(), meals: Meal[] = [], myId?: string | null): PlaceStats {
+  const visits = outingsAt(place.id, tasks, meals, now, myId)
   const summary = visitSummary(visits, now)
-  const cadence = placeCadenceStatus(place, tasks, now, meals)
+  const cadence = placeCadenceStatus(place, tasks, now, meals, myId)
   const eatenOut365 = visits.filter(v => v.kind === 'meal' && now.getTime() - Date.parse(v.at) < 365 * 86_400_000).length
   const base = placeReason(summary.lastAt, summary.daysSince, summary.count365, eatenOut365)
   const nagging = cadence.status === 'due' || cadence.status === 'overdue'

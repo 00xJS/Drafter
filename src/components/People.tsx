@@ -34,9 +34,18 @@ interface Props {
   entries?: CalendarEntry[]
   /** Open one of those entries, from the visit it counts as. */
   onOpenEntry?(e: CalendarEntry): void
+  /**
+   * Whose log this list reads. The address book is the household's — one Mum —
+   * but who saw whom is each member's own (v3.24), so every figure on a row
+   * counts the visits this account wrote or was handed, and nobody else's.
+   */
+  myId?: string | null
   /** A person whose card opens on arrival (from search); consumed once. */
   openId?: string | null
   onOpenConsumed?(): void
+  /** Open the add form from the List · Stats row; consumed once. */
+  openAdd?: boolean
+  onAddConsumed?(): void
   /**
    * The group chip and find box. The shell holds them rather than the
    * list, so People → Stats counts the rows they leave and List → Stats →
@@ -437,13 +446,15 @@ export function PersonRow({
 
 const NO_ENTRIES: CalendarEntry[] = []
 
-export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry, openId: wantOpen, onOpenConsumed, filter, onFilter }: Props) {
-  const [editing, setEditing] = useState<{ person?: Person } | null>(null)
+export function People({ people, places = [], tasks, entries = NO_ENTRIES, journal, myId, onOpenJournal, onSave, onDelete, onLogVisit, onSavePlace, onOpenPlace, onPlan, onOpenTask, onOpenEntry, openId: wantOpen, onOpenConsumed, openAdd, onAddConsumed, filter, onFilter }: Props) {
+  const [editing, setEditing] = useState<{ person?: Person } | null>(() => (openAdd ? {} : null))
   const [logging, setLogging] = useState<Person | null>(null)
   const [sort, setSort] = useState<SortKey>('attention')
   // a card asked for opens with the first paint when People mounts for it,
   // and through the effect below when People is already on screen
   const [openId, setOpenId] = useState<string | null>(() => wantOpen ?? null)
+  /** The whole list folded away. Not remembered: a hidden list you did not hide is worse than a long one. */
+  const [listShut, setListShut] = useState(false)
 
   useEffect(() => {
     if (!wantOpen) return
@@ -455,11 +466,17 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
     onOpenConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOpen])
+  useEffect(() => {
+    if (!openAdd) return
+    setEditing({})
+    onAddConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAdd])
   // An event of your own counts as seeing the people on it once it has
   // happened, the way a subscribed calendar's does once Who was there? logs
   // them: read as the visit task that would have been logged, it reaches
   // every number below. Places still come from tasks: an event names none.
-  const seen = useMemo(() => seenTasks(tasks, entries), [tasks, entries])
+  const seen = useMemo(() => seenTasks(tasks, entries, new Date(), myId), [tasks, entries, myId])
   const allStats = useMemo(() => people.map(p => personStats(p, seen)), [people, seen])
   const favouriteNames = useMemo(() => favourites(places, tasks, people).map(s => s.place.name), [places, tasks, people])
 
@@ -502,10 +519,6 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
           <h2 className="view-title">People</h2>
           <p className="chart-sub">Who you've seen, how often, and who's due a call.</p>
         </div>
-        <span className="spacer" />
-        <button className="btn primary" onClick={() => setEditing({})}>
-          + Add person
-        </button>
       </div>
 
       {people.length === 0 ? (
@@ -539,12 +552,29 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
               </select>
             </label>
             <span className="spacer" />
-            <button className="btn subtle" onClick={() => setOpenId(null)} disabled={!openId}>
-              Collapse
+            {/* Two different things used to be one disabled button. Collapse
+                shuts the card that is open, and was greyed out the rest of the
+                time — which reads as broken; Hide list folds the whole list
+                away, which is what "collapse the people" meant on a page with
+                thirty-odd rows. Neither is ever disabled. */}
+            {openId && (
+              <button className="btn" onClick={() => setOpenId(null)}>
+                Collapse card
+              </button>
+            )}
+            <button className="btn" aria-expanded={!listShut} onClick={() => setListShut(v => !v)}>
+              {listShut ? `Show ${countOf(shown.length, 'person', 'people')}` : 'Hide list'}
             </button>
           </div>
 
-          {shown.length === 0 ? (
+          {listShut ? (
+            <p className="empty">
+              {countOf(shown.length, 'person', 'people')} hidden.{' '}
+              <button type="button" className="btn subtle" onClick={() => setListShut(false)}>
+                Show them
+              </button>
+            </p>
+          ) : shown.length === 0 ? (
             <p className="empty">Nobody matches.</p>
           ) : (
             <ul className="people-list">

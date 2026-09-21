@@ -45,17 +45,20 @@ export interface Milestone {
  * and overdue handling for free. The amount due is the task's estimateCost and
  * what was actually paid is its actualCost; this only adds what a task lacks.
  */
-export type BillKind = 'bill' | 'card' | 'subscription' | 'loan'
-export const BILL_KINDS: BillKind[] = ['bill', 'card', 'subscription', 'loan']
+export type BillKind = 'bill' | 'card' | 'subscription' | 'loan' | 'income'
+export const BILL_KINDS: BillKind[] = ['bill', 'card', 'subscription', 'loan', 'income']
 export const BILL_KIND_META: Record<BillKind, { label: string; emoji: string }> = {
   bill: { label: 'Bill', emoji: '🧾' },
   card: { label: 'Credit card', emoji: '💳' },
   subscription: { label: 'Subscription', emoji: '🔁' },
   loan: { label: 'Loan or mortgage', emoji: '🏦' },
+  income: { label: 'Payday', emoji: '💵' },
 }
+/** Money coming IN. Every figure that adds money up has to ask, or a payday reads as a cost. */
+export const isIncomeKind = (k: BillKind | undefined): boolean => k === 'income'
 export interface Bill {
   kind: BillKind
-  /** Who is paid: "British Gas", "Amex". */
+  /** Who is paid: "British Gas", "Amex". On a payday, who pays you: "Acme Ltd". */
   payee?: string
   /** Paid automatically, by direct debit or a card on file. */
   autopay?: boolean
@@ -64,6 +67,15 @@ export interface Bill {
    * goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th for good.
    */
   day?: number
+  /**
+   * Whose payday it is, when it is one: a household member's account id. Two
+   * people are paid on different days for different amounts, and a household
+   * that adds both up without knowing which is whose cannot say whether
+   * Thursday is a thin week for one of them (v3.27).
+   */
+  forMemberId?: string
+  /** The account it lands in, or is paid from: an Account's id. */
+  accountId?: string
 }
 
 /** The social-publishing extension of a task; present only on tasks that are posts. */
@@ -209,18 +221,30 @@ export interface CalendarEvent {
   localId?: string
   /** Set when the entry is a work day, so the calendar draws it as a day badge instead of an item. */
   work?: WorkMode
+  /**
+   * Who wrote the entry this was projected from, when it is one of ours. A
+   * work day is the clearest case: two people in a household keep different
+   * hours, and the calendar drew the first one it found on a day as though it
+   * were yours (v3.24). Absent on a feed occurrence, and on a row this device
+   * has written but not yet synced — which is this device's own either way.
+   */
+  ownerId?: string
 }
 
 /**
- * Where a work day is spent. A work day is a CalendarEntry whose start and end
- * are the working hours: it answers "which days am I home" at a glance, and it
- * is never busy time — you are working, and available, just not in the office.
+ * What the day is: home or the office (working hours, available), or Off / a
+ * holiday (the whole day, not at work). A CalendarEntry with `work` set is
+ * drawn as a day badge, never as an item among the day's events.
  */
-export type WorkMode = 'home' | 'office'
-export const WORK_MODES: WorkMode[] = ['home', 'office']
+export type WorkMode = 'home' | 'office' | 'off' | 'holiday'
+export const WORK_MODES: WorkMode[] = ['home', 'office', 'off', 'holiday']
+/** Home and the office: you are working. Off and a holiday are the day away. */
+export const isWorkingMode = (m?: WorkMode): m is 'home' | 'office' => m === 'home' || m === 'office'
 export const WORK_MODE_META: Record<WorkMode, { label: string; short: string; emoji: string }> = {
   home: { label: 'Working from home', short: 'Home', emoji: '🏠' },
   office: { label: 'In the office', short: 'Office', emoji: '🏢' },
+  off: { label: 'PTO / Off', short: 'Off', emoji: '🌴' },
+  holiday: { label: 'Holiday', short: 'Holiday', emoji: '🎉' },
 }
 
 /**
@@ -246,7 +270,7 @@ export interface CalendarEntry extends Owned {
   notes?: string
   projectId?: string
   peopleIds?: string[]
-  /** Present on a work day: where it is spent. Its start and end are the working hours. */
+  /** Present on a work day: home or office hours, or an Off / holiday day. */
   work?: WorkMode
   /** On a time block made from a task (Plan my day): the task it is time for. */
   taskId?: string
@@ -634,6 +658,8 @@ export const CORE_TYPES: GarmentType[] = ['top', 'bottom', 'onepiece']
 export const MAX_PIECES = 12
 /** The longest note a look keeps: a word or a phrase ("wedding"), not a diary. */
 export const LOOK_NOTE_MAX = 120
+/** Optional names for a look on a day that already has another — stickers, not slots. */
+export const LOOK_NAME_HINTS = ['Morning', 'Gym', 'Going out', 'Home'] as const
 /** The seasons a piece can be marked for, in the year's order. A piece marked for none is for any. */
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 export const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter']
@@ -709,10 +735,11 @@ export interface Outfit extends Owned {
 
 /**
  * One look worn on a local day: id wear~YYYY-MM-DD~<10 random chars>, like a
- * journal entry's. A day can hold several (an evening change); every figure
- * counts distinct days. A look put together for a day still to come is
- * `planned`, and counts in no figure until it is confirmed worn; one whose day
- * passes unconfirmed stays out of them.
+ * journal entry's. A day can hold several, in the order you changed (morning,
+ * then going out, then home); every figure counts distinct days. A look put
+ * together for a day still to come is `planned`, and counts in no figure until
+ * it is confirmed worn; one whose day passes unconfirmed stays out of them.
+ * `note` is an optional name on that look ("Morning"), not a required slot.
  */
 export interface Wear extends Owned {
   kind: 'wear'
@@ -730,7 +757,150 @@ export interface Wear extends Owned {
   deletedAt?: string
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear
+/** What kind of account a balance is kept for. */
+export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'cash'
+export const ACCOUNT_TYPES: AccountType[] = ['checking', 'savings', 'credit', 'investment', 'cash']
+export const ACCOUNT_TYPE_META: Record<AccountType, { label: string; emoji: string; liability?: true }> = {
+  checking: { label: 'Checking', emoji: '🏦' },
+  savings: { label: 'Savings', emoji: '🐖' },
+  credit: { label: 'Credit card', emoji: '💳', liability: true },
+  investment: { label: 'Investment', emoji: '📈' },
+  cash: { label: 'Cash', emoji: '💵' },
+}
+
+/** One balance you typed in, on the day it was true. */
+export interface BalanceCheck {
+  /** YYYY-MM-DD, a local day key. */
+  on: string
+  /** What it held. On a credit account this is what is OWED, a positive number. */
+  amount: number
+}
+
+/**
+ * An account you keep a balance for (v3.27).
+ *
+ * Drafter never connects to a bank and never will: an account here is a name,
+ * a kind, and the balances you have typed in over time. That is enough to
+ * answer the question the Bills view could not — "is there enough in there
+ * before the 3rd?" — and it is the whole of this feature's contact with the
+ * outside world.
+ *
+ * The household's, like a bill: two people who share the rent share the
+ * picture. `memberId` says whose it is when only one of them uses it.
+ *
+ * The check-ins live on the row. That is last-write-wins, like every other
+ * record here: two people typing a balance for the SAME account in the same
+ * minute would keep one of the two. A balance is a once-a-week thing done by
+ * one person, so that is the right trade against a row per check-in — and
+ * `on` is a day key, so re-typing a day replaces it rather than doubling it.
+ */
+export interface Account extends Owned {
+  kind: 'account'
+  id: string
+  name: string
+  type: AccountType
+  /** Whose it is; absent means the household's. */
+  memberId?: string
+  /** Newest last, one per day. */
+  balances: BalanceCheck[]
+  /** Left out of the totals without being deleted: an account you closed. */
+  archivedAt?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/**
+ * One message in the household's chat.
+ *
+ * The household's, by kind — there is no per-record sharing here, because a
+ * message nobody else can read is not a message. One row per message, never
+ * edited after it is written, so two people typing at once cannot overwrite
+ * each other the way a growing array under last-write-wins would.
+ *
+ * The id carries the instant it was written (`message~<iso>~<10 random>`), as
+ * a journal entry's carries its day: the list sorts on the id alone, and two
+ * devices offline in the same second still write two rows.
+ */
+export interface Message extends Owned {
+  kind: 'message'
+  id: string
+  /** What was said. Plain text — a chat is not a document. */
+  body: string
+  /** A record this message is about, so "about the shopping" can open it. */
+  about?: { kind: 'task' | 'event' | 'meal' | 'note'; id: string; label: string }
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/** The longest one message can be: a paragraph, not a document. */
+export const MESSAGE_MAX = 2000
+
+/**
+ * One turn of the conversation with Drafter's assistant — yours or its.
+ *
+ * PERSONAL, and deliberately a different kind from `message`: asking the
+ * assistant what your week looks like is not something to say to the
+ * household, and a household chat that fills up with one person's questions
+ * to a model is not a household chat any more. The two never share a thread.
+ *
+ * One row per turn, like a message, for the same reason.
+ */
+export interface ChatTurn extends Owned {
+  kind: 'chat'
+  id: string
+  /** Who said it. */
+  role: 'you' | 'drafter'
+  text: string
+  /** On an answer: the references it cited (T3, J1), for the chips under it. */
+  cites?: string[]
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/**
+ * What a snooze can be put on. A person and a place are records of ours; an
+ * event is whatever Today's "Coming up" listed, which is usually an occurrence
+ * from a subscribed calendar and has no record here to write a field on.
+ */
+export type SnoozeTarget = 'person' | 'place' | 'event'
+
+/**
+ * A nudge put off rather than answered: "not this fortnight", not "seen".
+ *
+ * PERSONAL, and that is the whole point of it: whose nudge it is decides whose
+ * snooze it is. Maria putting her mother off for two weeks is not Joseph
+ * saying he has called her, any more than Maria's work day is his.
+ *
+ * One row per thing, keyed `snooze~<target>~<targetId>`, so putting the same
+ * nudge off again overwrites instead of piling rows up. A row is spent once
+ * `until` has passed; nothing sweeps it, because rewriting the same id is how
+ * the next snooze is made.
+ */
+export interface Snooze extends Owned {
+  kind: 'snooze'
+  id: string
+  target: SnoozeTarget
+  /** The person's or place's id; for an event, the occurrence id Today listed. */
+  targetId: string
+  /** ISO instant the nudge comes back. */
+  until: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+/** How long a nudge can be put off for. Never "forever": every one of these comes back. */
+export const SNOOZE_OPTIONS: { days: number; label: string; short: string }[] = [
+  { days: 7, label: 'a week', short: '1w' },
+  { days: 14, label: 'two weeks', short: '2w' },
+  { days: 30, label: 'a month', short: '1m' },
+  { days: 90, label: 'three months', short: '3m' },
+]
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear | Snooze | Message | ChatTurn | Account
 
 export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
   daily: 'Daily',

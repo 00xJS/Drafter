@@ -192,22 +192,47 @@ export function Calendar({
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   // (workByDay in calgrid.ts: the wardrobe reads a work day from the same map)
   const workDays = useMemo(() => workByDay(events), [events])
-  const workOn = (d: Date) => (workDays.get(dateKey(d)) ?? [])[0]
-  const workBadge = (d: Date) => {
-    const w = workOn(d)
-    if (!w?.work) return null
+  /** Is this work day this account's? An entry with no owner has not synced yet, so it is. */
+  const isMine = (w: CalendarEvent) => !w.ownerId || !myId || w.ownerId === myId
+  /** YOUR work day. Set work day, Edit and the wardrobe all act on this one alone. */
+  const workOn = (d: Date) => (workDays.get(dateKey(d)) ?? []).find(isMine)
+  /**
+   * The other members' work days on that day. Two people in a household keep
+   * different hours, and until v3.24 the calendar drew whichever it found
+   * first as though it were yours: "currently my work hours are hers". Theirs
+   * are still worth seeing — that is half of what a shared calendar is for —
+   * so they are drawn beside yours with the name on them.
+   */
+  const theirWorkOn = (d: Date) => (workDays.get(dateKey(d)) ?? []).filter(w => !isMine(w))
+  /** One badge. `whose` names the member when the day is not yours. */
+  const oneWorkBadge = (w: CalendarEvent, whose?: string | null) => {
+    if (!w.work) return null
     const meta = WORK_MODE_META[w.work]
     const hours = w.allDay ? '' : `${clock(w.start)}–${clock(w.end)}`
+    // "Maria's working from home", not "Working from home" under her name
+    const words = whose ? `${whose}: ${meta.label.toLowerCase()}` : meta.label
     return (
       <span
-        className={'cal-work-badge ' + w.work}
-        title={`${meta.label}${hours ? ' · ' + hours : ''}`}
-        aria-label={`${meta.label}${hours ? ', ' + hours : ''}`}
+        key={w.id}
+        className={'cal-work-badge ' + w.work + (whose ? ' theirs' : '')}
+        title={`${words}${hours ? ' · ' + hours : ''}`}
+        aria-label={`${words}${hours ? ', ' + hours : ''}`}
       >
-        {meta.emoji} {meta.short}
+        {meta.emoji} {whose ? `${whose} · ` : ''}
+        {meta.short}
         {hours ? ` ${hours}` : ''}
       </span>
     )
+  }
+  const workBadge = (d: Date) => {
+    const w = workOn(d)
+    return w ? oneWorkBadge(w) : null
+  }
+  /** Their work days, named. Nothing at all when you are the only account here. */
+  const theirWorkBadges = (d: Date) => {
+    const theirs = theirWorkOn(d)
+    if (theirs.length === 0) return null
+    return <>{theirs.map(w => oneWorkBadge(w, nameOf?.(w.ownerId) ?? 'Household'))}</>
   }
 
   const cells = useMemo(() => monthCells(new Date(cursor.getFullYear(), cursor.getMonth(), 1)), [cursor])
@@ -238,7 +263,16 @@ export function Calendar({
     if (!look) return null
     const looks = on ? on.looks : looksOn(wears ?? [], k).filter(w => w.garmentIds.length > 0).length
     const what = outfitLabel(look.garmentIds, pieces)
-    const thumbs = orderPieces(look.garmentIds, pieces).slice(0, 3)
+    const dayLooks = looksOn(wears ?? [], k).filter(w => w.garmentIds.length > 0)
+    const thumbs =
+      looks > 1
+        ? dayLooks
+            .slice(-3)
+            .map(w => ({ wear: w.id, id: orderPieces(w.garmentIds, pieces)[0] }))
+            .filter((t): t is { wear: string; id: string } => !!t.id)
+        : orderPieces(look.garmentIds, pieces)
+            .slice(0, 3)
+            .map(id => ({ wear: look.id, id }))
     const verb = plan ? 'Planned:' : k === todayKey ? 'Wearing' : 'Wore'
     const more = looks > 1 ? `, and ${looks - 1} more look${looks > 2 ? 's' : ''}` : ''
     return (
@@ -252,7 +286,7 @@ export function Calendar({
         }}
       >
         <span className="cal-look-thumbs" aria-hidden="true">
-          {thumbs.length > 0 ? thumbs.map(id => <GarmentPhoto key={id} garment={pieces.get(id)!} />) : <Icon name="wardrobe" size={14} />}
+          {thumbs.length > 0 ? thumbs.map(t => <GarmentPhoto key={t.wear} garment={pieces.get(t.id)!} />) : <Icon name="wardrobe" size={14} />}
         </span>
         <span className="cal-look-label">
           <span className="muted">{verb}</span> {what}
@@ -609,7 +643,7 @@ export function Calendar({
         <button className="btn" onClick={() => shift(1)} aria-label={`Next ${shiftBy}`}>
           ›
         </button>
-        <button className="btn subtle" onClick={() => setCursor(dayStart(new Date()))}>
+        <button className="btn" onClick={() => setCursor(dayStart(new Date()))}>
           Today
         </button>
         <span className="cal-hint">
@@ -636,6 +670,7 @@ export function Calendar({
                 </button>
               )
             })()}
+            {theirWorkBadges(cursor)}
           </div>
           {dayFace(cursor, () => {})}
         </div>
@@ -652,6 +687,7 @@ export function Calendar({
                     <span className="cal-weekday-num">{d.getDate()}</span>
                     <span className="cal-weekday-count">{daySummary(items)}</span>
                     {workBadge(d)}
+                    {theirWorkBadges(d)}
                   </button>
                   <div className="cal-add-wrap" onPointerDown={e => e.stopPropagation()}>
                     <button
@@ -749,6 +785,7 @@ export function Calendar({
                 >
                   <div className="cal-daynum">{d.getDate()}</div>
                   {workBadge(d)}
+                  {theirWorkBadges(d)}
                   {shown.map(item => monthPill(item, d))}
                   {hidden > 0 && <div className="cal-more">+{hidden} more</div>}
                 </div>
@@ -793,6 +830,7 @@ export function Calendar({
                   </button>
                 )
               })()}
+              {theirWorkBadges(sheetDay)}
             </div>
             <button className="btn subtle cal-sheet-nav" onClick={() => setSheetDay(addDays(sheetDay, 1))} aria-label="Next day">
               ›

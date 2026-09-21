@@ -131,13 +131,13 @@ function displaces(g, other) {
  * come), so logging a day whose latest look was a plan confirms that plan,
  * as the composer's Wearing this and an assistant's log_outfit do: a caller
  * that logs one piece and shows none of the plan (a piece's Wear today) logs
- * `another` beside it instead. `note`, when given, is the look's note; ''
- * clears it.
+ * `another` beside it instead. `wearId` edits that look of the day instead of
+ * the latest. `note`, when given, is the look's note; '' clears it.
  */
 export function logLook(wears, day, pieces, records, opts = {}) {
   const as = { planned: opts.planned ?? false, note: opts.note }
   const looks = opts.another ? [] : looksOn(wears, day)
-  const latest = looks[looks.length - 1]
+  const latest = opts.wearId && !opts.another ? looks.find(w => w.id === opts.wearId) ?? looks[looks.length - 1] : looks[looks.length - 1]
   if (!latest) {
     const write = marked(newWear(day, pieces, opts.now, opts.rand), as)
     return { write, undo: { remove: write.id } }

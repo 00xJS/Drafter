@@ -18,7 +18,7 @@ import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { imageFiles } from '../media'
 import type { Garment, GarmentType, Item, Outfit, Wear } from '../types'
 import { liveById, unwearable, wearIndex } from '../wardrobe'
-import { press, propsOf, rendered, settled, typeInto } from './rendered'
+import { button, press, propsOf, rendered, settled, textOf, typeInto } from './rendered'
 import { plannerSource } from './source'
 
 // Home → Wardrobe as a server render sees it: the composer's rows and its
@@ -125,12 +125,13 @@ describe('Outfit: the composer', () => {
     expect(html).not.toContain('Remove look')
   })
 
-  it('starts a logged day on its latest look, with Update look, + Another look and Remove look', () => {
+  it('starts a logged day on its latest look, with Update look, a look switcher and Remove look', () => {
     const html = composer({ wears: [look(TODAY, ['navy-tee', 'jeans']), look(TODAY, ['grey-tee', 'cords'])] })
     expect(chosenNames(html)).toEqual(['grey-tee', 'cords'])
     expect(html).toContain('>Logged</span>')
     expect(html).toContain('>Update look</button>')
-    // "+ Another look", or "+ Look" on a phone: named the same either way
+    expect(html).toContain('Look 2 of 2')
+    // "+ Another look", or "+ Look" on a phone: starts the next change, not a second save
     expect(html).toContain('aria-label="Another look"')
     expect(html).toContain('+ <span class="wardrobe-another-long">Another look</span><span class="wardrobe-another-short">Look</span>')
     expect(html).toContain('Remove look')
@@ -234,7 +235,8 @@ describe('Outfit: the composer', () => {
     expect(chosenNames(html)).toEqual(['grey-tee', 'cords'])
     expect(html).toContain('>Planned</span>')
     expect(html).toContain('>Wearing this</button>')
-    expect(html).not.toContain('aria-label="Another look"')
+    expect(html).toContain('Look 1 of 1')
+    expect(html).toContain('aria-label="Another look"')
   })
 
   it('carries the day’s note into its field, and deals a look with Surprise me', () => {
@@ -245,20 +247,22 @@ describe('Outfit: the composer', () => {
     expect(composer()).not.toContain('value="wedding"')
   })
 
-  it('logs the look with the note in its field, and gives + Another look only a note written for it', () => {
+  it('logs the look with the note in its field, and starts the next change from + Another look', () => {
     const onLog = vi.fn<ComposerProps['onLog']>()
     const noted = composerProps({ wears: [{ ...look(TODAY, ['navy-tee', 'jeans']), note: 'wedding' }], onLog })
     const tree = settled(OutfitComposer, noted)
     press(tree, 'Update look')
     expect(onLog.mock.lastCall?.[2]).toMatchObject({ note: 'wedding' })
     expect(onLog.mock.lastCall?.[2].another).toBeUndefined()
-    // the evening change is a look of its own: the day's note stays the day's
-    press(tree, 'Another look')
+    // + Another look starts a new change: nothing is written until Wearing this
+    const draft = settled(OutfitComposer, noted, t => press(t, 'Another look'))
+    expect(onLog).toHaveBeenCalledTimes(1)
+    expect(textOf(draft)).toContain('New look · 2 of 2')
+    expect(button(draft, 'The look before').props.disabled).toBe(false)
+    press(draft, 'Wearing this')
     expect(onLog.mock.lastCall?.[2]).toMatchObject({ another: true, note: '' })
-    // a note written since the field was filled goes with either
+    // a note written on the current look stays on Update look
     const written = settled(OutfitComposer, noted, t => typeInto(t, noteField, 'dinner'))
-    press(written, 'Another look')
-    expect(onLog.mock.lastCall?.[2]).toMatchObject({ another: true, note: 'dinner' })
     press(written, 'Update look')
     expect(onLog.mock.lastCall?.[2]).toMatchObject({ note: 'dinner' })
     // and a day with no look yet takes what is typed

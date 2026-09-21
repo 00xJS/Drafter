@@ -658,6 +658,14 @@ describe('logLook: what a log writes, and what its Undo puts back', () => {
     expect((undo as Wear).updatedAt > write.updatedAt).toBe(true)
   })
 
+  it('edits a named look of the day, not the latest, when wearId is given', () => {
+    const morning = look(TODAY, ['tee', 'jeans'])
+    const evening = look(TODAY, ['shirt', 'chinos'])
+    const { write } = logLook([morning, evening], TODAY, ['tee', 'cords'], everything, { shown: shownAll, wearId: morning.id })
+    expect(write.id).toBe(morning.id)
+    expect(write.garmentIds).toEqual(['tee', 'cords'])
+  })
+
   it('writes a second look with `another`, and leaves the first alone', () => {
     const morning = look(TODAY, ['tee', 'jeans'])
     const { write, undo } = logLook([morning], TODAY, ['shirt', 'chinos'], everything, { another: true, shown: shownAll })

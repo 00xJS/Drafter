@@ -65,7 +65,7 @@ export function visitDays(visits: { at: string }[], dayKeyOf: (at: string) => st
 }
 
 /** "1 day", "3 events". */
-export const countOf = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+export const countOf = (n: number, noun: string, plural?: string) => `${n} ${n === 1 ? noun : (plural ?? `${noun}s`)}`
 
 /** "2 days · 3 events", or just "2 days" when no two events shared a day. */
 export function seenLabel(days: number, events: number): string {
@@ -88,9 +88,14 @@ export function eventVisits(entries: CalendarEntry[], now: Date = new Date()): T
 /**
  * What every "have you seen them" figure reads: the tasks plus those event
  * visits. People, Today, Review, Ask and the week plan all count through it.
+ *
+ * `myId` narrows it to your own log (v3.24): the address book is the
+ * household's, the record of who saw whom is not. Pass it wherever there is a
+ * viewer — every surface in the app has one — and the household member's
+ * visits stop being counted as yours.
  */
-export function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date()): Task[] {
-  return sharedSeenTasks(tasks, entries, now)
+export function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date(), myId?: string | null): Task[] {
+  return sharedSeenTasks(tasks, entries, now, myId)
 }
 
 /** Shared last/gap/weekly rollup used by people and places. */

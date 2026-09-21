@@ -119,6 +119,7 @@ export function entryToEvent(e: CalendarEntry): CalendarEvent {
     location: e.location,
     localId: e.id,
     work: e.work,
+    ownerId: e.ownerId,
   }
 }
 

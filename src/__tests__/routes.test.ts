@@ -55,7 +55,9 @@ describe('six tabs, the same on the phone and the desktop', () => {
   })
 
   it('keeps the segments each tab holds', () => {
-    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'wardrobe'])
+    // Chat is a page Home opens (v3.26), like Week, Journal and Wardrobe — not
+    // a sixth noun on the tab bar, which has held the same five all along
+    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'wardrobe', 'chat'])
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'day'])
   })

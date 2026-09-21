@@ -59,14 +59,39 @@ export function eventVisits(entries, now = new Date()) {
 }
 
 /**
+ * Whether this row counts as YOU having been there (v3.24).
+ *
+ * The address book is the household's — one Mum, one favourite restaurant —
+ * but the log of who saw whom is not. Two people in a household are in
+ * different places on different days, and a fortnight where Maria saw her
+ * mother twice was reading on Joseph's Today and in his weekly recap as
+ * though he had.
+ *
+ * A row is yours when you wrote it (a logged visit is written by whoever
+ * tapped the button), or when it was handed to you and you are the one who
+ * did it. A row with no owner is this device's own — local mode, and the
+ * rows written before anyone signed in. `myId` absent means "don't ask":
+ * every caller that has no viewer (a local copy, a test) counts everything,
+ * exactly as it did before.
+ */
+export function ownVisit(row, myId) {
+  if (!myId || !row) return true
+  return !row.ownerId || row.ownerId === myId || row.assigneeId === myId
+}
+
+/**
  * What every "have you seen them" figure reads: the tasks, and your own past
  * events with people on them as the visits they amount to. People, Today, the
  * week plan, the digest, Review, Ask and MCP all count through this, so no
  * surface calls someone overdue whom another shows as seen. Plans (plannedVisit)
  * and gifts still read the tasks alone: an event is never an open plan.
+ *
+ * `myId` narrows it to your own log (ownVisit). Pass it wherever there is a
+ * viewer to be wrong about; leave it out where there is not.
  */
-export function seenTasks(tasks, entries, now = new Date()) {
-  return [...(tasks ?? []), ...eventVisits(entries, now)]
+export function seenTasks(tasks, entries, now = new Date(), myId = null) {
+  const mine = row => ownVisit(row, myId)
+  return [...(tasks ?? []).filter(mine), ...eventVisits((entries ?? []).filter(mine), now)]
 }
 
 /** Soonest open catch-up / visit plan for this person, if any. */

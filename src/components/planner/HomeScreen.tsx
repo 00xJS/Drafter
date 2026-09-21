@@ -1,9 +1,12 @@
+import { unreadSince } from '../../chat'
+import { memberName } from '../../household'
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { JournalView } from '../Journal'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
-import { Review, Wardrobe } from './lazy'
+import { askDocOpener } from './askRouting'
+import { Chat, Review, Wardrobe } from './lazy'
 
 /** A Home + New task is due this evening, so it lands on the day, not the Inbox. */
 function todayEveningIso(): string {
@@ -19,9 +22,14 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { store, household, allEvents, sourceMap, showToast } = p
   const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
-  const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent } = p
+  const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
   const { syncAlarm, dismissSyncAlarm, setAdminOpen } = p
+  // Every screen is a plain function of `p`, called straight from the shell —
+  // it holds no hooks of its own, and the tests call it as a function to read
+  // what it drew. chatSeenAt therefore lives on the shell (useNavigation).
+  const { chatSide, setChatSide, chatSeenAt, markChatSeen } = p
+  const openAskDoc = askDocOpener(p)
   return (
     <>
       {homeTab !== 'today' && (
@@ -67,6 +75,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           }}
           onOpenJournal={() => openJournal(localDayKey())}
           name={household.info?.me.displayName ?? undefined}
+          // whose work day is whose on the briefing strip (v3.24)
+          nameOf={id => memberName(household.info, id)}
           habits={store.habits}
           onSaveHabit={h => store.upsert(h)}
           onDeleteHabit={id => {
@@ -105,6 +115,13 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           syncAlarm={syncAlarm}
           onDismissSyncAlarm={dismissSyncAlarm}
           onOpenSyncCheck={() => setAdminOpen(true, 'data')}
+          // putting a nudge off: a person, a place or one of the next
+          // fortnight's events, for a while and never forever (v3.24)
+          snoozes={store.snoozes}
+          onSnooze={snooze}
+          // Home → Chat, and what this device has not shown you of it yet
+          onOpenChat={() => setHomeTab('chat')}
+          unread={unreadSince(store.messages, chatSeenAt, household.myId)}
         />
       )}
       {homeTab === 'week' && (
@@ -117,6 +134,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           places={store.places}
           habits={store.habits}
           entries={store.events}
+          // whose week this is: who you saw and where you went are yours (v3.24)
+          myId={household.myId}
           onSaveReview={r => store.upsert(r)}
           onOpen={openTask}
           onStatus={changeStatus}
@@ -147,6 +166,50 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           }}
           openDate={journalOpenDate}
           onOpenDateConsumed={() => setJournalOpenDate(null)}
+        />
+      )}
+      {homeTab === 'chat' && (
+        <Chat
+          side={chatSide}
+          onSide={setChatSide}
+          // opening the household thread is reading it: the badge clears here,
+          // not on a timer, so a message arriving while you read never counts
+          onSeen={markChatSeen}
+          // the household's thread, and yours with the assistant. Two kinds,
+          // two threads, and the second is personal at the database (v3.26)
+          messages={store.messages}
+          turns={store.chat}
+          household={household.info}
+          myId={household.myId}
+          // what the assistant may read: the same list Ask is handed, minus the
+          // journal — a chat that remembers what it was told is not where a
+          // diary belongs, and Ask's own chip is the place to turn that on
+          sources={{
+            tasks: store.tasks,
+            projects: store.projects,
+            people: store.people,
+            places: store.places,
+            recipes: store.recipes,
+            meals: store.meals,
+            entries: store.events,
+            feedEvents: allEvents,
+            journal: [],
+            garments: store.garments,
+            outfits: store.outfits,
+            wears: store.wears,
+          }}
+          tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          onSendMessage={m => store.upsert(m)}
+          onRemoveMessage={id => {
+            store.remove(id)
+            showToast('Message deleted', () => store.restore([id]))
+          }}
+          onWriteTurn={t => store.upsert(t)}
+          onClearChat={ids => {
+            for (const id of ids) store.remove(id)
+            showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => store.restore(ids))
+          }}
+          onOpen={openAskDoc}
         />
       )}
       {homeTab === 'wardrobe' && (

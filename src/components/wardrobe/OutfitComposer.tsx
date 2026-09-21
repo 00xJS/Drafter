@@ -54,13 +54,17 @@ interface Props {
   workDays?: ReadonlySet<string>
   onDay(day: string): void
   /**
-   * Log the pieces on the day: its latest look takes them, or with `another` a
-   * new look does; a day still to come is planned rather than logged. `shown`
-   * is every piece in the rows, so whatever else that look holds stays.
-   * `note` is the look's note, as the field under the rows says it.
+   * Log the pieces on the day: the look being edited takes them, or with
+   * `another` a new look does; a day still to come is planned rather than
+   * logged. `shown` is every piece in the rows, so whatever else that look
+   * holds stays. `note` is the look's note, as the field under the rows says it.
    */
-  onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string }): void
-  onRemoveLook(day: string): void
+  onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string; wearId?: string }): void
+  /** Remove the look being edited (`wearId`), or the day's latest if none is named. */
+  onRemoveLook(day: string, wearId?: string): void
+  /** A way in from Today: this look of the day, or a new change. Consumed once. */
+  focus?: { wearId?: string; another?: true } | null
+  onFocusConsumed?(): void
   onSaveOutfit(pieces: string[]): void
   /** The piece sheet, to add one of a type. */
   onAdd(type: GarmentType): void
@@ -81,12 +85,14 @@ interface Props {
  * Outfit: dress a day by swiping. A Tops row and a Bottoms row (or
  * One-pieces), Outerwear and Shoes when you open them, and Accessories as
  * chips; then Wearing this, or Save outfit, in a bar that stays in reach above
- * the tab bar. The rows lead with what has rested longest, in an order frozen
- * for the visit, Surprise me deals them a look, and your saved outfits sit
- * underneath. A day's look is shown as it is: a retired piece in it, or one in
- * Trash, joins its row for the visit, badged, so Update look never writes over
- * what you cannot see. A day still to come is planned: its look counts once it
- * is said to be worn. On today, a cold or wet forecast offers a coat.
+ * the tab bar. A day with a look has a switcher: flip the day's changes, or
+ * + Look to start the next one. The rows lead with what has rested longest,
+ * in an order frozen for the visit, Surprise me deals them a look, and your
+ * saved outfits sit underneath. A day's look is shown as it is: a retired
+ * piece in it, or one in Trash, joins its row for the visit, badged, so Update
+ * look never writes over what you cannot see. A day still to come is planned:
+ * its look counts once it is said to be worn. On today, a cold or wet forecast
+ * offers a coat.
  *
  * Beside the date, the day is a Work day (a work-day entry of yours is on the
  * calendar) or a Day off; a tap turns it the other way for this visit and
@@ -94,25 +100,49 @@ interface Props {
  * the other occasion follow, quieter; Surprise me and the coat keep to it.
  */
 export function OutfitComposer(props: Props) {
-  const { garments, inTrash = NONE, outfits, wears, byId, ix, day, todayKey, workDays = NO_DAYS, onDay, onLog, onRemoveLook, onSaveOutfit, onAdd, onOpenPiece, pending, onPendingUsed } =
-    props
+  const {
+    garments,
+    inTrash = NONE,
+    outfits,
+    wears,
+    byId,
+    ix,
+    day,
+    todayKey,
+    workDays = NO_DAYS,
+    onDay,
+    onLog,
+    onRemoveLook,
+    onSaveOutfit,
+    onAdd,
+    onOpenPiece,
+    pending,
+    onPendingUsed,
+    focus,
+    onFocusConsumed,
+  } = props
   const [frozen] = useState(() => byRest(garments, ix).map(g => g.id))
   const dayLooks = looksOn(wears, day)
   const latest = dayLooks[dayLooks.length - 1]
+  /** The look of this day being dressed, or `new` for the next change. */
+  const [editingId, setEditingId] = useState<string | 'new' | null>(() => (focus?.another ? 'new' : (focus?.wearId ?? null)))
+  const resolvedId = editingId === 'new' ? 'new' : editingId && dayLooks.some(w => w.id === editingId) ? editingId : (latest?.id ?? null)
+  const isDraft = resolvedId === 'new'
+  const current = isDraft ? undefined : dayLooks.find(w => w.id === resolvedId) ?? latest
   /** A day turned the other way than the calendar has it: for the view only, never saved. */
   const [flip, setFlip] = useState<{ day: string; to: DayOccasion } | null>(null)
   const calendarSays = dayOccasion(day, workDays)
   const occasion = flip?.day === day ? flip.to : calendarSays
-  const held = useMemo(() => heldPieces(latest, garments, inTrash), [latest, garments, inTrash])
+  const held = useMemo(() => heldPieces(current, garments, inTrash), [current, garments, inTrash])
   const rows = useMemo(() => rowsOf(garments, frozen, held, occasion), [garments, frozen, held, occasion])
   const shown = useMemo(() => shownIn(rows), [rows])
   const [sel, setSel] = useState<Selection>(() => {
-    const first = start(rows, latest, byId)
+    const first = start(rows, isDraft ? undefined : current ?? latest, byId)
     return pending ? load(first, pending, rows, byId) : first
   })
   const [openRows, setOpenRows] = useState<Optional[]>(storedRows)
-  /** The note of the day's latest look: what the note field is filled with. */
-  const lookNote = latest?.note ?? ''
+  /** The note of the look being dressed: what the note field is filled with. */
+  const lookNote = current?.note ?? ''
   const [note, setNote] = useState(lookNote)
   const cached = useCachedForecast()
   const forecast = props.forecast !== undefined ? props.forecast : cached
@@ -124,13 +154,33 @@ export function OutfitComposer(props: Props) {
   useEffect(() => {
     if (shownDay.current === day) return
     shownDay.current = day
+    setEditingId(null)
     setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
-  // the note field follows the day's latest look — another day's, a log, a
+  // a way in names a look of this day, or asks for a new change
+  useEffect(() => {
+    if (!focus) return
+    if (focus.another) {
+      setEditingId('new')
+      setSel(start(rows, undefined, byId))
+      setNote('')
+    } else if (focus.wearId && dayLooks.some(w => w.id === focus.wearId)) setEditingId(focus.wearId)
+    onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus])
+  const shownLook = useRef(resolvedId)
+  useEffect(() => {
+    if (shownLook.current === resolvedId) return
+    shownLook.current = resolvedId
+    setSel(s => (current ? load(s, current.garmentIds, rows, byId) : start(rows, undefined, byId)))
+    setNote(lookNote)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedId])
+  // the note field follows the look being dressed — another look, a log, a
   // Remove, an Undo, a sync — and a note typed with no look to follow stays,
   // as the rows do
-  useEffect(() => setNote(lookNote), [latest?.id, lookNote])
+  useEffect(() => setNote(lookNote), [current?.id, lookNote])
 
   // a saved outfit asked for from outside goes in the rows once — after the
   // day's own look, so it is what shows — and is handed back as used, so
@@ -173,14 +223,48 @@ export function OutfitComposer(props: Props) {
   const lastDay = lastPlanDay(todayKey)
   const dayName = `${day === todayKey ? 'Today · ' : day === yesterday ? 'Yesterday · ' : day === tomorrow ? 'Tomorrow · ' : ''}${shortDay(day, todayKey)}`
   const ahead = day > todayKey
-  const planned = !!latest?.planned
-  const worn = !!latest && !planned
+  const planned = !!current?.planned
+  const worn = !!current && !planned
   // a plan on a day that has come is confirmed by logging it, so it reads as a day not yet logged
-  const primary = ahead ? (latest ? 'Update plan' : `Plan for ${shortDay(day, todayKey)}`) : worn ? 'Update look' : day === todayKey ? 'Wearing this' : `Log for ${shortDay(day, todayKey)}`
-  const another = ahead ? !!latest : worn
-  // an evening change is a look of its own: it takes a note only when one was
-  // written for it, never the day's note the field was filled with
-  const anotherNote = note.trim() === lookNote ? '' : note
+  const primary = isDraft
+    ? ahead
+      ? `Plan for ${shortDay(day, todayKey)}`
+      : day === todayKey
+        ? 'Wearing this'
+        : `Log for ${shortDay(day, todayKey)}`
+    : ahead
+      ? current
+        ? 'Update plan'
+        : `Plan for ${shortDay(day, todayKey)}`
+      : worn
+        ? 'Update look'
+        : day === todayKey
+          ? 'Wearing this'
+          : `Log for ${shortDay(day, todayKey)}`
+  const lookAt = current ? dayLooks.findIndex(w => w.id === current.id) : -1
+  const lookMid =
+    isDraft
+      ? dayLooks.length
+        ? `New look · ${dayLooks.length + 1} of ${dayLooks.length + 1}`
+        : 'New look'
+      : current
+        ? `${current.note ? `${current.note} · ` : 'Look '}${lookAt + 1} of ${dayLooks.length}`
+        : ''
+  const logOpts = (asAnother: boolean) => ({
+    shown,
+    another: asAnother || undefined,
+    note: asAnother && note.trim() === lookNote ? '' : note,
+    wearId: asAnother ? undefined : current?.id,
+  })
+  const saveLook = (asAnother: boolean) => {
+    onLog(day, pieces, logOpts(asAnother))
+    if (asAnother) setEditingId(null)
+  }
+  const startAnother = () => {
+    setEditingId('new')
+    setSel(start(rows, undefined, byId))
+    setNote('')
+  }
 
   // what today's forecast asks for, when the rows have no outerwear chosen yet
   const need = day === todayKey ? weatherNeed(forecast) : null
@@ -256,15 +340,53 @@ export function OutfitComposer(props: Props) {
         <button type="button" className="btn subtle wardrobe-step" aria-label="The day after" disabled={day >= lastDay} onClick={() => onDay(shiftDayKey(day, 1))}>
           ›
         </button>
-        {latest && (
+        {current && (
           <span className="wardrobe-day-state">
             <span className={planned ? 'badge wardrobe-planned' : 'badge wardrobe-logged'}>{planned ? 'Planned' : 'Logged'}</span>
-            <ConfirmButton className="btn subtle danger wardrobe-remove" confirmLabel="Remove?" ariaLabel={planned ? 'Remove plan' : 'Remove look'} onConfirm={() => onRemoveLook(day)}>
+            <ConfirmButton
+              className="btn subtle danger wardrobe-remove"
+              confirmLabel="Remove?"
+              ariaLabel={planned ? 'Remove plan' : 'Remove look'}
+              onConfirm={() => {
+                onRemoveLook(day, current.id)
+                setEditingId(null)
+              }}
+            >
               Remove<span className="wardrobe-remove-more">{planned ? ' plan' : ' look'}</span>
             </ConfirmButton>
           </span>
         )}
       </div>
+      {(dayLooks.length > 0 || isDraft) && (
+        <div className="wardrobe-looks">
+          <button
+            type="button"
+            className="btn subtle wardrobe-step"
+            aria-label="The look before"
+            disabled={isDraft ? dayLooks.length === 0 : lookAt <= 0}
+            onClick={() => {
+              if (isDraft && dayLooks.length) setEditingId(dayLooks[dayLooks.length - 1].id)
+              else if (lookAt > 0) setEditingId(dayLooks[lookAt - 1].id)
+            }}
+          >
+            ‹
+          </button>
+          <span className="wardrobe-looks-mid">{lookMid}</span>
+          <button
+            type="button"
+            className="btn subtle wardrobe-step"
+            aria-label="The look after"
+            disabled={isDraft || lookAt < 0 || lookAt >= dayLooks.length - 1}
+            onClick={() => lookAt >= 0 && lookAt < dayLooks.length - 1 && setEditingId(dayLooks[lookAt + 1].id)}
+          >
+            ›
+          </button>
+          <button type="button" className="btn subtle" aria-label="Another look" disabled={isDraft} onClick={startAnother}>
+            + <span className="wardrobe-another-long">Another look</span>
+            <span className="wardrobe-another-short">Look</span>
+          </button>
+        </div>
+      )}
 
       {onepieceMode ? (
         row('onepiece')
@@ -342,14 +464,7 @@ export function OutfitComposer(props: Props) {
           Save outfit
         </button>
         <span className="spacer" />
-        {another && (
-          // "+ Look" on a phone, where the three share one row
-          <button type="button" className="btn" aria-label="Another look" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, another: true, note: anotherNote })}>
-            + <span className="wardrobe-another-long">Another look</span>
-            <span className="wardrobe-another-short">Look</span>
-          </button>
-        )}
-        <button type="button" className="btn primary" disabled={!dressed} onClick={() => onLog(day, pieces, { shown, note })}>
+        <button type="button" className="btn primary" disabled={!dressed} onClick={() => saveLook(isDraft)}>
           {primary}
         </button>
       </div>

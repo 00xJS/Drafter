@@ -185,6 +185,23 @@
   border-color: var(--tone-blue);
   color: var(--tone-blue);
 }
+.cal-work-badge.off {
+  border-color: var(--tone-orange);
+  color: var(--tone-orange);
+}
+.cal-work-badge.holiday {
+  border-color: var(--tone-amber);
+  color: var(--tone-amber);
+}
+/* Another member's work day (v3.24). Same shape and same colour as yours, so
+   Home and the office still read at a glance, but dashed and dimmed: the day
+   is theirs, and you cannot edit or dress for it. The name is inside the
+   badge, so a day with both reads "🏠 Home 09:00–17:00" then
+   "🏢 Maria · Office 08:30–16:30" without a legend. */
+.cal-work-badge.theirs {
+  border-style: dashed;
+  opacity: 0.78;
+}
 .cal-cell .cal-work-badge {
   margin: 0 0 2px;
 }
@@ -401,3 +418,76 @@
   min-width: 0;
 }
 
+
+/* ---- Finance (v3.27) -----------------------------------------------------
+   Bills grew into three segments: the month of bills it always was, the
+   paydays that say what comes in, and the accounts whose balances make "is
+   there enough before the 3rd" answerable. The rows are the bill rows, so
+   only what is new is here. */
+.finance-section {
+  margin-top: 4px;
+}
+/* money in reads as money in, wherever it is: a payday's amount and a runway
+   day that is still above water */
+.bill-amount.in {
+  color: var(--tone-mint);
+}
+/* what is owed, and a day the runway goes under */
+.bill-amount.owed {
+  color: var(--danger);
+}
+.finance-short {
+  margin: 0 4px 12px;
+}
+.account-row {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.account-row.archived {
+  opacity: 0.6;
+}
+.account-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+.account-entry {
+  width: 9rem;
+  font-variant-numeric: tabular-nums;
+}
+.finance-totals {
+  margin: 12px 0;
+}
+/* the runway is a long list of short rows: no glyph column, and the amount
+   pinned right so the balance reads as one column down the page */
+.bill-list.runway .bill-copy {
+  flex: 1;
+}
+.bill-list.runway .bill-amount {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  /* at 375pt the balance box and its three buttons need the full width under
+     the name rather than a fifth of it each */
+  .account-actions {
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+  .account-entry {
+    flex: 1;
+    width: auto;
+  }
+}

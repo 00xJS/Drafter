@@ -195,8 +195,9 @@
 
      `.event-list` is deliberate, not a slip: Occasions uses the same markup
      (avatar + name + a two-button `.event-actions`) and is squeezed just as
-     hard, so its rows stack too and gain a line. "Coming up" has a bare button
-     with no `.event-actions`, so only the wrap allowance reaches it. */
+     hard, so its rows stack too and gain a line. "Coming up" gained an
+     `.event-actions` of its own with the × that hides an event (v3.24), so it
+     stacks the same way now instead of taking only the wrap allowance. */
   .event-list .event-row {
     flex-wrap: wrap;
     row-gap: 6px;

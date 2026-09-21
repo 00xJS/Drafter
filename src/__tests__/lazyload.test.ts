@@ -134,10 +134,14 @@ describe('schedulePreload: after launch, one chunk at a time', () => {
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 const component = (name: string) => resolve(SRC, 'components', `${name}.tsx`)
 /** The views and overlays planner/lazy.ts loads on demand. */
-const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Bills', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet']
+const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Finance', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet']
 /** …and what only they use, which must travel with them. */
 const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
+  // Finance draws Bills inside it (v3.27), so the month of bills travels with
+  // the paydays and the accounts rather than shipping as a second chunk
+  component('Bills'),
+  resolve(SRC, 'finance.ts'),
   // Kitchen → Stats' counting travels with it
   resolve(SRC, 'kitchenstats.ts'),
   // the wardrobe's screens and its photo pipeline: only Today's card and its

@@ -52,7 +52,10 @@ describe('search, Ask and a reminder hand People the person', () => {
     const overlays = read('../components/planner/Overlays.tsx')
     expect(overlays).toMatch(/onOpenPerson=\{person => openPerson\(person\.id\)\}/)
     expect(overlays).not.toMatch(/onOpenPerson=\{\(\) =>/)
-    expect(overlays).toMatch(/doc\.kind === 'person'\) openPerson\(doc\.id\)/)
+    // the routing moved to askRouting.ts in v3.26, so the same citation goes
+    // to the same place from Ask Drafter's sheet AND from Home → Chat
+    expect(read('../components/planner/askRouting.ts')).toMatch(/doc\.kind === 'person'\) openPerson\(doc\.id\)/)
+    expect(overlays).toContain('askDocOpener(p, closeSheet)')
     const links = read('../components/planner/useDeepLinks.ts')
     const saw = links.slice(links.indexOf('if (parsed.saw) {'), links.indexOf('if (parsed.task) {'))
     expect(saw).toMatch(/openPerson\(person\.id\)/)

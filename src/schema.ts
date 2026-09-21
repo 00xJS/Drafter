@@ -30,12 +30,23 @@ import {
   Season,
   SEASONS,
   Wear,
+  Snooze,
+  SnoozeTarget,
+  Message,
+  MESSAGE_MAX,
+  ChatTurn,
+  Account,
+  AccountType,
+  ACCOUNT_TYPES,
+  BalanceCheck,
   Habit,
   Routine,
   RoutineStep,
   RoutineWhen,
   ROUTINE_WHENS,
   CalendarEntry,
+  WorkMode,
+  WORK_MODES,
   Bill,
   BillKind,
   BILL_KINDS,
@@ -248,6 +259,9 @@ function bill(v: unknown): Bill | undefined {
     payee: str(r.payee)?.trim() || undefined,
     autopay: r.autopay === true || undefined,
     day: Number.isInteger(day) && day >= 1 && day <= 31 ? day : undefined,
+    // whose payday it is, and where the money lands (v3.27)
+    forMemberId: idOrUndefined(r.forMemberId),
+    accountId: str(r.accountId)?.trim() || undefined,
   }
 }
 
@@ -406,6 +420,10 @@ export function sanitizeCalendar(raw: unknown): CalendarSource | null {
 }
 
 const PERSON_GROUP_SET = new Set<string>(PERSON_GROUPS)
+const SNOOZE_TARGETS = new Set<string>(['person', 'place', 'event'])
+/** What a message can be about: the record kinds one can point at from the chat. */
+const MESSAGE_ABOUT_KINDS = new Set<string>(['task', 'event', 'meal', 'note'])
+const ACCOUNT_TYPE_SET = new Set<string>(ACCOUNT_TYPES)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
@@ -656,7 +674,7 @@ export function sanitizeEvent(raw: unknown): CalendarEntry | null {
     allDay,
     location: str(r.location)?.trim() || undefined,
     notes: str(r.notes)?.trim() || undefined,
-    work: r.work === 'home' || r.work === 'office' ? r.work : undefined,
+    work: WORK_MODES.includes(r.work as WorkMode) ? (r.work as WorkMode) : undefined,
     taskId: idOrUndefined(r.taskId),
     projectId: idOrUndefined(r.projectId),
     peopleIds: idList(r.peopleIds),
@@ -957,6 +975,130 @@ export function sanitizeWear(raw: unknown): Wear | null {
   }
 }
 
+/**
+ * An account and its balance check-ins. One check-in per day: re-typing a day
+ * replaces it rather than doubling it, and the list is kept oldest-first so
+ * "the latest" is always the last of it, whatever order a device wrote them.
+ */
+export function sanitizeAccount(raw: unknown): Account | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const name = str(r.name)?.trim()
+  if (!id || (!name && !deletedAt)) return null
+  const now = new Date().toISOString()
+  const byDay = new Map<string, BalanceCheck>()
+  for (const row of Array.isArray(r.balances) ? r.balances : []) {
+    const b = row as Record<string, unknown>
+    const on = dayKeyOnly(b?.on)
+    const amount = Number(b?.amount)
+    if (on && Number.isFinite(amount)) byDay.set(on, { on, amount: Math.round(amount * 100) / 100 })
+  }
+  return {
+    kind: 'account',
+    id,
+    name: name ?? '',
+    type: typeof r.type === 'string' && ACCOUNT_TYPE_SET.has(r.type) ? (r.type as AccountType) : 'checking',
+    memberId: idOrUndefined(r.memberId),
+    balances: [...byDay.values()].sort((a, b) => a.on.localeCompare(b.on)).slice(-400),
+    archivedAt: isoDate(r.archivedAt),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
+/**
+ * One message in the household's chat. A row with nothing said and no
+ * tombstone is nothing at all; the body is capped so one paste cannot fill a
+ * sync exchange.
+ */
+export function sanitizeMessage(raw: unknown): Message | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const body = str(r.body)?.slice(0, MESSAGE_MAX) ?? ''
+  if (!id || (!body.trim() && !deletedAt)) return null
+  const now = new Date().toISOString()
+  const about = r.about && typeof r.about === 'object' ? (r.about as Record<string, unknown>) : null
+  const aboutKind = typeof about?.kind === 'string' && MESSAGE_ABOUT_KINDS.has(about.kind) ? (about.kind as 'task' | 'event' | 'meal' | 'note') : null
+  const aboutId = str(about?.id)
+  return {
+    kind: 'message',
+    id,
+    body,
+    about: aboutKind && aboutId ? { kind: aboutKind, id: aboutId, label: str(about?.label)?.slice(0, 120) ?? '' } : undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
+/**
+ * One turn of the assistant conversation. `role` decides which side of the
+ * thread it is drawn on, so a row whose role cannot be read is dropped rather
+ * than guessed at and put in the wrong voice.
+ */
+export function sanitizeChatTurn(raw: unknown): ChatTurn | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const role = r.role === 'drafter' ? 'drafter' : r.role === 'you' ? 'you' : null
+  const text = str(r.text)?.slice(0, MESSAGE_MAX) ?? ''
+  if (!id || !role || (!text.trim() && !deletedAt)) return null
+  const now = new Date().toISOString()
+  const cites = Array.isArray(r.cites) ? r.cites.map(c => str(c)).filter((c): c is string => !!c).slice(0, 12) : undefined
+  return {
+    kind: 'chat',
+    id,
+    role,
+    text,
+    cites: cites?.length ? cites : undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
+/**
+ * A nudge put off. The id carries the target (`snooze~person~<id>`), so a
+ * second snooze on the same thing overwrites the first; `until` is what the
+ * row is for, and a row with no usable instant is nothing at all.
+ */
+export function sanitizeSnooze(raw: unknown): Snooze | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const fromId = id ? /^snooze~(person|place|event)~(.+)$/.exec(id) : null
+  const target = typeof r.target === 'string' && SNOOZE_TARGETS.has(r.target) ? (r.target as SnoozeTarget) : (fromId?.[1] as SnoozeTarget | undefined)
+  const targetId = str(r.targetId)?.trim() || fromId?.[2]
+  const until = isoDate(r.until)
+  if (!id || !target || !targetId || (!until && !deletedAt)) return null
+  const now = new Date().toISOString()
+  return {
+    kind: 'snooze',
+    id,
+    target,
+    targetId,
+    until: until ?? now,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1068,6 +1210,10 @@ export function sanitizeItem(raw: unknown): Item | null {
   if (converted.kind === 'garment') return sanitizeGarment(converted)
   if (converted.kind === 'outfit') return sanitizeOutfit(converted)
   if (converted.kind === 'wear') return sanitizeWear(converted)
+  if (converted.kind === 'snooze') return sanitizeSnooze(converted)
+  if (converted.kind === 'message') return sanitizeMessage(converted)
+  if (converted.kind === 'chat') return sanitizeChatTurn(converted)
+  if (converted.kind === 'account') return sanitizeAccount(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null
   return sanitizeTask(converted)
 }

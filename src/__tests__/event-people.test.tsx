@@ -17,6 +17,7 @@ import { NO_PERSON_FILTER, eventVisits, personStats, seenTasks, yearReport } fro
 import { buildReview, weekRange } from '../review'
 import { newPerson } from '../taskform'
 import type { CalendarEntry, Person, Task } from '../types'
+import { press, settled } from './rendered'
 
 // Owner request #10: "+ Add person" in the event editor. People put on an
 // event of your own count, once it has happened, exactly as the people "Who
@@ -334,6 +335,48 @@ describe('a Plan my day block stays its task’s', () => {
     const withPeople = { ...block, start: at(12, 13), end: at(12, 14), peopleIds: ['mum'] }
     expect(eventVisits([withPeople], NOW)).toEqual([])
     expect(personStats(mum, seenTasks([done], [withPeople], NOW), NOW).count30).toBe(1)
+  })
+})
+
+describe('the work-day editor', () => {
+  const editor = (over: Partial<ComponentProps<typeof EventEditor>> = {}) =>
+    renderToStaticMarkup(<EventEditor defaultStartIso={at(14, 10)} people={people} onSavePerson={noop} onSave={noop} onClose={noop} {...over} />)
+
+  it('offers Home, Office, Off and Holiday, and keeps hours only when you are working', () => {
+    const html = editor({ defaultWork: 'home' })
+    expect(html).toContain('🏠 Home')
+    expect(html).toContain('🏢 Office')
+    expect(html).toContain('🌴 Off')
+    expect(html).toContain('🎉 Holiday')
+    expect(html).toContain('What kind of day')
+    expect(html).toContain('>From<')
+    expect(html).toContain('>To<')
+    const away = editor({
+      entry: entry('wd', { work: 'off', title: 'PTO / Off', allDay: true, start: '2026-09-20', end: '2026-09-21' }),
+    })
+    expect(away).toContain('aria-pressed="true">🌴 Off<')
+    expect(away).not.toContain('>From<')
+    expect(away).not.toContain('>To<')
+  })
+
+  it('saves Off as the whole day, with no working hours', () => {
+    const saved: CalendarEntry[][] = []
+    const tree = settled(
+      EventEditor,
+      { defaultStartIso: at(14, 10), defaultWork: 'home' as const, people, onSavePerson: noop, onSave: (e: CalendarEntry[]) => saved.push(e), onClose: noop },
+      t => press(t, '🌴 Off'),
+    )
+    press(tree, 'Save')
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toEqual([
+      expect.objectContaining({
+        work: 'off',
+        title: 'PTO / Off',
+        allDay: true,
+        start: '2026-09-14',
+        end: '2026-09-15',
+      }),
+    ])
   })
 })
 

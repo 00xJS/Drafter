@@ -1,9 +1,9 @@
 import { memberName } from '../../household'
 import type { PlannerCtx } from './ctx'
-import { Bills, Board, NotesView, TasksTable } from './lazy'
+import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
 
-/** Tasks: the list, the board, the bills and the project notes, four segments of one tab. */
+/** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, inHousehold } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
@@ -14,9 +14,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
 
   return (
     <>
-      {/* one workspace, four lenses on the same project data — the list,
-          the board, the bills and the project notes */}
-      <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, board, bills and notes.</p>
+      {/* one workspace, four lenses on the same project data — the list, the
+          board, the money (bills, paydays and accounts) and the project notes */}
+      <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>
       <div className="people-tab-seg">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
@@ -51,13 +51,28 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
         />
       )}
       {tasksTab === 'bills' && (
-        <Bills
+        <Finance
           tasks={store.tasks}
+          accounts={store.accounts}
+          // a payday says whose it is, and an account can too
+          members={household.info?.members ?? []}
           onOpen={openTask}
-          onNew={() => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false })}
+          onNew={bill =>
+            newTask(
+              // a payday defaults to a fortnight, which is what most are; a bill
+              // to a month, as it always has
+              { bill: { kind: bill.kind }, recurrence: { freq: bill.kind === 'income' ? 'biweekly' : 'monthly' }, title: bill.kind === 'income' ? 'Payday' : '' },
+              { capture: false },
+            )
+          }
           // the one completion path with a real undo: it restores the bill and
           // removes next month's occurrence, so an accidental tap costs nothing
           onMarkPaid={t => changeStatus(t.id, 'done')}
+          onSaveAccount={a => store.upsert(a)}
+          onRemoveAccount={id => {
+            store.remove(id)
+            showToast('Account removed', () => store.restore([id]))
+          }}
         />
       )}
       {tasksTab === 'notes' && (

@@ -1,10 +1,16 @@
-// The iOS app runs the web bundle from capacitor://localhost, so every call it
+// The iOS app runs the web bundle from inside a WKWebView, so every call it
 // makes to this API is cross-origin and WebKit asks permission first. Only the
-// app shell's origin is allowed; the browser build is same-origin and never
+// app shell's origins are allowed; the browser build is same-origin and never
 // needs any of this. No credentials are ever allowed across: the app sends a
 // bearer token, and the OAuth cookies are only ever set and read in Safari.
+//
+// There are two of them, and will be until both phones are rebuilt: v3.25
+// renamed the shell's host from `localhost` to the app's own name, because
+// `localhost` was what iOS put in every permission prompt.
 
-const ALLOWED = new Set(['capacitor://localhost'])
+import { APP_ORIGINS } from '../../../shared/apphost.mjs'
+
+const ALLOWED = new Set(APP_ORIGINS)
 
 export function corsHeaders(req) {
   const origin = req.headers.get('origin')

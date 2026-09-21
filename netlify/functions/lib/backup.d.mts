@@ -32,12 +32,16 @@ export interface BackupWrite {
   bytes: number
   kept: number
   dropped: number
+  /** Written through BACKUP_PASSPHRASE rather than in the clear (v3.25). */
+  encrypted: boolean
 }
 
 export interface BackupReport {
   date: string
   users: BackupWrite[]
   failures: string[]
+  /** Whether this host encrypts what it writes: BACKUP_PASSPHRASE is set. */
+  encrypted: boolean
   unowned: number
   historyPurged: number | null
   /** Wardrobe photos no piece of clothing pointed at, deleted; null when the sweep could not run. */

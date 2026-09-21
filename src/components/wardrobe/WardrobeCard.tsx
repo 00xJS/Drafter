@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { haptic } from '../../native'
-import { LOOK_NOTE_MAX, type Garment, type Outfit, type Wear } from '../../types'
+import { LOOK_NAME_HINTS, LOOK_NOTE_MAX, type Garment, type Outfit, type Wear } from '../../types'
 import {
   canDress,
   confirmed,
@@ -111,11 +111,12 @@ function LookNote({ look, onSave }: { look: Wear; onSave(note: string): void }) 
  * Today's "What are you wearing?": up to three looks — saved outfits and what
  * you wear most — each logged with one tap, and Pick… for anything else. A day
  * planned ahead shows its plan instead, with one tap to say it was worn. Once
- * today has a look it is one line with Change, and its note. When the forecast
- * is cold or wet, it offers a coat. Hidden until the wardrobe can dress you (a
- * top and a bottom, or a one-piece), so nobody without one is asked. The one
- * tap is the only thing in the wardrobe that buzzes. On a work day the looks
- * whose pieces are all for work, or for any time, come first.
+ * today has a look the latest is Wearing, earlier ones stay in a stack, and
+ * + Look starts the next change. When the forecast is cold or wet, it offers
+ * a coat. Hidden until the wardrobe can dress you (a top and a bottom, or a
+ * one-piece), so nobody without one is asked. The one tap is the only thing
+ * in the wardrobe that buzzes. On a work day the looks whose pieces are all
+ * for work, or for any time, come first.
  */
 export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now = new Date(), forecast: given, workDay = false }: Props) {
   const byId = useMemo(() => liveById(garments), [garments])
@@ -155,18 +156,47 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
   const today = ix.looks.get(dayKey)
   if (today?.length) {
     const look = today[today.length - 1]
+    const earlier = today.slice(0, -1)
     return (
       <section className="chart-card wardrobe-card logged">
+        {earlier.length > 0 && (
+          <ul className="wardrobe-card-stack">
+            {earlier.map((w, i) => (
+              <li key={w.id}>
+                <button type="button" className="wardrobe-card-prior" onClick={() => onOpen({ tab: 'outfit', date: dayKey, wearId: w.id })}>
+                  {thumbs(w.garmentIds)}
+                  <span className="wardrobe-card-line">
+                    <span className="muted">{w.note || `Look ${i + 1}`}</span>
+                    {w.note ? ` · ${outfitLabel(w.garmentIds, byId)}` : ` ${outfitLabel(w.garmentIds, byId)}`}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="wardrobe-card-look">
           {thumbs(look.garmentIds)}
           <p className="wardrobe-card-line">
-            <span className="muted">Wearing</span> {outfitLabel(look.garmentIds, byId)}
+            <span className="muted">Wearing</span>
+            {look.note ? ` ${look.note} ·` : ''} {outfitLabel(look.garmentIds, byId)}
           </p>
-          <button type="button" className="btn subtle" onClick={() => onOpen({ date: dayKey })}>
+          <button type="button" className="btn subtle" onClick={() => onOpen({ tab: 'outfit', date: dayKey, wearId: look.id })}>
             Change
           </button>
         </div>
         {noteOn(look)}
+        {earlier.length > 0 && !look.note && (
+          <div className="wardrobe-card-names" role="group" aria-label="Name this look">
+            {LOOK_NAME_HINTS.map(name => (
+              <button key={name} type="button" className="toggle" onClick={() => onLog(withNote(look, name), { before: look, msg: null })}>
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+        <button type="button" className="btn subtle wardrobe-card-add" aria-label="Another look" onClick={() => onOpen({ tab: 'outfit', date: dayKey, another: true })}>
+          + Look
+        </button>
       </section>
     )
   }
@@ -203,6 +233,9 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
             Wore it
           </button>
         </div>
+        <button type="button" className="btn subtle wardrobe-card-add" aria-label="Another look" onClick={() => onOpen({ tab: 'outfit', date: dayKey, another: true })}>
+          + Look
+        </button>
         {forgot}
       </section>
     )

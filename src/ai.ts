@@ -366,8 +366,8 @@ export async function summarizeReview(input: {
  * references to records that were sent survive — the answer is rebuilt without
  * any other — so an invented citation can never become a chip.
  */
-export async function askDrafter(question: string, docs: AskDoc[], facts: string[]): Promise<{ answer: string; cites: string[] }> {
-  const { system, prompt } = buildAskPrompt(question, docs, facts)
+export async function askDrafter(question: string, docs: AskDoc[], facts: string[], history: readonly string[] = []): Promise<{ answer: string; cites: string[] }> {
+  const { system, prompt } = buildAskPrompt(question, docs, facts, history)
   const text = await complete(system, prompt, 500, true)
   let raw: { answer?: unknown; cites?: unknown } | null = null
   try {

@@ -227,6 +227,12 @@ export function recordLabel(item: Item | undefined): string {
       return item.name || 'An outfit'
     case 'garment':
       return item.name || 'Untitled piece'
+    case 'snooze':
+      return 'A nudge put off'
+    case 'message':
+      return item.body ? `“${item.body.slice(0, 40)}”` : 'A message'
+    case 'chat':
+      return item.role === 'drafter' ? 'An answer from Drafter' : 'A question for Drafter'
     default:
       return item.name || 'Untitled'
   }

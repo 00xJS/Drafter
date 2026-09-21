@@ -18,7 +18,7 @@ export declare function tidyPlaceAliases(v: unknown, name?: string | null): stri
 /** A done task at the place, or a past meal you marked as eaten out there. */
 export type Outing = { kind: 'task'; task: Task; at: string } | { kind: 'meal'; meal: Meal; at: string }
 /** Newest first. Future meals are plans, not visits, so they are excluded. */
-export declare function outingsAt(placeId: string, tasks: Task[], meals?: Meal[], now?: Date): Outing[]
+export declare function outingsAt(placeId: string, tasks: Task[], meals?: Meal[], now?: Date, myId?: string | null): Outing[]
 
 export type PlaceCadenceState = 'none' | 'never' | 'ok' | 'due' | 'overdue'
 export interface PlaceCadenceStatus {
@@ -34,4 +34,4 @@ export interface PlaceCadenceStatus {
  * are required so every caller decides: one that leaves them out says "been a
  * while" about the place you ate at last night.
  */
-export declare function placeCadenceStatus(place: Place, tasks: Task[], now: Date, meals: Meal[]): PlaceCadenceStatus
+export declare function placeCadenceStatus(place: Place, tasks: Task[], now: Date, meals: Meal[], myId?: string | null): PlaceCadenceStatus

@@ -1,13 +1,13 @@
 import { Suspense, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mjs'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
-import type { AskDoc } from '../../ask'
 import { newerStamp } from '../../itemops'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
+import { askDocOpener } from './askRouting'
 import { Admin, AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
 
 /** The zone "today" and every day in the planning sheets are read in. */
@@ -70,7 +70,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
-  const { setView, goTasksTab, setNotesProjectId, openPlace, openPerson, openJournal, openNote, setKitchenRecipe, openWardrobe } = p
+  const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, adminGroup, isOwner } = p
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
@@ -78,34 +78,9 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { applyDayPlan, applyShutdown } = p
   const today = localDayKey()
 
-  // A source or a citation tapped in Ask Drafter: the sheet gives way to the
-  // record, opened where it lives. A subscribed calendar's event has no editor,
-  // so it opens the Calendar.
-  const openAskDoc = (doc: AskDoc) => {
-    closeSheet()
-    if (doc.kind === 'task' || doc.kind === 'bill') {
-      const t = store.tasks.find(x => x.id === doc.id)
-      if (t) openTask(t)
-    } else if (doc.kind === 'project') {
-      const found = store.projects.find(x => x.id === doc.id)
-      if (found) openProject(found)
-    } else if (doc.kind === 'place') openPlace(doc.id)
-    else if (doc.kind === 'journal') openJournal(doc.date)
-    else if (doc.kind === 'person') openPerson(doc.id)
-    else if (doc.kind === 'recipe') {
-      const r = store.recipes.find(x => x.id === doc.id)
-      if (r) setKitchenRecipe(r)
-      setView('kitchen')
-    } else if (doc.kind === 'meal') setView('kitchen')
-    // a piece opens its sheet over Clothes; a look, the composer on its day
-    else if (doc.kind === 'garment') openWardrobe({ tab: 'clothes', garmentId: doc.id })
-    else if (doc.kind === 'wear') openWardrobe({ date: doc.date })
-    else if (doc.kind === 'event') {
-      const e = doc.feed ? undefined : store.events.find(x => x.id === doc.id)
-      if (e) setEventEditor({ entry: e, startIso: e.start })
-      else setView('calendar')
-    }
-  }
+  // a citation tapped here closes the sheet first; the same routing serves
+  // an answer's sources in Home → Chat (askRouting.ts)
+  const openAskDoc = askDocOpener(p, closeSheet)
 
   return (
     <>

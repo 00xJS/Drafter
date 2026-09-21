@@ -13,6 +13,7 @@ import { Assistants } from './settings/Assistants'
 import { Calendars } from './settings/Calendars'
 import { EmailIn } from './settings/EmailIn'
 import { Account, Household } from './settings/Household'
+import { Profile } from './settings/Profile'
 import { Lock } from './settings/Lock'
 import { Reminders } from './settings/Reminders'
 import { Sync } from './settings/Sync'
@@ -24,6 +25,14 @@ interface SettingsGroupDef {
   label: string
   /** Offered only with an account (a Supabase backend). */
   needsAccount?: boolean
+  /**
+   * Folded away behind "More" until asked for (v3.25). Most of Settings is
+   * plumbing somebody sets up once — the calendars they connect, how the
+   * reminders behave, the sync buttons — and a second member opening this
+   * dialog to change their name should not have to read past all of it. The
+   * groups here are the ones that are not about you.
+   */
+  advanced?: boolean
   sections: ComponentType<SettingsCtx>[]
 }
 
@@ -36,12 +45,13 @@ interface SettingsGroupDef {
  * settings-groups.test.ts checks all three line up.
  */
 const SETTINGS_GROUPS: SettingsGroupDef[] = [
-  { key: 'calendars', label: 'Calendars', sections: [Calendars] },
-  { key: 'reminders', label: 'Reminders', sections: [Lock, Reminders] },
-  { key: 'appearance', label: 'Appearance', sections: [Appearance] },
-  { key: 'household', label: 'Household', needsAccount: true, sections: [Household, Account] },
-  { key: 'assistants', label: 'Assistants', needsAccount: true, sections: [Assistants] },
-  { key: 'data', label: 'Data', sections: [Sync, EmailIn, Templates, AdminLink, About] },
+  { key: 'you', label: 'You', needsAccount: true, sections: [Profile, Account] },
+  { key: 'appearance', label: 'Appearance', sections: [Appearance, Lock] },
+  { key: 'household', label: 'Household', needsAccount: true, sections: [Household] },
+  { key: 'reminders', label: 'Reminders', advanced: true, sections: [Reminders] },
+  { key: 'calendars', label: 'Calendars', advanced: true, sections: [Calendars] },
+  { key: 'assistants', label: 'Assistants', needsAccount: true, advanced: true, sections: [Assistants] },
+  { key: 'data', label: 'Data', advanced: true, sections: [Sync, EmailIn, Templates, AdminLink, About] },
 ]
 
 interface Props {
@@ -57,8 +67,12 @@ interface Props {
 }
 
 export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin }: Props) {
-  const [group, setGroup] = useState('calendars')
+  // You, when there is an account to be: the first thing a second member wants
+  // from this dialog is their own name and picture, not the calendar plumbing.
   const supabaseOn = isSupabaseConfigured()
+  const [group, setGroup] = useState(supabaseOn ? 'you' : 'appearance')
+  /** Show the groups that are not about you. Off until asked for, and for this visit only. */
+  const [more, setMore] = useState(false)
   // kept here because two sections share each: Sync's buttons, and the feed
   // status that both Calendars and Email in show (so it is fetched once)
   const [syncing, setSyncing] = useState(false)
@@ -71,11 +85,16 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
 
         <div className={`modal-body settings-body showing-${group}`}>
           <nav className="settings-nav" role="tablist" aria-label="Settings sections">
-            {SETTINGS_GROUPS.filter(g => !g.needsAccount || supabaseOn).map(g => (
+            {SETTINGS_GROUPS.filter(g => (!g.needsAccount || supabaseOn) && (!g.advanced || more || g.key === group)).map(g => (
               <button key={g.key} className={group === g.key ? 'seg on' : 'seg'} onClick={() => setGroup(g.key)} role="tab" aria-selected={group === g.key}>
                 {g.label}
               </button>
             ))}
+            {!more && (
+              <button className="seg settings-more" onClick={() => setMore(true)} role="tab" aria-selected={false}>
+                More…
+              </button>
+            )}
           </nav>
           {/* every section stays mounted, whichever group is showing: the class
               above hides the rest, and their fetches start as Settings opens */}

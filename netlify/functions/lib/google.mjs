@@ -382,8 +382,9 @@ export function googleEntryBody(entry, site, opts = {}) {
     location: entry.location || '',
     start: entry.allDay ? { date: entry.start } : { dateTime: new Date(entry.start).toISOString() },
     end: entry.allDay ? { date: entry.end } : { dateTime: new Date(entry.end).toISOString() },
-    // a work day is working hours, not a meeting: you are available, so it is free time
-    transparency: entry.work ? 'transparent' : 'opaque',
+    // home and the office are working hours, not a meeting: you are available.
+    // Off and a holiday are the day away, so they stay busy like any event.
+    transparency: entry.work === 'home' || entry.work === 'office' ? 'transparent' : 'opaque',
     // without this an entry took the calendar's default reminders, besides Drafter's own
     reminders: googleReminders(opts.remind),
     extendedProperties: { private: { drafter: '1', eventId: entry.id } },

@@ -17,6 +17,9 @@ import {
   Recipe,
   Review as ReviewRecord,
   Routine,
+  SNOOZE_OPTIONS,
+  Snooze,
+  SnoozeTarget,
   Task,
   TaskStatus,
   Wear,
@@ -24,6 +27,7 @@ import {
 import { mealLabel, platesOn, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
+import { snoozedIds } from '../snooze'
 import { SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { defaultReviewAnchor, doneByWeek, isVisit, weekRange, shiftRange } from '../review'
@@ -92,6 +96,8 @@ interface Props {
   onDeleteHabit(id: string): void
   /** The signed-in person's display name, for the greeting. */
   name?: string
+  /** A household member's display name: the briefing tile that says whose work day it is. */
+  nameOf?(id: string | undefined): string | null
   routines: Routine[]
   onSaveRoutine(r: Routine): void
   onDeleteRoutine(id: string): void
@@ -129,6 +135,19 @@ interface Props {
   onDismissSyncAlarm?(): void
   /** The backlog lives on Tasks — Home is only the day. */
   onOpenTasks?(): void
+  /** Home → Chat: the household's thread and the assistant's. Without it there is no button. */
+  onOpenChat?(): void
+  /** Messages from the other member this device has not shown you yet. */
+  unread?: number
+  // ---- putting a nudge off (v3.24). Optional: without both, nothing shows an ×.
+  /**
+   * Your own snoozes. A person, a place or one of the next fortnight's events
+   * can be put off rather than answered — and never forever: each one carries
+   * the day it comes back.
+   */
+  snoozes?: Snooze[]
+  /** Put one off for `days`; the shell writes the row and offers Undo. */
+  onSnooze?(target: SnoozeTarget, targetId: string, days: number, label: string): void
 }
 
 /**
@@ -159,6 +178,20 @@ export function SyncAlarmBanner({ alarm, onOpen, onDismiss }: { alarm: SyncAlarm
 
 const STALE_DAYS = 14
 const NO_ENTRIES: CalendarEntry[] = []
+const NO_SNOOZES: Snooze[] = []
+
+/**
+ * How long "hide this event" has to last: until the day it is for has gone by,
+ * and no longer. Rounded up to a whole day so the row is gone for the rest of
+ * today, and at least one day so a × on something already ending never reads
+ * as a no-op.
+ */
+export function daysUntilGone(ev: CalendarEvent, now = new Date()): number {
+  const start = eventStartDate(ev).getTime()
+  const end = ev.allDay ? start + DAY_MS : Date.parse(ev.end)
+  const ms = (Number.isFinite(end) ? end : start + DAY_MS) - now.getTime()
+  return Math.max(1, Math.ceil(ms / DAY_MS))
+}
 
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
 
@@ -172,6 +205,47 @@ export function freeTimeWishlist(tasks: Task[], limit = 5): Task[] {
     .filter(t => t.status === 'wishlist' && !t.deletedAt)
     .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9) || b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, limit)
+}
+
+/**
+ * The × on a nudge: put this one off, for a while (v3.24).
+ *
+ * Today's people, places and Coming up used to offer two answers — "done" and
+ * leaving it there to ask again tomorrow. Some weeks the honest answer is
+ * neither. So: an ×, and a small menu of how long. There is deliberately no
+ * "never" on it; each option carries the day the nudge comes back, so nothing
+ * is quietly dropped and nobody is forgotten by a mis-tap.
+ */
+function SnoozeButton({ label, onPick }: { label: string; onPick(days: number): void }) {
+  const [open, setOpen] = useState(false)
+  if (!open) {
+    return (
+      <button type="button" className="btn subtle nudge-x" aria-label={`Put ${label} off for a while`} title={`Not now — put ${label} off`} onClick={() => setOpen(true)}>
+        ×
+      </button>
+    )
+  }
+  return (
+    <span className="nudge-snooze" role="group" aria-label={`Put ${label} off for`}>
+      {SNOOZE_OPTIONS.map(o => (
+        <button
+          key={o.days}
+          type="button"
+          className="btn subtle nudge-snooze-opt"
+          title={`Ask again in ${o.label}`}
+          onClick={() => {
+            setOpen(false)
+            onPick(o.days)
+          }}
+        >
+          {o.short}
+        </button>
+      ))}
+      <button type="button" className="btn subtle nudge-x" aria-label="Keep asking" title="Keep asking" onClick={() => setOpen(false)}>
+        ↩
+      </button>
+    </span>
+  )
 }
 
 interface Section {
@@ -560,6 +634,7 @@ export function Today({
   onSaveHabit,
   onDeleteHabit,
   name,
+  nameOf,
   routines,
   onSaveRoutine,
   onDeleteRoutine,
@@ -579,6 +654,10 @@ export function Today({
   onOpenSyncCheck,
   onDismissSyncAlarm,
   onOpenTasks,
+  snoozes = NO_SNOOZES,
+  onSnooze,
+  onOpenChat,
+  unread = 0,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -642,16 +721,28 @@ export function Today({
   const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
   const blocks = useMemo(() => blocksOn(entries, todayKey), [entries, todayKey])
   const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
+  // What you have put off, by what it was put off (v3.24). Read once here so
+  // three lists can ask it; a row whose day has come back is simply absent.
+  const putOff = useMemo(
+    () => ({
+      people: snoozedIds(snoozes, 'person'),
+      places: snoozedIds(snoozes, 'place'),
+      events: snoozedIds(snoozes, 'event'),
+    }),
+    [snoozes],
+  )
   const peopleNudges = useMemo(
     () => {
-      // your own events that have happened count as seeing the people on them, as on People
-      const seen = seenTasks(tasks, entries)
+      // your own events that have happened count as seeing the people on them, as on People.
+      // myId is what makes this YOUR log: the address book is the household's,
+      // but the other member seeing their mother is not you having called her (v3.24).
+      const seen = seenTasks(tasks, entries, new Date(), myId)
       // peopleToNudge, not a filter here: the rule about who Today asks after
       // — the drifting, then a couple nobody has logged at all — lives with
       // the rest of the people rules
-      return peopleToNudge(people.map(p => personStats(p, seen)))
+      return peopleToNudge(people.filter(p => !putOff.people.has(p.id)).map(p => personStats(p, seen)))
     },
-    [people, tasks, entries],
+    [people, tasks, entries, myId, putOff],
   )
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
   // A meal eaten out there counts as going, as it does on Places.
@@ -659,13 +750,14 @@ export function Today({
     const now = new Date()
     const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
     for (const place of places) {
-      const s = placeCadenceStatus(place, tasks, now, meals)
+      if (putOff.places.has(place.id)) continue
+      const s = placeCadenceStatus(place, tasks, now, meals, myId)
       if (s.status === 'due' || s.status === 'overdue') out.push({ place, status: s.status, reason: s.reason, daysSince: s.daysSince ?? 0 })
     }
     return out
       .sort((a, b) => (a.status === b.status ? b.daysSince - a.daysSince : a.status === 'overdue' ? -1 : 1))
       .slice(0, 4)
-  }, [places, tasks, meals])
+  }, [places, tasks, meals, myId, putOff])
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const plates = useMemo(() => platesOn(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
@@ -673,12 +765,19 @@ export function Today({
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
     return events
       .filter(ev => {
+        // A work day is a property of the day, not something coming up: the
+        // calendar has always drawn it as a badge rather than an item, and
+        // the briefing strip already says whose day is what. Listing them
+        // here filled Coming up with the other member's shifts (v3.24).
+        if (ev.work) return false
+        // and of what is left, an × puts one away until it has gone by
+        if (putOff.events.has(ev.id)) return false
         const start = eventStartDate(ev).getTime()
         const end = ev.allDay ? start + DAY_MS : new Date(ev.end).getTime()
         return end > now && start < horizon
       })
       .slice(0, 10)
-  }, [events])
+  }, [events, putOff])
 
   const s = useMemo(() => {
     const now = new Date()
@@ -791,25 +890,49 @@ export function Today({
             {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
-        {onOpenWardrobe && (
-          <button
-            type="button"
-            className="btn today-wardrobe"
-            onClick={() =>
-              onOpenWardrobe(
-                garments && canDress(garments)
-                  ? { tab: 'outfit', date: todayKey }
-                  : { tab: 'clothes', add: true },
-              )
-            }
-          >
-            Wardrobe
-          </button>
-        )}
+        {/* The three pages Home opens, in the header where the Wardrobe
+            already was (v3.24). The weekly and monthly review held a lot of
+            what this planner knows and was reachable from one button on one
+            card — "I could only find it by clicking on plan my week" — and the
+            journal from a card link. They are peers of the wardrobe, so they
+            are buttons beside it. */}
+        <div className="today-pages">
+          {onOpenReview && (
+            <button type="button" className="btn today-page" onClick={onOpenReview}>
+              Week
+            </button>
+          )}
+          {onOpenJournal && (
+            <button type="button" className="btn today-page" onClick={onOpenJournal}>
+              Journal
+            </button>
+          )}
+          {onOpenChat && (
+            <button type="button" className="btn today-page" onClick={onOpenChat}>
+              Chat
+              {unread > 0 && <span className="board-count">{unread}</span>}
+            </button>
+          )}
+          {onOpenWardrobe && (
+            <button
+              type="button"
+              className="btn today-page today-wardrobe"
+              onClick={() =>
+                onOpenWardrobe(
+                  garments && canDress(garments)
+                    ? { tab: 'outfit', date: todayKey }
+                    : { tab: 'clothes', add: true },
+                )
+              }
+            >
+              Wardrobe
+            </button>
+          )}
+        </div>
       </header>
       {alarm}
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
-      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} />
+      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} myId={myId} nameOf={nameOf} />
       <FocusCard
         tasks={focus}
         blocks={blocks}
@@ -1105,7 +1228,9 @@ export function Today({
                   <span className="dash-reason">{s.reason}</span>
                 </div>
                 <div className="event-actions">
-                  <button className="btn subtle" onClick={() => onSaw(s.person)}>
+                  {/* a full button, like Plan something beside it: it was the one
+                      control on Today drawn with no outline at all */}
+                  <button className="btn" onClick={() => onSaw(s.person)}>
                     Saw them
                   </button>
                   {s.planned ? (
@@ -1117,6 +1242,7 @@ export function Today({
                         Plan something
                       </button>
                     )}
+                  {onSnooze && <SnoozeButton label={s.person.name} onPick={days => onSnooze('person', s.person.id, days, s.person.name)} />}
                 </div>
               </li>
             ))}
@@ -1135,12 +1261,13 @@ export function Today({
                   <span className="dash-reason">{s.reason}</span>
                 </div>
                 <div className="event-actions">
-                  <button className="btn subtle" onClick={() => onWentTo(s.place)}>
+                  <button className="btn" onClick={() => onWentTo(s.place)}>
                     Went there
                   </button>
                   <button className="btn" onClick={() => onPlanAt(s.place)}>
                     Plan a trip
                   </button>
+                  {onSnooze && <SnoozeButton label={s.place.name} onPick={days => onSnooze('place', s.place.id, days, s.place.name)} />}
                 </div>
               </li>
             ))}
@@ -1167,9 +1294,24 @@ export function Today({
                     {ev.location ? ` · ${ev.location}` : ''}
                   </span>
                 </div>
-                <button className="btn" onClick={() => onPlan(ev)}>
-                  Plan
-                </button>
+                <div className="event-actions">
+                  <button className="btn" onClick={() => onPlan(ev)}>
+                    Plan
+                  </button>
+                  {/* most of these are work days and need no planning: × puts
+                      the row away until the day it is for has gone by */}
+                  {onSnooze && (
+                    <button
+                      type="button"
+                      className="btn subtle nudge-x"
+                      aria-label={`Hide ${ev.title} from Coming up`}
+                      title="Not something to plan — hide it"
+                      onClick={() => onSnooze('event', ev.id, daysUntilGone(ev), ev.title)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

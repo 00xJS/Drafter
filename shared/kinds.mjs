@@ -15,13 +15,26 @@
 // food, like the grocery list, and hiding it is how one member planned a meal
 // the other never saw. Grocery was never on this list.
 //
+// 'snooze' joined in v3.24: a nudge put off is personal for the same reason a
+// work day is. Maria saying "not this fortnight" about her mother must not be
+// read as Joseph having called her.
+//
+// v3.26 adds the two halves of the chat, and they are deliberately two kinds.
+// 'message' is the household's by kind, because a message nobody else can read
+// is not a message. 'chat' — a turn of the conversation with the assistant — is
+// PERSONAL: asking what your week looks like is not something said to the
+// household, and the two must never end up in one thread.
+//
+// v3.27 adds 'account': a name, a kind and the balances you have typed in. The
+// household's, like a bill — two people who share the rent share the picture.
+//
 // The app still carries its own copies (KNOWN_KINDS in src/schema.ts,
 // PERSONAL_KINDS in src/store.ts); src/__tests__/srv-kinds.test.ts holds them,
 // the migrations and this file together until they import from here.
 
-export const SYNC_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear'])
+export const SYNC_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account'])
 
-export const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear'])
+export const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
 
 /** A stored row's kind: rows written before `kind` existed are tasks, as `coalesce(data->>'kind', 'task')` reads them. */
 export function kindOf(data) {

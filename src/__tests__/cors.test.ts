@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { withCors } from '../../netlify/functions/lib/cors.mjs'
+import { APP_ORIGIN } from '../../shared/apphost.mjs'
 
-const APP = 'capacitor://localhost'
+const APP = APP_ORIGIN
+/** The shell's host before v3.25 renamed it. A phone still on that bundle must keep syncing. */
+const OLD_APP = 'capacitor://localhost'
 const handler = withCors(async (req: Request) => Response.json({ ok: true, method: req.method }))
 
 describe('CORS for the iOS shell', () => {
@@ -20,6 +23,13 @@ describe('CORS for the iOS shell', () => {
     const fromElsewhere = await handler(new Request('https://site/api/push', { headers: { origin: 'https://evil.example' } }), {})
     expect(fromElsewhere.headers.get('access-control-allow-origin')).toBeNull()
     expect(await fromElsewhere.json()).toEqual({ ok: true, method: 'GET' })
+  })
+
+  it('still answers the origin the shell used before it was renamed', async () => {
+    // the rename costs each phone a resync on its next rebuild; it must not
+    // cost a phone that has NOT been rebuilt its API (v3.25)
+    const res = await handler(new Request('https://site/api/push', { headers: { origin: OLD_APP } }), {})
+    expect(res.headers.get('access-control-allow-origin')).toBe(OLD_APP)
   })
 
   it('refuses a preflight from anywhere else', async () => {

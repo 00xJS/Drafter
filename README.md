@@ -4,19 +4,23 @@ Drafter is a personal planner and home journal for one life. Everything sits in 
 
 Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — and one lens, **Stats**, the only tab you never add anything to. Everything else is a segment inside a tab rather than a tab of its own. It's light by default, with Dark and Match system in Settings → Appearance.
 
+In a household, the address book is shared but the log is not: who you saw, where you went and the hours you work are each member's own, and the other person's work day shows beside yours with their name on it.
+
 ## What it does
 
 ### Home
 
 - **Today**: a briefing strip (the weather if you turn it on, your work day, events, habits, tonight's dinner), up to three focus tasks, and what needs you: overdue, due today, the Inbox, people and places due a visit, birthdays and the next two weeks of events. Habits with streaks and daily routines live here too.
-- **Plan my day** and **Shut down** guide the morning and the evening, each with one Undo.
+- **Plan my day** and **Shut down** guide the morning and the evening, each with one Undo. Any nudge — a person, a place, something coming up — can be put off with ×, for a week to three months and never for good.
 - **Week**: the review of what got done, what slipped, who you saw, where you went and what you wore. ✨ can draft it, and each Sunday it's drafted for you. **Plan next week** proposes dinners, catch-ups and new days for overdue tasks.
-- **Journal**: one private entry a day, with an optional mood, the people it was about, a streak and mood charts.
+- **Journal**: one private entry a day, with an optional mood, the people it was about, a streak and mood charts. ‹ › step whole weeks, and a day you already wrote opens to be read rather than edited.
+- **Chat**: two threads that never mix — the household's, and yours with Drafter's assistant ("tell me about my week"). What you ask the assistant is personal; the household thread is the household's. **Week · Journal · Chat · Wardrobe** are buttons at the top of Home.
 
 ### Tasks
 
 - A task has a description, a status (Wishlist, To do, Doing, Done, or Blocked while it waits on another), a priority, a due date, tags, a checklist, comments, photos and files. A repeating task makes the next one when you finish it.
-- **List**, **Board** (drag between statuses), **Bills** (a month of payments, in dollars) and **Notes** (rich-text notes and the project's notepad).
+- **List**, **Board** (drag between statuses), **Finance** and **Notes** (rich-text notes and the project's notepad).
+- **Finance** is a month of bills, each person's **paydays**, and **accounts** you type a balance into — with what comes in, what goes out, what is left over, and the first day in the next sixty that the money goes under. Drafter never connects to a bank: every figure is arithmetic over what you wrote down.
 - A template or ✨ **Draft a plan** from a one-line goal adds a set of dated tasks at once.
 - A GitHub link shows the issue or pull request's live state. With a GitHub token, finishing the task can close the issue, and a linked Projects board syncs status and due dates both ways.
 - Forwarded emails can become tasks. Deleting takes two clicks, and the Trash keeps things for 90 days.

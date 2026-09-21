@@ -1,9 +1,10 @@
-import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type Person, type Place, type PlaceCategory, type Recipe } from '../../types'
+import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type Person, type Place, type PlaceCategory, type Recipe, type SnoozeTarget } from '../../types'
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendars'
 import { newerStamp } from '../../../shared/domain.mjs'
 import { cookTaskFor, cookTaskId, mealIsShared, mealWrites } from '../../kitchen'
 import { newPlace } from '../../places'
+import { makeSnooze, snoozeBackLabel, snoozeUntil } from '../../snooze'
 import { uid } from '../../utils'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -181,6 +182,19 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
       placeId,
     })
   }
+  /**
+   * Put a nudge off for a while (v3.24): one row per thing, so asking again
+   * overwrites rather than piling up. Undo takes it straight back — the row is
+   * removed, not re-dated, so the nudge is there again on the next render.
+   */
+  const snooze = (target: SnoozeTarget, targetId: string, days: number, label: string) => {
+    const row = makeSnooze(target, targetId, snoozeUntil(days))
+    const existing = store.snoozes.find(x => x.id === row.id)
+    store.upsert(existing ? { ...row, createdAt: existing.createdAt, updatedAt: newerStamp(existing.updatedAt) } : row)
+    showToast(`${label} — ${snoozeBackLabel(row.until)}`, () =>
+      existing ? store.upsert({ ...existing, updatedAt: newerStamp(row.updatedAt) }) : store.remove(row.id),
+    )
+  }
   const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
   const planAt = (place: Place) => newTask({ title: `Go to ${place.name}`, status: 'todo', placeId: place.id, tags: ['visit'] })
   /** Turn an external event into a prep task due the morning before. */
@@ -194,5 +208,5 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     })
   }
 
-  return { createPlaceInline, createRecipeInline, saveMeal, clearMeal, saveMeals, clearMeals, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent }
+  return { createPlaceInline, createRecipeInline, saveMeal, clearMeal, saveMeals, clearMeals, sawThem, logOuting, wentTo, logVisit, planOccasion, logAttendance, planWith, planAt, planForEvent, snooze }
 }

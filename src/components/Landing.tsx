@@ -7,7 +7,7 @@ interface Props {
 const FEATURES: { icon: string; title: string; text: string }[] = [
   { icon: '☀️', title: 'Home', text: 'A briefing for the day — greeting, weather if you want it, work hours, what is due — then habits to tick, routines to run and tonight’s dinner. The week’s review, your journal and your wardrobe — photograph your clothes, swipe together today’s outfit, see what you really wear — are a segment away.' },
   { icon: '🗂', title: 'Tasks', text: 'Wishlist → to do → doing → done, as a list, a board, the month’s bills or your notes. Due dates, priorities, checklists and a comment trail on everything.' },
-  { icon: '📅', title: 'Calendar', text: 'Month, week and day: tasks, events, meals, home or office days and your Google, Outlook or iCloud calendars in one place.' },
+  { icon: '📅', title: 'Calendar', text: 'Month, week and day: tasks, events, meals, home, office, off or holiday days and your Google, Outlook or iCloud calendars in one place.' },
   { icon: '👥', title: 'People & places', text: 'Who you saw and where you went — a rhythm for each, so Home says when it has been a while.' },
   { icon: '🍳', title: 'Kitchen', text: 'Recipes, a week of meals cooked or eaten out, and a grocery list built from what is planned.' },
   { icon: '⌘', title: 'Command palette', text: 'Cmd/Ctrl+K jumps to any view, creates a task or bill, searches everything, captures a line straight to the Inbox and answers questions from your own planner.' },

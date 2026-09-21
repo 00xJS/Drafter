@@ -17,9 +17,15 @@ import { dateKey } from './utils'
 /** The group chips: everyone, or one group's people, as on the list. */
 export type GroupFilter = 'all' | PersonGroup
 
-/** What the list reads, at `now`: the visits (seenTasks) and each person's rollup (personStats). */
-export function peopleSeen(people: readonly Person[], tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date()): { seen: Task[]; all: PersonStats[] } {
-  const seen = seenTasks(tasks, entries, now)
+/** What the list reads, at `now`: your own visits (seenTasks) and each person's rollup (personStats). */
+export function peopleSeen(
+  people: readonly Person[],
+  tasks: Task[],
+  entries: CalendarEntry[] | undefined,
+  now: Date = new Date(),
+  myId?: string | null,
+): { seen: Task[]; all: PersonStats[] } {
+  const seen = seenTasks(tasks, entries, now, myId)
   return { seen, all: people.map(p => personStats(p, seen, now)) }
 }
 

@@ -1,4 +1,4 @@
-import { Bill, OPEN_STATUSES, RecurrenceFreq, Task } from './types'
+import { Bill, OPEN_STATUSES, RecurrenceFreq, Task, isIncomeKind } from './types'
 
 // Household payments: the rules behind the Bills view and the calendar's money
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
@@ -13,7 +13,19 @@ export const CURRENCY = 'USD'
 const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })
 export const formatMoney = (n: number | undefined): string => (n === undefined || !Number.isFinite(n) ? '' : fmt.format(n))
 
-export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt
+export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && !isIncomeKind(t.bill.kind)
+
+/**
+ * A payday: money coming IN, kept as a bill facet because that is exactly the
+ * shape of it — a payee, an amount, a repeat and a date — and because doing so
+ * puts it on the calendar, in reminders and on Today with no second machinery
+ * (v3.27). Every figure that adds money up has to ask which it is, or a wage
+ * reads as a cost.
+ */
+export const isPayday = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && isIncomeKind(t.bill.kind)
+
+/** A bill OR a payday: the rows the Finance view is built from. */
+export const isMoney = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt
 
 /**
  * Marking a bill done with nothing typed under Paid records the amount due as
@@ -43,12 +55,31 @@ const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0)
  * every series once.
  */
 export function monthlyCost(tasks: Task[]): number {
+  return round(perMonth(tasks, isBill))
+}
+
+/**
+ * What the household is paid in an average month, the same way: each payday
+ * series counted once, at its own cadence. A fortnightly wage is 26 a year,
+ * which is 2.17 a month — not 2 — so the three-payday months are already in
+ * the figure rather than being a surprise twice a year.
+ */
+export function monthlyIncome(tasks: Task[]): number {
+  return round(perMonth(tasks, isPayday))
+}
+
+/** What is left over in an average month: paid in, less paid out. Negative is the answer that matters. */
+export function monthlySpare(tasks: Task[]): number {
+  return round(monthlyIncome(tasks) - monthlyCost(tasks))
+}
+
+function perMonth(tasks: Task[], pick: (t: Task) => boolean): number {
   let total = 0
   for (const t of tasks) {
-    if (!isBill(t) || !t.recurrence || !OPEN_STATUSES.includes(t.status) || t.estimateCost === undefined) continue
+    if (!pick(t) || !t.recurrence || !OPEN_STATUSES.includes(t.status) || t.estimateCost === undefined) continue
     total += t.estimateCost * PER_MONTH[t.recurrence.freq]
   }
-  return round(total)
+  return total
 }
 
 export interface BillMonth {

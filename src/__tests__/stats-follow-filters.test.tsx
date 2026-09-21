@@ -544,6 +544,8 @@ const ctx = (nav: Nav, filters: ReturnType<typeof useListFilters>) =>
     setEventEditor: noop,
     inHousehold: false,
     mineOnly: false,
+    // whose log the rows count (v3.24): the tab hands it to all four views
+    household: { info: null, myId: null, refresh: noop, error: undefined },
   }) as unknown as PlannerCtx
 /** What the tab hands the lazy view of this type, or undefined when it draws none. */
 const handed = (tree: ReactNode, type: unknown) => elements(tree).find(e => e.type === type)?.props as Record<string, any> | undefined

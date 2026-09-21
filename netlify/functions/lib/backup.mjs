@@ -10,6 +10,7 @@
 // TOMBSTONE_TTL_MS (peers have had time to see them).
 
 import { readableRow } from '../../../shared/kinds.mjs'
+import { backupEncryptionOn, wrapSnapshot } from './backupcrypto.mjs'
 import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mjs'
 import { keyHeaders } from './supabasekeys.mjs'
 
@@ -213,7 +214,9 @@ export async function signSnapshotUrl(objectPath, expiresIn = 300) {
 
 export async function backupUser(userId, rows, date = dayKey(), exportedAt = new Date()) {
   const snapshot = buildSnapshot(userId, rows, exportedAt)
-  const body = JSON.stringify(snapshot)
+  // encrypted when the host holds BACKUP_PASSPHRASE, and plain JSON when it
+  // does not — a night with no snapshot at all would be the worse failure
+  const { body, encrypted } = await wrapSnapshot(snapshot)
   const path = backupPath(userId, date)
   await storage(`/object/${BUCKET}/${path}`, {
     method: 'POST',
@@ -233,7 +236,7 @@ export async function backupUser(userId, rows, date = dayKey(), exportedAt = new
       body: JSON.stringify({ prefixes: drop.map(name => `${PREFIX}/${userId}/${name}`) }),
     }).catch(() => null)
   }
-  return { userId, path, items: snapshot.items.length, bytes: Buffer.byteLength(body), kept: kept.length, dropped: drop.length }
+  return { userId, path, items: snapshot.items.length, bytes: Buffer.byteLength(body), kept: kept.length, dropped: drop.length, encrypted }
 }
 
 /** Drop history rows older than the TTL. Returns the row count, or null if the server didn't say. */
@@ -385,6 +388,9 @@ export async function runBackup(now = new Date()) {
     date,
     users,
     failures,
+    // what the Admin panel says about this host, so "are my backups readable
+    // by whoever gets hold of them" has an answer on the page
+    encrypted: backupEncryptionOn(),
     unowned: (rows ?? []).filter(r => !r?.user_id).length,
     historyPurged: await purgeHistory(now),
     photosDeleted: photos.deleted,

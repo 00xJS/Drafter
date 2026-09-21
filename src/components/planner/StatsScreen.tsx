@@ -28,7 +28,7 @@ import type { AreaProps } from '../StatsLens'
  * neither place.
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
-  const { store, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
+  const { store, household, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
   const { openPerson, openPlace, openCalendarDay, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
@@ -114,6 +114,9 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
         setView('tasks')
       }}
       areas={areas}
+      // whose log the people figures count: the address book is the
+      // household's, who saw whom is this account's own (v3.24)
+      myId={household.myId}
     />
   )
 }

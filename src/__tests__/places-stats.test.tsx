@@ -694,7 +694,11 @@ describe('the shell’s ways into Places → Stats', () => {
   })
 
   it('remembers List · Stats from its switch alone; a tab tap re-reads it, the palette and a link move it for the visit', () => {
-    expect(screen).toContain(`<ListStatsSwitch label="Places list or stats" value={innerViews.places} onChange={v => setInnerView('places', v)} />`)
+    // the three facts the switch is pinned on, not the one line it used to fit on:
+    // it carries an `action` now (Places' + Add place), so the JSX is multi-line
+    expect(screen).toContain('label="Places list or stats"')
+    expect(screen).toContain('value={innerViews.places}')
+    expect(screen).toContain("onChange={v => setInnerView('places', v)}")
     expect(nav).toMatch(/const setInnerView = \(tab: PeopleTab, v: InnerView\) => \{\s*goInnerView\(tab, v\)\s*try \{\s*localStorage\.setItem\(INNER_VIEW_KEYS\[tab\], v\)/)
     expect(nav.match(/localStorage\.setItem\(INNER_VIEW_KEYS/g)).toHaveLength(1)
     expect(nav).toMatch(/if \(v === 'people'\) \{\s*goPeopleTab\(storedPeopleTab\(\)\)\s*startTransition\(\(\) => showInnerViews\(storedInnerViews\(\)\)\)/)

@@ -22,12 +22,15 @@ export type CalendarMode = 'month' | 'week' | 'day'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'day']
 export type PeopleTab = 'people' | 'places'
 /** Home's pages: the day, plus the week / journal / wardrobe opened from it. */
-export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe'
+export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe' | 'chat'
 export const HOME_TABS: { key: HomeTab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'week', label: 'Week' },
   { key: 'journal', label: 'Journal' },
   { key: 'wardrobe', label: 'Wardrobe' },
+  // a page Home opens, like the three above it — never a sixth noun on the tab
+  // bar, which has held the same five since the app had a shape (v3.26)
+  { key: 'chat', label: 'Chat' },
 ]
 /** Home → Wardrobe's own switch: the composer, every piece, and the figures.
  *  Not remembered: it opens on the composer, as Home opens on Today. */
@@ -37,12 +40,14 @@ export const WARDROBE_TABS: { key: WardrobeTab; label: string }[] = [
   { key: 'clothes', label: 'Clothes' },
   { key: 'stats', label: 'Stats' },
 ]
-/** The Tasks tab's four segments: the list, the board, the bills, the notes. */
+/** The Tasks tab's four segments: the list, the board, the money, the notes. */
 export type TasksTab = 'list' | 'board' | 'bills' | 'notes'
 export const TASKS_TABS: { key: TasksTab; label: string }[] = [
   { key: 'list', label: 'List' },
   { key: 'board', label: 'Board' },
-  { key: 'bills', label: 'Bills' },
+  // the key stays 'bills' so every saved segment and old drafter:// link still
+  // lands here; what it holds grew into Finance in v3.27
+  { key: 'bills', label: 'Finance' },
   { key: 'notes', label: 'Notes' },
 ]
 /** Old inbound links (drafter://…?view=board|bills|notes) still resolve: they

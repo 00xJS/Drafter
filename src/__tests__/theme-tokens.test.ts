@@ -93,7 +93,7 @@ const DARK: Record<string, string> = {
   '--on-armed-hover': '#ffffff', // .btn.armed's #fff, which a hovered armed button kept
   '--tone-violet': '#c4b5fd', // STATUS_META.wishlist, GITHUB_STATE_META closed / merged
   '--tone-violet-bg': 'rgba(139, 92, 246, 0.2)',
-  '--tone-amber': '#fcd34d', // STATUS_META.todo, .due-today
+  '--tone-amber': '#fcd34d', // STATUS_META.todo, .due-today, .cal-work-badge.holiday
   '--tone-amber-bg': 'rgba(245, 158, 11, 0.18)',
   '--tone-sky': '#7dd3fc', // STATUS_META.doing, .due-soon, TrendBadge
   '--tone-sky-bg': 'rgba(14, 165, 233, 0.2)',
@@ -105,7 +105,7 @@ const DARK: Record<string, string> = {
   '--tone-green-bg': 'rgba(34, 197, 94, 0.18)',
   '--tone-grey': '#9ca3af', // STATUS_META.canceled, PRIORITY_META.low
   '--tone-grey-bg': 'rgba(148, 163, 184, 0.16)',
-  '--tone-orange': '#fdba74', // .due-late
+  '--tone-orange': '#fdba74', // .due-late, .cal-work-badge.off
   '--tone-orange-bg': 'rgba(251, 146, 60, 0.2)',
   '--tone-indigo': '#a5b4fc', // .swipe-action.next
   '--tone-indigo-bg': 'rgba(99, 102, 241, 0.28)',
@@ -268,7 +268,7 @@ describe('the light palette reads (WCAG 2.x)', () => {
 
   it('gives every text colour 4.5:1 on the page, a card and a raised surface', () => {
     const text = ['--text', '--text-2', '--muted', '--placeholder', '--accent-text', '--accent-ink', '--danger', '--ok', '--warn-text']
-    const drawn = ['--prio-normal', '--prio-high', '--cal-meal-out', '--cal-meal-bought', '--cal-event-local', '--dot-fallback', '--tone-mint', '--tone-blue']
+    const drawn = ['--prio-normal', '--prio-high', '--cal-meal-out', '--cal-meal-bought', '--cal-event-local', '--dot-fallback', '--tone-mint', '--tone-blue', '--tone-orange', '--tone-amber']
     expect(under(4.5, [...text, ...drawn], grounds)).toEqual([])
   })
 

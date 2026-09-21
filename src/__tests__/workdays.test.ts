@@ -3,12 +3,13 @@ import { expandWorkDays } from '../calendars'
 import { sanitizeEvent } from '../schema'
 import { googleEntryBody } from '../../netlify/functions/lib/google.mjs'
 import { graphEntryBody } from '../../netlify/functions/lib/microsoft.mjs'
+import { feedFor, withOwner } from '../../netlify/functions/lib/feedrows.mjs'
 import { buildICS } from '../../shared/ics.mjs'
 
 // A work day is a calendar entry with a place (home or office) whose start and
-// end are the working hours. These pin the three things that make it useful:
-// a repeat lays out the right days, the record survives a sync, and it never
-// shows up as busy time on anyone's calendar.
+// end are the working hours, or Off / a holiday as the whole day. These pin
+// the three things that make it useful: a repeat lays out the right days, the
+// record survives a sync, and a working day never shows up as busy time.
 
 describe('expandWorkDays: a weekly pattern becomes concrete days', () => {
   it('lays a Monday and Friday pattern over two weeks, in local time', () => {
@@ -51,9 +52,11 @@ describe('a work day survives the round trip through the sanitizer', () => {
     updatedAt: '2026-09-01T00:00:00.000Z',
   }
 
-  it('keeps home and office', () => {
+  it('keeps home, office, Off and a holiday', () => {
     expect(sanitizeEvent({ ...base, work: 'home' })!.work).toBe('home')
     expect(sanitizeEvent({ ...base, work: 'office' })!.work).toBe('office')
+    expect(sanitizeEvent({ ...base, work: 'off' })!.work).toBe('off')
+    expect(sanitizeEvent({ ...base, work: 'holiday' })!.work).toBe('holiday')
   })
 
   it('drops anything else rather than inventing a work day', () => {
@@ -65,19 +68,34 @@ describe('a work day survives the round trip through the sanitizer', () => {
 describe('a work day is available time on every calendar, never busy', () => {
   const day = { id: 'w1', title: 'Working from home', start: '2026-09-07T08:00:00.000Z', end: '2026-09-07T16:30:00.000Z', allDay: false }
 
-  it('is free time in Google', () => {
+  it('is free time in Google at home and the office, and busy when Off or on a holiday', () => {
     expect(googleEntryBody({ ...day, work: 'home' }, '').transparency).toBe('transparent')
     expect(googleEntryBody({ ...day, work: 'office' }, '').transparency).toBe('transparent')
+    expect(googleEntryBody({ ...day, work: 'off' }, '').transparency).toBe('opaque')
+    expect(googleEntryBody({ ...day, work: 'holiday' }, '').transparency).toBe('opaque')
   })
 
-  it('is "working elsewhere" at home and free at the office in Outlook', () => {
+  it('is "working elsewhere" at home, free at the office, and out of office when Off or on a holiday in Outlook', () => {
     expect(graphEntryBody({ ...day, work: 'home' }, '').showAs).toBe('workingElsewhere')
     expect(graphEntryBody({ ...day, work: 'office' }, '').showAs).toBe('free')
+    expect(graphEntryBody({ ...day, work: 'off' }, '').showAs).toBe('oof')
+    expect(graphEntryBody({ ...day, work: 'holiday' }, '').showAs).toBe('oof')
   })
 
   it('leaves an ordinary event busy on both', () => {
     expect(googleEntryBody(day, '').transparency).toBe('opaque')
     expect(graphEntryBody(day, '').showAs).toBe('busy')
+  })
+
+  it('publishes home and the office as free time, and Off or a holiday as busy', () => {
+    const ME = '00000000-0000-0000-0000-00000000000a'
+    const row = (id: string, work?: string) =>
+      withOwner({ kind: 'event', id, title: id, start: day.start, end: day.end, allDay: false, work, createdAt: day.start, updatedAt: day.start }, ME)
+    const by = Object.fromEntries(feedFor([row('home', 'home'), row('office', 'office'), row('off', 'off'), row('holiday', 'holiday')], 'https://drafterz.netlify.app', 'Europe/London', ME).map(r => [r.uid, r]))
+    expect(by['event-home@drafter'].transparent).toBe(true)
+    expect(by['event-office@drafter'].transparent).toBe(true)
+    expect(by['event-off@drafter'].transparent).toBe(false)
+    expect(by['event-holiday@drafter'].transparent).toBe(false)
   })
 
   it('is TRANSP:TRANSPARENT in the feed, while an ordinary event stays busy', () => {

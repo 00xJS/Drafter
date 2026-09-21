@@ -7,6 +7,7 @@ import { MealPlanSheet, choiceFromSuggestion, mealsForPicks, proposeMealWeek } f
 import { RecipeSuggestions, SUGGESTIONS_KEY, freshSuggestions, parseDismissed, parsePending, suggestionRecipe } from '../components/RecipeSuggestions'
 import type { Meal, Place, Recipe } from '../types'
 import { dateKey } from '../utils'
+import { sheetSource } from './source'
 
 // Kitchen's "Plan this week's meals" and "Recipes you might like": the
 // proposal behind the sheet, what an accepted plan becomes, what a suggestion
@@ -218,6 +219,17 @@ describe('Kitchen', () => {
     expect(recipes).toContain('✨ Suggest recipes I’d like')
     expect(recipes).toContain('Paste a recipe')
     expect(recipes).toContain('Tap a dish to cook it')
+  })
+
+  it('puts Paste and + Recipe on each side of the Recipes row, each half the width', () => {
+    vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'recipes' }))
+    const html = renderToStaticMarkup(<Kitchen {...props} />)
+    const compose = html.match(/<div class="kitchen-recipe-compose">([\s\S]*?)<\/div>/)?.[1] ?? ''
+    expect(compose.indexOf('Paste a recipe')).toBeGreaterThan(-1)
+    expect(compose.indexOf('Paste a recipe')).toBeLessThan(compose.indexOf('+ Recipe'))
+    const css = sheetSource()
+    expect(css).toMatch(/\.kitchen-recipe-compose,\s*\.kitchen-empty-actions \{[^}]*width:\s*100%/)
+    expect(css).toMatch(/\.kitchen-recipe-compose \.btn,\s*\.kitchen-empty-actions \.btn \{[^}]*flex:\s*1/)
   })
 
   it('offers to plan a week with empty dinners, and not one that is planned', () => {

@@ -4,7 +4,7 @@ import { TaskCard } from './TaskCard'
 
 interface Props {
   tasks: Task[]
-  members: { id: string; displayName: string }[]
+  members: { id: string; displayName: string; avatar?: string | null }[]
   /** Passed to every card: the share mark is drawn only in a household. */
   inHousehold?: boolean
   onOpen(t: Task): void
@@ -24,6 +24,8 @@ function sortForColumn(list: Task[], s: TaskStatus): Task[] {
 const DONE_CAP = 30
 
 export function Board({ tasks, members, inHousehold, onOpen, onStatus, onNew }: Props) {
+  /** Whoever a card is for, once, so the card gets their name AND their face from one lookup. */
+  const assignedTo = (id?: string) => (id ? members.find(m => m.id === id) : undefined)
   return (
     <>
       {tasks.length === 0 && (
@@ -63,7 +65,9 @@ export function Board({ tasks, members, inHousehold, onOpen, onStatus, onNew }: 
                   <TaskCard
                     key={t.id}
                     task={t}
-                    assignee={t.assigneeId ? members.find(m => m.id === t.assigneeId)?.displayName : undefined}
+                    assignee={assignedTo(t.assigneeId)?.displayName}
+                    assigneeAvatar={assignedTo(t.assigneeId)?.avatar}
+                    assigneeId={t.assigneeId}
                     inHousehold={inHousehold}
                     onOpen={onOpen}
                     onStatus={onStatus}

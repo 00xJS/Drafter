@@ -49,11 +49,20 @@ async function describe(userId) {
   const [household] = await rest(`households?id=eq.${m.household_id}&select=id,name,created_by`)
   const rows = await rest(`household_members?household_id=eq.${m.household_id}&select=user_id,role,joined_at`)
   const users = await adminUsers()
-  const settings = await rest(`user_settings?user_id=in.(${rows.map(r => r.user_id).join(',')})&select=user_id,display_name`).catch(() => [])
+  const settings = await rest(`user_settings?user_id=in.(${rows.map(r => r.user_id).join(',')})&select=user_id,display_name,avatar_media_id`).catch(() => [])
   const members = rows.map(r => {
     const u = users.find(x => x.id === r.user_id)
     const s = settings.find(x => x.user_id === r.user_id)
-    return { id: r.user_id, email: u?.email ?? '', displayName: s?.display_name ?? (u?.email ? u.email.split('@')[0] : 'member'), role: r.role, joinedAt: r.joined_at }
+    return {
+      id: r.user_id,
+      email: u?.email ?? '',
+      displayName: s?.display_name ?? (u?.email ? u.email.split('@')[0] : 'member'),
+      // the object id of their picture in the media bucket, or null (v3.25).
+      // Household-readable by design: it is drawn on a task they were handed.
+      avatar: s?.avatar_media_id ?? null,
+      role: r.role,
+      joinedAt: r.joined_at,
+    }
   })
   return { household, members }
 }
@@ -75,7 +84,11 @@ const handler = async req => {
         const [h] = await rest(`households?id=eq.${inv.household_id}&select=id,name`).catch(() => [])
         if (h) withNames.push({ householdId: h.id, name: h.name })
       }
-      return Response.json({ me: { id: user.id, email: user.email, displayName: mine?.display_name ?? null }, invites: withNames, ...(await describe(user.id)) })
+      return Response.json({
+        me: { id: user.id, email: user.email, displayName: mine?.display_name ?? null, avatar: mine?.avatar_media_id ?? null },
+        invites: withNames,
+        ...(await describe(user.id)),
+      })
     }
     if (body.action === 'accept') {
       // consent step: only the invitee can turn their own invitation into membership
@@ -91,7 +104,19 @@ const handler = async req => {
       return Response.json({ ...(await describe(user.id)), invites: [] })
     }
     if (body.action === 'me') {
-      await settingsSet(user.id, { display_name: String(body.displayName ?? '').trim().slice(0, 40) || null })
+      // Each field is written only when the caller mentions it, so saving a
+      // name never clears a picture and the other way round. `avatar: null`
+      // is how a picture is taken off, and is not the same as leaving it out.
+      const patch = {}
+      if ('displayName' in body) patch.display_name = String(body.displayName ?? '').trim().slice(0, 40) || null
+      if ('avatar' in body) {
+        const id = body.avatar == null ? null : String(body.avatar).trim().slice(0, 200)
+        // a bare object id only: an avatar under personal/ would be unreadable
+        // to the one household member it exists to be seen by
+        if (id && (id.includes('/') || id.includes('..'))) return Response.json({ error: 'That is not a picture this app uploaded.' }, { status: 400 })
+        patch.avatar_media_id = id || null
+      }
+      if (Object.keys(patch).length > 0) await settingsSet(user.id, patch)
       return Response.json({ ok: true })
     }
     if (body.action === 'create') {

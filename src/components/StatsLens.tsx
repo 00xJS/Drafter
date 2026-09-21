@@ -68,6 +68,12 @@ export interface StatsLensProps {
   /** Everything the four areas' own Stats need, handed straight through (see StatsScreen). */
   areas: AreaProps
   now?: Date
+  /**
+   * Whose log the people figures count. The address book is the household's;
+   * who saw whom is each member's own (v3.24), so a figure here reads the same
+   * visits People → Stats reads, and the two still agree.
+   */
+  myId?: string | null
 }
 
 /**
@@ -194,7 +200,7 @@ function YearStep({ year, setYear, now }: { year: number; setYear(y: number): vo
 // ---- Overview --------------------------------------------------------------------
 
 function Overview(p: Lens) {
-  const { tasks, people, places, events, meals, recipes, journal, habits, garments, wears, areas: a, span, spanWords, now } = p
+  const { tasks, people, places, events, meals, recipes, journal, habits, garments, wears, areas: a, span, spanWords, now, myId } = p
   const theme = useTheme()
   const year = now.getFullYear()
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
@@ -205,7 +211,7 @@ function Overview(p: Lens) {
   // them — which People narrows per person. Mapping it raw made every day you
   // finished any chore a day you saw someone, and counted tasks in Trash too.
   // getTogethers is the narrowing People's own tiles use, so the two agree.
-  const { seen, all } = useMemo(() => peopleSeen(people, tasks, events, now), [people, tasks, events, now])
+  const { seen, all } = useMemo(() => peopleSeen(people, tasks, events, now, myId), [people, tasks, events, now, myId])
   const together = useMemo(() => getTogethers(all, seen), [all, seen])
   const jr = useMemo(() => journalReport(journal, span, year, now), [journal, span, year, now])
   const hr = useMemo(() => habitReport(habits, span, now), [habits, span, now])

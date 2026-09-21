@@ -101,6 +101,20 @@
   margin-top: 12px;
   flex-wrap: wrap;
 }
+/* ‹ week › over the strip (v3.24). Its own full-width row above the seven
+   cells, so stepping never squeezes them: at 375pt the cells are already a
+   seventh of the width each. */
+.journal-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 0 100%;
+}
+.journal-week-label {
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+  font-variant-numeric: tabular-nums;
+}
 .journal-week-days {
   list-style: none;
   padding: 0;

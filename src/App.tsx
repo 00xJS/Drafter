@@ -2,9 +2,11 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { clearLocalData } from './idb'
+import { APP_HOST } from '../shared/apphost.mjs'
 import { Landing } from './components/Landing'
 import { Login } from './components/Login'
 import { LockGate } from './components/LockGate'
+import { SetPassword } from './components/SetPassword'
 import { guardChunkLoads, preloadable, warm } from './lazyload'
 import { clearAuthorizeRequest, pendingAuthorizeRequest } from './oauthRequest'
 
@@ -23,6 +25,9 @@ guardChunkLoads()
 function isPrivateHost(hostname: string): boolean {
   return (
     hostname === 'localhost' ||
+    // the iOS shell's own host: the bundle is served from inside the app, not
+    // fetched from anywhere, so a build with no backend is a private one
+    hostname === APP_HOST ||
     hostname === '127.0.0.1' ||
     hostname.endsWith('.local') ||
     hostname.endsWith('.localhost') ||
@@ -65,6 +70,8 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(!supabaseOn)
   const [showLogin, setShowLogin] = useState(false)
+  /** A recovery link brought us here: nothing else may draw until a new password is set. */
+  const [recovering, setRecovering] = useState(false)
   // an assistant's connection request, kept by main.tsx before the first render
   const [pending, setPending] = useState(() => pendingAuthorizeRequest())
   const hadSession = useRef(false)
@@ -91,6 +98,10 @@ export default function App() {
       // a session ending for ANY reason (sign-out here, elsewhere, or revoked)
       // must take the local copy of the data with it
       if (event === 'SIGNED_OUT') clearLocalData().catch(() => {})
+      // A "reset your password" link signs this browser in for exactly one
+      // purpose. Without this the link would open the planner with the
+      // forgotten password still on the account (v3.25).
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
       // The sync cursor is reset in the store, which knows whether this device
       // actually has local rows — supabase re-emits SIGNED_IN on every tab
       // focus, so resetting it from here made every focus a full exchange.
@@ -100,6 +111,8 @@ export default function App() {
   }, [])
 
   if (!authReady) return null
+  // above every other route, including the landing page and the consent sheet
+  if (recovering) return <SetPassword email={session?.user.email ?? undefined} onDone={() => setRecovering(false)} />
   // fail closed: a public deploy with no backend gets the landing page with sign-in hidden
   if (!supabaseOn && import.meta.env.PROD && !isPrivateHost(window.location.hostname)) {
     return <Landing configured={false} />

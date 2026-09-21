@@ -64,7 +64,9 @@ export interface BackupList {
 
 export interface BackupReport {
   date: string
-  users: { userId: string; path: string; items: number; bytes: number; kept: number; dropped: number }[]
+  users: { userId: string; path: string; items: number; bytes: number; kept: number; dropped: number; encrypted?: boolean }[]
+  /** Whether this host holds BACKUP_PASSPHRASE, so the snapshots it writes are encrypted (v3.25). */
+  encrypted?: boolean
   failures: string[]
   unowned: number
   historyPurged: number | null
@@ -123,7 +125,13 @@ export function fetchAdminMe(): Promise<{ isOwner: boolean }> {
 }
 
 /** Admin's sections, in its own order; Users is where it opens unless another is asked for. */
-export type AdminGroup = 'users' | 'data' | 'backups' | 'integrations'
+/**
+ * Admin's tabs. Integration health is no longer one of them (v3.25): it is a
+ * page of read-outs about the host that the owner sets up once and then never
+ * touches, and it was a third of this dialog. It folds away inside Data now,
+ * where "is the server all right" already lives.
+ */
+export type AdminGroup = 'users' | 'data' | 'backups'
 
 /** The latest sync check (public.sync_canary), as admin.mjs reports it: one sentence and the stored record. */
 export interface SyncCheck {

@@ -35,6 +35,7 @@ import {
   weekdayLabel,
   weekdayName,
 } from '../journal'
+import { weekStartKey } from '../../shared/weeks.mjs'
 import { excerpt } from '../utils'
 import { haptic } from '../native'
 import { useMediaQuery } from '../useMediaQuery'
@@ -696,7 +697,12 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     // the day must be on screen: drop any search, show enough of the list, then scroll to it
     setQ('')
     setHitLimit(SEARCH_PAGE)
-    setEditing(openDate === today ? null : openDate)
+    // A day with words opens to be READ (v3.24). The archive row shows the
+    // whole entry as text; the editor is a 50vh textarea with a scroller
+    // inside it, which is where "I was not able to see the entire journal"
+    // came from. A blank day still opens its editor, because writing it up is
+    // the only reason to land on one.
+    setEditing(openDate === today || hasWords(openDate) ? null : openDate)
     // a link can name a day with nothing written on it (drafter://journal?date=…), which needs a row like any other
     const idx = rowsWith(openDate).indexOf(openDate)
     if (idx >= limit) setLimit((lastLimit = idx + 10))
@@ -735,7 +741,24 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const weekdayScored = weekdays.reduce((n, d) => n + d.count, 0)
 
   const query = q.trim()
-  const week = useMemo(() => journalWeek(entries, today), [entries, today])
+  /**
+   * Which week the strip shows. Today's, until you step off it — and then it
+   * stays where you left it for the visit, the way the calendar's cursor does.
+   * Before this, once Sunday came round the only way back to last Tuesday was
+   * the search box or the date field.
+   */
+  const [weekAnchor, setWeekAnchor] = useState<string>(today)
+  const week = useMemo(() => journalWeek(entries, weekAnchor), [entries, weekAnchor])
+  const thisWeek = useMemo(() => weekStartKey(weekAnchor) === weekStartKey(today), [weekAnchor, today])
+  const weekLabel = useMemo(() => {
+    const days = week.map(d => d.date)
+    const first = days[0]
+    const last = days[days.length - 1]
+    if (!first || !last) return ''
+    const sameMonth = first.slice(0, 7) === last.slice(0, 7)
+    return `${dayLabel(first, { day: 'numeric', ...(sameMonth ? {} : { month: 'short' }) })} – ${dayLabel(last, { day: 'numeric', month: 'short' })}`
+  }, [week])
+  const stepWeek = (delta: number) => setWeekAnchor(a => shiftDayKey(a, delta * 7))
   // a blank day that has since been written is already in `days`, so the set drops it
   const shownDays = useMemo(
     () => [...new Set([...days, ...blankDays])].filter(d => d !== today).sort((a, b) => b.localeCompare(a)),
@@ -746,6 +769,9 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   // so a diary with a decade in it still answers "how often did I write this".
   const results = useMemo(() => searchJournal(entries, query, hitLimit, peopleById), [entries, query, hitLimit, peopleById])
   const spansYears = new Set(results.hits.map(h => h.entry.date.slice(0, 4))).size > 1
+
+  /** Is anything written on that day? A day with words is opened to read, not to edit. */
+  const hasWords = (date: string) => !!entryOn(entries, date)
 
   /**
    * The rows `date` will land among, giving it one when nothing is written
@@ -766,7 +792,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const openDay = (date: string) => {
     setQ('')
     setHitLimit(SEARCH_PAGE)
-    setEditing(date === today ? null : date)
+    setEditing(date === today || hasWords(date) ? null : date)
     const idx = rowsWith(date).indexOf(date)
     if (idx >= limit) setLimit((lastLimit = idx + 10))
     restored.current = false
@@ -804,10 +830,28 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
         <JournalEditor entry={entryOn(entries, today)} date={today} people={people} onSave={onSave} onDelete={onDelete} showDelete />
       </section>
 
-      {/* This week, every day of it. The archive below lists only days that
-          have an entry, so the day you meant to write up and didn't had no row
-          to tap; these seven always do. */}
-      <section className="journal-week" aria-label="This week">
+      {/* A week, every day of it. The archive below lists only days that have
+          an entry, so the day you meant to write up and didn't had no row to
+          tap; these seven always do. ‹ › step whole weeks, as the calendar's
+          do: once Sunday came round, last Tuesday was only reachable through
+          the search box (v3.24). */}
+      <section className="journal-week" aria-label={thisWeek ? 'This week' : `Week of ${weekLabel}`}>
+        <div className="journal-week-nav">
+          <button type="button" className="btn" onClick={() => stepWeek(-1)} aria-label="Previous week">
+            ‹
+          </button>
+          <span className="journal-week-label" aria-live="polite">
+            {thisWeek ? 'This week' : weekLabel}
+          </span>
+          <button type="button" className="btn" onClick={() => stepWeek(1)} disabled={thisWeek} aria-label="Next week">
+            ›
+          </button>
+          {!thisWeek && (
+            <button type="button" className="btn" onClick={() => setWeekAnchor(today)}>
+              This week
+            </button>
+          )}
+        </div>
         <ul className="journal-week-days">
           {week.map(d => (
             <li key={d.date}>

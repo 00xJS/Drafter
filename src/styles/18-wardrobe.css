@@ -772,6 +772,52 @@
   gap: 4px;
   padding-block: 10px;
 }
+.wardrobe-card-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wardrobe-card-prior {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wardrobe-card-add {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.wardrobe-card-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wardrobe-looks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.wardrobe-looks-mid {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .wardrobe-card-look {
   display: flex;
   align-items: center;
@@ -1812,6 +1858,8 @@ button.photo-cal-day:focus-visible {
   .wardrobe-remove,
   .snap-hide,
   .wardrobe-forgot,
+  .wardrobe-card-prior,
+  .wardrobe-card-add,
   .wardrobe-list-piece,
   .stats-list-piece,
   .clothes-sort select,
