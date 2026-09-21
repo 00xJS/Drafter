@@ -1218,11 +1218,14 @@
 .review-period {
   margin-bottom: 8px;
 }
-/* the two things you can do with the week share its line rather than stopping
-   52pt short of the right edge */
+/* The two things you can do with the week take half the line each. `1 1 auto`
+   filled the line but sized each one to its own words, so "Plan next week" and
+   "✨ Write my summary" came out lopsided; `1 1 0` ignores the words and makes
+   them a matched pair. One of them alone takes the whole line. */
 @media (max-width: 640px) {
   .review-actions > .btn {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
 }
 .review-range {

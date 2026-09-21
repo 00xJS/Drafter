@@ -407,8 +407,15 @@
     border-radius: 10px;
   }
 
+  /* Tall enough for what is IN it: the 22px the grab handle takes above, a
+     44pt button, and the 14px under it. At `min-height: var(--touch)` the
+     header sized itself to its 17px heading instead, and Cancel, Save and ✕
+     — which are 44 — hung about 11pt BELOW the bottom border. The body then
+     scrolled through that strip behind them, which is what read as the text
+     clipping into the buttons on the task editor, New task and the Trash
+     (v3.28). */
   .native .modal-head {
-    min-height: var(--touch);
+    min-height: calc(22px + var(--touch) + 14px);
     padding-left: 16px;
     padding-right: 16px;
   }

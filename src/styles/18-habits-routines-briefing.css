@@ -367,8 +367,18 @@
      it, so its glyph and label were marooned in the top-left of a big box.
      Centre the ones that have nothing under the label; a tile that does keep
      its lines flush left, where a block of two reads properly. */
-  .briefing-tile:not(:has(.briefing-sub)) {
+  /* All of them, not just the ones with a single line: "0 of 1 habit done /
+     due today" sat flush left beside a centred "PTO / Off" and the pair read
+     as two different kinds of tile. Centred, the strip is one set. */
+  .briefing-tile {
     justify-content: center;
+    text-align: center;
+  }
+  /* the CTA's own button fills its tile and carries its own text-align, so
+     centring the tile around it is not enough */
+  .briefing-cta-btn {
+    justify-content: center;
+    text-align: center;
   }
 }
 

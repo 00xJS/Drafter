@@ -72,8 +72,6 @@ describe('the week strip', () => {
     if (!hit) throw new Error(`no day button for ${label}`)
     return hit
   }
-  /** How a row's date reads in the archive below. */
-  const rowDate = (date: string) => dayLabel(date, { day: 'numeric', month: 'short', year: 'numeric' })
   const rowDay = (date: string) => dayLabel(date, { weekday: 'short', day: 'numeric', month: 'short' })
 
   it('offers every day of the week, and says which have nothing written', () => {
@@ -107,22 +105,22 @@ describe('the week strip', () => {
     expect(dates).toContain('2026-09-13')
   })
 
-  it('opens any older day from the date field', () => {
-    const tree = view([], t => {
-      const field = elements(t).find(e => e.type === 'input' && e.props.type === 'date')
-      if (!field) throw new Error('no date field')
-      ;(field.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: '2026-08-02' } })
-    })
-    expect(textOf(tree)).toContain(rowDate('2026-08-02'))
+  /* "Another day" — a date field under the strip that jumped to any past day
+     — was taken off the page on 2026-09-21: "having the option to swap weeks
+     back and forth is the best way to navigate". The arrows reach the same
+     days a week at a time, and the field was a second way to do one thing. */
+  it('has no date field: the week arrows are the way back', () => {
+    const tree = view([])
+    expect(elements(tree).find(e => e.type === 'input' && e.props.type === 'date')).toBeUndefined()
+    expect(textOf(tree)).not.toContain('Another day')
   })
 
-  it('clears the date field after it jumps, so nothing is left sitting in it', () => {
-    const target = { value: '2026-08-02' }
-    view([], t => {
-      const field = elements(t).find(e => e.type === 'input' && e.props.type === 'date')
-      ;(field?.props.onChange as (e: { target: { value: string } }) => void)({ target })
-    })
-    expect(target.value).toBe('')
+  it('reaches a day in an earlier week by stepping the strip back to it', () => {
+    // the arrow moves the strip a week, and that week's days are then the
+    // buttons on it — which is the whole route the date field used to be
+    const tree = view([], t => (button(t, 'Previous week').props.onClick as () => void)())
+    expect(() => dayButton(tree, '2026-09-08')).not.toThrow()
+    expect(() => dayButton(tree, '2026-09-16')).toThrow()
   })
 
   it('takes today to its own card rather than giving it a second row', () => {

@@ -482,6 +482,16 @@
   .kpi-row > .kpi-wide {
     grid-column: 1 / -1;
   }
+  /* Home's three survivors — Overdue, Due today and the full-width Open —
+     centre with the briefing tiles directly above them, so the first screen
+     is not a centred strip sitting on a flush-left one. `.stat-jump` is the
+     tile itself when it scrolls to what it counts, and carries its own
+     text-align, so it is named too. Only Home: the Review page and Finance
+     read their tiles as rows of figures and keep them flush left. */
+  .today .kpi-row > .stat-tile,
+  .today .kpi-row > .stat-jump {
+    text-align: center;
+  }
 
   /* the bulk defer under the row is the width of the row it belongs to; on a
      wide screen (touchscreen laptop included) it stays a normal button */

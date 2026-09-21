@@ -171,14 +171,6 @@
   font-size: 0.8rem;
   min-height: 1.1em;
 }
-.journal-pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-2);
-  font-size: 0.85rem;
-}
-
 .journal-days {
   list-style: none;
   padding: 0;
@@ -651,31 +643,6 @@ button.journal-yesterday {
 }
 
 
-/* "Another day" was a label beside an empty `<input type="date">`, which iOS
-   draws as a bare white rectangle with nothing in it — a control that looks
-   broken rather than one waiting to be tapped. Bound together as one bordered
-   pill, so the words and the field read as the single button they are. */
-.journal-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  min-height: var(--touch);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: calc(0.8125rem * var(--type-scale));
-  white-space: nowrap;
-}
-.journal-pick input[type='date'] {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  min-height: 0;
-  width: 7.5rem;
-  color: var(--text);
-}
 /* Show stats reads as the control it is, across the page like the cards it
    opens rather than as a line of centred text */
 .journal-stats-toggle {
@@ -689,15 +656,5 @@ button.journal-yesterday {
   .mood-row {
     justify-content: space-between;
     gap: 4px;
-  }
-  /* and "Another day" takes the line it is on, as Show stats does directly
-     under it — at 223pt of 370 the two read as a ragged stack */
-  .journal-pick {
-    display: flex;
-    width: 100%;
-    justify-content: space-between;
-  }
-  .journal-pick input[type='date'] {
-    width: auto;
   }
 }

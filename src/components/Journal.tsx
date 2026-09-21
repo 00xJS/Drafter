@@ -876,21 +876,6 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
             </li>
           ))}
         </ul>
-        <label className="journal-pick">
-          <span>Another day</span>
-          {/* a button that happens to look like a field: it jumps to a day and
-              clears, so nothing is left sitting in it to mean something later */}
-          <input
-            type="date"
-            max={today}
-            defaultValue=""
-            onChange={e => {
-              const picked = e.target.value
-              e.target.value = ''
-              if (picked) openDay(picked)
-            }}
-          />
-        </label>
       </section>
 
       <div className="journal-stats" ref={statsBox}>
