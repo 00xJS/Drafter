@@ -6,6 +6,7 @@ import { looksLikeQuestion } from '../ask'
 import { dueLabel } from '../taskutils'
 import { excerpt } from '../utils'
 import { liveById, orderPieces, outfitLabel, pieceTags } from '../wardrobe'
+import { type Listening, listen, speechAvailable } from '../speech'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
@@ -192,6 +193,8 @@ export function Search({
   onClose,
 }: Props) {
   const [q, setQ] = useState('')
+  const [heard, setHeard] = useState<Listening | null>(null)
+  const [micNote, setMicNote] = useState('')
   const canAsk = !!onAsk
   const canOpenNote = !!onOpenNote
   const canOpenGarment = !!onOpenGarment
@@ -208,6 +211,36 @@ export function Search({
   useEffect(() => {
     input.current?.focus()
   }, [])
+
+  /* Dictation. The words land in the field and go no further: Enter still
+     opens the editor, where parseCapture proposes the date, the people and
+     the tags, and you confirm — speaking a task never files one behind your
+     back. Only offered where the browser has a recogniser; on the iPhone the
+     keyboard's own 🎤 key dictates into this field instead. */
+  const canDictate = useMemo(speechAvailable, [])
+  // a palette closed mid-sentence must not leave the microphone open
+  useEffect(() => () => heard?.cancel(), [heard])
+
+  function dictate() {
+    if (heard) {
+      heard.stop()
+      return
+    }
+    setMicNote('')
+    const session = listen({
+      onText: text => {
+        setQ(text)
+        setCursor(0)
+      },
+      onEnd: () => {
+        setHeard(null)
+        input.current?.focus()
+      },
+      onError: setMicNote,
+    })
+    if (session) setHeard(session)
+    else setMicNote('Dictation is not available here.')
+  }
 
   const hits = useMemo<Hit[]>(() => {
     const needle = q.trim().toLowerCase()
@@ -287,6 +320,7 @@ export function Search({
 
   return (
     <Modal onClose={onClose} className="search-palette" backdropClassName="modal-backdrop search-backdrop" label="Search">
+      <div className="search-field">
       <input
         ref={input}
         className="search-input"
@@ -317,6 +351,19 @@ export function Search({
           }
         }}
       />
+      {canDictate && (
+        <button
+          type="button"
+          className={heard ? 'icon-btn search-mic listening' : 'icon-btn search-mic'}
+          aria-label={heard ? 'Stop dictating' : 'Dictate'}
+          aria-pressed={!!heard}
+          onClick={dictate}
+        >
+          <Icon name="mic" size={18} />
+        </button>
+      )}
+      </div>
+      {micNote && <p className="empty search-empty">{micNote}</p>}
       {hits.length === 0 && q.trim() && <p className="empty search-empty">No matches. Keep typing to create “{q.trim()}”.</p>}
       {hits.length === 0 && !q.trim() && (
         <p className="empty search-empty">

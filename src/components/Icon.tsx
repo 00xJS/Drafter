@@ -27,6 +27,7 @@ export type IconName =
   | 'plus'
   | 'checkbox'
   | 'camera'
+  | 'mic'
   | 'refresh'
   | 'brand'
   | 'wardrobe'
@@ -140,6 +141,15 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M4 8h3l1.7-2.5h6.6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8z" />
       <circle cx="12" cy="13.5" r="3.3" />
+    </>
+  ),
+  // a microphone on its stand: dictation in the palette, where the browser
+  // has a recogniser to offer
+  mic: (
+    <>
+      <rect x="9" y="2.75" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
+      <path d="M12 17.5v3.75" />
     </>
   ),
   // a circular arrow: the pull-to-refresh disc, spun by CSS while a sync runs

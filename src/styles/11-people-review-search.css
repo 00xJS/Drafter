@@ -305,10 +305,18 @@
   box-shadow: var(--shadow-palette);
   overflow: hidden;
 }
-.search-input {
-  width: 100%;
-  border: 0;
+/* the field and the microphone share one line, and the line carries the rule
+   under it — the input used to draw its own, which the button would have
+   broken */
+.search-field {
+  display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--border);
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
   border-radius: 0;
   padding: 14px 16px;
   font-size: 0.9375rem;
@@ -316,6 +324,24 @@
 }
 .search-input:focus-visible {
   outline: none;
+}
+.search-mic {
+  flex: none;
+  margin-right: 8px;
+  color: var(--text-2);
+}
+.search-mic:hover {
+  color: var(--text);
+}
+/* Listening is a state you must be able to see at a glance, because the only
+   way out is pressing the button again. It is drawn and not animated: a pulse
+   slow enough to read as "live" is slow enough to be one of the long
+   animations Reduce Motion takes away (phonecss.test.ts holds the line at
+   400ms), and a filled button says the same thing standing still. */
+.search-mic.listening {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
 }
 .search-results {
   list-style: none;
