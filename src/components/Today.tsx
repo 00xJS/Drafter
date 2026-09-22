@@ -1037,7 +1037,7 @@ export function Today({
       )}
 
       {plates.length > 0 && (
-        <section className={card('dinner', 'chart-card kitchen-tonight')}>
+        <section className="chart-card kitchen-tonight">
           <header className="chart-head">
             <div>
               <h3>
@@ -1052,8 +1052,7 @@ export function Today({
             <button className="btn subtle" onClick={onOpenKitchen}>
               This week
             </button>
-          <Fold id="dinner" name="tonight's dinner" folded={folded} onFold={onFold} />
-            </header>
+          </header>
           {plates.map(plate => (
             <div key={plate.meal.id} className="today-plate">
               <p className="kitchen-tonight-title">
@@ -1145,15 +1144,6 @@ export function Today({
             ))}
           </ul>
         </section>
-      )}
-
-      {onOpenTasks && (
-        <p className="board-more">
-          <button type="button" className="btn subtle" onClick={onOpenTasks}>
-            All tasks
-          </button>
-          {' — the list, board and bills live there. Home is this day.'}
-        </p>
       )}
 
       {sections.length === 0 ? (
