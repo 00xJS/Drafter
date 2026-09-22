@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CHAT_CONTEXT_TURNS, newMessage, newTurn, recentContext, thread, threadId, unreadSince } from '../chat'
 import { PERSONAL_KINDS, SYNC_KINDS, readableRow } from '../../shared/kinds.mjs'
@@ -127,5 +129,88 @@ describe('the assistant is reminded of the conversation, not fed by it', () => {
     // the thread block is prose; retrieval builds <records>, and parseAskAnswer
     // drops any reference that was not sent (ask.ts)
     expect(buildAskPrompt('q', [], [], recentContext(turns)).prompt).not.toContain('<records>\n[T9]')
+  })
+})
+
+/*
+ * Opening the chat.
+ *
+ * The sheet had no scroller of its own. Everything downstream had assumed one
+ * since the chat was a page: `position: sticky` on the composer resolved
+ * against the backdrop, so it floated in the middle of the thread; a long
+ * thread drew straight past the card's rounded corner and over the page; and
+ * the jump to the newest message reached the backdrop too, moving the whole
+ * panel — in an effect, which is after the browser has painted, so you saw the
+ * thread from the top and then it lurched down.
+ *
+ * One scroller fixes all three, and these hold it there.
+ */
+describe('the chat sheet scrolls itself', () => {
+  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+  const css = read('../styles/11-people-review-search.css')
+  const chat = read('../components/Chat.tsx')
+  /** One rule's declarations, by selector. */
+  const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''
+
+  it('gives the chat the overflow its sticky composer and its jump both need', () => {
+    const pane = rule('.chat-modal > .chat')
+    expect(pane).toMatch(/overflow-y:\s*auto/)
+    // it has to be able to shrink inside the panel, or it never overflows
+    expect(pane).toMatch(/min-height:\s*0/)
+    // and a sheet does not hand its scroll to the page behind it
+    expect(pane).toMatch(/overscroll-behavior:\s*contain/)
+  })
+
+  it('clips the card, so a long thread cannot draw outside it', () => {
+    expect(rule('.chat-modal')).toMatch(/overflow:\s*hidden/)
+  })
+
+  it('holds the composer and the thread switcher against the card, not the page', () => {
+    // both are sticky, and both need the card's ground or the thread shows through
+    for (const sel of ['.chat-modal .chat-composer', '.chat-modal .chat-seg']) {
+      expect(rule(sel), sel).toMatch(/background:\s*var\(--surface\)/)
+    }
+    expect(rule('.chat-seg')).not.toMatch(/position:\s*sticky/)
+    expect(rule('.chat-modal .chat-seg')).toMatch(/position:\s*sticky/)
+  })
+
+  it('keeps nothing that sized the chat as a page under the tab bar', () => {
+    // it is only ever drawn in a Modal now, so a viewport-tall floor only ever
+    // forced the column out of the card
+    // the rule, not a mention of it: the comment where it used to be still names it
+    expect(css).not.toMatch(/\.content:has\(\.chat\)\s*\{/)
+    expect(rule('.chat')).toMatch(/min-height:\s*0/)
+    expect(rule('.chat')).not.toMatch(/100dvh/)
+    expect(css).not.toMatch(/\.chat \{[^}]*min-height:[^}]*100dvh/)
+    // and the composer no longer clears a bar it now sits over
+    expect(css).not.toMatch(/\.chat-composer \{[^}]*--tabbar-h/)
+  })
+
+  it('moves its own pane before the first paint, rather than asking a marker to scroll', () => {
+    expect(chat).toContain('useLayoutEffect')
+    expect(chat).toMatch(/el\.scrollTo\(\{ top: el\.scrollHeight/)
+    // scrollIntoView walks up to whatever scrolls; that was the whole bug
+    expect(chat).not.toMatch(/\.scrollIntoView\(/)
+    // and the marker it used to scroll to, which sat BELOW the composer, is gone
+    expect(chat).not.toContain('ref={foot}')
+    expect(chat).toContain('<section className="chat" ref={pane}>')
+  })
+
+  it('keeps each composer’s placeholder to one line at 375pt', () => {
+    // measured in the iOS shell at 375pt: 16px type in a 268px box, and a
+    // composer that starts one line tall (44pt) and cuts the second off.
+    // 24 characters is where that box fills; both sit under it.
+    for (const [, text] of chat.matchAll(/<Composer placeholder="([^"]+)"/g)) expect(text.length, text).toBeLessThanOrEqual(24)
+    expect([...chat.matchAll(/<Composer placeholder="([^"]+)"/g)]).toHaveLength(2)
+  })
+
+  it('lands on open and on a thread switch, and travels only for a new message', () => {
+    const effect = /useLayoutEffect\(\(\) => \{([\s\S]*?)\n {2}\}, \[side, messages\.length, turns\.length\]\)/.exec(chat)?.[1] ?? ''
+    expect(effect).toBeTruthy()
+    // a different thread is a different place, not a journey through this one
+    expect(effect).toMatch(/const jump = shown\.current !== side \|\| stillWanted\(\)/)
+    expect(effect).toMatch(/behavior: jump \? 'auto' : 'smooth'/)
+    // scrollTo's smoothing does not read the setting itself
+    expect(chat).toMatch(/stillWanted = \(\).*prefers-reduced-motion: reduce/s)
   })
 })

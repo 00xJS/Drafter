@@ -1030,10 +1030,15 @@
    floating halfway up an empty page is the single thing that read as a web
    form. The thread is pushed down to meet it (`margin-top: auto`), the way
    every message app stacks from the bottom. */
+/* Overlays draws the chat in a Modal and nowhere else, so it sizes to that
+   panel rather than to a page: the panel caps the height, and this column is
+   what scrolls inside it (.chat-modal > .chat). It carried a 100dvh floor
+   from its page days, which inside a sheet only forced a viewport-tall
+   column that spilled out of the card. */
 .chat {
   display: flex;
   flex-direction: column;
-  min-height: calc(100dvh - var(--topbar-h) - 24px);
+  min-height: 0;
 }
 .chat-what {
   margin: 0 0 4px;
@@ -1196,16 +1201,43 @@
   display: flex;
   flex-direction: column;
   max-height: calc(100dvh - 80px);
+  /* the card capped its height and let its contents through: a long thread
+     drew past the rounded corner and over the page, with the composer
+     stranded in the middle of it */
+  overflow: hidden;
 }
+/* THE scroller. Everything downstream assumed one and there was none: the
+   composer's `position: sticky` resolved against the backdrop, which is why
+   it floated mid-thread, and the jump to the newest message moved the whole
+   panel instead of the thread. */
 .chat-modal > .chat {
   flex: 1;
   min-height: 0;
   padding: 0 16px 8px;
+  overflow-y: auto;
+  /* the page behind a sheet stays where it was put */
+  overscroll-behavior: contain;
 }
 /* the composer cleared the tab bar when the chat was a page under it; a sheet
    is OVER that bar, so all it owes is the home indicator */
 .chat-modal .chat-composer {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  /* the thread runs under it, and the ground it runs onto is the card's */
+  background: var(--surface);
+}
+/* Which thread you are in is the sheet's one real control, so it holds the
+   top while the thread moves under it — the composer already holds the
+   bottom the same way. Both need the card's ground, or the messages passing
+   behind them show through. */
+.chat-modal .chat-seg {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* the gap below it is padding and not margin, so the band's ground covers
+     it: a margin is outside the element, and the thread would scroll into it */
+  margin-bottom: 0;
+  padding: 8px 0;
+  background: var(--surface);
 }
 
 /* The chat's way out travels with its own track rather than sitting in a
@@ -1233,31 +1265,18 @@
   background: var(--bg);
 }
 @media (max-width: 640px) {
-  /* The chat owns its own clearance of the tab bar, so `.content`'s does not
-     apply twice — and so the composer can stick to `bottom: 0`. A sticky
-     bottom OFFSET lifts the element off its flow position and back over
-     whatever precedes it, which is what buried the empty state under the
-     composer; the clearance belongs INSIDE the bar, as padding. */
-  .content:has(.chat) {
-    padding-bottom: 0;
-  }
-  /* --topbar-h is the bar's own height; the bar ALSO carries the top safe
-     area as padding (19-native-shell.css), so a column sized without that
-     term overshoots by the notch and the page scrolls the segmented control
-     off the top. --touch is the "Today" back button Home draws above every
-     page it opens. The composer carries the tab bar's clearance itself, so
-     there is no --tabbar-h term here.
+  /* The composer needs a ground and an edge of its own, because the thread
+     scrolls under it. It does NOT need the tab bar's clearance any more:
+     that was from the chat's page days, under the bar. A sheet is over the
+     bar and owes only the home indicator, which .chat-modal .chat-composer
+     gives it — so the bottom is left alone here rather than set twice.
 
-     Erring SHORT is deliberate: a few pixels spare leave the composer a
-     fraction high, which nobody sees, while a few too many scroll the
-     controls off the top, which everybody does. */
-  .chat {
-    min-height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-top, 0px) - var(--touch) - 24px);
-  }
+     Gone with it: a `.content:has(.chat)` rule and a 100dvh floor on .chat,
+     both sizing a page that no longer exists. */
   .chat-composer {
-    /* the thread runs under it, so it needs a ground and an edge of its own */
     margin: 0 -12px;
-    padding: 8px 12px calc(var(--tabbar-h) + var(--safe-b) + 8px);
+    padding-top: 8px;
+    padding-inline: 12px;
     border-top: 1px solid var(--hairline);
   }
 }

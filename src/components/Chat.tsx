@@ -1,4 +1,4 @@
-import { KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { askDrafter } from '../ai'
 import { CHAT_PAGE, CHAT_PROMPTS, newMessage, newTurn, recentContext, thread } from '../chat'
 import { dayLabel } from '../journal'
@@ -24,6 +24,9 @@ import { askFailure } from './AskSheet'
 // write anything.
 
 export type ChatSide = 'household' | 'assistant'
+
+/** Whether to land rather than travel: scrollTo's own smoothing ignores this. */
+const stillWanted = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 /** Which speaker a line is drawn as: yours on the right, theirs on the left. */
 const mine = (ownerId: string | undefined, myId: string | null) => !ownerId || !myId || ownerId === myId
@@ -156,7 +159,10 @@ function HouseholdThread({
           )}
         </ul>
       )}
-      <Composer placeholder="Say something to the household…" onSend={onSend} />
+      {/* short enough for one line: at 375pt the iOS shell draws this at 16px in
+          a 268px box, where the old "Say something to the household…" wrapped
+          to two lines and the composer's 44pt floor cut the second one off */}
+      <Composer placeholder="Message the household…" onSend={onSend} />
     </>
   )
 }
@@ -307,10 +313,28 @@ export function Chat({
   ask = askDrafter,
   now,
 }: Props) {
-  const foot = useRef<HTMLDivElement>(null)
-  // a thread you have just added to belongs at the bottom, the way every chat does
-  useEffect(() => {
-    foot.current?.scrollIntoView({ block: 'end' })
+  const pane = useRef<HTMLElement>(null)
+  /*
+   * A thread you have just added to belongs at the bottom, the way every chat
+   * does — but WHICH box moves matters, and so does when.
+   *
+   * This used to ask a marker at the end of the section to bring itself into
+   * view. scrollIntoView walks up to the nearest thing that scrolls, and the
+   * sheet had nothing: it reached the backdrop, so the whole panel lurched,
+   * and it ran in an effect, which is after the browser has painted — you saw
+   * the thread from the top and then it jumped. Scrolling this pane directly
+   * cannot move anything above it, and a layout effect puts the first frame
+   * where it belongs, so there is nothing left to see jump.
+   */
+  const shown = useRef<ChatSide | null>(null)
+  useLayoutEffect(() => {
+    const el = pane.current
+    if (!el) return
+    // opening, and switching threads, LAND at the bottom; a message arriving
+    // while you are reading travels there, so you can see that it did
+    const jump = shown.current !== side || stillWanted()
+    shown.current = side
+    el.scrollTo({ top: el.scrollHeight, behavior: jump ? 'auto' : 'smooth' })
   }, [side, messages.length, turns.length])
   // drawing the household thread IS reading it
   const newest = messages[messages.length - 1]?.createdAt
@@ -319,7 +343,7 @@ export function Chat({
   }, [side, newest, onSeen])
 
   return (
-    <section className="chat">
+    <section className="chat" ref={pane}>
       {/* The tab-level track People · Places uses, so the two halves of the
           chat read as one control rather than as two small web buttons; the
           native shell draws it as an iOS segmented control (19-native-shell). */}
@@ -372,7 +396,6 @@ export function Chat({
           }}
         />
       )}
-      <div ref={foot} />
     </section>
   )
 }
