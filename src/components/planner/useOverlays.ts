@@ -11,16 +11,32 @@ import type { PlanStep } from '../PlanDaySheet'
  */
 export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { kind: 'week' } | { kind: 'ask'; question?: string } | { kind: 'imhere' }
 
+/**
+ * A screen you go INTO and come back from, drawn over whichever tab you were
+ * on. Settings and the chat are the two.
+ *
+ * Both were sheets that slid up over the page, and neither is a thing you
+ * glance at: Settings is eight sections of prose and switches, the chat is a
+ * conversation. A sheet gave each of them about two thirds of a screen to
+ * scroll inside and left the tab underneath showing above it, cut off
+ * mid-card — which is what it looks like when a place is dressed as a
+ * glance. They are screens now, and they leave by the same ‹ back control
+ * every other page the app opens uses.
+ *
+ * They are NOT tabs. A tab is somewhere you return to; these are somewhere
+ * you go, do a thing, and leave. So they live here rather than in View, and
+ * a tap on any tab drops them (goView).
+ */
+export type Pushed = 'settings' | 'chat'
+
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
   const [editor, setEditor] = useState<{ task?: Task; preset?: Partial<Task>; capture?: boolean } | null>(null)
   const [projectEditor, setProjectEditor] = useState<{ project: Project } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  /** The chat, as a sheet off the top bar since v3.29: a thing you summon from
-   *  wherever you are, not a place you browse to. */
-  const [chatOpen, setChatOpen] = useState(false)
+  /** The pushed screen up, if any: Settings or the chat. */
+  const [pushed, setPushed] = useState<Pushed | null>(null)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
   const [adminOpen, setAdminShown] = useState(false)
@@ -60,8 +76,12 @@ export function useOverlays() {
   // nothing opens the editor on a blank one to start a second
   const openProject = (project: Project) => setProjectEditor({ project })
 
-  /** Pull to refresh stands down while any of these owns the screen. */
-  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || chatOpen || trashOpen || adminOpen
+  /**
+   * Pull to refresh stands down while any of these owns the screen. A pushed
+   * screen counts: Settings has nothing to refresh, and the chat scrolls
+   * itself, which is the gesture pull-to-refresh would take.
+   */
+  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || !!pushed || trashOpen || adminOpen
 
   return {
     sheet,
@@ -75,10 +95,8 @@ export function useOverlays() {
     setTrashOpen,
     searchOpen,
     setSearchOpen,
-    settingsOpen,
-    chatOpen,
-    setChatOpen,
-    setSettingsOpen,
+    pushed,
+    setPushed,
     settingsNonce,
     setSettingsNonce,
     adminOpen,

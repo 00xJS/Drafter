@@ -244,8 +244,13 @@ describe('a remembered segment may not hijack a destination', () => {
     expect(planner).not.toMatch(/view === 'today'/)
     expect(planner).not.toMatch(/HOME_TABS\.map/)
     // …and it needs no "Today" button back, because it is not a page hanging
-    // off the day any more: the tab bar is the way out (v3.29)
-    expect(planner).not.toMatch(/className="btn subtle notes-back"/)
+    // off the day any more: the tab bar is the way out (v3.29). Settings and
+    // the chat DO carry one — they are screens you go into rather than tabs
+    // you return to (PushedScreen, v3.30) — so this asks the screens that
+    // draw a tab, not every file in the folder.
+    for (const screen of ['HomeScreen', 'InsightsScreen', 'KeepScreen', 'TasksScreen', 'CalendarScreen']) {
+      expect(readFileSync(fileURLToPath(new URL(`../components/planner/${screen}.tsx`, import.meta.url)), 'utf8'), screen).not.toMatch(/notes-back/)
+    }
   })
 
   it('re-reads the remembered half when a tab bar is tapped', () => {
@@ -253,9 +258,11 @@ describe('a remembered segment may not hijack a destination', () => {
     // except Home, which always returns to the day
     expect(planner).toMatch(/const goView = \(v: View\) => \{[\s\S]*?goTasksTab\(storedTasksTab\(\)\)[\s\S]*?goKeepTab\(tab\)/)
     expect(planner).toMatch(/if \(v === 'home'\) setHomeTab\('today'\)/)
-    // both bars route through it
-    expect(planner).toMatch(/onClick=\{\(\) => goView\(v\)\}/)
-    expect(planner).toMatch(/goView\(t\.id\)/)
+    // both bars route through it, by way of goTab — which drops a pushed
+    // screen (Settings, the chat) first, so a tab tap always lands on a tab
+    expect(planner).toMatch(/onClick=\{\(\) => goTab\(v\)\}/)
+    expect(planner).toMatch(/goTab\(t\.id\)/)
+    expect(planner).toMatch(/const goTab = \(v: View\) => \{\s*setPushed\(null\)\s*goView\(v\)/)
   })
 })
 

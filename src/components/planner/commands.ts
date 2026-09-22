@@ -26,7 +26,7 @@ export interface PaletteNav {
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
 export interface PaletteOverlays {
   newTask(preset?: Partial<Task>, opts?: { capture?: boolean }): void
-  setSettingsOpen(open: boolean): void
+  setPushed(to: 'settings' | 'chat' | null): void
   openSheet(sheet: Sheet): void
 }
 
@@ -42,7 +42,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
   const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens } = nav
-  const { newTask, setSettingsOpen, openSheet } = overlays
+  const { newTask, setPushed, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places — two of Keep's four — remembered as its button would,
    *  on the List or Stats last chosen there: a one-shot People stats or Places
@@ -98,6 +98,6 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-money-stats', label: 'Money stats', icon: 'stats', keywords: 'spending paid payee subscriptions budget outgoings figures', run: () => openLens('money') },
     { id: 'go-habit-stats', label: 'Habit stats', icon: 'stats', keywords: 'streaks kept consistency clean days figures', run: () => openLens('habits') },
     { id: 'go-journal-stats', label: 'Journal stats', icon: 'stats', keywords: 'mood words entries streak figures', run: () => openLens('journal') },
-    { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setSettingsOpen(true) },
+    { id: 'go-settings', label: 'Settings', icon: 'settings', keywords: 'preferences calendars reminders', run: () => setPushed('settings') },
   ]
 }

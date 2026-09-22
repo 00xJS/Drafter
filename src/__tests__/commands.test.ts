@@ -167,8 +167,9 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     newTask: (...args) => {
       s.newTasks.push(args)
     },
-    setSettingsOpen: open => {
-      s.settingsOpen = open
+    // Settings is a pushed screen now, not a flag: the palette asks for it by name
+    setPushed: to => {
+      s.settingsOpen = to === 'settings'
     },
     openSheet: sheet => {
       s.sheets.push(sheet)

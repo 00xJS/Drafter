@@ -1030,14 +1030,22 @@
    floating halfway up an empty page is the single thing that read as a web
    form. The thread is pushed down to meet it (`margin-top: auto`), the way
    every message app stacks from the bottom. */
-/* Overlays draws the chat in a Modal and nowhere else, so it sizes to that
-   panel rather than to a page: the panel caps the height, and this column is
-   what scrolls inside it (.chat-modal > .chat). It carried a 100dvh floor
-   from its page days, which inside a sheet only forced a viewport-tall
-   column that spilled out of the card. */
+/* The chat is a screen again (PushedScreen), so the page scrolls it and the
+   composer's `position: sticky` has the viewport to stick to — which is what
+   it was written for. It fills the height rather than measuring it: .content
+   is already flex:1 of a 100vh column, so saying so is enough and there is no
+   budget of bar heights to keep in step. */
+.content:has(.pushed-screen) {
+  display: flex;
+  flex-direction: column;
+}
+.pushed-screen:has(> .chat) {
+  flex: 1;
+}
 .chat {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
 }
 .chat-what {
@@ -1189,57 +1197,6 @@
    the bar, which is what clipped the Assistant's box in half. No
    --keyboard-h term anywhere near it: that is a signal, not an inset, and
    resize:'native' has already shortened the WebView (01-base.css). */
-/* Summoned from the top bar, so it opens as a sheet over the page rather than
-   inside one: a thread is a place you go into and come back out of, and half
-   of it is a conversation with another person.
-   It is a real <Modal> and not a hand-rolled overlay — a11y.test.ts holds every
-   dialog to that, and rightly: the trap, Escape, the focus that goes back
-   where it came from and the grab handle's drag all live there. What it needs
-   of its own is height, because the thread and its composer are the content
-   and a 65vh body would cut them off. */
-.chat-modal {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100dvh - 80px);
-  /* the card capped its height and let its contents through: a long thread
-     drew past the rounded corner and over the page, with the composer
-     stranded in the middle of it */
-  overflow: hidden;
-}
-/* THE scroller. Everything downstream assumed one and there was none: the
-   composer's `position: sticky` resolved against the backdrop, which is why
-   it floated mid-thread, and the jump to the newest message moved the whole
-   panel instead of the thread. */
-.chat-modal > .chat {
-  flex: 1;
-  min-height: 0;
-  padding: 0 16px 8px;
-  overflow-y: auto;
-  /* the page behind a sheet stays where it was put */
-  overscroll-behavior: contain;
-}
-/* the composer cleared the tab bar when the chat was a page under it; a sheet
-   is OVER that bar, so all it owes is the home indicator */
-.chat-modal .chat-composer {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-  /* the thread runs under it, and the ground it runs onto is the card's */
-  background: var(--surface);
-}
-/* Which thread you are in is the sheet's one real control, so it holds the
-   top while the thread moves under it — the composer already holds the
-   bottom the same way. Both need the card's ground, or the messages passing
-   behind them show through. */
-.chat-modal .chat-seg {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  /* the gap below it is padding and not margin, so the band's ground covers
-     it: a margin is outside the element, and the thread would scroll into it */
-  margin-bottom: 0;
-  padding: 8px 0;
-  background: var(--surface);
-}
-
 /* The chat's way out travels with its own track rather than sitting in a
    header it does not have. */
 .chat-seg {

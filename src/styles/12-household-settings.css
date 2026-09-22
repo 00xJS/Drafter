@@ -263,57 +263,26 @@
   color: var(--muted);
 }
 
-/* settings: a few groups instead of one long scroll */
-.settings-modal {
-  width: 760px;
-  max-width: 100%;
-  height: min(86vh, 860px);
-  display: flex;
-  flex-direction: column;
-}
-.settings-modal .modal-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-.settings-nav {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--surface);
-  padding-bottom: 10px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-.settings-nav .seg {
-  flex: 1 1 auto;
-}
+/* Settings is a screen (PushedScreen), not a dialog, so what was written here
+   twice for a modal — a 760px panel, a fixed height, a body that scrolled
+   inside it — is gone. The page scrolls, as every other screen's does.
 
-/* settings: a few groups instead of one 800-line scroll */
-.settings-modal {
-  width: 760px;
-  max-width: 100%;
-  height: min(86vh, 860px);
+   The nav is not sticky either, and that is the fix as much as the frame is.
+   It was `position: sticky` with a ground of its own inside the modal body,
+   which on the phone put it over the text going past underneath: a line of
+   prose showed above it and another through the gaps between its buttons,
+   half-clipped, which is what "text clipping from behind instead of having a
+   header" was. Nothing in a screen needs to float over the text. The app's
+   other back-button page, the notes pad, scrolls its header away too. */
+.settings-body {
   display: flex;
   flex-direction: column;
-}
-.settings-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 .settings-nav {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--surface);
-  padding: 2px 0 10px;
+  padding-bottom: 10px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
@@ -435,14 +404,6 @@
   }
 }
 
-/* settings is a fixed-height dialog on desktop; on a phone it is a full sheet
-   (after the desktop rule above, so it wins) */
-@media (max-width: 640px) {
-  .settings-modal {
-    height: 100dvh;
-    width: 100%;
-  }
-}
 
 /* the signed-out pages have their own headers: keep them out from under the
    status bar / Dynamic Island on an installed app */

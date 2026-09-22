@@ -17,7 +17,7 @@ interface Deps {
   store: Store
   showToast: ReturnType<typeof useToast>['showToast']
   setSettingsNonce: Overlays['setSettingsNonce']
-  setSettingsOpen: Overlays['setSettingsOpen']
+  setPushed: Overlays['setPushed']
   setAdminOpen: Overlays['setAdminOpen']
   setEditor: Overlays['setEditor']
   newTask: Overlays['newTask']
@@ -47,7 +47,7 @@ export function useDeepLinks({
   store,
   showToast,
   setSettingsNonce,
-  setSettingsOpen,
+  setPushed,
   setAdminOpen,
   setEditor,
   newTask,
@@ -93,7 +93,7 @@ export function useDeepLinks({
           : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
       )
       setSettingsNonce(n => n + 1)
-      setSettingsOpen(true)
+      setPushed('settings')
       return
     }
     // Nothing below this line may run behind the lock card: a Done button that

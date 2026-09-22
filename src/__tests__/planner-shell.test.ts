@@ -24,8 +24,12 @@ describe('the tabs and segments say where you are', () => {
   it('marks the desktop strip like the phone bar: real buttons, the current tab current', () => {
     const strip = topBar.slice(topBar.indexOf('<nav className="tabs tabs-full"'), topBar.indexOf('<nav className="tabs tabs-compact"'))
     expect(strip).toMatch(/type="button"/)
-    expect(strip).toMatch(/aria-current=\{view === v \? 'page' : undefined\}/)
-    expect(strip).toMatch(/onClick=\{\(\) => goView\(v\)\}/)
+    // …and no tab is current while a pushed screen (Settings, the chat) is
+    // over it: you are not on a tab, you are somewhere you came from one
+    expect(strip).toMatch(/aria-current=\{view === v && !pushed \? 'page' : undefined\}/)
+    // a tab tap drops that screen, which is what a tab means
+    expect(strip).toMatch(/onClick=\{\(\) => goTab\(v\)\}/)
+    expect(topBar).toMatch(/const goTab = \(v: View\) => \{\s*setPushed\(null\)\s*goView\(v\)/)
   })
 
   it('gives the calendar mode control tabs that say which one is on', () => {

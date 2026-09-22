@@ -13,9 +13,11 @@ import { garmentMediaIds } from '../../shared/media.mjs'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
+import { ChatScreen } from './planner/ChatScreen'
 import { HomeScreen } from './planner/HomeScreen'
 import { InsightsScreen } from './planner/InsightsScreen'
 import { KeepScreen } from './planner/KeepScreen'
+import { SettingsScreen } from './planner/SettingsScreen'
 import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
 import { VIEW_LABELS } from './planner/routes'
@@ -130,7 +132,7 @@ export default function Planner() {
     ...focusActions,
   }
   // what the shell itself reads: the screen switch, pull to refresh, the toast
-  const { view, manualSync, anyOpen, toast, setToast } = p
+  const { view, pushed, manualSync, anyOpen, toast, setToast } = p
 
   return (
     <div className="app">
@@ -158,11 +160,25 @@ export default function Planner() {
                 Moving between tabs is a transition, so a screen already up
                 stays up until the next one can replace it. */}
             <Suspense fallback={<div className="view-pending" aria-busy="true" />}>
-              {view === 'home' && <HomeScreen p={p} />}
-              {view === 'calendar' && <CalendarScreen p={p} />}
-              {view === 'tasks' && <TasksScreen p={p} />}
-              {view === 'keep' && <KeepScreen p={p} />}
-              {view === 'insights' && <InsightsScreen p={p} />}
+              {/* A pushed screen — Settings, the chat — takes the same space a
+                  tab does, and leaves by its own ‹ Back or by a tap on any
+                  tab. It is drawn INSTEAD of the tab rather than over it: a
+                  sheet left the page behind it showing above the fold, cut
+                  off mid-card, which is what said "this is a glance" about
+                  two places you actually sit in. */}
+              {pushed === 'settings' ? (
+                <SettingsScreen p={p} />
+              ) : pushed === 'chat' ? (
+                <ChatScreen p={p} />
+              ) : (
+                <>
+                  {view === 'home' && <HomeScreen p={p} />}
+                  {view === 'calendar' && <CalendarScreen p={p} />}
+                  {view === 'tasks' && <TasksScreen p={p} />}
+                  {view === 'keep' && <KeepScreen p={p} />}
+                  {view === 'insights' && <InsightsScreen p={p} />}
+                </>
+              )}
             </Suspense>
           </ErrorBoundary>
         )}

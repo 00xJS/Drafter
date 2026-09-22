@@ -135,55 +135,52 @@ describe('the assistant is reminded of the conversation, not fed by it', () => {
 /*
  * Opening the chat.
  *
- * The sheet had no scroller of its own. Everything downstream had assumed one
- * since the chat was a page: `position: sticky` on the composer resolved
- * against the backdrop, so it floated in the middle of the thread; a long
- * thread drew straight past the card's rounded corner and over the page; and
- * the jump to the newest message reached the backdrop too, moving the whole
- * panel — in an effect, which is after the browser has painted, so you saw the
- * thread from the top and then it lurched down.
+ * It was a sheet for one release, and a sheet with no scroller of its own: the
+ * composer's `position: sticky` resolved against the backdrop and floated
+ * mid-thread, a long thread drew past the card and over the page, and the jump
+ * to the newest message moved the whole panel — after the browser had painted
+ * it, so you saw the thread from the top and then it lurched.
  *
- * One scroller fixes all three, and these hold it there.
+ * It is a screen again (PushedScreen, v3.30), which is what every one of those
+ * rules was written for: the page scrolls, the composer sticks to the viewport,
+ * and nothing is nested inside anything. These hold it there.
  */
-describe('the chat sheet scrolls itself', () => {
+describe('the chat is a screen, and the page scrolls it', () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
   const css = read('../styles/11-people-review-search.css')
   const chat = read('../components/Chat.tsx')
   /** One rule's declarations, by selector. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''
 
-  it('gives the chat the overflow its sticky composer and its jump both need', () => {
-    const pane = rule('.chat-modal > .chat')
-    expect(pane).toMatch(/overflow-y:\s*auto/)
-    // it has to be able to shrink inside the panel, or it never overflows
-    expect(pane).toMatch(/min-height:\s*0/)
-    // and a sheet does not hand its scroll to the page behind it
-    expect(pane).toMatch(/overscroll-behavior:\s*contain/)
+  it('fills the height it is given rather than measuring one', () => {
+    // .content is already flex:1 of a 100vh column, so saying "fill" is enough.
+    // A floor written as 100dvh minus a list of bar heights is a budget that
+    // has to be kept in step with every one of them, and was not.
+    expect(rule('.content:has(.pushed-screen)')).toMatch(/flex-direction:\s*column/)
+    expect(rule('.pushed-screen:has(> .chat)')).toMatch(/flex:\s*1/)
+    const chat = rule('.chat')
+    expect(chat).toMatch(/flex:\s*1/)
+    expect(chat).not.toMatch(/100dvh/)
   })
 
-  it('clips the card, so a long thread cannot draw outside it', () => {
-    expect(rule('.chat-modal')).toMatch(/overflow:\s*hidden/)
+  it('keeps nothing that dressed it as a sheet', () => {
+    // the card, its cap, and the scroller inside it all belonged to the Modal
+    expect(css).not.toMatch(/\.chat-modal\s*[,{]/)
+    // the composer sticks to the viewport again, which is what it was written for
+    expect(rule('.chat-composer')).toMatch(/position:\s*sticky/)
   })
 
-  it('holds the composer and the thread switcher against the card, not the page', () => {
-    // both are sticky, and both need the card's ground or the thread shows through
-    for (const sel of ['.chat-modal .chat-composer', '.chat-modal .chat-seg']) {
-      expect(rule(sel), sel).toMatch(/background:\s*var\(--surface\)/)
-    }
+  it('leaves the thread switcher in the flow, where nothing can show through it', () => {
+    // sticky inside a scroller is how Settings' section buttons came to have
+    // half a line of prose passing through the gaps between them
     expect(rule('.chat-seg')).not.toMatch(/position:\s*sticky/)
-    expect(rule('.chat-modal .chat-seg')).toMatch(/position:\s*sticky/)
   })
 
-  it('keeps nothing that sized the chat as a page under the tab bar', () => {
-    // it is only ever drawn in a Modal now, so a viewport-tall floor only ever
-    // forced the column out of the card
-    // the rule, not a mention of it: the comment where it used to be still names it
-    expect(css).not.toMatch(/\.content:has\(\.chat\)\s*\{/)
-    expect(rule('.chat')).toMatch(/min-height:\s*0/)
-    expect(rule('.chat')).not.toMatch(/100dvh/)
-    expect(css).not.toMatch(/\.chat \{[^}]*min-height:[^}]*100dvh/)
-    // and the composer no longer clears a bar it now sits over
+  it('does not clear the tab bar twice', () => {
+    // the composer carried the bar's height as padding when the chat was a
+    // page UNDER it; the screen is over it and owes only the home indicator
     expect(css).not.toMatch(/\.chat-composer \{[^}]*--tabbar-h/)
+    expect(css).not.toMatch(/\.content:has\(\.chat\)\s*\{/)
   })
 
   it('moves its own pane before the first paint, rather than asking a marker to scroll', () => {

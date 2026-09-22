@@ -14,8 +14,13 @@ import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
  * what it opens, so the tap that follows finds it here.
  */
 export function TopBar({ p }: { p: PlannerCtx }) {
-  const { view, goView, store, syncing, manualSync, setSearchOpen, setSettingsOpen, setChatOpen, chatSeenAt, household, isOwner, setAdminOpen, newTask } = p
+  const { view, goView, store, syncing, manualSync, setSearchOpen, setPushed, pushed, chatSeenAt, household, isOwner, setAdminOpen, newTask } = p
   const unread = unreadSince(store.messages, chatSeenAt, household.myId)
+  /** A tab tap leaves whatever screen was pushed over it — that is what a tab means. */
+  const goTab = (v: View) => {
+    setPushed(null)
+    goView(v)
+  }
   const warmSearch = () => warm(Search.preload)
   const warmSettings = () => warm(Settings.preload)
   const warmChat = () => warm(Chat.preload)
@@ -39,9 +44,9 @@ export function TopBar({ p }: { p: PlannerCtx }) {
           <button
             key={v}
             type="button"
-            className={view === v ? 'tab active' : 'tab'}
-            aria-current={view === v ? 'page' : undefined}
-            onClick={() => goView(v)}
+            className={view === v && !pushed ? 'tab active' : 'tab'}
+            aria-current={view === v && !pushed ? 'page' : undefined}
+            onClick={() => goTab(v)}
             onPointerDown={() => preloadView(v)}
             onFocus={() => preloadView(v)}
           >
@@ -55,14 +60,15 @@ export function TopBar({ p }: { p: PlannerCtx }) {
       </nav>
       <nav className="tabs tabs-compact" aria-label="Main">
         {COMPACT_TABS.map(t => {
-          const active = view === t.id
+          // a pushed screen is over the tab, so no tab is the one you are on
+          const active = view === t.id && !pushed
           return (
             <button
               key={t.id}
               type="button"
               className={active ? 'tab active' : 'tab'}
               aria-current={active ? 'page' : undefined}
-              onClick={() => goView(t.id)}
+              onClick={() => goTab(t.id)}
               onPointerDown={() => preloadView(t.id)}
               onFocus={() => preloadView(t.id)}
             >
@@ -106,14 +112,14 @@ export function TopBar({ p }: { p: PlannerCtx }) {
         className="btn subtle icon-btn chat-btn"
         aria-label={unread > 0 ? `Chat, ${unread} unread` : 'Chat'}
         title="Chat"
-        onClick={() => setChatOpen(true)}
+        onClick={() => setPushed('chat')}
         onPointerDown={warmChat}
         onFocus={warmChat}
       >
         <Icon name="chat" size={19} />
         {unread > 0 && <span className="chat-dot" aria-hidden />}
       </button>
-      <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)} onPointerDown={warmSettings} onFocus={warmSettings}>
+      <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setPushed('settings')} onPointerDown={warmSettings} onFocus={warmSettings}>
         <Icon name="settings" size={19} />
       </button>
       {/* hidden below 640px (it pushed "+ New task" off a 375pt header) —

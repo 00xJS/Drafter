@@ -4,7 +4,6 @@ import { CalendarState, GooglePushState } from '../calendars'
 import { isSupabaseConfigured } from '../supabase'
 import type { HouseholdInfo } from '../household'
 import type { SettingsCtx } from './settings/context'
-import { Modal, ModalHead } from './Modal'
 import { useFeedInfo } from './settings/useFeedInfo'
 import { About } from './settings/About'
 import { AdminLink } from './settings/AdminLink'
@@ -61,6 +60,8 @@ interface Props {
   googlePush: GooglePushState
   microsoftSync: GooglePushState
   household: { info: HouseholdInfo | null; myId: string | null; refresh(): Promise<void>; error?: string }
+  /** Leave the Settings screen. Its own header has the back button; this is
+      for the section that has to leave on your behalf — signing out. */
   onClose(): void
   /** Owner only. The header's Admin button is hidden on phones, so this is the
       only admin route on the device the owner actually uses. */
@@ -80,34 +81,29 @@ export function Settings({ store, calendars, googlePush, microsoftSync, househol
   const feed = useFeedInfo()
   const ctx: SettingsCtx = { store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin, supabaseOn, syncing, setSyncing, feed }
 
+  /*
+   * A screen, not a dialog. It was a Modal until v3.30 — with a Done button,
+   * which is what a dialog has instead of a way back. PushedScreen draws the
+   * header and the ‹ Back, so all that is left here is the sections and the
+   * nav that picks between them.
+   */
   return (
-    <Modal onClose={onClose} className="modal settings-modal">
-        <ModalHead title="Settings" />
-
-        <div className={`modal-body settings-body showing-${group}`}>
-          <nav className="settings-nav" role="tablist" aria-label="Settings sections">
-            {SETTINGS_GROUPS.filter(g => (!g.needsAccount || supabaseOn) && (!g.advanced || more || g.key === group)).map(g => (
-              <button key={g.key} className={group === g.key ? 'seg on' : 'seg'} onClick={() => setGroup(g.key)} role="tab" aria-selected={group === g.key}>
-                {g.label}
-              </button>
-            ))}
-            {!more && (
-              <button className="seg settings-more" onClick={() => setMore(true)} role="tab" aria-selected={false}>
-                More…
-              </button>
-            )}
-          </nav>
-          {/* every section stays mounted, whichever group is showing: the class
-              above hides the rest, and their fetches start as Settings opens */}
-          {SETTINGS_GROUPS.flatMap(g => g.sections.map((Section, i) => <Section key={`${g.key}-${i}`} {...ctx} />))}
-        </div>
-
-        <footer className="modal-foot">
-          <span className="spacer" />
-          <button className="btn primary" onClick={onClose}>
-            Done
+    <div className={`settings-body showing-${group}`}>
+      <nav className="settings-nav" role="tablist" aria-label="Settings sections">
+        {SETTINGS_GROUPS.filter(g => (!g.needsAccount || supabaseOn) && (!g.advanced || more || g.key === group)).map(g => (
+          <button key={g.key} className={group === g.key ? 'seg on' : 'seg'} onClick={() => setGroup(g.key)} role="tab" aria-selected={group === g.key}>
+            {g.label}
           </button>
-        </footer>
-    </Modal>
+        ))}
+        {!more && (
+          <button className="seg settings-more" onClick={() => setMore(true)} role="tab" aria-selected={false}>
+            More…
+          </button>
+        )}
+      </nav>
+      {/* every section stays mounted, whichever group is showing: the class
+          above hides the rest, and their fetches start as Settings opens */}
+      {SETTINGS_GROUPS.flatMap(g => g.sections.map((Section, i) => <Section key={`${g.key}-${i}`} {...ctx} />))}
+    </div>
   )
 }

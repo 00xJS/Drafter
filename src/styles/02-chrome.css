@@ -314,3 +314,29 @@
 .period-bar > .period-end {
   flex: none;
 }
+
+/* ---------- a screen you go into and come back from ----------------------
+   Settings and the chat. Both were sheets, and a sheet says "glance": it left
+   the tab behind it showing above the fold, cut off mid-card, and gave a page
+   of prose two thirds of a screen to scroll in.
+
+   The frame is deliberately thin. It takes the space a tab's screen takes, so
+   the page scrolls the way every other screen's does — no scroller inside a
+   scroller, nothing floating over the text. The header scrolls away with the
+   content, as the notes pad's does; the top bar above it is the sticky one,
+   and the tab bar is always there to leave by. */
+.pushed-screen {
+  display: flex;
+  flex-direction: column;
+}
+.pushed-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.pushed-head .view-title {
+  margin: 0;
+}
