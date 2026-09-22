@@ -4,6 +4,7 @@ import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { isStepDone, progressOn, stepsFromText, stepsToText, toggleStep, whichToShow } from '../routines'
 import { ConfirmButton } from './ConfirmButton'
+import { useFold } from './HomeFold'
 
 const WHEN_LABEL: Record<RoutineWhen, string> = { morning: 'Morning', evening: 'Evening', anytime: 'Anytime' }
 
@@ -70,9 +71,10 @@ export function RoutinesCard({ routines, today, hour, onSave, onDelete }: { rout
   }
 
   const form = { name, setName, when, setWhen, stepsText, setStepsText, save, close, canSave }
+  const fold = useFold('routines', 'Routines')
 
   return (
-    <section className="chart-card routines-card">
+    <section className={'chart-card routines-card' + fold.className}>
       <header className="chart-head">
         <div>
           <h3>Routines</h3>
@@ -83,6 +85,7 @@ export function RoutinesCard({ routines, today, hour, onSave, onDelete }: { rout
             + Add
           </button>
         )}
+        {fold.control}
       </header>
 
       {editing === 'new' && <RoutineForm {...form} isNew />}

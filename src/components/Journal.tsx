@@ -40,6 +40,7 @@ import { excerpt } from '../utils'
 import { haptic } from '../native'
 import { useMediaQuery } from '../useMediaQuery'
 import { ConfirmButton } from './ConfirmButton'
+import { useFold } from './HomeFold'
 import { StatTile } from './bits'
 
 /** How long after the last keystroke an entry is written. Blur and unmount write at once. */
@@ -335,8 +336,9 @@ export function JournalCard({
     : run > 0
       ? `How did today go? ${run} day${run === 1 ? '' : 's'} in a row so far`
       : 'How did today go? A line is enough.'
+  const fold = useFold('journal', 'the journal')
   return (
-    <section className="chart-card journal-card">
+    <section className={'chart-card journal-card' + fold.className}>
       <header className="chart-head">
         <div>
           <h3>Journal</h3>
@@ -345,6 +347,7 @@ export function JournalCard({
         <button className="btn subtle" onClick={onOpenAll}>
           All entries
         </button>
+        {fold.control}
       </header>
       <JournalEditor entry={entry} date={today} people={people} onSave={onSave} onDelete={onDelete} rows={2} placeholder="A line about today…" />
       {yesterday && (yesterday.body.trim() || yesterday.mood) && (

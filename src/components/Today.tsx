@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { readFolded, toggleFold, writeFolded } from '../homefolds'
+import { Fold, HomeFolds, useFold } from './HomeFold'
 import { Icon } from './Icon'
 import {
   MEAL_SLOT_META,
@@ -553,12 +554,13 @@ export function FocusCard({
   /** Opens Plan my day at the focus step. */
   onEdit?(): void
 }) {
+  const fold = useFold('focus', 'Today’s focus')
   if (tasks.length === 0) return null
   const done = tasks.filter(t => t.status === 'done').length
   const allDone = done === tasks.length
   const sub = allDone ? (tasks.length === 3 ? 'All three done' : 'All done') : `${done} of ${tasks.length} done`
   return (
-    <section id="today-focus" className={'chart-card focus-card' + (allDone ? ' all-done' : '')}>
+    <section id="today-focus" className={'chart-card focus-card' + (allDone ? ' all-done' : '') + fold.className}>
       <header className="chart-head">
         <div>
           <h3>Today’s focus</h3>
@@ -569,6 +571,7 @@ export function FocusCard({
             Edit
           </button>
         )}
+        {fold.control}
       </header>
       <ul className="dash-list tlist">
         {tasks.map(t => {
@@ -612,22 +615,6 @@ function plannedLabel(dueAt?: string): string {
  * that header already had — two controls at the right, not one on top of
  * another (v3.29).
  */
-function Fold({ id, name, folded, onFold }: { id: string; name: string; folded: string[]; onFold(id: string): void }) {
-  const shut = folded.includes(id)
-  return (
-    <button
-      type="button"
-      className="btn subtle card-fold"
-      aria-expanded={!shut}
-      aria-label={`${shut ? 'Show' : 'Hide'} ${name}`}
-      title={shut ? `Show ${name}` : `Hide ${name}`}
-      onClick={() => onFold(id)}
-    >
-      <Icon name="chevron" size={16} />
-    </button>
-  )
-}
-
 export function Today({
   tasks,
   people,
@@ -919,6 +906,7 @@ export function Today({
   })()
 
   return (
+    <HomeFolds value={{ folded, onFold }}>
     <div className="insights today">
       <header className="today-head">
         <div>
@@ -1377,5 +1365,6 @@ export function Today({
         </section>
       )}
     </div>
+    </HomeFolds>
   )
 }

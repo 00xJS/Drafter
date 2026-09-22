@@ -22,6 +22,7 @@ import {
 import type { Forecast } from '../../weather'
 import type { WardrobeOpen } from '../planner/useNavigation'
 import { useCachedForecast } from './forecast'
+import { useFold } from '../HomeFold'
 import { Collage, GarmentPhoto } from './GarmentPhoto'
 
 /** How the shell is to save what the card logs: for an edit, the look as it was, which Undo writes back; and the toast (null: none). */
@@ -124,6 +125,10 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
   const chips = useMemo(() => todaySuggestions(ix, outfits, byId, 3, workDay ? 'work' : undefined), [ix, outfits, byId, workDay])
   const cached = useCachedForecast()
   const [withCoat, setWithCoat] = useState(false)
+  /* Only the headed form below folds. Once the day is dressed this card is a
+     single line with no heading at all, and folding a card with no heading
+     would leave nothing on the screen to open it again. */
+  const fold = useFold('wardrobe', 'What are you wearing?')
   if (!canDress(garments)) return null
 
   const forecast = given !== undefined ? given : cached
@@ -244,12 +249,13 @@ export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, 
   // with the coat asked for, each look takes it, unless it has outerwear of its own
   const dressed = (ids: string[]) => (withCoat && coat && !hasOuterwear(ids, byId) ? [...ids, coat.id] : ids)
   return (
-    <section className="chart-card wardrobe-card">
+    <section className={'chart-card wardrobe-card' + fold.className}>
       <header className="chart-head">
         <div>
           <h3>What are you wearing?</h3>
           <p className="chart-sub">Tap one to log it, or pick</p>
         </div>
+        {fold.control}
       </header>
       {/* the coat rides on the one-tap looks; with none to ride on, Pick… opens
           Outfit, which offers it for today itself */}

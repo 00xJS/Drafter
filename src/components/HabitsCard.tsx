@@ -4,6 +4,7 @@ import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { isDueOn, isDoneOn, streakOf, toggleDone } from '../habits'
 import { ConfirmButton } from './ConfirmButton'
+import { useFold } from './HomeFold'
 
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -61,9 +62,10 @@ export function HabitsCard({ habits, today, onSave, onDelete }: { habits: Habit[
   }
 
   const tick = (h: Habit) => onSave(toggleDone(h, today))
+  const fold = useFold('habits', 'Habits')
 
   return (
-    <section className="chart-card habits-card">
+    <section className={'chart-card habits-card' + fold.className}>
       <header className="chart-head">
         <div>
           <h3>Habits</h3>
@@ -74,6 +76,7 @@ export function HabitsCard({ habits, today, onSave, onDelete }: { habits: Habit[
             + Add
           </button>
         )}
+        {fold.control}
       </header>
 
       {editing === 'new' && <HabitForm {...{ name, setName, emoji, setEmoji, days, WEEKDAY_LETTERS, toggleDay, save, close }} isNew />}
