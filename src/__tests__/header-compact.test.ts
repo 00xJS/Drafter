@@ -6,13 +6,14 @@ import { sheetSource } from './source'
 /*
  * Landscape iPhones are 667–932pt wide, above the 640px phone breakpoint, so
  * they get the desktop header, with the notch's inset on each side. Its
- * controls want 1052px (1135px with Admin), so "+ New task" ran off the right
+ * controls want 1005px of layout (1087px with Admin), and the breakpoints are
+ * those plus a 15px scrollbar the media query counts and the layout does not, so "+ New task" ran off the right
  * edge. Up to 960px the header compacts to icons; from 961px it sheds only the
  * wordmark, the wide gaps and the sync pill's width, keeping the tab labels.
  * These pin how, and that no other width sees it.
  *
  * The two numbers were measured in a browser on 2026-09-16 with six tabs (sum
- * .topbar's children, its gaps and its padding above 1134px, with an .admin-btn
+ * bisecting .topbar's own width until no .icon-btn is under 36px, with an .admin-btn
  * injected — local mode renders none). They were 964/1046 with five tabs; the
  * Stats tab added 88px, which is why the shed range below is no longer the
  * owner's alone. Re-measure if a control is ever added to the header.
@@ -85,12 +86,13 @@ describe('landscape phones: the desktop header compacts to fit', () => {
     expect(topBar).toMatch(/className="btn primary new-post-btn"[^\n]*aria-label="New task"/)
   })
 
-  it('sheds the first things for EVERY window from 961px to 1051px, tab labels kept', () => {
+  it('sheds the first things for EVERY window from 961px to 1019px, tab labels kept', () => {
     // With five tabs the strip wanted 964px and only the owner's Admin pushed
     // it past 961, so this was scoped to `.topbar:has(.admin-btn)`. The sixth
-    // tab made it everyone's: between 961 and 1051 an ordinary header's search
+    // tab made it everyone's, and v3.29 handed only 46px back: between 961 and
+    // 1019 an ordinary header's search
     // and settings flex-squashed to 21px.
-    const shed = media('(min-width: 961px) and (max-width: 1051px)')
+    const shed = media('(min-width: 961px) and (max-width: 1019px)')
     expect(shed).toHaveLength(1)
     expect(rule(shed[0], '.topbar .brand > span:not(.brand-mark)')).toMatch(/display:\s*none/)
     expect(rule(shed[0], '.topbar .icon-btn')).toMatch(/flex:\s*none/)
@@ -100,28 +102,28 @@ describe('landscape phones: the desktop header compacts to fit', () => {
     expect(shed[0]).not.toMatch(/tab-label|new-post/)
   })
 
-  it('carries the owner, whose Admin button is 83px more, a further 83px to 1134px', () => {
-    const owner = media('(min-width: 1052px) and (max-width: 1134px)')
+  it('carries the owner, whose Admin button is 82px more, a further 82px to 1101px', () => {
+    const owner = media('(min-width: 1020px) and (max-width: 1101px)')
     expect(owner).toHaveLength(1)
     expect(rule(owner[0], '.topbar:has(.admin-btn) .brand > span:not(.brand-mark)')).toMatch(/display:\s*none/)
     expect(rule(owner[0], '.topbar:has(.admin-btn) .icon-btn')).toMatch(/flex:\s*none/)
     expect(rule(owner[0], '.topbar:has(.admin-btn) .sync-label')).toMatch(/text-overflow:\s*ellipsis/)
-    // every rule here is the owner's alone; below 1052px the block above covers them
+    // every rule here is the owner's alone; below 1020px the block above covers them
     for (const m of owner[0].matchAll(/([^{}]+)\{/g)) expect(m[1].trim()).toMatch(/^\.topbar:has\(\.admin-btn\)/)
     expect(owner[0]).not.toMatch(/tab-label|new-post/)
     expect(topBar).toMatch(/className="btn subtle admin-btn"/)
   })
 
-  it('leaves no width between 641px and 1134px where the icon buttons can squash', () => {
-    // the three ranges have to meet exactly, with no gap: 641–960, 961–1051,
-    // 1052–1134 (the last the owner's). A gap is where search and settings
+  it('leaves no width between 641px and 1101px where the icon buttons can squash', () => {
+    // the three ranges have to meet exactly, with no gap: 641–960, 961–1019,
+    // 1020–1101 (the last the owner's). A gap is where search and settings
     // shrink below their 36px square.
     // (641–759 is the tightest block, nested inside the first; it squares New
     // task and is not one of the three that protect the icon buttons.)
     const steps: [number, number][] = [
       [641, 960],
-      [961, 1051],
-      [1052, 1134],
+      [961, 1019],
+      [1020, 1101],
     ]
     for (const [lo, hi] of steps) expect(media(`(min-width: ${lo}px) and (max-width: ${hi}px)`), `${lo}–${hi}`).toHaveLength(1)
     for (let i = 1; i < steps.length; i++) expect(steps[i][0], `gap after ${steps[i - 1][1]}px`).toBe(steps[i - 1][1] + 1)

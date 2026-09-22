@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_KEEP, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, statsTabOfView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_INSIGHTS, LEGACY_VIEW_TO_KEEP, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, statsTabOfView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -27,6 +27,7 @@ interface Deps {
   setHomeTab: Nav['setHomeTab']
   setView: Nav['setView']
   openJournal: Nav['openJournal']
+  openReview: Nav['openReview']
   openPlace: Nav['openPlace']
   openPerson: Nav['openPerson']
   openStats: Nav['openStats']
@@ -56,6 +57,7 @@ export function useDeepLinks({
   setHomeTab,
   setView,
   openJournal,
+  openReview,
   openPlace,
   openPerson,
   openStats,
@@ -126,6 +128,9 @@ export function useDeepLinks({
     // one still lands on exactly what it named, now inside Keep or Insights
     const keptTab = viewIn(LEGACY_VIEW_TO_KEEP, parsed.view)
     const movedView = viewIn(LEGACY_VIEW, parsed.view)
+    // …and the two pages that left Home for Insights: ?view=review has been in
+    // the morning digest and the Sunday reminder since long before v3.29
+    const insightsTab = viewIn(LEGACY_VIEW_TO_INSIGHTS, parsed.view)
     if (tasksTab) {
       goTasksTab(tasksTab)
       setView('tasks')
@@ -151,6 +156,10 @@ export function useDeepLinks({
     } else if (keptTab) {
       goKeepTab(keptTab)
       setView('keep')
+    } else if (insightsTab === 'journal') {
+      openJournal()
+    } else if (insightsTab) {
+      openReview()
     } else if (movedView) {
       setView(movedView)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
@@ -168,10 +177,13 @@ export function useDeepLinks({
       // drafter://open?plan=day. The link writes nothing, and whatever else it
       // carries is ignored; the sheet writes only when its own button is
       // pressed. With no view of its own it opens over where the plan shows
-      // once it is applied: the day, or for next week the Week segment.
+      // once it is applied: the day, or for next week Insights' Review.
       if (!parsed.view) {
-        setHomeTab(parsed.plan === 'week' ? 'week' : 'today')
-        setView('home')
+        if (parsed.plan === 'week') openReview()
+        else {
+          setHomeTab('today')
+          setView('home')
+        }
       }
       openSheet(parsed.plan === 'day' ? { kind: 'day' } : parsed.plan === 'week' ? { kind: 'week' } : { kind: 'shutdown' })
       return

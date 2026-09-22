@@ -660,6 +660,7 @@ describe('?view=people-stats', () => {
       setHomeTab: log('homeTab'),
       setView: log('view'),
       openJournal: log('journal'),
+      openReview: log('review'),
       openPlace: log('place'),
       openPerson: log('person'),
       openStats: log('stats'),

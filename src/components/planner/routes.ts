@@ -27,15 +27,40 @@ export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'keep', 'insights']
 export type CalendarMode = 'month' | 'week' | 'day'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'day']
 export type PeopleTab = 'people' | 'places'
-/** Home's pages: the day, plus the week / journal / chat opened from it.
- *  The Wardrobe left for Keep in v3.29, where the other things you keep are. */
-export type HomeTab = 'today' | 'week' | 'journal' | 'chat'
-export const HOME_TABS: { key: HomeTab; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'week', label: 'Week' },
+/**
+ * Home's pages. It held four at v3.28 — the day, the week, the journal and
+ * the chat — and holds one at v3.29: Home IS the day.
+ *
+ * The Wardrobe went to Keep, the Week and the Journal archive to Insights, and
+ * the Chat to the top bar. Home keeps the chips that link to all of them,
+ * because a chip on the day is not the module: "6 days in a row so far" with a
+ * line to write in is Home's, the archive of what you wrote is not.
+ */
+export type HomeTab = 'today'
+export const HOME_TABS: { key: HomeTab; label: string }[] = [{ key: 'today', label: 'Today' }]
+
+/**
+ * Insights' three: the figures, what you wrote, and the week you just had.
+ *
+ * The lens is one of them rather than the whole tab. It shows counts and never
+ * text — "nothing you wrote is shown here" is a line the Journal segment of it
+ * draws on purpose — so the archive cannot live inside it. It sits beside it.
+ */
+export type InsightsTab = 'stats' | 'journal' | 'review'
+export const INSIGHTS_TABS: { key: InsightsTab; label: string }[] = [
+  { key: 'stats', label: 'Stats' },
   { key: 'journal', label: 'Journal' },
-  { key: 'chat', label: 'Chat' },
+  { key: 'review', label: 'Review' },
 ]
+export const INSIGHTS_TAB_KEY = 'drafter:insights-tab'
+export const storedInsightsTab = (): InsightsTab => {
+  try {
+    const saved = localStorage.getItem(INSIGHTS_TAB_KEY)
+    return INSIGHTS_TABS.find(t => t.key === saved)?.key ?? 'stats'
+  } catch {
+    return 'stats'
+  }
+}
 
 /** Keep's four segments: who you see, where you go, what you eat, what you wear. */
 export type KeepTab = 'people' | 'places' | 'kitchen' | 'wardrobe'
@@ -67,8 +92,9 @@ export const TASKS_TABS: { key: TasksTab; label: string }[] = [
 /** Old inbound links (drafter://…?view=board|bills|notes) still resolve: they
  *  land on the Tasks tab with that segment open. */
 export const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', bills: 'bills', notes: 'notes' }
-/** …and the former Today / Review views land on the matching Home segment. */
-export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week' }
+/** …and the former Today view lands on Home. `?view=review` names Insights’
+ *  Review segment now, through LEGACY_VIEW_TO_INSIGHTS. */
+export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today' }
 /**
  * The tabs that stopped being tabs in v3.29. `?view=people`, `?view=places`,
  * `?view=kitchen` and `?view=wardrobe` are in Shortcuts, reminders and the
@@ -78,6 +104,8 @@ export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', re
  */
 export const LEGACY_VIEW_TO_KEEP: Record<string, KeepTab> = { people: 'people', places: 'places', kitchen: 'kitchen', wardrobe: 'wardrobe' }
 export const LEGACY_VIEW: Record<string, View> = { stats: 'insights' }
+/** …and the two pages that left Home for Insights keep the names they had. */
+export const LEGACY_VIEW_TO_INSIGHTS: Record<string, InsightsTab> = { review: 'review', journal: 'journal' }
 /** What a link's view names in one of these tables, or null: a table's own
  *  names only, so `?view=constructor` or `?view=__proto__` names nothing. */
 export const viewIn = <T>(table: Record<string, T>, view: string | undefined): T | null =>

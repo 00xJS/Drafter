@@ -47,6 +47,7 @@ function links() {
     setHomeTab: log('homeTab'),
     setView: log('view'),
     openJournal: log('journal'),
+      openReview: log('review'),
     openPlace: log('place'),
     openWardrobe: log('wardrobe'),
     changeStatus: log('changeStatus'),
@@ -86,13 +87,13 @@ describe('plan= links open a sheet and write nothing (B5)', () => {
     expect(calls).toEqual(['view ["calendar"]', 'openSheet [{"kind":"shutdown"}]'])
   })
 
-  it('plan=week opens Plan next week over the Week segment', () => {
+  it('plan=week opens Plan next week over Insights’ Review', () => {
     const a = links()
     a.apply('/?plan=week')
-    expect(a.calls).toEqual(['homeTab ["week"]', 'view ["home"]', 'openSheet [{"kind":"week"}]'])
+    expect(a.calls).toEqual(['review []', 'openSheet [{"kind":"week"}]'])
     const b = links()
     b.apply('/?view=review&plan=week')
-    expect(b.calls).toEqual(['homeTab ["week"]', 'view ["home"]', 'openSheet [{"kind":"week"}]'])
+    expect(b.calls).toEqual(['review []', 'openSheet [{"kind":"week"}]'])
   })
 
   it('writes nothing, even beside a notification’s action on a task', () => {

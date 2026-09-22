@@ -20,6 +20,7 @@ import {
   KEEP_TABS,
   KEEP_TAB_KEY,
   LEGACY_VIEW,
+  LEGACY_VIEW_TO_INSIGHTS,
   LEGACY_VIEW_TO_KEEP,
   VIEW_TO_WARDROBE,
   VIEWS,
@@ -59,9 +60,9 @@ describe('five tabs, the same on the phone and the desktop', () => {
   })
 
   it('keeps the segments each tab holds', () => {
-    // Chat is a page Home opens (v3.26), like Week and Journal. The Wardrobe
-    // was one too until v3.29, when it went to Keep with the other things you keep
-    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'chat'])
+    // Home IS the day at v3.29: the Wardrobe went to Keep, the Week and the
+    // Journal archive to Insights, and the Chat to a sheet off the top bar
+    expect(HOME_TABS.map(t => t.key)).toEqual(['today'])
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'day'])
   })
@@ -161,8 +162,11 @@ describe('old links still land on a segment', () => {
     for (const tab of Object.values(LEGACY_VIEW_TO_TASKS)) expect(segments).toContain(tab)
   })
 
-  it('sends the former Today and Review views to Home’s day and week', () => {
-    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today', review: 'week' })
+  it('sends the former Today view to Home, and Review to Insights', () => {
+    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today' })
+    // ?view=review names Insights' Review segment now
+    expect(LEGACY_VIEW_TO_INSIGHTS.review).toBe('review')
+    expect(LEGACY_VIEW_TO_INSIGHTS.journal).toBe('journal')
     const segments = HOME_TABS.map(t => t.key) as string[]
     for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(segments).toContain(tab)
     // and every view that stopped being a tab lands on the segment it named
@@ -197,8 +201,9 @@ describe('old links still land on a segment', () => {
 
   it('reads every link table by its own names, so an inherited one names nothing', () => {
     expect(viewIn(LEGACY_VIEW_TO_TASKS, 'board')).toBe('board')
-    expect(viewIn(LEGACY_VIEW_TO_HOME, 'review')).toBe('week')
-    for (const table of [LEGACY_VIEW_TO_TASKS, LEGACY_VIEW_TO_HOME, STATS_VIEW_TO_PEOPLE, VIEW_TO_KITCHEN, VIEW_TO_WARDROBE] as Record<string, unknown>[])
+    expect(viewIn(LEGACY_VIEW_TO_HOME, 'today')).toBe('today')
+    expect(viewIn(LEGACY_VIEW_TO_INSIGHTS, 'review')).toBe('review')
+    for (const table of [LEGACY_VIEW_TO_TASKS, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_KEEP, LEGACY_VIEW_TO_INSIGHTS, STATS_VIEW_TO_PEOPLE, VIEW_TO_KITCHEN, VIEW_TO_WARDROBE] as Record<string, unknown>[])
       for (const name of [undefined, '', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(viewIn(table, name), String(name)).toBeNull()
   })
 

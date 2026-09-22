@@ -1,16 +1,17 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import { storedInnerView, type HomeTab, type InnerView, type KeepTab, type KitchenTab, type PeopleTab, type StatsTab, type TasksTab, type View } from './routes'
+import { storedInnerView, type InnerView, type KeepTab, type KitchenTab, type PeopleTab, type StatsTab, type TasksTab, type View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
 /** The moves the palette makes (useNavigation's, or a stand-in in a test). */
 export interface PaletteNav {
   goView(v: View): void
-  setHomeTab(tab: HomeTab): void
   setView(v: View): void
   openJournal(date?: string): void
+  /** The week you just had — Insights' Review segment. */
+  openReview(): void
   goTasksTab(tab: TasksTab): void
   setKeepTab(tab: KeepTab): void
   /** A segment of People's List · Stats, for this visit only. */
@@ -40,7 +41,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens } = nav
+  const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places — two of Keep's four — remembered as its button would,
@@ -67,7 +68,7 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'add-clothing', label: 'Add clothing', icon: 'camera', quick: false, keywords: 'photo garment top bottom shirt', run: () => openWardrobe({ tab: 'clothes', add: true }) },
     { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
-    { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => { setHomeTab('week'); setView('home') } },
+    { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => openReview() },
     { id: 'go-journal', label: 'Journal', icon: 'journal', keywords: 'diary write', run: () => openJournal(localDayKey()) },
     { id: 'go-wardrobe', label: 'Wardrobe', icon: 'wardrobe', keywords: 'clothes outfit closet wear', run: () => openWardrobe() },
     { id: 'go-tasks', label: 'Tasks', icon: 'tasks', keywords: 'list', run: () => { goTasksTab('list'); setView('tasks') } },

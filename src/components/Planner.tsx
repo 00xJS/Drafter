@@ -14,10 +14,10 @@ import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { HomeScreen } from './planner/HomeScreen'
+import { InsightsScreen } from './planner/InsightsScreen'
 import { KeepScreen } from './planner/KeepScreen'
 import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
-import { StatsScreen } from './planner/StatsScreen'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
 import { Toast } from './planner/Toast'
@@ -162,7 +162,7 @@ export default function Planner() {
               {view === 'calendar' && <CalendarScreen p={p} />}
               {view === 'tasks' && <TasksScreen p={p} />}
               {view === 'keep' && <KeepScreen p={p} />}
-              {view === 'insights' && <StatsScreen p={p} />}
+              {view === 'insights' && <InsightsScreen p={p} />}
             </Suspense>
           </ErrorBoundary>
         )}

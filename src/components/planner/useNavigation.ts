@@ -5,12 +5,14 @@ import { readChatSeen, writeChatSeen } from '../../chat'
 import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
+  INSIGHTS_TAB_KEY,
   KEEP_TAB_KEY,
   STATS_TAB_KEY,
   TASKS_TAB_KEY,
   storedCalMode,
   storedInnerViews,
   storedKitchenTab,
+  storedInsightsTab,
   storedKeepTab,
   storedStatsTab,
   storedTasksTab,
@@ -19,6 +21,7 @@ import {
   type InnerView,
   type InnerViews,
   type KitchenTab,
+  type InsightsTab,
   type KeepTab,
   type PeopleTab,
   type StatsTab,
@@ -79,6 +82,17 @@ export function useNavigation() {
   const [innerViews, showInnerViews] = useState<InnerViews>(storedInnerViews)
   /** Move a segment's List · Stats for this visit only. */
   const goInnerView = (tab: PeopleTab, v: InnerView) => startTransition(() => showInnerViews(cur => (cur[tab] === v ? cur : { ...cur, [tab]: v })))
+  /** Insights' own segment — Stats · Journal · Review — as last chosen on its track. */
+  const [insightsTab, showInsightsTab] = useState<InsightsTab>(storedInsightsTab)
+  const goInsightsTab = (tab: InsightsTab) => startTransition(() => showInsightsTab(tab))
+  const setInsightsTab = (tab: InsightsTab) => {
+    goInsightsTab(tab)
+    try {
+      localStorage.setItem(INSIGHTS_TAB_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }
   /** The Stats lens's segment, as last chosen on its own buttons; a link or the palette moves it for that visit alone. */
   const [statsTab, showStatsTab] = useState<StatsTab>(storedStatsTab)
   const goStatsTab = (tab: StatsTab) => startTransition(() => showStatsTab(tab))
@@ -149,12 +163,21 @@ export function useNavigation() {
       // link would still be sitting there the next time you moved to it
       setKitchenOpen(storedKitchenTab())
     }
-    if (v === 'insights') goStatsTab(storedStatsTab())
+    if (v === 'insights') {
+      goInsightsTab(storedInsightsTab())
+      goStatsTab(storedStatsTab())
+    }
     setView(v)
   }
   /** The lens, on one of its segments (a link, the palette), for this visit only. */
   const openLens = (tab?: StatsTab) => {
     if (tab) goStatsTab(tab)
+    goInsightsTab('stats')
+    setView('insights')
+  }
+  /** The week you just had — Insights' Review segment (Home's card, the palette, ?view=review). */
+  const openReview = () => {
+    goInsightsTab('review')
     setView('insights')
   }
   /**
@@ -226,10 +249,12 @@ export function useNavigation() {
     goInnerView(tab, 'stats')
     setView('keep')
   }
+  /** The journal archive — Insights' Journal segment. Writing today's line is
+   *  Home's card and does not come through here. */
   const openJournal = (date?: string) => {
     if (date) setJournalOpenDate(date)
-    setHomeTab('journal')
-    setView('home')
+    goInsightsTab('journal')
+    setView('insights')
   }
   /** A recipe for Kitchen to open (Today's "tonight's dinner"); consumed by the view. */
   const [kitchenRecipe, setKitchenRecipe] = useState<Recipe | null>(null)
@@ -298,6 +323,10 @@ export function useNavigation() {
     goStatsTab,
     setStatsTab,
     openLens,
+    openReview,
+    insightsTab,
+    goInsightsTab,
+    setInsightsTab,
     homeTab,
     setHomeTab,
     setTasksTab,

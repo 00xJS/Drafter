@@ -189,6 +189,23 @@
   justify-content: center;
 }
 
+/* Somebody else fills this one, so it is a dot rather than a number: the count
+   is on the thread itself, and a badge that has to be read is a badge that
+   competes with the tabs beside it. */
+.chat-btn {
+  position: relative;
+}
+.chat-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--surface);
+}
+
 .spacer {
   flex: 1;
 }

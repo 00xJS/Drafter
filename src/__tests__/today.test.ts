@@ -133,7 +133,7 @@ describe('the journal is two taps away, and never moves under the caret', () => 
   it('opens the journal on today’s editor from Today, not the stats above it', () => {
     expect(planner).toMatch(/onOpenJournal=\{\(\) => openJournal\(localDayKey\(\)\)\}/)
     // openJournal moves Home to its journal segment and opens the day asked for
-    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[\s\S]*?setJournalOpenDate\(date\)[\s\S]*?setHomeTab\('journal'\)[\s\S]*?setView\('home'\)/)
+    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[\s\S]*?setJournalOpenDate\(date\)[\s\S]*?goInsightsTab\('journal'\)[\s\S]*?setView\('insights'\)/)
   })
 })
 
@@ -226,22 +226,26 @@ describe('a remembered segment may not hijack a destination', () => {
 
   it('opens a place and the journal without pinning the segment for good', () => {
     expect(planner).toMatch(/const openPlace = \([^)]*\) => \{[^}]*goKeepTab\('places'\)/)
-    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[^}]*setHomeTab\('journal'\)/)
+    expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[^}]*goInsightsTab\('journal'\)/)
     expect(planner).not.toMatch(/const openPlace[\s\S]{0,240}setKeepTab\(/)
   })
 
-  it('sends "Open review" to the week page on Home, not a peer tab', () => {
-    expect(planner).toMatch(/onOpenReview=\{\(\) => setHomeTab\('week'\)\}/)
+  it('sends "Open review" to Insights’ Review segment, not a peer tab', () => {
+    expect(planner).toMatch(/onOpenReview=\{openReview\}/)
+    expect(planner).toMatch(/const openReview = \(\) => \{\s*goInsightsTab\('review'\)\s*setView\('insights'\)/)
   })
 
-  it('reaches the review as a page on Home, not a tab of its own', () => {
-    // Home is the day; Week and Journal open from its cards
-    expect(planner).toMatch(/homeTab === 'week' && \(/)
+  it('reaches the review as a segment of Insights, never a tab of its own', () => {
+    // Home is the day; the week you just had is something you look back at,
+    // which is what Insights is for (v3.29)
+    expect(planner).toMatch(/insightsTab === 'review' && \(/)
     expect(planner).toMatch(/<Review/)
     expect(planner).not.toMatch(/view === 'review'/)
     expect(planner).not.toMatch(/view === 'today'/)
     expect(planner).not.toMatch(/HOME_TABS\.map/)
-    expect(planner).toMatch(/className="btn subtle notes-back"/)
+    // …and it needs no "Today" button back, because it is not a page hanging
+    // off the day any more: the tab bar is the way out (v3.29)
+    expect(planner).not.toMatch(/className="btn subtle notes-back"/)
   })
 
   it('re-reads the remembered half when a tab bar is tapped', () => {

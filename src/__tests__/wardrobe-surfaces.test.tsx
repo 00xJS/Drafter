@@ -705,9 +705,10 @@ describe('the Week review shows what you wore', () => {
     expect(review({ onOpenWardrobe: undefined })).not.toContain('What you wore')
   })
 
-  it('is handed the wardrobe by Home', () => {
-    const home = read('../components/planner/HomeScreen.tsx')
-    const week = home.slice(home.indexOf('<Review'), home.indexOf('/>', home.indexOf('<Review')))
+  it('is handed the wardrobe by Insights', () => {
+    // the Review left Home for Insights in v3.29
+    const insights = read('../components/planner/InsightsScreen.tsx')
+    const week = insights.slice(insights.indexOf('<Review'), insights.indexOf('/>', insights.indexOf('<Review')))
     for (const prop of ['garments={store.garments}', 'wears={store.wears}', 'onOpenWardrobe={openWardrobe}']) expect(week).toContain(prop)
   })
 })

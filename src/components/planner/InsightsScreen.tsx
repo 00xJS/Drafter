@@ -1,0 +1,81 @@
+import { newerStamp } from '../../itemops'
+import type { PlannerCtx } from './ctx'
+import { JournalView } from '../Journal'
+import { Review } from './lazy'
+import { INSIGHTS_TABS } from './routes'
+import { StatsScreen } from './StatsScreen'
+import { Segmented } from '../stats/Segmented'
+
+/**
+ * Insights: the one tab you never add anything to.
+ *
+ * Three segments. **Stats** is the lens — every figure the app keeps, nine
+ * scrolling segments of it. **Journal** is the archive of what you wrote.
+ * **Review** is the week you just had.
+ *
+ * The archive sits BESIDE the lens rather than inside it, and that is not
+ * tidiness: the lens's own Journal segment says "Counts and moods only —
+ * nothing you wrote is shown here", which is a line the journal being personal
+ * draws. Figures about the journal and the journal itself are two different
+ * things to look at, and only one of them is safe to put on a chart.
+ *
+ * Both moved here from Home in v3.29, where they were pages hanging off the
+ * day. Writing today's line is still Home's — that is capture, and it belongs
+ * on the day; reading back what you wrote is this tab's.
+ */
+export function InsightsScreen({ p }: { p: PlannerCtx }) {
+  const { store, household, showToast, insightsTab, setInsightsTab } = p
+  const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, openSheet, openWardrobe } = p
+  return (
+    <>
+      <div className="people-tab-seg insights-seg">
+        <Segmented items={INSIGHTS_TABS} value={insightsTab} onChange={t => setInsightsTab(t)} label="Insights view" />
+      </div>
+      {insightsTab === 'stats' && <StatsScreen p={p} />}
+      {insightsTab === 'journal' && (
+        <JournalView
+          entries={store.journal}
+          people={store.people}
+          onSave={(e: Parameters<typeof store.upsert>[0]) => store.upsert(e)}
+          onDelete={(id: string) => {
+            store.remove(id)
+            showToast('Journal entry removed', () => store.restore([id]))
+          }}
+          openDate={journalOpenDate}
+          onOpenDateConsumed={() => setJournalOpenDate(null)}
+        />
+      )}
+      {insightsTab === 'review' && (
+        <Review
+          tasks={store.tasks}
+          projects={store.projects}
+          people={store.people}
+          reviews={store.reviews}
+          journal={store.journal}
+          places={store.places}
+          habits={store.habits}
+          entries={store.events}
+          // whose week this is: who you saw and where you went are yours (v3.24)
+          myId={household.myId}
+          onSaveReview={r => store.upsert(r)}
+          onOpen={openTask}
+          onStatus={changeStatus}
+          onReschedule={(ids, dueAt) => {
+            for (const id of ids) {
+              const t = store.tasks.find(x => x.id === id)
+              if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
+            }
+            showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
+          }}
+          onNew={preset => newTask(preset)}
+          onPlanWeek={() => openSheet({ kind: 'week' })}
+          // what you wore that week: a look opens the composer on its day, the
+          // most worn piece its sheet
+          garments={store.garments}
+          wears={store.wears}
+          onOpenWardrobe={openWardrobe}
+        />
+      )}
+    </>
+  )
+}

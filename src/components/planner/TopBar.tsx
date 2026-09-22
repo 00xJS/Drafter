@@ -1,9 +1,10 @@
+import { unreadSince } from '../../chat'
 import { warm } from '../../lazyload'
 import { isSupabaseConfigured } from '../../supabase'
 import { timeAgo } from '../../utils'
 import { Icon } from '../Icon'
 import type { PlannerCtx } from './ctx'
-import { Search, Settings, TaskEditor, preloadView } from './lazy'
+import { Chat, Search, Settings, TaskEditor, preloadView } from './lazy'
 import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
 
 /**
@@ -13,9 +14,11 @@ import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
  * what it opens, so the tap that follows finds it here.
  */
 export function TopBar({ p }: { p: PlannerCtx }) {
-  const { view, goView, store, syncing, manualSync, setSearchOpen, setSettingsOpen, isOwner, setAdminOpen, newTask } = p
+  const { view, goView, store, syncing, manualSync, setSearchOpen, setSettingsOpen, setChatOpen, chatSeenAt, household, isOwner, setAdminOpen, newTask } = p
+  const unread = unreadSince(store.messages, chatSeenAt, household.myId)
   const warmSearch = () => warm(Search.preload)
   const warmSettings = () => warm(Settings.preload)
+  const warmChat = () => warm(Chat.preload)
   const warmEditor = () => warm(TaskEditor.preload)
   return (
     <header className="topbar">
@@ -91,6 +94,22 @@ export function TopBar({ p }: { p: PlannerCtx }) {
         onFocus={warmSearch}
       >
         <Icon name="search" size={19} />
+      </button>
+      {/* The chat sits with Search rather than in a tab: the household half is
+          a thread somebody else writes to, so its badge has to be visible from
+          wherever you are, and the assistant half is a thing you summon. The
+          palette has reached the assistant by name all along ("Ask Drafter");
+          this is the door the thread never had (v3.29). */}
+      <button
+        className="btn subtle icon-btn chat-btn"
+        aria-label={unread > 0 ? `Chat, ${unread} unread` : 'Chat'}
+        title="Chat"
+        onClick={() => setChatOpen(true)}
+        onPointerDown={warmChat}
+        onFocus={warmChat}
+      >
+        <Icon name="chat" size={19} />
+        {unread > 0 && <span className="chat-dot" aria-hidden />}
       </button>
       <button className="btn subtle icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)} onPointerDown={warmSettings} onFocus={warmSettings}>
         <Icon name="settings" size={19} />

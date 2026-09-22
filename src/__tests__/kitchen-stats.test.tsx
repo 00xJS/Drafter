@@ -656,6 +656,7 @@ describe('the ways to it', () => {
       setHomeTab: log('homeTab'),
       setView: log('view'),
       openJournal: log('journal'),
+      openReview: log('review'),
       openPlace: log('place'),
       openPerson: log('person'),
       openKitchen: log('kitchen'),

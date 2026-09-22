@@ -18,6 +18,9 @@ export function useOverlays() {
   const [trashOpen, setTrashOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /** The chat, as a sheet off the top bar since v3.29: a thing you summon from
+   *  wherever you are, not a place you browse to. */
+  const [chatOpen, setChatOpen] = useState(false)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
   const [adminOpen, setAdminShown] = useState(false)
@@ -58,7 +61,7 @@ export function useOverlays() {
   const openProject = (project: Project) => setProjectEditor({ project })
 
   /** Pull to refresh stands down while any of these owns the screen. */
-  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || trashOpen || adminOpen
+  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || settingsOpen || chatOpen || trashOpen || adminOpen
 
   return {
     sheet,
@@ -73,6 +76,8 @@ export function useOverlays() {
     searchOpen,
     setSearchOpen,
     settingsOpen,
+    chatOpen,
+    setChatOpen,
     setSettingsOpen,
     settingsNonce,
     setSettingsNonce,

@@ -1158,6 +1158,45 @@
    the bar, which is what clipped the Assistant's box in half. No
    --keyboard-h term anywhere near it: that is a signal, not an inset, and
    resize:'native' has already shortened the WebView (01-base.css). */
+/* Summoned from the top bar, so it opens as a sheet over the page rather than
+   inside one: a thread is a place you go into and come back out of, and half
+   of it is a conversation with another person.
+   It is a real <Modal> and not a hand-rolled overlay — a11y.test.ts holds every
+   dialog to that, and rightly: the trap, Escape, the focus that goes back
+   where it came from and the grab handle's drag all live there. What it needs
+   of its own is height, because the thread and its composer are the content
+   and a 65vh body would cut them off. */
+.chat-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 80px);
+}
+.chat-modal > .chat {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 8px;
+}
+/* the composer cleared the tab bar when the chat was a page under it; a sheet
+   is OVER that bar, so all it owes is the home indicator */
+.chat-modal .chat-composer {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+}
+
+/* The chat's way out travels with its own track rather than sitting in a
+   header it does not have. */
+.chat-seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-seg > .segmented {
+  flex: 1;
+  min-width: 0;
+}
+.chat-close {
+  flex: none;
+}
+
 .chat-composer {
   position: sticky;
   bottom: 0;

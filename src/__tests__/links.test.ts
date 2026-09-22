@@ -244,7 +244,7 @@ describe('Home Screen quick actions', () => {
     expect(router).toMatch(/\} else if \(keptTab\) \{\s*goKeepTab\(keptTab\)\s*setView\('keep'\)/)
     expect(router).toMatch(/\} else if \(homeTab\) \{\s*setHomeTab\(homeTab\)\s*setView\('home'\)/)
     // ?plan=day with no view: Home → Today, and the day's planning sheet over it
-    expect(router).toMatch(/if \(!parsed\.view\) \{\s*setHomeTab\(parsed\.plan === 'week' \? 'week' : 'today'\)\s*setView\('home'\)/)
+    expect(router).toMatch(/if \(!parsed\.view\) \{\s*if \(parsed\.plan === 'week'\) openReview\(\)/)
     expect(router).toContain("openSheet(parsed.plan === 'day' ? { kind: 'day' }")
   })
 })

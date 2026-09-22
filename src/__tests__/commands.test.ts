@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Search } from '../components/Search'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
-import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type KeepTab, type KitchenTab, type StatsTab, type TasksTab, type View } from '../components/planner/routes'
+import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type InsightsTab, type KeepTab, type KitchenTab, type StatsTab, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
@@ -31,6 +31,8 @@ interface ShellState {
   wardrobe: WardrobeOpen | null
   /** the one-shot Kitchen segment, when a command named one */
   kitchenTab: KitchenTab | null
+  /** Insights' own segment: the lens, the journal archive or the week */
+  insightsTab: InsightsTab
   /** the one-shot Stats lens segment, when a command named one */
   statsTab: StatsTab | null
   settingsOpen: boolean
@@ -43,7 +45,7 @@ interface ShellState {
 const STARTS: ShellState[] = [
   {
     view: 'keep',
-    homeTab: 'journal',
+    homeTab: 'today',
     tasksTab: 'notes',
     keepTab: 'places',
     peopleView: 'list',
@@ -60,6 +62,7 @@ const STARTS: ShellState[] = [
     wardrobe: null,
     kitchenTab: null,
     statsTab: null,
+    insightsTab: 'stats',
     settingsOpen: false,
     newTasks: [],
     sheets: [],
@@ -83,6 +86,7 @@ const STARTS: ShellState[] = [
     wardrobe: null,
     kitchenTab: null,
     statsTab: null,
+    insightsTab: 'stats',
     settingsOpen: false,
     newTasks: [],
     sheets: [],
@@ -108,7 +112,10 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       if (v === 'home') s.homeTab = 'today'
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
       if (v === 'calendar') s.calMode = s.rememberedCal
-      if (v === 'insights') s.statsTab = s.rememberedStats
+      if (v === 'insights') {
+        s.statsTab = s.rememberedStats
+        s.insightsTab = 'stats'
+      }
       if (v === 'keep') {
         s.keepTab = s.rememberedKeep
         s.peopleView = s.rememberedPeopleView
@@ -121,16 +128,17 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       if (tab === 'people') s.peopleView = v
       else s.placesView = v
     },
-    setHomeTab: tab => {
-      s.homeTab = tab
-    },
     setView: v => {
       s.view = v
     },
+    openReview: () => {
+      s.view = 'insights'
+      s.insightsTab = 'review'
+    },
     openJournal: date => {
       if (date) s.journalDate = date
-      s.homeTab = 'journal'
-      s.view = 'home'
+      s.insightsTab = 'journal'
+      s.view = 'insights'
     },
     goTasksTab: tab => {
       s.tasksTab = tab
@@ -151,6 +159,7 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     },
     openLens: tab => {
       if (tab) s.statsTab = tab
+      s.insightsTab = 'stats'
       s.view = 'insights'
     },
   }
@@ -223,8 +232,8 @@ describe('the palette’s own commands', () => {
 
   const landings: [string, Partial<ShellState>][] = [
     ['go-home', { view: 'home', homeTab: 'today' }],
-    ['go-week', { view: 'home', homeTab: 'week' }],
-    ['go-journal', { view: 'home', homeTab: 'journal' }],
+    ['go-week', { view: 'insights', insightsTab: 'review' }],
+    ['go-journal', { view: 'insights', insightsTab: 'journal' }],
     ['go-wardrobe', { view: 'keep', keepTab: 'wardrobe' }],
     ['go-tasks', { view: 'tasks', tasksTab: 'list' }],
     ['go-board', { view: 'tasks', tasksTab: 'board' }],

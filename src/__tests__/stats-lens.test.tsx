@@ -610,7 +610,7 @@ describe('the Insights tab', () => {
   })
 
   it('is mounted by the shell on its own view', () => {
-    expect(readSource('components/Planner.tsx')).toContain("{view === 'insights' && <StatsScreen p={p} />}")
+    expect(readSource('components/Planner.tsx')).toContain("{view === 'insights' && <InsightsScreen p={p} />}")
   })
 
   it('gathers what the areas need and counts nothing itself', () => {

@@ -6,9 +6,10 @@ import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { Modal, ModalHead } from '../Modal'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
-import { Admin, AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { Admin, AskSheet, AttendancePicker, Chat, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, Settings, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
 
 /** The zone "today" and every day in the planning sheets are read in. */
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -73,6 +74,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, settingsOpen, setSettingsOpen, settingsNonce, adminOpen, setAdminOpen, adminGroup, isOwner } = p
+  const { chatOpen, setChatOpen, chatSide, setChatSide, markChatSeen } = p
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { calendars, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
@@ -327,6 +329,63 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             }}
             onClose={closeSheet}
           />
+        </Layer>
+      )}
+
+      {/* The chat, summoned from the top bar rather than browsed to. It reads
+          across every tab, and the household half carries a badge somebody
+          else fills — both of which want it reachable from wherever you are,
+          not from one tab you have to go to first (v3.29). A real Modal, not a
+          hand-rolled overlay: the focus trap, Escape, the focus that goes back
+          where it came from and the grab handle's drag all live there, and
+          a11y.test.ts holds every dialog to it. */}
+      {chatOpen && (
+        <Layer name="the chat">
+          <Modal onClose={() => setChatOpen(false)} className="modal chat-modal">
+            <ModalHead title="Chat" />
+            <Chat
+              side={chatSide}
+              onSide={setChatSide}
+              // opening the household thread is reading it: the badge clears here,
+              // not on a timer, so a message arriving while you read never counts
+              onSeen={markChatSeen}
+              // the household's thread, and yours with the assistant. Two kinds,
+              // two threads, and the second is personal at the database (v3.26)
+              messages={store.messages}
+              turns={store.chat}
+              household={household.info}
+              myId={household.myId}
+              // what the assistant may read: the same list Ask is handed, minus the
+              // journal — a chat that remembers what it was told is not where a
+              // diary belongs, and Ask's own chip is the place to turn that on
+              sources={{
+                tasks: store.tasks,
+                projects: store.projects,
+                people: store.people,
+                places: store.places,
+                recipes: store.recipes,
+                meals: store.meals,
+                entries: store.events,
+                feedEvents: allEvents,
+                journal: [],
+                garments: store.garments,
+                outfits: store.outfits,
+                wears: store.wears,
+              }}
+              tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onSendMessage={m => store.upsert(m)}
+              onRemoveMessage={id => {
+                store.remove(id)
+                showToast('Message deleted', () => store.restore([id]))
+              }}
+              onWriteTurn={t => store.upsert(t)}
+              onClearChat={ids => {
+                for (const id of ids) store.remove(id)
+                showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => store.restore(ids))
+              }}
+              onOpen={openAskDoc}
+            />
+          </Modal>
         </Layer>
       )}
 

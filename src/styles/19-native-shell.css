@@ -206,6 +206,9 @@
   .native .people-tab-seg.keep-seg .segmented .seg {
     padding-inline: 6px;
   }
+  .native .people-tab-seg.insights-seg .segmented .seg {
+    padding-inline: 6px;
+  }
 }
 
 /* --- Pull to refresh. Only the disc moves: the body is the scroller and the

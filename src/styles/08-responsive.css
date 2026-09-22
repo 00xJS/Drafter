@@ -18,10 +18,15 @@
 /* ---------- compact header: landscape phones and narrow windows ----------
    Every iPhone is wider than 640pt on its side, so landscape gets the desktop
    header, less the notch's inset on each side (--safe-l / --safe-r, up to
-   59pt). Its controls want 1052px, 1135px with Admin (measured 2026-09-16 with
-   six tabs; re-measure by summing .topbar's children plus its gaps and padding
-   at a width where nothing compacts, above 1134px, with an .admin-btn injected
-   — local mode renders none). So at 667–932pt "+ New task" ran off the right
+   59pt). Its controls want 1005px of LAYOUT, 1087px with Admin (measured
+   2026-09-21 with five tabs and the chat button). The breakpoints below are
+   those plus 15: a classic scrollbar takes 15px out of the layout that the
+   media query still counts, so a boundary set at the layout figure squashes
+   the icons for the first 15px above it — which is exactly what happened when
+   1006 was tried. Re-measure by bisecting .topbar's own width until no
+   .icon-btn is under 36px, at a viewport where nothing compacts, with an
+   .admin-btn injected (local mode renders none); then add the scrollbar.
+   So at 667–932pt "+ New task" ran off the right
    edge. Up to 960px the header sheds width the
    way the phone bar does: the wordmark goes (the container keeps the name),
    the tabs become icons (each label stays in its button, hidden to the eye
@@ -92,8 +97,10 @@
 
    This used to be the owner's alone, because with five tabs the strip wanted
    964px and only Admin pushed it past 961. The sixth tab (Stats, 2026-09-15)
-   added 88px, so EVERY window from 961px to 1051px needs it now. */
-@media (min-width: 961px) and (max-width: 1051px) {
+   added 88px, and v3.29 took a tab away and put the chat button in its place —
+   46px back, not all of it — so EVERY window from 961px to 1019px still needs
+   it. */
+@media (min-width: 961px) and (max-width: 1019px) {
   .topbar {
     gap: 10px;
   }
@@ -117,10 +124,10 @@
   }
 }
 
-/* …and the owner's header carries Admin too, 83px more, so it needs the same
-   treatment for a further stretch, up to 1134px. Below 1052px the block above
+/* …and the owner's header carries Admin too, 82px more, so it needs the same
+   treatment for a further stretch, up to 1101px. Below 1020px the block above
    already covers them. */
-@media (min-width: 1052px) and (max-width: 1134px) {
+@media (min-width: 1020px) and (max-width: 1101px) {
   .topbar:has(.admin-btn) {
     gap: 10px;
   }
@@ -426,8 +433,15 @@
   .topbar .brand > span:not(.brand-mark) {
     display: none;
   }
-  /* the owner's admin route moves into Settings on a phone */
-  .admin-btn {
+  /* The owner's admin route moves into Settings ▸ Data on a phone
+     (settings/AdminLink.tsx). `.topbar .btn` rather than `.admin-btn` alone,
+     because the iOS shell's `.native .btn` sets `display: inline-flex` to
+     centre a button's label, and at (0,2,0) it outranked the (0,1,0) here —
+     so this rule had never once taken effect inside the app, and the owner's
+     phone carried an Admin button the header had no room for. It only showed
+     up when the chat button arrived and pushed the sync pill down to "0.."
+     (v3.29). */
+  .topbar .btn.admin-btn {
     display: none;
   }
   /* keep the unsynced count — that is the number an offline-first phone user
