@@ -374,6 +374,21 @@
     justify-content: center;
     text-align: center;
   }
+  /* A glyph beside the words centres the GLYPH AND THE WORDS as one group,
+     which puts the words themselves right of the tile's middle — "90°F ·
+     Clear" read as off-centre next to a habits tile that has no glyph and is
+     truly centred. The glyph goes above instead, which centres everything and
+     costs no width (taking it out of the flow and padding around it squeezed
+     "Shut down" to "Shut d…" and wrapped the forecast onto three lines). It
+     is also the shape of the Journal · Notes · Wardrobe cards right above:
+     a mark over a word (v3.29). */
+  .briefing-tile {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .briefing-tile > .briefing-text {
+    align-items: center;
+  }
   /* the CTA's own button fills its tile and carries its own text-align, so
      centring the tile around it is not enough */
   .briefing-cta-btn {

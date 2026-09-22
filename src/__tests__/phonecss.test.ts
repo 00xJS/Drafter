@@ -593,7 +593,7 @@ describe('landscape: nothing sits under the notch or the Dynamic Island', () => 
     [
       'the phone .tabs-compact',
       phone('.tabs-compact'),
-      ['padding: 6px max(6px, var(--safe-r)) calc(4px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));'],
+      ['padding: 4px max(6px, var(--safe-r)) calc(2px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));'],
     ],
   ])('insets %s', (_, declarations, wants) => {
     expect(declarations, 'no such rule').not.toBe('')

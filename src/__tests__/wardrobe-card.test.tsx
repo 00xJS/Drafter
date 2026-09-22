@@ -167,17 +167,17 @@ describe('where the card sits on Today', () => {
     const html = today(9, false)
     expect(html).toContain('id="today-focus"')
     expect(html).not.toContain('wardrobe-card')
-    expect(html).not.toContain('today-wardrobe')
+    expect(html).not.toContain('<span>Wardrobe</span>')
   })
 
   it('pins Wardrobe on Today so you can walk in and flip looks', () => {
     const html = today(9)
-    // one of Week · Journal · Wardrobe in the header now (v3.24), still its own class
-    expect(html).toContain('today-wardrobe')
-    expect(html).toContain('>Wardrobe</button>')
+    // one of Journal · Notes · Wardrobe, drawn as a card since v3.29
+    expect(html).toContain('today-cards')
+    expect(html).toContain('<span>Wardrobe</span>')
     // even before the wardrobe can dress you: the pin is the door, the card is the log
     const bare = today(9, true, undefined, [piece('tee', 'top')])
-    expect(bare).toContain('today-wardrobe')
+    expect(bare).toContain('<span>Wardrobe</span>')
     expect(bare).not.toContain('wardrobe-card')
   })
 

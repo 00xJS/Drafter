@@ -139,7 +139,7 @@
   /* the top edge of the phone's frosted tab bar */
   --tabbar-edge: rgba(15, 17, 21, 0.08);
   /* phone chrome: everything that floats measures itself off these */
-  --tabbar-h: 56px;
+  --tabbar-h: 50px;
   /* The smallest a thing you tap may be. Apple's floor, and the size the iOS
      shell has always given a button (19-native-shell.css, which set this
      itself until it moved here). On the web it applies below 640px — the same

@@ -1,4 +1,3 @@
-import { unreadSince } from '../../chat'
 import { memberName } from '../../household'
 import { newerStamp } from '../../itemops'
 import { localDayKey } from '../../journal'
@@ -23,15 +22,11 @@ function todayEveningIso(): string {
  */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { store, household, allEvents, sourceMap, showToast, goTasksTab } = p
-  const { setView, setKitchenRecipe, openJournal, openReview, setChatOpen, openKitchen, openWardrobe } = p
+  const { setView, setKitchenRecipe, openJournal, openReview, openKitchen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
   const { syncAlarm, dismissSyncAlarm, setAdminOpen } = p
-  // Every screen is a plain function of `p`, called straight from the shell —
-  // it holds no hooks of its own, and the tests call it as a function to read
-  // what it drew. chatSeenAt therefore lives on the shell (useNavigation).
-  const { chatSeenAt } = p
   return (
     <Today
           tasks={store.tasks}
@@ -114,14 +109,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           // fortnight's events, for a while and never forever (v3.24)
           snoozes={store.snoozes}
           onSnooze={snooze}
-          // the chat is a sheet off the top bar; Home is a second way in
-          onOpenChat={() => setChatOpen(true)}
           // the notes are a Tasks segment; Home is a second way in, not a move
           onOpenNotes={() => {
             goTasksTab('notes')
             setView('tasks')
           }}
-          unread={unreadSince(store.messages, chatSeenAt, household.myId)}
     />
   )
 }

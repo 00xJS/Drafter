@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { Icon } from './Icon'
 import {
   MEAL_SLOT_META,
   CalendarEntry,
@@ -135,8 +136,6 @@ interface Props {
   onDismissSyncAlarm?(): void
   /** The backlog lives on Tasks — Home is only the day. */
   onOpenTasks?(): void
-  /** Home → Chat: the household's thread and the assistant's. Without it there is no button. */
-  onOpenChat?(): void
   /**
    * The notes. They live on Tasks as a segment and were easy to miss there —
    * "it seems like it is buried on the tasks page & could be overlooked" — so
@@ -144,8 +143,6 @@ interface Props {
    * Tasks stays: this is a second door, not a move.
    */
   onOpenNotes?(): void
-  /** Messages from the other member this device has not shown you yet. */
-  unread?: number
   // ---- putting a nudge off (v3.24). Optional: without both, nothing shows an ×.
   /**
    * Your own snoozes. A person, a place or one of the next fortnight's events
@@ -663,9 +660,7 @@ export function Today({
   onOpenTasks,
   snoozes = NO_SNOOZES,
   onSnooze,
-  onOpenChat,
   onOpenNotes,
-  unread = 0,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -898,54 +893,45 @@ export function Today({
             {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
-        {/* The three pages Home opens, in the header where the Wardrobe
-            already was (v3.24). The weekly and monthly review held a lot of
-            what this planner knows and was reachable from one button on one
-            card — "I could only find it by clicking on plan my week" — and the
-            journal from a card link. They are peers of the wardrobe, so they
-            are buttons beside it. */}
-        <div className="today-pages">
-          {/* "Review", not "Week": it lands on Insights' Review segment, which
-              has its own Week · Month switch inside it, and a button should
-              say where it goes (v3.29) */}
-          {onOpenReview && (
-            <button type="button" className="btn today-page" onClick={onOpenReview}>
-              Review
-            </button>
-          )}
-          {onOpenJournal && (
-            <button type="button" className="btn today-page" onClick={onOpenJournal}>
-              Journal
-            </button>
-          )}
-          {onOpenChat && (
-            <button type="button" className="btn today-page" onClick={onOpenChat}>
-              Chat
-              {unread > 0 && <span className="board-count">{unread}</span>}
-            </button>
-          )}
-          {onOpenNotes && (
-            <button type="button" className="btn today-page" onClick={onOpenNotes}>
-              Notes
-            </button>
-          )}
-          {onOpenWardrobe && (
-            <button
-              type="button"
-              className="btn today-page today-wardrobe"
-              onClick={() =>
-                onOpenWardrobe(
-                  garments && canDress(garments)
-                    ? { tab: 'outfit', date: todayKey }
-                    : { tab: 'clothes', add: true },
-                )
-              }
-            >
-              Wardrobe
-            </button>
-          )}
-        </div>
+        {/* Review rides on the title line: it is the one of these that is about
+            a span of days rather than a thing you keep, so it belongs with the
+            date rather than in the row of places below (v3.29). */}
+        {onOpenReview && (
+          <button type="button" className="btn today-review" onClick={onOpenReview}>
+            Review
+          </button>
+        )}
       </header>
+
+      {/* The places Home opens, as cards rather than as a row of small buttons.
+          They are three of the app's rooms and a card is what a room looks
+          like; a 44pt pill among four others read as a toolbar. Chat left this
+          row for the top bar in v3.29, where its badge is visible from every
+          tab — which is what left exactly three to share the width. */}
+      <div className="today-cards">
+        {onOpenJournal && (
+          <button type="button" className="today-card" onClick={onOpenJournal}>
+            <Icon name="journal" size={24} />
+            <span>Journal</span>
+          </button>
+        )}
+        {onOpenNotes && (
+          <button type="button" className="today-card" onClick={onOpenNotes}>
+            <Icon name="notes" size={24} />
+            <span>Notes</span>
+          </button>
+        )}
+        {onOpenWardrobe && (
+          <button
+            type="button"
+            className="today-card"
+            onClick={() => onOpenWardrobe(garments && canDress(garments) ? { tab: 'outfit', date: todayKey } : { tab: 'clothes', add: true })}
+          >
+            <Icon name="wardrobe" size={24} />
+            <span>Wardrobe</span>
+          </button>
+        )}
+      </div>
       {alarm}
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
       <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} myId={myId} nameOf={nameOf} />

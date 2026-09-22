@@ -250,7 +250,7 @@
     display: none;
   }
 
-  /* six equal slots: Home, Calendar, Tasks, Stats, Kitchen, People */
+  /* five equal slots: Home, Calendar, Tasks, Keep, Insights */
   .tabs-compact {
     display: flex;
     position: fixed;
@@ -267,7 +267,7 @@
     border-top: 1px solid var(--hairline);
     justify-content: stretch;
     gap: 0;
-    padding: 6px max(6px, var(--safe-r)) calc(4px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));
+    padding: 4px max(6px, var(--safe-r)) calc(2px + env(safe-area-inset-bottom)) max(6px, var(--safe-l));
     margin: 0;
     width: 100%;
     overflow: hidden;
@@ -278,7 +278,7 @@
      and safe-area-inset-bottom collapses to 0 — so the fixed bar becomes an
      opaque strip sitting exactly where WebKit scrolls the caret. Native apps
      hide their tab bar while editing; slide it away and give the field back its
-     56pt. It is unreachable while typing anyway. */
+     50pt. It is unreachable while typing anyway. */
   .keyboard-open .tabs-compact {
     transform: translateY(100%);
     pointer-events: none;
@@ -298,11 +298,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    padding: 6px 2px 4px;
+    gap: 1px;
+    /* 50px of bar, not 56: the icon and its word need the room, the air
+       around them did not, and six points off the foot of every screen is
+       six points of the day you can see (v3.29). */
+    padding: 3px 2px 2px;
     border-radius: 10px;
-    /* The one place the ramp is capped. Six labels have to stay on one line
-       inside a 56px bar, and at scale 1.6 a 16px label wraps and pushes the bar
+    /* The one place the ramp is capped. Five labels have to stay on one line
+       inside a 50px bar, and at scale 1.6 a 16px label wraps and pushes the bar
        over the content it is meant to sit beside. 1.15 still reads larger and
        still keeps "Calendar" on its line. */
     font-size: calc(10px * min(1.15, var(--type-scale)));

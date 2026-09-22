@@ -334,50 +334,48 @@
   margin: 0;
   font-size: 1.35rem;
 }
-/* Week · Journal · Wardrobe: the pages Home opens (v3.24). One group so they
-   stay together on the right of the heading and wrap as a unit at 375pt,
-   rather than one of the three dropping under the date on its own. */
-.today-pages {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.today-page,
-.today-wardrobe {
+/* Review sits on the title line — it is the one of Home's doors that is about
+   a span of days rather than a room, so it belongs with the date. */
+.today-review {
   flex: none;
 }
 
-@media (max-width: 640px) {
-  /* Five pages at a 44pt touch size do not fit beside the date at 375pt —
-     Wardrobe ran off the edge the moment Notes joined them (v3.28). Their own
-     full-width row, wrapping, so every one of them is visible and reachable;
-     a horizontal scroller would have hidden the last one behind a gesture
-     nobody is told about. */
-  .today-pages {
-    flex: 1 0 100%;
-    justify-content: flex-start;
-  }
-  /* One line that scrolls, rather than 4 + 1 with Wardrobe orphaned beneath.
-     Five of them do not fit at 402pt at any padding worth having, and a
-     ragged second row was the first thing the eye landed on under the date. */
-  .today-pages {
-    flex: 1 0 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    scroll-snap-type: x proximity;
-  }
-  .today-pages::-webkit-scrollbar {
-    display: none;
-  }
-  .today-pages .btn {
-    flex: none;
-    padding-inline: 14px;
-    scroll-snap-align: start;
-  }
+/* Journal · Notes · Wardrobe: three rooms Home opens, as cards. They were a
+   row of 44pt pills beside the date, which read as a toolbar and, once Notes
+   joined, could not fit the line at 375pt at all. Equal thirds, an icon over
+   a word — a card is what a room looks like, and the whole tile is the target
+   (v3.29). */
+.today-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
 }
+.today-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 72px;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.today-card svg {
+  color: var(--accent-text);
+}
+.today-card:hover {
+  border-color: var(--accent-ring);
+}
+
 .week-review-excerpt {
   margin: 0 4px 12px;
   color: var(--text-2);
