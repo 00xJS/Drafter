@@ -3,7 +3,6 @@ import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, D
 import { siteOrigin } from '../api'
 import { unwrapSnapshot, type Snapshot } from '../backupcrypto'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
 
 const GROUPS: { key: AdminGroup; label: string }[] = [
   { key: 'users', label: 'Users' },
@@ -27,7 +26,6 @@ const KIND_LABELS: [string, string][] = [
 type Stats = DataStats & { syncCheck?: SyncCheck }
 
 interface Props {
-  onClose(): void
   /** The section it opens on: Users, unless another is asked for (Today's sync alarm opens Data). */
   initialGroup?: Group
 }
@@ -129,7 +127,7 @@ function TestLine({ ok, detail, error }: { ok: boolean; detail?: string; error?:
   )
 }
 
-export function Admin({ onClose, initialGroup = 'users' }: Props) {
+export function Admin({ initialGroup = 'users' }: Props) {
   const [group, setGroup] = useState<Group>(initialGroup)
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
@@ -238,10 +236,8 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
   const isOwnerRow = (u: AdminUser) => !!ownerEmail && u.email.toLowerCase() === ownerEmail.toLowerCase()
 
   return (
-    <Modal onClose={onClose} className="modal settings-modal">
-      <ModalHead title="Admin" />
-
-      <div className={`modal-body settings-body showing-${group}`}>
+    /* A screen, not a dialog: AdminScreen draws the header and the ‹ Back. */
+    <div className={`settings-body showing-${group}`}>
         <nav className="settings-nav" role="tablist" aria-label="Admin sections">
           {GROUPS.map(g => (
             <button key={g.key} className={group === g.key ? 'seg on' : 'seg'} onClick={() => setGroup(g.key)} role="tab" aria-selected={group === g.key}>
@@ -876,14 +872,6 @@ export function Admin({ onClose, initialGroup = 'users' }: Props) {
         </section>
 
         {error && <p className="warn">{error}</p>}
-      </div>
-
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <button className="btn primary" onClick={onClose}>
-          Done
-        </button>
-      </footer>
-    </Modal>
+    </div>
   )
 }

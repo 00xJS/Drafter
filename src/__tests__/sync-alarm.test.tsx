@@ -150,14 +150,17 @@ describe('wired for the owner, to Admin on Data', () => {
     expect(shell).toMatch(/const syncAlarm = useSyncAlarm\(owner\.isOwner\)/)
     expect(shell).toMatch(/syncAlarm=\{syncAlarm\}/)
     expect(shell).toMatch(/onOpenSyncCheck=\{\(\) => setAdminOpen\(true, 'data'\)\}/)
-    expect(shell).toMatch(/<Admin onClose=\{\(\) => setAdminOpen\(false\)\} initialGroup=\{adminGroup\} \/>/)
+    // Admin is a pushed screen now: the alarm's "data" rides on setAdminOpen,
+    // which sets both the section and the screen (useOverlays)
+    expect(shell).toMatch(/<Admin initialGroup=\{adminGroup\} \/>/)
+    expect(shell).toMatch(/pushed === 'admin' \? \(\s*<AdminScreen p=\{p\} \/>/)
     const hook = readFileSync(fileURLToPath(new URL('../components/planner/useSyncAlarm.ts', import.meta.url)), 'utf8')
     expect(hook).toMatch(/if \(!isOwner\) \{\s*setCheck\(null\)\s*return\s*\}/)
   })
 
   it('Admin opens on the section asked for, and on Users otherwise', () => {
     const tab = (html: string) => /class="seg on"[^>]*>([^<]+)</.exec(html)?.[1]
-    expect(tab(renderToStaticMarkup(<Admin onClose={() => {}} initialGroup="data" />))).toBe('Data')
-    expect(tab(renderToStaticMarkup(<Admin onClose={() => {}} />))).toBe('Users')
+    expect(tab(renderToStaticMarkup(<Admin initialGroup="data" />))).toBe('Data')
+    expect(tab(renderToStaticMarkup(<Admin />))).toBe('Users')
   })
 })

@@ -13,7 +13,7 @@ export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { 
 
 /**
  * A screen you go INTO and come back from, drawn over whichever tab you were
- * on. Settings and the chat are the two.
+ * on. Settings, the chat and Admin are the three.
  *
  * Both were sheets that slid up over the page, and neither is a thing you
  * glance at: Settings is eight sections of prose and switches, the chat is a
@@ -27,7 +27,7 @@ export type Sheet = { kind: 'day'; step?: PlanStep } | { kind: 'shutdown' } | { 
  * you go, do a thing, and leave. So they live here rather than in View, and
  * a tap on any tab drops them (goView).
  */
-export type Pushed = 'settings' | 'chat'
+export type Pushed = 'settings' | 'chat' | 'admin'
 
 /** What can sit over the screen — the editors, the palette, the sheets — and the ways to open them. */
 export function useOverlays() {
@@ -39,12 +39,12 @@ export function useOverlays() {
   const [pushed, setPushed] = useState<Pushed | null>(null)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
-  const [adminOpen, setAdminShown] = useState(false)
   /** The Admin section it opens on: Users, unless the opener asks for another (Today's sync alarm asks for Data). */
   const [adminGroup, setAdminGroup] = useState<AdminGroup | undefined>(undefined)
+  /** Admin is a pushed screen like the other two; four callers still say it this way. */
   const setAdminOpen = (open: boolean, group?: AdminGroup) => {
     setAdminGroup(group)
-    setAdminShown(open)
+    setPushed(open ? 'admin' : null)
   }
   /** Which event the editor is on: an existing entry, or a new one at this instant. */
   const [eventEditor, setEventEditor] = useState<{ entry?: CalendarEntry; startIso: string; work?: WorkMode } | null>(null)
@@ -81,7 +81,7 @@ export function useOverlays() {
    * screen counts: Settings has nothing to refresh, and the chat scrolls
    * itself, which is the gesture pull-to-refresh would take.
    */
-  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || !!pushed || trashOpen || adminOpen
+  const anyOpen = !!editor || !!projectEditor || !!eventEditor || !!attendance || !!sheet || searchOpen || !!pushed || trashOpen
 
   return {
     sheet,
@@ -99,7 +99,6 @@ export function useOverlays() {
     setPushed,
     settingsNonce,
     setSettingsNonce,
-    adminOpen,
     setAdminOpen,
     adminGroup,
     eventEditor,

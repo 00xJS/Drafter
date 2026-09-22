@@ -8,7 +8,7 @@ import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
-import { Admin, AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
 
 /** The zone "today" and every day in the planning sheets are read in. */
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -72,7 +72,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
   const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
-  const { searchOpen, setSearchOpen, trashOpen, setTrashOpen, adminOpen, setAdminOpen, adminGroup, isOwner } = p
+  const { searchOpen, setSearchOpen, trashOpen, setTrashOpen } = p
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
@@ -387,11 +387,6 @@ export function Overlays({ p }: { p: PlannerCtx }) {
         </Layer>
       )}
 
-      {adminOpen && isOwner && (
-        <Layer name="Admin">
-          <Admin onClose={() => setAdminOpen(false)} initialGroup={adminGroup} />
-        </Layer>
-      )}
     </>
   )
 }

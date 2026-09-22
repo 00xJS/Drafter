@@ -13,6 +13,7 @@ import { garmentMediaIds } from '../../shared/media.mjs'
 import { buildPaletteCommands } from './planner/commands'
 import type { PlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
+import { AdminScreen } from './planner/AdminScreen'
 import { ChatScreen } from './planner/ChatScreen'
 import { HomeScreen } from './planner/HomeScreen'
 import { InsightsScreen } from './planner/InsightsScreen'
@@ -170,6 +171,8 @@ export default function Planner() {
                 <SettingsScreen p={p} />
               ) : pushed === 'chat' ? (
                 <ChatScreen p={p} />
+              ) : pushed === 'admin' ? (
+                <AdminScreen p={p} />
               ) : (
                 <>
                   {view === 'home' && <HomeScreen p={p} />}

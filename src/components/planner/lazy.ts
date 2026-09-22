@@ -73,8 +73,13 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
-/** The background warm-up, most-opened first. Admin is not in it: only the owner fetches that chunk. */
-export const PRELOAD_ORDER = [TaskEditor, Search, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, Chat, ProjectEditor, EventEditor, AttendancePicker, Trash, Settings].map(c => c.preload)
+/** The background warm-up, most-opened first. Admin is not in it: only the
+ *  owner fetches that chunk.
+ *
+ *  Settings and the chat sit near the front because the top bar reaches both
+ *  from every screen — Settings was dead last of 29, from when it was a dialog
+ *  you rarely opened rather than a screen you navigate to. */
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {
