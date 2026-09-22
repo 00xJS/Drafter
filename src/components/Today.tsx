@@ -905,9 +905,12 @@ export function Today({
             journal from a card link. They are peers of the wardrobe, so they
             are buttons beside it. */}
         <div className="today-pages">
+          {/* "Review", not "Week": it lands on Insights' Review segment, which
+              has its own Week · Month switch inside it, and a button should
+              say where it goes (v3.29) */}
           {onOpenReview && (
             <button type="button" className="btn today-page" onClick={onOpenReview}>
-              Week
+              Review
             </button>
           )}
           {onOpenJournal && (
