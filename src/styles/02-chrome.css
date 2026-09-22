@@ -329,13 +329,32 @@
   display: flex;
   flex-direction: column;
 }
+/* Back holds its place under the top bar. The notes pad lets its header
+   scroll away, and that is fine for a pad; Settings' Reminders section is
+   longer than a phone screen, and a way out you have to scroll back up to
+   find is the one thing a sheet did better. The offset is the bar's own
+   height PLUS the top safe area, because the bar carries that as padding
+   rather than in --topbar-h (19-native-shell.css) — measured on an iPhone 17
+   Pro, not assumed. Below the bar's z-index of 20, so it passes under it. */
 .pushed-head {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
+  /* bled to the page's edges, so the content passing under it is covered all
+     the way across; .content's own 20px gutter is added back as padding */
+  margin: 0 -20px 14px;
+  padding: 4px 20px 10px;
+  background: var(--bg);
   border-bottom: 1px solid var(--hairline);
+}
+@media (max-width: 640px) {
+  .pushed-head {
+    margin-inline: -12px;
+    padding-inline: 12px;
+  }
 }
 .pushed-head .view-title {
   margin: 0;
