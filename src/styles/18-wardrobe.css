@@ -1153,6 +1153,40 @@
   bottom: 10px;
   width: min(30%, 120px);
 }
+/* A piece with no photo yet: the tile its type draws IS the picker, with the
+   invitation across the foot of it. The label carries the file input, so the
+   whole picture is the target. */
+.garment-hero-pick {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+}
+.garment-hero-pick:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.garment-hero-add {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.garment-hero-pick:hover .garment-hero-add {
+  border-color: var(--accent-ring);
+  color: var(--accent-ink);
+}
 /* bottom left: the inset has the other corner */
 .garment-hero .garment-busy {
   position: absolute;
@@ -1888,6 +1922,7 @@ button.photo-cal-day:focus-visible {
   .garment-with-piece,
   .garment-fav,
   .garment-back-pick,
+  .garment-hero-add,
   .garment-back-first,
   .garment-back .btn,
   .wardrobe-occasion {

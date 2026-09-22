@@ -395,7 +395,10 @@ describe('the piece sheet', () => {
     )
 
   it('reads a piece the Kitchen’s way: "Last worn 12 days ago · 5 times"', () => {
-    const tee = piece('tee', 'top', { color: '#1f2a44' })
+    // a photo and the colour sampled from it: Garment.color only ever comes
+    // from one, so a piece carrying a colour and no photo is a state that
+    // cannot happen — and the footer says Add photo for the ones that have none
+    const tee = piece('tee', 'top', { color: '#1f2a44', photoId: 'personal/u/tee', thumbId: 'personal/u/tee-t' })
     const worn = ['2026-09-02', '2026-08-28', '2026-08-20', '2026-08-10', '2026-07-30'].map(d => look(d, ['tee', 'jeans']))
     const html = sheet({ kind: 'edit', id: 'tee' }, [tee, piece('jeans', 'bottom')], worn, [outfit('o1', ['tee', 'jeans'], 'Weekend')])
     expect(html).toContain('Last worn 12 days ago · 5 times')

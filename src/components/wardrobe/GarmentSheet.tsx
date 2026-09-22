@@ -322,7 +322,11 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
             <>
               <Icon name="camera" size={28} />
               <span className="garment-pick-title">{file ? 'Choose another photo' : 'Choose photo'}</span>
-              <small className="muted">or save the piece without one</small>
+              {/* A photo is the usual way in and not the only one: a shirt you
+                  are not holding is still a shirt, and one saved on its name
+                  alone takes a photo later from its own sheet, where every
+                  row, look and figure that already points at it picks it up. */}
+              <small className="muted">Or just name it below and Save — you can add the photo later</small>
               <small className="muted garment-drop-hint">Drop or paste a photo here too</small>
             </>
           )}
@@ -499,6 +503,8 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const wornOn = (ix.days.get(g.id) ?? []).slice(0, 10)
   const inOutfits = outfits.filter(o => !o.deletedAt && o.garmentIds.includes(g.id))
   const back = hasBack(g)
+  /** A piece can be saved on its name alone; its front arrives whenever it does. */
+  const hasPhoto = !!(g.photoId || g.thumbId)
 
   return (
     <Modal onClose={close} className="modal narrow garment-sheet">
@@ -516,8 +522,22 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
       </ModalHead>
       <div className="modal-body">
         <div className="garment-hero">
-          {/* keyed by the side it leads with, so Show the back first shows at once */}
-          <GarmentView key={mainSide(g)} garment={g} size="photo" alt={g.name} flip />
+          {/* A piece saved without a photo shows its type's tile, and the tile
+              itself is the picker: tapping the empty picture to fill it is the
+              gesture to reach for, and Replace photo in the footer is a long
+              way from what it replaces. */}
+          {hasPhoto ? (
+            /* keyed by the side it leads with, so Show the back first shows at once */
+            <GarmentView key={mainSide(g)} garment={g} size="photo" alt={g.name} flip />
+          ) : (
+            <label className="garment-hero-pick">
+              <input type="file" accept="image/*" className="garment-file" disabled={photoBusy} onChange={pickFor('front')} />
+              <GarmentView garment={g} size="photo" alt={g.name} />
+              <span className="garment-hero-add">
+                <Icon name="camera" size={16} /> Add a photo
+              </span>
+            </label>
+          )}
           {photoBusy && (
             <span className="garment-busy" role="status">
               <span className="garment-spinner" aria-hidden="true" />
@@ -526,7 +546,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
           )}
         </div>
         {/* the back, for a piece whose logo or print is there: once it has a front */}
-        {(g.photoId || g.thumbId) && (
+        {hasPhoto && (
           <div className="garment-back" role="group" aria-label="Back photo">
             <label className="btn subtle garment-back-pick">
               {back ? 'Replace back photo' : 'Add back photo'}
@@ -641,7 +661,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
           {g.archivedAt ? 'Bring back' : 'Retire'}
         </button>
         <label className="btn subtle garment-replace">
-          Replace photo
+          {hasPhoto ? 'Replace photo' : 'Add photo'}
           <input type="file" accept="image/*" className="garment-file" disabled={photoBusy} onChange={pickFor('front')} />
         </label>
         <CutoutLater garment={g} disabled={photoBusy} onCutout={file => void replace(file, true)} onError={setPhotoError} />
