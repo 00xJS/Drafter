@@ -9,7 +9,7 @@ import { THEME_GROUND, THEME_PREFS } from '../theme'
  * SceneDelegate lays the same storyboard over the App Switcher card. A missing
  * image there is an empty screen on every cold start and nothing in the build
  * fails, so the storyboard, the asset catalog and the artwork are checked here
- * against each other and against public/icon.svg. The ground under the plane is
+ * against each other and against public/icon.svg. The ground under the mark is
  * the light one the app opens in (THEME_GROUND.light), held equal here to every
  * other copy of it: the web view's, the manifest's, the meta's and SceneDelegate's.
  */
@@ -30,8 +30,15 @@ const hex = (rgb: number[]) => `#${rgb.map(n => n.toString(16).padStart(2, '0'))
 /** An Interface Builder `red=".." green=".." blue=".."` colour as #rrggbb. */
 const ibColour = (a: Record<string, string>) => hex([a.red, a.green, a.blue].map(v => Math.round(Number(v) * 255)))
 
-/** The plane's two fills in the icon (whose rounded rect keeps its own dark ground). */
-const planeFills = [...icon.matchAll(/<path\b[^>]*fill="(#[0-9a-f]{6})"/g)].map(m => m[1])
+/**
+ * The mark's two oranges in the icon: every colour it names except the ground
+ * the square keeps. The icon became a house inside an atom in v3.29 and the
+ * deep orange now draws the house AND two of the orbits, while the light one
+ * draws a single thin ring — so the two no longer cover anything like the same
+ * area, and this list is about which colours exist, not how much of each.
+ */
+const GROUND = '#0f1115'
+const markFills = [...new Set([...icon.matchAll(/(?:fill|stroke)="(#[0-9a-f]{6})"/g)].map(m => m[1]))].filter(c => c !== GROUND)
 
 /**
  * A PNG's size and pixels. Only 8-bit RGBA without interlacing, which is what an
@@ -194,14 +201,14 @@ describe('LaunchLogo artwork', () => {
     }
   })
 
-  it("is the icon's plane alone, centred, on a transparent ground", () => {
-    expect(planeFills).toHaveLength(2)
+  it("is the icon's mark alone, centred, on a transparent ground", () => {
+    expect(markFills).toHaveLength(2)
     for (const image of set.images) {
       const { width, height, pixel } = readPng(path(`${CATALOG}/LaunchLogo.imageset/${image.filename}`))
       for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
         expect(pixel(x, y)[3], `${image.scale} corner`).toBe(0)
       }
-      const fills = new Map(planeFills.map(f => [f, 0]))
+      const fills = new Map(markFills.map(f => [f, 0]))
       const dark: string[] = []
       let [left, right, top, bottom] = [width, -1, height, -1]
       for (let y = 0; y < height; y++) {
@@ -213,19 +220,23 @@ describe('LaunchLogo artwork', () => {
           top = Math.min(top, y)
           bottom = Math.max(bottom, y)
           if (a < 255) continue
-          // solid pixels are the plane's two oranges, or a blend where they
+          // solid pixels are the mark's two oranges, or a blend where they
           // meet; the icon's dark ground would be solid with almost no red
           if (r < 0xe0) dark.push(`${hex([r, g, b])} at ${x},${y}`)
-          const fill = planeFills.find(f => [r, g, b].every((v, i) => Math.abs(v - Number.parseInt(f.slice(1 + 2 * i, 3 + 2 * i), 16)) <= 2))
+          const fill = markFills.find(f => [r, g, b].every((v, i) => Math.abs(v - Number.parseInt(f.slice(1 + 2 * i, 3 + 2 * i), 16)) <= 2))
           if (fill) fills.set(fill, fills.get(fill)! + 1)
         }
       }
       expect(dark.slice(0, 3), image.scale).toEqual([])
-      // both halves of the plane are drawn, not just one of them
-      for (const [fill, count] of fills) expect(count / (width * height), `${image.scale} ${fill}`).toBeGreaterThan(0.05)
-      // the image view centres the canvas, so the plane must sit in its middle
-      expect(Math.abs(left + right + 1 - width) / 2, `${image.scale} x`).toBeLessThanOrEqual(image.scale === '1x' ? 1 : 1.5)
-      expect(Math.abs(top + bottom + 1 - height) / 2, `${image.scale} y`).toBeLessThanOrEqual(image.scale === '1x' ? 1 : 1.5)
+      // both oranges are drawn, not just one of them. The threshold is a
+      // count and not a proportion: the light orange is one thin ring and a
+      // dot, which is well under a percent of the canvas even at 3x, and a
+      // proportion tuned to the old solid-triangle artwork only ever measured
+      // how filled-in the mark happened to be.
+      for (const [fill, count] of fills) expect(count, `${image.scale} ${fill}`).toBeGreaterThan(20)
+      // the image view centres the canvas, so the mark must sit in its middle
+      expect(Math.abs(left + right + 1 - width) / 2, `${image.scale} x`).toBeLessThanOrEqual(image.scale === '1x' ? 2 : 3)
+      expect(Math.abs(top + bottom + 1 - height) / 2, `${image.scale} y`).toBeLessThanOrEqual(image.scale === '1x' ? 2 : 3)
     }
   })
 })

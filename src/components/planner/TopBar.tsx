@@ -27,9 +27,11 @@ export function TopBar({ p }: { p: PlannerCtx }) {
           container and the glyph is decorative — otherwise VoiceOver announces
           the header as "airplane". */}
       <div className="brand" aria-label="Drafter">
-        <span className="brand-mark" aria-hidden>
-          <Icon name="brand" filled strokeWidth={0} />
-        </span>
+        {/* The app's own icon, not a glyph that looks like it. The header drew
+            a "D" while every icon file was a paper aeroplane, which is how the
+            comment above came to warn that VoiceOver says "airplane"; pointing
+            this at /icon.svg is the only way the two cannot drift again. */}
+        <img className="brand-mark" src="/icon.svg" alt="" width={28} height={28} aria-hidden />
         <span>Drafter</span>
       </div>
       <nav className="tabs tabs-full" aria-label="Views">

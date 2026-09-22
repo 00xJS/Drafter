@@ -35,23 +35,16 @@
   font-size: 1rem;
 }
 
+/* The app icon itself, at the size a home screen would draw it. It carries its
+   own near-black ground, so the tile needs no gradient behind it — only the
+   corner radius iOS would mask it with, and the glow the header always had. */
 .brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  flex: none;
   width: 28px;
   height: 28px;
   border-radius: 9px;
-  /* a lit tile, not a flat square: a soft top-down accent gradient and a faint
-     glow give the mark some dimension. */
-  background: linear-gradient(160deg, var(--accent-bright), var(--accent) 62%, var(--accent-deep));
-  color: var(--on-accent);
-  box-shadow: var(--glow-accent), inset 0 1px 0 var(--sheen);
-  font-size: 14px;
-}
-.brand-mark svg {
-  width: 17px;
-  height: 17px;
+  box-shadow: var(--glow-accent);
 }
 
 .tabs {
