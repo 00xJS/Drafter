@@ -35,6 +35,7 @@ export type IconName =
   | 'stats'
   | 'keep'
   | 'chat'
+  | 'chevron'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -188,6 +189,12 @@ const PATHS: Record<IconName, JSX.Element> = {
      marks stay legible at the 22px the tab bar draws it. */
   /* a speech bubble with a tail: the household thread and the assistant both
      answer to it, and it reads at 19px in the top bar */
+  /* a plain chevron, pointing down; a fold rotates it */
+  chevron: (
+    <>
+      <path d="M6.5 9.5 12 15l5.5-5.5" />
+    </>
+  ),
   chat: (
     <>
       <path d="M20.4 12.6c0 3.9-3.6 7-8 7a9.6 9.6 0 0 1-2.5-.3L5.2 20.6l1.2-3.3a6.6 6.6 0 0 1-2.8-5.3c0-3.9 3.6-7 8-7s8.8 3.1 8.8 7z" />

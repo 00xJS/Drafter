@@ -112,6 +112,47 @@
   font-size: 0.875rem;
 }
 
+/* A folded section keeps its heading and loses its body. The heading stays
+   because a section you cannot see at all is a section you forget you have —
+   the point is to get a thing out of the way, not to lose it (v3.29). */
+.chart-card.folded > *:not(.chart-head) {
+  display: none;
+}
+.chart-card.folded > .chart-head {
+  margin-bottom: 0;
+}
+.card-fold {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  padding: 4px 6px;
+  line-height: 0;
+  color: var(--muted);
+  /* flat: it is a disclosure, not an action, and a bordered box beside a
+     heading reads as something to press rather than something to peek */
+  border: 0;
+  background: transparent;
+}
+/* `.chart-head` wraps on a phone so a long title can push its action onto a
+   line of its own — which sent the fold down there too, to the left, under the
+   subtitle. Only where there IS a fold: the title column gives way instead, so
+   the chevron keeps the end of the heading's own line (v3.29). */
+.chart-head:has(.card-fold) > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.card-fold svg {
+  transition: transform 0.18s ease;
+}
+.card-fold[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-fold svg {
+    transition: none;
+  }
+}
+
 .chart-sub {
   margin: 2px 0 0;
   font-size: 0.75rem;

@@ -44,10 +44,28 @@ export function idbAll<T>(store: string): Promise<T[]> {
 }
 
 /**
+ * Settings about the SCREEN rather than about the person, kept across a sign-out.
+ *
+ * Everything else under drafter:* goes, and has to — see clearLocalData. The
+ * test for this list is narrow: a key belongs here only if reading it tells
+ * you nothing whatsoever about the account that set it. `drafter:theme` is
+ * "light" or "dark"; `drafter:home-folded` is a list of section NAMES, never
+ * their contents. Somebody signing in next inherits a colour and some folded
+ * headings, which is the same thing they would inherit from the device's own
+ * dark-mode switch.
+ *
+ * What may NOT go here: anything naming a record, a person, a place, a date, a
+ * count, or which tab got used most — that is the person's, and sign-out means
+ * sign-out. When in doubt it is not a display setting.
+ */
+const KEPT_ACROSS_SIGN_OUT = new Set(['drafter:theme', 'drafter:home-folded'])
+
+/**
  * Remove every trace of the signed-in person from this device: the cached
- * records, the photos, and every drafter:* preference. Signing out has to do
- * this — otherwise the whole planner stays readable in DevTools on a shared,
- * sold or stolen device, and the next account to sign in inherits it.
+ * records, the photos, and every drafter:* preference but the handful in
+ * KEPT_ACROSS_SIGN_OUT. Signing out has to do this — otherwise the whole
+ * planner stays readable in DevTools on a shared, sold or stolen device, and
+ * the next account to sign in inherits it.
  */
 export async function clearLocalData(): Promise<void> {
   // cancel local reminders before wiping the flag that would otherwise leave
@@ -62,7 +80,7 @@ export async function clearLocalData(): Promise<void> {
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
-      if (k && k.startsWith('drafter:')) keys.push(k)
+      if (k && k.startsWith('drafter:') && !KEPT_ACROSS_SIGN_OUT.has(k)) keys.push(k)
     }
     for (const k of keys) localStorage.removeItem(k)
   } catch {

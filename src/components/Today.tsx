@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { readFolded, toggleFold, writeFolded } from '../homefolds'
 import { Icon } from './Icon'
 import {
   MEAL_SLOT_META,
@@ -605,6 +606,28 @@ function plannedLabel(dueAt?: string): string {
   return `Planned · ${new Date(dueAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`
 }
 
+/**
+ * The fold on a section of Home: shut it to its heading, and remember which.
+ * It sits at the end of the section's own header row, after whatever action
+ * that header already had — two controls at the right, not one on top of
+ * another (v3.29).
+ */
+function Fold({ id, name, folded, onFold }: { id: string; name: string; folded: string[]; onFold(id: string): void }) {
+  const shut = folded.includes(id)
+  return (
+    <button
+      type="button"
+      className="btn subtle card-fold"
+      aria-expanded={!shut}
+      aria-label={`${shut ? 'Show' : 'Hide'} ${name}`}
+      title={shut ? `Show ${name}` : `Hide ${name}`}
+      onClick={() => onFold(id)}
+    >
+      <Icon name="chevron" size={16} />
+    </button>
+  )
+}
+
 export function Today({
   tasks,
   people,
@@ -683,6 +706,17 @@ export function Today({
    * editor debounces its writes, and re-deciding this at 17:00 would remount it
    * (losing the caret, and the keystrokes since the last save) mid-sentence.
    */
+  /** Which sections are folded away, per device (src/homefolds.ts). */
+  const [folded, setFolded] = useState(readFolded)
+  const onFold = (id: string) =>
+    setFolded(f => {
+      const next = toggleFold(f, id)
+      writeFolded(next)
+      return next
+    })
+  /** A section's class, with the fold on it when it is shut. */
+  const card = (id: string, cls = 'chart-card') => (folded.includes(id) ? `${cls} folded` : cls)
+
   const [evening] = useState(() => new Date().getHours() >= 17)
   /**
    * Where the wardrobe card sits: straight under the focus card in the
@@ -945,12 +979,13 @@ export function Today({
       />
       {morning && wardrobeCard}
       {freeTime.length > 0 && (
-        <section className="chart-card wishlist-nudge">
+        <section className={card('wishlist', 'chart-card wishlist-nudge')}>
           <header className="chart-head">
             <div>
               <h3>Nothing due today — from your wishlist</h3>
               <p className="chart-sub">Things you have been meaning to do, for when there is time</p>
             </div>
+          <Fold id="wishlist" name="the wishlist" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list tlist">
             {freeTime.map(t => (
@@ -1002,7 +1037,7 @@ export function Today({
       )}
 
       {plates.length > 0 && (
-        <section className="chart-card kitchen-tonight">
+        <section className={card('dinner', 'chart-card kitchen-tonight')}>
           <header className="chart-head">
             <div>
               <h3>
@@ -1017,7 +1052,8 @@ export function Today({
             <button className="btn subtle" onClick={onOpenKitchen}>
               This week
             </button>
-          </header>
+          <Fold id="dinner" name="tonight's dinner" folded={folded} onFold={onFold} />
+            </header>
           {plates.map(plate => (
             <div key={plate.meal.id} className="today-plate">
               <p className="kitchen-tonight-title">
@@ -1049,7 +1085,7 @@ export function Today({
       {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={new Date()} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />}
 
       {sundayDraft?.summary && (
-        <section className="chart-card week-review-ready">
+        <section className={card('weekreview', 'chart-card week-review-ready')}>
           <header className="chart-head">
             <div>
               <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
@@ -1065,7 +1101,8 @@ export function Today({
                 Open review
               </button>
             </div>
-          </header>
+          <Fold id="weekreview" name="the week" folded={folded} onFold={onFold} />
+            </header>
           <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
         </section>
       )}
@@ -1079,7 +1116,7 @@ export function Today({
       <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
 
       {top3.length > 0 && (
-        <section className="chart-card week-top3">
+        <section className={card('weektop3', 'chart-card week-top3')}>
           <header className="chart-head">
             <div>
               <h3>This week's 3</h3>
@@ -1090,6 +1127,7 @@ export function Today({
                 Plan next week
               </button>
             )}
+          <Fold id="weektop3" name="this week's 3" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list">
             {top3.map((line, i) => (
@@ -1131,7 +1169,7 @@ export function Today({
       ) : (
         <div className="today-grid">
           {sections.map(sec => (
-            <section key={sec.key} id={`today-${sec.key}`} className={sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card'}>
+            <section key={sec.key} id={`today-${sec.key}`} className={card(sec.key, sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card')}>
               <header className="chart-head">
                 <div>
                   <h3>
@@ -1144,7 +1182,8 @@ export function Today({
                     Push all to tomorrow
                   </button>
                 )}
-              </header>
+              <Fold id={sec.key} name={sec.title} folded={folded} onFold={onFold} />
+                </header>
               <ul className="dash-list tlist">
                 {sec.tasks.slice(0, 12).map(t => (
                   <TaskRow key={t.id} task={t} onOpen={onOpen} onStatus={onStatus} onDefer={onDefer} />
@@ -1160,12 +1199,13 @@ export function Today({
       {!evening && journalCard}
 
       {occasions.length > 0 && (
-        <section className="chart-card occasions">
+        <section className={card('occasions', 'chart-card occasions')}>
           <header className="chart-head">
             <div>
               <h3>Occasions</h3>
               <p className="chart-sub">Birthdays and anniversaries in the next 3 weeks</p>
             </div>
+          <Fold id="occasions" name="Occasions" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list event-list">
             {occasions.map(o => {
@@ -1207,12 +1247,13 @@ export function Today({
       )}
 
       {(peopleNudges.length > 0 || placeNudges.length > 0) && (
-        <section className="chart-card people-nudges">
+        <section className={card('people', 'chart-card people-nudges')}>
           <header className="chart-head">
             <div>
               <h3>People</h3>
               <p className="chart-sub">Who's due a call, who you've not logged yet — and where you've meant to go back to</p>
             </div>
+          <Fold id="people" name="People" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list event-list">
             {peopleNudges.map(s => (
@@ -1278,12 +1319,13 @@ export function Today({
       )}
 
       {upcomingEvents.length > 0 && (
-        <section className="chart-card coming-up">
+        <section className={card('comingup', 'chart-card coming-up')}>
           <header className="chart-head">
             <div>
               <h3>Coming up</h3>
               <p className="chart-sub">From your calendars, next {EVENT_HORIZON_DAYS} days — plan ahead with one tap</p>
             </div>
+          <Fold id="comingup" name="Coming up" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list event-list">
             {upcomingEvents.map(ev => (
@@ -1321,12 +1363,13 @@ export function Today({
       )}
 
       {s.doneRecent.length > 0 && (
-        <section className="chart-card">
+        <section className={card('done', 'chart-card')}>
           <header className="chart-head">
             <div>
               <h3>Recently done</h3>
               <p className="chart-sub">Completed in the last 7 days</p>
             </div>
+          <Fold id="done" name="Recently done" folded={folded} onFold={onFold} />
           </header>
           <ul className="dash-list tlist">
             {s.doneRecent.slice(0, 8).map(t => (
