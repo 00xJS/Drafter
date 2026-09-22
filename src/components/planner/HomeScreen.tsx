@@ -6,7 +6,7 @@ import { JournalView } from '../Journal'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
-import { Chat, Review, Wardrobe } from './lazy'
+import { Chat, Review } from './lazy'
 
 /** A Home + New task is due this evening, so it lands on the day, not the Inbox. */
 function todayEveningIso(): string {
@@ -20,7 +20,7 @@ function todayEveningIso(): string {
  *  split the same 18 hours four ways. */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { store, household, allEvents, sourceMap, showToast, goTasksTab } = p
-  const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, wardrobeOpen, setWardrobeOpen, openWardrobe } = p
+  const { homeTab, setHomeTab, journalOpenDate, setJournalOpenDate, setView, setKitchenRecipe, openJournal, openKitchen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
@@ -61,11 +61,11 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onOpenTasks={() => setView('tasks')}
           meals={store.meals}
           recipes={store.recipes}
-          onOpenKitchen={() => setView('kitchen')}
+          onOpenKitchen={() => openKitchen()}
           onOpenReview={() => setHomeTab('week')}
           onCookRecipe={r => {
             setKitchenRecipe(r)
-            setView('kitchen')
+            openKitchen()
           }}
           journal={store.journal}
           onSaveJournal={e => store.upsert(e)}
@@ -215,23 +215,6 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => store.restore(ids))
           }}
           onOpen={openAskDoc}
-        />
-      )}
-      {homeTab === 'wardrobe' && (
-        <Wardrobe
-          garments={store.garments}
-          inTrash={store.garmentsInTrash}
-          outfits={store.outfits}
-          wears={store.wears}
-          myId={household.myId}
-          // your work days on the calendar: Outfit dresses them for work
-          entries={store.events}
-          onSave={item => store.upsert(item)}
-          onRemove={id => store.remove(id)}
-          onRestore={ids => store.restore(ids)}
-          showToast={showToast}
-          open={wardrobeOpen}
-          onOpenConsumed={() => setWardrobeOpen(null)}
         />
       )}
     </>

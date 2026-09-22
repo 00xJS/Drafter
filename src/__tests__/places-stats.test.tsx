@@ -689,7 +689,7 @@ describe('the shell’s ways into Places → Stats', () => {
 
   it('loads it lazily, with the People tab’s other chunks', () => {
     expect(lazy).toContain("import('../PlacesStats')")
-    expect(lazy).toMatch(/people: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload\]/)
+    expect(lazy).toMatch(/keep: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload/)
     expect(screen).toMatch(/import \{ People, PeopleStats, Places, PlacesStats \} from '\.\/lazy'/)
   })
 
@@ -701,12 +701,12 @@ describe('the shell’s ways into Places → Stats', () => {
     expect(screen).toContain("onChange={v => setInnerView('places', v)}")
     expect(nav).toMatch(/const setInnerView = \(tab: PeopleTab, v: InnerView\) => \{\s*goInnerView\(tab, v\)\s*try \{\s*localStorage\.setItem\(INNER_VIEW_KEYS\[tab\], v\)/)
     expect(nav.match(/localStorage\.setItem\(INNER_VIEW_KEYS/g)).toHaveLength(1)
-    expect(nav).toMatch(/if \(v === 'people'\) \{\s*goPeopleTab\(storedPeopleTab\(\)\)\s*startTransition\(\(\) => showInnerViews\(storedInnerViews\(\)\)\)/)
-    expect(nav).toMatch(/const openStats = \(tab: PeopleTab\) => \{\s*goPeopleTab\(tab\)\s*goInnerView\(tab, 'stats'\)\s*setView\('people'\)/)
+    expect(nav).toMatch(/if \(v === 'keep'\) \{[\s\S]*?goKeepTab\(storedKeepTab\(\)\)[\s\S]*?showInnerViews\(storedInnerViews\(\)\)/)
+    expect(nav).toMatch(/const openStats = \(tab: PeopleTab\) => \{\s*goKeepTab\(tab\)\s*goInnerView\(tab, 'stats'\)\s*setView\('keep'\)/)
   })
 
   it('opens a place’s row on the list, whichever half was showing', () => {
-    expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{[^}]*setView\('people'\)[^}]*if \(id\) goInnerView\('places', 'list'\)\n\s*\}/)
+    expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{[^}]*setView\('keep'\)[^}]*if \(id\) goInnerView\('places', 'list'\)\n\s*\}/)
   })
 
   it('opens a day of the month on the Calendar with its sheet up, without changing Month · Week · Day', () => {

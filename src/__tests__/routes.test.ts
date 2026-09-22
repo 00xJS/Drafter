@@ -17,6 +17,10 @@ import {
   VIEW_LABELS,
   VIEW_TO_KITCHEN,
   VIEW_TO_STATS,
+  KEEP_TABS,
+  KEEP_TAB_KEY,
+  LEGACY_VIEW,
+  LEGACY_VIEW_TO_KEEP,
   VIEW_TO_WARDROBE,
   VIEWS,
   WARDROBE_TABS,
@@ -25,7 +29,7 @@ import {
   storedInnerView,
   storedInnerViews,
   statsTabOfView,
-  storedPeopleTab,
+  storedKeepTab,
   storedStatsTab,
   storedTasksTab,
   viewIn,
@@ -42,9 +46,9 @@ import {
  * More drawer".
  */
 
-describe('six tabs, the same on the phone and the desktop', () => {
-  it('puts the five nouns and the lens on the phone bar in its own order, and nothing else', () => {
-    expect(COMPACT_TABS.map(t => t.id)).toEqual(['home', 'calendar', 'tasks', 'stats', 'kitchen', 'people'])
+describe('five tabs, the same on the phone and the desktop', () => {
+  it('puts the five on the phone bar in its own order, and nothing else', () => {
+    expect(COMPACT_TABS.map(t => t.id)).toEqual(['home', 'calendar', 'tasks', 'keep', 'insights'])
     expect([...COMPACT_TABS.map(t => t.id)].sort()).toEqual([...VIEWS].sort())
   })
 
@@ -55,9 +59,9 @@ describe('six tabs, the same on the phone and the desktop', () => {
   })
 
   it('keeps the segments each tab holds', () => {
-    // Chat is a page Home opens (v3.26), like Week, Journal and Wardrobe — not
-    // a sixth noun on the tab bar, which has held the same five all along
-    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'wardrobe', 'chat'])
+    // Chat is a page Home opens (v3.26), like Week and Journal. The Wardrobe
+    // was one too until v3.29, when it went to Keep with the other things you keep
+    expect(HOME_TABS.map(t => t.key)).toEqual(['today', 'week', 'journal', 'chat'])
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'day'])
   })
@@ -119,15 +123,34 @@ describe('six tabs, the same on the phone and the desktop', () => {
     expect(read('__proto__')).toBe('overview')
   })
 
-  it('gives the wardrobe a page on Home, never a tab of its own', () => {
-    expect(VIEWS).toHaveLength(6)
+  it('gives the wardrobe a segment of Keep, never a tab of its own', () => {
+    expect(VIEWS).toHaveLength(5)
     expect(VIEWS as string[]).not.toContain('wardrobe')
-    expect(HOME_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')
+    // it left Home in v3.29 for the tab that holds the other things you keep
+    expect((HOME_TABS as { key: string }[]).find(t => t.key === 'wardrobe')).toBeUndefined()
+    expect(KEEP_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')
     expect(WARDROBE_TABS.map(t => [t.key, t.label])).toEqual([
       ['outfit', 'Outfit'],
       ['clothes', 'Clothes'],
       ['stats', 'Stats'],
     ])
+  })
+
+  it('keeps the four things you keep in one tab, and the five tabs in one bar', () => {
+    expect(KEEP_TABS.map(t => [t.key, t.label])).toEqual([
+      ['people', 'People'],
+      ['places', 'Places'],
+      ['kitchen', 'Kitchen'],
+      ['wardrobe', 'Wardrobe'],
+    ])
+    // the tabs People, Kitchen and Stats used to be are gone as views …
+    for (const gone of ['people', 'places', 'kitchen', 'stats']) expect(VIEWS as string[]).not.toContain(gone)
+    // … and every link that named one still lands on what it named
+    expect(LEGACY_VIEW_TO_KEEP.people).toBe('people')
+    expect(LEGACY_VIEW_TO_KEEP.places).toBe('places')
+    expect(LEGACY_VIEW_TO_KEEP.kitchen).toBe('kitchen')
+    expect(LEGACY_VIEW_TO_KEEP.wardrobe).toBe('wardrobe')
+    expect(LEGACY_VIEW.stats).toBe('insights')
   })
 })
 
@@ -138,10 +161,14 @@ describe('old links still land on a segment', () => {
     for (const tab of Object.values(LEGACY_VIEW_TO_TASKS)) expect(segments).toContain(tab)
   })
 
-  it('sends the former Today and Review views to Home’s day and week, and ?view=wardrobe to the wardrobe', () => {
-    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today', review: 'week', wardrobe: 'wardrobe' })
+  it('sends the former Today and Review views to Home’s day and week', () => {
+    expect(LEGACY_VIEW_TO_HOME).toEqual({ today: 'today', review: 'week' })
     const segments = HOME_TABS.map(t => t.key) as string[]
     for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(segments).toContain(tab)
+    // and every view that stopped being a tab lands on the segment it named
+    const kept = KEEP_TABS.map(t => t.key) as string[]
+    for (const tab of Object.values(LEGACY_VIEW_TO_KEEP)) expect(kept).toContain(tab)
+    for (const v of Object.values(LEGACY_VIEW)) expect(VIEWS as string[]).toContain(v)
   })
 
   it('opens People or Places on its Stats for ?view=people-stats or ?view=places-stats, names no live view or old link has', () => {
@@ -164,7 +191,8 @@ describe('old links still land on a segment', () => {
     // the plain link names none of the Wardrobe's own views, and nor does a name every object inherits
     for (const name of [undefined, '', 'wardrobe', 'stats', 'outfit', 'clothes', 'constructor', 'toString', '__proto__', 'hasOwnProperty'])
       expect(wardrobeTabOfView(name), String(name)).toBeNull()
-    expect(LEGACY_VIEW_TO_HOME.wardrobe).toBe('wardrobe')
+    // ?view=wardrobe names Keep's Wardrobe segment since v3.29, not a Home page
+    expect(LEGACY_VIEW_TO_KEEP.wardrobe).toBe('wardrobe')
   })
 
   it('reads every link table by its own names, so an inherited one names nothing', () => {
@@ -237,13 +265,26 @@ describe('the remembered segment', () => {
     expect(storedTasksTab()).toBe('list')
   })
 
-  it('reopens Places only when Places was chosen', () => {
-    withStorage({ [PEOPLE_TAB_KEY]: 'places' })
-    expect(storedPeopleTab()).toBe('places')
-    withStorage({ [PEOPLE_TAB_KEY]: 'nonsense' })
-    expect(storedPeopleTab()).toBe('people')
+  it('reopens the Keep segment last chosen, and falls back to People', () => {
+    withStorage({ [KEEP_TAB_KEY]: 'kitchen' })
+    expect(storedKeepTab()).toBe('kitchen')
+    withStorage({ [KEEP_TAB_KEY]: 'wardrobe' })
+    expect(storedKeepTab()).toBe('wardrobe')
+    withStorage({ [KEEP_TAB_KEY]: 'nonsense' })
+    expect(storedKeepTab()).toBe('people')
     withStorage({})
-    expect(storedPeopleTab()).toBe('people')
+    expect(storedKeepTab()).toBe('people')
+  })
+
+  it('inherits the old People · Places key, so Keep opens where its predecessor was left', () => {
+    // a phone updating into v3.29 has drafter:people-tab and no drafter:keep-tab
+    withStorage({ [PEOPLE_TAB_KEY]: 'places' })
+    expect(storedKeepTab()).toBe('places')
+    withStorage({ [PEOPLE_TAB_KEY]: 'people' })
+    expect(storedKeepTab()).toBe('people')
+    // and the new key wins once anything has been chosen on the new track
+    withStorage({ [PEOPLE_TAB_KEY]: 'places', [KEEP_TAB_KEY]: 'kitchen' })
+    expect(storedKeepTab()).toBe('kitchen')
   })
 
   it('reopens Places on Stats only when Stats was chosen', () => {
@@ -277,7 +318,7 @@ describe('the remembered segment', () => {
       },
     })
     expect(storedTasksTab()).toBe('list')
-    expect(storedPeopleTab()).toBe('people')
+    expect(storedKeepTab()).toBe('people')
     expect(storedInnerView('places')).toBe('list')
     expect(storedCalMode()).toBe('month')
   })

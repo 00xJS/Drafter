@@ -2,7 +2,7 @@
 
 Drafter is a personal planner and home journal for one life. Everything sits in one ongoing home project, so nothing asks which project a thing belongs to. It's an installable web app and the same app on the iPhone, works offline, syncs through Supabase, and lets assistants such as Claude help, within the permissions you give them.
 
-Six tabs: five nouns — **Home · Tasks · Calendar · People · Kitchen** — and one lens, **Stats**, the only tab you never add anything to. Everything else is a segment inside a tab rather than a tab of its own. It's light by default, with Dark and Match system in Settings → Appearance.
+Five tabs — **Home · Calendar · Tasks · Keep · Insights**. Home is today, Calendar is when, Tasks is what to do, **Keep** holds the things you keep records about (People, Places, Kitchen, Wardrobe), and **Insights** is the one tab you never add anything to. Everything else is a segment inside a tab rather than a tab of its own. It's light by default, with Dark and Match system in Settings → Appearance.
 
 In a household, the address book is shared but the log is not: who you saw, where you went and the hours you work are each member's own, and the other person's work day shows beside yours with their name on it.
 

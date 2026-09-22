@@ -5,7 +5,7 @@ import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
-import { LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, statsTabOfView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
+import { LEGACY_VIEW, LEGACY_VIEW_TO_HOME, LEGACY_VIEW_TO_KEEP, LEGACY_VIEW_TO_TASKS, VIEWS, kitchenTabOfView, peopleTabOfStatsView, statsTabOfView, viewIn, wardrobeTabOfView, type PendingLink, type View } from './routes'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -23,7 +23,7 @@ interface Deps {
   newTask: Overlays['newTask']
   openSheet: Overlays['openSheet']
   goTasksTab: Nav['goTasksTab']
-  goPeopleTab: Nav['goPeopleTab']
+  goKeepTab: Nav['goKeepTab']
   setHomeTab: Nav['setHomeTab']
   setView: Nav['setView']
   openJournal: Nav['openJournal']
@@ -52,7 +52,7 @@ export function useDeepLinks({
   newTask,
   openSheet,
   goTasksTab,
-  goPeopleTab,
+  goKeepTab,
   setHomeTab,
   setView,
   openJournal,
@@ -122,6 +122,10 @@ export function useDeepLinks({
     const kitchenTab = kitchenTabOfView(parsed.view)
     const wardrobeTab = wardrobeTabOfView(parsed.view)
     const lensTab = statsTabOfView(parsed.view)
+    // the three tabs that stopped being tabs in v3.29: every link that named
+    // one still lands on exactly what it named, now inside Keep or Insights
+    const keptTab = viewIn(LEGACY_VIEW_TO_KEEP, parsed.view)
+    const movedView = viewIn(LEGACY_VIEW, parsed.view)
     if (tasksTab) {
       goTasksTab(tasksTab)
       setView('tasks')
@@ -138,6 +142,17 @@ export function useDeepLinks({
       openWardrobe({ tab: wardrobeTab })
     } else if (lensTab) {
       openLens(lensTab)
+    } else if (keptTab === 'wardrobe') {
+      // handed in as a way in, so it lands on today's composer even when the
+      // Wardrobe segment is already the one on screen
+      openWardrobe({})
+    } else if (keptTab === 'kitchen') {
+      openKitchen()
+    } else if (keptTab) {
+      goKeepTab(keptTab)
+      setView('keep')
+    } else if (movedView) {
+      setView(movedView)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
       setView(parsed.view as View)
     }
@@ -145,8 +160,8 @@ export function useDeepLinks({
       // land on today's editor, not just the tab — this is the quick action's route
       openJournal(localDayKey())
     } else if (parsed.tab) {
-      goPeopleTab(parsed.tab)
-      setView('people')
+      goKeepTab(parsed.tab)
+      setView('keep')
     }
     if (parsed.plan) {
       // A planning sheet and nothing else — the morning digest, a Shortcut's

@@ -5,13 +5,13 @@ import { readChatSeen, writeChatSeen } from '../../chat'
 import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
-  PEOPLE_TAB_KEY,
+  KEEP_TAB_KEY,
   STATS_TAB_KEY,
   TASKS_TAB_KEY,
   storedCalMode,
   storedInnerViews,
   storedKitchenTab,
-  storedPeopleTab,
+  storedKeepTab,
   storedStatsTab,
   storedTasksTab,
   type CalendarMode,
@@ -19,6 +19,7 @@ import {
   type InnerView,
   type InnerViews,
   type KitchenTab,
+  type KeepTab,
   type PeopleTab,
   type StatsTab,
   type TasksTab,
@@ -71,9 +72,9 @@ export function useNavigation() {
    *  person may have stopped thinking about. It is the only project selection
    *  left in the app — nothing filters the other views any more. */
   const [notesProjectId, setNotesProjectId] = useState<string | null>(null)
-  const [peopleTab, showPeopleTab] = useState<PeopleTab>(storedPeopleTab)
-  /** Move the People segment for this visit only. */
-  const goPeopleTab = (tab: PeopleTab) => startTransition(() => showPeopleTab(tab))
+  const [keepTab, showKeepTab] = useState<KeepTab>(storedKeepTab)
+  /** Move the Keep segment for this visit only. */
+  const goKeepTab = (tab: KeepTab) => startTransition(() => showKeepTab(tab))
   /** People's and Places' List · Stats: each segment's own, as last chosen. */
   const [innerViews, showInnerViews] = useState<InnerViews>(storedInnerViews)
   /** Move a segment's List · Stats for this visit only. */
@@ -94,10 +95,10 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  const setPeopleTab = (tab: PeopleTab) => {
-    goPeopleTab(tab)
+  const setKeepTab = (tab: KeepTab) => {
+    goKeepTab(tab)
     try {
-      localStorage.setItem(PEOPLE_TAB_KEY, tab)
+      localStorage.setItem(KEEP_TAB_KEY, tab)
     } catch {
       /* ignore */
     }
@@ -140,18 +141,21 @@ export function useNavigation() {
     if (v === 'home') setHomeTab('today')
     if (v === 'tasks') goTasksTab(storedTasksTab())
     if (v === 'calendar') goCalMode(storedCalMode())
-    if (v === 'people') {
-      goPeopleTab(storedPeopleTab())
+    if (v === 'keep') {
+      goKeepTab(storedKeepTab())
       startTransition(() => showInnerViews(storedInnerViews()))
+      // the Kitchen keeps its own segment, so it is handed the remembered one
+      // too — always, not only when the tap lands on it, or a one-shot from a
+      // link would still be sitting there the next time you moved to it
+      setKitchenOpen(storedKitchenTab())
     }
-    if (v === 'kitchen') setKitchenOpen(storedKitchenTab())
-    if (v === 'stats') goStatsTab(storedStatsTab())
+    if (v === 'insights') goStatsTab(storedStatsTab())
     setView(v)
   }
   /** The lens, on one of its segments (a link, the palette), for this visit only. */
   const openLens = (tab?: StatsTab) => {
     if (tab) goStatsTab(tab)
-    setView('stats')
+    setView('insights')
   }
   /**
    * Which half of Home → Chat is showing: the household's thread or the
@@ -178,8 +182,8 @@ export function useNavigation() {
   const [placeOpenId, setPlaceOpenId] = useState<string | null>(null)
   const openPlace = (id?: string) => {
     if (id) setPlaceOpenId(id)
-    goPeopleTab('places')
-    setView('people')
+    goKeepTab('places')
+    setView('keep')
     // the row it opens is on the list, whichever half the segment was left on
     if (id) goInnerView('places', 'list')
   }
@@ -187,8 +191,8 @@ export function useNavigation() {
   const [personOpenId, setPersonOpenId] = useState<string | null>(null)
   const openPerson = (id?: string) => {
     if (id) setPersonOpenId(id)
-    goPeopleTab('people')
-    setView('people')
+    goKeepTab('people')
+    setView('keep')
     // the card it opens is on the list, whichever half the segment was left on
     if (id) goInnerView('people', 'list')
   }
@@ -203,14 +207,14 @@ export function useNavigation() {
   const [addPlace, setAddPlace] = useState(false)
   const addAPerson = () => {
     setAddPerson(true)
-    goPeopleTab('people')
-    setView('people')
+    goKeepTab('people')
+    setView('keep')
     goInnerView('people', 'list')
   }
   const addAPlace = () => {
     setAddPlace(true)
-    goPeopleTab('places')
-    setView('people')
+    goKeepTab('places')
+    setView('keep')
     goInnerView('places', 'list')
   }
   /** A segment's Stats, for this visit only: a tab tap opens the view last chosen.
@@ -218,9 +222,9 @@ export function useNavigation() {
    *  shipped before the lens. The palette's People stats and Places stats rows
    *  open the lens now, where every figure lives. */
   const openStats = (tab: PeopleTab) => {
-    goPeopleTab(tab)
+    goKeepTab(tab)
     goInnerView(tab, 'stats')
-    setView('people')
+    setView('keep')
   }
   const openJournal = (date?: string) => {
     if (date) setJournalOpenDate(date)
@@ -234,15 +238,19 @@ export function useNavigation() {
    *  only and the one last chosen stays remembered. */
   const [kitchenOpen, setKitchenOpen] = useState<KitchenTab | null>(null)
   const openKitchen = (tab?: KitchenTab) => {
-    if (tab) setKitchenOpen(tab)
-    setView('kitchen')
+    // with no segment named, the one Kitchen remembers — which is what a tap
+    // on the tab gives, and what the palette's Kitchen row has always given
+    setKitchenOpen(tab ?? storedKitchenTab())
+    goKeepTab('kitchen')
+    setView('keep')
   }
   /** A day for This week to open on, framed (the dinner calendar in the Stats lens's Kitchen); consumed by the view, like the segment. */
   const [kitchenDay, setKitchenDay] = useState<string | null>(null)
   const openKitchenDay = (day: string) => {
     setKitchenDay(day)
     setKitchenOpen('week')
-    setView('kitchen')
+    goKeepTab('kitchen')
+    setView('keep')
   }
   /** A note for Tasks → Notes to open (the palette's search); consumed by the view. */
   const [noteOpenId, setNoteOpenId] = useState<string | null>(null)
@@ -260,8 +268,8 @@ export function useNavigation() {
   const [wardrobeOpen, setWardrobeOpen] = useState<WardrobeOpen | null>(null)
   const openWardrobe = (o: WardrobeOpen = {}) => {
     setWardrobeOpen(o)
-    setHomeTab('wardrobe')
-    setView('home')
+    goKeepTab('wardrobe')
+    setView('keep')
   }
   /** A day for the Calendar to open, its day sheet up (the month calendar in People → Stats or Places → Stats); consumed by the view. */
   const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
@@ -280,8 +288,8 @@ export function useNavigation() {
     goTasksTab,
     notesProjectId,
     setNotesProjectId,
-    peopleTab,
-    goPeopleTab,
+    keepTab,
+    goKeepTab,
     innerViews,
     goInnerView,
     setInnerView,
@@ -293,7 +301,7 @@ export function useNavigation() {
     homeTab,
     setHomeTab,
     setTasksTab,
-    setPeopleTab,
+    setKeepTab,
     goView,
     chatSide,
     setChatSide,

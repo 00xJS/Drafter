@@ -35,8 +35,9 @@ export function Landing({ configured, onSignIn }: Props) {
           Run your life like a <span className="hero-accent">well-run project.</span>
         </h1>
         <p>
-          Drafter is a home journal and planner — six tabs on desktop and phone: Home, Tasks, Calendar, People and
-          Kitchen, and Stats, where every figure it keeps lives — with habits, routines, a weekly review, GitHub links
+          Drafter is a home journal and planner — five tabs on desktop and phone: Home, Calendar, Tasks, Keep (the
+          people, places, food and clothes you keep) and Insights, where every figure it keeps lives — with habits,
+          routines, a weekly review, GitHub links
           and an iPhone app that feels like one.
         </p>
         {configured ? (

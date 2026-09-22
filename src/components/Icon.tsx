@@ -33,6 +33,7 @@ export type IconName =
   | 'star'
   | 'shuffle'
   | 'stats'
+  | 'keep'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -179,6 +180,17 @@ const PATHS: Record<IconName, JSX.Element> = {
       <rect x="4.8" y="12.4" width="4" height="6" rx="1.4" />
       <rect x="10.4" y="8.6" width="4" height="9.8" rx="1.4" />
       <rect x="16" y="4.4" width="4" height="14" rx="1.4" />
+    </>
+  ),
+  /* Four squares for Keep's four: People, Places, Kitchen, Wardrobe. A box or
+     a basket would have named one of them; a quartet names the set, and four
+     marks stay legible at the 22px the tab bar draws it. */
+  keep: (
+    <>
+      <rect x="3.6" y="3.6" width="7.2" height="7.2" rx="2" />
+      <rect x="13.2" y="3.6" width="7.2" height="7.2" rx="2" />
+      <rect x="3.6" y="13.2" width="7.2" height="7.2" rx="2" />
+      <rect x="13.2" y="13.2" width="7.2" height="7.2" rx="2" />
     </>
   ),
 }

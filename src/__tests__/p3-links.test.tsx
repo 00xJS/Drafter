@@ -42,7 +42,7 @@ function links() {
     newTask: log('newTask'),
     openSheet: log('openSheet'),
     goTasksTab: log('tasksTab'),
-    goPeopleTab: log('peopleTab'),
+    goKeepTab: log('keepTab'),
     openStats: log('stats'),
     setHomeTab: log('homeTab'),
     setView: log('view'),
@@ -137,18 +137,22 @@ describe('a Stats view has a link, as the wardrobe has ?view=wardrobe', () => {
     }
   })
 
-  it('leaves ?view=wardrobe naming no view of the Wardrobe’s, so it opens on today’s composer as before', () => {
+  it('leaves ?view=wardrobe naming no view of the Wardrobe’s, so it opens on today’s composer', () => {
+    // It is handed in as a way IN — `{}`, naming nothing — rather than just
+    // switching tabs. Since v3.29 the Wardrobe is a segment of Keep that may
+    // already be mounted on Clothes, where "switch to it" would land you on
+    // whatever you were last looking at; the empty one-shot says composer.
     for (const raw of ['/?view=wardrobe', 'drafter://open?view=wardrobe']) {
       const { apply, calls } = links()
       apply(raw)
-      expect(calls, raw).toEqual(['homeTab ["wardrobe"]', 'view ["home"]'])
+      expect(calls, raw).toEqual(['wardrobe [{}]'])
     }
   })
 
   it('leaves ?tab=places on whichever half Places was showing', () => {
     const { apply, calls } = links()
     apply('/?tab=places')
-    expect(calls).toEqual(['peopleTab ["places"]', 'view ["people"]'])
+    expect(calls).toEqual(['keepTab ["places"]', 'view ["keep"]'])
   })
 })
 

@@ -77,7 +77,7 @@ describe('a person’s Where we go', () => {
     expect(screen).toMatch(/onOpenPlace=\{place => openPlace\(place\.id\)\}/)
     // openPlace hands the row to Places (its openId) and moves the segment
     const nav = read('../components/planner/useNavigation.ts')
-    expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{\s*if \(id\) setPlaceOpenId\(id\)\s*goPeopleTab\('places'\)/)
+    expect(nav).toMatch(/const openPlace = \(id\?: string\) => \{\s*if \(id\) setPlaceOpenId\(id\)\s*goKeepTab\('places'\)/)
     expect(screen).toMatch(/openId=\{placeOpenId\}/)
   })
 })

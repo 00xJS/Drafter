@@ -30,7 +30,7 @@ import type { AreaProps } from '../StatsLens'
 export function StatsScreen({ p }: { p: PlannerCtx }) {
   const { store, household, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
-  const { openPerson, openPlace, openCalendarDay, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
+  const { openPerson, openPlace, openCalendarDay, openKitchen, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
   // What the wardrobe's figures are read from. Wardrobe.tsx works these out for
   // itself; here they are the screen's, so the lens stays a view.
@@ -56,7 +56,7 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
     // same landing Today's "tonight's dinner" makes
     onOpenRecipe: recipe => {
       setKitchenRecipe(recipe)
-      setView('kitchen')
+      openKitchen()
     },
     // …and a dinner day lands on This week, framed, exactly as it does when
     // the same calendar is tapped inside the Kitchen's own Stats

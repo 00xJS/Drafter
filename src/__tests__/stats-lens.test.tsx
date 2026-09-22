@@ -562,9 +562,9 @@ describe('the kit the lens introduced', () => {
   })
 })
 
-describe('the sixth tab', () => {
+describe('the Insights tab', () => {
   it('is a view of its own, with its own chunk and its own link names', () => {
-    expect(VIEWS).toContain('stats')
+    expect(VIEWS).toContain('insights')
     expect(LensChunk.preload).toBeTypeOf('function')
     expect(Object.keys(VIEW_TO_STATS).sort()).toEqual(['stats-habits', 'stats-journal', 'stats-kitchen', 'stats-money', 'stats-people', 'stats-places', 'stats-tasks', 'stats-wardrobe'])
     expect(statsTabOfView('stats-tasks')).toBe('tasks')
@@ -610,7 +610,7 @@ describe('the sixth tab', () => {
   })
 
   it('is mounted by the shell on its own view', () => {
-    expect(readSource('components/Planner.tsx')).toContain("{view === 'stats' && <StatsScreen p={p} />}")
+    expect(readSource('components/Planner.tsx')).toContain("{view === 'insights' && <StatsScreen p={p} />}")
   })
 
   it('gathers what the areas need and counts nothing itself', () => {
@@ -636,7 +636,7 @@ describe('the sixth tab', () => {
     // not drag the composer, the clothes grid and the photo pipeline in with them
     expect(lazySrc).toContain("import('../wardrobe/WardrobeStats')")
     // …and a finger on the Stats tab warms every view it can draw
-    expect(lazySrc).toMatch(/stats: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload\]/)
+    expect(lazySrc).toMatch(/insights: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload\]/)
     // the lens reaches them through lazy.ts, never by importing the files
     const lens = readSource('components/StatsLens.tsx')
     expect(lens).toContain("from './planner/lazy'")
@@ -654,7 +654,7 @@ describe('what the app says about itself names the tab', () => {
    */
   const file = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8')
 
-  it('says six tabs, and names Stats, wherever it counts them', () => {
+  it('says five tabs, and names Insights, wherever it counts them', () => {
     const prose = [
       ['the landing page', readSource('components/Landing.tsx')],
       ['the meta description', file('index.html')],
@@ -662,13 +662,13 @@ describe('what the app says about itself names the tab', () => {
       ['the README', file('README.md')],
     ] as const
     for (const [where, text] of prose) {
-      expect(text, where).not.toMatch(/\bfive tabs\b/i)
-      expect(text, where).toMatch(/\bStats\b/)
+      expect(text, where).not.toMatch(/\bsix tabs\b/i)
+      expect(text, where).toMatch(/\bInsights\b/)
     }
   })
 
-  it('never lets a tab list in prose omit one of the six', () => {
-    // a sentence that names four of the tabs has to name all six
+  it('never lets a tab list in prose omit one of the five', () => {
+    // a sentence that names four of the tabs has to name all five
     const named = (text: string) => VIEWS.filter(v => new RegExp(`\\b${VIEW_LABELS[v]}\\b`).test(text))
     for (const [where, text] of [
       ['the landing page', readSource('components/Landing.tsx')],

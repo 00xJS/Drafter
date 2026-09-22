@@ -2,9 +2,16 @@ import type { PlannerCtx } from './ctx'
 import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
 
-/** People, with Places as its second segment; each segment has its own List · Stats. */
+/**
+ * Keep's People and Places halves, each with its own List · Stats.
+ *
+ * The People · Places switch that used to sit at the top of this file is
+ * gone: those are two of Keep's four segments now, drawn by KeepScreen, and a
+ * second switch under it saying the same two words would be the tab bar's own
+ * job done twice.
+ */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, showToast, peopleTab, setPeopleTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
+  const { store, household, showToast, keepTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, openSheet } = p
   // Each list's find box and chip. They live on the shell (useListFilters), not
   // here, because the Stats lens draws these same two Stats in its own tab: a
@@ -16,29 +23,7 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
   const { addPerson, setAddPerson, addAPerson, addPlace, setAddPlace, addAPlace } = p
   return (
     <>
-      <div className="people-tab-seg">
-        <span className="segmented" role="tablist" aria-label="People view">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={peopleTab === 'people'}
-            className={peopleTab === 'people' ? 'seg on' : 'seg'}
-            onClick={() => setPeopleTab('people')}
-          >
-            People
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={peopleTab === 'places'}
-            className={peopleTab === 'places' ? 'seg on' : 'seg'}
-            onClick={() => setPeopleTab('places')}
-          >
-            Places
-          </button>
-        </span>
-      </div>
-      {peopleTab === 'places' ? (
+      {keepTab === 'places' ? (
         <>
           {/* remembered as the segments are: chosen here, and nowhere else */}
           <ListStatsSwitch

@@ -63,13 +63,13 @@ export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => 
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, Wardrobe.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
+  home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
-  people: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload],
-  kitchen: [Kitchen.preload, KitchenStats.preload],
+  // four segments, and a finger cannot say which — so all four, as the lens does
+  keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
-  stats: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
+  insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 

@@ -201,6 +201,11 @@
   .native .people-tab-seg.kitchen-seg .segmented .seg {
     padding-inline: 6px;
   }
+  /* Keep's four: People · Places · Kitchen · Wardrobe, and "Wardrobe" is the
+     longest label any of these tracks carries */
+  .native .people-tab-seg.keep-seg .segmented .seg {
+    padding-inline: 6px;
+  }
 }
 
 /* --- Pull to refresh. Only the disc moves: the body is the scroller and the

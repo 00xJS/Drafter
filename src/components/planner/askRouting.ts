@@ -12,7 +12,7 @@ import type { PlannerCtx } from './ctx'
  * closes itself; the chat page stays where it is.
  */
 export function askDocOpener(p: PlannerCtx, before?: () => void): (doc: AskDoc) => void {
-  const { store, openTask, openProject, openPlace, openJournal, openPerson, setKitchenRecipe, setView, openWardrobe, setEventEditor } = p
+  const { store, openTask, openProject, openPlace, openJournal, openPerson, setKitchenRecipe, openKitchen, setView, openWardrobe, setEventEditor } = p
   return doc => {
     before?.()
     if (doc.kind === 'task' || doc.kind === 'bill') {
@@ -27,8 +27,8 @@ export function askDocOpener(p: PlannerCtx, before?: () => void): (doc: AskDoc) 
     else if (doc.kind === 'recipe') {
       const r = store.recipes.find(x => x.id === doc.id)
       if (r) setKitchenRecipe(r)
-      setView('kitchen')
-    } else if (doc.kind === 'meal') setView('kitchen')
+      openKitchen()
+    } else if (doc.kind === 'meal') openKitchen()
     // a piece opens its sheet over Clothes; a look, the composer on its day
     else if (doc.kind === 'garment') openWardrobe({ tab: 'clothes', garmentId: doc.id })
     else if (doc.kind === 'wear') openWardrobe({ date: doc.date })

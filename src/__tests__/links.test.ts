@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LEGACY_VIEW_TO_HOME } from '../components/planner/routes'
+import { LEGACY_VIEW_TO_KEEP } from '../components/planner/routes'
 import { oauthReasonLabel, paramsOf, parseLink, safeHttpUrl } from '../links'
 
 describe('parseLink', () => {
@@ -227,17 +227,21 @@ describe('Home Screen quick actions', () => {
     expect(parse(routes.get('new')!).capture).toEqual({ title: '', description: undefined, link: undefined })
     // Plan my day's sheet and nothing else: no view of its own, no capture, nothing to write
     expect(parse(routes.get('plan')!)).toEqual({ plan: 'day' })
-    // Home → Wardrobe, by the link the wardrobe has always answered to
+    // the Wardrobe, by the link it has always answered to — a Home page until
+    // v3.29, a segment of Keep since, and the same link either way
     expect(parse(routes.get('wardrobe')!)).toEqual({ view: 'wardrobe' })
-    expect(LEGACY_VIEW_TO_HOME.wardrobe).toBe('wardrobe')
+    expect(LEGACY_VIEW_TO_KEEP.wardrobe).toBe('wardrobe')
     // and the Today view
     expect(parse(routes.get('today')!).view).toBe('today')
   })
 
   it('lands each route where its name says, through the router', () => {
     const router = read('../components/planner/useDeepLinks.ts')
-    // ?view=wardrobe and ?view=today: the Home segment LEGACY_VIEW_TO_HOME names, read by its own keys
+    // ?view=today: the Home segment LEGACY_VIEW_TO_HOME names, read by its own keys
     expect(router).toMatch(/const homeTab = viewIn\(LEGACY_VIEW_TO_HOME, parsed\.view\)/)
+    // …and ?view=people / places / kitchen / wardrobe: the Keep segment each names
+    expect(router).toMatch(/const keptTab = viewIn\(LEGACY_VIEW_TO_KEEP, parsed\.view\)/)
+    expect(router).toMatch(/\} else if \(keptTab\) \{\s*goKeepTab\(keptTab\)\s*setView\('keep'\)/)
     expect(router).toMatch(/\} else if \(homeTab\) \{\s*setHomeTab\(homeTab\)\s*setView\('home'\)/)
     // ?plan=day with no view: Home → Today, and the day's planning sheet over it
     expect(router).toMatch(/if \(!parsed\.view\) \{\s*setHomeTab\(parsed\.plan === 'week' \? 'week' : 'today'\)\s*setView\('home'\)/)

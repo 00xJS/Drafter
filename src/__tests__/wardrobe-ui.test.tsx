@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { formatMoney } from '../bills'
 import type { PlannerCtx } from '../components/planner/ctx'
-import { HomeScreen } from '../components/planner/HomeScreen'
+import { KeepScreen } from '../components/planner/KeepScreen'
 import { Wardrobe as LazyWardrobe } from '../components/planner/lazy'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import { Clothes } from '../components/wardrobe/Clothes'
@@ -590,14 +590,16 @@ describe('Home → Wardrobe', () => {
       <Wardrobe garments={[...tops, ...bottoms]} outfits={[]} wears={[]} onSave={noop} onRemove={noop} onRestore={noop} showToast={noop} open={open} onOpenConsumed={noop} />,
     )
 
-  it('opens from the day, with a way back, on the composer', () => {
+  it('opens as a segment of Keep, on the composer', () => {
+    // It hung off Home until v3.29 — a page you opened from the day, with a
+    // "Today" button back. It is one of Keep's four now, so the way back is
+    // the tab bar and the way in is Keep's own track.
     at10()
     const store = { garments: [...tops, ...bottoms], outfits: [], wears: [], upsert: noop, remove: noop, restore: noop }
-    const p = { store, household: { myId: null }, homeTab: 'wardrobe', wardrobeOpen: null, setHomeTab: noop, setJournalOpenDate: noop, setWardrobeOpen: noop, openWardrobe: noop, showToast: noop } as unknown as PlannerCtx
-    const html = renderToStaticMarkup(<HomeScreen p={p} />)
+    const p = { store, household: { myId: null }, keepTab: 'wardrobe', wardrobeOpen: null, setKeepTab: noop, setWardrobeOpen: noop, showToast: noop } as unknown as PlannerCtx
+    const html = renderToStaticMarkup(<KeepScreen p={p} />)
     const tabs = [...html.matchAll(/role="tab" aria-selected="(true|false)" class="seg(?: on)?">([^<]+)</g)].map(m => `${m[2]}${m[1] === 'true' ? '*' : ''}`)
-    expect(html).toContain('>Today</button>')
-    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
+    expect(tabs).toEqual(['People', 'Places', 'Kitchen', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('aria-label="Tops"')
     expect(html).toContain('Add clothing')
   })

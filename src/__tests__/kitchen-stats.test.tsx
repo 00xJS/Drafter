@@ -652,7 +652,7 @@ describe('the ways to it', () => {
       newTask: log('newTask'),
       openSheet: log('openSheet'),
       goTasksTab: log('tasksTab'),
-      goPeopleTab: log('peopleTab'),
+      goKeepTab: log('keepTab'),
       setHomeTab: log('homeTab'),
       setView: log('view'),
       openJournal: log('journal'),
@@ -676,7 +676,9 @@ describe('the ways to it', () => {
     expect(calls).toEqual(['kitchen ["stats"]'])
     calls.length = 0
     apply('/?view=kitchen')
-    expect(calls).toEqual(['view ["kitchen"]'])
+    // ?view=kitchen names Keep's Kitchen segment since v3.29, on whatever
+    // segment the Kitchen itself remembers — so it goes through openKitchen
+    expect(calls).toEqual(['kitchen []'])
   })
 
   it('goes back to the segment last chosen when the Kitchen tab is tapped after a way in moved it', () => {
@@ -688,7 +690,7 @@ describe('the ways to it', () => {
       const [step, setStep] = useState(0)
       handed.push(nav.kitchenOpen)
       if (step === 0) nav.openKitchen('stats')
-      if (step === 1) nav.goView('kitchen')
+      if (step === 1) nav.goView('keep')
       if (step < 2) setStep(step + 1)
       return null
     }
@@ -720,7 +722,7 @@ describe('its chunk and its styles', () => {
   it('loads through planner/lazy.ts, warmed with the Kitchen tab, and no static import of the Kitchen reaches it or the kit', () => {
     const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
     expect(lazy).toContain("import('../kitchen/KitchenStats')")
-    expect(lazy).toContain('kitchen: [Kitchen.preload, KitchenStats.preload]')
+    expect(lazy).toContain('Kitchen.preload, KitchenStats.preload')
     const kitchen = reach([resolve(SRC, 'components/Kitchen.tsx')])
     const heavy = [resolve(SRC, 'components/kitchen/KitchenStats.tsx'), resolve(SRC, 'kitchenstats.ts'), ...['index.ts', 'ChartCard.tsx', 'RankedBars.tsx', 'Podium.tsx', 'MonthCalendar.tsx', 'ListCard.tsx'].map(f => resolve(SRC, 'components/stats', f))]
     expect(heavy.filter(f => kitchen.has(f)).map(f => f.slice(SRC.length))).toEqual([])

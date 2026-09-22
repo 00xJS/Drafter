@@ -41,7 +41,7 @@ describe('People opens the card asked for', () => {
 describe('search, Ask and a reminder hand People the person', () => {
   it('opens the People segment with the card, as openPlace does for Places', () => {
     const nav = read('../components/planner/useNavigation.ts')
-    expect(nav).toMatch(/const openPerson = \(id\?: string\) => \{\s*if \(id\) setPersonOpenId\(id\)\s*goPeopleTab\('people'\)\s*setView\('people'\)/)
+    expect(nav).toMatch(/const openPerson = \(id\?: string\) => \{\s*if \(id\) setPersonOpenId\(id\)\s*goKeepTab\('people'\)\s*setView\('keep'\)/)
     const screen = read('../components/planner/PeopleScreen.tsx')
     expect(screen).toMatch(/openId=\{personOpenId\}/)
     expect(screen).toMatch(/onOpenConsumed=\{\(\) => setPersonOpenId\(null\)\}/)
@@ -59,6 +59,6 @@ describe('search, Ask and a reminder hand People the person', () => {
     const links = read('../components/planner/useDeepLinks.ts')
     const saw = links.slice(links.indexOf('if (parsed.saw) {'), links.indexOf('if (parsed.task) {'))
     expect(saw).toMatch(/openPerson\(person\.id\)/)
-    expect(saw).not.toMatch(/goPeopleTab\('people'\)/)
+    expect(saw).not.toMatch(/goKeepTab\('people'\)/)
   })
 })

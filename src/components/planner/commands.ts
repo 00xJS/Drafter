@@ -1,7 +1,7 @@
 import type { Command } from '../Search'
 import type { Task } from '../../types'
 import { localDayKey } from '../../journal'
-import { storedInnerView, type HomeTab, type InnerView, type PeopleTab, type StatsTab, type TasksTab, type View } from './routes'
+import { storedInnerView, type HomeTab, type InnerView, type KeepTab, type KitchenTab, type PeopleTab, type StatsTab, type TasksTab, type View } from './routes'
 import type { Sheet } from './useOverlays'
 import type { WardrobeOpen } from './useNavigation'
 
@@ -12,10 +12,12 @@ export interface PaletteNav {
   setView(v: View): void
   openJournal(date?: string): void
   goTasksTab(tab: TasksTab): void
-  setPeopleTab(tab: PeopleTab): void
+  setKeepTab(tab: KeepTab): void
   /** A segment of People's List · Stats, for this visit only. */
   goInnerView(tab: PeopleTab, v: InnerView): void
   openWardrobe(o?: WardrobeOpen): void
+  /** Keep's Kitchen, on the segment it remembers. */
+  openKitchen(tab?: KitchenTab): void
   /** The Stats lens, on the segment named for this visit only, or the one last chosen. Every "… stats" row lands here. */
   openLens(tab?: StatsTab): void
 }
@@ -38,14 +40,16 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setHomeTab, setView, openJournal, goTasksTab, setPeopleTab, goInnerView, openWardrobe, openLens } = nav
+  const { goView, setHomeTab, setView, openJournal, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens } = nav
   const { newTask, setSettingsOpen, openSheet } = overlays
   const hour = now.getHours()
-  /** People or Places, remembered as its button would, on the List or Stats last chosen there: a one-shot People stats or Places stats does not linger. */
+  /** People or Places — two of Keep's four — remembered as its button would,
+   *  on the List or Stats last chosen there: a one-shot People stats or Places
+   *  stats does not linger. */
   const goPeople = (tab: PeopleTab) => {
-    setPeopleTab(tab)
+    setKeepTab(tab)
     goInnerView(tab, storedInnerView(tab))
-    setView('people')
+    setView('keep')
   }
   return [
     { id: 'new-task', label: 'New task', icon: 'plus', quick: true, keywords: 'add create', run: () => newTask() },
@@ -83,11 +87,11 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-people-stats', label: 'People stats', icon: 'stats', keywords: 'insights figures most seen often together streak podium catch up birthdays year', run: () => openLens('people') },
     { id: 'go-places-stats', label: 'Places stats', icon: 'stats', keywords: 'insights figures outings most visited where we go', run: () => openLens('places') },
     // where you last left it, as a tab tap opens it, not the Stats a Kitchen stats left for its visit
-    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => goView('kitchen') },
+    { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => openKitchen() },
     { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'stats', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openLens('kitchen') },
     { id: 'go-wardrobe-stats', label: 'Wardrobe stats', icon: 'stats', keywords: 'most worn never worn cost per wear streak uniform photo calendar repeated outfits insights figures', run: () => openLens('wardrobe') },
     // the lens, on the segment last chosen, as a tab tap opens it…
-    { id: 'go-stats', label: 'Stats', icon: 'stats', keywords: 'figures insights numbers charts overview trends how am i doing', run: () => goView('stats') },
+    { id: 'go-stats', label: 'Stats', icon: 'stats', keywords: 'figures insights numbers charts overview trends how am i doing', run: () => goView('insights') },
     // …and the four segments whose figures live nowhere else
     { id: 'go-task-stats', label: 'Task stats', icon: 'stats', keywords: 'finished done throughput overdue by tag priority weekday streak figures', run: () => openLens('tasks') },
     { id: 'go-money-stats', label: 'Money stats', icon: 'stats', keywords: 'spending paid payee subscriptions budget outgoings figures', run: () => openLens('money') },

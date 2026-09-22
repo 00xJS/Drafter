@@ -18,6 +18,7 @@ describe('the shell stays a shell', () => {
 const topBar = read('../components/planner/TopBar.tsx')
 const calendar = read('../components/planner/CalendarScreen.tsx')
 const people = read('../components/planner/PeopleScreen.tsx')
+const keep = read('../components/planner/KeepScreen.tsx')
 
 describe('the tabs and segments say where you are', () => {
   it('marks the desktop strip like the phone bar: real buttons, the current tab current', () => {
@@ -33,12 +34,15 @@ describe('the tabs and segments say where you are', () => {
     for (const mode of ['month', 'week', 'day']) expect(modes).toMatch(new RegExp(`type="button" role="tab" aria-selected=\\{calMode === '${mode}'\\}`))
   })
 
-  it('makes People / Places a tablist, like Home and Tasks', () => {
-    expect(people).toMatch(/<span className="segmented" role="tablist" aria-label="People view">/)
-    const from = people.indexOf('aria-label="People view"')
-    expect(people.slice(from, people.indexOf('</span>', from)).match(/role="tab"/g)).toHaveLength(2)
-    expect(people).toMatch(/aria-selected=\{peopleTab === 'people'\}/)
-    expect(people).toMatch(/aria-selected=\{peopleTab === 'places'\}/)
+  it('makes Keep’s four a tablist, like Home and Tasks', () => {
+    // one track, built from the shared <Segmented>, which gives each choice
+    // role="tab" and aria-selected of its own (stats/Segmented.tsx)
+    expect(keep).toMatch(/<Segmented items=\{KEEP_TABS\} value=\{keepTab\} onChange=\{t => setKeepTab\(t\)\} label="Keep view" \/>/)
+    // and PeopleScreen no longer draws a People · Places switch under it:
+    // those are two of the four above, and saying them twice is the tab bar's
+    // job done twice (v3.29)
+    expect(people).not.toMatch(/aria-label="People view"/)
+    expect(people).toMatch(/keepTab === 'places' \?/)
   })
 
   it('gives People and Places each their own List · Stats tablist, the wardrobe’s small switch, remembered by its buttons', () => {

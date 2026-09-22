@@ -589,8 +589,8 @@ describe('the People tab holds them for the visit', () => {
       tree => handed(tree, lazy.People)!.onFilter(friendsSa),
       (_, nav) => nav.setInnerView('people', 'stats'),
       (_, nav) => nav.setInnerView('people', 'list'),
-      (_, nav) => nav.setPeopleTab('places'),
-      (_, nav) => nav.setPeopleTab('people'),
+      (_, nav) => nav.setKeepTab('places'),
+      (_, nav) => nav.setKeepTab('people'),
     ])
     expect(trees).toHaveLength(6)
     expect(handed(trees[0], lazy.People)!.filter).toEqual(NO_PERSON_FILTER)
@@ -607,7 +607,7 @@ describe('the People tab holds them for the visit', () => {
   it('keeps what Places’ find box and chip hold through List → Stats → List', () => {
     const restaurantsNop: PlaceFilter = { category: 'restaurant', q: 'nop' }
     const { trees } = onTheTab([
-      (_, nav) => nav.setPeopleTab('places'),
+      (_, nav) => nav.setKeepTab('places'),
       tree => handed(tree, lazy.Places)!.onFilter(restaurantsNop),
       (_, nav) => nav.setInnerView('places', 'stats'),
       (_, nav) => nav.setInnerView('places', 'list'),
@@ -633,7 +633,7 @@ describe('the People tab holds them for the visit', () => {
     const friends: PersonFilter = { group: 'friends', q: '' }
     const { trees, page } = onTheTab([
       tree => handed(tree, lazy.People)!.onFilter(friends),
-      (_, nav) => nav.setPeopleTab('places'),
+      (_, nav) => nav.setKeepTab('places'),
       tree => handed(tree, lazy.Places)!.onFilter({ category: 'outdoors', q: 'park' }),
       (_, nav) => nav.openPlace('bella'),
     ])
@@ -643,7 +643,7 @@ describe('the People tab holds them for the visit', () => {
     const back = onTheTab([
       tree => handed(tree, lazy.People)!.onFilter(friends),
       (_, nav) => nav.openPlace('bella'),
-      (_, nav) => nav.setPeopleTab('people'),
+      (_, nav) => nav.setKeepTab('people'),
     ])
     expect(handed(back.trees[back.trees.length - 1], lazy.People)!.filter).toEqual(friends)
   })
@@ -664,7 +664,7 @@ describe('the People tab holds them for the visit', () => {
   it('keeps Places’ when a row on Stats opens it', () => {
     const restaurantsNop: PlaceFilter = { category: 'restaurant', q: 'nop' }
     const { trees, page } = onTheTab([
-      (_, nav) => nav.setPeopleTab('places'),
+      (_, nav) => nav.setKeepTab('places'),
       tree => handed(tree, lazy.Places)!.onFilter(restaurantsNop),
       (_, nav) => nav.setInnerView('places', 'stats'),
       // Nopi from the podium: the one place Restaurant and “nop” leave
@@ -700,7 +700,7 @@ describe('the People tab holds them for the visit', () => {
     const screen = source('components/planner/PeopleScreen.tsx')
     expect(screen).not.toMatch(/useState/)
     expect(screen).toContain('const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p')
-    expect(plannerSource()).toContain("{view === 'people' && <PeopleScreen p={p} />}")
+    expect(plannerSource()).toContain("{view === 'keep' && <KeepScreen p={p} />}")
     // …and the shell builds them once, for every tab that draws a filtered figure
     expect(plannerSource()).toContain('const listFilters = useListFilters({ store, personOpenId: nav.personOpenId, placeOpenId: nav.placeOpenId })')
   })

@@ -1,37 +1,51 @@
 import type { IconName } from '../Icon'
 
-// Each tab that shows the same data more than one way holds those ways as
-// segments instead of splitting into peer tabs — except Home, which IS the
-// day. Week, Journal and Wardrobe still live on Home as pages you open from
-// today's cards (a link, the palette, or the pinned Wardrobe on Today), not
-// as a four-way switch beside Today. Tasks holds the list, board, bills and
-// notes; People holds Places.
-// Desktop and phone then land on the identical six tabs.
+// Five tabs, and each one answers a different question.
 //
-// Five of them are nouns — things you add to. Stats is the sixth and is not a
-// noun but a lens: the only tab you never put anything into, reading across
-// every other one. That is why it can join them without competing for the same
-// slot, and why the areas that already count themselves (People, Places,
-// Kitchen, the Wardrobe) keep their own Stats, which follow that list's search
-// and chips. The lens aggregates those and holds the four areas that have
-// nowhere else to be counted: tasks, money, habits and the journal.
-// Still no More drawer.
-export type View = 'home' | 'tasks' | 'calendar' | 'people' | 'kitchen' | 'stats'
-export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'people', 'kitchen', 'stats']
+//   Home      — what about today
+//   Calendar  — when
+//   Tasks     — what to do
+//   Keep      — who and what you keep: People, Places, Kitchen, Wardrobe
+//   Insights  — what it all adds up to
+//
+// Until v3.29 there were six, and the sixth was an accident of growth rather
+// than a decision: People, Kitchen and Stats had each earned a tab by being
+// too big for anywhere else, and the Wardrobe had not, so it lived as a page
+// hanging off Home beside the Week and the Journal. That left two rules
+// running at once — "a big thing gets a tab" and "a thing Home opens is a
+// page" — and which one a module got depended on when it was built.
+//
+// Keep is the one rule: the things you KEEP records about sit together, and
+// each is a segment of it. People, Places, Kitchen and the Wardrobe are the
+// four, they already each carry their own inner switch (List · Stats, or the
+// Kitchen's four), and nothing about what they do changes by moving.
+//
+// A tab that shows the same data more than one way still holds those ways as
+// segments, never as peer tabs. Still no More drawer.
+export type View = 'home' | 'tasks' | 'calendar' | 'keep' | 'insights'
+export const VIEWS: View[] = ['home', 'tasks', 'calendar', 'keep', 'insights']
 export type CalendarMode = 'month' | 'week' | 'day'
 export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'day']
 export type PeopleTab = 'people' | 'places'
-/** Home's pages: the day, plus the week / journal / wardrobe opened from it. */
-export type HomeTab = 'today' | 'week' | 'journal' | 'wardrobe' | 'chat'
+/** Home's pages: the day, plus the week / journal / chat opened from it.
+ *  The Wardrobe left for Keep in v3.29, where the other things you keep are. */
+export type HomeTab = 'today' | 'week' | 'journal' | 'chat'
 export const HOME_TABS: { key: HomeTab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'week', label: 'Week' },
   { key: 'journal', label: 'Journal' },
-  { key: 'wardrobe', label: 'Wardrobe' },
-  // a page Home opens, like the three above it — never a sixth noun on the tab
-  // bar, which has held the same five since the app had a shape (v3.26)
   { key: 'chat', label: 'Chat' },
 ]
+
+/** Keep's four segments: who you see, where you go, what you eat, what you wear. */
+export type KeepTab = 'people' | 'places' | 'kitchen' | 'wardrobe'
+export const KEEP_TABS: { key: KeepTab; label: string }[] = [
+  { key: 'people', label: 'People' },
+  { key: 'places', label: 'Places' },
+  { key: 'kitchen', label: 'Kitchen' },
+  { key: 'wardrobe', label: 'Wardrobe' },
+]
+export const KEEP_TAB_KEY = 'drafter:keep-tab'
 /** Home → Wardrobe's own switch: the composer, every piece, and the figures.
  *  Not remembered: it opens on the composer, as Home opens on Today. */
 export type WardrobeTab = 'outfit' | 'clothes' | 'stats'
@@ -53,9 +67,17 @@ export const TASKS_TABS: { key: TasksTab; label: string }[] = [
 /** Old inbound links (drafter://…?view=board|bills|notes) still resolve: they
  *  land on the Tasks tab with that segment open. */
 export const LEGACY_VIEW_TO_TASKS: Record<string, TasksTab> = { board: 'board', bills: 'bills', notes: 'notes' }
-/** …and the former Today / Review views land on the matching Home segment.
- *  The wardrobe was never a view; `?view=wardrobe` is simply its link. */
-export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week', wardrobe: 'wardrobe' }
+/** …and the former Today / Review views land on the matching Home segment. */
+export const LEGACY_VIEW_TO_HOME: Record<string, HomeTab> = { today: 'today', review: 'week' }
+/**
+ * The tabs that stopped being tabs in v3.29. `?view=people`, `?view=places`,
+ * `?view=kitchen` and `?view=wardrobe` are in Shortcuts, reminders and the
+ * bot's replies, and every one of them still lands on exactly what it named —
+ * now as a segment of Keep. `?view=stats` is the same story for Insights and
+ * is handled by LEGACY_VIEW, since it names a whole tab and no segment.
+ */
+export const LEGACY_VIEW_TO_KEEP: Record<string, KeepTab> = { people: 'people', places: 'places', kitchen: 'kitchen', wardrobe: 'wardrobe' }
+export const LEGACY_VIEW: Record<string, View> = { stats: 'insights' }
 /** What a link's view names in one of these tables, or null: a table's own
  *  names only, so `?view=constructor` or `?view=__proto__` names nothing. */
 export const viewIn = <T>(table: Record<string, T>, view: string | undefined): T | null =>
@@ -68,9 +90,8 @@ export const VIEW_LABELS: Record<View, string> = {
   home: 'Home',
   tasks: 'Tasks',
   calendar: 'Calendar',
-  people: 'People',
-  kitchen: 'Kitchen',
-  stats: 'Stats',
+  keep: 'Keep',
+  insights: 'Insights',
 }
 
 /** The line icon each view carries in the desktop tab strip. */
@@ -78,21 +99,19 @@ export const VIEW_ICONS: Record<View, IconName> = {
   home: 'home',
   tasks: 'tasks',
   calendar: 'calendar',
-  people: 'people',
-  kitchen: 'kitchen',
-  stats: 'stats',
+  keep: 'keep',
+  insights: 'stats',
 }
 
-/** Phone tab bar: the same six tabs as the desktop, no catch-all. Home is the
- *  day; Tasks holds the board, bills and notes. Stats sits in the middle,
- *  between the things you plan and the things you keep. */
+/** Phone tab bar: the same five tabs as the desktop, no catch-all. The order
+ *  runs from the nearest thing to the furthest — today, then when, then what
+ *  to do, then what you keep, then what it adds up to. */
 export const COMPACT_TABS: { id: View; icon: IconName; label: string }[] = [
   { id: 'home', icon: 'home', label: 'Home' },
   { id: 'calendar', icon: 'calendar', label: 'Calendar' },
   { id: 'tasks', icon: 'tasks', label: 'Tasks' },
-  { id: 'stats', icon: 'stats', label: 'Stats' },
-  { id: 'kitchen', icon: 'kitchen', label: 'Kitchen' },
-  { id: 'people', icon: 'people', label: 'People' },
+  { id: 'keep', icon: 'keep', label: 'Keep' },
+  { id: 'insights', icon: 'stats', label: 'Insights' },
 ]
 
 export const CAL_MODE_KEY = 'drafter:calendar-mode'
@@ -121,8 +140,19 @@ export const storedTasksTab = (): TasksTab => {
     return 'list'
   }
 }
-export const storedPeopleTab = (): PeopleTab => {
+/**
+ * Which of Keep's four to open on, as last chosen on its own track.
+ *
+ * Falls back to `drafter:people-tab`, which is where People · Places was
+ * remembered before Keep existed: a phone that had been left on Places opens
+ * Keep on Places rather than resetting to People. Nothing writes the old key
+ * any more, so it decays to "never set" on its own.
+ */
+export const storedKeepTab = (): KeepTab => {
   try {
+    const saved = localStorage.getItem(KEEP_TAB_KEY)
+    const hit = KEEP_TABS.find(t => t.key === saved)
+    if (hit) return hit.key
     return localStorage.getItem(PEOPLE_TAB_KEY) === 'places' ? 'places' : 'people'
   } catch {
     return 'people'

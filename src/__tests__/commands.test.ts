@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Search } from '../components/Search'
 import { PLAN_DAY_QUICK_UNTIL, SHUT_DOWN_QUICK_FROM, buildPaletteCommands, type PaletteNav, type PaletteOverlays } from '../components/planner/commands'
-import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type KitchenTab, type PeopleTab, type StatsTab, type TasksTab, type View } from '../components/planner/routes'
+import { INNER_VIEW_KEYS, VIEWS, type CalendarMode, type HomeTab, type InnerView, type KeepTab, type KitchenTab, type StatsTab, type TasksTab, type View } from '../components/planner/routes'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import type { Sheet } from '../components/planner/useOverlays'
 import { localDayKey } from '../journal'
@@ -13,21 +13,21 @@ interface ShellState {
   view: View
   homeTab: HomeTab
   tasksTab: TasksTab
-  peopleTab: PeopleTab
+  keepTab: KeepTab
   /** each segment's own List · Stats */
   peopleView: InnerView
   placesView: InnerView
   calMode: CalendarMode
   /** what a tab tap re-reads: the segment last chosen on purpose */
   rememberedTasks: TasksTab
-  rememberedPeople: PeopleTab
+  rememberedKeep: KeepTab
   rememberedPeopleView: InnerView
   rememberedPlacesView: InnerView
   rememberedCal: CalendarMode
   rememberedKitchen: KitchenTab
   rememberedStats: StatsTab
   journalDate: string | null
-  /** the one-shot way into Home → Wardrobe, when a command made one */
+  /** the one-shot way into Keep → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
   /** the one-shot Kitchen segment, when a command named one */
   kitchenTab: KitchenTab | null
@@ -42,15 +42,15 @@ interface ShellState {
 /** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from a Stats view left, the Day remembered; in each, People's and Places' switches are on different halves. */
 const STARTS: ShellState[] = [
   {
-    view: 'kitchen',
+    view: 'keep',
     homeTab: 'journal',
     tasksTab: 'notes',
-    peopleTab: 'places',
+    keepTab: 'places',
     peopleView: 'list',
     placesView: 'stats',
     calMode: 'month',
     rememberedTasks: 'bills',
-    rememberedPeople: 'places',
+    rememberedKeep: 'places',
     rememberedPeopleView: 'list',
     rememberedPlacesView: 'stats',
     rememberedCal: 'day',
@@ -68,12 +68,12 @@ const STARTS: ShellState[] = [
     view: 'home',
     homeTab: 'today',
     tasksTab: 'list',
-    peopleTab: 'people',
+    keepTab: 'people',
     peopleView: 'stats',
     placesView: 'list',
     calMode: 'week',
     rememberedTasks: 'board',
-    rememberedPeople: 'people',
+    rememberedKeep: 'people',
     rememberedPeopleView: 'stats',
     rememberedPlacesView: 'list',
     rememberedCal: 'month',
@@ -108,12 +108,12 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       if (v === 'home') s.homeTab = 'today'
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
       if (v === 'calendar') s.calMode = s.rememberedCal
-      if (v === 'kitchen') s.kitchenTab = s.rememberedKitchen
-      if (v === 'stats') s.statsTab = s.rememberedStats
-      if (v === 'people') {
-        s.peopleTab = s.rememberedPeople
+      if (v === 'insights') s.statsTab = s.rememberedStats
+      if (v === 'keep') {
+        s.keepTab = s.rememberedKeep
         s.peopleView = s.rememberedPeopleView
         s.placesView = s.rememberedPlacesView
+        if (s.rememberedKeep === 'kitchen') s.kitchenTab = s.rememberedKitchen
       }
       s.view = v
     },
@@ -135,18 +135,23 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
     goTasksTab: tab => {
       s.tasksTab = tab
     },
-    setPeopleTab: tab => {
-      s.peopleTab = tab
-      s.rememberedPeople = tab
+    setKeepTab: tab => {
+      s.keepTab = tab
+      s.rememberedKeep = tab
     },
     openWardrobe: (o = {}) => {
       s.wardrobe = o
-      s.homeTab = 'wardrobe'
-      s.view = 'home'
+      s.keepTab = 'wardrobe'
+      s.view = 'keep'
+    },
+    openKitchen: tab => {
+      s.kitchenTab = tab ?? s.rememberedKitchen
+      s.keepTab = 'kitchen'
+      s.view = 'keep'
     },
     openLens: tab => {
       if (tab) s.statsTab = tab
-      s.view = 'stats'
+      s.view = 'insights'
     },
   }
   const overlays: PaletteOverlays = {
@@ -220,25 +225,26 @@ describe('the palette’s own commands', () => {
     ['go-home', { view: 'home', homeTab: 'today' }],
     ['go-week', { view: 'home', homeTab: 'week' }],
     ['go-journal', { view: 'home', homeTab: 'journal' }],
-    ['go-wardrobe', { view: 'home', homeTab: 'wardrobe' }],
+    ['go-wardrobe', { view: 'keep', keepTab: 'wardrobe' }],
     ['go-tasks', { view: 'tasks', tasksTab: 'list' }],
     ['go-board', { view: 'tasks', tasksTab: 'board' }],
     ['go-bills', { view: 'tasks', tasksTab: 'bills' }],
     ['go-notes', { view: 'tasks', tasksTab: 'notes' }],
     ['go-calendar', { view: 'calendar' }],
-    ['go-people', { view: 'people', peopleTab: 'people' }],
-    ['go-places', { view: 'people', peopleTab: 'places' }],
-    ['go-kitchen', { view: 'kitchen' }],
+    // the four things you keep are four segments of one tab now
+    ['go-people', { view: 'keep', keepTab: 'people' }],
+    ['go-places', { view: 'keep', keepTab: 'places' }],
+    ['go-kitchen', { view: 'keep', keepTab: 'kitchen' }],
     // every "… stats" row lands in the one tab that holds every figure
-    ['go-people-stats', { view: 'stats', statsTab: 'people' }],
-    ['go-places-stats', { view: 'stats', statsTab: 'places' }],
-    ['go-kitchen-stats', { view: 'stats', statsTab: 'kitchen' }],
-    ['go-wardrobe-stats', { view: 'stats', statsTab: 'wardrobe' }],
-    ['go-stats', { view: 'stats' }],
-    ['go-task-stats', { view: 'stats', statsTab: 'tasks' }],
-    ['go-money-stats', { view: 'stats', statsTab: 'money' }],
-    ['go-habit-stats', { view: 'stats', statsTab: 'habits' }],
-    ['go-journal-stats', { view: 'stats', statsTab: 'journal' }],
+    ['go-people-stats', { view: 'insights', statsTab: 'people' }],
+    ['go-places-stats', { view: 'insights', statsTab: 'places' }],
+    ['go-kitchen-stats', { view: 'insights', statsTab: 'kitchen' }],
+    ['go-wardrobe-stats', { view: 'insights', statsTab: 'wardrobe' }],
+    ['go-stats', { view: 'insights' }],
+    ['go-task-stats', { view: 'insights', statsTab: 'tasks' }],
+    ['go-money-stats', { view: 'insights', statsTab: 'money' }],
+    ['go-habit-stats', { view: 'insights', statsTab: 'habits' }],
+    ['go-journal-stats', { view: 'insights', statsTab: 'journal' }],
   ]
 
   it.each(landings)('%s lands on its tab and segment from anywhere', (id, where) => {
@@ -254,7 +260,7 @@ describe('the palette’s own commands', () => {
       // every figure in the app is in the Stats tab, so "Kitchen stats" goes
       // there, on its Kitchen segment — and moves no segment of the Kitchen itself
       const s = run('go-kitchen-stats', start)
-      expect(s).toMatchObject({ view: 'stats', statsTab: 'kitchen', homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, kitchenTab: start.kitchenTab, wardrobe: null, settingsOpen: false })
+      expect(s).toMatchObject({ view: 'insights', statsTab: 'kitchen', homeTab: start.homeTab, tasksTab: start.tasksTab, keepTab: start.keepTab, kitchenTab: start.kitchenTab, wardrobe: null, settingsOpen: false })
       // the plain Kitchen still opens where it was last left
       expect(run('go-kitchen', start).kitchenTab).toBe(start.rememberedKitchen)
     }
@@ -267,12 +273,12 @@ describe('the palette’s own commands', () => {
     for (const word of ['spending', 'paid', 'subscriptions']) expect(stats?.keywords).toContain(word)
     for (const start of STARTS) {
       // a lens segment moves nothing else
-      expect(run('go-money-stats', start)).toMatchObject({ homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, wardrobe: null, settingsOpen: false })
+      expect(run('go-money-stats', start)).toMatchObject({ homeTab: start.homeTab, tasksTab: start.tasksTab, keepTab: start.keepTab, wardrobe: null, settingsOpen: false })
       // and the plain Stats opens where it was last left, as a tab tap does, even straight after one of them
       const { s: after, commands: cmds } = shell(start)
       cmds.find(c => c.id === 'go-money-stats')!.run()
       cmds.find(c => c.id === 'go-stats')!.run()
-      expect(after).toMatchObject({ view: 'stats', statsTab: start.rememberedStats })
+      expect(after).toMatchObject({ view: 'insights', statsTab: start.rememberedStats })
     }
   })
 
@@ -289,8 +295,8 @@ describe('the palette’s own commands', () => {
   it('moves the Tasks segment for the visit only, and remembers People or Places', () => {
     for (const start of STARTS) {
       expect(run('go-board', start).rememberedTasks).toBe(start.rememberedTasks)
-      expect(run('go-places', start).rememberedPeople).toBe('places')
-      expect(run('go-people', start).rememberedPeople).toBe('people')
+      expect(run('go-places', start).rememberedKeep).toBe('places')
+      expect(run('go-people', start).rememberedKeep).toBe('people')
     }
   })
 
@@ -310,8 +316,8 @@ describe('the palette’s own commands', () => {
     for (const start of STARTS) {
       // the same figures the People tab draws beside its list, read in the one
       // tab that holds every figure — and neither List · Stats switch moves
-      expect(run('go-people-stats', start)).toMatchObject({ view: 'stats', statsTab: 'people', peopleTab: start.peopleTab, peopleView: start.peopleView, placesView: start.placesView })
-      expect(run('go-places-stats', start)).toMatchObject({ view: 'stats', statsTab: 'places', peopleTab: start.peopleTab, peopleView: start.peopleView, placesView: start.placesView })
+      expect(run('go-people-stats', start)).toMatchObject({ view: 'insights', statsTab: 'people', keepTab: start.keepTab, peopleView: start.peopleView, placesView: start.placesView })
+      expect(run('go-places-stats', start)).toMatchObject({ view: 'insights', statsTab: 'places', keepTab: start.keepTab, peopleView: start.peopleView, placesView: start.placesView })
     }
   })
 
@@ -319,9 +325,9 @@ describe('the palette’s own commands', () => {
     for (const start of STARTS) {
       const { s, commands: cmds } = shell(start)
       cmds.find(c => c.id === 'go-people')!.run()
-      expect(s).toMatchObject({ view: 'people', peopleTab: 'people', peopleView: start.rememberedPeopleView, rememberedPeopleView: start.rememberedPeopleView })
+      expect(s).toMatchObject({ view: 'keep', keepTab: 'people', peopleView: start.rememberedPeopleView, rememberedPeopleView: start.rememberedPeopleView })
       cmds.find(c => c.id === 'go-places')!.run()
-      expect(s).toMatchObject({ view: 'people', peopleTab: 'places', placesView: start.rememberedPlacesView, rememberedPlacesView: start.rememberedPlacesView })
+      expect(s).toMatchObject({ view: 'keep', keepTab: 'places', placesView: start.rememberedPlacesView, rememberedPlacesView: start.rememberedPlacesView })
     }
     // the list when nothing was chosen, or storage cannot be read
     const { s, commands: cmds } = shell({ ...STARTS[1], placesView: 'stats' })
@@ -331,9 +337,9 @@ describe('the palette’s own commands', () => {
       },
     })
     cmds.find(c => c.id === 'go-people')!.run()
-    expect(s).toMatchObject({ view: 'people', peopleTab: 'people', peopleView: 'list' })
+    expect(s).toMatchObject({ view: 'keep', keepTab: 'people', peopleView: 'list' })
     cmds.find(c => c.id === 'go-places')!.run()
-    expect(s).toMatchObject({ view: 'people', peopleTab: 'places', placesView: 'list' })
+    expect(s).toMatchObject({ view: 'keep', keepTab: 'places', placesView: 'list' })
   })
 })
 
@@ -352,8 +358,8 @@ describe('the wardrobe in the palette', () => {
 
   it('lands on today’s composer, or on Clothes with the sheet to add a piece, from anywhere', () => {
     for (const start of STARTS) {
-      expect(run('log-wear', start)).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobe: { date: localDayKey() } })
-      expect(run('add-clothing', start)).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobe: { tab: 'clothes', add: true } })
+      expect(run('log-wear', start)).toMatchObject({ view: 'keep', keepTab: 'wardrobe', wardrobe: { date: localDayKey() } })
+      expect(run('add-clothing', start)).toMatchObject({ view: 'keep', keepTab: 'wardrobe', wardrobe: { tab: 'clothes', add: true } })
       // the plain way in names nothing, so the segment opens as it would from its button
       expect(run('go-wardrobe', start).wardrobe).toEqual({})
     }
@@ -368,7 +374,7 @@ describe('the wardrobe in the palette', () => {
       // the wardrobe's figures are the Stats tab's Wardrobe segment; Home →
       // Wardrobe is left alone, composer and all
       const s = run('go-wardrobe-stats', start)
-      expect(s).toMatchObject({ view: 'stats', statsTab: 'wardrobe', homeTab: start.homeTab })
+      expect(s).toMatchObject({ view: 'insights', statsTab: 'wardrobe', homeTab: start.homeTab })
       expect(s.wardrobe).toBeNull()
     }
   })
@@ -377,11 +383,16 @@ describe('the wardrobe in the palette', () => {
     for (const start of STARTS) {
       for (const id of ['go-wardrobe', 'log-wear', 'add-clothing', 'go-wardrobe-stats']) {
         const s = run(id, start)
-        expect(s).toMatchObject({ tasksTab: start.tasksTab, peopleTab: start.peopleTab, journalDate: start.journalDate, settingsOpen: false })
+        // keepTab is not on this list since v3.29: the Wardrobe is one of
+        // Keep's four, so landing on it IS moving that segment. Everything
+        // outside the tab it lands in stays where it was.
+        expect(s).toMatchObject({ tasksTab: start.tasksTab, journalDate: start.journalDate, settingsOpen: false })
         expect(s.sheets).toEqual([])
         expect(s.newTasks).toEqual([])
       }
     }
+    // …and the three that go to the Wardrobe itself leave the lens alone
+    for (const start of STARTS) for (const id of ['go-wardrobe', 'log-wear', 'add-clothing']) expect(run(id, start).statsTab).toBe(start.statsTab)
   })
 })
 
@@ -416,15 +427,15 @@ describe('the Kitchen’s and the Wardrobe’s stats, typed into Search', () => 
   }
 
   const typed: [string, string, string, Partial<ShellState>][] = [
-    ['wardrobe stats', 'Wardrobe stats', 'go-wardrobe-stats', { view: 'stats', statsTab: 'wardrobe' }],
-    ['cost per wear', 'Wardrobe stats', 'go-wardrobe-stats', { view: 'stats', statsTab: 'wardrobe' }],
-    ['kitchen stats', 'Kitchen stats', 'go-kitchen-stats', { view: 'stats', statsTab: 'kitchen' }],
-    ['eaten out', 'Kitchen stats', 'go-kitchen-stats', { view: 'stats', statsTab: 'kitchen' }],
+    ['wardrobe stats', 'Wardrobe stats', 'go-wardrobe-stats', { view: 'insights', statsTab: 'wardrobe' }],
+    ['cost per wear', 'Wardrobe stats', 'go-wardrobe-stats', { view: 'insights', statsTab: 'wardrobe' }],
+    ['kitchen stats', 'Kitchen stats', 'go-kitchen-stats', { view: 'insights', statsTab: 'kitchen' }],
+    ['eaten out', 'Kitchen stats', 'go-kitchen-stats', { view: 'insights', statsTab: 'kitchen' }],
     // the lens's own segments answer for themselves. "cost per wear" is NOT
     // among Money's words: the Wardrobe's Stats is where that figure is worked
     // out, and a phrase that names one place must keep naming it.
-    ['outgoings', 'Money stats', 'go-money-stats', { view: 'stats', statsTab: 'money' }],
-    ['clean days', 'Habit stats', 'go-habit-stats', { view: 'stats', statsTab: 'habits' }],
+    ['outgoings', 'Money stats', 'go-money-stats', { view: 'insights', statsTab: 'money' }],
+    ['clean days', 'Habit stats', 'go-habit-stats', { view: 'insights', statsTab: 'habits' }],
   ]
 
   it.each(typed)('“%s” shows the %s row, and Enter or a tap on it lands there from anywhere', (words, label, id, where) => {
@@ -496,7 +507,7 @@ describe('the day’s routines in the palette', () => {
       const shut = run('shut-down', start, new Date(2026, 8, 14, 18))
       expect(shut.sheets).toEqual([{ kind: 'shutdown' }])
       for (const s of [day, shut]) {
-        expect(s).toMatchObject({ view: start.view, homeTab: start.homeTab, tasksTab: start.tasksTab, peopleTab: start.peopleTab, settingsOpen: false })
+        expect(s).toMatchObject({ view: start.view, homeTab: start.homeTab, tasksTab: start.tasksTab, keepTab: start.keepTab, settingsOpen: false })
         expect(s.newTasks).toEqual([])
       }
     }

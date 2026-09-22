@@ -118,13 +118,14 @@ describe('the journal is two taps away, and never moves under the caret', () => 
     expect(today).not.toMatch(/autoFocus/)
   })
 
-  it('keeps the phone to six tabs and no More drawer', () => {
+  it('keeps the phone to five tabs and no More drawer', () => {
     // Board, Bills and Notes moved into the Tasks tab as segments, so the
     // catch-all sheet is gone — its data and its open-state with it. Stats
-    // joined the bar on 2026-09-15 as the sixth: five nouns and one lens, and
-    // still nothing behind a More sheet.
+    // joined the bar on 2026-09-15 as a sixth; v3.29 took it back to five by
+    // gathering People, Places, Kitchen and the Wardrobe into Keep. Still
+    // nothing behind a More sheet.
     const bar = planner.slice(planner.indexOf('const COMPACT_TABS'), planner.indexOf('const CAL_MODE_KEY'))
-    expect(bar.match(/id: '/g)).toHaveLength(6)
+    expect(bar.match(/id: '/g)).toHaveLength(5)
     expect(planner).not.toMatch(/MORE_VIEWS/)
     expect(planner).not.toMatch(/moreOpen/)
   })
@@ -218,15 +219,15 @@ describe('a remembered segment may not hijack a destination', () => {
   it('writes each segment key from exactly one place', () => {
     // one persisting setter each — the segment buttons' own; every other route
     // moves the segment for the visit only. Home is deliberately not persisted.
-    expect(writes('PEOPLE_TAB_KEY')).toBe(1)
+    expect(writes('KEEP_TAB_KEY')).toBe(1)
     expect(writes('TASKS_TAB_KEY')).toBe(1)
     expect(planner).not.toMatch(/HOME_TAB_KEY/)
   })
 
   it('opens a place and the journal without pinning the segment for good', () => {
-    expect(planner).toMatch(/const openPlace = \([^)]*\) => \{[^}]*goPeopleTab\('places'\)/)
+    expect(planner).toMatch(/const openPlace = \([^)]*\) => \{[^}]*goKeepTab\('places'\)/)
     expect(planner).toMatch(/const openJournal = \([^)]*\) => \{[^}]*setHomeTab\('journal'\)/)
-    expect(planner).not.toMatch(/const openPlace[\s\S]{0,240}setPeopleTab\(/)
+    expect(planner).not.toMatch(/const openPlace[\s\S]{0,240}setKeepTab\(/)
   })
 
   it('sends "Open review" to the week page on Home, not a peer tab', () => {
@@ -234,7 +235,7 @@ describe('a remembered segment may not hijack a destination', () => {
   })
 
   it('reaches the review as a page on Home, not a tab of its own', () => {
-    // Home is the day; Week, Journal and Wardrobe open from its cards or the pin
+    // Home is the day; Week and Journal open from its cards
     expect(planner).toMatch(/homeTab === 'week' && \(/)
     expect(planner).toMatch(/<Review/)
     expect(planner).not.toMatch(/view === 'review'/)
@@ -246,7 +247,7 @@ describe('a remembered segment may not hijack a destination', () => {
   it('re-reads the remembered half when a tab bar is tapped', () => {
     // a tab tap means "wherever I left this", not "wherever a link last went" —
     // except Home, which always returns to the day
-    expect(planner).toMatch(/const goView = \(v: View\) => \{[\s\S]*?goTasksTab\(storedTasksTab\(\)\)[\s\S]*?goPeopleTab\(storedPeopleTab\(\)\)/)
+    expect(planner).toMatch(/const goView = \(v: View\) => \{[\s\S]*?goTasksTab\(storedTasksTab\(\)\)[\s\S]*?goKeepTab\(tab\)/)
     expect(planner).toMatch(/if \(v === 'home'\) setHomeTab\('today'\)/)
     // both bars route through it
     expect(planner).toMatch(/onClick=\{\(\) => goView\(v\)\}/)

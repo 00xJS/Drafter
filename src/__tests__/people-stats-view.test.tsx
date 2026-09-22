@@ -8,7 +8,7 @@ import { People } from '../components/People'
 import { PeopleStats } from '../components/PeopleStats'
 import { ListStatsSwitch } from '../components/planner/ListStatsSwitch'
 import { Segmented } from '../components/stats/Segmented'
-import { CAL_MODE_KEY, INNER_VIEW_KEYS, PEOPLE_TAB_KEY, type CalendarMode, type InnerView, type PeopleTab, type View } from '../components/planner/routes'
+import { CAL_MODE_KEY, INNER_VIEW_KEYS, PEOPLE_TAB_KEY, type CalendarMode, type InnerView, type KeepTab, type View } from '../components/planner/routes'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
 import { useNavigation } from '../components/planner/useNavigation'
 import { ListCard, MonthCalendar } from '../components/stats'
@@ -472,16 +472,18 @@ describe('List · Stats', () => {
     expect(screen).toMatch(/innerViews\.people === 'stats' \? \(\s*<PeopleStats/)
     expect(screen).toContain("import { People, PeopleStats, Places, PlacesStats } from './lazy'")
     expect(source('components/planner/lazy.ts')).toContain("import('../PeopleStats')")
-    // under the tab-level segments, never inside them, where the native shell draws its track
-    expect(screen.indexOf('<ListStatsSwitch')).toBeGreaterThan(screen.indexOf('<div className="people-tab-seg">'))
-    expect(screen.slice(screen.indexOf('<div className="people-tab-seg">'), screen.indexOf('<ListStatsSwitch'))).toContain('</div>')
+    // under Keep's own track, never inside it: KeepScreen closes that div
+    // before it renders any segment's body (v3.29)
+    const keep = source('components/planner/KeepScreen.tsx')
+    expect(keep.slice(keep.indexOf('<div className="people-tab-seg keep-seg">'), keep.indexOf('<PeopleScreen'))).toContain('</div>')
+    expect(screen).not.toContain('people-tab-seg')
   })
 })
 
 /** Where the shell stands: the tab, People's segment, each segment's List · Stats, the Calendar's mode and the day handed to it. */
 interface Where {
   view: View
-  peopleTab: PeopleTab
+  keepTab: KeepTab
   people: InnerView
   places: InnerView
   calMode: CalendarMode
@@ -508,7 +510,7 @@ function journey(stored: Record<string, string>, steps: ((nav: ReturnType<typeof
     const nav = useNavigation()
     // so a step that moves nothing still hands on to the next
     const [, tick] = useState(0)
-    at.push({ view: nav.view, peopleTab: nav.peopleTab, people: nav.innerViews.people, places: nav.innerViews.places, calMode: nav.calMode, day: nav.calendarOpenDay })
+    at.push({ view: nav.view, keepTab: nav.keepTab, people: nav.innerViews.people, places: nav.innerViews.places, calMode: nav.calMode, day: nav.calendarOpenDay })
     const step = steps[at.length - 1]
     if (step) {
       step(nav)
@@ -525,18 +527,18 @@ describe('the shell remembers List · Stats', () => {
   it('only from its own switch; a tab tap re-reads it, and a card opens on the list for that visit', () => {
     const { at, writes } = journey({}, [
       nav => nav.setInnerView('people', 'stats'),
-      nav => nav.goView('kitchen'),
-      nav => nav.goView('people'),
+      nav => nav.goView('keep'),
+      nav => nav.goView('keep'),
       // a search result, Ask or a reminder: the card is on the list
       nav => nav.openPerson('mum'),
-      nav => nav.goView('kitchen'),
-      nav => nav.goView('people'),
+      nav => nav.goView('keep'),
+      nav => nav.goView('keep'),
     ])
-    expect(at[0]).toMatchObject({ view: 'home', peopleTab: 'people', people: 'list' })
+    expect(at[0]).toMatchObject({ view: 'home', keepTab: 'people', people: 'list' })
     expect(at[1].people).toBe('stats')
-    expect(at[3]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
-    expect(at[4]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'list' })
-    expect(at[6]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
+    expect(at[3]).toMatchObject({ view: 'keep', keepTab: 'people', people: 'stats' })
+    expect(at[4]).toMatchObject({ view: 'keep', keepTab: 'people', people: 'list' })
+    expect(at[6]).toMatchObject({ view: 'keep', keepTab: 'people', people: 'stats' })
     expect(writes).toEqual([[INNER_VIEW_KEYS.people, 'stats']])
   })
 
@@ -544,19 +546,19 @@ describe('the shell remembers List · Stats', () => {
     const { at, writes } = journey({ [INNER_VIEW_KEYS.people]: 'list', [PEOPLE_TAB_KEY]: 'places' }, [
       nav => nav.openStats('people'),
       nav => nav.goView('home'),
-      nav => nav.goView('people'),
+      nav => nav.goView('keep'),
     ])
-    expect(at[0]).toMatchObject({ peopleTab: 'places', people: 'list' })
-    expect(at[1]).toMatchObject({ view: 'people', peopleTab: 'people', people: 'stats' })
-    expect(at[3]).toMatchObject({ view: 'people', peopleTab: 'places', people: 'list' })
+    expect(at[0]).toMatchObject({ keepTab: 'places', people: 'list' })
+    expect(at[1]).toMatchObject({ view: 'keep', keepTab: 'people', people: 'stats' })
+    expect(at[3]).toMatchObject({ view: 'keep', keepTab: 'places', people: 'list' })
     expect(writes).toEqual([])
   })
 
   it('keeps each segment’s own, and opens a place on the Places list', () => {
-    const { at, writes } = journey({ [INNER_VIEW_KEYS.people]: 'stats', [INNER_VIEW_KEYS.places]: 'stats' }, [nav => nav.openPlace('cafe'), nav => nav.goView('people')])
+    const { at, writes } = journey({ [INNER_VIEW_KEYS.people]: 'stats', [INNER_VIEW_KEYS.places]: 'stats' }, [nav => nav.openPlace('cafe'), nav => nav.goView('keep')])
     expect(at[0]).toMatchObject({ people: 'stats', places: 'stats' })
-    expect(at[1]).toMatchObject({ view: 'people', peopleTab: 'places', people: 'stats', places: 'list' })
-    expect(at[2]).toMatchObject({ peopleTab: 'people', people: 'stats', places: 'stats' })
+    expect(at[1]).toMatchObject({ view: 'keep', keepTab: 'places', people: 'stats', places: 'list' })
+    expect(at[2]).toMatchObject({ keepTab: 'people', people: 'stats', places: 'stats' })
     expect(writes).toEqual([])
   })
 })
@@ -654,7 +656,7 @@ describe('?view=people-stats', () => {
       newTask: log('newTask'),
       openSheet: log('openSheet'),
       goTasksTab: log('tasksTab'),
-      goPeopleTab: log('peopleTab'),
+      goKeepTab: log('keepTab'),
       setHomeTab: log('homeTab'),
       setView: log('view'),
       openJournal: log('journal'),
@@ -682,10 +684,12 @@ describe('?view=people-stats', () => {
     }
   })
 
-  it('leaves a plain ?view=people where it was', () => {
+  it('sends a plain ?view=people to Keep’s People segment, on the half it was left', () => {
+    // it named a tab until v3.29 and names a segment now; either way it lands
+    // on People, and says nothing about List or Stats
     const { apply, calls } = links()
     apply('/?view=people')
-    expect(calls).toEqual(['view ["people"]'])
+    expect(calls).toEqual(['keepTab ["people"]', 'view ["keep"]'])
   })
 })
 

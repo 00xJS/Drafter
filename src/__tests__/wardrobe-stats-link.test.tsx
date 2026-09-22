@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { PlannerCtx } from '../components/planner/ctx'
-import { HomeScreen } from '../components/planner/HomeScreen'
+import { KeepScreen } from '../components/planner/KeepScreen'
 import { Wardrobe as LazyWardrobe } from '../components/planner/lazy'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
 import { useNavigation, type WardrobeOpen } from '../components/planner/useNavigation'
@@ -170,8 +170,10 @@ describe('?view=wardrobe-stats, through the shell', () => {
     return last!
   }
   /** Home as it draws where the shell ended: its segments, then the Wardrobe's, the selected ones starred. */
+  // the Wardrobe is a segment of Keep since v3.29, so its screen is the one
+  // that draws it — and the way back out is the tab bar, not a "Today" button
   const home = (nav: Nav) => {
-    const html = renderToStaticMarkup(<HomeScreen p={ctx(nav)} />)
+    const html = renderToStaticMarkup(<KeepScreen p={ctx(nav)} />)
     return { html, tabs: [...html.matchAll(/role="tab" aria-selected="(true|false)" class="seg(?: on)?">([^<]+)</g)].map(m => `${m[2]}${m[1] === 'true' ? '*' : ''}`) }
   }
 
@@ -181,19 +183,18 @@ describe('?view=wardrobe-stats, through the shell', () => {
     at10()
     for (const raw of ['/?view=wardrobe-stats', 'drafter://open?view=wardrobe-stats']) {
       const nav = walk([(_, link) => link(raw)])
-      expect(nav, raw).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: { tab: 'stats' } })
-      expect(home(nav).html, raw).toContain('>Today</button>')
-      expect(home(nav).tabs, raw).toEqual(['Outfit', 'Clothes', 'Stats*'])
+      expect(nav, raw).toMatchObject({ view: 'keep', keepTab: 'wardrobe', wardrobeOpen: { tab: 'stats' } })
+        expect(home(nav).tabs, raw).toEqual(['People', 'Places', 'Kitchen', 'Wardrobe*', 'Outfit', 'Clothes', 'Stats*'])
     }
   })
 
   it('still lands ?view=wardrobe on today’s composer', () => {
     at10()
     const nav = walk([(_, link) => link('/?view=wardrobe')])
-    expect(nav).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: null })
-    const { html, tabs } = home(nav)
-    expect(html).toContain('>Today</button>')
-    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
+    // `{}` names none of the Wardrobe's own views, so it opens on the composer
+    expect(nav).toMatchObject({ view: 'keep', keepTab: 'wardrobe', wardrobeOpen: {} })
+    const { tabs, html } = home(nav)
+    expect(tabs).toEqual(['People', 'Places', 'Kitchen', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('Today · Mon 14 Sep')
   })
 
@@ -201,16 +202,15 @@ describe('?view=wardrobe-stats, through the shell', () => {
     at10()
     const nav = walk([
       (_, link) => link('/?view=wardrobe-stats'),
-      // the Wardrobe took it and let it go, through the hand-off HomeScreen gives it
-      n => propsOf(HomeScreen({ p: ctx(n) }), LazyWardrobe).onOpenConsumed(),
-      // a tap on the Home tab is the day; the wardrobe is opened from there, not a peer tab
+      // the Wardrobe took it and let it go, through the hand-off KeepScreen gives it
+      n => propsOf(KeepScreen({ p: ctx(n) }), LazyWardrobe).onOpenConsumed(),
+      // away to another tab, and back in by the way in — which still says composer
       n => n.goView('home'),
       n => n.openWardrobe(),
     ])
-    expect(nav).toMatchObject({ view: 'home', homeTab: 'wardrobe', wardrobeOpen: {} })
-    const { html, tabs } = home(nav)
-    expect(html).toContain('>Today</button>')
-    expect(tabs).toEqual(['Outfit*', 'Clothes', 'Stats'])
+    expect(nav).toMatchObject({ view: 'keep', keepTab: 'wardrobe', wardrobeOpen: {} })
+    const { tabs, html } = home(nav)
+    expect(tabs).toEqual(['People', 'Places', 'Kitchen', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])
     expect(html).toContain('Today · Mon 14 Sep')
   })
 })
