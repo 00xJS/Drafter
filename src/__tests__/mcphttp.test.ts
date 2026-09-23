@@ -243,7 +243,7 @@ describe('acting as the user', () => {
     expect(who.headers.authorization).toBeUndefined()
     expect(link).toMatchObject({ path: '/auth/v1/admin/generate_link', method: 'POST', body: { type: 'magiclink', email: 'owner@example.test' } })
     expect(link.headers.apikey).toBe('service-key')
-    expect(verify).toMatchObject({ path: '/auth/v1/verify', method: 'POST', body: { type: 'magiclink', token_hash: 'hash-1' } })
+    expect(verify).toMatchObject({ path: '/auth/v1/verify', method: 'POST', body: { type: 'email', token_hash: 'hash-1' } })
     expect(verify.headers.apikey).toBe('anon-key')
     expect(verify.headers.authorization).toBeUndefined()
 

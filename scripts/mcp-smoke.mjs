@@ -22,7 +22,9 @@
 // (`user:<uuid>`) as authenticated with that user's JWT claims — and a small
 // auth stand-in for the admin lookup, generate_link and verify. Anything it
 // does not implement answers 501 with the path; a silent empty array would
-// hide the class of bug this test exists to catch.
+// hide the class of bug this test exists to catch. The auth stand-in keeps
+// what GoTrue keeps: one magic-link token per user, each generate_link
+// replacing the last, each token redeemed once.
 //
 // Run with `npm run mcp:smoke`. Needs the PostgreSQL binaries on PATH; not
 // part of `npm run check` (Netlify has no Postgres).
@@ -349,7 +351,15 @@ function whoIs(headers) {
 
 // ------------------------------------------------------------- the auth shim
 
-const auth = { links: new Map(), mints: 0, verifyTypes: [], logouts: 0, rejectMagiclink: true }
+/**
+ * The auth stand-in's state. `live` is GoTrue's one magic-link token per user
+ * (userId -> hashed token): a new link replaces the last, whether or not it
+ * was redeemed, and a token is redeemed once. `refused` counts verifies that
+ * met a replaced or spent token. While `hold` is set, generate_link answers
+ * nothing until that many links have been asked for, so two mints can be made
+ * to collide on purpose.
+ */
+const auth = { live: new Map(), mints: 0, verifyTypes: [], refused: 0, logouts: 0, rejectMagiclink: true, hold: 0, held: [] }
 
 function authRoute(method, path, headers, body, reply) {
   const bearer = /^Bearer\s+(.+)$/i.exec(headers.authorization ?? '')?.[1] ?? ''
@@ -369,20 +379,31 @@ function authRoute(method, path, headers, body, reply) {
     const user = psqlJson(`select json_build_object('id', id, 'email', email) from auth.users where email = ${lit(body.email)}`)
     if (!user) return reply(404, { msg: 'User not found' })
     const hashed = `smoke-link-${++auth.mints}-${randomBytes(6).toString('hex')}`
-    auth.links.set(hashed, { userId: user.id, used: false })
+    // the user's last link, redeemed or not, stops working
+    auth.live.set(user.id, hashed)
     // the raw endpoint returns the link's fields at the top level (auth-js moves them into `properties`)
-    return reply(200, { ...user, action_link: `https://auth.example/verify?token=${hashed}`, email_otp: '000000', hashed_token: hashed, redirect_to: '', verification_type: 'magiclink' })
+    const answer = () => reply(200, { ...user, action_link: `https://auth.example/verify?token=${hashed}`, email_otp: '000000', hashed_token: hashed, redirect_to: '', verification_type: 'magiclink' })
+    if (!auth.hold) return answer()
+    auth.held.push(answer)
+    if (auth.held.length >= auth.hold) {
+      auth.hold = 0
+      for (const release of auth.held.splice(0)) release()
+    }
+    return true
   }
   if (path === '/auth/v1/verify' && method === 'POST') {
     if (headers.apikey !== ANON_KEY || bearer === SERVICE_KEY) return reply(401, { msg: 'verify is the browser’s call: the anon key, never the service key' })
     auth.verifyTypes.push(body?.type)
     // the hosted server has deprecated 'magiclink' as a verify type; this one refuses it outright
     if (auth.rejectMagiclink && body?.type === 'magiclink') return reply(403, { code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' })
-    const link = auth.links.get(body?.token_hash)
-    if (!link || link.used || body?.type !== 'email') return reply(403, { code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' })
-    link.used = true
-    const user = userById(link.userId)
-    return reply(200, { access_token: `user:${link.userId}`, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'smoke-refresh', user })
+    const userId = [...auth.live].find(([, hashed]) => hashed === body?.token_hash)?.[0]
+    if (!userId || body?.type !== 'email') {
+      auth.refused++
+      return reply(403, { code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' })
+    }
+    auth.live.delete(userId)
+    const user = userById(userId)
+    return reply(200, { access_token: `user:${userId}`, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'smoke-refresh', user })
   }
   if (path === '/auth/v1/logout' && method === 'POST') {
     auth.logouts++
@@ -1209,7 +1230,21 @@ async function main() {
 
     // --------------------------------------------------- minting and the keys
     ok(auth.mints >= 2, 'the endpoint minted sessions through generate_link (one per user)')
-    ok(auth.verifyTypes.includes('magiclink') && auth.verifyTypes.includes('email'), "verify was retried with type 'email' when 'magiclink' was refused")
+    ok(auth.verifyTypes.length > 0 && auth.verifyTypes.every(t => t === 'email'), "verify was asked with type 'email' only: 'magiclink' is deprecated as a verify type, and this auth server refuses it")
+
+    // Netlify runs concurrent requests in instances of their own, and the auth
+    // server keeps one magic-link token per user: two instances minting at once
+    // make two links, and the second replaces the first before it is redeemed.
+    // A second copy of the module is a second instance: its own sessions and
+    // its own mint in flight.
+    const agentauthUrl = pathToFileURL(join(ROOT, 'netlify/functions/lib/agentauth.mjs')).href
+    const instances = await Promise.all([import(`${agentauthUrl}?instance=race-1`), import(`${agentauthUrl}?instance=race-2`)])
+    const refusedBefore = auth.refused
+    const mintsBefore = auth.mints
+    auth.hold = 2
+    const raced = await Promise.all(instances.map(i => i.userAccessToken(OWNER)))
+    ok(raced.every(t => t === `user:${OWNER}`), 'two instances minting for the owner at once both end up with a session')
+    ok(auth.refused > refusedBefore && auth.mints - mintsBefore >= 3, 'though the second link killed the first: the refused instance asked for another')
     const serviceOnPosts = audit.filter(a => a.role === 'service_role' && /^\/rest\/v1\/(posts|rpc\/sync_posts)/.test(a.path)).map(a => a.path)
     eq(serviceOnPosts.join(', '), '', 'no tool call read or wrote posts with the service key: every one ran as its user')
     ok(audit.some(a => a.role === 'authenticated' && a.path === '/rest/v1/rpc/sync_posts'), "it wrote with the user's own session")

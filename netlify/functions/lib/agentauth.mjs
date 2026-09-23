@@ -155,6 +155,25 @@ export async function checkBearer(bearer, { limit = Number(process.env.MCP_RATE_
 // with the anon key, exactly as the browser would. Plain fetch on purpose:
 // supabase-js's verifyOtp stores the session inside the client, and a client
 // shared across users would hand one user's session to the next.
+//
+// The auth server keeps ONE such token per user: every generate_link replaces
+// the one before (a password-reset link shares the slot), and a replaced
+// token answers verify with a 403. `minting` below shares a mint only within one process,
+// and on Netlify each concurrent request runs in an instance of its own, so an
+// assistant running six tools at once mints six times at once and every link
+// but the last is dead before it is redeemed. A refused link is therefore
+// asked for again, after a random pause so the retries stop colliding: a few
+// times, and never past MINT_BUDGET_MS, which leaves a tool call most of
+// /api/mcp's 8.5 s. The lasting fix is fewer mints, not better retries — a
+// session kept per user, with its refresh token, where every instance can
+// reach it.
+
+/** How many times one mint asks for a link and redeems it: the first try, and up to three more when verify refuses the link. */
+export const MINT_ATTEMPTS = 4
+/** The pause before another try, drawn at random from this range (ms) so parallel mints stop colliding. */
+export const MINT_RETRY_PAUSE_MS = /** @type {const} */ ([100, 500])
+/** No further try starts once a mint has run this long. */
+export const MINT_BUDGET_MS = 4_000
 
 /** userId -> { accessToken, refreshAtMs } */
 const sessions = new Map()
@@ -165,10 +184,31 @@ function sessionError(message) {
   return httpError(`Drafter could not act as you: ${message}`, 502, 'session')
 }
 
+/**
+ * Whether verify refused the link itself (4xx), so a fresh link may work. A
+ * 429 is the auth server's rate limit, which another try only feeds.
+ */
+const linkRefused = status => status >= 400 && status < 500 && status !== 429
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+/** A one-time magic-link token for `email`, hashed, from the admin API. Emails nothing. */
+async function freshLink(url, admin, email) {
+  const link = await fetch(`${url}/auth/v1/admin/generate_link`, { method: 'POST', headers: admin, body: JSON.stringify({ type: 'magiclink', email }) })
+  if (!link.ok) throw sessionError(`generate_link answered ${link.status}.`)
+  const linkBody = await link.json()
+  // auth-js moves these into `properties`; the raw endpoint returns them at the top level
+  const props = linkBody?.properties ?? linkBody
+  const hashed = typeof props?.hashed_token === 'string' ? props.hashed_token : ''
+  if (!hashed) throw sessionError('generate_link returned no token.')
+  return hashed
+}
+
 async function mintSession(userId) {
   const { url, anonKey, serviceKey } = supabaseEnv()
   if (!url || !anonKey || !serviceKey) throw httpError('Assistants are not configured on this site.', 501, 'not_configured')
   const admin = keyHeaders(serviceKey, { 'content-type': 'application/json' })
+  const started = Date.now()
 
   const who = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: admin })
   if (!who.ok) throw sessionError(`the account lookup failed (${who.status}).`)
@@ -178,24 +218,25 @@ async function mintSession(userId) {
   const email = typeof user?.email === 'string' ? user.email : ''
   if (!email) throw sessionError('the account has no email address to sign in with.')
 
-  const link = await fetch(`${url}/auth/v1/admin/generate_link`, { method: 'POST', headers: admin, body: JSON.stringify({ type: 'magiclink', email }) })
-  if (!link.ok) throw sessionError(`generate_link answered ${link.status}.`)
-  const linkBody = await link.json()
-  // auth-js moves these into `properties`; the raw endpoint returns them at the top level
-  const props = linkBody?.properties ?? linkBody
-  const hashed = typeof props?.hashed_token === 'string' ? props.hashed_token : ''
-  if (!hashed) throw sessionError('generate_link returned no token.')
-
-  const verify = type =>
-    fetch(`${url}/auth/v1/verify`, {
+  let res
+  for (let tries = 1; ; tries++) {
+    const hashed = await freshLink(url, admin, email)
+    // 'email', not the link's own 'magiclink': that one is deprecated as a
+    // verify type, and 'email' redeems a magic link all the same — one verify a try
+    res = await fetch(`${url}/auth/v1/verify`, {
       method: 'POST',
       headers: { apikey: anonKey, 'content-type': 'application/json' },
-      body: JSON.stringify({ type, token_hash: hashed }),
+      body: JSON.stringify({ type: 'email', token_hash: hashed }),
     })
-  const firstType = typeof props.verification_type === 'string' && props.verification_type ? props.verification_type : 'magiclink'
-  let res = await verify(firstType)
-  // 'magiclink' is deprecated as a verify type; newer auth servers want 'email'
-  if (res.status >= 400 && res.status < 500 && firstType !== 'email') res = await verify('email')
+    if (res.ok || !linkRefused(res.status)) break
+    const pause = MINT_RETRY_PAUSE_MS[0] + Math.random() * (MINT_RETRY_PAUSE_MS[1] - MINT_RETRY_PAUSE_MS[0])
+    if (tries >= MINT_ATTEMPTS || Date.now() + pause - started >= MINT_BUDGET_MS) {
+      throw sessionError(`verify answered ${res.status}${tries > 1 ? ` on each of ${tries} tries` : ''}.`)
+    }
+    // the body is not wanted; reading it frees the connection for the next try
+    await res.text().catch(() => '')
+    await sleep(pause)
+  }
   if (!res.ok) throw sessionError(`verify answered ${res.status}.`)
   const body = await res.json()
   const session = body?.session ?? body
