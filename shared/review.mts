@@ -5,6 +5,7 @@
 // the Week segment does not, nor counts one differently. Dependency-free ESM.
 
 import type { Habit, Person, Task } from '../src/types.ts'
+import { isOverdue } from './due.mts'
 import { shiftDayKey } from './journal.mts'
 import { visitDays, visitsFor } from './people.mts'
 import { OPEN } from './today.mts'
@@ -51,18 +52,25 @@ export function inRange(iso: string | null | undefined, start: Date | number, en
 /**
  * The period's task lists. `done`: finished inside it, newest first, visits
  * left out. `visitsDone`: the visits logged inside it. `slipped`: still open,
- * due inside it, and that time has passed. `range` is { start, end }, end
- * exclusive. A bill is a task and counts like one; a wishlist item is not open.
+ * due inside it, and overdue — its day is over (shared/due.mts), so a task due
+ * today, with a time or without, has not slipped yet. `range` is { start, end },
+ * end exclusive. A bill is a task and counts like one; a wishlist item is not
+ * open. `tz` is the reader's zone: the server passes the account's, the app
+ * leaves it out and reads the device's.
  */
-export function reviewLists<T extends Task>(tasks: readonly T[], range: ReviewSpan, now: Date | number = new Date()): { done: T[]; visitsDone: T[]; slipped: T[] } {
-  const nowMs = ms(now)
+export function reviewLists<T extends Task>(
+  tasks: readonly T[],
+  range: ReviewSpan,
+  now: Date | number = new Date(),
+  tz?: string | null,
+): { done: T[]; visitsDone: T[]; slipped: T[] } {
   const doneAll = (tasks ?? [])
     .filter((t): t is T & { completedAt: string } => t.status === 'done' && inRange(t.completedAt, range.start, range.end))
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
   return {
     done: doneAll.filter(t => !isVisit(t)),
     visitsDone: doneAll.filter(isVisit),
-    slipped: (tasks ?? []).filter(t => OPEN.includes(t.status) && inRange(t.dueAt, range.start, range.end) && Date.parse(t.dueAt ?? '') < nowMs),
+    slipped: (tasks ?? []).filter(t => OPEN.includes(t.status) && inRange(t.dueAt, range.start, range.end) && isOverdue(t.dueAt, ms(now), tz)),
   }
 }
 

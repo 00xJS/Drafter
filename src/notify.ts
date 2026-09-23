@@ -1,6 +1,7 @@
 import { CalendarEntry, OPEN_STATUSES, Task } from './types'
 import { excerpt } from './utils'
-import { eventRemindAt, remindsMe } from './reminders'
+import { eventRemindAt, remindsMe, taskRemindAt } from './reminders'
+import { hasDueTime, isOverdue } from '../shared/due.mts'
 
 // Reminders are device-local by design: each open device notifies once per
 // task, and once as each of my own events starts — their copies in Google and
@@ -84,20 +85,23 @@ function eventEndMs(e: CalendarEntry): number {
 }
 
 /**
- * What should ring now: each open task whose due time arrived in the last day,
- * and each of my own events on the phone's rule (remindsMe and eventRemindAt: a
- * timed one at its start, an all-day one at 9am on its first day, never a work
- * day or a household member's) that has not ended yet — "starts now" about an
- * event already over is no reminder.
+ * What should ring now: each open task on the phone's rule (taskRemindAt: at
+ * its time, or at 9am on a day with no time — never at the 00:00 it is stored
+ * at) in the last day, and each of my own events on the phone's rule too
+ * (remindsMe and eventRemindAt: a timed one at its start, an all-day one at
+ * 9am on its first day, never a work day or a household member's) that has
+ * not ended yet — "starts now" about an event already over is no reminder,
+ * and neither is "due today" about a day that is over.
  */
 export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): DueNotice[] {
   const out: DueNotice[] = []
   for (const p of tasks) {
     if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt) continue
-    const due = new Date(p.dueAt).getTime()
-    if (due <= now && now - due < MAX_AGE_MS) {
-      out.push({ key: p.id, title: `${p.title || 'Untitled'} is due now`, body: excerpt(p.description, 120) || 'Open Drafter for the details.' })
-    }
+    const at = taskRemindAt(p.dueAt).getTime()
+    if (!(at <= now) || now - at >= MAX_AGE_MS) continue
+    const timed = hasDueTime(p.dueAt)
+    if (!timed && isOverdue(p.dueAt, now)) continue
+    out.push({ key: p.id, title: `${p.title || 'Untitled'} ${timed ? 'is due now' : 'is due today'}`, body: excerpt(p.description, 120) || 'Open Drafter for the details.' })
   }
   for (const e of opts.events ?? []) {
     if (!remindsMe(e, opts.myId)) continue
@@ -113,7 +117,7 @@ export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): D
   return out
 }
 
-/** Fire a reminder for every open task whose due time has arrived, and for each of my own events as it starts. */
+/** Fire a reminder for each open task as it comes due, and for each of my own events as it starts. */
 export async function notifyDue(tasks: Task[], opts: NotifyOpts = {}): Promise<void> {
   if (!notificationsSupported() || Notification.permission !== 'granted') return
   const already = seen()

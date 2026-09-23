@@ -62,9 +62,11 @@ describe('local reminders', () => {
     expect(r.actionTypeId).toBe('DRAFTER_TASK')
   })
 
-  it('moves a date-only (midnight) due to the morning instead of 00:00', () => {
-    const [r] = buildLocalReminders([task('a', { dueAt: new Date(2026, 8, 9, 0, 0).toISOString() })], [], [], [], NOW)
-    expect([r.at.getHours(), r.at.getMinutes()]).toEqual([9, 0])
+  it('moves a date-only (midnight) due to the morning instead of 00:00, and says it is due today rather than now', () => {
+    const [r] = buildLocalReminders([task('a', { title: 'Bins out', dueAt: new Date(2026, 8, 9, 0, 0).toISOString() })], [], [], [], NOW)
+    expect([r.at.getDate(), r.at.getHours(), r.at.getMinutes()]).toEqual([9, 9, 0])
+    // a day with no time is due all of it, so 9am is no deadline
+    expect(r.title).toBe('Due today: Bins out')
   })
 
   it('skips done, undated, past and far-future work', () => {
@@ -328,5 +330,15 @@ describe('while the app is open (a browser’s notifications)', () => {
       on8th(15, 30),
     )
     expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file' }])
+  })
+
+  it('a day with no time rings at 9am as the phone’s does, “due today”, never at the 00:00 it is stored at, and not once the day is over', () => {
+    const bins = task('bins', { title: 'Bins out', dueAt: new Date(2026, 8, 8).toISOString() })
+    expect(dueNotices([bins], on8th(0, 0))).toEqual([])
+    expect(dueNotices([bins], on8th(8, 59))).toEqual([])
+    expect(dueNotices([bins], on8th(9, 0))).toEqual([{ key: 'bins', title: 'Bins out is due today', body: 'Open Drafter for the details.' }])
+    expect(dueNotices([bins], on8th(23, 59))).toHaveLength(1)
+    // overdue from midnight: Home says so, and "due today" would not be true
+    expect(dueNotices([bins], new Date(2026, 8, 9, 0, 1).getTime())).toEqual([])
   })
 })

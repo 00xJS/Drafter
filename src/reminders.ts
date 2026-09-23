@@ -2,6 +2,7 @@ import { CalendarEntry, Meal, OPEN_STATUSES, Person, Place, Task } from './types
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
+import { hasDueTime } from '../shared/due.mts'
 import { currentEndpoint } from './push'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE, type PlanDayPref } from './native'
 
@@ -78,10 +79,14 @@ function nextPlaceMorning(placeId: string, now: Date): Date {
  */
 const MAX_PLACE_REMINDERS = 3
 
-/** A due date stored at local midnight means "that day": remind in the morning, not at 00:00. */
-function remindAt(dueAt: string): Date {
+/**
+ * When a task reminds: at its time, or, for a due date with no time (stored at
+ * local midnight, shared/due.mts), at 9am on its day — never at 00:00. The
+ * phone and a browser with Drafter open both go by this.
+ */
+export function taskRemindAt(dueAt: string): Date {
   const d = new Date(dueAt)
-  if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(MORNING, 0, 0, 0)
+  if (!hasDueTime(dueAt)) d.setHours(MORNING, 0, 0, 0)
   return d
 }
 
@@ -142,12 +147,14 @@ export function buildLocalReminders(
   if (!opts.skipTaskDue) {
     for (const t of tasks) {
       if (!OPEN_STATUSES.includes(t.status) || !t.dueAt) continue
-      const at = remindAt(t.dueAt)
+      const at = taskRemindAt(t.dueAt)
       const ms = at.getTime()
       if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
+      const title = t.title || 'Untitled task'
       out.push({
         id: reminderId(`task:${t.id}`),
-        title: opts.generic ? 'Something is due' : `Due now: ${t.title || 'Untitled task'}`,
+        // a day with no time is due all of it, so its 9am says so rather than "now"
+        title: opts.generic ? 'Something is due' : hasDueTime(t.dueAt) ? `Due now: ${title}` : `Due today: ${title}`,
         body: opts.generic ? 'Open Drafter to see what.' : t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
         at,
         url: `/?task=${encodeURIComponent(t.id)}`,

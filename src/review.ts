@@ -1,5 +1,5 @@
 import { CalendarEntry, Person, Place, Project, Task } from './types'
-import { DAY_MS, startOfDay } from './taskutils'
+import { DAY_MS, isOverdue, startOfDay } from './taskutils'
 import { seenTasks, visitDays } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
@@ -68,11 +68,12 @@ export interface ReviewData {
   done: Task[]
   /** Logged visits in the range — real, but not work finished. */
   visitsDone: Task[]
-  /** Open tasks whose due date fell inside the range and passed without completion. */
+  /** Open tasks due inside the range whose day is over (shared/due.mts): a task due today has not slipped yet. */
   slipped: Task[]
   created: Task[]
   /** Open and due inside the following period. */
   upcoming: Task[]
+  /** Open and overdue now, whenever they were due: Home's Overdue, and what the bulk buttons move. */
   overdueNow: Task[]
   /** Events in the range, per person, and the days they fell on: three on one Saturday are one day. */
   people: { person: Person; visits: Task[]; days: number }[]
@@ -94,7 +95,6 @@ const inRange = (iso: string | undefined, r: Range) => sharedInRange(iso, r.star
 
 /** `entries` are your own calendar entries: one that has happened with people on it counts as seeing them. */
 export function buildReview(range: Range, tasks: Task[], projects: Project[], people: Person[], now = new Date(), places: Place[] = [], entries: CalendarEntry[] = [], myId?: string | null): ReviewData {
-  const nowMs = now.getTime()
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
   // done, slipped and people seen are the lists Sunday's automatic draft reads
@@ -102,7 +102,9 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const { done, visitsDone, slipped } = reviewLists(tasks, range, now)
   const created = tasks.filter(t => inRange(t.createdAt, range) && !t.tags.includes('visit'))
   const upcoming = open.filter(t => inRange(t.dueAt, next)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
-  const overdueNow = open.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
+  // the rule Home's Overdue goes by: a task due today, untimed or with its time
+  // gone by, is today's still, and Push all to Monday must not sweep it up
+  const overdueNow = open.filter(t => isOverdue(t.dueAt, now)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
   // as on the People page: your own past events count, read as the visits they
   // amount to. Only names and titles are shown here, so none is ever opened as a task.
   // `myId` is what keeps the recap yours: a fortnight in which the other member

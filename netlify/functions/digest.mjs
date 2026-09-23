@@ -28,6 +28,7 @@
 // same push and email as the digest, at most every twelve hours.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
+import { hasDueTime } from '../../shared/due.mts'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mts'
 import { seenTasks } from '../../shared/people.mts'
 import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/review.mts'
@@ -48,6 +49,8 @@ const DAY = 86_400_000
 const HOUR = 3_600_000
 /** Cap the catch-up window so an outage can't unleash a flood of stale nudges. */
 const MAX_NUDGE_WINDOW = 6 * HOUR
+/** "Due now" nudges a run sends one account at most; the rest wait for the next run. */
+const MAX_NUDGES = 5
 const OPEN = ['todo', 'doing', 'blocked']
 const TOMBSTONE_TTL_MS = 90 * DAY
 /**
@@ -185,7 +188,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
   // the lists Home → Week shows for that week (shared/review.mts); your own past
   // events with people on them count as seeing them there, and so here
-  const lists = reviewLists(tasks, meta, now)
+  const lists = reviewLists(tasks, meta, now, opts.timezone || 'UTC')
   const done = lists.done.map(t => t.title).slice(0, 40)
   const slipped = lists.slipped.map(t => t.title).slice(0, 40)
   const seen = peopleSeen(people, seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now, userId), meta, iso => localParts(iso, opts.timezone || 'UTC').day)
@@ -541,22 +544,33 @@ async function digestRun(now, run) {
       }
 
       // 2. timed tasks that came due since the last check (watermarked, so a
-      //    delayed or repeated invocation neither duplicates nor skips nudges)
+      //    delayed or repeated invocation neither duplicates nor skips nudges).
+      //    Only a time comes due: a day with no time is due all of it, is not
+      //    "due now" at the 00:00 it is stored at, and the morning digest lists
+      //    it (shared/due.mts, read in the account's zone).
       if (liveSubs.length && pushConfigured()) {
         const lastCheck = Date.parse(u.last_due_check ?? '')
         const from = Math.max(Number.isFinite(lastCheck) ? lastCheck : now.getTime() - HOUR, now.getTime() - MAX_NUDGE_WINDOW)
-        // rows of every kind, read here for a task's fields
-        const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (items).filter(t => {
-          if (t.kind !== 'task' || t.deletedAt || !OPEN.includes(t.status) || !t.dueAt) return false
-          const at = Date.parse(t.dueAt)
-          return Number.isFinite(at) && at <= now.getTime() && at > from
-        })
-        for (const t of due.slice(0, 5)) {
+        // rows of every kind, read here for a task's fields; soonest first
+        const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (items)
+          .filter(t => t.kind === 'task' && !t.deletedAt && OPEN.includes(t.status) && t.dueAt && hasDueTime(t.dueAt, tz))
+          .map(t => ({ t, at: Date.parse(t.dueAt) }))
+          .filter(({ at }) => Number.isFinite(at) && at <= now.getTime() && at > from)
+          .sort((a, b) => a.at - b.at)
+        // At most MAX_NUDGES a run, and none skipped: when more came due, the
+        // watermark stops at the last one sent and the next run sends on from
+        // there. Tasks due at one instant go out together, even past the cap, as
+        // a watermark between them could not tell the sent from the unsent. A
+        // push service's refusal is the run's failure, on the job's record, and
+        // the watermark moves on past it as before.
+        let n = 0
+        while (n < due.length && (n < MAX_NUDGES || due[n].at === due[n - 1].at)) {
+          const { t } = due[n++]
           const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 })
           if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
           sent += Math.max(0, liveSubs.length - failed.length)
         }
-        patch.last_due_check = now.toISOString()
+        patch.last_due_check = n < due.length ? new Date(due[n - 1].at).toISOString() : now.toISOString()
       }
 
       if (liveSubs !== subs) patch.push_subscriptions = liveSubs

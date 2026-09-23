@@ -69,3 +69,23 @@ export function untilNextDay(now: Date = new Date()): number {
   next.setHours(24, 0, 0, 0)
   return next.getTime() - now.getTime() + 1000
 }
+
+const keyParts = (key: string): [number, number, number] => {
+  const [y, m, d] = key.split('-').map(Number)
+  return [y, m - 1, d]
+}
+
+/** Local midnight at the start of a YYYY-MM-DD day, in ms. */
+export function dayStartMs(key: string): number {
+  return new Date(...keyParts(key)).getTime()
+}
+
+/**
+ * Noon, local, on a YYYY-MM-DD day: the Date a view hands to what goes by the
+ * day (its weekday, its week, what is on it), worked out from the day key
+ * rather than from `new Date()` as it renders. Noon, so no daylight saving
+ * change can move it onto the day either side.
+ */
+export function noonOf(key: string): Date {
+  return new Date(...keyParts(key), 12)
+}
