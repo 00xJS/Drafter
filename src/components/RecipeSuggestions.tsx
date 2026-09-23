@@ -4,7 +4,7 @@ import { RecipeSuggestInput, RecipeSuggestion, recipeSuggestInput, recipeTitleKe
 import { newIngredient } from '../kitchen'
 import { Meal, Recipe } from '../types'
 import { dateKey, uid } from '../utils'
-import { aiFailureKind } from './AskSheet'
+import { aiFailureText } from './AskSheet'
 
 // Kitchen → Recipes: "✨ Suggest recipes I'd like". The assistant reads the
 // collection (names, tags, main ingredients, times cooked) and drafts dishes
@@ -190,14 +190,7 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
       else savePending([...waiting, ...fresh].slice(-PENDING_MAX))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      const kind = aiFailureKind(msg)
-      setMessage(
-        kind === 'busy'
-          ? 'The assistant is busy — try again in a minute.'
-          : kind === 'unavailable'
-            ? 'Suggestions need the assistant, which isn’t available here.'
-            : `Couldn’t get ideas: ${msg}`,
-      )
+      setMessage(aiFailureText(msg, { unavailable: 'Suggestions need the assistant, which isn’t available here.', failed: 'Couldn’t get ideas' }))
     } finally {
       setBusy(false)
     }

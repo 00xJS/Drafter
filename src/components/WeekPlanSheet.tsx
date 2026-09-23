@@ -7,7 +7,7 @@ import { cookedIndex, visitIndex, mealId, nextSwap } from '../kitchen'
 import { dateKey } from '../utils'
 import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
 import { CalendarEntry, Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
-import { aiFailureKind } from './AskSheet'
+import { aiFailureText } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 
@@ -169,16 +169,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
       setPol({ status: 'done', input, result: await polish(input) })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      const kind = aiFailureKind(message)
-      setPol({
-        status: 'failed',
-        message:
-          kind === 'busy'
-            ? 'The assistant is busy — try again in a minute.'
-            : kind === 'unavailable'
-              ? 'The assistant isn’t available here — the plan above works without it.'
-              : `Couldn’t polish the plan: ${message}`,
-      })
+      setPol({ status: 'failed', message: aiFailureText(message, { unavailable: 'The assistant isn’t available here — the plan above works without it.', failed: 'Couldn’t polish the plan' }) })
     }
   }
   /** The polish's recipe for a night, only ever one of that night's own candidates (ai.ts already checked). */

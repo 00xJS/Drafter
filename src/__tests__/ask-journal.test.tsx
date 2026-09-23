@@ -112,7 +112,10 @@ describe('askDrafter sends the journal as it sends any record', () => {
 
 describe('what the sheet says when no answer came', () => {
   it('is what it says for any question: never that the journal needs Claude, and no offer to ask without it', () => {
-    expect(askFailure('NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.')).toEqual({ text: 'Drafter’s assistant is busy — try again in a minute.', retry: true })
+    expect(askFailure('NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.')).toEqual({
+      text: 'NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.',
+      retry: true,
+    })
     expect(askFailure('AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.')).toEqual({
       text: 'The assistant isn’t available here, so there’s no written answer — these are the records that match.',
       retry: false,

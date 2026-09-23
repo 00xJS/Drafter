@@ -58,10 +58,38 @@ export function aiFailureKind(message: string): 'busy' | 'unavailable' | 'other'
   return 'other'
 }
 
-/** What Ask says when no answer came. Unavailable is not an error here: the sources are the answer. */
-export function askFailure(message: string): { text: string; retry: boolean } {
+/** Whether this device says it is online. Where nothing says (a test, a server render), it is. */
+const deviceOnline = (): boolean => typeof navigator === 'undefined' || navigator.onLine !== false
+
+/**
+ * Whether a call failed because this device is offline. The request fails the
+ * same way offline as it does in a copy of the app with no server behind it
+ * (src/api.ts), and both read as "the assistant isn't available here" — a dead
+ * end, with no Try again, for what is only a lost connection.
+ */
+export function failedOffline(message: string, online = deviceOnline()): boolean {
+  return !online && aiFailureKind(message) === 'unavailable' && /unreachable|offline|failed to fetch|network/i.test(message)
+}
+
+/**
+ * What a ✨ sheet says when its call failed: that the device is offline; the
+ * server's own words for a rate limit, which know how long the wait is ("try
+ * again in 3 min" — every sheet used to say "a minute"); the sheet's own words
+ * when there is no assistant here at all; and anything else as it came.
+ */
+export function aiFailureText(message: string, words: { unavailable: string; failed: string }, online = deviceOnline()): string {
+  if (failedOffline(message, online)) return 'You’re offline — try again once you’re connected.'
   const kind = aiFailureKind(message)
-  if (kind === 'busy') return { text: 'Drafter’s assistant is busy — try again in a minute.', retry: true }
+  if (kind === 'busy') return message
+  if (kind === 'unavailable') return words.unavailable
+  return `${words.failed}: ${message}`
+}
+
+/** What Ask says when no answer came. Unavailable is not an error here: the sources are the answer. */
+export function askFailure(message: string, online = deviceOnline()): { text: string; retry: boolean } {
+  if (failedOffline(message, online)) return { text: 'You’re offline, so there’s no written answer — these are the records that match. Try again once you’re connected.', retry: true }
+  const kind = aiFailureKind(message)
+  if (kind === 'busy') return { text: message, retry: true }
   if (kind === 'unavailable') return { text: 'The assistant isn’t available here, so there’s no written answer — these are the records that match.', retry: false }
   return { text: `Couldn’t write an answer: ${message}`, retry: true }
 }
