@@ -1,5 +1,5 @@
 // Web push subscriptions and digest preferences, per user.
-//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, digestJournal, timezone, sundayDraft, aiConfigured }
+//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, emailConfigured, digestJournal, timezone, sundayDraft, aiConfigured }
 //   POST /api/push { action } subscribe | unsubscribe | test | prefs
 // VAPID keys come from the host: `npx web-push generate-vapid-keys` →
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (+ VAPID_SUBJECT, a mailto: or https:).
@@ -12,6 +12,7 @@ import webpush from 'web-push'
 import { resolveProvider } from './lib/ai.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { apnsConfigured, apnsPayload, isGoneReason, missingApnsEnv, sendApnsWithRetry } from './lib/apns.mjs'
+import { emailConfigured } from './lib/email.mjs'
 import { adoptTimeZone } from './lib/timezone.mjs'
 
 // Two channels, one list: browser subscriptions carry an endpoint + keys and go
@@ -90,6 +91,15 @@ function explainPushFailure(failed) {
   return `The push service refused the message (HTTP ${codes.join(', ') || 'unknown'}).`
 }
 
+/**
+ * The test push's words: what push brings to every device the account has —
+ * the morning digest, and word of a shared task someone else updated unless
+ * that is switched off.
+ */
+export function testPushBody(settings) {
+  return settings?.notify_activity === false ? 'Push is on: a digest each morning.' : 'Push is on: a digest each morning, and word when someone updates a task you share.'
+}
+
 const handler = async req => {
   const { user, response, unconfigured } = await getUser(req)
   if (response) return response
@@ -113,6 +123,9 @@ const handler = async req => {
         // none while the host cannot send: the phone then keeps its own due reminders
         subscriptions: configured ? (s?.push_subscriptions ?? []).map(x => x.endpoint) : [],
         digestEmail: !!s?.digest_email,
+        // whether this site can send the digest by email at all (lib/email.mjs):
+        // without it Settings does not offer the switch. A yes or no only
+        emailConfigured: emailConfigured(),
         digestJournal: !!s?.digest_journal,
         // the client must render the SAVED hour, else an unrelated toggle
         // writes its default back over the user's choice
@@ -164,7 +177,10 @@ const handler = async req => {
       return Response.json({ ok: true, subscriptions: next.map(x => x.endpoint) })
     }
     if (body.action === 'test') {
-      const { gone, failed, updated } = await sendToAll(subs, { title: 'Drafter', body: 'Push reminders are on. You will get a digest each morning and a nudge when timed tasks come due.', tag: 'test' })
+      // Said for every device the account has, so only what reaches all of
+      // them: "Due now" nudges go to browsers alone (an iPhone reminds of its
+      // own due tasks, src/reminders.ts), so they are not promised here.
+      const { gone, failed, updated } = await sendToAll(subs, { title: 'Drafter', body: testPushBody(s), tag: 'test' })
       let next = subs
       if (gone.length) next = next.filter(x => !gone.includes(x.endpoint))
       if (updated?.length) {

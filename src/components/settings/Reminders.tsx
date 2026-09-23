@@ -110,6 +110,55 @@ export function PlanDayReminder({ pref, onChange }: { pref: PlanDayPref; onChang
   )
 }
 
+/**
+ * The morning digest's hour, and whether it comes by email too. Email goes
+ * only from a site that can send it: without that the switch is not offered,
+ * since a digest that never came looked exactly like one that had, and the
+ * line says so instead. The hour is push's as well, so it stays either way.
+ */
+export function DigestEmail({
+  email,
+  on,
+  configured,
+  hour,
+  onChange,
+  onHour,
+}: {
+  email: string
+  on: boolean
+  configured: boolean
+  hour: number
+  onChange(on: boolean): void
+  onHour(hour: number): void
+}) {
+  return (
+    <>
+      <p className="sync-line">
+        {configured ? (
+          <label className="cal-source mirror-row">
+            <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked)} />
+            <span className="cal-source-name">Also email me the morning digest ({email})</span>
+          </label>
+        ) : (
+          <span className="cal-source-name">Morning digest</span>
+        )}
+        <label className="digest-hour">
+          at
+          <select value={hour} onChange={e => onHour(Number(e.target.value))}>
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, '0')}:00
+              </option>
+            ))}
+          </select>
+          <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
+        </label>
+      </p>
+      {!configured && <p className="field-hint">The digest comes by push only: email isn’t set up on this site.</p>}
+    </>
+  )
+}
+
 /** What a switch turned on here hears when iOS says no. */
 const NOT_ALLOWED = 'Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.'
 
@@ -248,27 +297,17 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
               </>
             )}
           </p>
-          <p className="sync-line">
-            <label className="cal-source mirror-row">
-              <input
-                type="checkbox"
-                checked={push.digestEmail}
-                onChange={e => runPush(() => savePushPrefs({ digestEmail: e.target.checked, digestHour }))}
-              />
-              <span className="cal-source-name">Also email me the morning digest ({push.email})</span>
-            </label>
-            <label className="digest-hour">
-              at
-              <select value={digestHour} onChange={e => { setDigestHour(Number(e.target.value)); runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour: Number(e.target.value) })) }}>
-                {Array.from({ length: 24 }, (_, h) => (
-                  <option key={h} value={h}>
-                    {String(h).padStart(2, '0')}:00
-                  </option>
-                ))}
-              </select>
-              <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
-            </label>
-          </p>
+          <DigestEmail
+            email={push.email}
+            on={push.digestEmail}
+            configured={push.emailConfigured !== false}
+            hour={digestHour}
+            onChange={on => runPush(() => savePushPrefs({ digestEmail: on, digestHour }))}
+            onHour={h => {
+              setDigestHour(h)
+              runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour: h }))
+            }}
+          />
         </>
       ) : push ? (
         <p className="field-hint">Push reminders aren’t available yet.</p>
