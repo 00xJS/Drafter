@@ -666,8 +666,7 @@
     gap: 8px;
   }
 
-  .segmented,
-  .filter-row {
+  .segmented {
     gap: 6px;
   }
 }

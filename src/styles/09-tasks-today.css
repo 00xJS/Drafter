@@ -9,36 +9,7 @@
   color: var(--muted);
 }
 
-/* project chips: the Board's cards, Today's stalled list and the notes index
-   name a project with one; nothing selects projects with them any more */
-.pchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: 0.8125rem;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-.pchip:hover {
-  background: var(--surface-2);
-}
-.pchip.static {
-  padding: 1px 8px 1px 4px;
-  font-size: 0.6875rem;
-  cursor: default;
-  background: var(--surface-2);
-  border-color: transparent;
-  max-width: 180px;
-}
-.pchip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* a record's colour as a dot: a project's, a calendar's, a year table's row */
 .pdot {
   width: 9px;
   height: 9px;
@@ -191,8 +162,7 @@
 .tlist .trow.swipe-row:hover .swipe-face {
   background: color-mix(in srgb, var(--accent) 4%, var(--surface));
 }
-.warn-card .swipe-face,
-.next-up .swipe-face {
+.warn-card .swipe-face {
   background: var(--surface);
 }
 .swipe-tray {

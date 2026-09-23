@@ -644,19 +644,15 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(rule(bare, '.snap-add')).toMatch(/scroll-snap-align:\s*none/)
   })
 
-  it('caps the Home segment labels on a phone, where four share one row', () => {
-    const capped = narrow.find(b => rule(b.body, '.home-seg .seg'))
-    expect(capped, 'no @media (max-width: 640px) rule for .home-seg .seg').toBeTruthy()
-    expect(rule(capped!.body, '.home-seg .seg')).toMatch(/font-size:\s*calc\(13px \* min\(1\.15, var\(--type-scale\)\)\)/)
-    expect(bare.match(/\.home-seg \.seg\s*\{/g), 'the desktop row keeps its size: the cap is declared only there').toHaveLength(1)
-  })
-
-  it('narrows the native Home track’s thumbs on a phone, outranking the shared padding', () => {
-    const sel = '.native .people-tab-seg.home-seg .segmented .seg'
+  it('narrows the native Keep track’s thumbs on a phone, outranking the shared padding', () => {
+    // Home has had one segment since v3.29, and its track rules went with the
+    // rest; Keep's four are where "Wardrobe" is on a track now
+    const sel = '.native .people-tab-seg.keep-seg .segmented .seg'
     const block = narrow.find(b => rule(b.body, sel))
-    expect(block, 'no phone rule for the native Home segments').toBeTruthy()
+    expect(block, 'no phone rule for the native Keep segments').toBeTruthy()
     expect(rule(block!.body, sel)).toMatch(/padding-inline:\s*6px/)
     expect(compare(specificity(sel), specificity('.native .people-tab-seg .segmented .seg'))).toBeGreaterThan(0)
+    expect(bare).not.toMatch(/\.home-seg/)
   })
 
   it('sticks the action bar just above the tab bar on a phone, without spending the keyboard', () => {

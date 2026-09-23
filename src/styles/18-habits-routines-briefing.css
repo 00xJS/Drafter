@@ -518,51 +518,6 @@ button.briefing-cta-btn:focus-visible {
 }
 
 /* --- Plan my day and Shut down (B2, B3): one look for both sheets --- */
-.plan-steps {
-  padding: 10px 20px 0;
-}
-.plan-steps ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.plan-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 5px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.plan-step.on {
-  border-color: var(--accent-ring);
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-.plan-step-n {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5em;
-  height: 1.5em;
-  border-radius: 50%;
-  background: var(--surface-2);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-}
-.plan-step.on .plan-step-n {
-  background: var(--accent);
-  color: var(--on-accent);
-}
 .plan-section {
   display: flex;
   flex-direction: column;
@@ -614,11 +569,6 @@ button.briefing-cta-btn:focus-visible {
 /* an empty live region: kept in the page so the refusal is announced, but no gap */
 .plan-limit:empty {
   display: none;
-}
-.plan-bulk {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .plan-list,
 .plan-picks,
@@ -684,14 +634,6 @@ button.briefing-cta-btn:focus-visible {
 }
 .plan-remove {
   flex: none;
-}
-.plan-new {
-  display: flex;
-  gap: 8px;
-}
-.plan-new input {
-  flex: 1;
-  min-width: 0;
 }
 .plan-group {
   display: flex;
@@ -773,7 +715,6 @@ span.routine-name:hover {
 @media (pointer: coarse) {
   .briefing-cta-btn,
   .meal-idea,
-  .plan-step,
   .plan-cand,
   .plan-keep {
     min-height: 44px;
@@ -781,9 +722,6 @@ span.routine-name:hover {
 }
 
 @media (max-width: 640px) {
-  .plan-steps {
-    padding: 10px 12px 0;
-  }
   /* a row of pills fills its line, so a wrapped second line is not a stub */
   .plan-moves .seg,
   .plan-durations .seg,

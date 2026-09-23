@@ -29,34 +29,6 @@
 .people .chart-sub {
   margin: 2px 0 0;
 }
-.people-summary {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin: 0 0 12px;
-}
-.person-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.person-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.person-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
 .person-avatar {
   width: 36px;
   height: 36px;
@@ -76,11 +48,6 @@
   height: 28px;
   /* initials drawn to a fixed circle, like .person-avatar above */
   font-size: 14px;
-}
-.person-reason {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 0.8125rem;
 }
 .person-journal {
   display: flex;
@@ -150,13 +117,6 @@
   display: flex;
   gap: 6px;
   align-items: center;
-}
-.people-delete {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 60;
 }
 
 .person-ideas {
@@ -385,11 +345,6 @@
   .search-hit.create small {
     display: none;
   }
-}
-.search-foot {
-  padding: 6px 12px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
 }
 
 /* attachments, costs, blockers */
@@ -1192,9 +1147,6 @@
 .chat-seg > .segmented {
   flex: 1;
   min-width: 0;
-}
-.chat-close {
-  flex: none;
 }
 
 .chat-composer {

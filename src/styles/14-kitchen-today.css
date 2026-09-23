@@ -235,20 +235,6 @@
   border-radius: 12px;
   font-size: 1rem;
 }
-.recipe-emoji {
-  font-size: 1.75rem;
-  line-height: 1;
-  margin-top: 2px;
-}
-.recipe-preview {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .recipe-cook-meta,
 .recipe-notes {
   margin: 0 0 12px;
@@ -381,9 +367,6 @@
   color: var(--text-2);
   line-height: 1.5;
   white-space: pre-wrap;
-}
-.recipe-emoji {
-  flex: none;
 }
 .meal-day {
   flex-direction: column;

@@ -96,10 +96,6 @@
   min-width: 0;
 }
 
-.card-date {
-  margin-left: auto;
-}
-
 .card-tags {
   display: flex;
   flex-wrap: wrap;

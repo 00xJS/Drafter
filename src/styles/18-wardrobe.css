@@ -1815,11 +1815,6 @@ button.photo-cal-day:focus-visible {
   html:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
     bottom: calc(var(--tabbar-h) + var(--safe-b) + 64px);
   }
-  /* the tab bar's precedent: labels grow with Dynamic Type, but only so far,
-     or "Wardrobe" pushes the fourth segment off a 375pt row */
-  .home-seg .seg {
-    font-size: calc(13px * min(1.15, var(--type-scale)));
-  }
   .wardrobe-bar {
     gap: 6px;
     margin-bottom: 6px;

@@ -176,24 +176,6 @@
   color: var(--danger);
 }
 
-.dash-when {
-  text-align: right;
-  white-space: nowrap;
-  display: flex;
-  flex-direction: column;
-}
-
-.dash-when small {
-  color: var(--muted);
-}
-
-.dash-fix {
-  color: var(--accent-ink);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 /* ---------- new interaction chrome ---------- */
 
 .card-title-row {
@@ -333,14 +315,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.filter-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-2);
-}
-
 .show-all {
   display: block;
   margin: 12px auto;
@@ -385,35 +359,6 @@
   font-size: 0.75rem;
   color: var(--muted);
   flex-wrap: wrap;
-}
-
-.action-menu {
-  position: relative;
-}
-
-.action-menu summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.action-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.action-menu[open] .action-menu-items {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-pop);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  min-width: 180px;
 }
 
 /* ---------- garment cut-out ----------

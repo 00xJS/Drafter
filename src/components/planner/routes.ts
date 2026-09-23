@@ -29,7 +29,8 @@ export const CALENDAR_MODES: CalendarMode[] = ['month', 'week', 'day']
 export type PeopleTab = 'people' | 'places'
 /**
  * Home's pages. It held four at v3.28 — the day, the week, the journal and
- * the chat — and holds one at v3.29: Home IS the day.
+ * the chat — and holds one at v3.29: Home IS the day, and draws no segments
+ * for it.
  *
  * The Wardrobe went to Keep, the Week and the Journal archive to Insights, and
  * the Chat to the top bar. Home keeps the chips that link to all of them,
@@ -37,7 +38,6 @@ export type PeopleTab = 'people' | 'places'
  * line to write in is Home's, the archive of what you wrote is not.
  */
 export type HomeTab = 'today'
-export const HOME_TABS: { key: HomeTab; label: string }[] = [{ key: 'today', label: 'Today' }]
 
 /**
  * Insights' three: the figures, what you wrote, and the week you just had.
