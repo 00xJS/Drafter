@@ -249,7 +249,7 @@ describe('the digest that went out is kept in the hub', () => {
   it('on a Sunday it opens the review, as the push does', async () => {
     settings = [account(ME)]
     await runAt('2026-09-27T15:00:00.000Z')
-    expect(kept[0].data).toMatchObject({ type: 'digest', target: { kind: 'review', id: '2026-09-27' }, lines: ['Sunday: your weekly review is ready.'] })
+    expect(kept[0].data).toMatchObject({ type: 'digest', target: { kind: 'review', id: '2026-09-27' }, lines: ['Sunday: time to look back on last week.'] })
   })
 
   it('only when it reached them: a digest every device refused is not kept', async () => {
@@ -258,5 +258,26 @@ describe('the digest that went out is kept in the hub', () => {
     rows = [task(ME, 'Renew the insurance', { dueAt: '2026-09-22T10:00:00.000Z' })]
     await runAt('2026-09-23T15:00:00.000Z')
     expect(kept).toEqual([])
+  })
+})
+
+// A Google or Outlook sign-in that died stopped the calendar mirror in silence
+// (lib/signins.mjs): the digest now says so, every morning until it is signed
+// in again — read from the account's own settings, which keep the address.
+describe('the morning digest names a calendar sign-in that stopped working', () => {
+  it('in the push, until it is signed in again', async () => {
+    settings = [account(ME, { google_email: 'me@gmail.com', google_refresh_token: null, microsoft_accounts: [{ id: 'w', email: 'me@work.test', authFailedAt: '2026-09-20T00:00:00Z', refreshToken: null }] })]
+    rows = [task(ME, 'Renew the insurance', { dueAt: '2026-09-22T10:00:00.000Z' })]
+    await runAt('2026-09-23T15:00:00.000Z')
+    expect(morning()[0].body?.split('\n')).toEqual([
+      '1 overdue: Renew the insurance',
+      'Google Calendar and Outlook (me@work.test) need you to sign in again (Settings → Calendars): nothing reaches them until then.',
+    ])
+    // signed in again: the next morning says nothing of it
+    settings[0].google_refresh_token = 'grant'
+    settings[0].microsoft_accounts = [{ id: 'w', email: 'me@work.test', refreshToken: 'r' }]
+    log.length = 0
+    await runAt('2026-09-24T15:00:00.000Z')
+    expect(morning()[0].body).toBe('1 overdue: Renew the insurance')
   })
 })

@@ -11,18 +11,15 @@
 // same digest and nudges again an hour later. Written first, a run that dies
 // mid-send loses what it had not sent yet rather than repeating what it had.
 //
-// Sunday's review draft is for every account, push and email or not: on its
-// own Sunday, from its digest hour, last week's review is written for it once
-// (upsertSundayReview), and a digest that day ends with what it says. An
-// account the site owner has disabled in Admin (an auth ban) is not drafted,
-// though its digest still ends with the week's review as it stands: a run
-// with a draft due reads every account's sign-in status once, for
-// AUTH_READ_MS at most, and when that read fails or runs out of time nobody
-// is skipped, as before. Netlify
-// stops a scheduled function at 30 seconds, so the accounts whose digest may
-// be due go first, and a draft starts only while the run has time to finish
-// it (RUN_BUDGET_MS). One that can't start waits for the next hourly run: it
-// stays due for the rest of that Sunday.
+// Sunday's review draft is for every account, push and email or not, and is
+// written by the background function (ai-jobs-background.mjs,
+// lib/sundaydraft.mjs), not here: the model takes 20 to 60 seconds and this
+// run has 30 for everyone. From the hour before an account's digest hour on
+// its Sunday, a run that finds its review still wanting a draft names it to
+// the background function, which has minutes; the next two hours' runs do
+// the same if that try got no answer (lib/reviewweek.mjs sundayDraftStarts).
+// The digest itself only reads the week's review, and ends Sunday's with its
+// first sentence, or with the invitation to look back while there is none.
 //
 // Records are scoped per recipient exactly as the database policy scopes them:
 // your own rows plus your household's (plus legacy unowned rows, which belong
@@ -42,22 +39,21 @@
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 import { isMineTask } from '../../shared/domain.mts'
 import { hasDueTime } from '../../shared/due.mts'
-import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mts'
-import { seenTasks } from '../../shared/people.mts'
-import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/review.mts'
 import { SYNC_KINDS } from '../../shared/kinds.mts'
 import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mts'
-import { complete, resolveProvider } from './lib/ai.mjs'
+import { resolveProvider } from './lib/ai.mjs'
+import { startJob } from './lib/aijobs.mjs'
 import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { emailConfigured, sendEmail } from './lib/email.mjs'
 import { recordJobRun } from './lib/jobhealth.mjs'
 import { putNotice } from './lib/notices.mjs'
 import { noticeId } from '../../shared/notices.mts'
-import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
+import { buildPeerMap as peerMap } from './lib/peers.mjs'
+import { sundayDraftStarts, sundayLine } from './lib/reviewweek.mjs'
 import { signInLine } from './lib/signins.mjs'
+import { wantsDraft, weekReviewOf } from './lib/sundaydraft.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
-import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mts'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -71,23 +67,13 @@ const MAX_NUDGES = 5
 const OPEN = ['todo', 'doing', 'blocked']
 const TOMBSTONE_TTL_MS = 90 * DAY
 /**
- * How long a run may go on starting work that can wait. Netlify stops a
- * scheduled function at 30s; the rest is for the digests, nudges and writes
- * still to do once the last draft has had its time.
+ * The kinds a digest reads: the day's tasks, the people and places it nudges
+ * about, tonight's dinner and its recipe, events (who was seen, and the week
+ * plan's busy evenings), the project the week plan's Top 3 come from, and the
+ * reviews (Sunday's line). It used to read every row of every kind each hour
+ * — notes, wardrobe, chat and all — to use these.
  */
-const RUN_BUDGET_MS = 22_000
-/** Left of the budget, at least, before a draft starts: a model call, and a write either side of it. */
-const DRAFT_MIN_MS = 12_000
-/** Accounts a page when the run reads which are disabled, as Admin → Users pages them. */
-const AUTH_PAGE = 200
-/** Pages read at most (4,000 accounts); an account past them is drafted as though enabled. */
-const AUTH_MAX_PAGES = 20
-/**
- * The longest a run waits to learn which accounts are disabled, every page
- * together. A read still going then is let go and skips nobody, as a failed
- * one does, and the drafts still have their time after it.
- */
-const AUTH_READ_MS = 5_000
+export const DIGEST_KINDS = Object.freeze(['task', 'project', 'person', 'place', 'meal', 'recipe', 'event', 'review'])
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -98,213 +84,6 @@ async function rest(path, init = {}) {
   return text ? JSON.parse(text) : null
 }
 
-/** `promise`'s value, or `fallback` once `ms` has passed. Nothing is cancelled; a late answer is not waited for. */
-async function settleWithin(promise, ms, fallback) {
-  if (!Number.isFinite(ms)) return promise
-  let timer
-  try {
-    return await Promise.race([promise, new Promise(resolve => (timer = setTimeout(resolve, Math.max(0, ms), fallback)))])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-/** The id Sunday's draft gives the review of a week it has to create for an account. */
-const draftIdOf = (key, userId) => `review-${key}-${String(userId).slice(0, 8)}`
-
-/**
- * An account's own reviews of a week, deleted ones included. Reviews are
- * personal: never a household peer's for the same week, and never another
- * account's draft that the site owner holds while its hand-over is retried.
- */
-const ownReviews = (items, userId, key) =>
-  (items ?? []).filter(
-    i =>
-      i.kind === 'review' &&
-      i.period === 'week' &&
-      i.key === key &&
-      (i.ownerId == null || i.ownerId === userId) &&
-      (i.id === draftIdOf(key, userId) || !String(i.id).startsWith(`review-${key}-`)),
-  )
-
-/** One millisecond after `iso`, or null without a valid one: newer than the copy a write was built on, and older than any save made since. */
-function justAfter(iso) {
-  const t = Date.parse(iso ?? '')
-  return Number.isFinite(t) ? new Date(t + 1).toISOString() : null
-}
-
-/**
- * Write a review through sync_posts. False when the server did not take it:
- * the request failed, or a newer copy stands. A new row is the site owner's,
- * so with `handOver` it is then given to its reader, and the write counts
- * only once that has worked. A claim left with the site owner is out of its
- * reader's sight, so the next hourly run writes it and hands it over again.
- */
-async function writeReview(review, userId, { handOver = false } = {}) {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
-    method: 'POST',
-    headers: keyHeaders(serviceKey, { 'content-type': 'application/json' }),
-    body: JSON.stringify({ incoming: [review], since: new Date(Date.now() + 86_400_000).toISOString() }),
-  })
-  if (!res.ok) return false
-  const answer = await res.json().catch(() => null)
-  if (['rejected', 'stale', 'gone'].some(k => Array.isArray(answer?.[k]) && answer[k].includes(review.id))) return false
-  if (!handOver) return true
-  // for the site owner this changes nothing and answers 204 all the same
-  return fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
-    method: 'PATCH',
-    headers: keyHeaders(serviceKey, { 'content-type': 'application/json', prefer: 'return=minimal' }),
-    body: JSON.stringify({ user_id: userId }),
-  }).then(
-    r => r.ok,
-    () => false,
-  )
-}
-
-/**
- * Draft a weekly review summary into posts when the owner hasn't written one.
- * Never clobbers reflections or an existing summary. `opts.timezone` is the
- * reader's zone, which decides what "last week" is (lib/reviewweek.mjs).
- *
- * One try a week, however many hourly runs find it due: the record is stamped
- * `draftedAt` before the model is asked, so a call that fails or runs out of
- * time is not paid for again every hour of the day. `items` is one read of
- * every record, made at the start of the run: it can be cut short, and a save
- * made since is not in it. So the week's own rows are read again, straight
- * from the table, just before the stamp, and they decide. Both writes are
- * stamped just after the copy they were built on, so a save made meanwhile
- * wins and the draft steps aside.
- *
- * `opts.deadline` (epoch ms) is when the run stops starting work. Without
- * DRAFT_MIN_MS left, nothing is stamped and the week waits for the next hour.
- * Past the deadline the model is not waited for, and its try is spent. A
- * deadline of 0 only reads the week's review, as it stands, from `items`.
- * `opts.ownerId` is the site owner, whose legacy unowned rows are its own.
- * Answers the week's review as it now stands, { id, summary, drafted }, or
- * null when it has none.
- */
-export async function upsertSundayReview(userId, items, now = new Date(), opts = {}) {
-  const meta = previousWeekIn(now, opts.timezone)
-  const answer = (r, drafted = false) => (r ? { id: r.id, summary: r.summary?.trim() || undefined, drafted } : null)
-  const yours = r => !!(r?.summary?.trim() || r?.reflections?.trim())
-  const left = () => (opts.deadline == null ? Infinity : opts.deadline - Date.now())
-  let existing = ownReviews(items, userId, meta.key).find(r => !r.deletedAt)
-  if (!resolveProvider() || yours(existing) || existing?.draftedAt || left() < DRAFT_MIN_MS) return answer(existing)
-
-  // the week's rows as they stand now, deleted ones too: a stamp on any of
-  // them means the week has had its try, however the read above was cut
-  const week = await rest(`posts?select=data,user_id&kind=eq.review&data->>key=eq.${encodeURIComponent(meta.key)}`).catch(() => null)
-  if (!Array.isArray(week)) return answer(existing)
-  const mine = ownReviews(visibleItemsFor(week, userId, [], opts.ownerId), userId, meta.key)
-  existing = mine.find(r => !r.deletedAt)
-  if (yours(existing) || mine.some(r => r.draftedAt)) return answer(existing)
-
-  const tasks = (items ?? []).filter(i => i.kind === 'task' && !i.deletedAt)
-  const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
-  // the lists Home → Week shows for that week (shared/review.mts); your own past
-  // events with people on them count as seeing them there, and so here
-  const lists = reviewLists(tasks, meta, now, opts.timezone || 'UTC')
-  const done = lists.done.map(t => t.title).slice(0, 40)
-  const slipped = lists.slipped.map(t => t.title).slice(0, 40)
-  const seen = peopleSeen(people, seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now, userId), meta, iso => localParts(iso, opts.timezone || 'UTC').day)
-    .map(p => p.person.name)
-    .slice(0, 20)
-  // habits are personal, like the journal: only this user's own, never a
-  // household peer's. Kept, missed and the streak each ended the week on, in
-  // the one line the ✨ summary on Home → Week sends (shared/review.mts)
-  const habits = habitLines(
-    habitsKept(
-      (items ?? []).filter(i => i.kind === 'habit' && (i.ownerId == null || i.ownerId === userId)),
-      meta,
-      now,
-      iso => localParts(iso, opts.timezone || 'UTC').day,
-    ),
-  )
-  // the journal is personal: only this user's own entries, never a household peer's
-  // …and it reaches the model only when the account opted in (user_settings.digest_journal);
-  // the on-demand summary the user presses for is explicit consent and always may
-  const wrote = opts.journal
-    ? journalLines(
-        entriesBetween(
-          (items ?? []).filter(i => i.kind === 'journal' && (i.ownerId == null || i.ownerId === userId)),
-          meta.startKey,
-          meta.endKey,
-        ),
-        10,
-        220,
-        peopleNameMap(people), // "with Mum, Dad" on a line; a mention is not a visit and is not in "People seen"
-      )
-    : []
-  const list = xs => (xs.length ? xs.map(x => `- ${x}`).join('\n') : '- none')
-  const habitSection = habits.length ? `\n\nHabits:\n${list(habits)}` : ''
-  const journalSection = opts.journal ? `\n\nMy journal this week:\n${list(wrote)}` : ''
-
-  // the week's one try is claimed before the model is asked, just after the
-  // copy read above: a save made since is newer, and the claim steps aside
-  const stamp = justAfter(existing?.updatedAt) ?? new Date().toISOString()
-  const claim = {
-    kind: 'review',
-    id: existing?.id ?? draftIdOf(meta.key, userId),
-    period: 'week',
-    key: meta.key,
-    top: existing?.top ?? [],
-    topDone: existing?.topDone,
-    reflections: existing?.reflections,
-    draftedAt: now.toISOString(),
-    createdAt: existing?.createdAt ?? stamp,
-    updatedAt: stamp,
-  }
-  if (!(await writeReview(claim, userId, { handOver: true }))) return answer(existing)
-
-  const prompt = `Period: last week (${meta.label})\n\nCompleted:\n${list(done)}\n\nSlipped (due but not done):\n${list(slipped)}\n\nPeople seen:\n${list(seen)}${habitSection}${journalSection}\n\n120–220 words. Begin with the review's first sentence.`
-
-  const ai = await settleWithin(
-    complete({
-      // REVIEW_SYSTEM, not a second wording: this writes the same review the
-      // ✨ button does, and the two briefs had drifted apart — this one was
-      // still the rule-heavy original the model got stuck weighing.
-      system: REVIEW_SYSTEM,
-      prompt,
-      maxTokens: 900,
-      // nobody is waiting on it: a second NVIDIA key takes it first, and the owner's own requests keep the main one
-      background: true,
-    }),
-    left(),
-    { error: 'the run ran out of time' },
-  )
-  if (ai.error || !ai.text?.trim()) return answer(claim)
-
-  /**
-   * The thinking guard, on the one path nobody watches.
-   *
-   * NVIDIA's default model reasons before it answers, and when the budget runs
-   * out in the reasoning that is what comes back. In the app a bad answer is in
-   * front of someone who can press the button again; here it is written
-   * straight into the review, on a Sunday, unasked — which is exactly how a
-   * week's review came to be 3,625 characters of the model working out how to
-   * write one. Ask once more without the reasoning, and if that is thinking
-   * too, leave the summary unwritten: the claim alone still lets them press ✨
-   * themselves, and no summary is better than that one.
-   */
-  let text = ai.text.trim()
-  if (looksLikeThinking(text, REVIEW_SYSTEM)) {
-    const retry = await settleWithin(
-      complete({ system: `${REVIEW_SYSTEM}\n\n${NO_THINKING}`, prompt, maxTokens: 2048, background: true }),
-      left(),
-      { error: 'the run ran out of time' },
-    )
-    text = retry.error ? '' : (retry.text ?? '').trim()
-    if (!text || looksLikeThinking(text, REVIEW_SYSTEM)) return answer(claim)
-  }
-
-  // just after the claim, not now: reflections or a Top 3 saved while the
-  // model was asked are newer, so they stand and the summary is not written
-  const review = { ...claim, summary: text, updatedAt: justAfter(claim.updatedAt) }
-  return (await writeReview(review, userId)) ? answer(review, true) : answer(claim)
-}
-
 async function userEmail(userId) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_KEY
@@ -313,60 +92,11 @@ async function userEmail(userId) {
   return (await res.json())?.email ?? null
 }
 
-/**
- * The accounts disabled in Admin → Users, for Sunday's draft to skip. Disable
- * is a Supabase Auth ban (banned_until far ahead, admin.mjs), so this reads
- * every account through the same service-key admin API, a page at a time,
- * and counts a ban only until it runs out. Throws when a page can't be read,
- * or when the pages together take longer than `ms`: a list cut short can't
- * say who is disabled on the pages it missed.
- */
-async function disabledAccounts(now, ms) {
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_KEY
-  // one timer for every page, so a slow list is let go rather than waited on a page at a time
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(new Error(`auth admin users: no answer within ${ms} ms`)), ms)
-  try {
-    const out = new Set()
-    for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
-      const res = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=${AUTH_PAGE}`, { headers: keyHeaders(key), signal: ctrl.signal })
-      if (!res.ok) throw new Error(`auth admin users: ${res.status}`)
-      const list = (await res.json())?.users
-      if (!Array.isArray(list)) throw new Error('auth admin users: no list')
-      for (const u of list) {
-        const until = Date.parse(u?.banned_until ?? '')
-        if (u?.id && Number.isFinite(until) && until > now.getTime()) out.add(u.id)
-      }
-      if (list.length < AUTH_PAGE) break
-    }
-    return out
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 // Admin's digest preview emails through the same sender (lib/email.mjs)
 export { sendEmail }
 
-/** userId -> the set of owner ids whose records that user may see (mirrors household_user_ids()). */
-export async function buildPeerMap() {
-  const rows = await rest('household_members?select=household_id,user_id').catch(() => [])
-  const byHousehold = new Map()
-  for (const r of rows ?? []) {
-    if (!byHousehold.has(r.household_id)) byHousehold.set(r.household_id, [])
-    byHousehold.get(r.household_id).push(r.user_id)
-  }
-  const peers = new Map()
-  for (const members of byHousehold.values()) {
-    for (const uid of members) {
-      const set = peers.get(uid) ?? new Set()
-      for (const other of members) set.add(other)
-      peers.set(uid, set)
-    }
-  }
-  return peers
-}
+/** userId -> the set of owner ids whose records that user may see (lib/peers.mjs); Admin reads it through here. */
+export const buildPeerMap = () => peerMap(rest)
 
 /**
  * Every account a run is for: each settings row, then each account with
@@ -472,63 +202,42 @@ async function digestRun(now, run) {
     : `sync check failed: ${canary.failures.length ? canary.failures.map(f => `${f.kind} ${f.reason}`).join(', ') : canary.error}`
 
   const active = (users ?? []).filter(u => (u.push_subscriptions?.length ?? 0) > 0 || u.digest_email)
-  // Sunday's draft reads the records even with nobody subscribed, on a Sunday
-  // that is due somewhere: {} stands for an account with no settings row
-  const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftDue(u, now))
-  run.counts = { subscribers: active.length, sent: 0, drafted: 0 }
+  // Sunday's draft is started even with nobody subscribed, on a Sunday hour
+  // that starts one somewhere: {} stands for an account with no settings row
+  const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftStarts(u, now))
+  run.counts = { subscribers: active.length, sent: 0, draftsStarted: 0 }
   if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
   // keep row ownership so each recipient only ever sees their own scope. Read a
   // page at a time (restAll, as the nightly backup reads them): one request
   // stops at PostgREST's max_rows, and a read that can't be finished fails the
-  // run, to be tried again the next hour, rather than send a digest or draft
-  // Sunday's review from part of the records
-  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll('posts?select=id,data,user_id&deleted=is.false'))
+  // run, to be tried again the next hour, rather than send a digest from part
+  // of the records. Only the kinds a digest reads (DIGEST_KINDS).
+  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`))
   const peers = await buildPeerMap()
   let sent = 0
-  let drafted = 0
   // the job's record reads this list as it grows, so a run that throws part-way keeps what failed before
   const failures = run.failures
-  // Sunday's drafts start only while there is time to finish them
-  const deadline = now.getTime() + RUN_BUDGET_MS
+  /** Accounts whose review of last week still wants Sunday's draft, for the background function. */
+  const drafts = []
 
   // accounts whose digest may be due go first, as they did before Sunday's
-  // draft ran for everyone: a draft for an account with neither push nor email
-  // never holds up anyone's digest or nudges
+  // draft ran for everyone
   const accounts = accountsOf(users, rows, ownerId)
-  // an account disabled in Admin gets no draft; which ones are is read once,
-  // and only on a run with a draft due and time left to start one. The read
-  // stops at AUTH_READ_MS, or sooner when a draft could no longer start after
-  // it: one that fails or runs out of time skips nobody, as before, says so
-  // in the log, and holds up no digest.
-  const draftDue = drafting && accounts.some(a => sundayDraftDue(a, now))
-  const readFor = Math.min(AUTH_READ_MS, deadline - Date.now() - DRAFT_MIN_MS)
-  const disabled =
-    draftDue && readFor > 0
-      ? await disabledAccounts(now, readFor).catch(e => {
-          console.error(`digest: could not read which accounts are disabled, so none is skipped: ${e?.message ?? e}`)
-          return new Set()
-        })
-      : new Set()
   for (const u of [...accounts.filter(a => active.includes(a)), ...accounts.filter(a => !active.includes(a))]) {
     const subscribed = active.includes(u)
-    // from its hour on its Sunday the week's review is read, for Sunday's
-    // line, and drafted unless the account is disabled in Admin
-    const reviewDue = sundayDraftDue(u, now)
-    const mayDraft = reviewDue && !disabled.has(u.user_id)
-    if (!subscribed && !mayDraft) continue
+    const startsDraft = drafting && sundayDraftStarts(u, now)
+    if (!subscribed && !startsDraft) continue
     try {
       const items = visibleItemsFor(rows, u.user_id, peers.get(u.user_id), ownerId)
 
       const tz = u.timezone || 'UTC'
-      // 0. Sunday's review draft — every account not disabled in Admin, once a
-      //    week (its record keeps the stamp), when the run has time for it, and
-      //    before the digest so Sunday's line can carry it. A disabled account
-      //    is given no time: its review is read as it stands, and not drafted
-      const review = reviewDue
-        ? await upsertSundayReview(u.user_id, items, now, { journal: !!u.digest_journal, timezone: tz, ownerId, deadline: mayDraft ? deadline : 0 }).catch(() => null)
-        : null
-      if (review?.drafted) drafted++
+      // 0. Sunday's review: read for Sunday's line, and named to the background
+      //    function while it still wants a draft (lib/sundaydraft.mjs), which
+      //    skips an account disabled in Admin
+      const sundayHere = localParts(now, tz).weekday === 'Sun'
+      const review = sundayHere ? weekReviewOf(items, u.user_id, now, tz) : null
+      if (startsDraft && wantsDraft(review)) drafts.push(u.user_id)
       if (!subscribed) continue
 
       const { hour, day, weekday } = localParts(now, tz)
@@ -563,7 +272,7 @@ async function digestRun(now, run) {
         // a calendar whose sign-in died has gone quiet: said every morning until it is signed in again
         const signIn = signInLine(u)
         if (signIn) digest.lines.push(signIn)
-        // the review's first sentence, drafted above or written by you; the fixed line without one
+        // the review's first sentence, drafted an hour ago or written by you; while it has none, the invitation to look back
         if (sunday) digest.lines.push(sundayLine(review?.summary))
         // Either link only opens a sheet — Plan my day, or the week plan over the
         // review — and the sheet writes nothing until its button is pressed. With
@@ -664,6 +373,14 @@ async function digestRun(now, run) {
     }
   }
 
+  // Sunday's drafts go to the background function, which has minutes where this
+  // run has seconds; a try that gets no answer is tried again next hour
+  let draftsStarted = 0
+  if (drafts.length) {
+    if (await startJob({ type: 'sunday-drafts', userIds: drafts, at: now.toISOString() }, { origin: site })) draftsStarted = drafts.length
+    else failures.push(`Sunday's draft could not be started for ${drafts.length} account(s): the background function did not answer`)
+  }
+
   // hard-delete purged tombstones older than the TTL (peers have had time to see them);
   // on a run with someone subscribed, as before Sunday's draft ran for everyone
   if (active.length) {
@@ -678,8 +395,8 @@ async function digestRun(now, run) {
     }
   }
 
-  const report = `${active.length ? `sent ${sent}` : 'no subscribers'}${drafted ? `; drafted ${drafted}` : ''}; ${checked}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
+  const report = `${active.length ? `sent ${sent}` : 'no subscribers'}${draftsStarted ? `; drafts started ${draftsStarted}` : ''}; ${checked}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
   if (failures.length) console.error('digest:', report)
-  run.counts = { subscribers: active.length, sent, drafted }
+  run.counts = { subscribers: active.length, sent, draftsStarted }
   return new Response(report, { status: 200 })
 }

@@ -230,7 +230,7 @@ describe('the hourly digest records each run', () => {
 
   it('a run with nobody subscribed is still a run that worked', async () => {
     expect(await (await runDigest()).text()).toBe('no subscribers; sync check ok')
-    expect(recordOf('digest')).toMatchObject({ ok: true, counts: { subscribers: 0, sent: 0, drafted: 0 }, ran_at: '2026-09-22T00:00:00.000Z' })
+    expect(recordOf('digest')).toMatchObject({ ok: true, counts: { subscribers: 0, sent: 0, draftsStarted: 0 }, ran_at: '2026-09-22T00:00:00.000Z' })
   })
 
   it('a run that throws is recorded as failed, and still throws', async () => {

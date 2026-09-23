@@ -28,7 +28,12 @@ export function jobSummary(job: JobName, r: JobRecord): string {
   const parts =
     job === 'backup'
       ? [plural('snapshots', 'snapshot'), plural('records', 'record'), r.counts.encrypted === true ? 'encrypted' : r.counts.encrypted === false ? 'not encrypted' : null]
-      : [n('sent') === null ? null : `sent ${n('sent')}`, n('drafted') ? `drafted ${n('drafted')}` : null, n('subscribers') === null ? null : `${n('subscribers')} subscribed`]
+      : [
+          n('sent') === null ? null : `sent ${n('sent')}`,
+          // Sunday's drafts are written by the background function now; the digest starts them (a record from before says drafted)
+          n('draftsStarted') ? `drafts started ${n('draftsStarted')}` : n('drafted') ? `drafted ${n('drafted')}` : null,
+          n('subscribers') === null ? null : `${n('subscribers')} subscribed`,
+        ]
   return parts.filter(Boolean).join(' · ')
 }
 

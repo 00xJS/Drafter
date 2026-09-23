@@ -68,17 +68,36 @@ export function previousWeekIn(now, tz) {
   }
 }
 
+/** The account's digest hour, 8 when it has none. */
+const digestHourOf = settings => (Number.isInteger(settings?.digest_hour) ? settings.digest_hour : 8)
+
 /**
- * Whether Sunday's review draft is due for an account now: its own Sunday, at
- * or after its digest hour (8 when it has none), push and email or not.
+ * Whether Sunday's review is due for an account now: its own Sunday, at or
+ * after its digest hour (8 when it has none), push and email or not.
  * `settings` is its user_settings row, or {} for an account without one,
- * which reads as UTC. Due for the rest of that day: the draft's own stamp
- * (upsertSundayReview in digest.mjs) is what makes it once a week.
+ * which reads as UTC. Due for the rest of that day; the draft's own
+ * `draftedAt` is what makes it once a week (lib/sundaydraft.mjs), and
+ * sundayDraftStarts which runs ask for it.
  */
 export function sundayDraftDue(settings, now) {
   const { hour, weekday } = localParts(now, validTimeZone(settings?.timezone) ?? 'UTC')
-  const wantHour = Number.isInteger(settings?.digest_hour) ? settings.digest_hour : 8
-  return weekday === 'Sun' && hour !== null && hour >= wantHour
+  return weekday === 'Sun' && hour !== null && hour >= digestHourOf(settings)
+}
+
+/** How many hourly runs on a Sunday start the draft: a try that gets no answer is tried again, this many times at most. */
+export const DRAFT_TRIES = 3
+
+/**
+ * Whether this hourly run starts Sunday's draft for an account: the hour
+ * before its digest hour, so the summary is written by the time the digest
+ * goes, and the next DRAFT_TRIES - 1 hours for a try that got no answer. The
+ * draft is claimed only once written, so what bounds the model calls a Sunday
+ * can cost is this window, not a stamp put down before asking.
+ */
+export function sundayDraftStarts(settings, now) {
+  const { hour, weekday } = localParts(now, validTimeZone(settings?.timezone) ?? 'UTC')
+  const first = Math.max(0, digestHourOf(settings) - 1)
+  return weekday === 'Sun' && hour !== null && hour >= first && hour < first + DRAFT_TRIES
 }
 
 /**
@@ -100,8 +119,12 @@ export function firstSentence(text, max = 200) {
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
-/** Sunday's line in the digest: the week's review in its first sentence, or the fixed line while it has none. */
+/**
+ * Sunday's line in the digest: the week's review in its first sentence, or,
+ * while it has none, the invitation to look back. It used to say "your weekly
+ * review is ready" whether or not anything had been written.
+ */
 export function sundayLine(summary) {
   const first = firstSentence(summary)
-  return first ? `Last week: ${first}` : 'Sunday: your weekly review is ready.'
+  return first ? `Last week: ${first}` : 'Sunday: time to look back on last week.'
 }

@@ -195,6 +195,8 @@ describe('Admin → Data: the jobs and the errors', () => {
     expect(html).toContain('sent 3 · 2 subscribed')
     expect(html).toContain('and 1 more')
     expect(jobSummary('digest', run({ counts: { sent: 0, drafted: 2, subscribers: 0 } }))).toBe('sent 0 · drafted 2 · 0 subscribed')
+    // the digest starts Sunday's drafts now, and the background function writes them
+    expect(jobSummary('digest', run({ counts: { sent: 1, draftsStarted: 2, subscribers: 1 } }))).toBe('sent 1 · drafts started 2 · 1 subscribed')
   })
 
   it('reads as running when all is well, and says so when the records cannot be read yet', () => {

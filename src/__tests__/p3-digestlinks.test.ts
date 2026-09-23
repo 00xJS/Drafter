@@ -94,14 +94,14 @@ describe('the digest opens a planning sheet', () => {
     expect(await runAt('2026-09-13T09:00:00Z')).toMatch(/^sent 1;/)
     expect(pushes).toHaveLength(1)
     expect(pushes[0].url).toBe('https://site.test/?view=review&plan=week')
-    expect(pushes[0].body.split('\n')).toEqual(['Plan next week: 1 dinner to fill', 'Sunday: your weekly review is ready.'])
+    expect(pushes[0].body.split('\n')).toEqual(['Plan next week: 1 dinner to fill', 'Sunday: time to look back on last week.'])
     expect(emails[0].text.split('\n').slice(-2)).toEqual(['Plan the week: https://site.test/?view=review&plan=week', 'Open Drafter: https://site.test/'])
   })
 
   it('on a Sunday with nothing to plan: the review on its own', async () => {
     await runAt('2026-09-13T09:00:00Z')
     expect(pushes[0].url).toBe('https://site.test/?view=review')
-    expect(pushes[0].body).toBe('Sunday: your weekly review is ready.')
+    expect(pushes[0].body).toBe('Sunday: time to look back on last week.')
     expect(emails[0].text).not.toContain('plan=')
   })
 
