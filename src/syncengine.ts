@@ -28,6 +28,15 @@ import {
 // hand a round a stale list. store.ts is now only the React adapter over this.
 
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
+/** Records a page going away had not written to IndexedDB yet (see writeJournal). A drafter:* key, so sign-out wipes it. */
+export const JOURNAL_KEY = 'drafter:unsaved-journal'
+
+interface Journal {
+  v: 1
+  userId: string | null
+  upserts: Item[]
+  deletes: string[]
+}
 /** The IndexedDB write waits this long after the last change, off the render hot path. */
 const PERSIST_MS = 300
 /** A cache write that failed is tried again this long after, if nothing else writes first. */
@@ -552,6 +561,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       written = { userId: change.userId, shadows: shadowList }
       if (change.replace) replaceNext = false
       if (change.dropSnapshot) snapshotLeft = false
+      // the records a page going away journalled are on disk now
+      if (unsaved.size === 0) clearJournal()
       // legacy cache retired only once the new cache holds real data
       if (index.size > 0) kv.removeItem(LEGACY_LS_KEY)
     } catch (e) {
@@ -574,6 +585,79 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** Something is waiting to be written: a debounce not yet run, or a write that failed. */
   function persistPending(): boolean {
     return persistTimer !== undefined || (perRecord && unsaved.size > 0)
+  }
+
+  // ---- the journal: what a page going away had not written yet ----------------------
+  //
+  // An IndexedDB write is asynchronous, and a page that is closing — a reload,
+  // the app swiped away — may be gone before it commits: an edit made in the
+  // last moments before that was lost from the device, and, not pushed yet
+  // either, lost altogether (the dirty set, in synchronous storage, survived
+  // and pointed at a record the cache still held in its older form). So when
+  // the page goes away the records still unwritten are also put in synchronous
+  // storage, and the next boot lays them over what IndexedDB read. The next
+  // write that leaves nothing unwritten removes it.
+
+  /** A journal bigger than this is not written: localStorage is small, and the IndexedDB write is still under way. */
+  const JOURNAL_MAX_CHARS = 1_500_000
+
+  function writeJournal(): void {
+    if (!perRecord || !state.loaded || unsaved.size === 0) return
+    const upserts: Item[] = []
+    const deletes: string[] = []
+    for (const id of unsaved) {
+      const item = index.get(id)
+      if (item) upserts.push(item)
+      else deletes.push(id)
+    }
+    try {
+      const text = JSON.stringify({ v: 1, userId: account, upserts, deletes } satisfies Journal)
+      if (text.length <= JOURNAL_MAX_CHARS) kv.setItem(JOURNAL_KEY, text)
+    } catch {
+      /* storage full or blocked: the IndexedDB write is still on its way */
+    }
+  }
+
+  function clearJournal(): void {
+    try {
+      kv.removeItem(JOURNAL_KEY)
+    } catch {
+      /* nothing to do: the next boot reads it, finds it older, and changes nothing */
+    }
+  }
+
+  /** The journal a page going away left for this account, taken out of storage; another account's is thrown away. */
+  function takeJournal(myId: string | null): Journal | null {
+    let raw: string | null = null
+    try {
+      raw = kv.getItem(JOURNAL_KEY)
+    } catch {
+      return null
+    }
+    if (raw === null) return null
+    try {
+      const j = JSON.parse(raw) as Partial<Journal>
+      if (j?.v !== 1 || !Array.isArray(j.upserts) || !Array.isArray(j.deletes) || (j.userId ?? null) !== myId) {
+        clearJournal()
+        return null
+      }
+      const upserts = (migrateStored(j.upserts) ?? []).filter(i => typeof i?.id === 'string')
+      return { v: 1, userId: myId, upserts, deletes: j.deletes.filter((d): d is string => typeof d === 'string') }
+    } catch {
+      clearJournal()
+      return null
+    }
+  }
+
+  /** The cache as IndexedDB read it, with the journal laid over it: a journal record wins unless the cache holds a newer one. */
+  function withJournal(items: Item[], j: Journal): Item[] {
+    const byId = new Map(items.map(i => [i.id, i]))
+    for (const item of j.upserts) {
+      const had = byId.get(item.id)
+      if (!had || !(Date.parse(had.updatedAt) > Date.parse(item.updatedAt))) byId.set(item.id, item)
+    }
+    for (const id of j.deletes) byId.delete(id)
+    return [...byId.values()]
   }
 
   function schedulePush(): void {
@@ -715,8 +799,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // blanket version re-sent every place, recipe, meal, grocery list, journal
     // entry and event on every load — none of which the server echoed back,
     // so none could ever be confirmed, and all of them read as "n unsynced".
-    const items = ensureProjects(cached.items)
+    const journal = perRecord ? takeJournal(myId) : null
+    const items = ensureProjects(journal ? withJournal(cached.items, journal) : cached.items)
     rebase(items, cached)
+    // what the journal held is written to IndexedDB on this boot's first write
+    if (journal) for (const id of [...journal.upserts.map(i => i.id), ...journal.deletes]) unsaved.add(id)
     publish({ items, byKind: groupByKind(items, null), loaded: true, failures: failureList() })
     // a cache still in an older build's shape moves over now, not after the debounce
     if (perRecord && (snapshotLeft || cached.legacy)) void persistNow()
@@ -1249,6 +1336,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * repeatedly; with nothing waiting it does nothing.
    */
   function flush(): void {
+    // before anything asynchronous: the page may be gone before the write below commits
+    writeJournal()
     if (pushTimer !== undefined) {
       timers.clearTimeout(pushTimer)
       pushTimer = undefined

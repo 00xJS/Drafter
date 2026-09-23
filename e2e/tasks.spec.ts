@@ -57,3 +57,17 @@ test('the assistant proposes a task: Apply adds it, Undo takes it away', async (
   await app.go('Tasks')
   await expect(page.getByRole('button', { name: 'Book the dentist', exact: true })).toBeHidden()
 })
+
+test('a task filed a moment before the page reloads is still there after it', async ({ page, app }) => {
+  await app.open()
+  await page.keyboard.press('ControlOrMeta+K')
+  const line = page.getByRole('dialog', { name: 'Search' }).getByRole('combobox', { name: 'Search' })
+  await line.fill('Call the plumber')
+  await line.press('Shift+Enter')
+  await expect(page.getByRole('status')).toContainText('Captured')
+  // no waiting for the IndexedDB write: the page goes at once, as a swipe-away
+  // does — the journal written as it goes is what brings the task back
+  await app.open()
+  await app.go('Tasks')
+  await expect(page.getByRole('button', { name: 'Call the plumber', exact: true })).toBeVisible()
+})
