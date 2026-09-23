@@ -392,15 +392,60 @@ export interface PendingReminder {
  */
 let actionTypesRegistered = false
 
+/** The set last handed to iOS, as written: an identical set is not written again. */
+let lastWritten: string | null = null
+/** The newest set asked for while a write was running; only it is written next. */
+let queuedSet: (() => PendingReminder[]) | null = null
+let writing: Promise<number> | null = null
+
 /**
  * Replace every pending reminder with this set. iOS holds at most 64 pending
  * local notifications per app: one that repeats every day keeps its slot, and
- * the soonest of the rest fill up to 60. Returns how many are set.
+ * the soonest of the rest fill up to 60. Resolves how many are set.
+ *
+ * One write at a time. A write reads what is pending, cancels it and
+ * schedules the new set; two at once interleaved those steps, and the older
+ * set could land last — a "Due now" for a task already done on the other
+ * phone. A set asked for while a write runs waits for it, and only the newest
+ * one waiting is written; a function is called when its turn comes, so it
+ * reads the data as it is then, not as it was when it was asked for. A set
+ * that is what iOS already holds is left alone: the phone used to rewrite
+ * every notification a second and a half after any change at all.
  */
-export async function scheduleLocalReminders(items: PendingReminder[]): Promise<number> {
-  if (!isNative()) return 0
+export function scheduleLocalReminders(items: PendingReminder[] | (() => PendingReminder[])): Promise<number> {
+  if (!isNative()) return Promise.resolve(0)
+  queuedSet = typeof items === 'function' ? items : () => items
+  if (writing) return writing
+  writing = (async () => {
+    let count = 0
+    let failure: unknown = null
+    try {
+      while (queuedSet) {
+        const next = queuedSet
+        queuedSet = null
+        try {
+          count = await writeReminders(next())
+          failure = null
+        } catch (e) {
+          // the next set asked for still gets its turn; the last failure is the caller's to hear
+          failure = e
+        }
+      }
+    } finally {
+      writing = null
+    }
+    if (failure) throw failure
+    return count
+  })()
+  return writing
+}
+
+async function writeReminders(items: PendingReminder[]): Promise<number> {
   const { LocalNotifications } = await import('@capacitor/local-notifications')
-  if ((await LocalNotifications.checkPermissions()).display !== 'granted') return 0
+  if ((await LocalNotifications.checkPermissions()).display !== 'granted') {
+    lastWritten = null
+    return 0
+  }
   if (!actionTypesRegistered) {
     try {
       await LocalNotifications.registerActionTypes({
@@ -420,8 +465,6 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
       /* an older plugin still schedules fine, just without buttons */
     }
   }
-  const pending = await LocalNotifications.getPending()
-  if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) })
   const now = Date.now()
   const daily = items.flatMap(i => (i.daily ? [{ ...i, on: i.daily }] : []))
   const upcoming = items
@@ -455,7 +498,19 @@ export async function scheduleLocalReminders(items: PendingReminder[]): Promise<
       ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
     })),
   ]
+  const pending = await LocalNotifications.getPending()
+  // the set written last, and iOS still holds exactly its reminders: nothing to do
+  const signature = JSON.stringify(notifications)
+  const ids = (list: { id: number }[]) =>
+    list
+      .map(n => n.id)
+      .sort((a, b) => a - b)
+      .join(',')
+  if (signature === lastWritten && ids(pending.notifications) === ids(notifications)) return notifications.length
+  lastWritten = null
+  if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) })
   if (notifications.length) await LocalNotifications.schedule({ notifications })
+  lastWritten = signature
   return notifications.length
 }
 

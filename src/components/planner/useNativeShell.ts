@@ -40,7 +40,10 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
   // phone changes none of it: the server's "Due now" nudges go to browsers
   // alone (digest.mjs), so the phone's task reminders are the only ones it hears.
   const remindersRef = useRef(() => {})
+  // the data a queued rewrite reads when its turn comes: the render last committed, never the one it was asked from
+  const latest = useRef({ store, myId })
   useLayoutEffect(() => {
+    latest.current = { store, myId }
     notifyRef.current = () => {
       notifyDue(store.tasks, { events: store.events, myId })
     }
@@ -54,7 +57,12 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
         // iOS for notifications; after that iOS answers from the choice made,
         // without asking again. Never over the lock screen: a later run asks
         if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
-        await scheduleLocalReminders(deviceReminders(store, new Date(), { local, generic: genericRemindersEnabled(), planDay, events: store.events, myId }))
+        // one rewrite at a time (scheduleLocalReminders), each worked out when its
+        // turn comes, from the data and the switches as they are by then
+        await scheduleLocalReminders(() => {
+          const { store: now, myId: me } = latest.current
+          return deviceReminders(now, new Date(), { local: localRemindersEnabled(), generic: genericRemindersEnabled(), planDay: planDayPref(), events: now.events, myId: me })
+        }).catch(() => {})
       })()
     }
   })
