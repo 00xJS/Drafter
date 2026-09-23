@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AskDoc, AskKind, AskPrep, AskSources, parseAskAnswer, prepareAsk } from '../ask'
 import { askDrafter } from '../ai'
+import { OFFLINE_MESSAGE } from '../api'
 import { ASK_HELP, isHelpQuestion } from '../assistanthelp'
 import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
@@ -68,6 +69,9 @@ const deviceOnline = (): boolean => typeof navigator === 'undefined' || navigato
  * end, with no Try again, for what is only a lost connection.
  */
 export function failedOffline(message: string, online = deviceOnline()): boolean {
+  // src/api.ts has already told a lost connection apart, even where the
+  // device still claims to be online (a captive portal, a dead Wi-Fi)
+  if (message === OFFLINE_MESSAGE) return true
   return !online && aiFailureKind(message) === 'unavailable' && /unreachable|offline|failed to fetch|network/i.test(message)
 }
 
@@ -78,7 +82,7 @@ export function failedOffline(message: string, online = deviceOnline()): boolean
  * when there is no assistant here at all; and anything else as it came.
  */
 export function aiFailureText(message: string, words: { unavailable: string; failed: string }, online = deviceOnline()): string {
-  if (failedOffline(message, online)) return 'You’re offline — try again once you’re connected.'
+  if (failedOffline(message, online)) return OFFLINE_MESSAGE
   const kind = aiFailureKind(message)
   if (kind === 'busy') return message
   if (kind === 'unavailable') return words.unavailable
@@ -87,7 +91,7 @@ export function aiFailureText(message: string, words: { unavailable: string; fai
 
 /** What Ask says when no answer came. Unavailable is not an error here: the sources are the answer. */
 export function askFailure(message: string, online = deviceOnline()): { text: string; retry: boolean } {
-  if (failedOffline(message, online)) return { text: 'You’re offline, so there’s no written answer — these are the records that match. Try again once you’re connected.', retry: true }
+  if (failedOffline(message, online)) return { text: 'You’re offline, so there’s no written answer — these are the records that match. Try again when you’re connected.', retry: true }
   const kind = aiFailureKind(message)
   if (kind === 'busy') return { text: message, retry: true }
   if (kind === 'unavailable') return { text: 'The assistant isn’t available here, so there’s no written answer — these are the records that match.', retry: false }
