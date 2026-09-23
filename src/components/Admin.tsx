@@ -195,6 +195,14 @@ export function Admin({ initialGroup = 'users' }: Props) {
     }
   }
 
+  /** Link only: a reset link to copy. Supabase keeps one per account, so this cancels any reset email sent before it. */
+  const makeResetLink = () =>
+    run(async () => {
+      const r = await adminAction<{ actionLink?: string | null }>('resetPassword', { email: resetEmail })
+      setSentTo('')
+      if (r.actionLink) await copyLink(r.actionLink)
+    })
+
   /**
    * Read a snapshot back. The server never decrypts one (see
    * netlify/functions/lib/backupcrypto.mjs), so the file is fetched through
@@ -317,8 +325,8 @@ export function Admin({ initialGroup = 'users' }: Props) {
 
           <h4>Reset someone's password</h4>
           <p className="field-hint">
-            Pick the account, then send them the email. Most of the time that is the whole job — they follow the link, choose a password and are signed in. The link is
-            shown underneath as well, for when mail is not set up or has not arrived.
+            Pick the account, then send them the email. Most of the time that is the whole job — they follow the link in it, choose a password and are signed in. Link
+            only makes a link for you to pass on yourself instead, for when the email does not come.
           </p>
           <div className="check-add">
             <label className="people-sort">
@@ -338,7 +346,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
               disabled={busy || !resetEmail.trim()}
               onClick={() =>
                 run(async () => {
-                  const r = await adminAction<{ actionLink?: string | null; mode: string }>('resetPassword', {
+                  await adminAction<{ mode: string }>('resetPassword', {
                     email: resetEmail,
                     send: true,
                     // the link has to come back to the hosted site, not to
@@ -346,31 +354,28 @@ export function Admin({ initialGroup = 'users' }: Props) {
                     // and never to the iOS shell's own capacitor:// origin
                     redirectTo: siteOrigin(),
                   })
+                  // no link comes back: one made now would cancel the emailed one
+                  setLinkOut('')
                   setSentTo(resetEmail)
-                  if (r.actionLink) await copyLink(r.actionLink)
                 })
               }
             >
               Send reset email
             </button>
-            <button
-              className="btn"
-              disabled={busy || !resetEmail.trim()}
-              onClick={() =>
-                run(async () => {
-                  const r = await adminAction<{ actionLink?: string | null }>('resetPassword', { email: resetEmail })
-                  setSentTo('')
-                  if (r.actionLink) await copyLink(r.actionLink)
-                })
-              }
-            >
-              Link only
-            </button>
+            {sentTo !== '' && sentTo === resetEmail && !busy ? (
+              <ConfirmButton className="btn" confirmLabel="Cancels the emailed link — click again" onConfirm={() => void makeResetLink()}>
+                Link only
+              </ConfirmButton>
+            ) : (
+              <button className="btn" disabled={busy || !resetEmail.trim()} onClick={() => void makeResetLink()}>
+                Link only
+              </button>
+            )}
           </div>
           {sentTo && (
             <p className="sync-ok">
-              Sent to {sentTo}. If nothing arrives, Supabase has no SMTP set up — its built-in sender only allows a few an hour and is not meant for real use. Set SMTP
-              under Project Settings → Authentication → SMTP, and add this site to the allowed redirect URLs. The link below works either way.
+              Sent to {sentTo}. The link in that email is the one to use. Supabase's built-in sender allows only a few emails an hour, so if nothing has come in a few
+              minutes, use Link only — but making a link cancels the one in the email.
             </p>
           )}
 
