@@ -322,10 +322,11 @@ function useMirrorSync(
           for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
           settleSignIns(list, pass, new Date().toISOString())
           if (want.pull) foreground.done()
-          // a target left out of this pass keeps what it last said
+          // a target left out of this pass (waiting on a sign-in) keeps what it last said; one no longer mirrored says nothing
           const all = targetsRef.current
           setState(prev => {
-            const accountErrors = { ...Object.fromEntries(Object.entries(prev.accountErrors ?? {}).filter(([id]) => !list.some(t => t.id === id))), ...pass.accountErrors }
+            const kept = Object.entries(prev.accountErrors ?? {}).filter(([id]) => all.some(t => t.id === id) && !list.some(t => t.id === id))
+            const accountErrors = { ...Object.fromEntries(kept), ...pass.accountErrors }
             return {
               lastAt: new Date().toISOString(),
               pending: false,
