@@ -12,6 +12,7 @@ import { newerStamp } from '../itemops'
 import { dateKey, excerpt, fmtDate, uid } from '../utils'
 import { liveById, outfitLabel, wearIndex, wornBetween } from '../wardrobe'
 import { DueBadge, StatTile } from './bits'
+import { useNow } from '../useNow'
 import type { WardrobeOpen } from './planner/useNavigation'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
 
@@ -149,6 +150,7 @@ export function Review({
 }: Props) {
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
+  const now = useNow()
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
   const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries, myId), [range, tasks, projects, people, places, entries, myId])
   // what you wore in the period, counted in days as the Stats are: each day's
@@ -249,7 +251,7 @@ export function Review({
     }
   }
 
-  const isCurrent = range.end.getTime() > Date.now() && range.start.getTime() <= Date.now()
+  const isCurrent = range.end.getTime() > now && range.start.getTime() <= now
   const endOfNext = (() => {
     const d = new Date(range.end)
     d.setDate(d.getDate() + (period === 'week' ? 6 : 27))

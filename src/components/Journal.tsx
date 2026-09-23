@@ -50,7 +50,7 @@ const px = (n: number) => Math.round(n * 10) / 10
  * It measures `clientWidth`, which is 0 for anything inside a closed
  * collapsible — attach it to a node that is always in the DOM.
  */
-export function useWidth<T extends HTMLElement>(initial: number): [RefObject<T>, number] {
+export function useWidth<T extends HTMLElement>(initial: number): [RefObject<T | null>, number] {
   const ref = useRef<T>(null)
   const [width, setWidth] = useState(initial)
   useLayoutEffect(() => {
@@ -367,26 +367,19 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
       restored.current = false
       return
     }
-    // the day must be on screen: drop any search, show enough of the list, then scroll to it
-    setQ('')
-    setHitLimit(SEARCH_PAGE)
-    // A day with words opens to be READ (v3.24). The archive row shows the
-    // whole entry as text; the editor is a 50vh textarea with a scroller
-    // inside it, which is where "I was not able to see the entire journal"
-    // came from. A blank day still opens its editor, because writing it up is
-    // the only reason to land on one.
-    setEditing(openDate === today || hasWords(openDate) ? null : openDate)
-    // a link can name a day with nothing written on it (drafter://journal?date=…), which needs a row like any other
-    const idx = rowsWith(openDate).indexOf(openDate)
-    if (idx >= limit) setLimit((lastLimit = idx + 10))
+    // the day is on screen by now (showDay, as it was asked for): scroll to it…
     // …unless the mount above is putting the reader back where they were, which
     // only ever happens for today's key. Cleared straight away: a past day
     // opened later in this same visit is a target again.
     if (!restored.current) window.setTimeout(() => document.getElementById(`journal-day-${openDate}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
     restored.current = false
     onOpenDateConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per day asked for; the callback is the parent's setter
   }, [openDate])
+  // the list's length outlives the page, so a return lands on a day already drawn
+  useEffect(() => {
+    lastLimit = limit
+  }, [limit])
 
   const last30 = useMemo(() => recentEntries(entries, 30, today), [entries, today])
   const avg = moodAverage(last30)
@@ -463,13 +456,34 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
    * the day list back on screen for the scroll to land in.
    */
   const openDay = (date: string) => {
+    showDay(date)
+    restored.current = false
+    window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+  }
+
+  /**
+   * Put a day on screen: drop any search and show enough of the list. A day
+   * with words opens to be READ (v3.24): the archive row shows the whole entry
+   * as text, while the editor is a 50vh textarea with a scroller inside it,
+   * which is where "I was not able to see the entire journal" came from. A
+   * blank day still opens its editor, because writing it up is the only reason
+   * to land on one. A link can name a day with nothing written on it
+   * (drafter://journal?date=…), which needs a row like any other.
+   */
+  function showDay(date: string) {
     setQ('')
     setHitLimit(SEARCH_PAGE)
     setEditing(date === today || hasWords(date) ? null : date)
     const idx = rowsWith(date).indexOf(date)
-    if (idx >= limit) setLimit((lastLimit = idx + 10))
-    restored.current = false
-    window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+    if (idx >= limit) setLimit(idx + 10)
+  }
+
+  // a day asked for from outside (Today, a link) opens as it arrives, as a tap on it would
+  const asked = openDate ?? null
+  const [shownFor, setShownFor] = useState<string | null>(null)
+  if (asked !== shownFor) {
+    setShownFor(asked)
+    if (asked) showDay(asked)
   }
 
   return (
@@ -718,7 +732,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
       )}
       {!query && shownDays.length > limit && (
         <p>
-          <button className="btn" onClick={() => setLimit(l => (lastLimit = l + 60))}>
+          <button className="btn" onClick={() => setLimit(l => l + 60)}>
             Show older
           </button>
         </p>

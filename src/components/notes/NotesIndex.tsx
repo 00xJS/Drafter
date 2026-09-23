@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useNow } from '../../useNow'
 import { Note, Project } from '../../types'
 import { excerpt } from '../../utils'
 import { ShareMark } from '../bits'
@@ -32,7 +33,7 @@ export function NotesIndex({ notes, projects, myId, nameOf, inHousehold, query, 
   const all = useMemo(() => notesIndex(notes, projects, '', { myId, nameOf }), [notes, projects, myId, nameOf])
   const shown = query.trim() ? all.filter(e => matchesQuery(query, e.title, e.text)) : all
   const byId = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
-  const now = Date.now()
+  const now = useNow()
 
   return (
     <div className="notes-index notes-records">

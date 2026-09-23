@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { shiftDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import { GARMENT_TYPE_META, LOOK_NOTE_MAX, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
@@ -133,9 +133,11 @@ export function OutfitComposer(props: Props) {
   const [flip, setFlip] = useState<{ day: string; to: DayOccasion } | null>(null)
   const calendarSays = dayOccasion(day, workDays)
   const occasion = flip?.day === day ? flip.to : calendarSays
-  const held = useMemo(() => heldPieces(current, garments, inTrash), [current, garments, inTrash])
-  const rows = useMemo(() => rowsOf(garments, frozen, held, occasion), [garments, frozen, held, occasion])
-  const shown = useMemo(() => shownIn(rows), [rows])
+  // memoised by the React Compiler: the state below is adjusted as it renders,
+  // which a hand-written useMemo over `current` could not be kept across
+  const held = heldPieces(current, garments, inTrash)
+  const rows = rowsOf(garments, frozen, held, occasion)
+  const shown = shownIn(rows)
   const [sel, setSel] = useState<Selection>(() => {
     const first = start(rows, isDraft ? undefined : current ?? latest, byId)
     return pending ? load(first, pending, rows, byId) : first
@@ -147,49 +149,57 @@ export function OutfitComposer(props: Props) {
   const cached = useCachedForecast()
   const forecast = props.forecast !== undefined ? props.forecast : cached
 
-  // a day with a look brings its pieces into the rows; a day without one
-  // keeps what is chosen, so a look put together here can be logged for
-  // yesterday or planned for tomorrow
-  const shownDay = useRef(day)
-  useEffect(() => {
-    if (shownDay.current === day) return
-    shownDay.current = day
+  // What changes around the composer is taken as the change renders, in this
+  // order, each against what it last saw (what the state above started from
+  // counts as seen). A day with a look brings its pieces into the rows; a day
+  // without one keeps what is chosen, so a look put together here can be
+  // logged for yesterday or planned for tomorrow.
+  const [shownDay, setShownDay] = useState(day)
+  if (shownDay !== day) {
+    setShownDay(day)
     setEditingId(null)
     setSel(s => (latest ? load(s, latest.garmentIds, rows, byId) : { ...s, note: undefined }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day])
+  }
   // a way in names a look of this day, or asks for a new change
-  useEffect(() => {
-    if (!focus) return
-    if (focus.another) {
+  const [focusSeen, setFocusSeen] = useState(focus)
+  if (focusSeen !== focus) {
+    setFocusSeen(focus)
+    if (focus?.another) {
       setEditingId('new')
       setSel(start(rows, undefined, byId))
       setNote('')
-    } else if (focus.wearId && dayLooks.some(w => w.id === focus.wearId)) setEditingId(focus.wearId)
-    onFocusConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus])
-  const shownLook = useRef(resolvedId)
+    } else if (focus?.wearId && dayLooks.some(w => w.id === focus.wearId)) setEditingId(focus.wearId)
+  }
   useEffect(() => {
-    if (shownLook.current === resolvedId) return
-    shownLook.current = resolvedId
+    if (focus) onFocusConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per way in; the callback is the parent's setter
+  }, [focus])
+  const [shownLook, setShownLook] = useState(resolvedId)
+  if (shownLook !== resolvedId) {
+    setShownLook(resolvedId)
     setSel(s => (current ? load(s, current.garmentIds, rows, byId) : start(rows, undefined, byId)))
     setNote(lookNote)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedId])
+  }
   // the note field follows the look being dressed — another look, a log, a
   // Remove, an Undo, a sync — and a note typed with no look to follow stays,
   // as the rows do
-  useEffect(() => setNote(lookNote), [current?.id, lookNote])
+  const [noteFor, setNoteFor] = useState({ id: current?.id, lookNote })
+  if (noteFor.id !== current?.id || noteFor.lookNote !== lookNote) {
+    setNoteFor({ id: current?.id, lookNote })
+    setNote(lookNote)
+  }
 
   // a saved outfit asked for from outside goes in the rows once — after the
   // day's own look, so it is what shows — and is handed back as used, so
   // coming back to Outfit later does not put it there again
+  const [pendingSeen, setPendingSeen] = useState(pending)
+  if (pendingSeen !== pending) {
+    setPendingSeen(pending)
+    if (pending) setSel(s => load(s, pending, rows, byId))
+  }
   useEffect(() => {
-    if (!pending) return
-    setSel(s => load(s, pending, rows, byId))
-    onPendingUsed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (pending) onPendingUsed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per outfit asked for; the callback is the parent's setter
   }, [pending])
 
   const { slots: chosen, accessories, both, onepieceMode, open, pieces, dressed } = chosenIn(sel, rows, openRows)

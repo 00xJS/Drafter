@@ -78,8 +78,17 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
   const [peopleIds, setPeopleIds] = useState<string[]>(entry?.peopleIds ?? [])
   const [showPeople, setShowPeople] = useState(!!peopleOpen)
   const latest = useRef<JournalDraft>({ body, mood, peopleIds })
-  latest.current = { body, mood, peopleIds }
+  useLayoutEffect(() => {
+    latest.current = { body, mood, peopleIds }
+  })
   const created = useRef<JournalEntry | null>(null)
+  /** Whether this editor made an entry the store has not echoed back yet: what the Delete button reads. */
+  const [createdHere, setCreatedHere] = useState(false)
+  /** The entry made here, for the ref and for the render: a commit reads the ref, as two can land before a render. */
+  const remember = (made: JournalEntry | null) => {
+    created.current = made
+    setCreatedHere(made !== null)
+  }
   const seen = useRef<JournalDraft>(draftOf(entry))
   const timer = useRef<number | undefined>(undefined)
   const [savedAt, setSavedAt] = useState<string | undefined>(entry?.updatedAt)
@@ -125,6 +134,41 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
   /** The id this editor just removed; a stale commit for it must not remove it twice. */
   const deletedId = useRef<string | null>(null)
 
+  const commit = () => {
+    window.clearTimeout(timer.current)
+    const { body, mood, peopleIds } = latest.current
+    const ids = idSet(peopleIds) // never store an empty array
+    const blank = !body.trim() && mood === undefined && !ids
+    const cur = entry ?? created.current ?? undefined
+    if (cur && cur.id === deletedId.current) return
+    if (!cur) {
+      if (blank) return
+      const next = newEntry(date, body, mood, ids)
+      remember(next)
+      seen.current = { body, mood, peopleIds }
+      setSavedAt(next.updatedAt)
+      onSave(next)
+      return
+    }
+    if (cur.body === body && cur.mood === mood && samePeople(cur.peopleIds, ids)) return
+    if (blank && onDelete) {
+      remember(null)
+      deletedId.current = cur.id
+      seen.current = { body: '', mood: undefined, peopleIds: [] }
+      onDelete(cur.id)
+      return
+    }
+    const next: JournalEntry = { ...cur, body, mood, peopleIds: ids, updatedAt: newerStamp(cur.updatedAt) }
+    if (!entry) remember(next)
+    seen.current = { body, mood, peopleIds }
+    setSavedAt(next.updatedAt)
+    onSave(next)
+  }
+  const commitRef = useRef(commit)
+  useLayoutEffect(() => {
+    commitRef.current = commit
+  })
+
   useEffect(() => {
     // Typing while a change lands from elsewhere (the other editor on this day,
     // another device, a Shortcut, an agent): mergeDraft keeps what was typed
@@ -143,45 +187,12 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
     }
     seen.current = draftOf(entry)
     if (entry) {
-      created.current = null
+      remember(null)
       // any live entry reaching here (a new id, or the deleted one restored) may be edited again
       deletedId.current = null
       setSavedAt(entry.updatedAt)
     }
   }, [entry, date])
-
-  const commit = () => {
-    window.clearTimeout(timer.current)
-    const { body, mood, peopleIds } = latest.current
-    const ids = idSet(peopleIds) // never store an empty array
-    const blank = !body.trim() && mood === undefined && !ids
-    const cur = entry ?? created.current ?? undefined
-    if (cur && cur.id === deletedId.current) return
-    if (!cur) {
-      if (blank) return
-      const next = newEntry(date, body, mood, ids)
-      created.current = next
-      seen.current = { body, mood, peopleIds }
-      setSavedAt(next.updatedAt)
-      onSave(next)
-      return
-    }
-    if (cur.body === body && cur.mood === mood && samePeople(cur.peopleIds, ids)) return
-    if (blank && onDelete) {
-      created.current = null
-      deletedId.current = cur.id
-      seen.current = { body: '', mood: undefined, peopleIds: [] }
-      onDelete(cur.id)
-      return
-    }
-    const next: JournalEntry = { ...cur, body, mood, peopleIds: ids, updatedAt: newerStamp(cur.updatedAt) }
-    if (!entry) created.current = next
-    seen.current = { body, mood, peopleIds }
-    setSavedAt(next.updatedAt)
-    onSave(next)
-  }
-  const commitRef = useRef(commit)
-  commitRef.current = commit
   useEffect(() => () => commitRef.current(), [])
 
   const schedule = () => {
@@ -255,14 +266,14 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
         </div>
       )}
       <div className="journal-editor-foot">
-        {showDelete && (entry ?? created.current) && onDelete && (
+        {showDelete && (entry || createdHere) && onDelete && (
           <ConfirmButton
             className="btn subtle danger"
             confirmLabel="Click again to delete"
             onConfirm={() => {
               window.clearTimeout(timer.current)
               const id = (entry ?? created.current)!.id
-              created.current = null
+              remember(null)
               deletedId.current = id
               seen.current = { body: '', mood: undefined, peopleIds: [] }
               setBody('')

@@ -23,7 +23,26 @@ const EMOJI = ['💡', '✅', '⭐', '🔥', '❤', '🎯', '📌', '📝', '�
  * colour, since the ballot box U+2610 drew as an empty square that read as a
  * glyph the font was missing, and the camera emoji as a dark block on the bar.
  */
-type Cmd = { face: ReactNode; tip: string; run: () => void; key?: string }
+type Cmd = { face: ReactNode; tip: string; does: CmdAction; key?: string }
+/** What a button does to the page: a browser editing command, HTML at the caret, the selection wrapped, or a link asked for. */
+type CmdAction = { exec: string; arg?: string } | { html: string } | { wrap: readonly [string, string] } | 'link'
+
+const TOOLS: Cmd[] = [
+  { face: <b>B</b>, tip: 'Bold (Cmd/Ctrl+B)', does: { exec: 'bold' }, key: 'b' },
+  { face: <i>I</i>, tip: 'Italic (Cmd/Ctrl+I)', does: { exec: 'italic' }, key: 'i' },
+  { face: <u>U</u>, tip: 'Underline (Cmd/Ctrl+U)', does: { exec: 'underline' }, key: 'u' },
+  { face: <s>S</s>, tip: 'Strikethrough: cross the text out', does: { exec: 'strikeThrough' } },
+  { face: 'H', tip: 'Heading', does: { exec: 'formatBlock', arg: 'H2' } },
+  { face: '¶', tip: 'Normal text: undo a heading, quote or code block', does: { exec: 'formatBlock', arg: 'P' } },
+  { face: '•', tip: 'Bulleted list', does: { exec: 'insertUnorderedList' } },
+  { face: '1.', tip: 'Numbered list', does: { exec: 'insertOrderedList' } },
+  { face: <Icon name="checkbox" size={15} strokeWidth={2} />, tip: 'Checklist: a list with tick boxes', does: { html: '<ul class="checklist"><li><input type="checkbox"> </li></ul>' } },
+  { face: '“', tip: 'Quote: set a paragraph apart', does: { exec: 'formatBlock', arg: 'BLOCKQUOTE' } },
+  { face: '<>', tip: 'Code: monospace text within a line', does: { wrap: ['<code>', '</code>'] } },
+  { face: '{ }', tip: 'Code block: lines of monospace text', does: { exec: 'formatBlock', arg: 'PRE' } },
+  { face: '🔗', tip: 'Link (Cmd/Ctrl+K)', does: 'link', key: 'k' },
+  { face: '―', tip: 'Divider: a line across the note', does: { exec: 'insertHorizontalRule' } },
+]
 
 /**
  * One running notepad: type straight into the page, format with the toolbar
@@ -125,28 +144,18 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     }
   }
 
-  const TOOLS: Cmd[] = [
-    { face: <b>B</b>, tip: 'Bold (Cmd/Ctrl+B)', run: () => exec('bold'), key: 'b' },
-    { face: <i>I</i>, tip: 'Italic (Cmd/Ctrl+I)', run: () => exec('italic'), key: 'i' },
-    { face: <u>U</u>, tip: 'Underline (Cmd/Ctrl+U)', run: () => exec('underline'), key: 'u' },
-    { face: <s>S</s>, tip: 'Strikethrough: cross the text out', run: () => exec('strikeThrough') },
-    { face: 'H', tip: 'Heading', run: () => exec('formatBlock', 'H2') },
-    { face: '¶', tip: 'Normal text: undo a heading, quote or code block', run: () => exec('formatBlock', 'P') },
-    { face: '•', tip: 'Bulleted list', run: () => exec('insertUnorderedList') },
-    { face: '1.', tip: 'Numbered list', run: () => exec('insertOrderedList') },
-    { face: <Icon name="checkbox" size={15} strokeWidth={2} />, tip: 'Checklist: a list with tick boxes', run: () => insertHtml('<ul class="checklist"><li><input type="checkbox"> </li></ul>') },
-    { face: '“', tip: 'Quote: set a paragraph apart', run: () => exec('formatBlock', 'BLOCKQUOTE') },
-    { face: '<>', tip: 'Code: monospace text within a line', run: () => wrapSelection('<code>', '</code>') },
-    { face: '{ }', tip: 'Code block: lines of monospace text', run: () => exec('formatBlock', 'PRE') },
-    { face: '🔗', tip: 'Link (Cmd/Ctrl+K)', run: addLink, key: 'k' },
-    { face: '―', tip: 'Divider: a line across the note', run: () => exec('insertHorizontalRule') },
-  ]
+  const run = (does: CmdAction) => {
+    if (does === 'link') addLink()
+    else if ('exec' in does) exec(does.exec, does.arg)
+    else if ('html' in does) insertHtml(does.html)
+    else wrapSelection(...does.wrap)
+  }
 
   return (
     <div className={dragging ? 'notes dragging' : 'notes'}>
       <div className="notes-toolbar">
         {TOOLS.map(t => (
-          <button key={t.tip} type="button" className="btn subtle notes-tool" {...tipAttrs(t.tip)} onMouseDown={e => e.preventDefault()} onClick={t.run}>
+          <button key={t.tip} type="button" className="btn subtle notes-tool" {...tipAttrs(t.tip)} onMouseDown={e => e.preventDefault()} onClick={() => run(t.does)}>
             {t.face}
           </button>
         ))}
@@ -224,7 +233,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
             const tool = TOOLS.find(t => t.key === e.key.toLowerCase())
             if (tool && tool.key === 'k') {
               e.preventDefault()
-              tool.run()
+              run(tool.does)
             }
           }
         }}

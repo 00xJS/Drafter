@@ -111,7 +111,9 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, oc
     onSelect(keyAt(nearest))
   }
   const settleNow = useRef(settle)
-  settleNow.current = settle
+  useLayoutEffect(() => {
+    settleNow.current = settle
+  })
 
   // the row is drawn only while it has cards, so listen again when it appears
   const hasRow = cards.length > 0

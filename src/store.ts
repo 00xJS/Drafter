@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
@@ -6,7 +6,7 @@ import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } f
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mjs'
-import { drawLists, type DrawnLists } from './kindlists'
+import { listDrawer } from './kindlists'
 import { watchRealtime } from './realtime'
 import {
   createSyncEngine,
@@ -219,9 +219,8 @@ export function useItems(myId: string | null = null): Store {
   // The lists, drawn from the engine's per-kind arrays: a list is drawn again
   // only when its own kind changed (src/kindlists.ts), so editing a task keeps
   // every other list — and whatever a view memoized on it — as it was.
-  const drawn = useRef<DrawnLists | null>(null)
-  drawn.current = drawLists(snap.byKind, myId, drawn.current)
-  const lists = drawn.current.lists
+  const [draw] = useState(listDrawer)
+  const lists = draw(snap.byKind, myId).lists
 
   // Everything I may see: a peer's personal kinds are never shown, even when a
   // cache from before the policy still holds them.

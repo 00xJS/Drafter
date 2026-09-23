@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Note } from '../../types'
 import { timeAgo } from '../../utils'
 import { ConfirmButton } from '../ConfirmButton'
@@ -46,14 +46,18 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
   const [isNew] = useState(!stored)
   const draftRef = useRef(draft)
   const storedRef = useRef(stored)
-  storedRef.current = stored
   const handlers = useRef({ onSave, onDelete, onBack })
-  handlers.current = { onSave, onDelete, onBack }
+  useLayoutEffect(() => {
+    storedRef.current = stored
+    handlers.current = { onSave, onDelete, onBack }
+  })
   /** The version on screen: as opened, as last saved here, or as last taken from another device. */
   const known = useRef((stored ?? note).updatedAt)
   /** Set once the store has held this note, so its disappearing afterwards reads as a delete. */
   const seen = useRef(!!stored)
   const page = useRef<HTMLDivElement>(null)
+  // made once; its callbacks read the latest props through the refs above and run only from handlers, timers and effects
+  // eslint-disable-next-line react-hooks/refs -- the refs are captured here, not read: nothing calls these while rendering
   const [saver] = useState(() =>
     createNoteSaver({
       note,

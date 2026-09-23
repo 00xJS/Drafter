@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { haptic } from '../native'
 import { IDLE, PullState, step } from '../pull'
 import { Icon } from './Icon'
@@ -37,7 +37,9 @@ export function PullToRefresh({ enabled, onRefresh }: PullToRefreshProps) {
   const [native] = useState(() => document.documentElement.classList.contains('native'))
   const state = useRef<PullState>(IDLE)
   const onRefreshRef = useRef(onRefresh)
-  onRefreshRef.current = onRefresh
+  useLayoutEffect(() => {
+    onRefreshRef.current = onRefresh
+  })
   const [paint, setPaint] = useState<{ travel: number; armed: boolean; pulling: boolean; refreshing: boolean }>({ travel: 0, armed: false, pulling: false, refreshing: false })
 
   useEffect(() => {

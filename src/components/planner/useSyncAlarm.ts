@@ -25,10 +25,7 @@ export function useSyncAlarm(isOwner: boolean) {
   const [dismissedJobs, setDismissedJobs] = useState<SyncAlarmDismissal[]>(readJobAlarmDismissals)
 
   useEffect(() => {
-    if (!isOwner) {
-      setCheck(null)
-      return
-    }
+    if (!isOwner) return
     let alive = true
     let readAt = 0
     const read = () => {
@@ -54,7 +51,8 @@ export function useSyncAlarm(isOwner: boolean) {
     }
   }, [isOwner])
 
-  const syncAlarm = opsAlarmOf(check, new Date(), dismissed, dismissedJobs)
+  // a check read while this was the owner's device says nothing once it is not
+  const syncAlarm = opsAlarmOf(isOwner ? check : null, new Date(), dismissed, dismissedJobs)
   const dismissSyncAlarm = () => {
     if (!syncAlarm) return
     const d = { since: syncAlarm.since, at: new Date().toISOString() }

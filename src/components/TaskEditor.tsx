@@ -106,7 +106,6 @@ export function TaskEditor({
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<RefineProposal | null>(null)
   const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
 
   /** The last copy this editor wrote: the store's reaches `getLatest` a render later, and a save straight after a write must build on it. */
   const wrote = useRef<Task | null>(null)
@@ -265,7 +264,6 @@ export function TaskEditor({
     <Modal
       onClose={requestClose}
       className="modal wide task-editor"
-      panelRef={modalRef}
       onKeyDown={e => {
         const target = e.target as HTMLElement
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

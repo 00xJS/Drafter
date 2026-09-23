@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { workDaysOf } from '../../calgrid'
 import { newerStamp } from '../../itemops'
-import { localDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import { retireMedia } from '../../media'
 import type { CalendarEntry, Garment, Item, Outfit, Wear } from '../../types'
@@ -90,20 +89,27 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   }, [todayKey])
 
   // a way in is used once — the view, the day, the sheet, an outfit for the
-  // rows — and then forgotten, so the next visit opens on today's composer
+  // rows — and then forgotten, so the next visit opens on today's composer.
+  // The state above starts from one that is here at mount; a later one is
+  // taken as it renders.
+  const [openSeen, setOpenSeen] = useState(open)
+  if (openSeen !== open) {
+    setOpenSeen(open)
+    if (open) {
+      if (open.tab) setTab(open.tab)
+      else if (open.date || open.outfitId) setTab('outfit')
+      if (open.date) setDay(dayOr(open.date, todayKey))
+      const s = sheetFor(open)
+      if (s) setSheet(s)
+      const ids = outfitFor(open, outfits)
+      if (ids) setPending(ids)
+      if (open.wearId) setLookFocus({ wearId: open.wearId })
+      else if (open.another) setLookFocus({ another: true })
+    }
+  }
   useEffect(() => {
-    if (!open) return
-    if (open.tab) setTab(open.tab)
-    else if (open.date || open.outfitId) setTab('outfit')
-    if (open.date) setDay(dayOr(open.date, localDayKey()))
-    const s = sheetFor(open)
-    if (s) setSheet(s)
-    const ids = outfitFor(open, outfits)
-    if (ids) setPending(ids)
-    if (open.wearId) setLookFocus({ wearId: open.wearId })
-    else if (open.another) setLookFocus({ another: true })
-    onOpenConsumed()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) onOpenConsumed()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per way in; the callback is the parent's setter
   }, [open])
 
   /** Write a log and say so; Undo removes a new look, or writes back the copy an edit was made on. */

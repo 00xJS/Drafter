@@ -47,7 +47,7 @@ async function toFace(file: File): Promise<Blob> {
 /** Settings → You: your picture, your name, and your password. */
 export function Profile({ household, supabaseOn }: SettingsCtx) {
   const me = household.info?.me
-  const [name, setName] = useState(me?.displayName ?? '')
+  const [typed, setTyped] = useState('')
   const [email, setEmail] = useState('')
   const [touched, setTouched] = useState(false)
   const file = useRef<HTMLInputElement>(null)
@@ -56,9 +56,7 @@ export function Profile({ household, supabaseOn }: SettingsCtx) {
 
   // the name the server knows, until you start typing over it: a refresh
   // after another device saved one must not wipe what is in the box here
-  useEffect(() => {
-    if (!touched) setName(me?.displayName ?? '')
-  }, [me?.displayName, touched])
+  const name = touched ? typed : (me?.displayName ?? '')
 
   useEffect(() => {
     getSupabase()
@@ -140,7 +138,7 @@ export function Profile({ household, supabaseOn }: SettingsCtx) {
           placeholder="The name the household sees"
           onChange={e => {
             setTouched(true)
-            setName(e.target.value)
+            setTyped(e.target.value)
           }}
         />
       </label>

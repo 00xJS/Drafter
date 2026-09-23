@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
@@ -55,11 +55,13 @@ export default function Planner() {
   // it go, and no copy the server may still hold points at it: the swaps ask
   // this, and get nothing until the records have loaded
   const mediaInUse = useRef<() => MediaInUse | null>(() => null)
-  mediaInUse.current = () => {
-    if (!store.loaded) return null
-    const { ids: unsynced, shadows } = store.unconfirmed()
-    return { userId: household.myId, ids: garmentMediaIds(store.allItems), unsynced, onServer: garmentMediaIds(shadows) }
-  }
+  useLayoutEffect(() => {
+    mediaInUse.current = () => {
+      if (!store.loaded) return null
+      const { ids: unsynced, shadows } = store.unconfirmed()
+      return { userId: household.myId, ids: garmentMediaIds(store.allItems), unsynced, onServer: garmentMediaIds(shadows) }
+    }
+  })
   useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])
   // a round the server answered may be the one that confirmed such an edit
   useEffect(() => void retireDue(), [store.syncInfo.lastAt])

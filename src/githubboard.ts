@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { Project, Task, TaskStatus } from './types'
 import { fetchProjectItems, parseGithubUrl } from './github'
 
@@ -90,14 +90,17 @@ export function useGithubProjectSync(
   onChanges?: (changes: ProjectPull[]) => void,
   onNotice?: (message: string) => void,
 ): void {
+  // what a pull reads when it runs, from the render last committed
   const projectsRef = useRef(projects)
-  projectsRef.current = projects
   const tasksRef = useRef(tasks)
-  tasksRef.current = tasks
   const onChangesRef = useRef(onChanges)
-  onChangesRef.current = onChanges
   const onNoticeRef = useRef(onNotice)
-  onNoticeRef.current = onNotice
+  useLayoutEffect(() => {
+    projectsRef.current = projects
+    tasksRef.current = tasks
+    onChangesRef.current = onChanges
+    onNoticeRef.current = onNotice
+  })
   const busy = useRef(false)
   // a board over the read cap is over it on every pull, and a toast every 30
   // minutes is noise — say it once per board per session

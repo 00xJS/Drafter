@@ -667,14 +667,14 @@ describe('?view=people-stats', () => {
       changeStatus: log('changeStatus'),
       defer: log('defer'),
     } as unknown as Parameters<typeof useDeepLinks>[0]
-    let apply: (raw: string) => void = () => {}
+    // the ref the hook hands the native shell, kept by pushing it out of the render
+    const handed: { current: (raw: string) => void }[] = []
     function Shell() {
-      const { applyLinkRef } = useDeepLinks(deps)
-      apply = raw => applyLinkRef.current(raw)
+      handed.push(useDeepLinks(deps).applyLinkRef)
       return null
     }
     renderToString(<Shell />)
-    return { apply, calls }
+    return { apply: (raw: string) => handed[handed.length - 1].current(raw), calls }
   }
 
   it('opens People → People on its Stats for that visit, from the web and from drafter://open, and writes nothing', () => {

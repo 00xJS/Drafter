@@ -166,7 +166,6 @@ export function Admin({ initialGroup = 'users' }: Props) {
   const refreshBackups = () => adminAction<BackupList>('listBackups').then(setBackups)
 
   useEffect(() => {
-    setError('')
     // load every panel up front: the whole point of Data and Backups is that
     // they answer "is my data still there?" the moment Admin opens
     Promise.all([refreshUsers(), refreshStatus(), refreshStats(), refreshBackups()]).catch(e => setError((e as Error).message))

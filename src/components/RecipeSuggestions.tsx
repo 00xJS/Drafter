@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { mealHistory } from '../../shared/weekplan.mjs'
 import { RecipeSuggestInput, RecipeSuggestion, recipeSuggestInput, recipeTitleKey, suggestRecipes } from '../ai'
 import { newIngredient } from '../kitchen'
@@ -158,7 +158,9 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
   const headId = useId()
   // the answer lands after an await: read what is waiting then, not when it was asked
   const latest = useRef({ pending, dismissed })
-  latest.current = { pending, dismissed }
+  useLayoutEffect(() => {
+    latest.current = { pending, dismissed }
+  })
 
   const mine = recipes.filter(r => !r.deletedAt)
   // a dish since saved by hand is not waiting any more

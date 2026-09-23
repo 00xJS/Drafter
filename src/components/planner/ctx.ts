@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useState } from 'react'
 import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
 import type { projectById } from '../../taskutils'
@@ -112,7 +112,6 @@ function sameEntries(a: Record<string, unknown>, b: Record<string, unknown>): bo
 
 /** Planner's context, memoized over the values in it (createCtxMemo). */
 export function usePlannerCtx(parts: PlannerParts): PlannerCtx {
-  const memo = useRef<((parts: PlannerParts) => PlannerCtx) | null>(null)
-  memo.current ??= createCtxMemo()
-  return memo.current(parts)
+  const [memo] = useState(() => createCtxMemo())
+  return memo(parts)
 }

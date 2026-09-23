@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import { newerStamp } from '../../itemops'
@@ -288,10 +288,12 @@ export function useDeepLinks({
     }
   }
   const applyLinkRef = useRef(applyLink)
-  applyLinkRef.current = applyLink
   // the deferred "Add" on a web ?journal= link must append to the entry as it is when pressed
   const journalRef = useRef(store.journal)
-  journalRef.current = store.journal
+  useLayoutEffect(() => {
+    applyLinkRef.current = applyLink
+    journalRef.current = store.journal
+  })
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)

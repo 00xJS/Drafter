@@ -57,22 +57,23 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
   const [myId, setMyId] = useState<string | null>(info?.me.id ?? null)
   const [error, setError] = useState<string | undefined>(undefined)
 
+  /** The server's answer, kept and cached for the next launch offline; or why there is none. */
+  const read = (): Promise<void> =>
+    householdAction('status').then(
+      next => {
+        setInfo(next)
+        setMyId(next.me.id)
+        setError(undefined)
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(next))
+        } catch {
+          /* ignore */
+        }
+      },
+      (e: Error) => setError(e.message),
+    )
   const refresh = async () => {
-    const sb = getSupabase()
-    if (!sb) return
-    try {
-      const next = await householdAction('status')
-      setInfo(next)
-      setMyId(next.me.id)
-      setError(undefined)
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(next))
-      } catch {
-        /* ignore */
-      }
-    } catch (e) {
-      setError((e as Error).message)
-    }
+    if (getSupabase()) await read()
   }
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
     sb.auth.getSession().then(({ data }) => {
       if (data.session) setMyId(data.session.user.id)
     })
-    refresh()
+    void read()
   }, [])
 
   return { info, myId, refresh, error }

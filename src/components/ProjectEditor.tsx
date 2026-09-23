@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
 import { BUILT_IN_TEMPLATES, extendProject, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
@@ -68,9 +68,11 @@ function ProjectSyncFields({ url, sync, onChange }: { url: string; sync?: Github
   const [busy, setBusy] = useState(false)
   const on = !!sync
   const syncRef = useRef(sync)
-  syncRef.current = sync
   const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
+  useLayoutEffect(() => {
+    syncRef.current = sync
+    onChangeRef.current = onChange
+  })
   // the URL is a live input: read the board once typing settles, not once per
   // keystroke — every read is a session-gated POST and a GraphQL round trip
   const [settled, setSettled] = useState(url)
@@ -80,15 +82,18 @@ function ProjectSyncFields({ url, sync, onChange }: { url: string; sync?: Github
     return () => window.clearTimeout(t)
   }, [url])
 
-  useEffect(() => {
-    if (!on) {
-      setFields(null)
-      setError('')
-      return
-    }
-    let cancelled = false
-    setBusy(true)
+  // switched on or off, or another board: reading it (or not) shows from the render that asks
+  const [readFor, setReadFor] = useState<{ on: boolean; settled: string } | null>(null)
+  if (readFor?.on !== on || readFor.settled !== settled) {
+    setReadFor({ on, settled })
     setError('')
+    if (on) setBusy(true)
+    else setFields(null)
+  }
+
+  useEffect(() => {
+    if (!on) return
+    let cancelled = false
     fetchProjectFields(settled)
       .then(f => {
         if (cancelled) return

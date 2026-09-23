@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fillInputFor, fillRecipe, fillRunCurrent } from '../../recipefill'
 import type { FillInput, FillRun, RecipeDraft } from '../../recipefill'
 import type { Recipe } from '../../types'
@@ -59,7 +59,9 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
   // the effect below and across the editor opening in this sheet's place
   const asked = useRef(new Map<string, Promise<RecipeDraft>>())
   const latest = useRef({ onDraft, fill })
-  latest.current = { onDraft, fill }
+  useLayoutEffect(() => {
+    latest.current = { onDraft, fill }
+  })
 
   const id = recipe?.id ?? null
   const needsDraft = !!recipe && !draft
@@ -72,7 +74,7 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
       pending = latest.current.fill(fillInputFor(recipe))
       asked.current.set(key, pending)
     }
-    setFailed(null)
+    // a failure is shown only for the recipe it was for (`error` below), and Retry clears its own
     pending.then(
       d => {
         if (live) latest.current.onDraft(recipe.id, d)

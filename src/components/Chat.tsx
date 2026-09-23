@@ -283,7 +283,9 @@ function AssistantThread({
   // the shell as of the latest render: an apply that waits a render between
   // suggestions, and a toast's Undo, both read the planner as it is by then
   const shellRef = useRef(shell)
-  shellRef.current = shell
+  useLayoutEffect(() => {
+    shellRef.current = shell
+  })
   const clock = () => now ?? new Date()
   const today = todayIn(tz, clock())
   const data = shell ?? dataOf(sources)

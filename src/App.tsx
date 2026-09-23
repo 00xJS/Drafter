@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { getSupabase, isSupabaseConfigured } from './supabase'
 import { clearLocalData } from './idb'
@@ -74,8 +74,10 @@ export default function App() {
   const [recovering, setRecovering] = useState(false)
   // an assistant's connection request, kept by main.tsx before the first render
   const [pending, setPending] = useState(() => pendingAuthorizeRequest())
-  const hadSession = useRef(false)
-  if (session) hadSession.current = true
+  // once signed in, a lost session never unmounts the planner (see below):
+  // remembered as the session arrives, so the render that sees it already knows
+  const [hadSession, setHadSession] = useState(false)
+  if (session && !hadSession) setHadSession(true)
   const route = authorizeRoute(pending, session, supabaseOn)
   const dropRequest = () => {
     clearAuthorizeRequest()
@@ -119,7 +121,7 @@ export default function App() {
   }
   // local mode keeps everything on this device: there is no account to connect
   if (route === 'no-account') return <Login connecting onBack={dropRequest} />
-  if (supabaseOn && !session && !hadSession.current) {
+  if (supabaseOn && !session && !hadSession) {
     // an assistant is waiting: straight to sign-in, saying why, no landing page on the way
     if (route === 'sign-in') return <Login connecting onBack={dropRequest} />
     return showLogin ? <Login onBack={() => setShowLogin(false)} /> : <Landing configured onSignIn={() => setShowLogin(true)} />

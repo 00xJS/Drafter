@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { STATUS_META, type Project, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import { newerStamp, nextOccurrence } from '../../itemops'
@@ -29,7 +29,9 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
   // the latest live tasks, for work that finishes after a later render (the
   // palette's capture enrichment must see an Undo that happened meanwhile)
   const tasksRef = useRef(store.tasks)
-  tasksRef.current = store.tasks
+  useLayoutEffect(() => {
+    tasksRef.current = store.tasks
+  })
 
   /**
    * Shift+Enter in the palette: file the line as a task now, no editor. The

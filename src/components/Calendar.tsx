@@ -151,22 +151,25 @@ export function Calendar({
 }: Props) {
   // one anchor day drives both grids: its month, or the week around it. A day
   // asked for opens with the first paint when the Calendar mounts for it, and
-  // through the effect below when the Calendar is already on screen.
+  // as it arrives when the Calendar is already on screen.
   const [cursor, setCursor] = useState(() => dayOfKey(openDay) ?? dayStart(new Date()))
   const [sheetDay, setSheetDay] = useState<Date | null>(() => (view === 'day' ? null : dayOfKey(openDay)))
-  useEffect(() => {
-    if (!openDay) return
-    const day = dayOfKey(openDay)
+  const [asked, setAsked] = useState({ openDay, view })
+  if (asked.openDay !== openDay || asked.view !== view) {
+    setAsked({ openDay, view })
+    const day = asked.openDay !== openDay ? dayOfKey(openDay) : null
     if (day) {
       setCursor(day)
       if (view !== 'day') setSheetDay(day)
     }
-    onOpenDayConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openDay])
+    // the day view draws the day itself, so no sheet stays open over it
+    if (asked.view !== view && view === 'day') setSheetDay(null)
+  }
+  // …and says so, so the next ask for the same day opens it again
   useEffect(() => {
-    if (view === 'day') setSheetDay(null)
-  }, [view])
+    if (openDay) onOpenDayConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per day asked for; the callback is the parent's setter
+  }, [openDay])
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
   const [addFor, setAddFor] = useState<string | null>(null)
@@ -183,11 +186,9 @@ export function Calendar({
   /** The saved place an event's location names (matchPlace), looked up once per location. */
   const placeAt = useMemo(() => {
     const known = new Map<string, Place | undefined>()
-    return (location: string) => {
-      if (!known.has(location)) known.set(location, matchPlace(location, places))
-      return known.get(location)
-    }
-  }, [places])
+    for (const e of events) if (e.location && !known.has(e.location)) known.set(e.location, matchPlace(e.location, places))
+    return (location: string) => (known.has(location) ? known.get(location) : matchPlace(location, places))
+  }, [events, places])
   // A work day is drawn as a badge on the day, not as an item competing with
   // the day's events and meals: "am I home on Thursday" is a property of the day.
   // (workByDay in calgrid.ts: the wardrobe reads a work day from the same map)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarEntry, CalendarEvent, CalendarSource, Item, Project } from './types'
 import type { MirrorPulled, PassResult } from './calendars'
 import { apiFetch } from './api'
@@ -128,23 +128,26 @@ function useMirrorSync(
   myId?: string | null,
 ): GooglePushState {
   const [state, setState] = useState<MirrorStatus>(() => ({ pending: false, notices: storedNotices(targets) }))
+  // what the pass reads when it runs, from the render last committed
   const onPulledRef = useRef(onPulled)
-  onPulledRef.current = onPulled
   const itemsRef = useRef(items)
-  itemsRef.current = items
   const projectsRef = useRef(projects)
-  projectsRef.current = projects
   const myIdRef = useRef(myId)
-  myIdRef.current = myId
   const targetsRef = useRef(targets)
-  targetsRef.current = targets
+  useLayoutEffect(() => {
+    onPulledRef.current = onPulled
+    itemsRef.current = items
+    projectsRef.current = projects
+    myIdRef.current = myId
+    targetsRef.current = targets
+  })
   const inflight = useRef<Promise<void> | null>(null)
   const queued = useRef<{ pull: boolean } | null>(null)
   const retry = useRef<{ timer?: number; delay: number }>({ delay: 0 })
   const debounce = useRef<number | undefined>(undefined)
-  const triggerRef = useRef<(pull: boolean) => Promise<void>>(() => Promise.resolve())
 
-  const trigger = useCallback((pull: boolean): Promise<void> => {
+  // named, so a retry can queue the next pass on the very function that is running
+  const trigger = useCallback(function requestPass(pull: boolean): Promise<void> {
     // one pass at a time; a request made mid-pass gets a pass of its own right
     // after, and waits for it, so pull-to-refresh never reports done early
     queued.current = { pull: pull || !!queued.current?.pull }
@@ -185,7 +188,7 @@ function useMirrorSync(
             retry.current.delay = 0
             delay = pass.more ? 1500 : pass.waiting > 0 ? 5 * 60_000 : 0
           }
-          if (delay) retry.current.timer = window.setTimeout(() => void triggerRef.current(false), delay)
+          if (delay) retry.current.timer = window.setTimeout(() => void requestPass(false), delay)
         }
       } finally {
         inflight.current = null
@@ -194,9 +197,16 @@ function useMirrorSync(
     inflight.current = loop
     return loop
   }, [])
-  triggerRef.current = trigger
 
   const signature = targets.map(t => t.key).join('\n')
+  // A mirror switched on or off, or an account added: what is shown is redone
+  // as the new set renders — the notices stored for it, or, switched off, a
+  // clean slate, so an old error cannot linger beside the switch.
+  const [shownFor, setShownFor] = useState(signature)
+  if (shownFor !== signature) {
+    setShownFor(signature)
+    setState(signature ? s => ({ ...s, notices: storedNotices(targets) }) : { pending: false })
+  }
 
   // a few seconds after any change: send what is owed
   useEffect(() => {
@@ -208,12 +218,7 @@ function useMirrorSync(
 
   // now, on focus, every half hour and when the network returns: retry, then pull
   useEffect(() => {
-    if (!signature) {
-      // mirroring switched off: an old error must not linger beside the switch
-      setState({ pending: false })
-      return
-    }
-    setState(s => ({ ...s, notices: storedNotices(targetsRef.current) }))
+    if (!signature) return
     const onVisible = () => {
       if (document.visibilityState === 'visible') void trigger(true)
     }
@@ -336,9 +341,11 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
   // at once and reporting done while the feeds are still loading
   const inflight = useRef<Promise<void> | null>(null)
   const sigRef = useRef(signature)
-  sigRef.current = signature
   const sourcesRef = useRef(enabled)
-  sourcesRef.current = enabled
+  useLayoutEffect(() => {
+    sigRef.current = signature
+    sourcesRef.current = enabled
+  })
 
   const refresh = useCallback((): Promise<void> => {
     if (inflight.current) return inflight.current

@@ -15,7 +15,7 @@ export function GithubCard({ url, onUnlink }: Props) {
   const ref = parseGithubUrl(url)
   const [card, setCard] = useState<Card | null>(null)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(() => !!ref)
   // a label keeps its GitHub colour, moved only as far as it takes to read on
   // the card's own ground (--surface-2, 'raised')
   const theme = useTheme()
@@ -33,10 +33,27 @@ export function GithubCard({ url, onUnlink }: Props) {
     }
   }
 
-  useEffect(() => {
+  // another link: its card, never the last one's, from the render that shows it
+  const [cardFor, setCardFor] = useState(url)
+  if (cardFor !== url) {
+    setCardFor(url)
     setCard(null)
-    if (ref) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setError('')
+    setBusy(!!ref)
+  }
+  useEffect(() => {
+    if (!parseGithubUrl(url)) return
+    // an answer for a link since replaced is dropped
+    let live = true
+    fetchGithubCard(url)
+      .then(
+        c => live && setCard(c),
+        (e: Error) => live && setError(e.message),
+      )
+      .finally(() => live && setBusy(false))
+    return () => {
+      live = false
+    }
   }, [url])
 
   if (!ref)

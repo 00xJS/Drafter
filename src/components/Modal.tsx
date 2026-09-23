@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, PointerEvent as ReactPointerEvent, ReactNode, Ref } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { createModalStack, pickReturn, wrapFocus } from '../modalstack'
 
 /** Every open dialog, topmost last. One per page, like the focus it looks after. */
@@ -54,7 +54,6 @@ interface ModalProps {
   label?: string
   /** id of the heading that names the dialog, when it is not a ModalHead's */
   labelledBy?: string
-  panelRef?: Ref<HTMLDivElement>
   /** the panel's own keys, e.g. Cmd+Enter to save. Escape and Tab are already handled. */
   onKeyDown?(e: ReactKeyboardEvent<HTMLDivElement>): void
   /** false: a press on the dimmed backdrop does nothing. Default true. */
@@ -84,7 +83,6 @@ export function Modal({
   backdropClassName = 'modal-backdrop',
   label,
   labelledBy,
-  panelRef,
   onKeyDown,
   closeOnBackdrop = true,
 }: ModalProps) {
@@ -101,16 +99,9 @@ export function Modal({
   // decided at the first mount: StrictMode's rehearsal remount must not re-decide it
   const back = useRef<HTMLElement | null | undefined>(undefined)
   const close = useRef(onClose)
-  close.current = onClose
-
-  const setPanel = useCallback(
-    (node: HTMLDivElement | null) => {
-      panel.current = node
-      if (typeof panelRef === 'function') panelRef(node)
-      else if (panelRef) (panelRef as MutableRefObject<HTMLDivElement | null>).current = node
-    },
-    [panelRef],
-  )
+  useLayoutEffect(() => {
+    close.current = onClose
+  })
 
   useEffect(() => {
     const el = panel.current
@@ -151,7 +142,7 @@ export function Modal({
       }}
     >
       <div
-        ref={setPanel}
+        ref={panel}
         className={className}
         role="dialog"
         aria-modal="true"
@@ -190,7 +181,9 @@ const FLING_PX = 24
  */
 function useSheetDrag(onClose?: () => void): (e: ReactPointerEvent<HTMLElement>) => void {
   const close = useRef(onClose)
-  close.current = onClose
+  useLayoutEffect(() => {
+    close.current = onClose
+  })
   return useCallback((e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return
     if (!document.documentElement.classList.contains('native')) return
