@@ -1,11 +1,12 @@
 import { Item, Note, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedPeerRows, type SyncConflict } from './itemops'
-import { applyLocalChoice, sameContent } from '../shared/merge.mts'
+import { applyLocalChoice, mergeRecord, sameContent } from '../shared/merge.mts'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { peerVisibleByKind, purgeTombstone, type SyncResult } from './sync'
 import { NO_BOOKKEEPING, forgetLegacyBookkeeping, parseBookkeeping, readLegacyBookkeeping, type KV, type SyncBookkeeping, type SyncFailure } from './syncstate'
+import type { AskOp, Leadership, SyncMessage } from './synclead'
 
 // The sync engine: everything that keeps this device's records and the
 // server's in step, as a plain module with its world injected — the RPC, the
@@ -46,6 +47,10 @@ export const PERIODIC_MS = 60_000
  * them no change — not the way changes arrive.
  */
 export const LIVE_PERIODIC_MS = 5 * 60_000
+/** How long a tab that does not sync waits for the one that does to answer (Sync now, Try again…). */
+const ASK_TIMEOUT_MS = 60_000
+/** How long boot waits to learn whether this tab syncs before it opens as one that does not. */
+const LEAD_WAIT_MS = 3_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_CAP_MS = 30 * 60_000
 /** The kinds this build syncs, as the bookkeeping records them beside the cursor: when the stored list differs, boot does one full exchange. */
@@ -107,6 +112,25 @@ export interface CacheRecord {
   sync?: SyncBookkeeping
   /** Which write this was, counting up from the first: orders the unload journal against the cache. */
   seq?: number
+  /** Edits other tabs handed over that no syncing tab has taken yet (see Handoff). */
+  outbox?: Handoff[]
+}
+
+/**
+ * An edit made in a tab that does not sync, handed to the one that does
+ * through the cache (src/synclead.ts): the tab that syncs takes it as its own
+ * edit — merged against its copy when that moved on since — and removes it in
+ * the write that marks the record dirty.
+ */
+export interface Handoff {
+  /** The record's id. */
+  id: string
+  /** This hand-over's own id: only the very one taken is removed; a newer one waits its turn. */
+  hid: string
+  /** The record as edited; null when the edit removed it (Delete forever in local mode). */
+  item: Item | null
+  /** The copy the edit was made on: what it is merged against when the syncing tab's copy moved on. */
+  base: Item | null
 }
 
 /**
@@ -134,6 +158,8 @@ export interface CacheChanges {
   seq: number
   /** Remove the single value of an older build in the same transaction: set on the write that moves it over. */
   dropSnapshot?: boolean
+  /** Hand-overs taken into this write's dirty set: removed from the outbox in the same transaction, if still the same ones. */
+  handoffsDone?: { id: string; hid: string }[]
 }
 
 export interface SyncStorage {
@@ -160,6 +186,15 @@ export interface SyncStorage {
    * bookkeeping that build kept here.
    */
   kv: KV
+  // What tabs sharing the cache need (src/synclead.ts); without them every page syncs on its own.
+  /** The records under these ids as the cache holds them now. */
+  readRecords?(ids: readonly string[]): Promise<Item[]>
+  /** Which write the cache is at, or null when none has counted. */
+  readSeq?(): Promise<number | null>
+  /** A follower's edits, for the tab that syncs. */
+  writeHandoffs?(entries: readonly Handoff[]): Promise<unknown>
+  /** The edits waiting, with the records they name as the cache holds them. */
+  readOutbox?(): Promise<{ entries: Handoff[]; records: Item[] }>
 }
 
 /** What boot read, and where from (loadCache). */
@@ -179,6 +214,8 @@ interface LoadedCache {
   sync: SyncBookkeeping | null
   /** The last write that reached the cache (0: none counted). */
   seq: number
+  /** Edits other tabs handed over that no syncing tab has taken yet. */
+  outbox: Handoff[]
 }
 
 export interface SyncTimers {
@@ -195,6 +232,14 @@ export interface SyncEngineDeps {
   /** Epoch ms; backoff, deletions and "last synced" read it. Stamps use newerStamp (Date.now). */
   now?: () => number
   timers?: SyncTimers
+  /**
+   * Which of the tabs sharing this cache syncs (src/synclead.ts). Absent — the
+   * iOS shell, a browser without Web Locks, the tests of one device — this
+   * page always does.
+   */
+  leadership?: Leadership | null
+  /** Where a failure nobody sees goes (the client error log, src/errorreport.ts): a cache write that failed, say. */
+  report?: (error: unknown, where: string) => void
 }
 
 /** The records of each kind, in `items` order. */
@@ -432,6 +477,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   const kv = storage.kv
   const now = deps.now ?? (() => Date.now())
   const timers = deps.timers ?? defaultTimers
+  const report = deps.report ?? (() => {})
   /** One row per record (the app's IndexedDB), or the single value rewritten whole (a storage without the per-record calls). */
   const perRecord = typeof storage.readAll === 'function' && typeof storage.writeChanges === 'function'
 
@@ -499,6 +545,29 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** The write in progress. Writes run one after another, so an older one can never land last. */
   let writing: Promise<void> | null = null
 
+  // Tabs sharing the cache (src/synclead.ts): one leads — runs the rounds,
+  // writes the cache and its bookkeeping — and the others follow.
+  /** Which tab syncs; null: this page always does (one page, or no Web Locks). */
+  const lead = perRecord && deps.leadership && storage.readRecords && storage.readSeq && storage.writeHandoffs && storage.readOutbox ? deps.leadership : null
+  /** Whether this page runs the rounds and writes the cache. */
+  let leading = lead === null || lead.leading()
+  /** Follower: edits handed over that the leader has not said it took — the latest hand-over, and the copy the first was made on. */
+  const handed = new Map<string, { hid: string; base: Item | null }>()
+  /** Follower: the hand-over writes, one after another. */
+  let handing: Promise<void> = Promise.resolve()
+  /** Follower: re-reads of what the leader wrote, one after another. */
+  let catching: Promise<void> = Promise.resolve()
+  /** Leader: hand-overs taken in, to be removed from the outbox by the write that carries their dirty marks. */
+  let taken: { id: string; hid: string }[] = []
+  /** Leader: every hand-over already taken, so an outbox read that raced a write takes none twice. */
+  const seenHids = new Set<string>()
+  /** Leader: outbox reads, one after another. */
+  let taking: Promise<void> = Promise.resolve()
+  /** Follower: questions asked of the leader, waiting for its answer, by request id. */
+  const asked = new Map<string, (ok: boolean) => void>()
+  /** Leader: giving the lead up (stepDown). */
+  let steppingDown = false
+
   /**
    * Bring `index` in step with a new list. Each record that is new, changed (a
    * different object) or gone is noted for the next write, and its kind for a
@@ -535,6 +604,18 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }
     state = { ...state, ...patch }
     for (const l of [...listeners]) l()
+    if (patch.syncInfo || patch.failures) postStatus()
+  }
+
+  let statusQueued = false
+  /** Leader: where sync stands, for the pill and Settings of the other tabs — once per burst of changes. */
+  function postStatus(): void {
+    if (!lead || !leading || statusQueued) return
+    statusQueued = true
+    queueMicrotask(() => {
+      statusQueued = false
+      if (lead && leading) lead.post({ type: 'status', from: lead.id, syncInfo: state.syncInfo, failures: state.failures })
+    })
   }
 
   function failureList(): SyncFailure[] {
@@ -624,8 +705,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   }
 
   async function writeCache(): Promise<void> {
-    // never overwrite the cache with the empty state from before it was read
-    if (!state.loaded) return
+    // never overwrite the cache with the empty state from before it was read,
+    // and never from a tab that follows another: the leader writes it
+    if (!state.loaded || !leading) return
     if (!perRecord) {
       unsaved.clear()
       const snapshot = state.items
@@ -644,7 +726,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       return
     }
     const ids = [...unsaved]
-    if (ids.length === 0 && !snapshotLeft && !metaMoved()) return
+    const done = taken.slice()
+    if (ids.length === 0 && !snapshotLeft && !metaMoved() && done.length === 0) return
     unsaved.clear()
     const gen = metaGen
     const change: CacheChanges = {
@@ -662,10 +745,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       else change.deletes.push(id)
     }
     if (snapshotLeft) change.dropSnapshot = true
+    if (done.length > 0) change.handoffsDone = done
     inflightIds = new Set(ids)
     try {
       await storage.writeChanges!(change)
       landed(change.userId, gen, change.sync)
+      if (done.length > 0) taken = taken.filter(t => !done.includes(t))
+      // the other tabs read what this wrote
+      lead?.post({ type: 'wrote', from: lead.id, seq: change.seq, upserts: change.upserts.map(i => i.id), deletes: change.deletes, taken: done.map(t => t.hid) })
       if (change.dropSnapshot) snapshotLeft = false
       // what a page going away journalled is on disk now
       if (unsaved.size === 0 && !metaMoved()) clearJournal()
@@ -797,7 +884,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   }
 
   function schedulePush(): void {
-    if (!remote) return
+    if (!remote || !leading) return
     if (pushTimer !== undefined) timers.clearTimeout(pushTimer)
     pushTimer = timers.setTimeout(() => {
       pushTimer = undefined
@@ -818,7 +905,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * and nowhere else — was gone the moment IndexedDB had one bad launch.
    */
   async function loadCache(myId: string | null): Promise<LoadedCache> {
-    let cached: { userId?: string | null; shadows?: unknown; items?: unknown; sync?: unknown; seq?: unknown } | undefined = perRecord ? await storage.readAll!() : undefined
+    let cached: { userId?: string | null; shadows?: unknown; items?: unknown; sync?: unknown; seq?: unknown; outbox?: unknown } | undefined = perRecord
+      ? await storage.readAll!()
+      : undefined
     let from: LoadedCache['from'] = cached !== undefined ? 'records' : 'none'
     const ids = new Set<string>()
     if (cached !== undefined) {
@@ -832,9 +921,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }
     // a cache written by a different account must never be adopted or re-synced
     if (cached && myId && cached.userId && cached.userId !== myId) {
-      await storage.clearAll()
-      return { items: [], shadows: [], wiped: true, from: 'none', ids: new Set(), legacy: false, sync: null, seq: 0 }
+      // wiping it is the syncing tab's to do; a tab that follows shows nothing of it meanwhile
+      if (leading) await storage.clearAll()
+      return { items: [], shadows: [], wiped: leading, from: 'none', ids: new Set(), legacy: false, sync: null, seq: 0, outbox: [] }
     }
+    const outbox = handoffsOf(cached?.outbox)
     const owner = cached?.userId
     const sync = parseBookkeeping(cached?.sync)
     const seqRead = typeof cached?.seq === 'number' && Number.isFinite(cached.seq) ? cached.seq : 0
@@ -843,7 +934,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       const migrated = migrateStored(cached)
       // an empty cache must not shadow a legacy localStorage store (e.g. an
       // interrupted first run of this version)
-      if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead }
+      if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead, outbox }
     }
     // migration from the old localStorage cache — non-destructive: the legacy
     // key is only removed after the IndexedDB cache has persisted real data.
@@ -855,8 +946,20 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     } catch {
       legacy = null
     }
-    if (legacy && legacy.length > 0) return { items: purgeTombstones(legacy, now()), shadows: [], wiped: false, from, ids, owner, legacy: true, sync, seq: seqRead }
-    return { items: [], shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead }
+    if (legacy && legacy.length > 0) return { items: purgeTombstones(legacy, now()), shadows: [], wiped: false, from, ids, owner, legacy: true, sync, seq: seqRead, outbox }
+    return { items: [], shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead, outbox }
+  }
+
+  /** Hand-overs as read back from the cache: the ones whose shape holds, their records sanitized. */
+  function handoffsOf(raw: unknown): Handoff[] {
+    const out: Handoff[] = []
+    for (const h of Array.isArray(raw) ? raw : []) {
+      if (!h || typeof h.id !== 'string' || typeof h.hid !== 'string') continue
+      const item = h.item ? sanitizeItem(h.item) : null
+      if (h.item && !item) continue
+      out.push({ id: h.id, hid: h.hid, item, base: h.base ? sanitizeItem(h.base) : null })
+    }
+    return out
   }
 
   /** How long boot waits before each try again at a cache that would not read. */
@@ -911,6 +1014,15 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   async function boot(myId: string | null): Promise<void> {
     const gen = ++bootGen
     const before = account
+    // Whether this tab leads is settled before anything is read (src/synclead.ts).
+    // A lock that never answers must not keep the planner from opening: after
+    // a few seconds this tab reads as a follower — it writes nothing — and
+    // takes over when the lock does come.
+    if (lead) {
+      await Promise.race([lead.ready, pause(LEAD_WAIT_MS)])
+      if (lead.leading() && !takingOver) leading = true
+    }
+    if (gen !== bootGen) return
     // an edit still waiting on the debounce is written first, under the account it was made in
     if (persistPending()) await persistNow()
     account = myId
@@ -933,11 +1045,26 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       return
     }
     if (!cached) return
+    if (!leading) {
+      // another tab syncs: this one shows what the cache holds (a remount's memory is no older)
+      if (!(wasLoaded && before === myId)) follow(cached)
+      return
+    }
     if (wasLoaded && !cached.wiped && before === myId) {
       // the same account again (a remount): memory is at least as new as the cache just written
       void sync()
       return
     }
+    takeUp(cached, myId)
+  }
+
+  /**
+   * Take up what boot read as this device's sync state: the bookkeeping, the
+   * journal a page going away left, and the edits other tabs handed over.
+   * Synchronous, so no edit lands between the read being taken up and the
+   * bookkeeping that goes with it.
+   */
+  function takeUp(cached: LoadedCache, myId: string | null): void {
     // The bookkeeping belongs to whoever the cache belongs to: beside the
     // records, or — in a cache an older build wrote — in localStorage, read
     // once here and moved over by the next write.
@@ -1004,6 +1131,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     metaGen++
     written = fresh ? { userId: cached.owner ?? null, gen: metaGen } : null
     publish({ items, byKind: groupByKind(items, null), loaded: true, loadError: undefined, failures: failureList() })
+    // edits other tabs handed over that no syncing tab took (it closed first)
+    adopt(cached.outbox)
     // a cache still in an older build's shape moves over now, not after the debounce
     if (perRecord && (snapshotLeft || cached.legacy)) void persistNow()
     else schedulePersist()
@@ -1042,12 +1171,308 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // nothing read yet: boot decides from what it reads — an empty list here
     // is not an empty cache, and clearing the dirty set on it lost edits
     if (!state.loaded) return
+    if (!leading) return
     if (state.items.length === 0 && (cursor !== null || dirty.size > 0)) {
       cursor = null
       dirty = new Set()
       saveBookkeeping()
     }
     void sync()
+  }
+
+  // ---- tabs: one syncs, the others follow (src/synclead.ts) ----------------------
+
+  /**
+   * A tab that follows another: show what the cache holds, with the edits
+   * handed over and not yet taken laid over it, and leave the bookkeeping, the
+   * journal and the rounds to the tab that syncs.
+   */
+  function follow(cached: LoadedCache): void {
+    const byId = new Map(cached.items.map(i => [i.id, i]))
+    handed.clear()
+    for (const h of cached.outbox) {
+      if (h.item) byId.set(h.id, h.item)
+      else byId.delete(h.id)
+      handed.set(h.id, { hid: h.hid, base: h.base })
+    }
+    const items = [...byId.values()]
+    index = new Map(items.map(i => [i.id, i]))
+    unsaved.clear()
+    dirty = new Set()
+    shadows = new Map()
+    failures = new Map()
+    cursor = null
+    seq = cached.seq
+    written = null
+    publish({ items, byKind: groupByKind(items, null), loaded: true, loadError: undefined, failures: [] })
+    lead!.post({ type: 'hello', from: lead!.id })
+  }
+
+  /**
+   * A follower's edit: shown here at once, and handed to the tab that syncs
+   * through the cache — each record beside the copy the edit was made on, so
+   * that tab can merge it with anything newer it holds.
+   */
+  function handOver(next: Item[]): void {
+    const ids = new Set<string>()
+    for (const i of next) if (index.get(i.id) !== i) ids.add(i.id)
+    const present = new Set(next.map(i => i.id))
+    for (const id of index.keys()) if (!present.has(id)) ids.add(id)
+    // the copy each edit was made on: the first un-taken hand-over's, else the one shown until now
+    const bases = new Map([...ids].map(id => [id, handed.has(id) ? handed.get(id)!.base : (index.get(id) ?? null)]))
+    publish({ items: next })
+    const entries: Handoff[] = [...ids].map(id => {
+      const item = index.get(id) ?? null
+      const h: Handoff = { id, hid: uid(), item, base: bases.get(id) ?? null }
+      handed.set(id, { hid: h.hid, base: h.base })
+      return h
+    })
+    if (entries.length > 0) sendHandoffs(entries)
+  }
+
+  function sendHandoffs(entries: Handoff[]): void {
+    handing = handing.then(async () => {
+      // a newer hand-over of the same record replaced this one meanwhile: that one goes instead
+      const current = entries.filter(h => handed.get(h.id)?.hid === h.hid)
+      if (current.length === 0) return
+      try {
+        await storage.writeHandoffs!(current)
+        lead?.post({ type: 'handoff', from: lead.id })
+      } catch (e) {
+        console.error('Failed to hand an edit to the syncing tab', e)
+        report(e, 'sync handoff')
+        timers.setTimeout(() => sendHandoffs(current), PERSIST_RETRY_MS)
+      }
+    })
+  }
+
+  /**
+   * The leader wrote: read those records again. An edit of this tab's that
+   * the leader has not taken yet stays as it is here — what the leader wrote
+   * is older than it — until a write says it was taken.
+   */
+  function catchUp(upserts: readonly string[], deletes: readonly string[], takenHids: readonly string[]): void {
+    catching = catching
+      .then(async () => {
+        if (leading || !state.loaded) return
+        const rows = upserts.length > 0 ? await storage.readRecords!(upserts) : []
+        if (leading || !state.loaded) return
+        const done = new Set(takenHids)
+        for (const [id, h] of [...handed]) if (done.has(h.hid)) handed.delete(id)
+        const byId = new Map(state.items.map(i => [i.id, i]))
+        let changed = false
+        for (const id of deletes) if (!handed.has(id) && byId.delete(id)) changed = true
+        for (const raw of rows) {
+          if (handed.has(raw.id)) continue
+          const row = sanitizeItem(raw)
+          if (!row) continue
+          byId.set(row.id, row)
+          changed = true
+        }
+        if (changed) publish({ items: [...byId.values()] })
+      })
+      .catch(e => console.error('Failed to read what the syncing tab wrote', e))
+  }
+
+  /**
+   * One hand-over against what this tab holds: the edit itself when this
+   * tab's copy is still the one it was made on, the edit on top of the newer
+   * copy when that moved on since (a round brought a partner's change), or
+   * nothing new when it is already here. Stamped newer than the copy it
+   * replaces, as every edit is.
+   */
+  function takeOne(h: Handoff, had: Item | undefined): Item | null | undefined {
+    if (!h.item) return had ? null : had
+    if (!had) return h.item
+    if (sameContent(h.item, had)) return had
+    const after = (item: Item): Item => (item.updatedAt > had.updatedAt ? item : { ...item, updatedAt: newerStamp(had.updatedAt) })
+    if (!h.base || sameContent(h.base, had)) return after(h.item)
+    const merged = sanitizeItem(mergeRecord(h.base, h.item, had).merged) ?? h.item
+    if (sameContent(merged, had)) return had
+    return { ...merged, updatedAt: newerStamp(h.item.updatedAt > had.updatedAt ? h.item.updatedAt : had.updatedAt) }
+  }
+
+  /** Leader: take hand-overs in as this tab's own edits — dirty, merge-based, pushed — and let the next write remove them. */
+  function adopt(entries: readonly Handoff[]): void {
+    const fresh = entries.filter(h => !seenHids.has(h.hid))
+    if (fresh.length === 0) return
+    const byId = new Map(state.items.map(i => [i.id, i]))
+    const touched: string[] = []
+    for (const h of fresh) {
+      seenHids.add(h.hid)
+      taken.push({ id: h.id, hid: h.hid })
+      const had = byId.get(h.id)
+      const next = takeOne(h, had)
+      if (next === had) continue
+      if (next) byId.set(h.id, next)
+      else byId.delete(h.id)
+      touched.push(h.id)
+    }
+    // the oldest are long gone from the outbox
+    for (const hid of seenHids) {
+      if (seenHids.size <= 2_000) break
+      seenHids.delete(hid)
+    }
+    if (touched.length > 0) commit(ensureProjects([...byId.values()]), touched)
+    // nothing changed, but the hand-overs still go, with the next write
+    else schedulePersist()
+  }
+
+  /** Leader: read the outbox and take in what is new there. */
+  function takeHandoffs(): Promise<void> {
+    taking = taking
+      .then(async () => {
+        if (!leading || !state.loaded) return
+        const { entries } = await storage.readOutbox!()
+        if (leading && state.loaded) adopt(handoffsOf(entries))
+      })
+      .catch(e => console.error('Failed to read the edits other tabs handed over', e))
+    return taking
+  }
+
+  /** Follower: ask the leader to act, and wait for its answer (false after a minute without one). */
+  function ask(op: AskOp, arg?: string): Promise<boolean> {
+    if (!lead) return Promise.resolve(false)
+    const rid = uid()
+    return new Promise<boolean>(resolve => {
+      const timer = timers.setTimeout(() => done(false), ASK_TIMEOUT_MS)
+      const done = (ok: boolean) => {
+        timers.clearTimeout(timer)
+        asked.delete(rid)
+        resolve(ok)
+      }
+      asked.set(rid, done)
+      lead.post({ type: 'ask', from: lead.id, rid, op, arg })
+    })
+  }
+
+  /** Leader: do what a follower asked — after taking in what it handed over first — and say how it went. */
+  async function answer(rid: string, op: AskOp, arg = ''): Promise<void> {
+    let ok = false
+    try {
+      await takeHandoffs()
+      if (op === 'sync') ok = await syncAfterFlight()
+      else if (op === 'full') ok = await fullResync()
+      else if (op === 'retry') ok = await retry(arg)
+      else if (op === 'discard') ok = (discard(arg), true)
+      else if (op === 'retainMine') ok = (retainMine(arg || null), true)
+      else if (op === 'purge') {
+        await syncAfterFlight()
+        ok = arg.split('\n').every(id => !dirty.has(id))
+      }
+    } finally {
+      lead?.post({ type: 'answer', from: lead.id, rid, ok })
+    }
+  }
+
+  let takingOver = false
+  /**
+   * This tab leads now: the last leader closed or gave it up. When nobody
+   * wrote since this tab last did, memory is the cache but for the edits it
+   * handed over while it followed; otherwise the cache is read again — the
+   * last leader's bookkeeping, its journal if it died mid-write — and taken
+   * up, synchronously, before this tab acts as the leader.
+   */
+  async function takeOver(): Promise<void> {
+    if (leading || takingOver || !lead) return
+    takingOver = true
+    try {
+      // this tab's own hand-overs are on disk before the outbox is read
+      await handing.catch(() => {})
+      if (!lead.leading()) return
+      if (!state.loaded) {
+        // the boot under way — or the next Try again — reads as the leader
+        leading = true
+        return
+      }
+      const gen = bootGen
+      let diskSeq: number | null = null
+      try {
+        diskSeq = await storage.readSeq!()
+      } catch {
+        diskSeq = null
+      }
+      let journalLeft = true
+      try {
+        journalLeft = kv.getItem(JOURNAL_KEY) !== null
+      } catch {
+        /* read it as left: the full read below takes it up if there is one */
+      }
+      if (diskSeq === null || diskSeq !== seq || written === null || journalLeft) {
+        let cached: LoadedCache | null = null
+        try {
+          cached = await readCache(account, gen)
+        } catch (e) {
+          console.error('Failed to read the cache to take over syncing', e)
+        }
+        await handing.catch(() => {})
+        if (!cached || gen !== bootGen || !lead.leading()) {
+          // cannot lead without knowing what is on disk: let another tab try
+          if (!cached) lead.release()
+          return
+        }
+        leading = true
+        stopTimers()
+        unsaved.clear()
+        takeUp(cached, account)
+      } else {
+        const { entries, records } = await storage.readOutbox!()
+        await handing.catch(() => {})
+        if (gen !== bootGen || !lead.leading()) return
+        leading = true
+        stopTimers()
+        // the cache's copy of each record handed over, not this tab's own edit of it: that is taken in below, as the edit it is
+        const onDisk = new Map(records.map(r => [r.id, r]))
+        const handedIds = new Set(entries.map(h => h.id))
+        const next: Item[] = []
+        for (const i of state.items) {
+          if (!handedIds.has(i.id)) next.push(i)
+          else if (onDisk.has(i.id)) next.push(sanitizeItem(onDisk.get(i.id)) ?? i)
+        }
+        for (const r of records) if (!index.has(r.id)) next.push(sanitizeItem(r) ?? r)
+        publish({ items: next })
+        for (const id of handedIds) unsaved.delete(id)
+        adopt(handoffsOf(entries))
+        void sync()
+      }
+      handed.clear()
+      arm()
+      postStatus()
+      // what was handed over while the cache was being read
+      void takeHandoffs()
+    } finally {
+      takingOver = false
+    }
+  }
+
+  function stopTimers(): void {
+    for (const t of [persistTimer, pushTimer]) if (t !== undefined) timers.clearTimeout(t)
+    persistTimer = undefined
+    pushTimer = undefined
+  }
+
+  /**
+   * Give the lead to a tab in view that waits for it, this one being out of
+   * view: push what is waiting, write everything down — and journal what
+   * could not be written, for the tab that takes over — then follow.
+   */
+  async function stepDown(): Promise<void> {
+    if (!lead || !leading || steppingDown || takingOver) return
+    steppingDown = true
+    try {
+      if (state.loaded) {
+        writeJournal()
+        if (remote && dirty.size > 0) await syncAfterFlight()
+        for (let i = 0; i < 3 && persistPending(); i++) await persistNow()
+        writeJournal()
+      }
+    } finally {
+      leading = false
+      steppingDown = false
+      stopTimers()
+      arm()
+      lead.release()
+    }
   }
 
   // ---- local edits -------------------------------------------------------------
@@ -1068,6 +1493,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   function commit(next: Item[], touched: Iterable<string> = []): void {
     const prev = state.items
     if (next === prev) return
+    // another tab syncs: the edit is handed to it
+    if (!leading) return handOver(next)
     if (remote) {
       // `index` is still `prev` by id: publish below moves it on
       const ids = new Set<string>()
@@ -1220,6 +1647,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** Drop peer-owned rows after leaving a household (keeps unowned + mine). */
   function retainMine(me: string | null): void {
     if (!me) return
+    if (!leading) {
+      void ask('retainMine', me)
+      return
+    }
     const list = state.items
     const next = list.filter(i => !i.ownerId || i.ownerId === me)
     if (next.length === list.length) return
@@ -1244,7 +1675,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       return true
     }
     const deletedAt = new Date(now()).toISOString()
-    const next = list.map(p => {
+    const tombstones = list.map(p => {
       if (!set.has(p.id) || p.purged) return p
       // A tombstone is content-free by design, which for a note meant it
       // carried no `shared` — and v3.16's `with check` refuses a write onto
@@ -1265,7 +1696,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       )
       return tomb ? { ...tomb, ownerId: p.ownerId } : p
     })
+    const next = tombstones
     commit(next, [...set].filter(id => next.some(p => p.id === id)))
+    // another tab syncs: it has them once it says so
+    if (!leading) return ask('purge', ids.join('\n'))
     // the purge must survive the app being killed before the debounce fires
     await persistNow()
     await syncAfterFlight()
@@ -1289,6 +1723,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   /** Push a refused row now rather than when its backoff runs out. */
   function retry(id: string): Promise<boolean> {
+    if (!leading) return ask('retry', id)
     const f = failures.get(id)
     if (f) {
       failures.set(id, { ...f, nextAt: 0 })
@@ -1306,6 +1741,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * brings back the server's version if it has one.
    */
   function discard(id: string): void {
+    if (!leading) {
+      void ask('discard', id)
+      return
+    }
     const base = shadows.get(id)
     dirty.delete(id)
     shadows.delete(id)
@@ -1523,6 +1962,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   function sync(): Promise<boolean> {
     if (!state.loaded || !rpc) return Promise.resolve(false)
+    // another tab syncs: it runs the round, and says how it went
+    if (!leading) return ask('sync')
     if (inflight) return inflight
     inflight = runRound().finally(() => {
       inflight = null
@@ -1542,6 +1983,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   /** Forget the delta cursor so the next round is a full exchange. */
   function fullResync(): Promise<boolean> {
+    if (!leading) return ask('full')
     forceFull = true
     cursor = null
     saveBookkeeping()
@@ -1555,6 +1997,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * repeatedly; with nothing waiting it does nothing.
    */
   function flush(): void {
+    // a tab that follows another has handed its edits over as it made them
+    if (!leading) return
     // before anything asynchronous: the page may be gone before the write below commits
     writeJournal()
     if (pushTimer !== undefined) {
@@ -1572,7 +2016,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * since coming back to it runs one anyway.
    */
   function nudge(): Promise<boolean> {
-    if (hidden) return Promise.resolve(false)
+    // hidden, the return runs a round anyway; following, the syncing tab has its own channel
+    if (hidden || !leading) return Promise.resolve(false)
     return syncAfterFlight()
   }
 
@@ -1582,7 +2027,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       timers.clearInterval(periodic)
       periodic = undefined
     }
-    if (started && remote && !hidden) periodic = timers.setInterval(() => void sync(), live ? LIVE_PERIODIC_MS : PERIODIC_MS)
+    if (started && remote && !hidden && leading) periodic = timers.setInterval(() => void sync(), live ? LIVE_PERIODIC_MS : PERIODIC_MS)
   }
 
   /** Start the periodic round. Returns stop. */
@@ -1617,7 +2062,42 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (hidden === on) return
     hidden = on
     arm()
+    lead?.setVisible(!on)
+    // Out of view, the lead goes to a tab in view waiting for it: a page out
+    // of view runs no periodic round, so it would leave that tab unsynced.
+    if (on && leading && lead) void lead.othersWaiting().then(waiting => (waiting && hidden ? stepDown() : undefined))
   }
+
+  // what the other tabs say (src/synclead.ts)
+  lead?.onMessage((msg: SyncMessage) => {
+    switch (msg.type) {
+      case 'wrote':
+        if (!leading) catchUp(msg.upserts, msg.deletes, msg.taken)
+        return
+      case 'status':
+        if (!leading) publish({ syncInfo: msg.syncInfo, failures: msg.failures })
+        return
+      case 'handoff':
+        if (leading) void takeHandoffs()
+        return
+      case 'ask':
+        if (leading) void answer(msg.rid, msg.op, msg.arg)
+        return
+      case 'answer':
+        asked.get(msg.rid)?.(msg.ok)
+        return
+      case 'want':
+        postStatus()
+        if (leading && hidden) void stepDown()
+        return
+      case 'hello':
+        postStatus()
+        return
+    }
+  })
+  lead?.onLeadChange(on => {
+    if (on) void takeOver()
+  })
 
   return {
     getState: (): EngineState => state,
@@ -1665,7 +2145,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
      * push, and its last confirmed copy of each it already had. A photo swapped
      * out of a piece of clothing waits on both (src/media.ts retireMedia).
      */
-    unconfirmed: (): { ids: ReadonlySet<string>; shadows: Item[] } => ({ ids: new Set(dirty), shadows: [...shadows.values()] }),
+    // a tab that follows does not know: every record counts as unconfirmed there, so nothing is let go on its word
+    unconfirmed: (): { ids: ReadonlySet<string>; shadows: Item[] } => (leading ? { ids: new Set(dirty), shadows: [...shadows.values()] } : { ids: new Set(index.keys()), shadows: [] }),
     /**
      * Whether this device holds exactly this version of a record — the same
      * stamp and, when given, the same owner. A change that says so is this
@@ -1687,6 +2168,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       pollMs: periodic === undefined ? null : live ? LIVE_PERIODIC_MS : PERIODIC_MS,
       /** Ids the next cache write will put or delete. */
       unsaved: [...unsaved].sort(),
+      /** Whether this tab runs the rounds and writes the cache (src/synclead.ts). */
+      leading,
     }),
   }
 }

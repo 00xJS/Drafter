@@ -190,6 +190,15 @@ export function reportRenderError(error: unknown, where?: string): void {
   installed?.capture(error, where)
 }
 
+/**
+ * A failure caught where nobody would see it — this device's saved copy that
+ * would not write, an edit one tab could not hand to another — named by
+ * where it happened ("local cache"). Nothing before installErrorReporting.
+ */
+export function reportError(error: unknown, where: string): void {
+  installed?.capture(error, where)
+}
+
 /** Forget the installed reporter, so a test can install its own. */
 export function resetErrorReporting(): void {
   installed = null

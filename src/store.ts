@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
+import { Capacitor } from '@capacitor/core'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
-import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } from './idb'
+import { clearLocalData, idbGet, idbSet, readCacheSeq, readOutbox, readRecordCache, readRecords, writeHandoffs, writeRecordChanges } from './idb'
+import { browserLeadership } from './synclead'
+import { reportError } from './errorreport'
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mts'
@@ -150,7 +153,15 @@ function engine(): SyncEngine {
       writeSnapshot: record => idbSet('posts', 'all', record),
       clearAll: clearLocalData,
       kv: browserKV,
+      // the tabs of the web app share this cache; one of them syncs (src/synclead.ts)
+      readRecords,
+      readSeq: readCacheSeq,
+      writeHandoffs,
+      readOutbox,
     },
+    // the iOS shell is one page: nothing to agree with
+    leadership: browserLeadership(Capacitor.isNativePlatform()),
+    report: reportError,
   })
   return shared
 }
