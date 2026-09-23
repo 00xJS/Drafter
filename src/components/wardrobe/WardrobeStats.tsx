@@ -3,6 +3,7 @@ import { formatMoney } from '../../bills'
 import { daysAgo, daysBetween, shortDay } from '../../kitchen'
 import { countOf } from '../../people'
 import { useTheme } from '../../theme'
+import { useNow } from '../../useNow'
 import type { Garment, Outfit } from '../../types'
 import { dateKey } from '../../utils'
 import {
@@ -123,7 +124,11 @@ function PieceRow({
  * with the Stats kit (components/stats), which People, Places and Kitchen
  * share.
  */
-export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, onGoDay, onWearToday, now = new Date() }: Props) {
+export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onRetire, onSaveOutfit, onGoDay, onWearToday, now: given }: Props) {
+  // the trend's clock: the app's minute (useNow), unless a test hands one in.
+  // A default read as the stats draw would be kept by the React Compiler.
+  const minute = useNow()
+  const now = given ?? new Date(minute)
   const theme = useTheme()
   const thisYear = Number(ix.dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
