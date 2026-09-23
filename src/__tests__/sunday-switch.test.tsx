@@ -103,7 +103,7 @@ describe('/api/push says whether the host can write the draft at all', () => {
     expect(await (await call('GET')).json()).toMatchObject({ sundayDraft: true, aiConfigured: false })
   })
 
-  it('yes with either key, and never the key itself or whose it is', async () => {
+  it('yes with an NVIDIA key, and never the key itself or whose it is; an Anthropic key alone is no', async () => {
     vi.stubEnv('NVIDIA_API_KEY', 'nvapi-secret-123')
     const body = await (await call('GET')).text()
     expect(JSON.parse(body)).toMatchObject({ aiConfigured: true })
@@ -111,6 +111,8 @@ describe('/api/push says whether the host can write the draft at all', () => {
     expect(body).not.toMatch(/nvidia|anthropic/i)
     vi.stubEnv('NVIDIA_API_KEY', '')
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret')
+    expect((await (await call('GET')).json()).aiConfigured).toBe(false)
+    vi.stubEnv('AI_PROVIDER', 'anthropic')
     expect((await (await call('GET')).json()).aiConfigured).toBe(true)
   })
 

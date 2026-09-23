@@ -1,12 +1,14 @@
 // Shared AI completion used by /api/ai and (later) digest / inbound / MCP.
-// NVIDIA first when keyed; Anthropic as runtime fallback on 429/502.
-// NVIDIA may hold a second key, NVIDIA_API_KEY_2, to spread the load and ride
-// out rate limits (the free tier is about 40 requests a minute per key). Work
-// the server starts by itself (`background`) tries it first, so the owner's
-// own requests keep the main key's quota; a 429 or a 5xx from the key tried
-// first is tried once on the other, on the same model, and so is a key NVIDIA
-// rejects; only then does the Anthropic fallback apply. With the second key
-// unset, all of it is exactly as it was.
+// NVIDIA only: the owner's choice (2026-09-23) is NVIDIA keys and no paid
+// fallback. The Anthropic path stays, but answers only when the host names it
+// with AI_PROVIDER=anthropic; an ANTHROPIC_API_KEY left on the host is unused.
+// NVIDIA takes as many keys as the owner adds — NVIDIA_API_KEY, then
+// NVIDIA_API_KEY_2, NVIDIA_API_KEY_3 and on — to spread the load and ride out
+// rate limits (the free tier is about 40 requests a minute per key). Work the
+// server starts by itself (`background`) starts on the second, so the owner's
+// own requests keep the main key's quota; a 429 or a 5xx from a key is tried
+// on the next, on the same model, and so is a key NVIDIA rejects, while there
+// is time. With one key, all of it is exactly as it was.
 // JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
 // instruction instead (current Claude models accept no temperature at all).
 //
@@ -72,15 +74,15 @@ function modelTrouble(message) {
 }
 
 /**
- * How long one completion may take in all — every model, key and fallback it
- * tries — counted from when the request began. Netlify stops a synchronous
- * function at 60 s, a limit no setting or plan changes; the last five seconds
- * are for the answer and whatever the handler did first. NVIDIA, tried first,
+ * How long one completion may take in all — every model and key it tries —
+ * counted from when the request began. Netlify stops a synchronous function
+ * at 60 s, a limit no setting or plan changes; the last five seconds are for
+ * the answer and whatever the handler did first. NVIDIA, tried first,
  * may use all of it: the reasoning model takes 20 to 60 seconds on a recipe
- * draft (measured on the live site), and a fallback gets only what is left.
+ * draft (measured on the live site), and a further key gets only what is left.
  */
 export const AI_BUDGET_MS = 55_000
-/** No further attempt (the other NVIDIA key, the Anthropic fallback) starts with less than this left. */
+/** No further attempt (the next NVIDIA key) starts with less than this left. */
 export const MIN_ATTEMPT_MS = 5_000
 
 /** The answer for a provider that did not answer inside the budget: a failure like any other, so the app says so. */
@@ -144,42 +146,55 @@ function deadlineOf({ deadline, startedAt, background = false }) {
 
 /**
  * The model each NVIDIA key last answered with, by key name: a key whose
- * account cannot serve a model walks on to the next, and that never moves the
- * other key off the one it serves.
+ * account cannot serve a model walks on to the next, and that never moves
+ * another key off the one it serves.
  */
 const resolvedNvidiaModels = new Map()
 
-/** The main NVIDIA key and the optional second one, by the names they have on the host. */
-const NVIDIA_KEYS = /** @type {const} */ (['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2'])
+/** An NVIDIA key's name on the host: NVIDIA_API_KEY, or NVIDIA_API_KEY_ and a number. Nothing else is read as a key. */
+export const NVIDIA_KEY_NAME = /^NVIDIA_API_KEY(?:_([1-9]\d{0,2}))?$/
+
+/**
+ * The NVIDIA key names the host sets: the main key first, then by number.
+ * @returns {import('./ai.mjs').NvidiaKeyName[]}
+ */
+function nvidiaKeyNames() {
+  /** @param {string} name */
+  const rank = name => Number(NVIDIA_KEY_NAME.exec(name)?.[1] ?? 1)
+  return /** @type {import('./ai.mjs').NvidiaKeyName[]} */ (
+    Object.keys(process.env)
+      .filter(name => NVIDIA_KEY_NAME.test(name) && process.env[name])
+      .sort((a, b) => rank(a) - rank(b) || a.length - b.length)
+  )
+}
 
 /**
  * The NVIDIA keys a request may use, by name, in the order it tries them: the
  * main key first, or for work the server starts by itself (`background`) the
- * second. Only keys that are set, and one value set under both names is one
- * key, so a request never has more than one other key to try. Names, not
- * values: a key goes nowhere but into the request's own header.
+ * second, with the main key last. Only keys that are set, and one value set
+ * under two names is one key. Names, not values: a key goes nowhere but into
+ * the request's own header.
  * @param {{ background?: boolean }} [opts]
  */
 export function nvidiaKeyOrder({ background = false } = {}) {
+  const names = nvidiaKeyNames()
   const seen = new Set()
-  return (background ? [NVIDIA_KEYS[1], NVIDIA_KEYS[0]] : [...NVIDIA_KEYS]).filter(name => {
+  return (background ? [...names.slice(1), ...names.slice(0, 1)] : names).filter(name => {
     const key = process.env[name]
-    if (!key || seen.has(key)) return false
+    if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 }
 
+/**
+ * NVIDIA whenever a key is set, and nothing else unless the host names it:
+ * Anthropic answers only with AI_PROVIDER=anthropic as well as its key.
+ */
 export function resolveProvider() {
   const forced = (process.env.AI_PROVIDER ?? '').trim().toLowerCase()
-  if (forced === 'nvidia' || forced === 'anthropic') {
-    // either NVIDIA key makes NVIDIA configured
-    const keyed = forced === 'nvidia' ? nvidiaKeyOrder().length > 0 : !!process.env.ANTHROPIC_API_KEY
-    return keyed ? forced : null
-  }
-  if (nvidiaKeyOrder().length) return 'nvidia'
-  if (process.env.ANTHROPIC_API_KEY) return 'anthropic'
-  return null
+  if (forced === 'anthropic') return process.env.ANTHROPIC_API_KEY ? 'anthropic' : null
+  return nvidiaKeyOrder().length ? 'nvidia' : null
 }
 
 // A reasoning model's tagged thinking comes out of every answer here, by the
@@ -224,19 +239,19 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
  * unless given), trying the models in turn while the model is the trouble — a
  * 404, or a 400 that names the model or a parameter it lacks — or only
  * `model` when one is given. Answers the completion and the model NVIDIA
- * answered for (null when none would), so a retry on the other key can ask the
+ * answered for (null when none would), so a retry on the next key can ask the
  * same one. A failure carries the status NVIDIA answered (`upstream`), so
  * complete() can tell a rate limit, an outage or a rejected key, which the
- * other key may get past, from anything else. Every model tried shares
+ * next key may get past, from anything else. Every model tried shares
  * `deadline` (AI_BUDGET_MS from now when none is given): past it the call is
  * abandoned as a 504. `reasoning: 'off'` asks a model that has a switch for it
  * (THINKING_SWITCH) to answer without thinking first.
- * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2', model?: string | null }} input
+ * @param {import('./ai.mjs').CompletionInput & { keyName?: import('./ai.mjs').NvidiaKeyName, model?: string | null }} input
  * @returns {Promise<{ model: string | null, result: import('./ai.mjs').Completion }>}
  */
-async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null, deadline = Date.now() + AI_BUDGET_MS }) {
-  // one of the two NVIDIA names, never another variable
-  const apiKey = NVIDIA_KEYS.includes(keyName) ? process.env[keyName] : undefined
+async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning, keyName = nvidiaKeyOrder()[0] ?? 'NVIDIA_API_KEY', model: only = null, deadline = Date.now() + AI_BUDGET_MS }) {
+  // an NVIDIA key's name, never another variable
+  const apiKey = NVIDIA_KEY_NAME.test(keyName) ? process.env[keyName] : undefined
   const messages = []
   if (system) messages.push({ role: 'system', content: system })
   messages.push({ role: 'user', content: prompt })
@@ -308,7 +323,7 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning,
 /**
  * One NVIDIA completion on one key: nvidiaOnKey's answer alone. Admin → Test
  * AI asks each key through it, by name.
- * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2' }} input
+ * @param {import('./ai.mjs').CompletionInput & { keyName?: import('./ai.mjs').NvidiaKeyName }} input
  */
 export async function completeNvidia(input) {
   return (await nvidiaOnKey(input)).result
@@ -395,73 +410,75 @@ async function attempt(run, input) {
   }
 }
 
-/** What the other NVIDIA key may ride out: this key's rate limit, or NVIDIA failing. */
+/** What the next NVIDIA key may ride out: this key's rate limit, or NVIDIA failing. */
 const rideable = r => r.upstream === 429 || (r.upstream ?? 0) >= 500
 
-/** A key NVIDIA would not take: the other key stands in for it. */
+/** A key NVIDIA would not take: the next key stands in for it. */
 const refused = r => r.upstream === 401 || r.upstream === 403
 
 /**
- * Complete a prompt. Prefers NVIDIA when available; on 429/502 retries once via
- * Anthropic when that key is set. `json: true` asks for JSON-shaped output, and
- * `reasoning: 'off'` asks a model that can be told (THINKING_SWITCH) to answer
- * without thinking first. With a second NVIDIA key, `background: true` (work
- * the server starts by itself) tries that key first, and a 429 or a 5xx from
- * the key tried first is tried once on the other, on the same model — as is a
- * key NVIDIA rejects, on whichever model the other key serves — before the
- * Anthropic fallback.
+ * NVIDIA on `keys` in turn. The first key's answer stands unless it is one the
+ * next key can get past — a rate limit or an outage (rideable), or a key NVIDIA
+ * rejects (refused) — and there is time for the next to answer. The next key
+ * asks the model the standing answer asked (a rejected key asked none: the
+ * next goes by its own). Its answer, or its own rate limit or outage, becomes
+ * the standing one; anything else (NVIDIA rejects that key, its account can't
+ * serve the model) is that key's trouble, named in the log, and the standing
+ * answer stays, so a busy key still reads as busy.
+ *
+ * A rejected key is named in the log whichever went first, and the next
+ * answers in its place: a key revoked or mistyped on the host used to fail
+ * every request of the owner's while a good key sat unused beside it. Admin →
+ * Test AI still asks each key on its own.
+ * @param {import('./ai.mjs').CompletionInput} input
+ * @param {import('./ai.mjs').NvidiaKeyName[]} keys
+ * @param {number} until
+ * @returns {Promise<import('./ai.mjs').Completion>}
+ */
+async function nvidiaOnKeys(input, keys, until) {
+  /** @param {import('./ai.mjs').NvidiaKeyName} keyName @param {string | null} model */
+  const ask = (keyName, model) => nvidiaOnKey({ ...input, keyName, model }).catch(err => ({ model: null, result: thrown(err) }))
+  // the key whose answer stands
+  let standing = keys[0]
+  let { model, result } = await ask(standing, null)
+  if (keys.length > 1 && refused(result)) console.error(`ai: ${result.error}`)
+  for (const next of keys.slice(1)) {
+    if (!(rideable(result) || refused(result)) || !roomFor(until)) break
+    const retry = await ask(next, refused(result) ? null : model)
+    if (!retry.result.error) return retry.result
+    if (rideable(retry.result)) {
+      ;({ model, result } = retry)
+      standing = next
+    } else console.error(`ai: ${next} could not take over from ${standing}: ${retry.result.error}`)
+  }
+  return result
+}
+
+/**
+ * Complete a prompt on NVIDIA, or on Anthropic where the host says
+ * AI_PROVIDER=anthropic; one never falls back to the other. `json: true` asks
+ * for JSON-shaped output, and `reasoning: 'off'` asks a model that can be told
+ * (THINKING_SWITCH) to answer without thinking first. With more than one NVIDIA
+ * key, `background: true` (work the server starts by itself) starts on the
+ * second, and a 429 or a 5xx from a key is tried on the next, on the same
+ * model — as is a key NVIDIA rejects, on whichever model the next key serves.
  *
  * All of it runs inside one budget: AI_BUDGET_MS from `startedAt` (pass the
  * request's own start), or a `deadline` of the caller's. A provider still
- * silent when it runs out answers a 504; the other key and the fallback start
- * only with MIN_ATTEMPT_MS left, and get only what is left.
+ * silent when it runs out answers a 504; each further key starts only with
+ * MIN_ATTEMPT_MS left, and gets only what is left.
  */
 export async function complete({ system = '', prompt, maxTokens = 2048, json = false, reasoning, background = false, startedAt, deadline }) {
   const primary = resolveProvider()
   if (!primary) {
     return {
       status: 501,
-      error: 'AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.',
+      error: 'AI is not configured on this site: set NVIDIA_API_KEY in the host environment.',
     }
   }
 
   const until = deadlineOf({ deadline, startedAt, background })
   const input = { system, prompt, maxTokens, json, reasoning, deadline: until }
-  let result
-  if (primary === 'nvidia') {
-    const [first, other] = nvidiaKeyOrder({ background })
-    const tried = await nvidiaOnKey({ ...input, keyName: first }).catch(err => ({ model: null, result: thrown(err) }))
-    result = tried.result
-    // With two keys a rejected one is named in the log, whichever went first,
-    // and the other answers in its place: a key revoked or mistyped on the
-    // host used to fail every request of the owner's while a good key sat
-    // unused beside it. Admin → Test AI still asks each key on its own.
-    if (other && refused(result)) console.error(`ai: ${result.error}`)
-    // once, and only for what the other key can get past, asking the model
-    // the first key asked (a rejected key asked none: the other goes by its
-    // own) — and only while there is time for it to answer
-    if (other && (rideable(result) || refused(result)) && roomFor(until)) {
-      const model = refused(result) ? null : tried.model
-      const retry = (await nvidiaOnKey({ ...input, keyName: other, model }).catch(err => ({ model: null, result: thrown(err) }))).result
-      // the other key's answer, or its own rate limit or outage. Anything else
-      // (NVIDIA rejects that key, its account can't serve the model, no answer
-      // at all) is that key's trouble: the first key's answer stands, so a
-      // busy key still reads as busy, and the log says which key it was
-      if (!retry.error || rideable(retry)) result = retry
-      else console.error(`ai: ${other} could not take over from ${first}: ${retry.error}`)
-    }
-  } else {
-    result = await attempt(completeAnthropic, input)
-  }
-
-  const retryable = result.status === 429 || result.status === 502
-  if (retryable && primary === 'nvidia' && process.env.ANTHROPIC_API_KEY && roomFor(until)) {
-    try {
-      const fallback = await completeAnthropic(input)
-      if (!fallback.error) return fallback
-    } catch {
-      /* keep original error */
-    }
-  }
-  return result
+  if (primary === 'anthropic') return attempt(completeAnthropic, input)
+  return nvidiaOnKeys(input, nvidiaKeyOrder({ background }), until)
 }

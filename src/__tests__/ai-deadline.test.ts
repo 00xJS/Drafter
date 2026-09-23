@@ -8,9 +8,10 @@ import aiFunction from '../../netlify/functions/ai.mjs'
 // held the function until it was killed, and the app got the platform's error
 // page instead of a reason. Every attempt now runs against one budget, counted
 // from when the request began: past it the call is abandoned as a 504 the app
-// shows, and the other key or the Anthropic fallback only get what is left.
-// NVIDIA is a fetch stub that answers each call as a test plans it; the
-// Anthropic SDK is replaced.
+// shows, and a further NVIDIA key only gets what is left. There is no
+// Anthropic fallback; Anthropic answers only where AI_PROVIDER names it, and
+// is held to the same budget. NVIDIA is a fetch stub that answers each call as
+// a test plans it; the Anthropic SDK is replaced.
 
 const claude = vi.hoisted(() => ({ asked: 0, hang: false, signals: [] as (AbortSignal | undefined)[] }))
 vi.mock('@anthropic-ai/sdk', () => {
@@ -159,9 +160,18 @@ describe('what is left of it', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
   })
 
-  it('goes to the Anthropic fallback, whose request is aborted when the budget runs out', async () => {
+  it('is never Claude’s after NVIDIA fails, however much of it is left', async () => {
     fakeClock()
     plans.main = [{ after: 3_000, status: 503 }]
+    const answer = complete({ prompt: 'x' })
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(await answer).toMatchObject({ status: 502, upstream: 503 })
+    expect(claude.asked).toBe(0)
+  })
+
+  it('holds Anthropic, where AI_PROVIDER names it, to the same budget: its request is aborted when it runs out', async () => {
+    vi.stubEnv('AI_PROVIDER', 'anthropic')
+    fakeClock()
     claude.hang = true
     const answer = complete({ prompt: 'x' })
     const state = watch(answer)
@@ -169,26 +179,9 @@ describe('what is left of it', () => {
     expect(claude.asked).toBe(1)
     expect(state.done).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
-    // the fallback did not answer either, so NVIDIA's own failure stands
-    expect(await answer).toMatchObject({ status: 502, upstream: 503 })
+    expect(await answer).toEqual({ status: 504, error: 'Anthropic did not answer in time — try again in a moment.' })
     expect(claude.signals[0]?.aborted).toBe(true)
-  })
-
-  it('and the fallback answers when it can', async () => {
-    fakeClock()
-    plans.main = [{ after: 3_000, status: 503 }]
-    const answer = complete({ prompt: 'x' })
-    await vi.advanceTimersByTimeAsync(3_000)
-    expect(await answer).toEqual({ text: 'from Claude', provider: 'anthropic' })
-  })
-
-  it('is not enough for the fallback once less than MIN_ATTEMPT_MS remains', async () => {
-    fakeClock()
-    plans.main = [{ after: AI_BUDGET_MS - MIN_ATTEMPT_MS + 1, status: 503 }]
-    const answer = complete({ prompt: 'x' })
-    await vi.advanceTimersByTimeAsync(AI_BUDGET_MS)
-    expect(await answer).toMatchObject({ status: 502, upstream: 503 })
-    expect(claude.asked).toBe(0)
+    expect(asked).toEqual([])
   })
 
   it('is nothing at all after NVIDIA hangs: the 504 comes back, and Claude is never asked', async () => {

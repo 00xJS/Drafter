@@ -146,9 +146,11 @@ function shortEndpoint(sub) {
 
 function integrationStatus(origin) {
   const vapidMissing = [!process.env.VAPID_PUBLIC_KEY && 'VAPID_PUBLIC_KEY', !process.env.VAPID_PRIVATE_KEY && 'VAPID_PRIVATE_KEY'].filter(Boolean)
-  // either NVIDIA key counts; how many are set is said, never what they are
+  // any NVIDIA key counts; how many are set is said, never what they are.
+  // Anthropic only where the host names it (AI_PROVIDER=anthropic).
   const nvidiaKeys = nvidiaKeyOrder().length
-  const aiMissing = [!nvidiaKeys && !process.env.ANTHROPIC_API_KEY && 'NVIDIA_API_KEY or ANTHROPIC_API_KEY'].filter(Boolean)
+  const provider = resolveProvider()
+  const aiMissing = [!provider && 'NVIDIA_API_KEY'].filter(Boolean)
   return {
     google: {
       configured: googleConfigured(),
@@ -169,11 +171,11 @@ function integrationStatus(origin) {
       missing: missingApnsEnv(),
     },
     ai: {
-      configured: !!(nvidiaKeys || process.env.ANTHROPIC_API_KEY),
+      configured: !!provider,
       missing: aiMissing,
-      nvidia: nvidiaKeys > 0,
+      nvidia: provider === 'nvidia',
       nvidiaKeys,
-      anthropic: !!process.env.ANTHROPIC_API_KEY,
+      anthropic: provider === 'anthropic',
     },
     github: {
       configured: !!process.env.GITHUB_TOKEN,
@@ -430,10 +432,10 @@ const handler = async req => {
         const r = await run().catch(e => /** @type {import('./lib/ai.mjs').Completion} */ ({ error: e?.message ?? 'AI call threw' }))
         return { r, latencyMs: Date.now() - started }
       }
-      // With two NVIDIA keys each is asked on its own as well: one goes first
-      // only for work nobody watches (Sunday's draft, email-in), and a request
-      // the other key answers would never show that one is rejected. By name,
-      // never by value.
+      // With more than one NVIDIA key each is asked on its own as well: the
+      // second goes first only for work nobody watches (Sunday's draft,
+      // email-in), and a request another key answers would never show that one
+      // is rejected. By name, never by value.
       const each = resolveProvider() === 'nvidia' && nvidiaKeyOrder().length > 1 ? nvidiaKeyOrder() : []
       const [all, ...keys] = await Promise.all([
         timed(() => complete({ prompt, maxTokens: 16 })),

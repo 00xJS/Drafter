@@ -408,7 +408,21 @@ describe('Admin → status counts either NVIDIA key, and names neither', () => {
     expect((await aiStatus()).ai).toMatchObject({ nvidiaKeys: 1 })
     vi.stubEnv('NVIDIA_API_KEY', '')
     vi.stubEnv('NVIDIA_API_KEY_2', '')
-    expect((await aiStatus()).ai).toEqual({ configured: false, missing: ['NVIDIA_API_KEY or ANTHROPIC_API_KEY'], nvidia: false, nvidiaKeys: 0, anthropic: false })
+    expect((await aiStatus()).ai).toEqual({ configured: false, missing: ['NVIDIA_API_KEY'], nvidia: false, nvidiaKeys: 0, anthropic: false })
+  })
+
+  it('counts a third key and on, and an Anthropic key only where AI_PROVIDER names it', async () => {
+    vi.stubEnv('NVIDIA_API_KEY', 'nvapi-main-secret')
+    vi.stubEnv('NVIDIA_API_KEY_2', 'nvapi-second-secret')
+    vi.stubEnv('NVIDIA_API_KEY_3', 'nvapi-third-secret')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret')
+    const three = await aiStatus()
+    expect(three.ai).toEqual({ configured: true, missing: [], nvidia: true, nvidiaKeys: 3, anthropic: false })
+    expect(three.text).not.toMatch(/nvapi-(main|second|third)-secret|sk-ant-secret/)
+    for (const name of ['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'NVIDIA_API_KEY_3']) vi.stubEnv(name, '')
+    expect((await aiStatus()).ai).toMatchObject({ configured: false, missing: ['NVIDIA_API_KEY'], anthropic: false })
+    vi.stubEnv('AI_PROVIDER', 'anthropic')
+    expect((await aiStatus()).ai).toEqual({ configured: true, missing: [], nvidia: false, nvidiaKeys: 0, anthropic: true })
   })
 })
 

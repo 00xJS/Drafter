@@ -807,16 +807,15 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
 
               <HealthCard title="AI assist" piece={status.ai}>
                 <p className="field-hint">
-                  The ✨ features (break a task into steps, suggest tags, refine a description) run through the site's server-side proxy — configure{' '}
-                  <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) or <code>ANTHROPIC_API_KEY</code> in the host environment (Netlify), and optionally a second NVIDIA
-                  key, <code>NVIDIA_API_KEY_2</code>, which scheduled work uses first; with two, Test AI asks each key on its own as well. No key is ever stored in the
-                  browser.
+                  The ✨ features (break a task into steps, suggest tags, refine a description) run through the site's server-side proxy on NVIDIA — set{' '}
+                  <code>NVIDIA_API_KEY</code> (free from build.nvidia.com) in the host environment (Netlify), and as many more keys as you like as{' '}
+                  <code>NVIDIA_API_KEY_2</code>, <code>NVIDIA_API_KEY_3</code> and on: a key that is busy or rejected hands the request to the next, scheduled work
+                  starts on the second, and Test AI asks each key on its own as well. No key is ever stored in the browser.
                   {status.ai.configured && (
                     <>
                       {' '}
-                      Currently using {status.ai.nvidia ? (status.ai.nvidiaKeys === 2 ? 'NVIDIA (two keys)' : 'NVIDIA') : null}
-                      {status.ai.nvidia && status.ai.anthropic ? ' (Anthropic also set)' : null}
-                      {!status.ai.nvidia && status.ai.anthropic ? 'Anthropic' : null}.
+                      Currently using{' '}
+                      {status.ai.anthropic ? 'Anthropic (AI_PROVIDER=anthropic)' : (status.ai.nvidiaKeys ?? 0) > 1 ? `NVIDIA (${status.ai.nvidiaKeys} keys)` : 'NVIDIA'}.
                     </>
                   )}
                 </p>

@@ -3,15 +3,16 @@ import { complete, nvidiaKeyOrder, resolveProvider } from '../../netlify/functio
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import aiFunction from '../../netlify/functions/ai.mjs'
 
-// An optional second NVIDIA key, NVIDIA_API_KEY_2, spreads the load: the free
-// tier is about 40 requests a minute per key. Work the server starts by itself
-// (`background`: Sunday's draft, email-in's triage) tries it first, so the
-// owner's own requests keep the main key's quota; a 429 or a 5xx from the key
-// tried first is tried once on the other, on the same model, never more, and
-// so is a key NVIDIA rejects; then the Anthropic fallback applies as before.
-// With the second key unset, nothing changes. NVIDIA is a fetch stub that
-// answers each key as a test says and records the key each call carried; the
-// Anthropic SDK is replaced.
+// More NVIDIA keys — NVIDIA_API_KEY_2, NVIDIA_API_KEY_3 and on — spread the
+// load: the free tier is about 40 requests a minute per key, and the owner can
+// get as many keys as they like. Work the server starts by itself
+// (`background`: Sunday's draft, email-in's triage) starts on the second, so
+// the owner's own requests keep the main key's quota; a 429 or a 5xx from a
+// key is tried on the next, on the same model, once per key, and so is a key
+// NVIDIA rejects. There is no Anthropic fallback: NVIDIA keys only, whatever
+// else the host has. With one key, nothing changes. NVIDIA is a fetch stub
+// that answers each key as a test says and records the key each call carried;
+// the Anthropic SDK is replaced, to count that it is never asked.
 
 const claude = vi.hoisted(() => ({ asked: 0 }))
 vi.mock('@anthropic-ai/sdk', () => {
@@ -34,8 +35,9 @@ const SUPABASE = 'https://db.example.test'
 const NVIDIA = 'https://integrate.api.nvidia.com/v1/chat/completions'
 const MAIN = 'nvapi-main-key-0000'
 const SECOND = 'nvapi-second-key-1111'
+const THIRD = 'nvapi-third-key-2222'
 
-type Key = 'main' | 'second'
+type Key = 'main' | 'second' | 'third'
 /** Each NVIDIA call: the key it carried, the model it asked for and where it went. */
 let asked: { key: Key; model: string; url: string }[]
 /** What NVIDIA answers each key, call by call; 200 once a key's list runs out, and 0 for no answer at all. */
@@ -48,13 +50,14 @@ beforeEach(() => {
   vi.stubEnv('SUPABASE_ANON_KEY', 'anon-key')
   vi.stubEnv('NVIDIA_API_KEY', MAIN)
   vi.stubEnv('NVIDIA_API_KEY_2', SECOND)
+  vi.stubEnv('NVIDIA_API_KEY_3', '')
   vi.stubEnv('ANTHROPIC_API_KEY', '')
   vi.stubEnv('AI_PROVIDER', '')
   vi.stubEnv('NVIDIA_MODEL', '')
   claude.asked = 0
   asked = []
-  answers = { main: [], second: [] }
-  serves = { main: () => true, second: () => true }
+  answers = { main: [], second: [], third: [] }
+  serves = { main: () => true, second: () => true, third: () => true }
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,8 +68,8 @@ beforeEach(() => {
       }
       if (url === NVIDIA) {
         const bearer = new Headers(init?.headers).get('authorization')
-        const key: Key | null = bearer === `Bearer ${MAIN}` ? 'main' : bearer === `Bearer ${SECOND}` ? 'second' : null
-        if (!key) throw new Error('NVIDIA was asked with neither key')
+        const key: Key | null = bearer === `Bearer ${MAIN}` ? 'main' : bearer === `Bearer ${SECOND}` ? 'second' : bearer === `Bearer ${THIRD}` ? 'third' : null
+        if (!key) throw new Error('NVIDIA was asked with none of the keys')
         const model: string = JSON.parse(String(init?.body)).model
         asked.push({ key, model, url })
         if (!serves[key](model)) return Response.json({ error: { message: `Function '${model}': Not found for account` } }, { status: 404 })
@@ -107,11 +110,11 @@ describe('with NVIDIA_API_KEY_2 unset, nothing changes', () => {
     expect(keys()).toEqual(['main', 'main'])
   })
 
-  it('tries no other key on a 429: Claude, when it is set, is the one backup, as before', async () => {
+  it('tries no other key on a 429, and never Claude, even with a Claude key on the host', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
     answers.main = [429]
-    expect(await complete({ prompt: 'x', background: true })).toEqual({ text: 'from Claude', provider: 'anthropic' })
-    expect([keys(), claude.asked]).toEqual([['main'], 1])
+    expect(await complete({ prompt: 'x', background: true })).toMatchObject({ status: 429, upstream: 429 })
+    expect([keys(), claude.asked]).toEqual([['main'], 0])
   })
 
   it('and without Claude answers NVIDIA’s 429, as before', async () => {
@@ -152,12 +155,12 @@ describe('with NVIDIA_API_KEY_2 set', () => {
     expect(keys()).toEqual(['main', 'second'])
   })
 
-  it('then the Anthropic fallback applies, as before', async () => {
+  it('and no Anthropic fallback after them, a Claude key on the host or not', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
     answers.main = [503]
     answers.second = [503]
-    expect(await complete({ prompt: 'x' })).toEqual({ text: 'from Claude', provider: 'anthropic' })
-    expect([keys(), claude.asked]).toEqual([['main', 'second'], 1])
+    expect(await complete({ prompt: 'x' })).toMatchObject({ status: 502, upstream: 503 })
+    expect([keys(), claude.asked]).toEqual([['main', 'second'], 0])
   })
 
   it('a key NVIDIA rejects is named in the log, and the other key answers in its place, whichever went first', async () => {
@@ -193,17 +196,18 @@ describe('with NVIDIA_API_KEY_2 set', () => {
     expect(JSON.stringify(spy.mock.calls)).not.toMatch(new RegExp(`${MAIN}|${SECOND}`))
   })
 
-  it('so does a 5xx whose retry gets no answer at all, and then the Anthropic fallback applies as ever', async () => {
+  it('so does a 5xx whose retry gets no answer at all, a Claude key on the host or not', async () => {
     const spy = logs()
     answers.main = [503]
     answers.second = [0]
     // plain words for the page; NVIDIA's own and the thrown error for the log
-    expect(await complete({ prompt: 'x' })).toEqual({ status: 502, upstream: 503, error: 'NVIDIA’s service had a problem (HTTP 503) — try again in a moment.' })
+    const outage = { status: 502, upstream: 503, error: 'NVIDIA’s service had a problem (HTTP 503) — try again in a moment.' }
+    expect(await complete({ prompt: 'x' })).toEqual(outage)
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
     answers.main = [503]
     answers.second = [0]
-    expect(await complete({ prompt: 'x' })).toEqual({ text: 'from Claude', provider: 'anthropic' })
-    expect([keys(), claude.asked]).toEqual([['main', 'second', 'main', 'second'], 1])
+    expect(await complete({ prompt: 'x' })).toEqual(outage)
+    expect([keys(), claude.asked]).toEqual([['main', 'second', 'main', 'second'], 0])
     const once = [
       expect.stringMatching(/^ai: NVIDIA answered \S+ on NVIDIA_API_KEY with HTTP 503: HTTP 503$/),
       'ai: the provider call threw: fetch failed',
@@ -330,5 +334,66 @@ describe('the model, key by key', () => {
       expect.stringMatching(/^ai: no NVIDIA model answered on NVIDIA_API_KEY_2\. Tried: \S+ \(404\)\. The models this account can use are listed at /),
       'ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: None of NVIDIA’s models would answer for this key — the site owner can set NVIDIA_MODEL on the host to one the account can use.',
     ])
+  })
+})
+
+describe('as many keys as the host sets', () => {
+  beforeEach(() => {
+    vi.stubEnv('NVIDIA_API_KEY_3', THIRD)
+  })
+
+  it('takes NVIDIA_API_KEY_3 and on, main key first and then by number; background work starts on the second, the main key last', () => {
+    vi.stubEnv('NVIDIA_API_KEY_10', 'nvapi-tenth-key-9999')
+    // not a key's name: nothing else is read as a key
+    vi.stubEnv('NVIDIA_API_KEY_0', 'nvapi-zero')
+    vi.stubEnv('NVIDIA_API_KEY_X', 'nvapi-x')
+    vi.stubEnv('NVIDIA_API_KEYS', 'nvapi-plural')
+    expect(nvidiaKeyOrder()).toEqual(['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'NVIDIA_API_KEY_3', 'NVIDIA_API_KEY_10'])
+    expect(nvidiaKeyOrder({ background: true })).toEqual(['NVIDIA_API_KEY_2', 'NVIDIA_API_KEY_3', 'NVIDIA_API_KEY_10', 'NVIDIA_API_KEY'])
+  })
+
+  it('counts one value under two names as one key', () => {
+    vi.stubEnv('NVIDIA_API_KEY_4', SECOND)
+    expect(nvidiaKeyOrder()).toEqual(['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'NVIDIA_API_KEY_3'])
+  })
+
+  it('walks on through every key while each is busy: two rate limits, and the third answers, on the same model', async () => {
+    answers.main = [429]
+    answers.second = [429]
+    expect(await complete({ prompt: 'x' })).toEqual({ text: 'from the third key', provider: 'nvidia' })
+    expect(keys()).toEqual(['main', 'second', 'third'])
+    expect(new Set(asked.map(a => a.model)).size).toBe(1)
+  })
+
+  it('passes over a rejected key in the middle, and names it in the log', async () => {
+    const spy = logs()
+    answers.main = [429]
+    answers.second = [401]
+    expect(await complete({ prompt: 'x' })).toEqual({ text: 'from the third key', provider: 'nvidia' })
+    expect(keys()).toEqual(['main', 'second', 'third'])
+    expect(logged(spy)).toEqual(['ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: NVIDIA rejected the API key — check NVIDIA_API_KEY_2 on the host.'])
+  })
+
+  it('with every key busy answers the last one’s 429, after one call on each', async () => {
+    answers.main = [429]
+    answers.second = [429]
+    answers.third = [429]
+    expect(await complete({ prompt: 'x' })).toMatchObject({ status: 429, upstream: 429, error: expect.stringMatching(/^NVIDIA rate limit hit/) })
+    expect(keys()).toEqual(['main', 'second', 'third'])
+  })
+
+  it('stops at an answer no other key can change, as with two', async () => {
+    answers.main = [400]
+    expect(await complete({ prompt: 'x' })).toMatchObject({ status: 502, upstream: 400 })
+    expect(keys()).toEqual(['main'])
+  })
+
+  it('is NVIDIA whatever else is set: Claude only where AI_PROVIDER names it', () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
+    expect(resolveProvider()).toBe('nvidia')
+    for (const name of ['NVIDIA_API_KEY', 'NVIDIA_API_KEY_2', 'NVIDIA_API_KEY_3']) vi.stubEnv(name, '')
+    expect(resolveProvider()).toBe(null)
+    vi.stubEnv('AI_PROVIDER', 'anthropic')
+    expect(resolveProvider()).toBe('anthropic')
   })
 })

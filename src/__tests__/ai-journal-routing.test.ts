@@ -87,10 +87,12 @@ describe('/api/ai: a question with the journal in it follows the normal provider
     expect(claude.asked).toBe(0)
   })
 
-  it('tries Claude once when NVIDIA is rate-limited and a Claude key is set', async () => {
+  it('never tries Claude when NVIDIA is rate-limited, a Claude key set or not: NVIDIA keys only', async () => {
     nvidiaStatus = 429
-    expect(await (await askAi({ prompt: WITH_JOURNAL, journal: true })).json()).toEqual({ text: 'from Claude', provider: 'anthropic' })
-    expect([nvidiaPrompts.length, claude.asked]).toEqual([1, 1])
+    const res = await askAi({ prompt: WITH_JOURNAL, journal: true })
+    expect(res.status).toBe(429)
+    expect(await res.json()).toEqual({ error: expect.stringMatching(/^NVIDIA rate limit hit/) })
+    expect([nvidiaPrompts.length, claude.asked]).toEqual([1, 0])
   })
 
   it('without a Claude key answers with NVIDIA’s own error, and no code of its own', async () => {
@@ -102,10 +104,11 @@ describe('/api/ai: a question with the journal in it follows the normal provider
     expect(claude.asked).toBe(0)
   })
 
-  it('goes to Claude when Claude is the only key, as any request does', async () => {
+  it('is off when Claude’s is the only key: a Claude key is used only where AI_PROVIDER names it', async () => {
     vi.stubEnv('NVIDIA_API_KEY', '')
-    expect(await (await askAi({ prompt: WITH_JOURNAL, journal: true })).json()).toEqual({ text: 'from Claude', provider: 'anthropic' })
-    expect(nvidiaPrompts).toEqual([])
+    const res = await askAi({ prompt: WITH_JOURNAL, journal: true })
+    expect(res.status).toBe(501)
+    expect([nvidiaPrompts, claude.asked]).toEqual([[], 0])
   })
 
   it('keeps AI_PROVIDER’s order: anthropic goes first and never falls back to NVIDIA', async () => {
@@ -119,7 +122,7 @@ describe('/api/ai: a question with the journal in it follows the normal provider
     vi.stubEnv('ANTHROPIC_API_KEY', '')
     const res = await askAi({ prompt: WITH_JOURNAL, journal: true })
     expect(res.status).toBe(501)
-    expect(await res.json()).toEqual({ error: 'AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.' })
+    expect(await res.json()).toEqual({ error: 'AI is not configured on this site: set NVIDIA_API_KEY in the host environment.' })
   })
 })
 

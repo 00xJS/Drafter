@@ -35,7 +35,7 @@ const handler = async req => {
 
   if (!resolveProvider()) {
     return Response.json(
-      { error: 'AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.' },
+      { error: 'AI is not configured on this site: set NVIDIA_API_KEY in the host environment.' },
       { status: 501 },
     )
   }

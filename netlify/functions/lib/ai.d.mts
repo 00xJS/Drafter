@@ -21,7 +21,7 @@ export interface CompletionInput {
 
 /** How long one completion may take in all, from when its request began (ms). */
 export declare const AI_BUDGET_MS: number
-/** No further attempt (the other NVIDIA key, the Anthropic fallback) starts with less than this left (ms). */
+/** No further attempt (the next NVIDIA key) starts with less than this left (ms). */
 export declare const MIN_ATTEMPT_MS: number
 
 /**
@@ -33,10 +33,13 @@ export type Completion =
   | { text: string; provider: 'nvidia' | 'anthropic'; status?: undefined; error?: undefined; upstream?: undefined }
   | { status: number; error: string; upstream?: number; text?: undefined; provider?: undefined }
 
-/** The host's NVIDIA keys, by name. */
-export type NvidiaKeyName = 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2'
+/** The pattern an NVIDIA key's name matches: NVIDIA_API_KEY, or NVIDIA_API_KEY_ and a number. */
+export declare const NVIDIA_KEY_NAME: RegExp
 
-/** The NVIDIA keys that are set, in the order a request tries them: the main key first, or for background work the second. */
+/** An NVIDIA key, by its name on the host: NVIDIA_API_KEY, NVIDIA_API_KEY_2, NVIDIA_API_KEY_3 and on. */
+export type NvidiaKeyName = `NVIDIA_API_KEY` | `NVIDIA_API_KEY_${number}`
+
+/** The NVIDIA keys that are set, in the order a request tries them: the main key first, or for background work the second and the main key last. */
 export function nvidiaKeyOrder(opts?: { background?: boolean }): NvidiaKeyName[]
 
 export function resolveProvider(): 'nvidia' | 'anthropic' | null
