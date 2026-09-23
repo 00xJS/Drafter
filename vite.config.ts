@@ -95,18 +95,43 @@ const cutoutRuntime = (): Plugin => {
   }
 }
 
+/**
+ * The React Compiler memoises the app's components and hooks as it builds them,
+ * and eslint-plugin-react-hooks reports what it would refuse (a component it
+ * cannot prove safe is left as written). The React plugin keeps it out of
+ * server-side transforms, which is how vitest loads modules: the unit tests
+ * run the components as written, and only the browser tests (npm run e2e) run
+ * what the compiler made of them.
+ */
+const withCompiler = {
+  babel: { plugins: ['babel-plugin-react-compiler'] },
+} satisfies Parameters<typeof react>[0]
+
+/**
+ * Lazy chunks that only work online, so they are kept out of the precache
+ * (the budget in scripts/check-precache.mjs, which keeps the same list): Admin,
+ * whose every panel reads or writes through /api/admin, and the garment
+ * cut-out's web runtime, whose WASM and model come from the network on first
+ * use anyway (cutout/ is never precached). Each is fetched when first opened.
+ */
+const ONLINE_ONLY_CHUNKS = ['Admin', 'cutoutweb']
+
+/** The assistant's own modules: the lazy views load them, the launch never does (see chunkFileNames below). */
+const ASSISTANT_MODULE = /\/src\/(ai|ask|chatactions|recipefill|recipeimport)\.ts$/
+
 export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees and carry their own copy of
-    // every test; a run from the checkout must not collect theirs too
-    exclude: [...configDefaults.exclude, '.claude/**', 'dist/**'],
+    // every test; a run from the checkout must not collect theirs too. e2e/ is
+    // Playwright's (npm run e2e), in a browser, not vitest's.
+    exclude: [...configDefaults.exclude, '.claude/**', 'dist/**', 'e2e/**'],
     // the build host carries the site's real environment (Netlify runs `npm run
     // check` with BACKUP_PASSPHRASE set); setup.ts decides what a test sees
     // rather than letting it inherit whatever the machine happens to hold
     setupFiles: ['./src/__tests__/setup.ts'],
   },
   plugins: [
-    react(),
+    react(withCompiler),
     cutoutRuntime(),
     buildStamp(),
     appleSiteAssociation(),
@@ -114,7 +139,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       // the app registers the worker itself and watches for deploys (src/appupdate.ts)
       injectRegister: false,
-      includeAssets: ['icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
+      // Only the favicon is precached. The PNG icons (200 KiB of the budget)
+      // are read when the app is installed or added to a Home Screen, which
+      // happens online; an offline launch never asks for them.
+      includeAssets: ['icon.svg'],
+      includeManifestIcons: false,
       manifest: {
         name: 'Drafter',
         short_name: 'Drafter',
@@ -157,8 +186,19 @@ export default defineConfig({
         // first use into their own cache (src/cutoutassets.ts): precached, every
         // app update would download them. workbox's only default ignore is the
         // node_modules one, so it is kept.
-        globIgnores: ['**/node_modules/**/*', 'cutout/**'],
+        //
+        // Chunks that only work online are not precached either: each is
+        // fetched the first time it is used, into a cache of its own, below.
+        // scripts/check-precache.mjs holds the same list, and fails the build
+        // if one is loaded at launch or imported by anything precached.
+        globIgnores: ['**/node_modules/**/*', 'cutout/**', ...ONLINE_ONLY_CHUNKS.map(name => `assets/${name}-*.js`)],
         runtimeCaching: [
+          {
+            // hashed, so a copy never goes stale: a new deploy is a new name
+            urlPattern: new RegExp(`/assets/(${ONLINE_ONLY_CHUNKS.join('|')})-[\\w-]+\\.js$`),
+            handler: 'CacheFirst',
+            options: { cacheName: 'drafter-online-only', expiration: { maxEntries: 8 } },
+          },
           {
             // the OAuth metadata and endpoints are functions, never the app shell;
             // /oauth/authorize stays in: consent happens inside the app
@@ -186,14 +226,22 @@ export default defineConfig({
           // stable vendor chunks survive app-code deploys in the service-worker cache
           if (id.includes('node_modules/react-dom/') || /node_modules\/react\//.test(id)) return 'vendor-react'
           if (id.includes('node_modules/@supabase/')) return 'vendor-supabase'
-          // The assistant's prompts and parsers, and the retrieval Ask Drafter
-          // runs over the device. Nothing on Today touches either: every view
-          // that does is lazy. But ten of those lazy views share them, and a
-          // module shared by several async chunks is hoisted into their common
-          // parent — the shell — so first paint was paying for both.
-          if (/\/src\/(ai|ask)\.ts$/.test(id)) return 'assistant'
           return undefined
         },
+        // The assistant's code — its prompts and parsers (ai.ts), the retrieval
+        // Ask runs over the device (ask.ts), the chat's actions and the recipe
+        // fill and import — is loaded by a dozen lazy views and by nothing the
+        // launch draws. A chunk that is the assistant's (its entry is one of
+        // those modules, or it has no entry and holds one) is NAMED for it, so
+        // scripts/check-precache.mjs can hold it out of the launch. It is not a
+        // manualChunks rule: that form moves every module the assistant imports
+        // into the named chunk too (the API and Supabase clients, the schema,
+        // the kitchen…), and the entry, which needs those, then loaded the
+        // whole assistant first — what 3d22024 shipped.
+        chunkFileNames: chunk =>
+          (chunk.facadeModuleId ? ASSISTANT_MODULE.test(chunk.facadeModuleId) : chunk.moduleIds.some(id => ASSISTANT_MODULE.test(id)))
+            ? 'assets/assistant-[hash].js'
+            : 'assets/[name]-[hash].js',
       },
     },
   },

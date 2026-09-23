@@ -30,26 +30,19 @@ export function faceTint(id: string | undefined): string {
  * from the media cache on every later paint.
  */
 function usePhoto(id: string | null | undefined): string | null {
-  const [url, setUrl] = useState<string | null>(() => (id ? peekMediaURL(id) : null))
+  const [fetched, setFetched] = useState<{ id: string; url: string | null } | null>(null)
   useEffect(() => {
-    if (!id) {
-      setUrl(null)
-      return
-    }
-    const seen = peekMediaURL(id)
-    if (seen) {
-      setUrl(seen)
-      return
-    }
+    if (!id || peekMediaURL(id)) return
     let live = true
-    void mediaURL(id).then(u => {
-      if (live) setUrl(u)
+    void mediaURL(id).then(url => {
+      if (live) setFetched({ id, url })
     })
     return () => {
       live = false
     }
   }, [id])
-  return url
+  if (!id) return null
+  return peekMediaURL(id) ?? (fetched?.id === id ? fetched.url : null)
 }
 
 export function MemberFace({

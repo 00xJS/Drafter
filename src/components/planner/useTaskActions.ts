@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { STATUS_META, type Project, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import { newerStamp, nextOccurrence } from '../../itemops'
 import { parseGithubUrl, setIssueState } from '../../github'
-import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubsync'
+import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubboard'
 import { fmtDateTime, uid } from '../../utils'
 import { inInbox } from '../../taskutils'
-import { buildCapturedTask, parseCapture, quickCaptureFields } from '../../ai'
+import { buildCapturedTask, quickCaptureFields } from '../../capture'
 import { haptic } from '../../native'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
@@ -29,7 +29,9 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
   // the latest live tasks, for work that finishes after a later render (the
   // palette's capture enrichment must see an Undo that happened meanwhile)
   const tasksRef = useRef(store.tasks)
-  tasksRef.current = store.tasks
+  useLayoutEffect(() => {
+    tasksRef.current = store.tasks
+  })
 
   /**
    * Shift+Enter in the palette: file the line as a task now, no editor. The
@@ -49,7 +51,11 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     const first = buildCapturedTask(quickCaptureFields(line, now), lookup, { id, now })
     store.upsert(first)
     showToast(inInbox(first) ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
-    void parseCapture(line, { now, personNames: store.people.map(p => p.name) })
+    const personNames = store.people.map(p => p.name)
+    // the assistant's code (ai.ts) is fetched here, by the first capture that
+    // asks the model, never with the shell
+    void import('../../ai')
+      .then(ai => ai.parseCapture(line, { now, personNames }))
       .then(parsed => {
         const cur = tasksRef.current.find(t => t.id === id)
         if (!cur || cur.updatedAt !== first.updatedAt) return

@@ -28,18 +28,19 @@ import {
   Wear,
 } from '../types'
 import { mealLabel, platesOn, tonightDinner } from '../kitchen'
-import { JournalCard } from './Journal'
+import { JournalCard } from './JournalCard'
 import { newerStamp } from '../itemops'
 import { snoozedIds } from '../snooze'
 import { NEVER_NUDGES, SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { defaultReviewAnchor, doneByWeek, isVisit, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
-import { eventStartDate } from '../calendars'
+import { eventStartDate } from '../calendarstate'
 import { workDaysOf } from '../calgrid'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
 import { useDayKey } from '../useDayKey'
+import { useNow } from '../useNow'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
 import { bucketByDue, focusTasks } from '../../shared/today.mjs'
 import type { MealIdea } from '../../shared/weekplan.mjs'
@@ -690,6 +691,8 @@ export function Today({
    * on the day before.
    */
   const todayKey = useDayKey()
+  // what is still coming up moves on as the hours pass, not only when the list changes
+  const now = useNow()
   const weekly = useMemo(() => doneByWeek(tasks), [tasks])
   const thisWeek = useMemo(() => weekRange(new Date()), [])
   const isSunday = new Date().getDay() === 0
@@ -793,7 +796,6 @@ export function Today({
   const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
   const plates = useMemo(() => platesOn(meals, recipes), [meals, recipes])
   const upcomingEvents = useMemo(() => {
-    const now = Date.now()
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
     return events
       .filter(ev => {
@@ -809,7 +811,7 @@ export function Today({
         return end > now && start < horizon
       })
       .slice(0, 10)
-  }, [events, putOff])
+  }, [events, putOff, now])
 
   const s = useMemo(() => {
     const now = new Date()

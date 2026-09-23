@@ -155,7 +155,9 @@ describe('wired for the owner, to Admin on Data', () => {
     expect(shell).toMatch(/<Admin initialGroup=\{adminGroup\} \/>/)
     expect(shell).toMatch(/pushed === 'admin' \? \(\s*<AdminScreen p=\{p\} \/>/)
     const hook = readFileSync(fileURLToPath(new URL('../components/planner/useSyncAlarm.ts', import.meta.url)), 'utf8')
-    expect(hook).toMatch(/if \(!isOwner\) \{\s*setCheck\(null\)\s*return\s*\}/)
+    // nothing is read for anyone else, and a check read as the owner says nothing once the device is not
+    expect(hook).toMatch(/if \(!isOwner\) return\n/)
+    expect(hook).toMatch(/opsAlarmOf\(isOwner \? check : null,/)
   })
 
   it('Admin opens on the section asked for, and on Users otherwise', () => {

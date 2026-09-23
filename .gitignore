@@ -1,5 +1,9 @@
 node_modules
 dist
+# npm run e2e: its build, and what Playwright writes
+/e2e/.dist/
+/playwright-report/
+/test-results/
 .DS_Store
 *.local
 server/drafter.db

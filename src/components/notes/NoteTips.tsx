@@ -28,7 +28,7 @@ function keyboardFocus(el: Element): boolean {
  * tabbing to a button off screen scrolls it into view, and goes once the
  * button has left the window. A finger never raises one.
  */
-export function NoteTips({ root }: { root: RefObject<HTMLElement> }) {
+export function NoteTips({ root }: { root: RefObject<HTMLElement | null> }) {
   const [tip, setTip] = useState<{ text: string; at: DOMRect } | null>(null)
 
   useEffect(() => {

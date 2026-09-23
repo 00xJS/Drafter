@@ -131,3 +131,14 @@ export function drawLists(byKind: KindLists, myId: string | null, prev?: DrawnLi
   }
   return { byKind, myId, lists: prev && rebuilt.length === 0 ? prev.lists : (lists as Lists), rebuilt }
 }
+
+/**
+ * drawLists that keeps its last drawing, for a hook that draws as it renders
+ * (useItems): each call reuses whatever the one before drew. Held in the
+ * hook's state, so the render never reads or writes a ref; a render React
+ * throws away only leaves a drawing that is still right for its arrays.
+ */
+export function listDrawer(): (byKind: KindLists, myId: string | null) => DrawnLists {
+  let last: DrawnLists | null = null
+  return (byKind, myId) => (last = drawLists(byKind, myId, last))
+}

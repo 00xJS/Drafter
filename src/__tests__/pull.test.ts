@@ -219,7 +219,7 @@ describe('pull to refresh: wired the way the shell needs', () => {
     expect(engine).toMatch(/if \(inflight\) return inflight/)
     expect(engine).not.toMatch(/syncBusy/)
     expect(read('../store.ts')).toContain('syncNowManual: e.sync')
-    const cal = read('../calendars.ts')
+    const cal = read('../calendarstate.ts')
     const feeds = cal.slice(cal.indexOf('const refresh = useCallback('), cal.indexOf('// boot: serve the cache'))
     expect(feeds).toMatch(/if \(inflight\.current\) return inflight\.current/)
     expect(feeds).not.toMatch(/busy\.current/)

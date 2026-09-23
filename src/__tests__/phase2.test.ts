@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captureSeed, deterministicCapture, isSimpleDateCapture } from '../ai'
+import { captureSeed, deterministicCapture, isSimpleDateCapture } from '../capture'
 import { dueLabel, dueTone, duplicateTask } from '../taskutils'
 import { plannedGift, personStats } from '../people'
 import { nextUp } from '../review'

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CalendarEvent, CalendarSource, PROJECT_STATUS_META, Project, Task } from '../types'
 import { DAY_MS, startOfDay } from '../taskutils'
-import { eventStartDate } from '../calendars'
+import { eventStartDate } from '../calendarstate'
 import { getSupabase } from '../supabase'
 import { fmtDate } from '../utils'
 import { graphicInk } from '../contrast'

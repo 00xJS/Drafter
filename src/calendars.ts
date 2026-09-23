@@ -1,27 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isMineTask } from '../shared/domain.mjs'
-import { CalendarEntry, CalendarEvent, CalendarSource, Item, OPEN_STATUSES, Project, Task, TaskStatus } from './types'
+import { CalendarEntry, CalendarSource, Item, OPEN_STATUSES, Task, TaskStatus } from './types'
 import { apiFetch } from './api'
-import { idbGet, idbSet } from './idb'
+import { googleLedgerKey, msLedgerKey, readCursor, writeCursor, type MirrorSpec } from './calendarstate'
 import { hashId, localMidnightIso, newerStamp } from './itemops'
 import { oauthReasonLabel } from './links'
 import { isNative, onOAuthReturn, startOAuth } from './native'
 import { getSupabase } from './supabase'
 import { dateKey } from './utils'
 
-// External calendars are read through the session-gated /api/calendars proxy
-// and cached in IndexedDB so the overlay survives offline and reloads.
-
-const CACHE_KEY = 'calendar-events'
-const FRESH_MS = 15 * 60_000
-const DAY = 86_400_000
-
-interface Cached {
-  at: string
-  events: CalendarEvent[]
-  errors: Record<string, string>
-  names: Record<string, string>
-}
+// The calendars: subscribing, connecting Google and Outlook, and the engine
+// that mirrors my tasks and entries into them and reads back what changed
+// there. What the shell holds from launch — the feeds' events, the mirrors'
+// state and the day arithmetic Today draws with — is src/calendarstate.ts;
+// this file loads with the first mirror pass, the first entry written through
+// to a mirror, or Settings. Re-exported here so the calendars read as one API.
+export {
+  GOOGLE_PUSH_ID,
+  GOOGLE_PUSH_URL,
+  LOCAL_SOURCE_ID,
+  entryToEvent,
+  eventDayKeys,
+  eventStartDate,
+  googleLedgerKey,
+  googlePushId,
+  msLedgerKey,
+  prepDueFor,
+} from './calendarstate'
+export type { CalendarState, GooglePushState, MirrorSpec } from './calendarstate'
 
 export interface CalendarFeedInfo {
   configured: boolean
@@ -74,11 +79,6 @@ export function googleAction<T>(action: string, payload: Record<string, unknown>
   return apiFetch('/api/google', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...payload }), timeoutMs: 60_000 }).then(json<T>)
 }
 
-/** The pseudo-source that turns on mirroring tasks into the connected Google account. */
-export const GOOGLE_PUSH_URL = 'google:push'
-/** Legacy fixed id — migrated to googlePushId(myId) so household members don't collide. */
-export const GOOGLE_PUSH_ID = 'google-push'
-export const googlePushId = (userId: string) => `google-push-${userId}`
 export const isGoogleSource = (s: CalendarSource) => s.url.startsWith('google:')
 
 /**
@@ -101,26 +101,6 @@ export function mirrorToggle(
   if (!pushSource) return { write: on ? 'fresh' : 'none' }
   if (pushSource.id !== myPushId) return { removeId: pushSource.id, write: 'fresh' }
   return { write: 'existing' }
-}
-
-/**
- * Draw one of our own entries with the code that already draws feed events.
- * The alternative — a parallel render path for local events — is how a month
- * grid ends up with two kinds of pill that drift apart.
- */
-export function entryToEvent(e: CalendarEntry): CalendarEvent {
-  return {
-    id: `local:${e.id}`,
-    sourceId: LOCAL_SOURCE_ID,
-    title: e.title || 'Untitled event',
-    start: e.start,
-    end: e.end,
-    allDay: e.allDay,
-    location: e.location,
-    localId: e.id,
-    work: e.work,
-    ownerId: e.ownerId,
-  }
 }
 
 /**
@@ -211,9 +191,6 @@ export function expandWorkDays(
   return out
 }
 
-/** Reserved: never a real CalendarSource id, so it cannot collide with a subscription. */
-export const LOCAL_SOURCE_ID = 'drafter:local'
-
 /**
  * The device's IANA zone, sent with every mirror push and with each email-in
  * address action (triage reads an emailed "Thursday 3pm" in it). The server decides
@@ -233,20 +210,6 @@ function deviceTimeZone(): string | undefined {
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
 const pushCursorKey = (userId?: string | null) => (userId ? `${PUSH_CURSOR_KEY}:${userId}` : PUSH_CURSOR_KEY)
 
-const readCursor = (key: string) => {
-  try {
-    return localStorage.getItem(key) ?? ''
-  } catch {
-    return ''
-  }
-}
-const writeCursor = (key: string, value: string) => {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    /* ignore */
-  }
-}
 
 // ---- the mirror ledger ----------------------------------------------------------
 //
@@ -285,8 +248,6 @@ const ledgers = new Map<string, MirrorLedger>()
 /** A version fingerprint, short because the ledger holds one per record. */
 export const mirrorStamp = (updatedAt: string): string => hashId(updatedAt)
 
-export const googleLedgerKey = (userId?: string | null) => `google:${userId ?? ''}`
-export const msLedgerKey = (accountId: string) => `ms:${accountId}`
 
 function readLedger(key: string): MirrorLedger | null {
   const hit = ledgers.get(key)
@@ -678,159 +639,6 @@ function settlePull(key: string, out: PullOutcome): { work: boolean; switched: b
   return { work: resend, switched: false }
 }
 
-export interface GooglePushState {
-  lastAt?: string
-  error?: string
-  pending: boolean
-  /** Why each target's last pass failed: 'google', or an Outlook account id. */
-  accountErrors?: Record<string, string>
-  /** Records still owed to a provider (refused, unreachable or not reached yet); they are retried. */
-  waiting?: number
-  /** Something to tell the owner, by target ('google' or an Outlook account id), kept until dismissed. */
-  notices?: Record<string, string>
-  dismissNotice?(id: string): void
-  /** Send what is owed; pulls afterwards when anything went out. */
-  pushNow(): Promise<void>
-  /**
-   * Retry what is owed, then fetch what moved on the other side — the pass the
-   * foreground resume runs, and what pull-to-refresh asks for.
-   */
-  pullNow(): Promise<void>
-}
-
-type MirrorStatus = Omit<GooglePushState, 'pushNow' | 'pullNow' | 'dismissNotice'>
-
-const NOTICE_PREFIX = 'drafter:mirror-notice:'
-
-/** Notices outlive a reload until dismissed: a recreated calendar is worth hearing about even if Settings was closed at the time. */
-function storedNotices(targets: PassTarget[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const t of targets) {
-    const text = readCursor(NOTICE_PREFIX + t.key)
-    if (text) out[t.id] = text
-  }
-  return out
-}
-
-/**
- * The React side both mirrors share: when a pass runs, and what it reports. A
- * pass runs a few seconds after any change, on focus, every half hour and when
- * the network comes back. Whatever is still owed afterwards is retried on its
- * own — straight away while there is more to send, backing off from a minute
- * to half an hour while something is failing.
- */
-function useMirrorSync(items: Item[], projects: Project[], targets: PassTarget[], myId?: string | null): GooglePushState {
-  const [state, setState] = useState<MirrorStatus>(() => ({ pending: false, notices: storedNotices(targets) }))
-  const itemsRef = useRef(items)
-  itemsRef.current = items
-  const projectsRef = useRef(projects)
-  projectsRef.current = projects
-  const myIdRef = useRef(myId)
-  myIdRef.current = myId
-  const targetsRef = useRef(targets)
-  targetsRef.current = targets
-  const inflight = useRef<Promise<void> | null>(null)
-  const queued = useRef<{ pull: boolean } | null>(null)
-  const retry = useRef<{ timer?: number; delay: number }>({ delay: 0 })
-  const debounce = useRef<number | undefined>(undefined)
-  const triggerRef = useRef<(pull: boolean) => Promise<void>>(() => Promise.resolve())
-
-  const trigger = useCallback((pull: boolean): Promise<void> => {
-    // one pass at a time; a request made mid-pass gets a pass of its own right
-    // after, and waits for it, so pull-to-refresh never reports done early
-    queued.current = { pull: pull || !!queued.current?.pull }
-    if (inflight.current) return inflight.current
-    const loop = (async () => {
-      try {
-        while (queued.current) {
-          const want = queued.current
-          queued.current = null
-          const list = targetsRef.current
-          if (list.length === 0) continue
-          setState(s => ({ ...s, pending: true }))
-          const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
-          const pass = await mirrorPass(list, itemsRef.current, names, myIdRef.current, { pull: want.pull })
-          for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
-          setState({
-            lastAt: new Date().toISOString(),
-            pending: false,
-            error: Object.values(pass.accountErrors)[0],
-            accountErrors: pass.accountErrors,
-            waiting: pass.waiting,
-            notices: storedNotices(list),
-          })
-          window.clearTimeout(retry.current.timer)
-          let delay = 0
-          if (pass.failed) delay = retry.current.delay = Math.min(30 * 60_000, retry.current.delay ? retry.current.delay * 2 : 60_000)
-          else {
-            retry.current.delay = 0
-            delay = pass.more ? 1500 : pass.waiting > 0 ? 5 * 60_000 : 0
-          }
-          if (delay) retry.current.timer = window.setTimeout(() => void triggerRef.current(false), delay)
-        }
-      } finally {
-        inflight.current = null
-      }
-    })()
-    inflight.current = loop
-    return loop
-  }, [])
-  triggerRef.current = trigger
-
-  const signature = targets.map(t => t.key).join('\n')
-
-  // a few seconds after any change: send what is owed
-  useEffect(() => {
-    if (!signature) return
-    window.clearTimeout(debounce.current)
-    debounce.current = window.setTimeout(() => void trigger(false), 3000)
-    return () => window.clearTimeout(debounce.current)
-  }, [items, signature, trigger])
-
-  // now, on focus, every half hour and when the network returns: retry, then pull
-  useEffect(() => {
-    if (!signature) {
-      // mirroring switched off: an old error must not linger beside the switch
-      setState({ pending: false })
-      return
-    }
-    setState(s => ({ ...s, notices: storedNotices(targetsRef.current) }))
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void trigger(true)
-    }
-    const onOnline = () => void trigger(false)
-    const every = window.setInterval(() => void trigger(true), 30 * 60_000)
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('online', onOnline)
-    void trigger(true)
-    return () => {
-      window.clearInterval(every)
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('online', onOnline)
-    }
-  }, [signature, trigger])
-
-  useEffect(() => () => window.clearTimeout(retry.current.timer), [])
-
-  const pushNow = useCallback(() => trigger(false), [trigger])
-  const pullNow = useCallback(() => trigger(true), [trigger])
-  const dismissNotice = useCallback((id: string) => {
-    const t = targetsRef.current.find(x => x.id === id)
-    if (t) {
-      try {
-        localStorage.removeItem(NOTICE_PREFIX + t.key)
-      } catch {
-        /* ignore */
-      }
-    }
-    setState(s => {
-      const notices = { ...(s.notices ?? {}) }
-      delete notices[id]
-      return { ...s, notices }
-    })
-  }, [])
-  return { ...state, pushNow, pullNow, dismissNotice }
-}
 
 /** One of my mirrored tasks as Google or Outlook now holds it (googlePullRows / graphTaskChange on the server). */
 export interface GoogleChange {
@@ -1126,54 +934,6 @@ export function applyMirrorChanges(store: MirrorStore, pulled: MirrorPulled, sou
   toast(`${parts.join(', ')} from ${source}`, undo)
 }
 
-/**
- * Mirror my tasks and entries into the Google "Drafter" calendar: whatever the
- * ledger says Google has not confirmed goes out a few seconds after a change,
- * on focus, every half hour and when the network returns, and then what changed
- * in Google comes back, to `onPulled` (apply it with applyMirrorChanges).
- * Server-side every write is idempotent (upsert by record id; remove a task
- * that is no longer open and dated, or a deleted entry). Only my rows go, so a
- * partner's chores stay out of my calendar.
- */
-export function useGooglePush(
-  items: Item[],
-  projects: Project[],
-  enabled: boolean,
-  onPulled?: (pulled: MirrorPulled) => void,
-  myId?: string | null,
-): GooglePushState {
-  const onPulledRef = useRef(onPulled)
-  onPulledRef.current = onPulled
-  const targets = useMemo<PassTarget[]>(
-    () =>
-      enabled
-        ? [
-            {
-              id: 'google',
-              key: googleLedgerKey(myId),
-              lock: GOOGLE_LOCK,
-              legacyCursor: () => {
-                try {
-                  return localStorage.getItem(pushCursorKey(myId)) ?? localStorage.getItem(PUSH_CURSOR_KEY) ?? ''
-                } catch {
-                  return ''
-                }
-              },
-              push: (records, projectNames) => googleAction<MirrorBatchReply>('push', { records, projects: projectNames, timezone: deviceTimeZone() }),
-              pull: async () => {
-                const apply = onPulledRef.current
-                if (!apply) return
-                const r = await pullGoogle()
-                if (r.changes.length || r.entries?.length) apply({ changes: r.changes, entries: r.entries ?? [] })
-                return { calendarId: r.calendarId }
-              },
-            },
-          ]
-        : [],
-    [enabled, myId],
-  )
-  return useMirrorSync(items, projects, targets, myId)
-}
 
 /** Forget what Google has confirmed, so the next sweep sends everything — tasks and entries — again (turning the mirror on, reconnecting). */
 export function resetGooglePushCursor(userId?: string | null): void {
@@ -1217,130 +977,6 @@ export async function setCopyReminders(on: boolean): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
-  const now = Date.now()
-  const res = await apiFetch('/api/calendars', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      sources: sources.map(s => ({ id: s.id, url: s.url })),
-      from: new Date(now - 60 * DAY).toISOString(),
-      to: new Date(now + 400 * DAY).toISOString(),
-    }),
-    timeoutMs: 45_000,
-  })
-  const body = (await res.json().catch(() => null)) as (Omit<Cached, 'at'> & { fetchedAt?: string; error?: string }) | null
-  if (!res.ok || !body) throw new Error(body?.error ?? `HTTP ${res.status}`)
-  return { at: body.fetchedAt ?? new Date().toISOString(), events: body.events ?? [], errors: body.errors ?? {}, names: body.names ?? {} }
-}
-
-export interface CalendarState {
-  events: CalendarEvent[]
-  errors: Record<string, string>
-  names: Record<string, string>
-  lastAt?: string
-  loading: boolean
-  /** Network-level failure (proxy unreachable), separate from per-source errors. */
-  error?: string
-  refresh(): Promise<void>
-}
-
-export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
-  const [state, setState] = useState<Omit<CalendarState, 'refresh'>>({ events: [], errors: {}, names: {}, loading: false })
-  // pseudo-sources (task mirrors) are not feeds to fetch
-  const enabled = sources.filter(s => s.enabled && s.url !== GOOGLE_PUSH_URL && !s.url.startsWith('ms-push:'))
-  const signature = enabled.map(s => s.id + '|' + s.url).join('\n')
-  // the fetch in flight, if any: a refresh asked for mid-fetch (the pull-down
-  // right after a foreground resume) waits for that one rather than returning
-  // at once and reporting done while the feeds are still loading
-  const inflight = useRef<Promise<void> | null>(null)
-  const sigRef = useRef(signature)
-  sigRef.current = signature
-  const sourcesRef = useRef(enabled)
-  sourcesRef.current = enabled
-
-  const refresh = useCallback((): Promise<void> => {
-    if (inflight.current) return inflight.current
-    const list = sourcesRef.current
-    if (list.length === 0) {
-      setState({ events: [], errors: {}, names: {}, loading: false })
-      idbSet('posts', CACHE_KEY, { at: new Date().toISOString(), events: [], errors: {}, names: {}, signature: '' }).catch(() => {})
-      return Promise.resolve()
-    }
-    setState(s => ({ ...s, loading: true, error: undefined }))
-    inflight.current = fetchEvents(list)
-      .then(fresh => {
-        setState({ ...fresh, lastAt: fresh.at, loading: false })
-        idbSet('posts', CACHE_KEY, { ...fresh, signature: sigRef.current }).catch(() => {})
-      })
-      .catch((e: Error) => {
-        setState(s => ({ ...s, loading: false, error: e.message }))
-      })
-      .finally(() => {
-        inflight.current = null
-      })
-    return inflight.current
-  }, [])
-
-  // boot: serve the cache immediately, refresh if stale or the source list changed
-  useEffect(() => {
-    let live = true
-    idbGet<Cached & { signature?: string }>('posts', CACHE_KEY)
-      .then(cached => {
-        if (!live) return
-        const sameSources = cached?.signature === signature
-        if (cached && sameSources) setState({ events: cached.events, errors: cached.errors ?? {}, names: cached.names ?? {}, lastAt: cached.at, loading: false })
-        const stale = !cached || !sameSources || Date.now() - Date.parse(cached.at) > FRESH_MS
-        if (stale) refresh()
-      })
-      .catch(() => refresh())
-    return () => {
-      live = false
-    }
-  }, [signature, refresh])
-
-  // periodic refresh + when the app returns to the foreground
-  useEffect(() => {
-    const t = window.setInterval(() => refresh(), 30 * 60_000)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.clearInterval(t)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [refresh])
-
-  return { ...state, refresh }
-}
-
-/** Local calendar-day keys an event occupies (all-day spans cover every day; timed events their start day). */
-export function eventDayKeys(ev: CalendarEvent): string[] {
-  if (!ev.allDay) return [dateKey(ev.start)]
-  const keys: string[] = []
-  const [y, m, d] = ev.start.split('-').map(Number)
-  const [ey, em, ed] = ev.end.split('-').map(Number)
-  const end = new Date(ey, em - 1, ed).getTime()
-  for (let cur = new Date(y, m - 1, d); cur.getTime() < end && keys.length < 62; cur.setDate(cur.getDate() + 1)) keys.push(dateKey(cur))
-  return keys.length > 0 ? keys : [ev.start]
-}
-
-/** Start of an event as a local Date (all-day → local midnight of its first day). */
-export function eventStartDate(ev: CalendarEvent): Date {
-  if (!ev.allDay) return new Date(ev.start)
-  const [y, m, d] = ev.start.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-/** Sensible due date for a prep task: the morning before the event (same morning if that is already past). */
-export function prepDueFor(ev: CalendarEvent): string {
-  const start = eventStartDate(ev)
-  const dayBefore = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1, 9, 0, 0)
-  if (dayBefore.getTime() > Date.now()) return dayBefore.toISOString()
-  const sameDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 9, 0, 0)
-  return (sameDay.getTime() > Date.now() ? sameDay : new Date(Date.now() + 3_600_000)).toISOString()
-}
 
 // ---- Outlook / Microsoft 365 (OAuth, per user, several accounts) -------------
 
@@ -1501,68 +1137,79 @@ interface MicrosoftPull {
 }
 
 /**
- * Mirror my tasks and entries into the "Drafter" calendar of each Outlook
- * account that has mirroring on, then pull back what changed in Outlook, to
- * `onPulled` (apply it with applyMirrorChanges). The same sweep as Google, one
- * account after another and each on its own, so a dead account cannot stop the
- * rest and reports under its own id; and the pull runs on focus and every half
- * hour like Google's, not only after a push.
+ * The provider calendar a mirror hook names (calendarstate.ts), as the sweep
+ * drives it: how to send to it and how to pull from it. `onPulled` is read at
+ * pull time, so what came back goes to the latest render's handler (apply it
+ * with applyMirrorChanges).
+ *
+ * Google: whatever the ledger says Google has not confirmed goes out, then
+ * what changed in Google comes back. Server-side every write is idempotent
+ * (upsert by record id; remove a task that is no longer open and dated, or a
+ * deleted entry). Only my rows go, so a partner's chores stay out of my calendar.
+ *
+ * Outlook: the same sweep into the "Drafter" calendar of each account that has
+ * mirroring on, one account after another and each on its own, so a dead
+ * account cannot stop the rest and reports under its own id.
  */
-export function useMicrosoftSync(
-  items: Item[],
-  projects: Project[],
-  accountIds: string[],
-  onPulled?: (pulled: MirrorPulled) => void,
-  myId?: string | null,
-): GooglePushState {
-  const onPulledRef = useRef(onPulled)
-  onPulledRef.current = onPulled
-  const signature = accountIds.join('\n')
-  const targets = useMemo<PassTarget[]>(
-    () =>
-      signature
-        .split('\n')
-        .filter(Boolean)
-        .map(
-          (accountId): PassTarget => ({
-            id: accountId,
-            key: msLedgerKey(accountId),
-            lock: msLock(accountId),
-            legacyCursor: () => readCursor(`${MS_PUSH_CURSOR}:${accountId}`),
-            push: (records, projectNames) => microsoftAction<MirrorBatchReply>('push', { accountId, records, projects: projectNames, timezone: deviceTimeZone() }),
-            pull: async current => {
-              const apply = onPulledRef.current
-              if (!apply) return
-              const pullKey = `${MS_PULL_CURSOR}:${accountId}`
-              const scanKey = `${MS_SCAN_AT}:${accountId}`
-              const ledger = readLedger(msLedgerKey(accountId))
-              const now = Date.now()
-              // Graph hard-deletes, so a task or an entry deleted in Outlook is
-              // never a change; now and then, name the ones we believe are there
-              // and hear back which are not
-              const scan = !!ledger?.cal && now - (Number(readCursor(scanKey)) || 0) > MS_SCAN_EVERY_MS
-              const live = scan && ledger ? believedLive(current, ledger, myId, now) : []
-              const liveEntries = scan && ledger ? believedLiveEntries(current, ledger, myId, now) : []
-              const r = await microsoftAction<MicrosoftPull>('pull', {
-                accountId,
-                since: readCursor(pullKey) || undefined,
-                entries: true,
-                live: live.length ? live : undefined,
-                liveEntries: liveEntries.length ? liveEntries : undefined,
-                calendarId: ledger?.cal,
-              })
-              writeCursor(pullKey, r.at)
-              if (scan) writeCursor(scanKey, String(now))
-              const changes = [...(r.changes ?? []), ...(ledger ? outlookDeletions(ledger, r.missing ?? []) : [])]
-              const entries = [...(r.entries ?? []), ...(ledger ? outlookEntryDeletions(ledger, r.missingEntries ?? []) : [])]
-              if (changes.length || entries.length) apply({ changes, entries })
-              return { calendarId: r.calendarId, resend: r.resend }
-            },
-          }),
-        ),
-    [signature, myId],
-  )
-  return useMirrorSync(items, projects, targets, myId)
+export function passTarget(spec: MirrorSpec, myId: string | null | undefined, onPulled: () => ((pulled: MirrorPulled) => void) | undefined): PassTarget {
+  if (spec.provider === 'google') {
+    return {
+      id: 'google',
+      key: spec.key,
+      lock: GOOGLE_LOCK,
+      legacyCursor: () => {
+        try {
+          return localStorage.getItem(pushCursorKey(myId)) ?? localStorage.getItem(PUSH_CURSOR_KEY) ?? ''
+        } catch {
+          return ''
+        }
+      },
+      push: (records, projectNames) => googleAction<MirrorBatchReply>('push', { records, projects: projectNames, timezone: deviceTimeZone() }),
+      pull: async () => {
+        const apply = onPulled()
+        if (!apply) return
+        const r = await pullGoogle()
+        if (r.changes.length || r.entries?.length) apply({ changes: r.changes, entries: r.entries ?? [] })
+        return { calendarId: r.calendarId }
+      },
+    }
+  }
+  const { accountId } = spec
+  return {
+    id: accountId,
+    key: spec.key,
+    lock: msLock(accountId),
+    legacyCursor: () => readCursor(`${MS_PUSH_CURSOR}:${accountId}`),
+    push: (records, projectNames) => microsoftAction<MirrorBatchReply>('push', { accountId, records, projects: projectNames, timezone: deviceTimeZone() }),
+    pull: async current => {
+      const apply = onPulled()
+      if (!apply) return
+      const pullKey = `${MS_PULL_CURSOR}:${accountId}`
+      const scanKey = `${MS_SCAN_AT}:${accountId}`
+      const ledger = readLedger(msLedgerKey(accountId))
+      const now = Date.now()
+      // Graph hard-deletes, so a task or an entry deleted in Outlook is
+      // never a change; now and then, name the ones we believe are there
+      // and hear back which are not
+      const scan = !!ledger?.cal && now - (Number(readCursor(scanKey)) || 0) > MS_SCAN_EVERY_MS
+      const live = scan && ledger ? believedLive(current, ledger, myId, now) : []
+      const liveEntries = scan && ledger ? believedLiveEntries(current, ledger, myId, now) : []
+      const r = await microsoftAction<MicrosoftPull>('pull', {
+        accountId,
+        since: readCursor(pullKey) || undefined,
+        entries: true,
+        live: live.length ? live : undefined,
+        liveEntries: liveEntries.length ? liveEntries : undefined,
+        calendarId: ledger?.cal,
+      })
+      writeCursor(pullKey, r.at)
+      if (scan) writeCursor(scanKey, String(now))
+      const changes = [...(r.changes ?? []), ...(ledger ? outlookDeletions(ledger, r.missing ?? []) : [])]
+      const entries = [...(r.entries ?? []), ...(ledger ? outlookEntryDeletions(ledger, r.missingEntries ?? []) : [])]
+      if (changes.length || entries.length) apply({ changes, entries })
+      return { calendarId: r.calendarId, resend: r.resend }
+    },
+  }
 }
 
 // ---- connecting an account -----------------------------------------------------

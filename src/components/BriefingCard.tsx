@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CalendarEvent, Habit, MEAL_SLOT_META, WORK_MODE_META } from '../types'
-import { eventDayKeys } from '../calendars'
+import { eventDayKeys } from '../calendarstate'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
 import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, readCache, requestLocation, setCity, watchWeather } from '../weather'

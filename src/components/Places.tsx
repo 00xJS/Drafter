@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNow } from '../useNow'
 import {
   Meal,
   CADENCE_META,
@@ -108,7 +109,7 @@ export function PlaceForm({
   const [emoji, setEmoji] = useState(place?.emoji ?? '')
   // a new place starts with no kind: Save waits for one, as it does wherever a place is made
   const [category, setCategory] = useState<PlaceCategory | undefined>(place?.category)
-  const [color, setColor] = useState(place?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
+  const [color, setColor] = useState(() => place?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
   // No target by default: a place only nags when you ask it to. 'off' is No reminders.
   const [cadence, setCadence] = useState<Cadence | '' | 'off'>(place?.noReminders ? 'off' : ((place?.cadenceDays as Cadence | undefined) ?? ''))
   const [notes, setNotes] = useState(place?.notes ?? '')
@@ -349,6 +350,7 @@ export function PlaceRow({
   onSaveAddress?(found: AddressCandidate): void
 }) {
   const { place } = stats
+  const now = useNow()
   const cat = PLACE_CATEGORY_META[place.category]
   // the iPhone app is an Apple device whatever its web view says
   const apple = isNative() || prefersAppleMaps()
@@ -371,7 +373,7 @@ export function PlaceRow({
             <small>12mo</small>
           </span>
           <span title="Outings in the last 90 days">
-            <strong>{stats.visits.filter(v => Date.now() - Date.parse(v.at) < 90 * 86_400_000).length}</strong>
+            <strong>{stats.visits.filter(v => now - Date.parse(v.at) < 90 * 86_400_000).length}</strong>
             <small>90d</small>
           </span>
         </span>
@@ -517,7 +519,8 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
   // "Needs attention" only earns the default once at least one place has a rhythm.
   const [sortChoice, setSortChoice] = useState<SortKey | null>(null)
   const sort: SortKey = sortChoice ?? (places.some(p => p.cadenceDays) ? 'attention' : 'recent')
-  const [openId, setOpenId] = useState<string | null>(null)
+  // a row asked for opens with the first paint when Places mounts for it
+  const [openId, setOpenId] = useState<string | null>(() => wantOpen ?? null)
   /** The whole list folded away, as on People. Not remembered. */
   const [listShut, setListShut] = useState(false)
   const [ideas, setIdeas] = useState<OutingIdea[] | null>(null)
@@ -529,21 +532,25 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
   const [askedWith, setAskedWith] = useState<string[] | null>(null)
   const [withAll, setWithAll] = useState(false)
 
+  // A row or the add sheet asked for while this is already on screen opens
+  // as the ask arrives. The People tab clears the find box and the chip as
+  // the row is asked for, so neither hides it.
+  const [asked, setAsked] = useState({ wantOpen, openAdd })
+  if (asked.wantOpen !== wantOpen || asked.openAdd !== openAdd) {
+    setAsked({ wantOpen, openAdd })
+    if (wantOpen && wantOpen !== asked.wantOpen) setOpenId(wantOpen)
+    if (openAdd && !asked.openAdd) setEditing({})
+  }
   useEffect(() => {
     if (!wantOpen) return
-    // the People tab clears the find box and the chip as the row is asked
-    // for, before this draws, so neither hides it
-    setOpenId(wantOpen)
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
     onOpenConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
   }, [wantOpen])
   useEffect(() => {
-    if (!openAdd) return
-    setEditing({})
-    onAddConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (openAdd) onAddConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
   }, [openAdd])
 
   const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals, myId)), [places, tasks, people, meals, myId])

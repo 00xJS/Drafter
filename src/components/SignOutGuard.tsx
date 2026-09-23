@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { expiredLine, signOutAnyway, signOutFlow, startSignOut, unsentLine, uploadThenSignOut, withMedia, type SignOutBusy, type UnsentAsk } from '../signout'
 import { Modal, ModalHead } from './Modal'
@@ -62,10 +62,13 @@ export function UnsentPhotosSheet({ count, tried, busy, expired = false, onUploa
 export function useSignOut(signOut: () => Promise<void>, sessionExpired = false): { start(): void; busy: boolean; question: ReactNode } {
   const [ask, setAsk] = useState<UnsentAsk | null>(null)
   const [busy, setBusy] = useState<SignOutBusy | null>(null)
-  // made once, as an upload spans renders; it signs out with the latest handler
+  // made on first use and kept, as an upload spans renders; it signs out with the latest handler
   const latest = useRef(signOut)
-  latest.current = signOut
-  const [flow] = useState(() => signOutFlow(() => withMedia(latest.current), { ask: setAsk, busy: setBusy }))
+  useLayoutEffect(() => {
+    latest.current = signOut
+  })
+  const made = useRef<ReturnType<typeof signOutFlow> | null>(null)
+  const flow = () => (made.current ??= signOutFlow(() => withMedia(latest.current), { ask: setAsk, busy: setBusy }))
   const question =
     ask && typeof document !== 'undefined'
       ? createPortal(
@@ -73,12 +76,12 @@ export function useSignOut(signOut: () => Promise<void>, sessionExpired = false)
             {...ask}
             busy={busy}
             expired={sessionExpired}
-            onUpload={() => void flow.run('uploading', uploadThenSignOut)}
-            onSignOut={() => void flow.run('signing-out', signOutAnyway)}
-            onCancel={flow.cancel}
+            onUpload={() => void flow().run('uploading', uploadThenSignOut)}
+            onSignOut={() => void flow().run('signing-out', signOutAnyway)}
+            onCancel={() => flow().cancel()}
           />,
           document.body,
         )
       : null
-  return { start: () => void flow.run('checking', startSignOut), busy: busy !== null, question }
+  return { start: () => void flow().run('checking', startSignOut), busy: busy !== null, question }
 }

@@ -2,21 +2,14 @@ import { useMemo, useRef, useState } from 'react'
 import type { CalendarEntry } from '../../types'
 import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
-import {
-  applyMirrorChanges,
-  entryToEvent,
-  pushEventToGoogle,
-  pushEventToMicrosoft,
-  GOOGLE_PUSH_ID,
-  googlePushId,
-  useCalendarEvents,
-  useGooglePush,
-  useMicrosoftSync,
-  type MirrorPulled,
-} from '../../calendars'
+import type { MirrorPulled } from '../../calendars'
+import { entryToEvent, GOOGLE_PUSH_ID, googlePushId, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../../calendarstate'
 import { flushPendingMedia } from '../../media'
 import { requestWeatherRefresh } from '../../weather'
 import type { useToast } from './useToast'
+
+/** The mirror engine: fetched by the first entry written through to a mirror, or the first pass (calendarstate.ts). */
+const calendarEngine = () => import('../../calendars')
 
 interface Deps {
   store: Store
@@ -49,7 +42,9 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
   // deleted there, an event edited or deleted there — only ever when newer than
   // Drafter's own edit: applyMirrorChanges decides, saves and says so, with an
   // Undo for what it marked done or put in the Trash.
-  const applyPulled = (pulled: MirrorPulled, source: string) => applyMirrorChanges(store, pulled, source, showToast)
+  // (the mirror engine, calendars.ts, is already here by then: it made the pull)
+  const applyPulled = (pulled: MirrorPulled, source: string) =>
+    void calendarEngine().then(engine => engine.applyMirrorChanges(store, pulled, source, showToast))
   const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, pulled => applyPulled(pulled, 'Google Calendar'), household.myId)
   const microsoftSync = useMicrosoftSync(store.allItems, store.projects, store.loaded ? msMirrorIds : [], pulled => applyPulled(pulled, 'Outlook'), household.myId)
 
@@ -79,14 +74,15 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
    * costs the copy in the provider, never the entry itself.
    */
   const mirrorEvent = (e: CalendarEntry, opts: { revive?: boolean } = {}) => {
-    if (mirroring) void enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e, opts)).catch(() => {})
-    for (const accountId of msMirrorIds) void enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId)).catch(() => {})
+    if (mirroring) void enqueueMirror(`google:${e.id}`, () => calendarEngine().then(engine => engine.pushEventToGoogle(e, opts))).catch(() => {})
+    for (const accountId of msMirrorIds)
+      void enqueueMirror(`ms:${accountId}:${e.id}`, () => calendarEngine().then(engine => engine.pushEventToMicrosoft(e, accountId))).catch(() => {})
   }
   /** The same fan-out, awaited, so a run of entries can be fed to the mirrors one at a time. */
   const mirrorEventNow = (e: CalendarEntry) =>
     Promise.allSettled([
-      ...(mirroring ? [enqueueMirror(`google:${e.id}`, () => pushEventToGoogle(e))] : []),
-      ...msMirrorIds.map(accountId => enqueueMirror(`ms:${accountId}:${e.id}`, () => pushEventToMicrosoft(e, accountId))),
+      ...(mirroring ? [enqueueMirror(`google:${e.id}`, () => calendarEngine().then(engine => engine.pushEventToGoogle(e)))] : []),
+      ...msMirrorIds.map(accountId => enqueueMirror(`ms:${accountId}:${e.id}`, () => calendarEngine().then(engine => engine.pushEventToMicrosoft(e, accountId)))),
     ]).then(() => undefined)
   /**
    * Save one entry, or a run of repeated work days. Every row lands locally at

@@ -1,7 +1,7 @@
 // The date maths behind the Calendar's Month and Week views: which days a grid
 // shows, and what lands on each of them. Kept out of the component so the
 // bucketing and the week ranges can be tested without a DOM.
-import { entryToEvent, eventDayKeys } from './calendars'
+import { entryToEvent, eventDayKeys } from './calendarstate'
 import { CalendarEntry, CalendarEvent, MEAL_SLOTS, Meal, Milestone, Person, Project, Task, isWorkingMode } from './types'
 import { dateKey } from './utils'
 

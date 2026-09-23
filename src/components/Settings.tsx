@@ -1,6 +1,6 @@
 import { ComponentType, useState } from 'react'
 import { Store } from '../store'
-import { CalendarState, GooglePushState } from '../calendars'
+import type { CalendarState, GooglePushState } from '../calendarstate'
 import { isSupabaseConfigured } from '../supabase'
 import type { HouseholdInfo } from '../household'
 import type { SettingsCtx } from './settings/context'

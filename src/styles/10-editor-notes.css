@@ -451,18 +451,6 @@
 }
 
 /* notes pad */
-.notes-modal {
-  width: 1100px;
-  height: min(88vh, 900px);
-  display: flex;
-  flex-direction: column;
-}
-.notes-modal-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 .notes {
   display: flex;
   flex-direction: column;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Note, Project } from '../types'
 import { newerStamp } from '../itemops'
 import { htmlToText, wordCountHtml } from '../richtext'
@@ -34,7 +34,9 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
   const dirtyRef = useRef(false)
   const timer = useRef<number | undefined>(undefined)
   const textRef = useRef(text)
-  textRef.current = text
+  useLayoutEffect(() => {
+    textRef.current = text
+  })
   const page = useRef<HTMLDivElement>(null)
 
   /**

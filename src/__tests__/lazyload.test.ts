@@ -134,7 +134,7 @@ describe('schedulePreload: after launch, one chunk at a time', () => {
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 const component = (name: string) => resolve(SRC, 'components', `${name}.tsx`)
 /** The views and overlays planner/lazy.ts loads on demand. */
-const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Finance', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet', 'RhythmSheet']
+const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Finance', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'Journal', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet', 'RhythmSheet']
 /** …and what only they use, which must travel with them. */
 const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
@@ -164,6 +164,20 @@ const LAZY_ONLY = [
   // Find address, and the lookup behind it: the place editor's and the rhythm sheet's
   component('AddressFinder'),
   resolve(SRC, 'geocode.ts'),
+  // The assistant: its prompts and parsers, the retrieval Ask runs over the
+  // device, and the chat's actions. The palette's capture files a line through
+  // capture.ts and asks the model with import('../../ai'); nothing else in the
+  // shell may reach them (check-precache.mjs holds the built chunks to the same).
+  resolve(SRC, 'ai.ts'),
+  resolve(SRC, 'ask.ts'),
+  resolve(SRC, 'chatactions.ts'),
+  // The calendar mirrors' engine and Settings' calendar actions: the shell
+  // holds the feeds and the mirrors' state (calendarstate.ts) and fetches this
+  // with the first mirror pass or the first entry written through to a mirror.
+  resolve(SRC, 'calendars.ts'),
+  // A GitHub board's rules: loaded by the first push or pull, and nothing
+  // pushes or pulls until a project has a board linked (githubboard.ts).
+  resolve(SRC, 'githubsync.ts'),
 ]
 
 /** Static edges only: `import type` and import() are not followed. */
@@ -196,6 +210,14 @@ describe('the lazy set stays out of the first load', () => {
     expect(shell).toContain(resolve(SRC, 'components/planner/HomeScreen.tsx'))
     expect(shell).toContain(resolve(SRC, 'components/planner/lazy.ts'))
     expect(shell).toContain(component('Today'))
+  })
+
+  it('reaches the small halves the launch needs, which stand in for the lazy ones', () => {
+    // capture.ts for ai.ts, calendarstate.ts for calendars.ts, JournalCard for
+    // the journal page, githubboard.ts for githubsync.ts: if one of these stops
+    // being reached, the split has been undone some other way
+    for (const file of ['capture.ts', 'calendarstate.ts', 'githubboard.ts'].map(f => resolve(SRC, f))) expect(shell).toContain(file)
+    expect(shell).toContain(component('JournalCard'))
   })
 
   it('reaches none of the lazy views, overlays or what only they use', () => {

@@ -32,11 +32,8 @@ export function LockGate() {
     }).then(d => {
       dispose = d
     })
-    if (!appLockEnabled()) {
-      setLocked(false)
-      return () => dispose()
-    }
-    setLocked(true)
+    // `locked` started from the same setting, so only an unlock is left to ask for
+    if (!appLockEnabled()) return () => dispose()
     void checkAppLock().then(s => setLabel(s.label))
     void authenticateAppLock('Unlock Drafter').then(ok => {
       if (ok) setLocked(false)

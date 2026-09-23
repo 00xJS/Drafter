@@ -192,7 +192,7 @@ export function Search({
   onAsk,
   onClose,
 }: Props) {
-  const [q, setQ] = useState('')
+  const [q, setQuery] = useState('')
   const [heard, setHeard] = useState<Listening | null>(null)
   const [micNote, setMicNote] = useState('')
   const canAsk = !!onAsk
@@ -202,6 +202,11 @@ export function Search({
   // a saved outfit is drawn from its pieces, as it is everywhere in the wardrobe
   const byId = useMemo(() => liveById(garments), [garments])
   const [cursor, setCursor] = useState(0)
+  /** A new query puts the highlight back on the first row. */
+  const setQ = (next: string) => {
+    setQuery(next)
+    setCursor(0)
+  }
   const input = useRef<HTMLInputElement>(null)
   // the results are a listbox the field drives: focus stays in the field, and
   // aria-activedescendant names the row that Enter would open
@@ -217,7 +222,7 @@ export function Search({
      the tags, and you confirm — speaking a task never files one behind your
      back. Only offered where the browser has a recogniser; on the iPhone the
      keyboard's own 🎤 key dictates into this field instead. */
-  const canDictate = useMemo(speechAvailable, [])
+  const [canDictate] = useState(speechAvailable)
   // a palette closed mid-sentence must not leave the microphone open
   useEffect(() => () => heard?.cancel(), [heard])
 
@@ -228,10 +233,7 @@ export function Search({
     }
     setMicNote('')
     const session = listen({
-      onText: text => {
-        setQ(text)
-        setCursor(0)
-      },
+      onText: text => setQ(text),
       onEnd: () => {
         setHeard(null)
         input.current?.focus()
@@ -299,8 +301,6 @@ export function Search({
     else top.unshift(createHit)
     return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
   }, [q, tasks, projects, people, places, journal, notes, garments, outfits, commands, canAsk, canOpenNote, canOpenGarment, canOpenOutfit])
-
-  useEffect(() => setCursor(0), [q])
 
   // a click on the create row opens the editor; only Shift+Enter passes false
   const pick = (h: Hit, openEditor = true) => {

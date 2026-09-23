@@ -1,7 +1,6 @@
 import { newerStamp } from '../../itemops'
 import type { PlannerCtx } from './ctx'
-import { JournalView } from '../Journal'
-import { Review } from './lazy'
+import { JournalView, Review } from './lazy'
 import { INSIGHTS_TABS } from './routes'
 import { StatsScreen } from './StatsScreen'
 import { Segmented } from '../stats/Segmented'

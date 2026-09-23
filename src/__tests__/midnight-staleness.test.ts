@@ -22,7 +22,8 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 const today = read('../components/Today.tsx')
-const journal = read('../components/Journal.tsx')
+// the page, and Today's card with the editor both write with (JournalCard.tsx)
+const journal = read('../components/Journal.tsx') + read('../components/JournalCard.tsx')
 const kitchen = read('../components/Kitchen.tsx')
 const mealIdeas = read('../components/MealIdeasCard.tsx')
 const wardrobe = read('../components/wardrobe/Wardrobe.tsx')

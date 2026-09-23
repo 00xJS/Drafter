@@ -267,7 +267,8 @@ describe('a remembered segment may not hijack a destination', () => {
 })
 
 const native = readFileSync(fileURLToPath(new URL('../native.ts', import.meta.url)), 'utf8')
-const journal = readFileSync(fileURLToPath(new URL('../components/Journal.tsx', import.meta.url)), 'utf8')
+// the mood chips live in the editor Today's card and the journal page share (JournalCard.tsx)
+const journal = readFileSync(fileURLToPath(new URL('../components/JournalCard.tsx', import.meta.url)), 'utf8')
 
 describe('the gestures can be felt', () => {
   it('buzzes on entering a band, not on every touchmove', () => {

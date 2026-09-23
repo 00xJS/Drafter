@@ -41,6 +41,10 @@ export function preloadable<P extends object>(factory: () => Promise<ComponentTy
   let viaLazy = makeLazy()
 
   const Preloadable = (props: P) => {
+    // Left to plain React: the compiler (1.0) treats `loaded` and `viaLazy`,
+    // which belong to this factory, as module globals — it hoisted the
+    // initialiser below out of here as `() => loaded`, and every lazy view threw.
+    'use no memo'
     // decided once per mount: switching an instance from the lazy wrapper to
     // the loaded component would remount it and drop its state
     const [direct] = useState<ComponentType<P> | null>(() => loaded)

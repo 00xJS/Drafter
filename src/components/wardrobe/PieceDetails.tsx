@@ -88,11 +88,14 @@ export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }
     filled.current.tags = text
     if (next.join(',') !== (g.tags ?? []).join(',')) onEdit(cur => withDetails(cur, { tags: next }))
   }
+  // Set as it renders, not in an effect: only the sheet's handlers call it, and
+  // the tests that hold it to that (wardrobe-ui.test.tsx) render with no effects.
+  // eslint-disable-next-line react-hooks/immutability -- the sheet's own ref into this render's fields; the compiler leaves this one component as written
   keep.current = () => {
     commitPrice()
     commitTags()
   }
-  const onEnter = (commit: () => void) => (e: { key: string; preventDefault(): void }) => {
+  const onEnter = (e: { key: string; preventDefault(): void }, commit: () => void) => {
     if (e.key !== 'Enter') return
     e.preventDefault()
     commit()
@@ -104,7 +107,7 @@ export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }
         <span>
           Price <small className="muted">(what it cost)</small>
         </span>
-        <input value={price} inputMode="decimal" maxLength={12} placeholder="$0" onChange={e => setPrice(e.target.value)} onBlur={commitPrice} onKeyDown={onEnter(commitPrice)} />
+        <input value={price} inputMode="decimal" maxLength={12} placeholder="$0" onChange={e => setPrice(e.target.value)} onBlur={commitPrice} onKeyDown={e => onEnter(e, commitPrice)} />
       </label>
       <div className="field">
         <span>Wear it for</span>
@@ -140,7 +143,7 @@ export function PieceDetails({ garment: g, ix, byId, onEdit, onOpenPiece, keep }
         <span>
           Tags <small className="muted">(comma-separated)</small>
         </span>
-        <input value={tags} placeholder="work, gym" onChange={e => setTags(e.target.value)} onBlur={commitTags} onKeyDown={onEnter(commitTags)} />
+        <input value={tags} placeholder="work, gym" onChange={e => setTags(e.target.value)} onBlur={commitTags} onKeyDown={e => onEnter(e, commitTags)} />
       </label>
       {company.length > 0 && (
         <div className="field">

@@ -12,7 +12,7 @@ vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({}),
 }))
 
-import { buildCapturedTask, quickCaptureFields } from '../ai'
+import { buildCapturedTask, quickCaptureFields } from '../capture'
 import { dueSections } from '../components/Today'
 import { addGroceryItem, buildGroceryList, groceryId, mealLabel, mealsForWeek } from '../kitchen'
 import { weekRange } from '../review'

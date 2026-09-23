@@ -4,7 +4,9 @@ import { formatMoney, isPayday, monthlyCost, monthlyIncome, monthlySpare } from 
 import { balanceOn, cashRunway, countable, firstShortfall, isLiability, isLiquid, latestBalance, moneyTotals, withBalance } from '../finance'
 import { newerStamp } from '../itemops'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, OPEN_STATUSES, RECURRENCE_META, type Account, type AccountType, type Task } from '../types'
-import { dateKey, uid } from '../utils'
+import { uid } from '../utils'
+import { shiftDayKey } from '../journal'
+import { useDayKey } from '../useDayKey'
 import { Bills } from './Bills'
 import { StatTile } from './bits'
 import { ConfirmButton } from './ConfirmButton'
@@ -99,7 +101,7 @@ function AccountRow({ account, whose, onSave, onRemove }: { account: Account; wh
   const latest = latestBalance(account)
   const meta = ACCOUNT_TYPE_META[account.type]
   // a month back, so a row can say which way it is going without a chart
-  const monthAgo = dateKey(new Date(Date.now() - 30 * 86_400_000))
+  const monthAgo = shiftDayKey(useDayKey(), -30)
   const then = balanceOn(account, monthAgo)
   const move = latest && then && then.on !== latest.on ? Math.round((latest.amount - then.amount) * 100) / 100 : null
 

@@ -72,7 +72,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   const [group, setGroup] = useState<PersonGroup>(person?.group ?? 'family')
   // '' is none set (the 90-day default), 'off' is No reminders
   const [cadence, setCadence] = useState<Cadence | '' | 'off'>(person?.noReminders ? 'off' : ((person?.cadenceDays as Cadence | undefined) ?? ''))
-  const [color, setColor] = useState(person?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
+  const [color, setColor] = useState(() => person?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
   const [notes, setNotes] = useState(person?.notes ?? '')
   const [birthday, setBirthday] = useState(person?.birthday ?? '')
   const [anniversary, setAnniversary] = useState(person?.anniversary ?? '')
@@ -453,27 +453,30 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   const [editing, setEditing] = useState<{ person?: Person } | null>(() => (openAdd ? {} : null))
   const [logging, setLogging] = useState<Person | null>(null)
   const [sort, setSort] = useState<SortKey>('attention')
-  // a card asked for opens with the first paint when People mounts for it,
-  // and through the effect below when People is already on screen
+  // a card asked for opens with the first paint when People mounts for it
   const [openId, setOpenId] = useState<string | null>(() => wantOpen ?? null)
   /** The whole list folded away. Not remembered: a hidden list you did not hide is worse than a long one. */
   const [listShut, setListShut] = useState(false)
 
+  // A card or the add sheet asked for while this is already on screen opens
+  // as the ask arrives. The People tab clears the find box and the group chip as
+  // the card is asked for, so neither hides it.
+  const [asked, setAsked] = useState({ wantOpen, openAdd })
+  if (asked.wantOpen !== wantOpen || asked.openAdd !== openAdd) {
+    setAsked({ wantOpen, openAdd })
+    if (wantOpen && wantOpen !== asked.wantOpen) setOpenId(wantOpen)
+    if (openAdd && !asked.openAdd) setEditing({})
+  }
   useEffect(() => {
     if (!wantOpen) return
-    // the People tab clears the find box and the group chip as the card is
-    // asked for, before this draws, so neither hides it
-    setOpenId(wantOpen)
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
     onOpenConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
   }, [wantOpen])
   useEffect(() => {
-    if (!openAdd) return
-    setEditing({})
-    onAddConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (openAdd) onAddConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
   }, [openAdd])
   // An event of your own counts as seeing the people on it once it has
   // happened, the way a subscribed calendar's does once Who was there? logs

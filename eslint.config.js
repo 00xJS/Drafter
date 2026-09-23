@@ -15,13 +15,17 @@ const server = ['netlify/functions', 'mcp', 'shared', 'scripts']
 
 export default tseslint.config(
   // supabase/functions/bot is Deno: its own globals and URL imports.
-  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**'] },
+  // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.
+  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist/**', 'playwright-report/**', 'test-results/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // The rules of hooks, and the React Compiler's own checks (vite.config.ts
+    // compiles src/ with it): a component it cannot prove safe is left
+    // uncompiled, so what these report is either a bug or lost memoisation.
     files: ['src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
-    rules: { ...reactHooks.configs.recommended.rules, ...rules },
+    rules: { ...reactHooks.configs['recommended-latest'].rules, ...rules },
   },
   {
     // Plain ES modules run by Node (functions on Netlify, the MCP server over

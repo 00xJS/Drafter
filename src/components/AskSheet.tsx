@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AskDoc, AskKind, AskPrep, AskSources, parseAskAnswer, prepareAsk } from '../ask'
 import { askDrafter } from '../ai'
 import { relativeDayLabel } from '../journal'
@@ -110,20 +110,23 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
   })
   const [phase, setPhase] = useState<Phase>(() => (!req ? { kind: 'idle' } : worthAsking(req.prep) ? { kind: 'busy' } : { kind: 'empty' }))
   const askRef = useRef(ask)
-  askRef.current = ask
+  useLayoutEffect(() => {
+    askRef.current = ask
+  })
   // one call per question: StrictMode's rehearsal re-runs the effect, not the request
   const inflight = useRef<{ id: number; answer: Promise<Answer> } | null>(null)
 
+  /** Ask this, now: it reads as busy, or as empty when nothing matched, before the effect below sends it. */
+  const startAsking = (next: Request) => {
+    setReq(next)
+    setPhase(worthAsking(next.prep) ? { kind: 'busy' } : { kind: 'empty' })
+  }
+
   useEffect(() => {
-    if (!req) return
-    if (!worthAsking(req.prep)) {
-      setPhase({ kind: 'empty' })
-      return
-    }
+    if (!req || !worthAsking(req.prep)) return
     if (inflight.current?.id !== req.id) inflight.current = { id: req.id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts) }
     const pending = inflight.current.answer
     let live = true
-    setPhase({ kind: 'busy' })
     pending.then(
       res => {
         if (!live) return
@@ -145,7 +148,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
     const question = draft.trim()
     if (!question) return
     setAll(false)
-    setReq(r => ({ id: (r?.id ?? 0) + 1, question, prep: prepare(question, journal) }))
+    startAsking({ id: (req?.id ?? 0) + 1, question, prep: prepare(question, journal) })
   }
 
   // the chip changes what may be read, so the question is asked again with it
@@ -153,7 +156,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
     const next = !journal
     setJournal(next)
     writeAskJournal(next)
-    if (req) setReq({ id: req.id + 1, question: req.question, prep: prepare(req.question, next) })
+    if (req) startAsking({ id: req.id + 1, question: req.question, prep: prepare(req.question, next) })
   }
 
   const docs = req?.prep.docs ?? []
@@ -211,7 +214,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
               <p className="ask-note ask-failed">
                 {phase.text}{' '}
                 {phase.retry && (
-                  <button type="button" className="btn subtle" onClick={() => setReq({ ...req, id: req.id + 1 })}>
+                  <button type="button" className="btn subtle" onClick={() => startAsking({ ...req, id: req.id + 1 })}>
                     Try again
                   </button>
                 )}

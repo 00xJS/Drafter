@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { useEffect, useRef, useState } from 'react'
-import { buildCapturedTask, quickCaptureFields } from './ai'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { buildCapturedTask, quickCaptureFields } from './capture'
 import { dueSections } from './components/Today'
 import { blocksOn } from './focus'
 import { addGroceryItem, buildGroceryList, groceryId, mealLabel, mealsForWeek, tonightDinner } from './kitchen'
@@ -362,7 +362,11 @@ export function createWidgetBridge(deps: {
  */
 export function useWidgetBridge(store: Store): void {
   const latest = useRef(store)
-  latest.current = store
+  useLayoutEffect(() => {
+    latest.current = store
+  })
+  // made once; it reads the store through the ref above, from native callbacks and effects only
+  // eslint-disable-next-line react-hooks/refs -- the ref is captured here, not read: nothing calls the bridge while rendering
   const [bridge] = useState(() => {
     const plugin = widgetBridgePlugin()
     return plugin ? createWidgetBridge({ plugin, store: () => latest.current, generic: genericRemindersEnabled }) : null

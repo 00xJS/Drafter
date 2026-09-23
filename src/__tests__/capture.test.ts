@@ -2,7 +2,8 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 vi.mock('../api', () => ({ apiFetch: vi.fn() }))
 import { apiFetch } from '../api'
-import { CapturedFields, buildCapturedTask, parseCapture, quickCaptureFields } from '../ai'
+import { parseCapture } from '../ai'
+import { CapturedFields, buildCapturedTask, quickCaptureFields } from '../capture'
 import { inInbox } from '../taskutils'
 
 // The palette's Shift+Enter files a task from these two pure steps with no

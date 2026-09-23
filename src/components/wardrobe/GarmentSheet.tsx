@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
@@ -182,7 +182,9 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
   // through; pasted text still goes into the fields as ever, and a dropped file
   // is never opened by the browser in the app's place
   const take = useRef({ choose, drop })
-  take.current = { choose, drop }
+  useLayoutEffect(() => {
+    take.current = { choose, drop }
+  })
   useEffect(() => {
     const carriesFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
     const onPaste = (e: ClipboardEvent) => {
@@ -433,7 +435,9 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
   const g = garments.find(x => x.id === id)
   // edits after an await read the piece as it is by then, so each is stamped newer than the last
   const latest = useRef(g)
-  latest.current = g
+  useLayoutEffect(() => {
+    latest.current = g
+  })
   const [draft, setDraft] = useState(g?.name ?? '')
   const [notes, setNotes] = useState(g?.notes ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)

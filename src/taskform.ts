@@ -1,4 +1,5 @@
-import type { CapturedFields, RefineMode } from './ai'
+import type { RefineMode } from './ai'
+import type { CapturedFields } from './capture'
 import { parseGithubUrl } from './github'
 import { newerStamp } from './itemops'
 import type { Attachment, Bill, ChecklistItem, Comment, Person, Priority, RecurrenceFreq, Task, TaskStatus } from './types'

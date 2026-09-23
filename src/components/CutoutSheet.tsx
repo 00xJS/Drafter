@@ -227,31 +227,46 @@ function useOnline(): boolean {
 }
 
 /**
+ * An object URL for a blob while it is shown: made when the blob arrives,
+ * revoked when it is replaced or the sheet closes, and '' until then (or for
+ * no blob), so a new blob never draws with the old one's revoked URL.
+ */
+function useObjectUrl(blob: Blob | undefined): string {
+  const [made, setMade] = useState<{ blob: Blob; url: string } | null>(null)
+  useEffect(() => {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the URL lives outside React: made here, revoked by this effect's cleanup
+    setMade({ blob, url })
+    return () => URL.revokeObjectURL(url)
+  }, [blob])
+  return made && made.blob === blob ? made.url : ''
+}
+
+/**
  * The cut-out behind the sheet. It owns the object URLs (revoked when replaced
  * or unmounted), aborts a run the sheet has moved past, runs again after a tap
  * or a retake, and lets the web segmenter go idle on unmount.
  */
 function useGarmentCutout(initial: Blob) {
   const [job, setJob] = useState<Job>({ photo: initial, web: false, n: 0 })
-  const [photoUrl, setPhotoUrl] = useState('')
   const [state, setState] = useState<PreviewState>('preparing')
   const [progress, setProgress] = useState<{ loaded: number; total: number }>()
   const [result, setResult] = useState<CutoutResult>()
-  const [cutoutUrl, setCutoutUrl] = useState('')
   const [canPick, setCanPick] = useState(false)
-
-  useEffect(() => {
-    const url = URL.createObjectURL(job.photo)
-    setPhotoUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [job.photo])
+  const photoUrl = useObjectUrl(job.photo)
+  const cutoutUrl = useObjectUrl(result && result.method !== 'none' ? result.image : undefined)
+  /** Run again (a tap, a retake, a retry): the sheet shows the new run from its start. */
+  const rerun = (next: (j: Job) => Job) => {
+    setJob(next)
+    setState('preparing')
+    setProgress(undefined)
+    setResult(undefined)
+  }
 
   useEffect(() => {
     const controller = new AbortController()
     let live = true
-    setState('preparing')
-    setProgress(undefined)
-    setResult(undefined)
     void extractGarment(job.photo, {
       point: job.point,
       points: job.points,
@@ -278,16 +293,6 @@ function useGarmentCutout(initial: Blob) {
   }, [job])
 
   useEffect(() => {
-    if (!result || result.method === 'none') {
-      setCutoutUrl('')
-      return
-    }
-    const url = URL.createObjectURL(result.image)
-    setCutoutUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [result])
-
-  useEffect(() => {
     let live = true
     void canPickGarment().then(ok => {
       if (live) setCanPick(ok)
@@ -311,11 +316,11 @@ function useGarmentCutout(initial: Blob) {
     // A tap picks among Vision's subjects first, where it lifted this photo
     // (the extractor moves on to the web engine when Vision has nothing more);
     // a key press asks the web engine's own automatic seeds for a second opinion.
-    pick: (point: Point | null) => setJob(j => ({ photo: j.photo, point: point ?? undefined, web: point === null, n: j.n + 1 })),
+    pick: (point: Point | null) => rerun(j => ({ photo: j.photo, point: point ?? undefined, web: point === null, n: j.n + 1 })),
     // + Add another: a point on everything the cut-out holds, and the tap
-    add: (point: Point) => setJob(j => ({ photo: j.photo, points: [...(result?.points ?? []), point], web: false, n: j.n + 1 })),
-    retry: () => setJob(j => ({ ...j, n: j.n + 1 })),
-    retake: (photo: Blob) => setJob(j => ({ photo, web: false, n: j.n + 1 })),
+    add: (point: Point) => rerun(j => ({ photo: j.photo, points: [...(result?.points ?? []), point], web: false, n: j.n + 1 })),
+    retry: () => rerun(j => ({ ...j, n: j.n + 1 })),
+    retake: (photo: Blob) => rerun(j => ({ photo, web: false, n: j.n + 1 })),
   }
 }
 

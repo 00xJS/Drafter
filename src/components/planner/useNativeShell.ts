@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { Store } from '../../store'
 import { notifyDue } from '../../notify'
 import {
@@ -30,6 +30,44 @@ interface Deps {
  * phone fires on its own, and the widget and Siri.
  */
 export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
+  // What the listeners below call, from the render last committed: set before
+  // any of them can run.
+  const notifyRef = useRef(() => {})
+  // iOS: the phone itself fires a notification at each due time, at the start
+  // of each of my events and on occasion mornings — no server involved, so it
+  // works with no account and the app closed — and the morning's Plan your
+  // day, which is on until turned off
+  const remindersRef = useRef(() => {})
+  useLayoutEffect(() => {
+    notifyRef.current = () => {
+      notifyDue(store.tasks, { events: store.events, myId })
+    }
+    remindersRef.current = () => {
+      if (!isNative()) return
+      const local = localRemindersEnabled()
+      const planDay = planDayPref()
+      if (!local && !planDay.on) return
+      void (async () => {
+        // Plan your day is on by default, so the first run that would set it asks
+        // iOS for notifications; after that iOS answers from the choice made,
+        // without asking again. Never over the lock screen: a later run asks
+        if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
+        let skipTaskDue = false
+        if (local) {
+          try {
+            const info = await fetchPushInfo()
+            skipTaskDue = await deviceHasServerPush(info.subscriptions ?? [])
+          } catch {
+            /* offline / unsigned — keep local due reminders */
+          }
+        }
+        await scheduleLocalReminders(
+          deviceReminders(store, new Date(), { local, skipTaskDue, generic: genericRemindersEnabled(), planDay, events: store.events, myId }),
+        )
+      })()
+    }
+  })
+
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
   useEffect(() => {
     // the effect can be torn down before initNative resolves (React's
@@ -64,45 +102,12 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
 
   // due tasks and my events as they start, while the app is open (device-local,
   // never a store write): the copies in Google and Outlook no longer ring
-  const notifyRef = useRef(() => {})
-  notifyRef.current = () => {
-    notifyDue(store.tasks, { events: store.events, myId })
-  }
   useEffect(() => {
     notifyRef.current()
     const t = window.setInterval(() => notifyRef.current(), 30_000)
     return () => window.clearInterval(t)
   }, [])
 
-  // iOS: the phone itself fires a notification at each due time, at the start
-  // of each of my events and on occasion mornings — no server involved, so it
-  // works with no account and the app closed — and the morning's Plan your
-  // day, which is on until turned off
-  const remindersRef = useRef(() => {})
-  remindersRef.current = () => {
-    if (!isNative()) return
-    const local = localRemindersEnabled()
-    const planDay = planDayPref()
-    if (!local && !planDay.on) return
-    void (async () => {
-      // Plan your day is on by default, so the first run that would set it asks
-      // iOS for notifications; after that iOS answers from the choice made,
-      // without asking again. Never over the lock screen: a later run asks
-      if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
-      let skipTaskDue = false
-      if (local) {
-        try {
-          const info = await fetchPushInfo()
-          skipTaskDue = await deviceHasServerPush(info.subscriptions ?? [])
-        } catch {
-          /* offline / unsigned — keep local due reminders */
-        }
-      }
-      await scheduleLocalReminders(
-        deviceReminders(store, new Date(), { local, skipTaskDue, generic: genericRemindersEnabled(), planDay, events: store.events, myId }),
-      )
-    })()
-  }
   // meals too: a takeaway logged tonight takes that place's nudge off the phone;
   // and who I am, which may be known only after the last change, so a household
   // member's events never stay on this phone for want of it

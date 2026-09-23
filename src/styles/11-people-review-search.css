@@ -35,11 +35,6 @@
   flex-wrap: wrap;
   margin: 0 0 12px;
 }
-.people-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
 .person-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -226,16 +221,6 @@
 }
 .spark-bar.now {
   background: var(--viz-series-1);
-}
-.stalled-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0 0 14px;
-}
-.stalled-chip {
-  cursor: pointer;
 }
 
 /* review */

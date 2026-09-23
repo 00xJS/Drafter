@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -316,7 +316,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
 
   // the latest props, for an Undo pressed after this render's closures went stale
   const latest = useRef({ meals, recipes, groceries, onClearMeal, onSave })
-  latest.current = { meals, recipes, groceries, onClearMeal, onSave }
+  useLayoutEffect(() => {
+    latest.current = { meals, recipes, groceries, onClearMeal, onSave }
+  })
 
   /** Fill them in, over these recipes in this order. */
   const startFill = (list: readonly Recipe[]) => {
@@ -364,22 +366,6 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
     }
   }
 
-  useEffect(() => {
-    if (!openRecipe) return
-    // Today's Cook on tonight's dinner: today's meal with this main, so its sides are in cook mode too
-    const key = dateKey(new Date())
-    const meal = meals.find(m => m.date === key && m.slot === 'dinner' && m.recipeId === openRecipe.id) ?? meals.find(m => m.date === key && m.recipeId === openRecipe.id)
-    cook(openRecipe, meal)
-    // setSeg, not setTab: a way in (Today's Cook, the Stats lens's Most cooked)
-    // moves the segment for this visit only. setTab writes KITCHEN_TAB_KEY, so
-    // it would leave every later tap of the Kitchen tab opening Recipes instead
-    // of the segment the person actually chose.
-    setSeg('recipes')
-    setFocusDay(null)
-    onOpenRecipeConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openRecipe])
-
   // A way in (a link, a tap on the Kitchen tab) moves the segment
   // for this visit only: the one last chosen with its button stays remembered.
   // It moves as Kitchen renders, so the segment it leaves never shows first,
@@ -411,6 +397,28 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
     if (openDay) onOpenDayConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDay])
+  // …and a recipe to cook, from Today's Cook on tonight's dinner or the Stats
+  // lens's Most cooked. Taken last, so it wins over a segment or a day sent with
+  // it; and at mount too, as the Kitchen mostly mounts with it already set.
+  const [seenOpenRecipe, setSeenOpenRecipe] = useState<Recipe | null>(null)
+  if ((openRecipe ?? null) !== seenOpenRecipe) {
+    setSeenOpenRecipe(openRecipe ?? null)
+    if (openRecipe) {
+      // today's meal with this main, so its sides are in cook mode too
+      const meal = meals.find(m => m.date === today && m.slot === 'dinner' && m.recipeId === openRecipe.id) ?? meals.find(m => m.date === today && m.recipeId === openRecipe.id)
+      cook(openRecipe, meal)
+      // setSeg, not setTab: a way in (Today's Cook, the Stats lens's Most cooked)
+      // moves the segment for this visit only. setTab writes KITCHEN_TAB_KEY, so
+      // it would leave every later tap of the Kitchen tab opening Recipes instead
+      // of the segment the person actually chose.
+      setSeg('recipes')
+      setFocusDay(null)
+    }
+  }
+  useEffect(() => {
+    if (openRecipe) onOpenRecipeConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+  }, [openRecipe])
   /** Stats' dinner calendar: that day on This week, scrolled to and framed, for this visit only. */
   const goDay = (day: string) => {
     setAnchor(new Date(`${day}T12:00:00`))
@@ -782,11 +790,13 @@ function WeekPlan({
   const land = (want: string | null | undefined) => (want && keys.includes(want) ? want : keys.includes(today) ? today : keys[0])
   const [picked, setPicked] = useState(() => land(focusDay))
   const swipeFrom = useRef<number | null>(null)
-  useEffect(() => {
+  // week.start is the week on screen (the page's memo, so it is a new one only
+  // when the week is moved); a new week or a Stats day replaces the open letter
+  const [pickedFor, setPickedFor] = useState({ start: week.start, focusDay })
+  if (pickedFor.start !== week.start || pickedFor.focusDay !== focusDay) {
+    setPickedFor({ start: week.start, focusDay })
     setPicked(land(focusDay))
-    // week.start is the week on screen; a new week or a Stats day replaces the open letter
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week.start, focusDay])
+  }
   const dinnerOn = (key: string) => {
     const { mine, theirs } = mealsForSlot(meals, key, 'dinner', myId)
     const shown = mine ?? theirs.find(mealIsShared) ?? theirs[0]
@@ -977,10 +987,12 @@ function GroceryPane({
   const counts = groceryCounts(list.items)
 
   // a new week is a new shop: nothing carries over but the list itself
-  useEffect(() => {
+  const [shopFor, setShopFor] = useState(week.key)
+  if (shopFor !== week.key) {
+    setShopFor(week.key)
     setTicked(new Set<string>())
     setGone(new Set<string>())
-  }, [week.key])
+  }
 
   const patch = (next: GroceryList) => onSave({ ...next, updatedAt: newerStamp(next.updatedAt) })
   /**
@@ -1578,7 +1590,9 @@ function RecipeForm({
   const has = { ingredients: ingredients.some(i => i.name.trim() !== ''), steps: steps.trim() !== '' }
   // an answer arrives after an await: it lands on what the fields hold then
   const now = useRef({ has, servings })
-  now.current = { has, servings }
+  useLayoutEffect(() => {
+    now.current = { has, servings }
+  })
 
   const setRows = (rows: RecipeIngredient[]) => {
     setQtyText(t => ({ ...t, ...qtyTexts(rows) }))

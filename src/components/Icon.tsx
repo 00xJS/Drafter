@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, JSX } from 'react'
 
 /**
  * One inline stroke-icon set for the app chrome, drawn to a 24×24 box in

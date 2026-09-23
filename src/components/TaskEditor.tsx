@@ -2,7 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
-import { RefineMode, CapturedFields, captureSeed, isSimpleDateCapture, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { RefineMode, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import { CapturedFields, captureSeed, isSimpleDateCapture } from '../capture'
 import { AiBusy, FormPatch, StepOp, appendOnce, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -111,7 +112,6 @@ export function TaskEditor({
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<RefineProposal | null>(null)
   const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
 
   /** The last copy this editor wrote: the store's reaches `getLatest` a render later, and a save straight after a write must build on it. */
   const wrote = useRef<Task | null>(null)
@@ -277,7 +277,6 @@ export function TaskEditor({
     <Modal
       onClose={requestClose}
       className="modal wide task-editor"
-      panelRef={modalRef}
       onKeyDown={e => {
         const target = e.target as HTMLElement
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

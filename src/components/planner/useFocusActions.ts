@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { MEAL_SLOT_META, type CalendarEntry, type Item, type Meal, type MealSlot, type Review, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import { planDayWrites, restoreSnapshots, shutdownWrites, type DayWrites, type ShutdownResult, type ShutdownWrites, type StatusMove } from '../../focus'
@@ -265,7 +265,9 @@ export function useFocusActions(deps: Deps) {
   // An Undo runs renders after its plan, against tasks, blocks and meals the
   // plan itself added: it reads the store and the save paths as they are then
   const latest = useRef(deps)
-  latest.current = deps
+  useLayoutEffect(() => {
+    latest.current = deps
+  })
   const ports = (): PlanPorts => {
     const d = latest.current
     return {

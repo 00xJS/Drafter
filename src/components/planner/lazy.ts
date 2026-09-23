@@ -3,10 +3,11 @@ import { preloadable, schedulePreload, warm } from '../../lazyload'
 import type { View } from './routes'
 
 // Everything a launch does not paint first, each in a chunk of its own: the
-// views behind the other tabs and segments, and every overlay. Today, the
-// Journal, the header, the toast and the error boundary stay in the Planner
-// chunk. The shell and the screens import these, never the files themselves
-// (lazyload.test.ts walks the imports to hold that).
+// views behind the other tabs and segments, and every overlay. Today (with its
+// journal card), the header, the toast and the error boundary stay in the
+// Planner chunk. The shell and the screens import these, never the files
+// themselves (lazyload.test.ts walks the imports to hold that, and
+// scripts/check-precache.mjs checks the built launch holds no assistant code).
 export const Calendar = preloadable(() => import('../Calendar').then(m => m.Calendar), 'Calendar')
 export const Roadmap = preloadable(() => import('../Roadmap').then(m => m.Roadmap), 'Roadmap')
 export const TasksTable = preloadable(() => import('../TasksTable').then(m => m.TasksTable), 'TasksTable')
@@ -27,6 +28,10 @@ export const Kitchen = preloadable(() => import('../Kitchen').then(m => m.Kitche
 // the Kitchen imports from here and a finger on the Kitchen tab warms too
 export const KitchenStats = preloadable(() => import('../kitchen/KitchenStats').then(m => m.KitchenStats), 'KitchenStats')
 export const Review = preloadable(() => import('../Review').then(m => m.Review), 'Review')
+// Insights → Journal: the archive of what you wrote, with its mood chart and
+// its search. Writing today's line is Today's, and that card and the editor it
+// writes with stay in the Planner chunk (JournalCard.tsx).
+export const JournalView = preloadable(() => import('../Journal').then(m => m.JournalView), 'JournalView')
 // Home → Chat: the household's thread and the assistant's, and the retrieval
 // the assistant runs on this device (ask.ts) — the biggest module either of
 // them touches, and one nobody who never opens the chat should download.
@@ -71,7 +76,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   // four segments, and a finger cannot say which — so all four, as the lens does
   keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
-  insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
+  insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload, JournalView.preload, Review.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
@@ -81,7 +86,7 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  Settings and the chat sit near the front because the top bar reaches both
  *  from every screen — Settings was dead last of 29, from when it was a dialog
  *  you rarely opened rather than a screen you navigate to. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {
