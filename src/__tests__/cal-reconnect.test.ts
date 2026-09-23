@@ -108,7 +108,7 @@ describe('a token the provider refuses is dropped at once', () => {
     expect(issued).toBe(2)
   })
 
-  it('Google: a revoked grant says reconnect, and the dead token is never tried again', async () => {
+  it('Google: a revoked grant says sign in again, and neither the dead token nor the dead grant is tried again', async () => {
     let revoked = false
     let refreshes = 0
     const w = world({
@@ -118,13 +118,14 @@ describe('a token the provider refuses is dropped at once', () => {
       },
       google: () => (revoked ? { status: 401, body: { error: { message: 'Invalid Credentials' } } } : { body: { items: [] } }),
     })
-    w.rows.set('u-g-revoked', { user_id: 'u-g-revoked', google_refresh_token: 'grant' })
+    w.rows.set('u-g-revoked', { user_id: 'u-g-revoked', google_refresh_token: 'grant', google_email: 'me@gmail.com' })
     await gapi('u-g-revoked', '/users/me/calendarList')
     revoked = true
-    await expect(gapi('u-g-revoked', '/users/me/calendarList')).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/reconnect/) })
-    await expect(gapi('u-g-revoked', '/users/me/calendarList')).rejects.toMatchObject({ status: 409 })
-    // before: the cached token was sent for up to an hour after the revoke
-    expect(refreshes).toBe(3)
+    await expect(gapi('u-g-revoked', '/users/me/calendarList')).rejects.toMatchObject({ status: 409, reason: 'reauth', message: expect.stringMatching(/sign in again/) })
+    await expect(gapi('u-g-revoked', '/users/me/calendarList')).rejects.toMatchObject({ status: 409, reason: 'reauth' })
+    // before: the cached token was sent for up to an hour after the revoke; and
+    // the refused grant was offered to Google again on every call after that
+    expect(refreshes).toBe(2)
     expect(w.seen.filter(r => r.url.includes('calendarList'))).toHaveLength(2)
   })
 

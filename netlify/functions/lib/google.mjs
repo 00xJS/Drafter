@@ -48,12 +48,28 @@ export async function exchangeCode(code, redirectUri) {
   return body
 }
 
+/** What a mirror hears once Google has refused the grant: the app shows it on Today and stops asking until the account is signed in again. */
+export const GOOGLE_SIGN_IN_AGAIN = 'Google Calendar needs you to sign in again.'
+
+const signInAgain = () => Object.assign(new Error(GOOGLE_SIGN_IN_AGAIN), { status: 409, reason: 'reauth' })
+
+/**
+ * Whether the account's Google sign-in has stopped working: it was connected
+ * — its address, or the Drafter calendar it mirrors into, is still kept — but
+ * Google refused its grant, so the grant was let go. Disconnect clears all
+ * three; a reconnect writes a new grant. The morning digest says so meanwhile.
+ */
+export const googleNeedsSignIn = settings => !settings?.google_refresh_token && !!(settings?.google_email || settings?.google_drafter_calendar_id)
+
 export async function accessToken(userId) {
   const hit = cache.get(userId)
   if (hit && Date.now() < hit.exp - 60_000) return hit.token
   const settings = await settingsGet(userId)
   const refresh = settings?.google_refresh_token
-  if (!refresh) throw Object.assign(new Error('Google Calendar is not connected'), { status: 409 })
+  if (!refresh) {
+    if (googleNeedsSignIn(settings)) throw signInAgain()
+    throw Object.assign(new Error('Google Calendar is not connected'), { status: 409, reason: 'not_connected' })
+  }
   const e = env()
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -64,7 +80,15 @@ export async function accessToken(userId) {
   if (!res.ok) {
     cache.delete(userId)
     if (body.error === 'invalid_grant') {
-      throw Object.assign(new Error('Google access was revoked or expired — reconnect Google Calendar in Settings.'), { status: 409 })
+      // Revoked, expired, or the password changed: this grant will never work
+      // again. It used to be offered to Google on every pass, every half hour,
+      // with only Settings saying why. Let it go (the address stays, so a
+      // reconnect keeps the same Drafter calendar and the digest can say what
+      // happened), and every call after this is refused here at once. Only if
+      // it is still the stored grant: a reconnect may have landed meanwhile.
+      const now = await settingsGet(userId).catch(() => null)
+      if (now?.google_refresh_token === refresh) await settingsSet(userId, { google_refresh_token: null }).catch(() => {})
+      throw signInAgain()
     }
     throw new Error(body.error_description ?? body.error ?? `token refresh failed (${res.status})`)
   }

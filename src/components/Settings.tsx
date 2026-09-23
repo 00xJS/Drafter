@@ -66,13 +66,24 @@ interface Props {
   /** Owner only. The header's Admin button is hidden on phones, so this is the
       only admin route on the device the owner actually uses. */
   onOpenAdmin?(): void
+  /** The group to open on, when the opener asks for one: Today's calendar sign-in banner opens Calendars. */
+  initialGroup?: string
 }
 
-export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin }: Props) {
-  // You, when there is an account to be: the first thing a second member wants
-  // from this dialog is their own name and picture, not the calendar plumbing.
+/**
+ * The group Settings opens on: the one asked for (Today's calendar sign-in
+ * banner asks for Calendars), when it exists here; else You, when there is an
+ * account to be — the first thing a second member wants from Settings is
+ * their own name and picture, not the calendar plumbing.
+ */
+export function openingGroup(asked: string | undefined, supabaseOn: boolean): string {
+  if (asked && SETTINGS_GROUPS.some(g => g.key === asked && (!g.needsAccount || supabaseOn))) return asked
+  return supabaseOn ? 'you' : 'appearance'
+}
+
+export function Settings({ store, calendars, googlePush, microsoftSync, household, onClose, onOpenAdmin, initialGroup }: Props) {
   const supabaseOn = isSupabaseConfigured()
-  const [group, setGroup] = useState(supabaseOn ? 'you' : 'appearance')
+  const [group, setGroup] = useState(() => openingGroup(initialGroup, supabaseOn))
   /** Show the groups that are not about you. Off until asked for, and for this visit only. */
   const [more, setMore] = useState(false)
   // kept here because two sections share each: Sync's buttons, and the feed

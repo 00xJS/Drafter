@@ -27,7 +27,7 @@ import {
   validChallenge,
   verifyState,
 } from './lib/oauth.mjs'
-import { SCOPES, exchangeCode, googleConfigured, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
+import { SCOPES, exchangeCode, googleConfigured, googleNeedsSignIn, googlePullRows, listCalendars, listChangedMirrors, missingGoogleEnv, pushEntry, pushTask, reconnectPatch, resolveDrafterCalendar, revoke } from './lib/google.mjs'
 import { runMirrorBatch } from './lib/mirror.mjs'
 
 const redirectUriFor = origin => `${origin}/api/google/callback`
@@ -169,7 +169,15 @@ const handler = async req => {
     if (action === 'status') {
       const configured = googleConfigured()
       const s = configured ? await settingsGet(user.id) : null
-      return Response.json({ configured, connected: !!s?.google_refresh_token, email: s?.google_email ?? null, missing: missingGoogleEnv(), redirectUri: redirectUriFor(url.origin) })
+      return Response.json({
+        configured,
+        connected: !!s?.google_refresh_token,
+        email: s?.google_email ?? null,
+        // connected once, until Google refused the grant: Settings asks to sign in again
+        ...(googleNeedsSignIn(s) ? { needsSignIn: true } : {}),
+        missing: missingGoogleEnv(),
+        redirectUri: redirectUriFor(url.origin),
+      })
     }
     if (!googleConfigured()) return Response.json({ error: `Google Calendar is not configured on the host: set ${missingGoogleEnv().join(', ')}` }, { status: 501 })
 
@@ -267,7 +275,8 @@ const handler = async req => {
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {
     const status = e?.status === 409 || e?.status === 401 ? 409 : e?.status === 501 ? 501 : 502
-    return Response.json({ error: e?.message ?? 'Google request failed' }, { status })
+    // `reason` tells the app a sign-in has died ('reauth') from a blip it should retry
+    return Response.json({ error: e?.message ?? 'Google request failed', ...(e?.reason ? { reason: e.reason } : {}) }, { status })
   }
 }
 

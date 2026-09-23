@@ -18,7 +18,17 @@ export interface GoogleTokens {
 }
 /** Trade an authorization code for tokens; throws with Google's reason. */
 export declare function exchangeCode(code: string, redirectUri: string): Promise<GoogleTokens>
-/** A live access token for the user's grant, cached per warm function. */
+/** What a mirror hears once Google has refused the grant (the error's reason is 'reauth'). */
+export declare const GOOGLE_SIGN_IN_AGAIN: string
+/** Connected once (the address or the Drafter calendar is kept) until Google refused the grant, which was then let go. */
+export declare function googleNeedsSignIn(
+  settings: { google_email?: string | null; google_refresh_token?: string | null; google_drafter_calendar_id?: string | null } | null | undefined,
+): boolean
+/**
+ * A live access token for the user's grant, cached per warm function. Throws
+ * with status 409: reason 'not_connected', or 'reauth' once Google refused the
+ * grant (it is then let go, and every later call is refused here at once).
+ */
 export declare function accessToken(userId: string): Promise<string>
 /** Revoke the grant at Google and forget it here. */
 export declare function revoke(userId: string): Promise<void>

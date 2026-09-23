@@ -79,10 +79,26 @@ export const writeCursor = (key: string, value: string) => {
  */
 export type MirrorSpec = { provider: 'google'; id: 'google'; key: string } | { provider: 'microsoft'; id: string; key: string; accountId: string }
 
+/**
+ * A mirror whose account's sign-in the provider refuses for good (revoked,
+ * expired): what to say, and since when. Kept on this device until the account
+ * is signed in again, so the streak is said once, and the mirror stops asking.
+ */
+export interface SignInTrouble {
+  /** This streak and this target: a banner put aside stays aside until a new streak starts. */
+  id: string
+  /** Which provider, so Settings can clear it when that account is connected again. */
+  provider: 'google' | 'microsoft'
+  since: string
+  message: string
+}
+
 export interface GooglePushState {
   lastAt?: string
   error?: string
   pending: boolean
+  /** Targets whose sign-in died, by target id ('google' or an Outlook account id): not retried until signed in again. */
+  signIn?: Record<string, SignInTrouble>
   /** Why each target's last pass failed: 'google', or an Outlook account id. */
   accountErrors?: Record<string, string>
   /** Records still owed to a provider (refused, unreachable or not reached yet); they are retried. */
@@ -102,6 +118,117 @@ export interface GooglePushState {
 type MirrorStatus = Omit<GooglePushState, 'pushNow' | 'pullNow' | 'dismissNotice'>
 
 const NOTICE_PREFIX = 'drafter:mirror-notice:'
+const SIGN_IN_PREFIX = 'drafter:mirror-signin:'
+const SIGN_IN_DISMISSED = 'drafter:mirror-signin-dismissed'
+
+const providerOf = (key: string): SignInTrouble['provider'] => (key.startsWith('ms:') ? 'microsoft' : 'google')
+
+/** The dead sign-in stored for one mirror target (its ledger key), if any. */
+export function readSignIn(key: string): SignInTrouble | null {
+  try {
+    const raw = localStorage.getItem(SIGN_IN_PREFIX + key)
+    const v = raw ? (JSON.parse(raw) as { since?: unknown; message?: unknown }) : null
+    if (!v || typeof v.since !== 'string' || typeof v.message !== 'string') return null
+    return { id: `${key}|${v.since}`, provider: providerOf(key), since: v.since, message: v.message }
+  } catch {
+    return null
+  }
+}
+
+function writeSignIn(key: string, value: { since: string; message: string } | null): void {
+  try {
+    if (value) localStorage.setItem(SIGN_IN_PREFIX + key, JSON.stringify(value))
+    else localStorage.removeItem(SIGN_IN_PREFIX + key)
+  } catch {
+    /* full or blocked: the next pass finds it again */
+  }
+}
+
+function storedSignIns(targets: readonly MirrorSpec[]): Record<string, SignInTrouble> {
+  const out: Record<string, SignInTrouble> = {}
+  for (const t of targets) {
+    const trouble = readSignIn(t.key)
+    if (trouble) out[t.id] = trouble
+  }
+  return out
+}
+
+/**
+ * Which of the targets a pass asks. One whose sign-in died waits for the
+ * account to be signed in again — retrying every half hour could never mend
+ * it — unless the pass was asked for (pull-to-refresh, a switch in Settings).
+ */
+export function passTargetsFor<T extends { key: string }>(targets: readonly T[], asked: boolean, read: (key: string) => unknown = readSignIn): T[] {
+  return asked ? [...targets] : targets.filter(t => !read(t.key))
+}
+
+/**
+ * What a pass leaves stored: a target whose sign-in it found dead keeps the
+ * streak it was already in (or starts one now), and one that worked clears
+ * its streak. A target that failed some other way keeps whatever it had.
+ */
+export function settleSignIns(
+  ran: readonly { id: string; key: string }[],
+  pass: Pick<PassResult, 'signIn' | 'accountErrors'>,
+  now: string,
+  read: (key: string) => { since: string } | null = readSignIn,
+  write: (key: string, value: { since: string; message: string } | null) => void = writeSignIn,
+): void {
+  for (const t of ran) {
+    const message = pass.signIn[t.id]
+    if (message) write(t.key, { since: read(t.key)?.since ?? now, message })
+    else if (!pass.accountErrors[t.id] && read(t.key)) write(t.key, null)
+  }
+}
+
+const signInWatchers = new Set<() => void>()
+
+/**
+ * The account was signed in again (Settings found it connected): its mirrors
+ * may ask again, at once. `accountId` narrows Outlook to one account.
+ */
+export function clearMirrorSignIn(provider: SignInTrouble['provider'], accountId?: string): void {
+  const prefix = SIGN_IN_PREFIX + (provider === 'google' ? 'google:' : accountId ? msLedgerKey(accountId) : 'ms:')
+  let cleared = false
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix)) keys.push(k)
+    }
+    for (const k of keys) localStorage.removeItem(k)
+    cleared = keys.length > 0
+  } catch {
+    /* nothing stored, nothing to clear */
+  }
+  if (cleared) for (const w of [...signInWatchers]) w()
+}
+
+/** The sign-in streaks this device has put aside on Today. */
+export function readSignInDismissed(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIGN_IN_DISMISSED) ?? '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** Put one streak aside; the last few are remembered. */
+export function dismissSignIn(id: string, list: readonly string[] = readSignInDismissed()): string[] {
+  const next = [id, ...list.filter(x => x !== id)].slice(0, 12)
+  try {
+    localStorage.setItem(SIGN_IN_DISMISSED, JSON.stringify(next))
+  } catch {
+    /* the banner comes back next launch, no worse */
+  }
+  return next
+}
+
+/** Today's banner: the oldest dead sign-in not put aside, or null. Once a streak, since a new one has a new id. */
+export function signInBanner(troubles: readonly SignInTrouble[], dismissed: readonly string[]): SignInTrouble | null {
+  return [...troubles].sort((a, b) => a.since.localeCompare(b.since)).find(t => !dismissed.includes(t.id)) ?? null
+}
 
 /** Notices outlive a reload until dismissed: a recreated calendar is worth hearing about even if Settings was closed at the time. */
 function storedNotices(targets: readonly MirrorSpec[]): Record<string, string> {
@@ -127,7 +254,7 @@ function useMirrorSync(
   onPulled: ((pulled: MirrorPulled) => void) | undefined,
   myId?: string | null,
 ): GooglePushState {
-  const [state, setState] = useState<MirrorStatus>(() => ({ pending: false, notices: storedNotices(targets) }))
+  const [state, setState] = useState<MirrorStatus>(() => ({ pending: false, notices: storedNotices(targets), signIn: storedSignIns(targets) }))
   // what the pass reads when it runs, from the render last committed
   const onPulledRef = useRef(onPulled)
   const itemsRef = useRef(items)
@@ -142,22 +269,22 @@ function useMirrorSync(
     targetsRef.current = targets
   })
   const inflight = useRef<Promise<void> | null>(null)
-  const queued = useRef<{ pull: boolean } | null>(null)
+  const queued = useRef<{ pull: boolean; asked: boolean } | null>(null)
   const retry = useRef<{ timer?: number; delay: number }>({ delay: 0 })
   const debounce = useRef<number | undefined>(undefined)
 
   // named, so a retry can queue the next pass on the very function that is running
-  const trigger = useCallback(function requestPass(pull: boolean): Promise<void> {
+  const trigger = useCallback(function requestPass(pull: boolean, asked = false): Promise<void> {
     // one pass at a time; a request made mid-pass gets a pass of its own right
     // after, and waits for it, so pull-to-refresh never reports done early
-    queued.current = { pull: pull || !!queued.current?.pull }
+    queued.current = { pull: pull || !!queued.current?.pull, asked: asked || !!queued.current?.asked }
     if (inflight.current) return inflight.current
     const loop = (async () => {
       try {
         while (queued.current) {
           const want = queued.current
           queued.current = null
-          const list = targetsRef.current
+          const list = passTargetsFor(targetsRef.current, want.asked)
           if (list.length === 0) continue
           setState(s => ({ ...s, pending: true }))
           const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
@@ -170,16 +297,23 @@ function useMirrorSync(
           } catch (e) {
             // its chunk would not load: a failed pass like any other, retried with the same backoff
             const why = (e as Error).message || 'The calendar mirror could not load.'
-            pass = { accountErrors: Object.fromEntries(list.map(t => [t.id, why])), waiting: 0, more: false, failed: true, notices: {} }
+            pass = { accountErrors: Object.fromEntries(list.map(t => [t.id, why])), waiting: 0, more: false, failed: true, notices: {}, signIn: {} }
           }
           for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
-          setState({
-            lastAt: new Date().toISOString(),
-            pending: false,
-            error: Object.values(pass.accountErrors)[0],
-            accountErrors: pass.accountErrors,
-            waiting: pass.waiting,
-            notices: storedNotices(list),
+          settleSignIns(list, pass, new Date().toISOString())
+          // a target left out of this pass keeps what it last said
+          const all = targetsRef.current
+          setState(prev => {
+            const accountErrors = { ...Object.fromEntries(Object.entries(prev.accountErrors ?? {}).filter(([id]) => !list.some(t => t.id === id))), ...pass.accountErrors }
+            return {
+              lastAt: new Date().toISOString(),
+              pending: false,
+              error: Object.values(accountErrors)[0],
+              accountErrors,
+              waiting: pass.waiting,
+              notices: storedNotices(all),
+              signIn: storedSignIns(all),
+            }
           })
           window.clearTimeout(retry.current.timer)
           let delay = 0
@@ -205,8 +339,20 @@ function useMirrorSync(
   const [shownFor, setShownFor] = useState(signature)
   if (shownFor !== signature) {
     setShownFor(signature)
-    setState(signature ? s => ({ ...s, notices: storedNotices(targets) }) : { pending: false })
+    setState(signature ? s => ({ ...s, notices: storedNotices(targets), signIn: storedSignIns(targets) }) : { pending: false })
   }
+
+  // signed in again (clearMirrorSignIn): say so at once, and ask again now
+  useEffect(() => {
+    const onCleared = () => {
+      setState(s => ({ ...s, signIn: storedSignIns(targetsRef.current) }))
+      void trigger(true)
+    }
+    signInWatchers.add(onCleared)
+    return () => {
+      signInWatchers.delete(onCleared)
+    }
+  }, [trigger])
 
   // a few seconds after any change: send what is owed
   useEffect(() => {
@@ -236,8 +382,9 @@ function useMirrorSync(
 
   useEffect(() => () => window.clearTimeout(retry.current.timer), [])
 
-  const pushNow = useCallback(() => trigger(false), [trigger])
-  const pullNow = useCallback(() => trigger(true), [trigger])
+  // asked for: a target waiting on a sign-in is tried too
+  const pushNow = useCallback(() => trigger(false, true), [trigger])
+  const pullNow = useCallback(() => trigger(true, true), [trigger])
   const dismissNotice = useCallback((id: string) => {
     const t = targetsRef.current.find(x => x.id === id)
     if (t) {

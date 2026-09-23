@@ -55,6 +55,7 @@ import { recordJobRun } from './lib/jobhealth.mjs'
 import { putNotice } from './lib/notices.mjs'
 import { noticeId } from '../../shared/notices.mts'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
+import { signInLine } from './lib/signins.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mts'
 import { pushConfigured, sendToAll } from './push.mjs'
@@ -559,6 +560,9 @@ async function digestRun(now, run) {
         const sunday = weekday === 'Sun'
         const weekPlan = sunday ? weekPlanSummary(proposeWeek(items, { todayKey: day, tz, userId: u.user_id, now })) : null
         const digest = buildDigest(items, tz, now, u.nudged ?? {}, u.user_id, { weekPlan })
+        // a calendar whose sign-in died has gone quiet: said every morning until it is signed in again
+        const signIn = signInLine(u)
+        if (signIn) digest.lines.push(signIn)
         // the review's first sentence, drafted above or written by you; the fixed line without one
         if (sunday) digest.lines.push(sundayLine(review?.summary))
         // Either link only opens a sheet — Plan my day, or the week plan over the

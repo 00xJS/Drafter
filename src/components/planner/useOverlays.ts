@@ -48,6 +48,12 @@ export function useOverlays() {
   const [pushed, setPushed] = useState<Pushed | null>(null)
   // bumped when a calendar consent flow returns, so an open Settings refetches
   const [settingsNonce, setSettingsNonce] = useState(0)
+  /** The Settings group it opens on, when the opener asks for one (Today's calendar sign-in banner asks for Calendars). */
+  const [settingsGroup, setSettingsGroup] = useState<string | undefined>(undefined)
+  const openSettings = (group?: string) => {
+    setSettingsGroup(group)
+    setPushed('settings')
+  }
   /** The Admin section it opens on: Users, unless the opener asks for another (Today's sync alarm asks for Data). */
   const [adminGroup, setAdminGroup] = useState<AdminGroup | undefined>(undefined)
   /** Admin is a pushed screen like the other two; four callers still say it this way. */
@@ -108,6 +114,9 @@ export function useOverlays() {
     setPushed,
     settingsNonce,
     setSettingsNonce,
+    settingsGroup,
+    setSettingsGroup,
+    openSettings,
     setAdminOpen,
     adminGroup,
     eventEditor,

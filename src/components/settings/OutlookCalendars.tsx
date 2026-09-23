@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MicrosoftCalendarInfo, MicrosoftStatus, connectCalendarAccount, disconnectOutlook, microsoftAction, msPushId, msPushUrl, msSourceUrl, oauthCompleting, onOAuthSettled, resetMicrosoftPushCursor } from '../../calendars'
+import { clearMirrorSignIn } from '../../calendarstate'
 import { newerStamp } from '../../itemops'
 import { PROJECT_COLORS } from '../../types'
 import { timeAgo, uid } from '../../utils'
@@ -8,7 +9,7 @@ import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
 /** One connected Outlook account's calendars, or why they could not be listed. */
-type AccountCalendars = { account: { id: string; name: string; email: string }; calendars: MicrosoftCalendarInfo[]; error?: string }
+type AccountCalendars = { account: { id: string; name: string; email: string; needsSignIn?: boolean }; calendars: MicrosoftCalendarInfo[]; error?: string }
 
 /** Calendars → Outlook / Microsoft 365: any number of accounts, each with its calendars and its own mirror. */
 export function OutlookCalendars({ store, calendars, microsoftSync }: SettingsCtx) {
@@ -22,6 +23,8 @@ export function OutlookCalendars({ store, calendars, microsoftSync }: SettingsCt
       microsoftAction<MicrosoftStatus>('status')
         .then(st => {
           setMs(st)
+          // an account signed in (again): its mirror, stopped for a dead sign-in, may ask again
+          for (const a of st.accounts) if (!a.needsSignIn) clearMirrorSignIn('microsoft', a.id)
           if (st.accounts.length > 0) {
             microsoftAction<{ accounts: AccountCalendars[] }>('calendars')
               .then(r => setMsCals(r.accounts))
@@ -103,6 +106,15 @@ export function OutlookCalendars({ store, calendars, microsoftSync }: SettingsCt
                         Disconnect
                       </ConfirmButton>
                     </p>
+                    {/* Microsoft refused this account's sign-in: its mirror stopped, and Today said so */}
+                    {acct.needsSignIn && (
+                      <p className="sync-line" role="alert">
+                        <span className="warn">Microsoft stopped letting Drafter into this account — the access was removed or ran out. Nothing reaches it until you sign in again.</span>
+                        <button className="btn" disabled={msBusy} onClick={connectOutlook}>
+                          Sign in again
+                        </button>
+                      </p>
+                    )}
                     {'error' in entry && entry.error ? (
                       <p className="warn">{entry.error}</p>
                     ) : (

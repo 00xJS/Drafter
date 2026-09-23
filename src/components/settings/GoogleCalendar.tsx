@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { GOOGLE_PUSH_ID, GOOGLE_PUSH_URL, GoogleCalendarInfo, GoogleStatus, connectCalendarAccount, googleAction, googlePushId, isGoogleSource, mirrorToggle, oauthCompleting, onOAuthSettled, resetGooglePushCursor } from '../../calendars'
+import { clearMirrorSignIn } from '../../calendarstate'
 import { newerStamp } from '../../itemops'
 import { PROJECT_COLORS } from '../../types'
 import { timeAgo, uid } from '../../utils'
@@ -30,7 +31,10 @@ export function GoogleCalendar({
       googleAction<GoogleStatus>('status')
         .then(st => {
           setGoogle(st)
-          if (st.connected) googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
+          if (!st.connected) return
+          // signed in (again): a mirror that stopped for a dead sign-in may ask again
+          clearMirrorSignIn('google')
+          googleAction<{ calendars: GoogleCalendarInfo[] }>('calendars').then(r => setGoogleCals(r.calendars)).catch(e => setGoogleError((e as Error).message))
         })
         .catch(e => setGoogleError((e as Error).message))
     // A sign-in the app is finishing right now reports below; asking for its
@@ -174,9 +178,23 @@ export function GoogleCalendar({
         </>
       ) : google?.configured ? (
         <>
+          {/* Google refused the sign-in it had (revoked, expired): the mirror
+              stopped and Today said so; signing in again carries on with the
+              same Drafter calendar, and Disconnect forgets it for good */}
+          {google.needsSignIn && (
+            <p className="sync-line" role="alert">
+              <span className="warn">
+                Google stopped letting Drafter into {google.email ?? 'your account'} — the access was removed or ran out. Sign in again to carry on
+                mirroring; nothing reaches Google until then.
+              </span>
+              <button className="btn subtle danger" disabled={googleBusy} onClick={disconnectGoogle}>
+                Disconnect
+              </button>
+            </p>
+          )}
           <p className="sync-line">
             <button className="btn primary" disabled={googleBusy} onClick={connectGoogle}>
-              {googleBusy ? 'Opening Google…' : 'Connect Google Calendar'}
+              {googleBusy ? 'Opening Google…' : google.needsSignIn ? 'Sign in to Google again' : 'Connect Google Calendar'}
             </button>
             <small>Read your calendars and mirror tasks. Tokens stay server-side, per account.</small>
           </p>

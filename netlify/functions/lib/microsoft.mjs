@@ -57,8 +57,17 @@ async function saveAccounts(userId, accounts) {
   await settingsSet(userId, { microsoft_accounts: accounts })
 }
 
-/** Public shape — never leaks a token to the client. */
-export const publicAccount = a => ({ id: a.id, email: a.email, name: a.name, hasMirror: !!a.drafterCalendarId })
+/**
+ * Public shape — never leaks a token to the client. `needsSignIn`: Microsoft
+ * refused this account's grant, so it was let go (see accessToken).
+ */
+export const publicAccount = a => ({ id: a.id, email: a.email, name: a.name, hasMirror: !!a.drafterCalendarId, ...(outlookNeedsSignIn(a) ? { needsSignIn: true } : {}) })
+
+/** Whether an account's sign-in has stopped working: Microsoft refused its grant, and it waits for a reconnect. */
+export const outlookNeedsSignIn = a => !!a?.authFailedAt && !a?.refreshToken
+
+/** What a mirror hears for such an account: the app shows it on Today and stops asking until it is signed in again. */
+export const outlookSignInAgain = email => `Outlook${email ? ` (${email})` : ''} needs you to sign in again.`
 
 // ------------------------------------------------------------------ tokens
 
@@ -138,7 +147,8 @@ export async function accessToken(userId, accountId) {
 
   const accounts = await listAccounts(userId)
   const account = accounts.find(a => a.id === accountId)
-  if (!account?.refreshToken) throw Object.assign(new Error('That Microsoft account is not connected.'), { status: 409 })
+  if (outlookNeedsSignIn(account)) throw Object.assign(new Error(outlookSignInAgain(account.email)), { status: 409, reason: 'reauth' })
+  if (!account?.refreshToken) throw Object.assign(new Error('That Microsoft account is not connected.'), { status: 409, reason: 'not_connected' })
 
   const e = env()
   const res = await fetch(`${AUTHORITY}/token`, {
@@ -149,8 +159,17 @@ export async function accessToken(userId, accountId) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     cache.delete(key)
-    if (body.error === 'invalid_grant') {
-      throw Object.assign(new Error(`Microsoft access for ${account.email} expired or was revoked — reconnect it in Settings.`), { status: 409 })
+    if (body.error === 'invalid_grant' || body.error === 'interaction_required') {
+      // Expired, revoked, a password change, a new sign-in rule: this grant
+      // is dead. Let it go and mark the account (lib/google.mjs does the
+      // same), unless a reconnect replaced it meanwhile, so nothing asks
+      // Microsoft with it again and the digest can say what happened.
+      const fresh = await listAccounts(userId).catch(() => null)
+      if (fresh?.some(a => a.id === accountId && a.refreshToken === account.refreshToken)) {
+        const at = new Date().toISOString()
+        await saveAccounts(userId, fresh.map(a => (a.id === accountId ? { ...a, refreshToken: null, authFailedAt: at } : a))).catch(() => {})
+      }
+      throw Object.assign(new Error(outlookSignInAgain(account.email)), { status: 409, reason: 'reauth' })
     }
     throw new Error(body.error_description ?? body.error ?? `token refresh failed (${res.status})`)
   }

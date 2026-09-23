@@ -290,7 +290,8 @@ const handler = async req => {
     return Response.json({ error: 'unknown action' }, { status: 400 })
   } catch (e) {
     const status = e?.status === 409 || e?.status === 401 ? 409 : e?.status === 501 ? 501 : 502
-    return Response.json({ error: e?.message ?? 'Microsoft request failed' }, { status })
+    // `reason` tells the app a sign-in has died ('reauth') from a blip it should retry
+    return Response.json({ error: e?.message ?? 'Microsoft request failed', ...(e?.reason ? { reason: e.reason } : {}) }, { status })
   }
 }
 

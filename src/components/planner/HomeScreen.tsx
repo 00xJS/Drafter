@@ -26,7 +26,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
-  const { syncAlarm, dismissSyncAlarm, setAdminOpen } = p
+  const { syncAlarm, dismissSyncAlarm, setAdminOpen, calendarSignIn, dismissCalendarSignIn, openSettings } = p
   return (
     <Today
           tasks={store.tasks}
@@ -105,6 +105,10 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           syncAlarm={syncAlarm}
           onDismissSyncAlarm={dismissSyncAlarm}
           onOpenSyncCheck={() => setAdminOpen(true, 'data')}
+          // a calendar mirror whose sign-in died: once a streak, and the way to Settings → Calendars
+          calendarSignIn={calendarSignIn}
+          onDismissCalendarSignIn={dismissCalendarSignIn}
+          onOpenCalendarSettings={() => openSettings('calendars')}
           // putting a nudge off: a person, a place or one of the next
           // fortnight's events, for a while and never forever (v3.24)
           snoozes={store.snoozes}

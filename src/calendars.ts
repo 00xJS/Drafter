@@ -41,11 +41,17 @@ export function inboundAction(action: 'inbound-enable' | 'inbound-rotate' | 'inb
   return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, timezone: deviceTimeZone() }) }).then(json<{ inboundUrl: string | null }>)
 }
 
+/** A refused call, with the status and — for a sign-in the provider no longer takes — `reason: 'reauth'`. */
+export type ActionError = Error & { status?: number; reason?: string }
+
 async function json<T>(res: Response): Promise<T> {
-  const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null
-  if (!res.ok || !body) throw new Error(body?.error ?? `HTTP ${res.status}`)
+  const body = (await res.json().catch(() => null)) as (T & { error?: string; reason?: string }) | null
+  if (!res.ok || !body) throw Object.assign(new Error(body?.error ?? `HTTP ${res.status}`), { status: res.status, reason: body?.reason }) as ActionError
   return body
 }
+
+/** Whether a failure is an account whose sign-in the provider refuses for good: retrying cannot mend it, signing in again can. */
+export const needsSignIn = (e: unknown): boolean => (e as ActionError | null)?.reason === 'reauth'
 
 export function fetchFeedInfo(): Promise<CalendarFeedInfo> {
   return apiFetch('/api/feed.ics').then(json<CalendarFeedInfo>)
@@ -61,6 +67,8 @@ export interface GoogleStatus {
   configured: boolean
   connected: boolean
   email: string | null
+  /** Connected once, until Google refused the sign-in: it needs signing in again. */
+  needsSignIn?: boolean
   missing: string[]
   redirectUri: string
 }
@@ -371,7 +379,7 @@ const accountRefusal = (status?: number) => status === 401 || status === 403 || 
 /** What a provider said to one chunk (see runMirrorBatch in netlify/functions/lib/mirror.mjs). */
 export interface MirrorBatchReply {
   done?: string[]
-  errors?: { id: string; error: string; status?: number }[]
+  errors?: { id: string; error: string; status?: number; reason?: string }[]
   left?: string[]
   fatal?: boolean
   calendarId?: string
@@ -395,6 +403,8 @@ export interface SweepResult {
   errors: { id: string; error: string }[]
   /** Set when the request failed outright or the account refused: nothing after it was tried. */
   fatal?: string
+  /** The account's sign-in is gone for good (the provider refused its grant): `fatal` says so, and retrying cannot mend it. */
+  signIn?: boolean
   /** A chunk came back with nothing done and nothing refused, so the pass stopped rather than spin. */
   stalled: boolean
   /** The provider calendar was not the one the ledger knew, so everything was owed to the new one. */
@@ -434,6 +444,7 @@ export async function sweepMirror(
   let recreated = false
   let stalled = false
   let fatal: string | undefined
+  let signIn = false
   for (let round = 0; round < rounds; round++) {
     const owed = mirrorCandidates(items, ledger, myId, r => failedNow.has(r.id) || refused(target.lock, r, now()))
     if (owed.length === 0) break
@@ -457,6 +468,7 @@ export async function sweepMirror(
       // the request itself failed (offline, the function down, the account
       // refused outright): nothing in it was confirmed, so all of it stays owed
       fatal = (e as Error).message || 'The calendar could not be reached.'
+      signIn = needsSignIn(e)
       break
     }
     if (!replaced && (reply.replaced || (reply.calendarId && ledger.cal && reply.calendarId !== ledger.cal))) {
@@ -485,6 +497,7 @@ export async function sweepMirror(
     writeLedger(target.key, ledger, held)
     if (reply.fatal) {
       fatal = reply.errors?.[0]?.error ?? 'The calendar refused the update.'
+      signIn = reply.errors?.[0]?.reason === 'reauth'
       break
     }
     if (!reply.done?.length && !reply.errors?.length) {
@@ -497,6 +510,7 @@ export async function sweepMirror(
     confirmed,
     errors,
     fatal,
+    ...(signIn ? { signIn } : {}),
     stalled,
     replaced,
     recreated,
@@ -530,10 +544,16 @@ export interface PassResult {
   waiting: number
   /** Something is sendable right now (a chunk limit or the time budget cut the pass short). */
   more: boolean
-  /** Something failed: retry later, backing off. */
+  /** Something failed that a retry may mend: retry later, backing off. */
   failed: boolean
   /** Something the owner should hear, by target id: the Drafter calendar was replaced. */
   notices: Record<string, string>
+  /**
+   * Targets whose account's sign-in the provider refuses for good, by target
+   * id, with what to say. No retry mends that, so they are not `failed`: the
+   * hooks stop asking until the account is signed in again, and Today says so.
+   */
+  signIn: Record<string, string>
 }
 
 const describeRefusals = (errors: { error: string }[]) =>
@@ -570,6 +590,7 @@ export async function mirrorPass(
 ): Promise<PassResult> {
   const accountErrors: Record<string, string> = {}
   const notices: Record<string, string> = {}
+  const signIn: Record<string, string> = {}
   let waiting = 0
   let more = false
   let failed = false
@@ -584,6 +605,11 @@ export async function mirrorPass(
     }
     waiting += res.waiting
     if (res.replaced) notices[t.id] = calendarNotice(t, res.recreated)
+    if (res.signIn && res.fatal) {
+      // a dead sign-in is said, not retried: nothing below can reach the account either
+      accountErrors[t.id] = signIn[t.id] = res.fatal
+      continue
+    }
     if (res.fatal || res.errors.length || res.stalled) failed = true
     if (res.fatal) {
       accountErrors[t.id] = res.fatal
@@ -598,7 +624,8 @@ export async function mirrorPass(
     } catch (e) {
       // a dead account shows here even when nothing was owed to it
       if (!accountErrors[t.id]) accountErrors[t.id] = (e as Error).message
-      failed = true
+      if (needsSignIn(e)) signIn[t.id] = (e as Error).message
+      else failed = true
       continue
     }
     if (!out) continue
@@ -606,7 +633,7 @@ export async function mirrorPass(
     if (settled.work) more = true
     if (settled.switched) notices[t.id] = calendarNotice(t, !!out.replaced)
   }
-  return { accountErrors, waiting, more, failed, notices }
+  return { accountErrors, waiting, more, failed, notices, signIn }
 }
 
 /**
@@ -985,6 +1012,8 @@ export interface MicrosoftAccount {
   email: string
   name: string
   hasMirror: boolean
+  /** Microsoft refused this account's sign-in: it needs signing in again. */
+  needsSignIn?: boolean
 }
 
 export interface MicrosoftStatus {
