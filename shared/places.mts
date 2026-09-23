@@ -2,6 +2,7 @@
 
 import type { Meal, Place, Task } from '../src/types.ts'
 import { ownVisit, remindersOff } from './people.mts'
+import { doneOuting, mealOut, mealOutings, taskIndex } from './visitindex.mts'
 
 export type PlaceCategory = 'restaurant' | 'fastfood' | 'cafe' | 'bar' | 'outdoors' | 'venue' | 'shop' | 'home' | 'other'
 
@@ -203,11 +204,15 @@ export type Outing = { kind: 'task'; task: Task; at: string } | { kind: 'meal'; 
  */
 export function outingsAt(placeId: string, tasks: readonly Task[], meals: readonly Meal[] = [], now: Date | string = new Date(), myId: string | null = null): Outing[] {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
-  const fromTasks = (tasks ?? [])
-    .filter((t): t is Task & { completedAt: string } => t && !t.deletedAt && t.status === 'done' && !!t.completedAt && t.placeId === placeId && ownVisit(t, myId))
-    .map((t): Outing => ({ kind: 'task', task: t, at: t.completedAt }))
-  const fromMeals = (meals ?? [])
-    .filter(m => m && !m.deletedAt && m.out === true && m.placeId === placeId && m.date && (m.shared !== false || ownVisit(m, myId)))
+  // each list's outings filed by place once (shared/visitindex.mts), so asking
+  // about every place reads the lists once rather than once per place
+  const index = taskIndex(tasks)
+  const done = index ? (index.outings.get(placeId) ?? []) : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneOuting(t) && t.placeId === placeId)
+  const out = mealOutings(meals)
+  const eaten = out ? (out.get(placeId) ?? []) : (meals ?? []).filter(m => mealOut(m) && m.placeId === placeId)
+  const fromTasks = done.filter(t => ownVisit(t, myId)).map((t): Outing => ({ kind: 'task', task: t, at: t.completedAt }))
+  const fromMeals = eaten
+    .filter(m => m.shared !== false || ownVisit(m, myId))
     .map((m): Outing => ({ kind: 'meal', meal: m, at: middayOf(m.date) }))
     .filter(v => Date.parse(v.at) <= nowMs)
   return [...fromTasks, ...fromMeals].sort((a, b) => b.at.localeCompare(a.at))
