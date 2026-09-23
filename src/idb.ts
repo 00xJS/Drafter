@@ -1,10 +1,30 @@
+import type { CacheChanges, CacheRecord } from './syncengine'
+
 const DB_NAME = 'drafter'
-// 'posts' arrived in v2 (the local cache moved out of localStorage's 5MB quota)
-const STORES = ['media', 'handles', 'posts'] as const
+/**
+ * v2: 'posts' — the local cache moved out of localStorage's 5MB quota, every
+ *     record in ONE value under 'all' (rewritten whole after every change).
+ * v3: 'records', one row per record keyed by its id, and 'meta', whose cache
+ *     it is and the merge base of each record still to push. An edit writes
+ *     the one record it changed. The v2 value is moved over on the first write
+ *     after it is read (src/syncengine.ts), and 'posts' stays for the
+ *     calendar's own cache (src/calendars.ts).
+ */
+const DB_VERSION = 3
+const STORES = ['media', 'handles', 'posts', 'records', 'meta'] as const
+/** The one row in 'meta'. */
+const META_KEY = 'cache'
+
+/** What 'meta' holds beside the records, written in the same transaction as they are. */
+interface StoredMeta {
+  version: number
+  userId: string | null
+  shadows: unknown[]
+}
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2)
+    const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       for (const s of STORES) {
         if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s)
@@ -26,6 +46,36 @@ async function withStore<T>(store: string, mode: IDBTransactionMode, fn: (s: IDB
   })
 }
 
+/**
+ * One transaction over several stores, settled when it commits — or rejected
+ * when it aborts, in which case none of it was written. A request that throws
+ * while it is being queued (a record that cannot be cloned) aborts the lot,
+ * rather than letting the requests queued before it commit on their own.
+ */
+async function transact(stores: string[], mode: IDBTransactionMode, fn: (tx: IDBTransaction) => void): Promise<void> {
+  const db = await open()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(stores, mode)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+      try {
+        fn(tx)
+      } catch (e) {
+        try {
+          tx.abort()
+        } catch {
+          /* already finished */
+        }
+        reject(e)
+      }
+    })
+  } finally {
+    db.close()
+  }
+}
+
 export function idbGet<T>(store: string, key: string): Promise<T | undefined> {
   return withStore<T | undefined>(store, 'readonly', s => s.get(key))
 }
@@ -41,6 +91,48 @@ export function idbDel(store: string, key: string): Promise<unknown> {
 /** Every value in a store: the media upload queue reads its pending photos from here. */
 export function idbAll<T>(store: string): Promise<T[]> {
   return withStore<T[]>(store, 'readonly', s => s.getAll())
+}
+
+/**
+ * The per-record cache as one CacheRecord — the shape the single value had —
+ * read in one transaction, so the records and the account they belong to are
+ * from the same moment. Undefined when nothing has ever been written there:
+ * the engine then reads the v2 value, and its first write moves it over.
+ */
+export async function readRecordCache(): Promise<CacheRecord | undefined> {
+  let items: unknown[] = []
+  let meta: StoredMeta | undefined
+  await transact(['records', 'meta'], 'readonly', tx => {
+    const all = tx.objectStore('records').getAll()
+    all.onsuccess = () => (items = all.result)
+    const row = tx.objectStore('meta').get(META_KEY)
+    row.onsuccess = () => (meta = row.result as StoredMeta | undefined)
+  })
+  if (items.length === 0 && !meta) return undefined
+  // no meta beside records is a cache nothing wrote whole: its owner is unknown, as a pre-account cache's was
+  return { version: meta?.version ?? 0, userId: meta ? meta.userId : undefined, items: items as CacheRecord['items'], shadows: (meta?.shadows ?? []) as CacheRecord['items'] }
+}
+
+/**
+ * Write what changed since the last write, in ONE transaction: the records
+ * upserted and deleted, the account they belong to and the shadows beside
+ * them, and — on the write that migrates it — the removal of the v2 value.
+ * IndexedDB commits a transaction whole or not at all, so a write cut short
+ * leaves the cache as it was: never a record without the account it belongs
+ * to, never a dirty record without its merge base, never the v2 value gone
+ * before its records were copied.
+ */
+export function writeRecordChanges(change: CacheChanges): Promise<void> {
+  const stores = change.dropSnapshot ? ['records', 'meta', 'posts'] : ['records', 'meta']
+  return transact(stores, 'readwrite', tx => {
+    const records = tx.objectStore('records')
+    if (change.replace) records.clear()
+    for (const id of change.deletes) records.delete(id)
+    for (const item of change.upserts) records.put(item, item.id)
+    const meta: StoredMeta = { version: change.version, userId: change.userId, shadows: change.shadows }
+    tx.objectStore('meta').put(meta, META_KEY)
+    if (change.dropSnapshot) tx.objectStore('posts').delete('all')
+  })
 }
 
 /**
@@ -86,6 +178,17 @@ export async function clearLocalData(): Promise<void> {
   } catch {
     /* storage may be unavailable; carry on and still drop the database */
   }
+  // Emptied first, store by store: a delete below that another tab's open
+  // connection leaves waiting (or that the browser refuses) must not leave the
+  // records readable in the meantime. Never waited on for long — an older tab
+  // holding the database open would stall the upgrade this needs, and the
+  // delete is the wipe either way.
+  const emptied = transact([...STORES], 'readwrite', tx => {
+    for (const s of STORES) tx.objectStore(s).clear()
+  }).catch(() => {
+    /* no database to empty; the delete below is the wipe */
+  })
+  await Promise.race([emptied, new Promise(resolve => setTimeout(resolve, 2_000))])
   await new Promise<void>(resolve => {
     try {
       const req = indexedDB.deleteDatabase(DB_NAME)

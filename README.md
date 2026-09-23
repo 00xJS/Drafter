@@ -63,7 +63,7 @@ The same app in a Capacitor shell, with iOS sheets, haptics and pull to refresh;
 
 ## Privacy and your data
 
-- **Local first.** Records live on the device and sync to Supabase, so the app works offline. Edits from two devices merge field by field; when both changed the same field, the newer one wins and a toast offers **Keep mine**.
+- **Local first.** Records live on the device and sync to Supabase, so the app works offline. Changes from the other device arrive within seconds while the app is open. Edits from two devices merge field by field; when both changed the same field, the newer one wins and a toast offers **Keep mine**.
 - **Household.** Settings → Household shares the project, tasks, notes, events, people, places and the kitchen with members you invite. Your journal, habits, routines, reviews, calendar subscriptions and wardrobe never reach the household.
 - **Photos.** Note and task photos are shared with the household; wardrobe photos go in a folder only you can read. Assistants never get a wardrobe photo, and see the journal only with permission — Ask Drafter sends only the matching records, masks email addresses and phone numbers, and reads the journal only while its chip is on.
 - **Backups.** Each night the server saves an encrypted snapshot of every account, journal included, in private storage and keeps the newest 14; only the site owner can download them, from Admin → Backups. Anyone can export a JSON file from Settings → Data.

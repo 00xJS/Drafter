@@ -2438,3 +2438,47 @@ commit;
 
 -- v3.21-1 is held by FAIL 3 above: the peer's sync includes meal~2026-09-08~dinner
 -- the way it includes the grocery list. Journal, review and calendar stay hidden.
+
+-- ===== v3.30: live updates =====
+-- 20261007000000_v3_30_realtime puts public.posts in the supabase_realtime
+-- publication. Plain Postgres has none, so it was a no-op above. Here it runs
+-- again where the publication exists — empty, already carrying posts, and
+-- FOR ALL TABLES — and each must end with posts published, without an error.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    raise exception 'FAIL v3.30-0: the stubs grew a supabase_realtime publication; this block assumes none';
+  end if;
+  raise notice 'ok v3.30-0: with no supabase_realtime publication the migration applied as a no-op';
+end $$;
+create publication supabase_realtime;
+\ir ../supabase/migrations/20261007000000_v3_30_realtime.sql
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'posts') then
+    raise exception 'FAIL v3.30-1: public.posts is not in supabase_realtime after the migration';
+  end if;
+  raise notice 'ok v3.30-1: the migration publishes public.posts to supabase_realtime';
+end $$;
+\ir ../supabase/migrations/20261007000000_v3_30_realtime.sql
+do $$
+begin
+  if (select count(*) from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'posts') <> 1 then
+    raise exception 'FAIL v3.30-2: run twice, the migration should leave posts published exactly once';
+  end if;
+  if (select count(*) from pg_publication_tables where pubname = 'supabase_realtime') <> 1 then
+    raise exception 'FAIL v3.30-2: the migration published more than public.posts';
+  end if;
+  raise notice 'ok v3.30-2: run again, it changes nothing';
+end $$;
+drop publication supabase_realtime;
+create publication supabase_realtime for all tables;
+\ir ../supabase/migrations/20261007000000_v3_30_realtime.sql
+do $$
+begin
+  if not (select puballtables from pg_publication where pubname = 'supabase_realtime') then
+    raise exception 'FAIL v3.30-3: a publication FOR ALL TABLES should be left as it was';
+  end if;
+  raise notice 'ok v3.30-3: a publication FOR ALL TABLES already carries posts and is left alone';
+end $$;
+drop publication supabase_realtime;

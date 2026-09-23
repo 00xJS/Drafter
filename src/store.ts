@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
-import { clearLocalData, idbGet, idbSet } from './idb'
+import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } from './idb'
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mjs'
+import { drawLists, type DrawnLists } from './kindlists'
+import { watchRealtime } from './realtime'
 import {
   createSyncEngine,
   recordLabel,
@@ -20,11 +22,13 @@ import {
 
 // The React adapter over the sync engine (src/syncengine.ts). The engine owns
 // the records, the dirty set, the cursor, persistence and the rounds; this
-// file subscribes to it, derives the per-kind lists every view renders, and
-// wires the page's lifecycle to it.
+// file subscribes to it, draws the lists every view renders from the engine's
+// per-kind arrays (src/kindlists.ts), and wires the page's lifecycle and the
+// live channel (src/realtime.ts) to it.
 
 export type { EngineConflict, ImportSummary, RetiredSpawn, StatusChange, SyncInfo }
 export { conflictMessage, retiredMessage, stampStatus } from './syncengine'
+export { sortNotes } from './kindlists'
 
 /** A row the server refused, as Settings lists it. */
 export interface FailedSync extends SyncFailure {
@@ -124,11 +128,6 @@ export interface Store {
   unconfirmed(): { ids: ReadonlySet<string>; shadows: Item[] }
 }
 
-/** The Notes list order: pinned first, then the most recently edited (ties by id, so the order is stable). */
-export function sortNotes(notes: Note[]): Note[] {
-  return [...notes].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
-}
-
 let shared: SyncEngine | null = null
 
 /** One engine per page: the dirty set and cursor it keeps belong to the device, not to a component. */
@@ -137,6 +136,9 @@ function engine(): SyncEngine {
     // local mode (no Supabase env) has nothing to sync, so nothing is ever "unsynced"
     rpc: getSupabase() ? syncNow : null,
     storage: {
+      // one row per record; the single value is only read, once, to move it over
+      readAll: readRecordCache,
+      writeChanges: writeRecordChanges,
       readSnapshot: () => idbGet('posts', 'all'),
       writeSnapshot: record => idbSet('posts', 'all', record),
       clearAll: clearLocalData,
@@ -145,6 +147,8 @@ function engine(): SyncEngine {
   })
   return shared
 }
+
+const NO_FAILURES: FailedSync[] = []
 
 /**
  * A round now, if this page has started the engine; never starts one. A
@@ -185,163 +189,45 @@ export function useItems(myId: string | null = null): Store {
     return () => sub.subscription.unsubscribe()
   }, [e])
 
-  // Calendar subscriptions and reviews are personal: only mine (or unowned,
-  // pre-household rows) show. Declared BEFORE every memo that calls it — a
-  // const used above its declaration throws once the list is non-empty, which
-  // took down the whole app the first time a review was saved.
-  const isMine = (i: Item) => !i.ownerId || !myId || i.ownerId === myId
+  // Live updates: a change another device makes arrives within seconds, as a
+  // nudge to run the ordinary round (src/realtime.ts). Signed in with a backend
+  // only; a new account is a new channel, and signing out closes it.
+  useEffect(() => {
+    const sb = getSupabase()
+    if (!sb || !myId) return
+    const channel = watchRealtime({ client: sb, engine: e })
+    // back on the page, or back online: a channel that dropped meanwhile comes back
+    const onReturn = () => {
+      if (document.visibilityState === 'visible') channel.resume()
+    }
+    document.addEventListener('visibilitychange', onReturn)
+    window.addEventListener('online', onReturn)
+    const { data: sub } = sb.auth.onAuthStateChange(event => {
+      // after the callback, not inside it: auth-js holds its lock while it runs,
+      // and a subscribe asks it for the session
+      if (event === 'SIGNED_OUT') setTimeout(() => channel.pause(), 0)
+      else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') setTimeout(() => channel.resume(), 0)
+    })
+    return () => {
+      sub.subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', onReturn)
+      window.removeEventListener('online', onReturn)
+      channel.stop()
+    }
+  }, [e, myId])
 
-  const tasks = useMemo(() => items.filter((i): i is Task => i.kind === 'task' && !i.deletedAt), [items])
-  const projects = useMemo(
-    () =>
-      items
-        .filter((i): i is Project => i.kind === 'project' && !i.deletedAt)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [items],
-  )
-  const people = useMemo(
-    () =>
-      items
-        .filter((i): i is Person => i.kind === 'person' && !i.deletedAt)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [items],
-  )
-  const places = useMemo(
-    () =>
-      items
-        .filter((i): i is Place => i.kind === 'place' && !i.deletedAt)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [items],
-  )
-  const recipes = useMemo(
-    () =>
-      items
-        .filter((i): i is Recipe => i.kind === 'recipe' && !i.deletedAt)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [items],
-  )
-  const meals = useMemo(
-    () =>
-      items
-        .filter((i): i is Meal => i.kind === 'meal' && !i.deletedAt && (!i.ownerId || !myId || i.ownerId === myId || i.shared !== false))
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    [items, myId],
-  )
-  const groceries = useMemo(
-    () => items.filter((i): i is GroceryList => i.kind === 'grocery' && !i.deletedAt),
-    [items],
-  )
-  // Entries you wrote yourself. Household-visible like tasks: a block of time
-  // on a family calendar is meant to be seen, unlike a `calendar` subscription.
-  const events = useMemo(
-    () => items.filter((i): i is CalendarEntry => i.kind === 'event' && !i.deletedAt).sort((a, b) => a.start.localeCompare(b.start)),
-    [items],
-  )
-  const visibleItems = useMemo(
-    () => items.filter(i => !PERSONAL_KINDS.has(i.kind) || isMine(i)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  // Journal entries are personal, like reviews: only mine (or unowned, local-mode rows).
-  const journal = useMemo(
-    () =>
-      items
-        .filter((i): i is JournalEntry => i.kind === 'journal' && !i.deletedAt && isMine(i))
-        .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const reviews = useMemo(() => items.filter((i): i is Review => i.kind === 'review' && !i.deletedAt && isMine(i)), [items, myId])
-  const habits = useMemo(
-    () =>
-      items
-        .filter((i): i is Habit => i.kind === 'habit' && !i.deletedAt && !i.archivedAt && isMine(i))
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt.localeCompare(b.createdAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  const routines = useMemo(
-    () =>
-      items
-        .filter((i): i is Routine => i.kind === 'routine' && !i.deletedAt && !i.archivedAt && isMine(i))
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt.localeCompare(b.createdAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  // Household-shared like tasks: a peer's note shows, so no isMine filter.
-  const notes = useMemo(() => sortNotes(items.filter((i): i is Note => i.kind === 'note' && !i.deletedAt)), [items])
-  const templates = useMemo(
-    () => items.filter((i): i is Template => i.kind === 'template' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
-    [items],
-  )
-  // The wardrobe is personal, like the journal: only mine (or unowned, local-mode
-  // rows). A retired piece stays in the list; each view leaves it out where it should.
-  const garments = useMemo(
-    () =>
-      items
-        .filter((i): i is Garment => i.kind === 'garment' && !i.deletedAt && isMine(i))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  const garmentsInTrash = useMemo(
-    () => items.filter((i): i is Garment => i.kind === 'garment' && !!i.deletedAt && !i.purged && isMine(i)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  const outfits = useMemo(
-    () =>
-      items
-        .filter((i): i is Outfit => i.kind === 'outfit' && !i.deletedAt && isMine(i))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  const wears = useMemo(
-    () =>
-      items
-        .filter((i): i is Wear => i.kind === 'wear' && !i.deletedAt && isMine(i))
-        .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  const calendars = useMemo(
-    () =>
-      items
-        .filter((i): i is CalendarSource => i.kind === 'calendar' && !i.deletedAt && isMine(i))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  // Accounts you keep a balance for. The household's, like a bill: two people
-  // who share the rent share the picture. An archived one stays in the list;
-  // the views that total money leave it out.
-  const accounts = useMemo(
-    () => items.filter((i): i is Account => i.kind === 'account' && !i.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
-    [items],
-  )
-  // The household's chat, oldest first — the id carries the instant, so the
-  // list sorts on it alone and needs no clock of its own.
-  const messages = useMemo(
-    () => items.filter((i): i is Message => i.kind === 'message' && !i.deletedAt).sort((a, b) => a.id.localeCompare(b.id)),
-    [items],
-  )
-  // Your side of the assistant conversation and its answers. Personal, like
-  // the journal: what you ask Drafter is not household business.
-  const chat = useMemo(
-    () => items.filter((i): i is ChatTurn => i.kind === 'chat' && !i.deletedAt && isMine(i)).sort((a, b) => a.id.localeCompare(b.id)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
-  // Nudges you have put off. Personal, like the journal: a peer's "not this
-  // fortnight" is theirs, and never silences the nudge on this device.
-  const snoozes = useMemo(
-    () => items.filter((i): i is Snooze => i.kind === 'snooze' && !i.deletedAt && isMine(i)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, myId],
-  )
+  // The lists, drawn from the engine's per-kind arrays: a list is drawn again
+  // only when its own kind changed (src/kindlists.ts), so editing a task keeps
+  // every other list — and whatever a view memoized on it — as it was.
+  const drawn = useRef<DrawnLists | null>(null)
+  drawn.current = drawLists(snap.byKind, myId, drawn.current)
+  const lists = drawn.current.lists
+
+  // Everything I may see: a peer's personal kinds are never shown, even when a
+  // cache from before the policy still holds them.
+  const visibleItems = useMemo(() => items.filter(i => !PERSONAL_KINDS.has(i.kind) || !i.ownerId || !myId || i.ownerId === myId), [items, myId])
   const failures = useMemo(() => {
+    if (snap.failures.length === 0) return NO_FAILURES
     const byId = new Map(items.map(i => [i.id, i]))
     return snap.failures.map(f => {
       const row = byId.get(f.id)
@@ -349,54 +235,41 @@ export function useItems(myId: string | null = null): Store {
     })
   }, [snap.failures, items])
 
-  return {
-    myId,
-    tasks,
-    projects,
-    calendars,
-    people,
-    places,
-    recipes,
-    meals,
-    events,
-    groceries,
-    journal,
-    reviews,
-    habits,
-    routines,
-    notes,
-    templates,
-    garments,
-    garmentsInTrash,
-    outfits,
-    wears,
-    snoozes,
-    messages,
-    chat,
-    accounts,
-    allItems: items,
-    visibleItems,
-    loaded: snap.loaded,
-    syncInfo: snap.syncInfo,
-    failures,
-    upsert: e.upsert,
-    remove: e.remove,
-    restore: e.restore,
-    purge: e.purge,
-    setStatus: (id, status) => {
+  const setStatus = useCallback(
+    (id: string, status: TaskStatus) => {
       const change = e.setStatus(id, status)
       if (change && status === 'done' && change.prev.status !== 'done') void haptic('success')
       return change
     },
-    importItems: e.importItems,
-    syncNowManual: e.sync,
-    fullResync: e.fullResync,
-    retainMine: e.retainMine,
-    retrySync: e.retry,
-    discardLocal: e.discard,
-    onConflict: e.onConflict,
-    keepMine: e.keepMine,
-    onRetired: e.onRetired,
-    unconfirmed: e.unconfirmed,
-  }
+    [e],
+  )
+
+  // one object for as long as nothing in it changed
+  return useMemo<Store>(
+    () => ({
+      myId,
+      ...lists,
+      allItems: items,
+      visibleItems,
+      loaded: snap.loaded,
+      syncInfo: snap.syncInfo,
+      failures,
+      upsert: e.upsert,
+      remove: e.remove,
+      restore: e.restore,
+      purge: e.purge,
+      setStatus,
+      importItems: e.importItems,
+      syncNowManual: e.sync,
+      fullResync: e.fullResync,
+      retainMine: e.retainMine,
+      retrySync: e.retry,
+      discardLocal: e.discard,
+      onConflict: e.onConflict,
+      keepMine: e.keepMine,
+      onRetired: e.onRetired,
+      unconfirmed: e.unconfirmed,
+    }),
+    [e, myId, lists, items, visibleItems, snap.loaded, snap.syncInfo, failures, setStatus],
+  )
 }
