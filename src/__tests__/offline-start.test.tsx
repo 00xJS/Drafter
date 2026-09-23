@@ -53,6 +53,17 @@ describe('a cold start', () => {
     expect(page).not.toContain('auth-overlay')
   })
 
+  it('with a sign-in or password-reset link in the address, waits for auth-js to read it, as before', async () => {
+    vi.stubGlobal('window', { sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} }, location: { hash: '#access_token=x&type=recovery', search: '' } })
+    auth.stored = 'user-1'
+    expect(await html()).toBe('')
+    const { authRedirect } = await import('../App')
+    expect(authRedirect({ hash: '', search: '?code=abc' })).toBe(true)
+    expect(authRedirect({ hash: '', search: '' })).toBe(false)
+    // an assistant's request is kept aside before this runs, and its code_challenge is not a code
+    expect(authRedirect({ hash: '', search: '?code_challenge=abc&state=s' })).toBe(false)
+  })
+
   it('with none, waits for getSession — which answers quickly then — and shows no planner', async () => {
     vi.stubGlobal('window', { sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} } })
     expect(await html()).toBe('')

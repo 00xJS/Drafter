@@ -49,6 +49,11 @@ function isPrivateHost(hostname: string): boolean {
   )
 }
 
+/** Whether the address holds an auth redirect (a magic, invite or reset link) auth-js has still to read. */
+export function authRedirect(loc: Pick<Location, 'hash' | 'search'> | undefined = globalThis.window?.location): boolean {
+  return /(?:^|[#?&])(?:access_token|refresh_token|code|token_hash|type|error_description)=/.test(`${loc?.hash ?? ''}&${loc?.search ?? ''}`)
+}
+
 /** What a waiting assistant connection request (src/oauthRequest.ts) asks of the gate. */
 export type AuthorizeRoute = 'none' | 'no-account' | 'sign-in' | 'consent'
 
@@ -91,8 +96,11 @@ async function signOutForAnotherAccount() {
 export default function App() {
   const supabaseOn = isSupabaseConfigured()
   const [session, setSession] = useState<Session | null>(null)
-  // the account whose session this device holds, whether or not its token is fresh
-  const [storedUser, setStoredUser] = useState<string | null>(() => (supabaseOn ? storedUserId() : null))
+  // The account whose session this device holds, whether or not its token is
+  // fresh — unless the address carries a sign-in or password-reset link:
+  // auth-js reads that first, and a reset link must reach SetPassword before
+  // anything of the planner draws.
+  const [storedUser, setStoredUser] = useState<string | null>(() => (supabaseOn && !authRedirect() ? storedUserId() : null))
   // with a session on the device there is nothing to wait for; without one, getSession says quickly
   const [authReady, setAuthReady] = useState(() => !supabaseOn || storedUser !== null)
   const signedIn = !!session || storedUser !== null
