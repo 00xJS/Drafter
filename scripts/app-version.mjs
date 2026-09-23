@@ -7,7 +7,9 @@
 // for a feature, 2.0.0 for a break. This script is the one place that name
 // is raised, and it writes every copy so they cannot drift: package.json,
 // the lockfile's root, Xcode, and src/appversion.ts (what Settings reads
-// on the web).
+// on the web). In Xcode that is every configuration of every target — the app
+// and the widget embedded in it, which App Store Connect refuses to take with
+// a version of its own — and it checks they all say the same afterwards.
 //
 //   npm run version:patch   1.0.0 → 1.0.1
 //   npm run version:minor   1.0.1 → 1.1.0
@@ -21,6 +23,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { bumpVersion, formatVersion, parseVersion } from '../shared/appversion.mjs'
+import { nativeTargets, parsePbxproj, versionDrift } from './lib/pbxproj.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PKG = `${ROOT}/package.json`
@@ -34,6 +37,36 @@ export function readStoredVersion() {
   if (found.length === 0) return null
   const parts = parseVersion(found[0]) ?? [0, 0, 0]
   return formatVersion(parts)
+}
+
+/**
+ * The project with `next` as the version people read, in every configuration
+ * of every target: the app's and the widget's alike.
+ * @param {string} pbx the project file's text
+ * @param {string} next
+ */
+function setMarketingVersion(pbx, next) {
+  return pbx.replace(/MARKETING_VERSION = [\d.]+;/g, `MARKETING_VERSION = ${next};`)
+}
+
+/**
+ * Why this project cannot be archived as it stands: a target whose version or
+ * build number is not the app's (App Store Connect refuses the upload, after
+ * the archive), or one that does not read `version` at all. Empty when ready.
+ * @param {string} pbx the project file's text
+ * @param {string} [version] the version every target should read
+ */
+export function versionProblems(pbx, version) {
+  const project = parsePbxproj(pbx)
+  const problems = versionDrift(project)
+  if (version) {
+    for (const t of nativeTargets(project)) {
+      for (const [config, settings] of Object.entries(t.configurations)) {
+        if (settings.MARKETING_VERSION !== version) problems.push(`${t.name} ${config} has MARKETING_VERSION ${settings.MARKETING_VERSION}, not ${version}`)
+      }
+    }
+  }
+  return problems
 }
 
 function writeAll(next) {
@@ -53,7 +86,7 @@ function writeAll(next) {
   writeFileSync(LOCK, lock)
 
   const pbx = readFileSync(PBX, 'utf8')
-  writeFileSync(PBX, pbx.replace(/MARKETING_VERSION = [\d.]+;/g, `MARKETING_VERSION = ${next};`))
+  writeFileSync(PBX, setMarketingVersion(pbx, next))
 
   writeFileSync(
     TS,
@@ -93,6 +126,12 @@ if (isMain) {
 
   const prev = writeAll(next)
   const pbx = readFileSync(PBX, 'utf8')
-  const copies = [...pbx.matchAll(/MARKETING_VERSION = ([\d.]+);/g)].length
-  console.log(`app-version: ${prev} -> ${next} (${copies} Xcode configurations)`)
+  const problems = versionProblems(pbx, next)
+  if (problems.length) {
+    console.error(`app-version: the Xcode targets do not all read ${next}:\n  ${problems.join('\n  ')}`)
+    process.exit(1)
+  }
+  const targets = nativeTargets(parsePbxproj(pbx))
+  const copies = targets.reduce((n, t) => n + Object.keys(t.configurations).length, 0)
+  console.log(`app-version: ${prev} -> ${next} (${targets.map(t => t.name).join(' and ')}, ${copies} Xcode configurations)`)
 }

@@ -466,6 +466,22 @@ export async function onAppPause(cb: () => void): Promise<() => void> {
   }
 }
 
+/**
+ * Run `cb` each time the shell comes back to the foreground (Capacitor's App
+ * `resume`), the moment to pick up what happened while it was away — Siri's
+ * captures among it (src/widgetbridge.ts). Returns a disposer; no-op on the web.
+ */
+export async function onAppResume(cb: () => void): Promise<() => void> {
+  if (!isNative()) return () => {}
+  try {
+    const { App } = await import('@capacitor/app')
+    const handle = await App.addListener('resume', () => cb())
+    return () => void handle.remove()
+  } catch {
+    return () => {}
+  }
+}
+
 // ---- keyboard: signal the keyboard, and give multi-line fields a Done key ----
 
 /**

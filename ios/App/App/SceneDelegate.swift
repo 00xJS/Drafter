@@ -231,8 +231,9 @@ public class AppearancePlugin: CAPPlugin, CAPBridgedPlugin {
 }
 
 /// The bridge, plus the plugins compiled into this target: the page's own light
-/// or dark (AppearancePlugin, above) and the garment cut-out's subject lifting
-/// (SubjectLiftPlugin.swift). `cap sync` writes packageClassList from
+/// or dark (AppearancePlugin, above), the garment cut-out's subject lifting
+/// (SubjectLiftPlugin.swift), and the widget's snapshot and Siri's captures
+/// (WidgetBridgePlugin.swift). `cap sync` writes packageClassList from
 /// node_modules alone and rewrites it every time, so a plugin that lives in
 /// ios/App is registered here, by hand. It has to be this hook: registering
 /// injects the plugin's JS proxy as a user script, and capacitorDidLoad is the
@@ -241,6 +242,7 @@ class DrafterBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(AppearancePlugin())
         bridge?.registerPluginInstance(SubjectLiftPlugin())
+        bridge?.registerPluginInstance(WidgetBridgePlugin())
         paintGround()
     }
 

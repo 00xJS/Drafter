@@ -27,5 +27,14 @@
 		<string>applinks:drafterz.netlify.app</string>
 		<string>webcredentials:drafterz.netlify.app</string>
 	</array>
+
+	<!-- App Group: the Home Screen and Lock Screen widget reads today's snapshot
+	     from it (WidgetBridgePlugin.swift writes it), and Siri's "Add to Drafter"
+	     leaves what it heard there for the app to save (CaptureQueue.swift). The
+	     widget extension's entitlements name the same group. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.drafter.ios</string>
+	</array>
 </dict>
 </plist>

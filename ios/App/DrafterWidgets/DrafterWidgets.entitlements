@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The App Group the app writes today's snapshot into (WidgetBridgePlugin.swift).
+	     The same group is on the app's entitlements; automatic signing registers it
+	     for both bundle IDs the first time the paid team builds. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.drafter.ios</string>
+	</array>
+</dict>
+</plist>
