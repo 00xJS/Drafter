@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { newerStamp } from '../itemops'
-import { createSyncEngine, type SyncStorage } from '../syncengine'
+import { KINDS_EPOCH, createSyncEngine, type SyncStorage } from '../syncengine'
 import { CURSOR_KEY, DIRTY_KEY } from '../syncstate'
 import { Person, Recipe, Task } from '../types'
 import { FakeDisk, editTask, recordDevice, settle } from './record-fakes'
@@ -315,15 +315,22 @@ describe('accounts and a torn write', () => {
     expect(onDisk(d.disk)).toEqual(['a'])
   })
 
-  it('a cache whose read failed is replaced whole by the next write, so nothing stale outlives it', async () => {
+  it('a cache whose read failed once is read again, and nothing on it is replaced or lost', async () => {
     const server = new FakeServer()
     server.seed(task('a'))
-    const disk = FakeDisk.withRecords('user-1', [task('stale')])
+    // an edit of `kept` still waiting to go out, and nothing about it on the server
+    const disk = FakeDisk.withRecords('user-1', [task('kept', { updatedAt: '2026-09-09T00:00:00.000Z' })], [], { cursor: '2026-09-10T11:00:00.000Z', kinds: KINDS_EPOCH, dirty: ['kept'], failures: [] }, 4)
     disk.failRead = true
     const d = recordDevice(server, { disk })
-    await settle(d)
-    expect(disk.landed()[0]).toMatchObject({ replace: true })
-    expect(onDisk(disk)).toEqual(['a'])
+    const booting = d.engine.boot('user-1')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await booting
+    if (d.engine.inspect().syncing) await d.engine.sync()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(disk.reads).toBe(2)
+    expect(disk.landed().some(w => (w as { replace?: boolean }).replace)).toBe(false)
+    expect(server.row<Task>('kept')).toBeDefined()
+    expect(onDisk(disk)).toEqual(['a', 'kept'])
   })
 
   it('writes run one after another: an older write never lands over a newer one', async () => {

@@ -94,6 +94,13 @@ export interface Store {
   visibleItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
+  /**
+   * Why this device's saved copy could not be read, after a few tries. Until
+   * it can be, nothing is drawn, written or synced (see the engine's boot).
+   */
+  loadError?: string
+  /** Read this device's saved copy again, after loadError. */
+  retryLoad(): void
   syncInfo: SyncInfo
   /** Rows the server refused: still dirty, retried with backoff, counted as unsynced. */
   failures: FailedSync[]
@@ -234,6 +241,8 @@ export function useItems(myId: string | null = null): Store {
     })
   }, [snap.failures, items])
 
+  const retryLoad = useCallback(() => void e.boot(myId), [e, myId])
+
   const setStatus = useCallback(
     (id: string, status: TaskStatus) => {
       const change = e.setStatus(id, status)
@@ -251,6 +260,8 @@ export function useItems(myId: string | null = null): Store {
       allItems: items,
       visibleItems,
       loaded: snap.loaded,
+      loadError: snap.loadError,
+      retryLoad,
       syncInfo: snap.syncInfo,
       failures,
       upsert: e.upsert,
@@ -269,6 +280,6 @@ export function useItems(myId: string | null = null): Store {
       onRetired: e.onRetired,
       unconfirmed: e.unconfirmed,
     }),
-    [e, myId, lists, items, visibleItems, snap.loaded, snap.syncInfo, failures, setStatus],
+    [e, myId, lists, items, visibleItems, snap.loaded, snap.loadError, retryLoad, snap.syncInfo, failures, setStatus],
   )
 }

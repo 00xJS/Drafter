@@ -1,13 +1,24 @@
-/** Delta cursor for sync_posts — null/absent means a full exchange. */
+// What a device keeps about its sync: the delta cursor, the records with an
+// edit still to push, and the rows the server refused. It lives beside the
+// records it covers — in IndexedDB's 'meta' row, written in the same
+// transaction as they are (src/idb.ts) — so the two can never disagree.
+//
+// It used to live in localStorage, written the moment it changed, while the
+// records reached IndexedDB 300 ms later: a phone suspended in between kept a
+// cursor that had moved past rows it never saved, and the partner's changes
+// in them were skipped for good. The keys below are only read now, once, from
+// a device an older build left them on (readLegacyBookkeeping).
+
+/** Delta cursor for sync_posts — null/absent means a full exchange. (Legacy: read once.) */
 export const CURSOR_KEY = 'drafter:sync-cursor'
-/** Ids waiting to push; only used when a cursor is present. */
+/** Ids waiting to push. (Legacy: read once.) */
 export const DIRTY_KEY = 'drafter:dirty-ids'
-/** Ids the server refused, with the reason and when to try each again. */
+/** Ids the server refused, with the reason and when to try each again. (Legacy: read once.) */
 export const FAILURES_KEY = 'drafter:sync-failures'
-/** The kinds this build syncs, as last booted: a change means one full exchange. */
+/** The kinds this build syncs, as last booted. (Legacy: read once.) */
 export const KINDS_KEY = 'drafter:sync-kinds'
 
-/** The small synchronous store this state lives in: localStorage in the app, a Map in tests. */
+/** The small synchronous store: localStorage in the app, a Map in tests. */
 export interface KV {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -19,67 +30,6 @@ export const browserKV: KV = {
   getItem: key => globalThis.localStorage?.getItem(key) ?? null,
   setItem: (key, value) => globalThis.localStorage?.setItem(key, value),
   removeItem: key => globalThis.localStorage?.removeItem(key),
-}
-
-export function readDirty(kv: KV = browserKV): Set<string> {
-  try {
-    const raw = kv.getItem(DIRTY_KEY)
-    if (!raw) return new Set()
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === 'string')) : new Set()
-  } catch {
-    return new Set()
-  }
-}
-
-export function writeDirty(ids: Set<string>, kv: KV = browserKV): void {
-  try {
-    kv.setItem(DIRTY_KEY, JSON.stringify([...ids]))
-  } catch {
-    /* ignore */
-  }
-}
-
-export function readCursor(kv: KV = browserKV): string | null {
-  try {
-    return kv.getItem(CURSOR_KEY)
-  } catch {
-    return null
-  }
-}
-
-export function writeCursor(iso: string, kv: KV = browserKV): void {
-  try {
-    kv.setItem(CURSOR_KEY, iso)
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Drop the delta cursor so the next sync_posts uses since=null (full exchange). */
-export function clearSyncCursor(kv: KV = browserKV): void {
-  try {
-    kv.removeItem(CURSOR_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
-export function clearDirtyIds(kv: KV = browserKV): void {
-  try {
-    kv.removeItem(DIRTY_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Same effect as Settings → Data → Full resync's cursor reset.
- * When local cache is empty, also drop the dirty set (stale ids would only confuse a full pull).
- */
-export function prepareFullResync(opts?: { clearDirty?: boolean }, kv: KV = browserKV): void {
-  clearSyncCursor(kv)
-  if (opts?.clearDirty) clearDirtyIds(kv)
 }
 
 /** A row the server refused. It stays dirty and is pushed again once `nextAt` passes. */
@@ -95,33 +45,86 @@ export interface SyncFailure {
   firstAt: number
 }
 
-export function readFailures(kv: KV = browserKV): Map<string, SyncFailure> {
-  const out = new Map<string, SyncFailure>()
-  try {
-    const raw = kv.getItem(FAILURES_KEY)
-    const arr = raw ? JSON.parse(raw) : []
-    for (const f of Array.isArray(arr) ? arr : []) {
-      if (!f || typeof f !== 'object' || typeof f.id !== 'string') continue
-      const n = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
-      out.set(f.id, {
-        id: f.id,
-        reason: typeof f.reason === 'string' && f.reason ? f.reason : undefined,
-        attempts: Math.max(1, Math.round(n(f.attempts, 1))),
-        nextAt: n(f.nextAt, 0),
-        firstAt: n(f.firstAt, 0),
-      })
-    }
-  } catch {
-    /* a corrupt entry only costs the backoff, never the dirty row */
-  }
-  return out
+/** The sync state kept beside the records. */
+export interface SyncBookkeeping {
+  /** Where the last answer got to; null: the next round is a full exchange. */
+  cursor: string | null
+  /**
+   * The kinds list of the build that reached the cursor (KINDS_EPOCH). A build
+   * that did not know a kind dropped its rows on pull and still moved past
+   * them, so a cursor reached under another list is not used.
+   */
+  kinds: string | null
+  /** Records with an edit the server has not confirmed. */
+  dirty: string[]
+  /** Rows the server refused, and the backoff each waits out. */
+  failures: SyncFailure[]
 }
 
-export function writeFailures(failures: Map<string, SyncFailure>, kv: KV = browserKV): void {
+export const NO_BOOKKEEPING: SyncBookkeeping = Object.freeze({ cursor: null, kinds: null, dirty: [], failures: [] }) as SyncBookkeeping
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+
+/** Refusals as stored, one per id; a corrupt entry only costs its backoff, never the dirty row. */
+export function parseFailures(v: unknown): SyncFailure[] {
+  const out = new Map<string, SyncFailure>()
+  for (const f of Array.isArray(v) ? v : []) {
+    if (!f || typeof f !== 'object' || typeof f.id !== 'string') continue
+    const n = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? x : d)
+    out.set(f.id, {
+      id: f.id,
+      reason: typeof f.reason === 'string' && f.reason ? f.reason : undefined,
+      attempts: Math.max(1, Math.round(n(f.attempts, 1))),
+      nextAt: n(f.nextAt, 0),
+      firstAt: n(f.firstAt, 0),
+    })
+  }
+  return [...out.values()]
+}
+
+/** Bookkeeping as read back from storage, or null when there is none to read (a cache an older build wrote). */
+export function parseBookkeeping(v: unknown): SyncBookkeeping | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const b = v as Partial<Record<keyof SyncBookkeeping, unknown>>
+  return {
+    cursor: typeof b.cursor === 'string' && b.cursor ? b.cursor : null,
+    kinds: typeof b.kinds === 'string' ? b.kinds : null,
+    dirty: [...new Set(strings(b.dirty))],
+    failures: parseFailures(b.failures),
+  }
+}
+
+function read(kv: KV, key: string): string | null {
   try {
-    if (failures.size === 0) kv.removeItem(FAILURES_KEY)
-    else kv.setItem(FAILURES_KEY, JSON.stringify([...failures.values()]))
+    return kv.getItem(key)
   } catch {
-    /* ignore */
+    return null
+  }
+}
+
+function json(raw: string | null): unknown {
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+/** What an older build kept in localStorage, or null when it kept nothing there. */
+export function readLegacyBookkeeping(kv: KV = browserKV): SyncBookkeeping | null {
+  const raw = [CURSOR_KEY, DIRTY_KEY, FAILURES_KEY, KINDS_KEY].map(k => read(kv, k))
+  if (raw.every(r => r === null)) return null
+  const [cursor, dirty, failures, kinds] = raw
+  return { cursor: cursor || null, kinds, dirty: [...new Set(strings(json(dirty)))], failures: parseFailures(json(failures)) }
+}
+
+/** Remove what readLegacyBookkeeping read: done once a write has put it beside the records. */
+export function forgetLegacyBookkeeping(kv: KV = browserKV): void {
+  for (const key of [CURSOR_KEY, DIRTY_KEY, FAILURES_KEY, KINDS_KEY]) {
+    try {
+      kv.removeItem(key)
+    } catch {
+      /* read again next boot, and ignored: IndexedDB has its own now */
+    }
   }
 }

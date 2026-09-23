@@ -5,7 +5,7 @@
 import { vi } from 'vitest'
 import { newerStamp } from '../itemops'
 import { KINDS_EPOCH, createSyncEngine, type CacheChanges, type CacheRecord, type SyncStorage } from '../syncengine'
-import { KINDS_KEY } from '../syncstate'
+import { KINDS_KEY, type SyncBookkeeping } from '../syncstate'
 import { Item, Task } from '../types'
 import type { Device, FakeServer } from './sync-fakes'
 
@@ -13,15 +13,21 @@ const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(
 
 export class FakeDisk {
   records = new Map<string, Item>()
-  meta: { version: number; userId: string | null; shadows: Item[] } | null = null
+  meta: { version: number; userId: string | null; shadows: Item[]; sync?: SyncBookkeeping; seq?: number } | null = null
   /** The single value (posts/'all') of a build before the per-record cache. */
   snapshot: CacheRecord | undefined = undefined
   /** Every write asked for, in order — the ones that failed included. */
   writes: CacheChanges[] = []
   /** Refuse this many writes from now on, as a full disk does. */
   failWrites = 0
+  /** Writes from now on never finish: the page is gone before IndexedDB commits. */
+  hangWrites = false
   /** Throw on the next read, as a broken database does. */
   failRead = false
+  /** Throw on this many reads from now on. */
+  failReads = 0
+  /** Every read asked for, the ones that failed included. */
+  reads = 0
   cleared = 0
 
   /** The v2 value an older build left, and nothing in the per-record stores. */
@@ -31,11 +37,20 @@ export class FakeDisk {
     return disk
   }
 
-  /** Records already moved over, under this account. */
-  static withRecords(userId: string | null, items: Item[], shadows: Item[] = []): FakeDisk {
+  /** Records already moved over, under this account (with no bookkeeping beside them, as an older build left it, unless given). */
+  static withRecords(userId: string | null, items: Item[], shadows: Item[] = [], sync?: SyncBookkeeping, seq?: number): FakeDisk {
     const disk = new FakeDisk()
     for (const item of items) disk.records.set(item.id, clone(item))
-    disk.meta = { version: 3, userId, shadows: clone(shadows) }
+    disk.meta = { version: 3, userId, shadows: clone(shadows), sync: clone(sync), seq }
+    return disk
+  }
+
+  /** A copy of this disk as it is now: what a page killed at this moment leaves behind. */
+  copy(): FakeDisk {
+    const disk = new FakeDisk()
+    for (const [id, item] of this.records) disk.records.set(id, clone(item))
+    disk.meta = clone(this.meta)
+    disk.snapshot = clone(this.snapshot)
     return disk
   }
 
@@ -51,25 +66,37 @@ export class FakeDisk {
   storage(kv: Map<string, string>): SyncStorage {
     return {
       readAll: async () => {
-        if (this.failRead) {
-          this.failRead = false
+        this.reads++
+        if (this.failRead || this.failReads > 0) {
+          if (this.failRead) this.failRead = false
+          else this.failReads--
           throw new Error('UnknownError: the database is broken')
         }
         if (this.records.size === 0 && !this.meta) return undefined
-        return { version: this.meta?.version ?? 0, userId: this.meta ? this.meta.userId : undefined, items: clone([...this.records.values()]), shadows: clone(this.meta?.shadows ?? []) }
+        return {
+          version: this.meta?.version ?? 0,
+          userId: this.meta ? this.meta.userId : undefined,
+          items: clone([...this.records.values()]),
+          shadows: clone(this.meta?.shadows ?? []),
+          sync: clone(this.meta?.sync),
+          seq: this.meta?.seq,
+        }
       },
       writeChanges: async change => {
         const copy = clone(change)
         this.writes.push(copy)
+        if (this.hangWrites) {
+          ;(copy as { failed?: boolean }).failed = true
+          return new Promise<void>(() => {})
+        }
         if (this.failWrites > 0) {
           this.failWrites--
           ;(copy as { failed?: boolean }).failed = true
           throw new Error('QuotaExceededError')
         }
-        if (change.replace) this.records.clear()
         for (const id of change.deletes) this.records.delete(id)
         for (const item of change.upserts) this.records.set(item.id, clone(item))
-        this.meta = { version: change.version, userId: change.userId, shadows: clone(change.shadows) }
+        this.meta = { version: change.version, userId: change.userId, shadows: clone(change.shadows), sync: clone(change.sync), seq: change.seq }
         if (change.dropSnapshot) this.snapshot = undefined
       },
       readSnapshot: async () => clone(this.snapshot),

@@ -37,6 +37,7 @@ import { useSyncAlarm } from './planner/useSyncAlarm'
 import { useCookTaskSync } from './planner/useCookTaskSync'
 import { useTaskActions } from './planner/useTaskActions'
 import { useToast } from './planner/useToast'
+import { CacheError } from './planner/CacheError'
 
 export default function Planner() {
   const household = useHousehold()
@@ -159,6 +160,8 @@ export default function Planner() {
       <PullToRefresh enabled={!anyOpen} onRefresh={manualSync} />
 
       <main className="content">
+        {/* this device's saved copy would not open: say so, rather than draw an empty planner over it */}
+        {!store.loaded && store.loadError && <CacheError error={store.loadError} retry={store.retryLoad} withServer={!!getSupabase()} />}
         {store.loaded && (
           <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
             {/* a screen whose chunk has not arrived holds its space, blank.

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { newerStamp, pullSince } from '../itemops'
 import { KINDS_EPOCH, backoffMs, type CacheRecord } from '../syncengine'
-import { CURSOR_KEY, DIRTY_KEY, FAILURES_KEY, KINDS_KEY } from '../syncstate'
+import { CURSOR_KEY, DIRTY_KEY, KINDS_KEY } from '../syncstate'
 import { Garment, Item, Outfit, Task, Wear } from '../types'
 import { FakeServer, device, edit, idle, last, ready, task } from './sync-fakes'
 
@@ -26,7 +26,10 @@ describe('boot and the everyday round', () => {
     expect(server.calls[0].since).toBeNull()
     expect(d.item('a')).toBeDefined()
     expect(d.engine.getState()).toMatchObject({ loaded: true, syncInfo: { online: true, pending: 0 } })
-    expect(d.kv.get(CURSOR_KEY)).toBeTruthy()
+    // the cursor is written beside the records it covers, not on its own
+    expect(d.engine.inspect().cursor).toBeTruthy()
+    expect(d.snapshot()!.sync!.cursor).toBe(d.engine.inspect().cursor)
+    expect(d.kv.has(CURSOR_KEY)).toBe(false)
   })
 
   it('writes an edit to the cache after 300ms and pushes it after 2s, pulling with the 10s overlap', async () => {
@@ -34,13 +37,14 @@ describe('boot and the everyday round', () => {
     server.seed(task('a'))
     const d = device(server)
     await ready(d)
-    const cursor = d.kv.get(CURSOR_KEY)!
+    const cursor = d.engine.inspect().cursor!
     const calls = server.calls.length
     edit(d, 'a', { title: 'Buy paint' })
     expect(d.engine.inspect().dirty).toEqual(['a'])
-    expect(JSON.parse(d.kv.get(DIRTY_KEY)!)).toEqual(['a'])
     await vi.advanceTimersByTimeAsync(300)
     expect(d.snapshot()!.items.find(i => i.id === 'a')).toMatchObject({ title: 'Buy paint' })
+    // the dirty mark in the same write as the edit it marks
+    expect(d.snapshot()!.sync!.dirty).toEqual(['a'])
     expect(server.calls.length).toBe(calls)
     await vi.advanceTimersByTimeAsync(1700)
     await idle(d)
@@ -61,7 +65,7 @@ describe('boot and the everyday round', () => {
     await vi.advanceTimersByTimeAsync(2000)
     await idle(d)
     expect(d.engine.getState().syncInfo).toMatchObject({ online: false, pending: 2 })
-    expect(JSON.parse(d.kv.get(DIRTY_KEY)!).sort()).toEqual(['a', 'new'])
+    expect([...d.snapshot()!.sync!.dirty].sort()).toEqual(['a', 'new'])
     // the base the edit was made on is written with it, for a merge after a restart
     expect(d.snapshot()!.shadows).toEqual([expect.objectContaining({ id: 'a', title: 'a' })])
 
@@ -158,7 +162,8 @@ describe('a refused row is never dropped', () => {
     expect(d.engine.inspect().failures).toEqual([
       { id: 'a', reason: 'status not allowed', attempts: 1, nextAt: Date.now() + backoffMs(1), firstAt: Date.now() },
     ])
-    expect(JSON.parse(d.kv.get(FAILURES_KEY)!)[0]).toMatchObject({ id: 'a', attempts: 1 })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(d.snapshot()!.sync!.failures[0]).toMatchObject({ id: 'a', attempts: 1 })
     // kept as the user left it, and still counted
     expect(d.item<Task>('a')!.title).toBe('Refused edit')
     expect(d.engine.getState().syncInfo).toMatchObject({ pending: 1, rejected: ['a'] })
@@ -176,7 +181,8 @@ describe('a refused row is never dropped', () => {
     expect(await d.engine.retry('a')).toBe(true)
     expect(server.row<Task>('a')!.title).toBe('Refused edit')
     expect(d.engine.inspect()).toMatchObject({ dirty: [], failures: [] })
-    expect(d.kv.has(FAILURES_KEY)).toBe(false)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(d.snapshot()!.sync).toMatchObject({ dirty: [], failures: [] })
     expect(d.engine.getState().syncInfo.pending).toBe(0)
   })
 
@@ -308,7 +314,7 @@ describe('Delete forever', () => {
     expect(await d.engine.purge(['a'])).toBe(false)
     // no debounce ran: the purge was written because it must survive the app being killed
     expect(d.snapshot()!.items.find(i => i.id === 'a')).toMatchObject({ purged: true })
-    expect(JSON.parse(d.kv.get(DIRTY_KEY)!)).toEqual(['a'])
+    expect(d.snapshot()!.sync!.dirty).toEqual(['a'])
     expect(d.engine.getState().syncInfo.pending).toBe(1)
 
     server.offline = false
@@ -414,7 +420,7 @@ describe('the kinds epoch: a build that syncs other kinds pulls everything once'
     await ready(d)
     expect(server.calls[0].since).toBeNull()
     expect(d.item('skipped')).toBeDefined()
-    expect(d.kv.get(KINDS_KEY)).toBe(KINDS_EPOCH)
+    expect(d.snapshot()!.sync!.kinds).toBe(KINDS_EPOCH)
   })
 
   it('treats an older build’s list the same way', async () => {
@@ -424,7 +430,9 @@ describe('the kinds epoch: a build that syncs other kinds pulls everything once'
     await ready(d)
     expect(server.calls[0].since).toBeNull()
     expect(d.item('skipped')).toBeDefined()
-    expect(d.kv.get(KINDS_KEY)).toBe(KINDS_EPOCH)
+    expect(d.snapshot()!.sync!.kinds).toBe(KINDS_EPOCH)
+    // moved beside the records: the older build's keys are gone
+    expect(d.kv.has(KINDS_KEY) || d.kv.has(CURSOR_KEY)).toBe(false)
   })
 
   it('does it once: the next boot of the same build is a delta round again', async () => {
@@ -432,7 +440,7 @@ describe('the kinds epoch: a build that syncs other kinds pulls everything once'
     server.seed(task('a'))
     const first = device(server, { kv: new Map([[CURSOR_KEY, OLD_CURSOR]]), snapshot: cache([task('a')]), kinds: null })
     await ready(first)
-    const cursor = first.kv.get(CURSOR_KEY)!
+    const cursor = first.engine.inspect().cursor!
     const calls = server.calls.length
     const restarted = device(server, { kv: first.kv, snapshot: first.snapshot() })
     await ready(restarted)
@@ -465,10 +473,10 @@ describe('the kinds epoch: a build that syncs other kinds pulls everything once'
   it('leaves the list alone in local mode and before anyone signs in', async () => {
     const local = device(null, { kinds: null })
     await ready(local, null)
-    expect(local.kv.has(KINDS_KEY)).toBe(false)
+    expect(local.snapshot()?.sync?.kinds ?? null).toBeNull()
     const signedOut = device(new FakeServer(), { kinds: null })
     await ready(signedOut, null)
-    expect(signedOut.kv.has(KINDS_KEY)).toBe(false)
+    expect(signedOut.snapshot()?.sync?.kinds ?? null).toBeNull()
   })
 
   it('removing a garment and restoring it leaves every look and outfit it is in as it was', async () => {

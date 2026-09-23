@@ -5,19 +5,7 @@ import { applyLocalChoice, sameContent } from '../shared/merge.mts'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { peerVisibleByKind, purgeTombstone, type SyncResult } from './sync'
-import {
-  KINDS_KEY,
-  clearSyncCursor,
-  prepareFullResync,
-  readCursor,
-  readDirty,
-  readFailures,
-  writeCursor,
-  writeDirty,
-  writeFailures,
-  type KV,
-  type SyncFailure,
-} from './syncstate'
+import { NO_BOOKKEEPING, forgetLegacyBookkeeping, parseBookkeeping, readLegacyBookkeeping, type KV, type SyncBookkeeping, type SyncFailure } from './syncstate'
 
 // The sync engine: everything that keeps this device's records and the
 // server's in step, as a plain module with its world injected — the RPC, the
@@ -32,10 +20,17 @@ const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 export const JOURNAL_KEY = 'drafter:unsaved-journal'
 
 interface Journal {
-  v: 1
+  /** 1: records only (the build before the bookkeeping moved beside them). 2: the bookkeeping too. */
+  v: 1 | 2
   userId: string | null
   upserts: Item[]
   deletes: string[]
+  /** v2: how many writes had been started when it was taken. A cache a later write reached is newer than all of it. */
+  seq?: number
+  /** v2: the merge base of every dirty record — a replayed edit without one would overwrite a partner's concurrent change. */
+  shadows?: Item[]
+  /** v2: the cursor, the dirty set and the refusals, as they were when the page went away. */
+  sync?: SyncBookkeeping
 }
 /** The IndexedDB write waits this long after the last change, off the render hot path. */
 const PERSIST_MS = 300
@@ -53,7 +48,7 @@ export const PERIODIC_MS = 60_000
 export const LIVE_PERIODIC_MS = 5 * 60_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_CAP_MS = 30 * 60_000
-/** The kinds this build syncs, as KINDS_KEY records them: when the stored list differs, boot does one full exchange. */
+/** The kinds this build syncs, as the bookkeeping records them beside the cursor: when the stored list differs, boot does one full exchange. */
 export const KINDS_EPOCH = [...KNOWN_KINDS].sort().join(',')
 
 /** How long a row refused `attempts` times in a row waits before the next try: 30s, 1m, 2m … capped at 30 min. */
@@ -105,6 +100,13 @@ export interface CacheRecord {
   items: Item[]
   /** The merge base of each dirty record, written with the items so the two can never disagree. */
   shadows?: Item[]
+  /**
+   * The cursor, the dirty set and the refusals, written with the records they
+   * cover. Absent in a cache an older build wrote: it kept them in localStorage.
+   */
+  sync?: SyncBookkeeping
+  /** Which write this was, counting up from the first: orders the unload journal against the cache. */
+  seq?: number
 }
 
 /**
@@ -122,8 +124,14 @@ export interface CacheChanges {
   deletes: string[]
   /** The merge base of every dirty record — the whole set, each write, beside the records it belongs to. */
   shadows: Item[]
-  /** Empty the records first: what is on disk is not known (its read failed), so this write is the whole cache. */
-  replace?: boolean
+  /**
+   * The cursor, the dirty set and the refusals, whole, each write. In the same
+   * transaction as the records: a cursor saved ahead of the rows it moved past
+   * skipped a partner's changes for good when the app was killed in between.
+   */
+  sync: SyncBookkeeping
+  /** Counts up with every write: the journal a page going away leaves says which write it came after. */
+  seq: number
   /** Remove the single value of an older build in the same transaction: set on the write that moves it over. */
   dropSnapshot?: boolean
 }
@@ -146,7 +154,11 @@ export interface SyncStorage {
   writeChanges?(changes: CacheChanges): Promise<unknown>
   /** Wipe every trace of an account from this device (clearLocalData in the app). */
   clearAll(): Promise<void>
-  /** The dirty set, the cursor and the refusals: small, synchronous, written as they change. */
+  /**
+   * Small and synchronous (localStorage): the journal a page going away
+   * leaves, and — read once, from a device an older build ran on — the
+   * bookkeeping that build kept here.
+   */
   kv: KV
 }
 
@@ -156,13 +168,17 @@ interface LoadedCache {
   shadows: Item[]
   /** The cache belonged to another account and was wiped. */
   wiped: boolean
-  from: 'records' | 'snapshot' | 'none' | 'unknown'
+  from: 'records' | 'snapshot' | 'none'
   /** Every id the per-record cache holds (from 'records'). */
   ids: Set<string>
   /** The account the cache says it belongs to. */
   owner?: string | null
   /** The records came from the pre-IndexedDB localStorage cache. */
   legacy: boolean
+  /** The bookkeeping written beside the records; null when the cache predates it (localStorage holds it then). */
+  sync: SyncBookkeeping | null
+  /** The last write that reached the cache (0: none counted). */
+  seq: number
 }
 
 export interface SyncTimers {
@@ -194,6 +210,13 @@ export interface EngineState {
   byKind: KindLists
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
+  /**
+   * Why the local cache could not be read, after a few tries. Nothing is
+   * shown, written, pushed or pulled until it can be: an empty planner over
+   * a cache that is really there would be written over it, unsynced edits and
+   * all. The planner says so, and offers another try (boot again).
+   */
+  loadError?: string
   syncInfo: SyncInfo
   /** Rows the server refused, oldest refusal first. */
   failures: SyncFailure[]
@@ -424,6 +447,19 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** The last version the server confirmed of each dirty record: the base a concurrent edit merges against. */
   let shadows = new Map<string, Item>()
   let failures = new Map<string, SyncFailure>()
+  /** The delta cursor: where the last answer got to. Null: the next round is a full exchange. */
+  let cursor: string | null = null
+  /** The kinds list the cursor was reached under (see SyncBookkeeping.kinds). */
+  let cursorKinds: string | null = null
+  /**
+   * Bumped by every change of the bookkeeping above. Every write carries the
+   * whole of it; this says whether the one on disk is behind.
+   */
+  let metaGen = 0
+  /** Writes started, counting on from the one the cache was read at: orders the journal against the cache. */
+  let seq = 0
+  /** The bookkeeping came from localStorage, where an older build kept it: its keys go once a write has put it beside the records. */
+  let legacyKeys = false
 
   let persistTimer: unknown = undefined
   let pushTimer: unknown = undefined
@@ -452,12 +488,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   let index = new Map<string, Item>()
   /** Ids whose copy on disk may differ from the one in memory: the next write puts or deletes each. */
   const unsaved = new Set<string>()
-  /** What is on disk is not known (its read failed): the next write replaces the whole cache. */
-  let replaceNext = false
+  /** Ids the write in progress carries: not on disk until it lands, so a journal taken meanwhile holds them too. */
+  let inflightIds: ReadonlySet<string> = new Set()
   /** An older build's single value is still on disk: the next write moves it over and removes it. */
   let snapshotLeft = false
-  /** The account and shadows the last write put beside the records; null when unknown. */
-  let written: { userId: string | null; shadows: Item[] } | null = null
+  /** The account and bookkeeping generation the last write put beside the records; null when unknown. */
+  let written: { userId: string | null; gen: number } | null = null
+  /** The cursor the cache on disk holds: what a journal too big to keep whole falls back to. */
+  let savedCursor: string | null = null
   /** The write in progress. Writes run one after another, so an older one can never land last. */
   let writing: Promise<void> | null = null
 
@@ -507,9 +545,25 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     return remote ? dirty.size : 0
   }
 
+  /**
+   * The bookkeeping changed: the next write carries it, beside the records it
+   * covers — never on its own ahead of them, which is how a cursor once moved
+   * past rows the device had not saved.
+   */
   function saveBookkeeping(): void {
-    writeDirty(dirty, kv)
-    writeFailures(failures, kv)
+    metaGen++
+    schedulePersist()
+  }
+
+  /** The bookkeeping as a write carries it. */
+  function bookkeeping(): SyncBookkeeping {
+    return { cursor, kinds: cursorKinds, dirty: [...dirty], failures: failureList() }
+  }
+
+  /** The bookkeeping in one string, to tell whether a round changed any of it. */
+  function bookSignature(): string {
+    const marks = [...shadows.values()].map(s => `${s.id}@${s.updatedAt}`)
+    return JSON.stringify([cursor, cursorKinds, [...dirty], failureList(), marks])
   }
 
   /** Drop bookkeeping for ids with nothing left to push (removed by retainMine, a wipe, an old purge). */
@@ -553,10 +607,20 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     return run
   }
 
-  /** Whether the account or the shadows differ from what the last write put beside the records. */
-  function metaMoved(shadowList: Item[]): boolean {
-    if (!written || written.userId !== account || written.shadows.length !== shadowList.length) return true
-    return shadowList.some((s, i) => written!.shadows[i] !== s)
+  /** Whether the account or the bookkeeping differ from what the last write put beside the records. */
+  function metaMoved(): boolean {
+    return !written || written.userId !== account || written.gen !== metaGen
+  }
+
+  /** A write landed carrying the bookkeeping as it was at `gen`. */
+  function landed(userId: string | null, gen: number, sync: SyncBookkeeping): void {
+    written = { userId, gen }
+    savedCursor = sync.cursor
+    // the bookkeeping an older build kept in localStorage is beside the records now
+    if (legacyKeys) {
+      forgetLegacyBookkeeping(kv)
+      legacyKeys = false
+    }
   }
 
   async function writeCache(): Promise<void> {
@@ -565,10 +629,13 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (!perRecord) {
       unsaved.clear()
       const snapshot = state.items
-      const record: CacheRecord = { version: STORAGE_VERSION, userId: account, items: snapshot }
+      const gen = metaGen
+      const sync = bookkeeping()
+      const record: CacheRecord = { version: STORAGE_VERSION, userId: account, items: snapshot, sync, seq: ++seq }
       if (remote && shadows.size > 0) record.shadows = [...shadows.values()]
       try {
         await storage.writeSnapshot(record)
+        landed(record.userId ?? null, gen, sync)
         // legacy cache retired only once the new cache holds real data
         if (snapshot.length > 0) kv.removeItem(LEGACY_LS_KEY)
       } catch (e) {
@@ -577,24 +644,31 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       return
     }
     const ids = [...unsaved]
-    const shadowList = remote ? [...shadows.values()] : []
-    if (ids.length === 0 && !replaceNext && !snapshotLeft && !metaMoved(shadowList)) return
+    if (ids.length === 0 && !snapshotLeft && !metaMoved()) return
     unsaved.clear()
-    const change: CacheChanges = { userId: account, version: STORAGE_VERSION, upserts: [], deletes: [], shadows: shadowList }
+    const gen = metaGen
+    const change: CacheChanges = {
+      userId: account,
+      version: STORAGE_VERSION,
+      upserts: [],
+      deletes: [],
+      shadows: remote ? [...shadows.values()] : [],
+      sync: bookkeeping(),
+      seq: ++seq,
+    }
     for (const id of ids) {
       const item = index.get(id)
       if (item) change.upserts.push(item)
       else change.deletes.push(id)
     }
-    if (replaceNext) change.replace = true
     if (snapshotLeft) change.dropSnapshot = true
+    inflightIds = new Set(ids)
     try {
       await storage.writeChanges!(change)
-      written = { userId: change.userId, shadows: shadowList }
-      if (change.replace) replaceNext = false
+      landed(change.userId, gen, change.sync)
       if (change.dropSnapshot) snapshotLeft = false
-      // the records a page going away journalled are on disk now
-      if (unsaved.size === 0) clearJournal()
+      // what a page going away journalled is on disk now
+      if (unsaved.size === 0 && !metaMoved()) clearJournal()
       // legacy cache retired only once the new cache holds real data
       if (index.size > 0) kv.removeItem(LEGACY_LS_KEY)
     } catch (e) {
@@ -603,6 +677,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       for (const id of ids) unsaved.add(id)
       console.error('Failed to save the local cache', e)
       if (persistTimer === undefined) schedulePersist(PERSIST_RETRY_MS)
+    } finally {
+      inflightIds = new Set()
     }
   }
 
@@ -616,7 +692,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   /** Something is waiting to be written: a debounce not yet run, or a write that failed. */
   function persistPending(): boolean {
-    return persistTimer !== undefined || (perRecord && unsaved.size > 0)
+    return persistTimer !== undefined || (perRecord && state.loaded && (unsaved.size > 0 || metaMoved()))
   }
 
   // ---- the journal: what a page going away had not written yet ----------------------
@@ -629,21 +705,36 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   // the page goes away the records still unwritten are also put in synchronous
   // storage, and the next boot lays them over what IndexedDB read. The next
   // write that leaves nothing unwritten removes it.
+  //
+  // It carries the bookkeeping too — the dirty set, each dirty record's merge
+  // base, the cursor — as the page held it. Without the merge base a replayed
+  // edit went out as if nothing had changed on the server since, and
+  // overwrote a partner's concurrent edit of the same record whole. And it
+  // says how many writes had been started (`seq`): a cache that a later write
+  // reached is newer than everything in it.
 
-  /** A journal bigger than this is not written: localStorage is small, and the IndexedDB write is still under way. */
+  /** A journal bigger than this is not written whole: localStorage is small, and the IndexedDB write is still under way. */
   const JOURNAL_MAX_CHARS = 1_500_000
 
   function writeJournal(): void {
-    if (!perRecord || !state.loaded || unsaved.size === 0) return
+    if (!perRecord || !state.loaded) return
+    // the write in progress is not on disk until it lands: what it carries goes in too
+    const ids = new Set([...unsaved, ...inflightIds])
+    if (ids.size === 0 && !metaMoved()) return
     const upserts: Item[] = []
     const deletes: string[] = []
-    for (const id of unsaved) {
+    for (const id of ids) {
       const item = index.get(id)
       if (item) upserts.push(item)
       else deletes.push(id)
     }
+    const whole: Journal = { v: 2, userId: account, seq, upserts, deletes, shadows: remote ? [...shadows.values()] : [], sync: bookkeeping() }
     try {
-      const text = JSON.stringify({ v: 1, userId: account, upserts, deletes } satisfies Journal)
+      let text = JSON.stringify(whole)
+      // Too big to keep whole (a first full exchange, say): the edits alone,
+      // with the cursor the cache already holds, so what was pulled since is
+      // pulled again rather than skipped.
+      if (text.length > JOURNAL_MAX_CHARS) text = JSON.stringify({ ...whole, upserts: upserts.filter(i => dirty.has(i.id)), deletes: [], sync: { ...whole.sync!, cursor: savedCursor } })
       if (text.length <= JOURNAL_MAX_CHARS) kv.setItem(JOURNAL_KEY, text)
     } catch {
       /* storage full or blocked: the IndexedDB write is still on its way */
@@ -669,24 +760,37 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (raw === null) return null
     try {
       const j = JSON.parse(raw) as Partial<Journal>
-      if (j?.v !== 1 || !Array.isArray(j.upserts) || !Array.isArray(j.deletes) || (j.userId ?? null) !== myId) {
+      if ((j?.v !== 1 && j?.v !== 2) || !Array.isArray(j.upserts) || !Array.isArray(j.deletes) || (j.userId ?? null) !== myId) {
         clearJournal()
         return null
       }
       const upserts = (migrateStored(j.upserts) ?? []).filter(i => typeof i?.id === 'string')
-      return { v: 1, userId: myId, upserts, deletes: j.deletes.filter((d): d is string => typeof d === 'string') }
+      const deletes = j.deletes.filter((d): d is string => typeof d === 'string')
+      if (j.v === 1) return { v: 1, userId: myId, upserts, deletes }
+      const sync = parseBookkeeping(j.sync)
+      // a v2 journal without its bookkeeping is not one this build wrote
+      if (!sync || typeof j.seq !== 'number') {
+        clearJournal()
+        return null
+      }
+      const shadowList = (migrateStored(Array.isArray(j.shadows) ? j.shadows : []) ?? []).filter(i => typeof i?.id === 'string')
+      return { v: 2, userId: myId, seq: j.seq, upserts, deletes, shadows: shadowList, sync }
     } catch {
       clearJournal()
       return null
     }
   }
 
-  /** The cache as IndexedDB read it, with the journal laid over it: a journal record wins unless the cache holds a newer one. */
+  /**
+   * The cache as IndexedDB read it, with the journal laid over it. A v2
+   * journal is newer than the cache whole (boot checks its `seq`); from a v1
+   * journal, which cannot say, a record wins unless the cache holds a newer one.
+   */
   function withJournal(items: Item[], j: Journal): Item[] {
     const byId = new Map(items.map(i => [i.id, i]))
     for (const item of j.upserts) {
       const had = byId.get(item.id)
-      if (!had || !(Date.parse(had.updatedAt) > Date.parse(item.updatedAt))) byId.set(item.id, item)
+      if (j.v === 2 || !had || !(Date.parse(had.updatedAt) > Date.parse(item.updatedAt))) byId.set(item.id, item)
     }
     for (const id of j.deletes) byId.delete(id)
     return [...byId.values()]
@@ -705,52 +809,79 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * Read the cache for this account. `from` is what the per-record cache needs
    * to know about the disk: the records came from it ('records', with `ids`,
    * every id stored there), from an older build's single value ('snapshot', to
-   * be moved over), or there was nothing ('none') — or the read failed
-   * ('unknown'). `legacy` says they came from localStorage instead.
+   * be moved over), or there was nothing ('none'). `legacy` says they came from
+   * localStorage instead.
+   *
+   * A read that fails THROWS. It used to come back as an empty cache, and boot
+   * took it for one: the dirty set was cleared for a full exchange and the next
+   * write emptied the records store, so an edit made offline — on the device
+   * and nowhere else — was gone the moment IndexedDB had one bad launch.
    */
   async function loadCache(myId: string | null): Promise<LoadedCache> {
-    let from: LoadedCache['from'] = 'none'
-    let ids = new Set<string>()
-    let owner: string | null | undefined
-    try {
-      let cached: { userId?: string | null; shadows?: unknown; items?: unknown } | undefined = perRecord ? await storage.readAll!() : undefined
-      if (cached !== undefined) {
-        from = 'records'
-        for (const raw of Array.isArray(cached.items) ? cached.items : []) {
-          const id = (raw as { id?: unknown } | null)?.id
-          if (typeof id === 'string') ids.add(id)
-        }
-      } else {
-        cached = (await storage.readSnapshot()) as typeof cached
-        if (cached) from = 'snapshot'
+    let cached: { userId?: string | null; shadows?: unknown; items?: unknown; sync?: unknown; seq?: unknown } | undefined = perRecord ? await storage.readAll!() : undefined
+    let from: LoadedCache['from'] = cached !== undefined ? 'records' : 'none'
+    const ids = new Set<string>()
+    if (cached !== undefined) {
+      for (const raw of Array.isArray(cached.items) ? cached.items : []) {
+        const id = (raw as { id?: unknown } | null)?.id
+        if (typeof id === 'string') ids.add(id)
       }
-      // a cache written by a different account must never be adopted or re-synced
-      if (cached && myId && cached.userId && cached.userId !== myId) {
-        await storage.clearAll()
-        return { items: [], shadows: [], wiped: true, from: 'none', ids: new Set(), legacy: false }
-      }
-      owner = cached?.userId
-      if (cached) {
-        const migrated = migrateStored(cached)
-        // an empty cache must not shadow a legacy localStorage store (e.g. an
-        // interrupted first run of this version)
-        if (migrated && migrated.length > 0) {
-          return { items: purgeTombstones(migrated, now()), shadows: migrateStored(Array.isArray(cached.shadows) ? cached.shadows : []) ?? [], wiped: false, from, ids, owner, legacy: false }
-        }
-      }
-      // migration from the old localStorage cache — non-destructive: the legacy
-      // key is only removed after the IndexedDB cache has persisted real data
-      const raw = kv.getItem(LEGACY_LS_KEY)
-      if (raw !== null) {
-        const migrated = migrateStored(JSON.parse(raw))
-        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: [], wiped: false, from, ids, owner, legacy: true }
-      }
-    } catch (e) {
-      console.error('Failed to load the local cache', e)
-      from = 'unknown'
-      ids = new Set()
+    } else {
+      cached = (await storage.readSnapshot()) as typeof cached
+      if (cached) from = 'snapshot'
     }
-    return { items: [], shadows: [], wiped: false, from, ids, owner, legacy: false }
+    // a cache written by a different account must never be adopted or re-synced
+    if (cached && myId && cached.userId && cached.userId !== myId) {
+      await storage.clearAll()
+      return { items: [], shadows: [], wiped: true, from: 'none', ids: new Set(), legacy: false, sync: null, seq: 0 }
+    }
+    const owner = cached?.userId
+    const sync = parseBookkeeping(cached?.sync)
+    const seqRead = typeof cached?.seq === 'number' && Number.isFinite(cached.seq) ? cached.seq : 0
+    const shadowList = (cached && migrateStored(Array.isArray(cached.shadows) ? cached.shadows : [])) || []
+    if (cached) {
+      const migrated = migrateStored(cached)
+      // an empty cache must not shadow a legacy localStorage store (e.g. an
+      // interrupted first run of this version)
+      if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead }
+    }
+    // migration from the old localStorage cache — non-destructive: the legacy
+    // key is only removed after the IndexedDB cache has persisted real data.
+    // One that does not parse is no cache at all, not a failed read.
+    let legacy: Item[] | null = null
+    try {
+      const raw = kv.getItem(LEGACY_LS_KEY)
+      legacy = raw === null ? null : migrateStored(JSON.parse(raw))
+    } catch {
+      legacy = null
+    }
+    if (legacy && legacy.length > 0) return { items: purgeTombstones(legacy, now()), shadows: [], wiped: false, from, ids, owner, legacy: true, sync, seq: seqRead }
+    return { items: [], shadows: shadowList, wiped: false, from, ids, owner, legacy: false, sync, seq: seqRead }
+  }
+
+  /** How long boot waits before each try again at a cache that would not read. */
+  const READ_RETRY_MS = [250, 1_000, 3_000]
+
+  const pause = (ms: number) => new Promise<void>(resolve => void timers.setTimeout(resolve, ms))
+
+  /**
+   * loadCache, tried again a few times: IndexedDB in WebKit can fail a read
+   * once and answer the next ("Connection to Indexed Database server lost").
+   * Throws the last failure; resolves null when a later boot took over.
+   */
+  async function readCache(myId: string | null, gen: number): Promise<LoadedCache | null> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const cached = await loadCache(myId)
+        return gen === bootGen ? cached : null
+      } catch (e) {
+        console.error('Failed to load the local cache', e)
+        if (gen !== bootGen) return null
+        if (attempt >= READ_RETRY_MS.length) throw e
+        await pause(READ_RETRY_MS[attempt])
+        if (gen !== bootGen) return null
+      }
+    }
   }
 
   /**
@@ -763,9 +894,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   function rebase(items: Item[], cached: LoadedCache): void {
     index = new Map(items.map(i => [i.id, i]))
     unsaved.clear()
-    replaceNext = cached.from === 'unknown'
     snapshotLeft = cached.from === 'snapshot'
-    written = cached.from === 'records' ? { userId: cached.owner ?? null, shadows: cached.shadows } : null
     if (!perRecord) return
     const onDisk = cached.from === 'records' ? cached.ids : new Set<string>()
     for (const id of onDisk) if (!index.has(id)) unsaved.add(id)
@@ -786,57 +915,95 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (persistPending()) await persistNow()
     account = myId
     const wasLoaded = state.loaded
-    const cached = await loadCache(myId)
-    if (gen !== bootGen) return
+    let cached: LoadedCache | null
+    try {
+      cached = await readCache(myId, gen)
+    } catch (e) {
+      if (gen !== bootGen) return
+      if (wasLoaded && before === myId) {
+        // the same account again (a remount): memory is the newest copy there is
+        void sync()
+        return
+      }
+      // Nothing is known about what is on disk, so nothing may be shown as
+      // if it were all there is, nor written over it, pushed from it or
+      // pulled into it. The planner says so and offers another try.
+      if (wasLoaded) resetMemory(myId)
+      publish({ loaded: false, loadError: e instanceof Error ? e.message || e.name : String(e) })
+      return
+    }
+    if (!cached) return
     if (wasLoaded && !cached.wiped && before === myId) {
       // the same account again (a remount): memory is at least as new as the cache just written
       void sync()
       return
     }
-    // reread after a possible wipe: the bookkeeping belongs to whoever the cache belongs to
-    dirty = remote ? readDirty(kv) : new Set()
-    failures = remote ? readFailures(kv) : new Map()
+    // The bookkeeping belongs to whoever the cache belongs to: beside the
+    // records, or — in a cache an older build wrote — in localStorage, read
+    // once here and moved over by the next write.
+    let book = cached.sync
+    legacyKeys = false
+    if (!book && remote) {
+      book = readLegacyBookkeeping(kv)
+      legacyKeys = book !== null
+    }
+    book ??= NO_BOOKKEEPING
+    savedCursor = book.cursor
+    seq = cached.seq
+    // What a page going away left unwritten (writeJournal). A v2 journal that
+    // a later write overtook is stale, all of it; a newer one is the page as
+    // it last was, bookkeeping and merge bases included.
+    let journal = perRecord ? takeJournal(myId) : null
+    if (journal?.v === 2 && journal.seq! < cached.seq) {
+      clearJournal()
+      journal = null
+    }
+    let shadowList = cached.shadows
+    if (journal?.v === 2) {
+      book = journal.sync!
+      shadowList = journal.shadows!
+      seq = Math.max(seq, journal.seq!)
+    }
+    // whether the bookkeeping on disk is the one about to be held, so the first write need not carry it
+    let fresh = cached.from === 'records' && cached.sync !== null && !journal
+    dirty = remote ? new Set(book.dirty) : new Set()
+    failures = remote ? new Map(book.failures.map(f => [f.id, f])) : new Map()
+    cursor = remote ? book.cursor : null
+    cursorKinds = book.kinds
+    const loadedItems = journal ? withJournal(cached.items, journal) : cached.items
     // Empty local + cloud: a leftover cursor would delta-pull nothing → blank UI
-    // while the server still has data (stuck after wipe / sign-out race).
-    if (myId && cached.items.length === 0) {
-      prepareFullResync({ clearDirty: true }, kv)
+    // while the server still has data (stuck after wipe / sign-out race). Only
+    // for a cache that READ as empty: one that could not be read never gets here.
+    if (myId && loadedItems.length === 0 && (cursor !== null || dirty.size > 0 || failures.size > 0)) {
+      cursor = null
       dirty = new Set()
       failures = new Map()
-      writeFailures(failures, kv)
+      fresh = false
     }
     // A build that did not know a kind dropped its rows on pull (sanitizeItem →
     // null) and applySync still moved the cursor past them, so they would never
     // arrive. The first boot of a build with a different kinds list forgets the
-    // cursor once — one full exchange, as Settings → Full resync does.
-    if (remote && myId) {
-      let stored: string | null = null
-      try {
-        stored = kv.getItem(KINDS_KEY)
-      } catch {
-        /* unreadable storage: treat as changed */
-      }
-      if (stored !== KINDS_EPOCH) {
-        prepareFullResync({}, kv) // clears the cursor; the dirty set stays
-        forceFull = true
-        try {
-          kv.setItem(KINDS_KEY, KINDS_EPOCH)
-        } catch {
-          /* the cleared cursor already forces the full round */
-        }
-      }
+    // cursor once — one full exchange, as Settings → Full resync does. The
+    // dirty set stays.
+    if (remote && myId && cursorKinds !== KINDS_EPOCH) {
+      cursor = null
+      cursorKinds = KINDS_EPOCH
+      forceFull = true
+      fresh = false
     }
-    shadows = new Map(cached.shadows.filter(s => dirty.has(s.id)).map(s => [s.id, s]))
+    shadows = new Map(shadowList.filter(s => dirty.has(s.id)).map(s => [s.id, s]))
     // No blanket re-push of whole kinds on boot: a rejected id stays in the
     // persisted dirty set, so a new session pushes it again on its own. The
     // blanket version re-sent every place, recipe, meal, grocery list, journal
     // entry and event on every load — none of which the server echoed back,
     // so none could ever be confirmed, and all of them read as "n unsynced".
-    const journal = perRecord ? takeJournal(myId) : null
-    const items = ensureProjects(journal ? withJournal(cached.items, journal) : cached.items)
+    const items = ensureProjects(loadedItems)
     rebase(items, cached)
     // what the journal held is written to IndexedDB on this boot's first write
     if (journal) for (const id of [...journal.upserts.map(i => i.id), ...journal.deletes]) unsaved.add(id)
-    publish({ items, byKind: groupByKind(items, null), loaded: true, failures: failureList() })
+    metaGen++
+    written = fresh ? { userId: cached.owner ?? null, gen: metaGen } : null
+    publish({ items, byKind: groupByKind(items, null), loaded: true, loadError: undefined, failures: failureList() })
     // a cache still in an older build's shape moves over now, not after the debounce
     if (perRecord && (snapshotLeft || cached.legacy)) void persistNow()
     else schedulePersist()
@@ -852,6 +1019,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     dirty = new Set()
     shadows = new Map()
     failures = new Map()
+    cursor = null
     saveBookkeeping()
     publish({ items: [], failures: [], syncInfo: { online: false, authError: false } })
   }
@@ -871,11 +1039,15 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       // them may be pushed into this account
       resetMemory(userId)
     }
-    if (state.items.length === 0) {
-      prepareFullResync({ clearDirty: true }, kv)
+    // nothing read yet: boot decides from what it reads — an empty list here
+    // is not an empty cache, and clearing the dirty set on it lost edits
+    if (!state.loaded) return
+    if (state.items.length === 0 && (cursor !== null || dirty.size > 0)) {
+      cursor = null
       dirty = new Set()
+      saveBookkeeping()
     }
-    if (state.loaded) void sync()
+    void sync()
   }
 
   // ---- local edits -------------------------------------------------------------
@@ -1145,7 +1317,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     } else {
       if (inflight) removedMidRound.add(id)
       forceFull = true
-      clearSyncCursor(kv)
+      cursor = null
+      saveBookkeeping()
       replaceItems(list.filter(i => i.id !== id))
     }
     publish({ failures: failureList() })
@@ -1193,7 +1366,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** One round of push-and-pull; sync() is the only caller and serialises it. */
   async function runRound(): Promise<boolean> {
     const full = forceFull
-    let since = full ? null : readCursor(kv)
+    let since = full ? null : cursor
     const clock = now()
     pruneBookkeeping()
     // Pull before pushing an edit of a record the server already had. If
@@ -1205,7 +1378,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       const pulled = await call([], since)
       if (!pulled) return false
       settle(pulled, [], since, clock)
-      since = readCursor(kv)
+      since = cursor
     }
     editedMidRound = false
     const outgoing = outgoingFor(since, clock)
@@ -1222,6 +1395,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // from: an edit made while the request was in flight must survive it.
     const current = state.items
     const gone = new Set(result.gone)
+    const bookBefore = bookSignature()
     // Rows of other people's that this account can no longer read: a note they
     // un-shared, a task they made private, or the household changed. They
     // cannot arrive as items — an invisible row is indistinguishable from an
@@ -1252,7 +1426,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // dropped, not tombstoned: the row is alive and well, just not ours to read
     if (revoked.size > 0) next = next.filter(i => !revoked.has(i.id))
     next = ensureProjects(purgeTombstones(next, clock))
-    if (decision.cursor) writeCursor(decision.cursor, kv)
+    // The cursor reaches the disk in the same write as the rows it moved past
+    // (saveBookkeeping below), never ahead of them: saved on its own, then
+    // killed before the rows were, the device skipped them for good — and its
+    // next edit of one of them overwrote the partner's change it never saw.
+    if (decision.cursor) cursor = decision.cursor
 
     // What still has to go out: anything unconfirmed, merged anew, or refused.
     const retryIds = new Set(decision.unconfirmed)
@@ -1298,7 +1476,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }
     for (const id of [...shadows.keys()]) if (!dirty.has(id)) shadows.delete(id)
     for (const id of [...failures.keys()]) if (!dirty.has(id)) failures.delete(id)
-    saveBookkeeping()
+    // an everyday round that moved nothing has nothing to write
+    if (bookSignature() !== bookBefore) saveBookkeeping()
 
     // Whose a row is belongs in here beside its stamp. Re-attributing a
     // departing member's work changes `user_id` and touches neither `data` nor
@@ -1364,7 +1543,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** Forget the delta cursor so the next round is a full exchange. */
   function fullResync(): Promise<boolean> {
     forceFull = true
-    clearSyncCursor(kv)
+    cursor = null
+    saveBookkeeping()
     return syncAfterFlight()
   }
 
@@ -1501,7 +1681,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       dirty: [...dirty].sort(),
       shadows: new Map(shadows),
       failures: failureList(),
-      cursor: readCursor(kv),
+      cursor,
       syncing: inflight !== null,
       /** How often the periodic round runs now, or null while it is off (stopped, hidden, local mode). */
       pollMs: periodic === undefined ? null : live ? LIVE_PERIODIC_MS : PERIODIC_MS,

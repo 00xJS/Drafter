@@ -5,10 +5,11 @@ const DB_NAME = 'drafter'
  * v2: 'posts' — the local cache moved out of localStorage's 5MB quota, every
  *     record in ONE value under 'all' (rewritten whole after every change).
  * v3: 'records', one row per record keyed by its id, and 'meta', whose cache
- *     it is and the merge base of each record still to push. An edit writes
- *     the one record it changed. The v2 value is moved over on the first write
- *     after it is read (src/syncengine.ts), and 'posts' stays for the
- *     calendar's own cache (src/calendars.ts).
+ *     it is, the merge base of each record still to push and (since the
+ *     bookkeeping left localStorage) the sync cursor, the dirty set and the
+ *     refusals. An edit writes the one record it changed. The v2 value is moved
+ *     over on the first write after it is read (src/syncengine.ts), and
+ *     'posts' stays for the calendar's own cache (src/calendars.ts).
  */
 const DB_VERSION = 3
 const STORES = ['media', 'handles', 'posts', 'records', 'meta'] as const
@@ -20,6 +21,10 @@ interface StoredMeta {
   version: number
   userId: string | null
   shadows: unknown[]
+  /** The cursor, the dirty set and the refusals (syncstate.ts). Absent in a row an older build wrote. */
+  sync?: unknown
+  /** Which write this was, counting up: orders the unload journal against the cache. */
+  seq?: number
 }
 
 function open(): Promise<IDBDatabase> {
@@ -110,26 +115,33 @@ export async function readRecordCache(): Promise<CacheRecord | undefined> {
   })
   if (items.length === 0 && !meta) return undefined
   // no meta beside records is a cache nothing wrote whole: its owner is unknown, as a pre-account cache's was
-  return { version: meta?.version ?? 0, userId: meta ? meta.userId : undefined, items: items as CacheRecord['items'], shadows: (meta?.shadows ?? []) as CacheRecord['items'] }
+  return {
+    version: meta?.version ?? 0,
+    userId: meta ? meta.userId : undefined,
+    items: items as CacheRecord['items'],
+    shadows: (meta?.shadows ?? []) as CacheRecord['items'],
+    sync: meta?.sync as CacheRecord['sync'],
+    seq: typeof meta?.seq === 'number' ? meta.seq : undefined,
+  }
 }
 
 /**
  * Write what changed since the last write, in ONE transaction: the records
- * upserted and deleted, the account they belong to and the shadows beside
- * them, and — on the write that migrates it — the removal of the v2 value.
- * IndexedDB commits a transaction whole or not at all, so a write cut short
- * leaves the cache as it was: never a record without the account it belongs
- * to, never a dirty record without its merge base, never the v2 value gone
- * before its records were copied.
+ * upserted and deleted, the account they belong to, the shadows and the sync
+ * bookkeeping beside them, and — on the write that migrates it — the removal
+ * of the v2 value. IndexedDB commits a transaction whole or not at all, so a
+ * write cut short leaves the cache as it was: never a record without the
+ * account it belongs to, never a dirty record without its merge base, never a
+ * cursor past rows that are not saved, never the v2 value gone before its
+ * records were copied.
  */
 export function writeRecordChanges(change: CacheChanges): Promise<void> {
   const stores = change.dropSnapshot ? ['records', 'meta', 'posts'] : ['records', 'meta']
   return transact(stores, 'readwrite', tx => {
     const records = tx.objectStore('records')
-    if (change.replace) records.clear()
     for (const id of change.deletes) records.delete(id)
     for (const item of change.upserts) records.put(item, item.id)
-    const meta: StoredMeta = { version: change.version, userId: change.userId, shadows: change.shadows }
+    const meta: StoredMeta = { version: change.version, userId: change.userId, shadows: change.shadows, sync: change.sync, seq: change.seq }
     tx.objectStore('meta').put(meta, META_KEY)
     if (change.dropSnapshot) tx.objectStore('posts').delete('all')
   })
