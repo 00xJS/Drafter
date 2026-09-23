@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { syncPillLabel } from '../sync'
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 
@@ -71,11 +72,16 @@ describe('the tabs and segments say where you are', () => {
 describe('the sync pill', () => {
   const pill = topBar.slice(topBar.indexOf('className="sync-btn"'), topBar.indexOf('</button>', topBar.indexOf('className="sync-btn"')))
 
-  it('says the data stays on this device when there is no account to sync with', () => {
+  it('says where things stand: on this device only, synced, offline — or the server failing, on a working connection', () => {
+    expect(topBar).toContain('const syncLabel = syncPillLabel(isSupabaseConfigured(), store.syncInfo)')
+    expect(pill).toContain('aria-label={syncLabel} title={syncLabel}')
     // local mode (no Supabase env) has nothing to sync: "Offline — tap to retry" was untrue
-    expect(pill).toMatch(/!isSupabaseConfigured\(\)\s*\?\s*'Stored on this device[^']*'/)
-    expect(pill).toContain("'Synced — tap to sync now'")
-    expect(pill).toContain("'Offline — tap to retry'")
+    expect(syncPillLabel(false, { online: false, authError: false })).toMatch(/^Stored on this device/)
+    expect(syncPillLabel(true, { online: true, authError: false })).toBe('Synced — tap to sync now')
+    expect(syncPillLabel(true, { online: false, authError: false, problem: 'offline' })).toBe('Offline — tap to retry')
+    // a statement timeout on a full exchange said "Offline" too
+    expect(syncPillLabel(true, { online: false, authError: false, problem: 'server' })).toBe('Sync failed on the server — tap to try again')
+    expect(syncPillLabel(true, { online: false, authError: true, problem: 'auth' })).toMatch(/^Session expired/)
   })
 
   it('keeps the visible label as it was', () => {

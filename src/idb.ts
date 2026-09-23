@@ -1,25 +1,37 @@
-import type { CacheChanges, CacheRecord } from './syncengine'
+import type { CacheChanges, CacheRecord, Handoff } from './syncengine'
+import type { Item } from './types'
 
 const DB_NAME = 'drafter'
 /**
  * v2: 'posts' — the local cache moved out of localStorage's 5MB quota, every
  *     record in ONE value under 'all' (rewritten whole after every change).
  * v3: 'records', one row per record keyed by its id, and 'meta', whose cache
- *     it is and the merge base of each record still to push. An edit writes
- *     the one record it changed. The v2 value is moved over on the first write
- *     after it is read (src/syncengine.ts), and 'posts' stays for the
- *     calendar's own cache (src/calendars.ts).
+ *     it is, the merge base of each record still to push and (since the
+ *     bookkeeping left localStorage) the sync cursor, the dirty set and the
+ *     refusals. An edit writes the one record it changed. The v2 value is moved
+ *     over on the first write after it is read (src/syncengine.ts), and
+ *     'posts' stays for the calendar's own cache (src/calendars.ts).
  */
 const DB_VERSION = 3
 const STORES = ['media', 'handles', 'posts', 'records', 'meta'] as const
-/** The one row in 'meta'. */
+/** The one row in 'meta' that describes the cache. */
 const META_KEY = 'cache'
+/**
+ * Beside it in 'meta', one row per record another tab has edited and handed
+ * to the tab that syncs (src/syncengine.ts, Handoff): `handoff:<record id>`.
+ */
+const HANDOFF_PREFIX = 'handoff:'
+const outboxRange = () => IDBKeyRange.bound(HANDOFF_PREFIX, `${HANDOFF_PREFIX}￿`)
 
 /** What 'meta' holds beside the records, written in the same transaction as they are. */
 interface StoredMeta {
   version: number
   userId: string | null
   shadows: unknown[]
+  /** The cursor, the dirty set and the refusals (syncstate.ts). Absent in a row an older build wrote. */
+  sync?: unknown
+  /** Which write this was, counting up: orders the unload journal against the cache. */
+  seq?: number
 }
 
 function open(): Promise<IDBDatabase> {
@@ -99,38 +111,131 @@ export function idbAll<T>(store: string): Promise<T[]> {
  * from the same moment. Undefined when nothing has ever been written there:
  * the engine then reads the v2 value, and its first write moves it over.
  */
-export async function readRecordCache(): Promise<CacheRecord | undefined> {
+export function readRecordCache(): Promise<CacheRecord | undefined> {
+  const early = prefetched
+  prefetched = null
+  return early ?? readRecordCacheNow()
+}
+
+let prefetched: Promise<CacheRecord | undefined> | null = null
+
+/**
+ * Start reading the cache now (main.tsx, for a device that opens straight to
+ * its planner): the read runs beside the planner's chunk coming in, rather
+ * than after it, and the engine's first read takes it. A read that fails is
+ * not kept — the engine reads again, and tries again after that.
+ */
+export function prefetchRecordCache(): void {
+  if (prefetched || typeof indexedDB === 'undefined') return
+  const read = readRecordCacheNow()
+  prefetched = read
+  read.catch(() => {
+    if (prefetched === read) prefetched = null
+  })
+}
+
+async function readRecordCacheNow(): Promise<CacheRecord | undefined> {
   let items: unknown[] = []
   let meta: StoredMeta | undefined
+  let outbox: Handoff[] = []
   await transact(['records', 'meta'], 'readonly', tx => {
     const all = tx.objectStore('records').getAll()
     all.onsuccess = () => (items = all.result)
     const row = tx.objectStore('meta').get(META_KEY)
     row.onsuccess = () => (meta = row.result as StoredMeta | undefined)
+    const handed = tx.objectStore('meta').getAll(outboxRange())
+    handed.onsuccess = () => (outbox = handed.result as Handoff[])
   })
-  if (items.length === 0 && !meta) return undefined
+  if (items.length === 0 && !meta && outbox.length === 0) return undefined
   // no meta beside records is a cache nothing wrote whole: its owner is unknown, as a pre-account cache's was
-  return { version: meta?.version ?? 0, userId: meta ? meta.userId : undefined, items: items as CacheRecord['items'], shadows: (meta?.shadows ?? []) as CacheRecord['items'] }
+  return {
+    version: meta?.version ?? 0,
+    userId: meta ? meta.userId : undefined,
+    items: items as CacheRecord['items'],
+    shadows: (meta?.shadows ?? []) as CacheRecord['items'],
+    sync: meta?.sync as CacheRecord['sync'],
+    seq: typeof meta?.seq === 'number' ? meta.seq : undefined,
+    outbox,
+  }
+}
+
+/** The records under these ids as the cache holds them now, in one read: a tab that does not sync, catching up with one that does. */
+export async function readRecords(ids: readonly string[]): Promise<Item[]> {
+  const out: Item[] = []
+  await transact(['records'], 'readonly', tx => {
+    const store = tx.objectStore('records')
+    for (const id of ids) {
+      const req = store.get(id)
+      req.onsuccess = () => void (req.result && out.push(req.result as Item))
+    }
+  })
+  return out
+}
+
+/** Which write the cache is at (its meta row's `seq`), or null when none has counted. */
+export async function readCacheSeq(): Promise<number | null> {
+  const meta = await idbGet<StoredMeta>('meta', META_KEY)
+  return typeof meta?.seq === 'number' ? meta.seq : null
+}
+
+/**
+ * Edits made in a tab that does not sync, for the one that does: each beside
+ * the copy it was made on, in one transaction, replacing any earlier one of
+ * the same record that has not been taken yet.
+ */
+export function writeHandoffs(entries: readonly Handoff[]): Promise<void> {
+  return transact(['meta'], 'readwrite', tx => {
+    const meta = tx.objectStore('meta')
+    for (const h of entries) meta.put(h, HANDOFF_PREFIX + h.id)
+  })
+}
+
+/** Every edit waiting to be taken, and the records they name as the cache holds them — one read, so the two agree. */
+export async function readOutbox(): Promise<{ entries: Handoff[]; records: Item[] }> {
+  let entries: Handoff[] = []
+  const records: Item[] = []
+  await transact(['records', 'meta'], 'readonly', tx => {
+    const handed = tx.objectStore('meta').getAll(outboxRange())
+    handed.onsuccess = () => {
+      entries = handed.result as Handoff[]
+      const store = tx.objectStore('records')
+      for (const h of entries) {
+        const req = store.get(h.id)
+        req.onsuccess = () => void (req.result && records.push(req.result as Item))
+      }
+    }
+  })
+  return { entries, records }
 }
 
 /**
  * Write what changed since the last write, in ONE transaction: the records
- * upserted and deleted, the account they belong to and the shadows beside
- * them, and — on the write that migrates it — the removal of the v2 value.
- * IndexedDB commits a transaction whole or not at all, so a write cut short
- * leaves the cache as it was: never a record without the account it belongs
- * to, never a dirty record without its merge base, never the v2 value gone
- * before its records were copied.
+ * upserted and deleted, the account they belong to, the shadows and the sync
+ * bookkeeping beside them, and — on the write that migrates it — the removal
+ * of the v2 value. IndexedDB commits a transaction whole or not at all, so a
+ * write cut short leaves the cache as it was: never a record without the
+ * account it belongs to, never a dirty record without its merge base, never a
+ * cursor past rows that are not saved, never the v2 value gone before its
+ * records were copied.
  */
 export function writeRecordChanges(change: CacheChanges): Promise<void> {
   const stores = change.dropSnapshot ? ['records', 'meta', 'posts'] : ['records', 'meta']
   return transact(stores, 'readwrite', tx => {
     const records = tx.objectStore('records')
-    if (change.replace) records.clear()
     for (const id of change.deletes) records.delete(id)
     for (const item of change.upserts) records.put(item, item.id)
-    const meta: StoredMeta = { version: change.version, userId: change.userId, shadows: change.shadows }
-    tx.objectStore('meta').put(meta, META_KEY)
+    const meta: StoredMeta = { version: change.version, userId: change.userId, shadows: change.shadows, sync: change.sync, seq: change.seq }
+    const metaStore = tx.objectStore('meta')
+    metaStore.put(meta, META_KEY)
+    // Edits another tab handed over, taken into this write's dirty set: gone
+    // in the same transaction, and only the very one taken — the tab may have
+    // handed over a newer edit of the record meanwhile, which waits its turn.
+    for (const done of change.handoffsDone ?? []) {
+      const req = metaStore.get(HANDOFF_PREFIX + done.id)
+      req.onsuccess = () => {
+        if ((req.result as Handoff | undefined)?.hid === done.hid) metaStore.delete(HANDOFF_PREFIX + done.id)
+      }
+    }
     if (change.dropSnapshot) tx.objectStore('posts').delete('all')
   })
 }

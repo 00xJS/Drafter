@@ -31,7 +31,10 @@ describe('flush when the app goes to the background', () => {
     const calls = server.calls.length
     await vi.advanceTimersByTimeAsync(5000)
     expect(server.calls.length).toBe(calls)
-    expect(d.writes.length).toBe(writes + 1)
+    // one more write, and only one: what the push settled (the edit confirmed,
+    // the cursor moved), which goes to disk beside the records like any change
+    expect(d.writes.length).toBe(writes + 2)
+    expect(last(d.writes).sync).toMatchObject({ dirty: [] })
   })
 
   it('is safe to call again and again, and does nothing with nothing waiting', async () => {

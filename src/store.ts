@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
+import { Capacitor } from '@capacitor/core'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
-import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } from './idb'
+import { clearLocalData, idbGet, idbSet, readCacheSeq, readOutbox, readRecordCache, readRecords, writeHandoffs, writeRecordChanges } from './idb'
+import { browserLeadership } from './synclead'
+import { reportError } from './errorreport'
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mts'
@@ -94,6 +97,13 @@ export interface Store {
   visibleItems: Item[]
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
+  /**
+   * Why this device's saved copy could not be read, after a few tries. Until
+   * it can be, nothing is drawn, written or synced (see the engine's boot).
+   */
+  loadError?: string
+  /** Read this device's saved copy again, after loadError. */
+  retryLoad(): void
   syncInfo: SyncInfo
   /** Rows the server refused: still dirty, retried with backoff, counted as unsynced. */
   failures: FailedSync[]
@@ -143,7 +153,15 @@ function engine(): SyncEngine {
       writeSnapshot: record => idbSet('posts', 'all', record),
       clearAll: clearLocalData,
       kv: browserKV,
+      // the tabs of the web app share this cache; one of them syncs (src/synclead.ts)
+      readRecords,
+      readSeq: readCacheSeq,
+      writeHandoffs,
+      readOutbox,
     },
+    // the iOS shell is one page: nothing to agree with
+    leadership: browserLeadership(Capacitor.isNativePlatform()),
+    report: reportError,
   })
   return shared
 }
@@ -234,6 +252,8 @@ export function useItems(myId: string | null = null): Store {
     })
   }, [snap.failures, items])
 
+  const retryLoad = useCallback(() => void e.boot(myId), [e, myId])
+
   const setStatus = useCallback(
     (id: string, status: TaskStatus) => {
       const change = e.setStatus(id, status)
@@ -251,6 +271,8 @@ export function useItems(myId: string | null = null): Store {
       allItems: items,
       visibleItems,
       loaded: snap.loaded,
+      loadError: snap.loadError,
+      retryLoad,
       syncInfo: snap.syncInfo,
       failures,
       upsert: e.upsert,
@@ -269,6 +291,6 @@ export function useItems(myId: string | null = null): Store {
       onRetired: e.onRetired,
       unconfirmed: e.unconfirmed,
     }),
-    [e, myId, lists, items, visibleItems, snap.loaded, snap.syncInfo, failures, setStatus],
+    [e, myId, lists, items, visibleItems, snap.loaded, snap.loadError, retryLoad, snap.syncInfo, failures, setStatus],
   )
 }

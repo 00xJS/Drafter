@@ -72,6 +72,8 @@ export interface BackupReport {
   historyPurged: number | null
   /** Wardrobe photos no piece pointed at any more, deleted; null when the sweep could not run. */
   photosDeleted?: number | null
+  /** Rows past their 90 days in the Trash emptied of their content; null when that could not run. */
+  trashEmptied?: number | null
   tombstonesPurged: number | null
 }
 

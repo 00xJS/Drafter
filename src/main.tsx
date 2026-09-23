@@ -1,9 +1,11 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
-import App from './App'
+import App, { preloadPlanner } from './App'
 import { startAppUpdates } from './appupdate'
 import { installErrorReporting } from './errorreport'
+import { prefetchRecordCache } from './idb'
+import { isSupabaseConfigured, storedUserId } from './supabase'
 import { applyPlatformClasses, syncNativeAppearance } from './native'
 import { captureAuthorizeRequest } from './oauthRequest'
 import { startTheme } from './theme'
@@ -33,6 +35,15 @@ startTheme((pref, theme) => void syncNativeAppearance(pref, theme))
 // On the web the worker is registered here, and every load and return to the
 // app checks for a newer deploy (src/appupdate.ts); Vite's dev server has none.
 if (!Capacitor.isNativePlatform() && import.meta.env.PROD) startAppUpdates()
+
+// A device that opens straight to its planner — signed in, or with no account
+// to sign in to (local mode) — starts fetching the planner's chunk and reading
+// its saved copy now, side by side, instead of one after the other once the
+// gate has decided.
+if (storedUserId() || !isSupabaseConfigured()) {
+  preloadPlanner()
+  prefetchRecordCache()
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

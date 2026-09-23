@@ -29,8 +29,6 @@ export interface MediaItem {
   thumbOf?: string
 }
 
-const urlCache = new Map<string, string>()
-
 /** The images among files picked, pasted or dropped: a note takes these inline, and Add clothing takes them as photos. */
 export const imageFiles = (files: FileList | readonly File[]): File[] => Array.from(files).filter(f => f.type.startsWith('image/'))
 
@@ -63,6 +61,9 @@ export async function saveMedia(file: Blob & { name?: string }, opts: { personal
   if (opts.thumbOf) item.thumbOf = opts.thumbOf
   if (sb) item.pending = true
   await idbSet('media', id, item)
+  // just made: it belongs to an edit that may not be saved yet, so no trim takes it
+  noteUse(id)
+  grew(file.size)
   void flushPendingMedia()
   return id
 }
@@ -341,24 +342,79 @@ export async function deleteMedia(ids: readonly (string | undefined)[]): Promise
   const gone = ids.filter((id): id is string => !!id)
   if (gone.length === 0) return
   for (const id of gone) {
-    const url = urlCache.get(id)
-    if (url) {
-      URL.revokeObjectURL(url)
-      urlCache.delete(id)
-    }
+    forgetURL(id)
+    forgetUse(id)
     await idbDel('media', id).catch(() => {})
   }
   const sb = getSupabase()
   if (sb) await sb.storage.from('media').remove(gone).catch(() => {})
 }
 
+// ---- object URLs ------------------------------------------------------------------
+//
+// Every photo drawn needs an object URL, and each one keeps its whole blob in
+// memory until revoked. They were never revoked, so an app left open for days
+// held every photo it had shown. Now at most URL_MAX of them, and URL_BYTES
+// between them, are kept, the least recently asked for let go first — well
+// beyond what one screen shows, so what goes is what nobody is looking at.
+
+const native = (): boolean => (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.() === true
+/** Object URLs kept at most. */
+export const URL_MAX = 400
+/** And the bytes they keep in memory between them: the iPhone has less to spare. */
+export const urlBytesMax = (): number => (native() ? 48 : 96) * 1024 * 1024
+
+/** Object URLs by photo id, the least recently asked for first. */
+const urlCache = new Map<string, { url: string; bytes: number }>()
+let urlBytes = 0
+
+function forgetURL(id: string): void {
+  const had = urlCache.get(id)
+  if (!had) return
+  URL.revokeObjectURL(had.url)
+  urlBytes -= had.bytes
+  urlCache.delete(id)
+}
+
+/** Keep this URL, as the most recently asked for, and let the oldest go past the caps (never the one just kept). */
+function keepURL(id: string, url: string, bytes: number): void {
+  forgetURL(id)
+  urlCache.set(id, { url, bytes })
+  urlBytes += bytes
+  for (const old of urlCache.keys()) {
+    if (old === id || (urlCache.size <= URL_MAX && urlBytes <= urlBytesMax())) break
+    forgetURL(old)
+  }
+}
+
+/** The URL for this id, moved up as the most recently asked for. */
+function cachedURL(id: string): string | null {
+  const had = urlCache.get(id)
+  if (!had) return null
+  urlCache.delete(id)
+  urlCache.set(id, had)
+  noteUse(id)
+  return had.url
+}
+
 /** The object URL already made for this id, if any: a thumbnail seen once paints at once the next time. */
-export const peekMediaURL = (id: string): string | null => urlCache.get(id) ?? null
+export const peekMediaURL = (id: string): string | null => cachedURL(id)
 
-export async function mediaURL(id: string): Promise<string | null> {
-  const cached = urlCache.get(id)
-  if (cached) return cached
+/** One lookup per id at a time: two views asking at once made two URLs, and the first was never let go. */
+const lookups = new Map<string, Promise<string | null>>()
 
+export function mediaURL(id: string): Promise<string | null> {
+  const cached = cachedURL(id)
+  if (cached) return Promise.resolve(cached)
+  let pending = lookups.get(id)
+  if (!pending) {
+    pending = lookUp(id).finally(() => lookups.delete(id))
+    lookups.set(id, pending)
+  }
+  return pending
+}
+
+async function lookUp(id: string): Promise<string | null> {
   let item = await idbGet<MediaItem>('media', id)
   if (!item) {
     // not on this device — pull from the cloud bucket and cache it
@@ -367,10 +423,158 @@ export async function mediaURL(id: string): Promise<string | null> {
     const { data, error } = await sb.storage.from('media').download(id)
     if (error || !data) return null
     item = { id, name: id, type: data.type, blob: data }
-    idbSet('media', id, item).catch(() => {})
+    idbSet('media', id, item)
+      .then(() => grew(data.size))
+      .catch(() => {})
   }
-
+  noteUse(id)
   const url = URL.createObjectURL(item.blob)
-  urlCache.set(id, url)
+  keepURL(id, url, item.blob.size)
   return url
+}
+
+// ---- the photo cache on this device -----------------------------------------------
+//
+// Every photo viewed was kept in IndexedDB for good: only Delete forever took
+// one out. So the cache grew with everything ever looked at, and a note a
+// housemate stopped sharing left its photos readable here until sign-out. It
+// is trimmed now, with the bucket as the copy that counts: a photo still
+// waiting to upload is never touched, and in local mode — no bucket, this is
+// the only copy — nothing is.
+
+/** The cache kept at most, photos waiting to upload included: less in the app. */
+export const cacheBytesMax = (): number => (native() ? 80 : 150) * 1024 * 1024
+/** Trimmed down to this share of the cap, so it is not trimmed again at the next photo. */
+const TRIM_TO = 0.8
+/** A photo used this recently stays, whatever else: it may belong to an edit not saved yet. */
+export const RECENT_USE_MS = 30 * 60_000
+/** Trimmed at most this often. */
+const TRIM_EVERY_MS = 6 * 3_600_000
+/** When each photo was last shown (epoch ms), kept across launches. A drafter:* key, so sign-out forgets it. */
+export const USED_KEY = 'drafter:media-used'
+
+let used: Map<string, number> | null = null
+let usedTimer: ReturnType<typeof setTimeout> | undefined
+
+function shownMap(kv: KV = browserKV): Map<string, number> {
+  if (used) return used
+  used = new Map()
+  try {
+    const raw: unknown = JSON.parse(kv.getItem(USED_KEY) ?? '{}')
+    if (raw && typeof raw === 'object') for (const [id, at] of Object.entries(raw)) if (typeof at === 'number') used.set(id, at)
+  } catch {
+    /* a corrupt list only costs the order photos are let go in */
+  }
+  return used
+}
+
+function saveUse(kv: KV = browserKV): void {
+  if (usedTimer !== undefined) return
+  usedTimer = setTimeout(() => {
+    usedTimer = undefined
+    try {
+      kv.setItem(USED_KEY, JSON.stringify(Object.fromEntries(shownMap(kv))))
+    } catch {
+      /* storage full: the order is kept in memory for this session */
+    }
+  }, 5_000)
+}
+
+function noteUse(id: string): void {
+  shownMap().set(id, Date.now())
+  saveUse()
+}
+
+function forgetUse(id: string): void {
+  if (shownMap().delete(id)) saveUse()
+}
+
+/** Bytes downloaded since the last trim: past the cap, the next trim comes sooner. */
+let grownSince = 0
+let lastTrim = 0
+let cacheBytes: number | null = null
+
+function grew(bytes: number): void {
+  grownSince += bytes
+  if (cacheBytes !== null && cacheBytes + grownSince > cacheBytesMax()) lastTrim = 0
+}
+
+/** A cached photo as the trim weighs it. */
+export interface CachedPhoto {
+  id: string
+  bytes: number
+  /** Still waiting to upload: this device holds the only copy. */
+  pending?: boolean
+}
+
+/**
+ * The trim's core, with its inputs handed in: which of the photos this device
+ * holds to let go. Never one waiting to upload, nor one shown in the last
+ * RECENT_USE_MS. First every photo no record points at; then, while the cache
+ * is over `cap`, the least recently shown of the rest, down to TRIM_TO of it.
+ */
+export function photosToTrim(photos: readonly CachedPhoto[], referenced: ReadonlySet<string>, usedAt: ReadonlyMap<string, number>, cap: number, now: number): string[] {
+  const out: string[] = []
+  let total = photos.reduce((n, p) => n + p.bytes, 0)
+  const spare = photos.filter(p => !p.pending && now - (usedAt.get(p.id) ?? 0) >= RECENT_USE_MS)
+  for (const p of spare) {
+    if (referenced.has(p.id)) continue
+    out.push(p.id)
+    total -= p.bytes
+  }
+  if (total <= cap) return out
+  const byAge = spare.filter(p => referenced.has(p.id)).sort((a, b) => (usedAt.get(a.id) ?? 0) - (usedAt.get(b.id) ?? 0))
+  for (const p of byAge) {
+    if (total <= cap * TRIM_TO) break
+    out.push(p.id)
+    total -= p.bytes
+  }
+  return out
+}
+
+/**
+ * Every photo id the records point at: the pieces of clothing's fields, a
+ * task's images and files, and every <img data-media> in a note or a
+ * project's pad — found by walking each record whole, so a field added later
+ * cannot be the one missed. Tombstones deleted forever point at nothing.
+ */
+export function mediaReferences(records: readonly unknown[], extra: Iterable<string | null | undefined> = []): Set<string> {
+  const ids = new Set<string>()
+  const walk = (v: unknown): void => {
+    if (typeof v === 'string') {
+      ids.add(v)
+      if (v.includes('data-media')) for (const m of v.matchAll(/data-media="([^"]+)"/g)) ids.add(m[1])
+    } else if (Array.isArray(v)) for (const x of v) walk(x)
+    else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x)
+  }
+  for (const r of records) if (!(r as { purged?: unknown } | null)?.purged) walk(r)
+  for (const id of extra) if (id) ids.add(id)
+  return ids
+}
+
+/**
+ * Let go of the cached photos the trim picks (photosToTrim): from this
+ * device only — the bucket keeps its copy, and a photo asked for again comes
+ * back from it. With the planner's records in hand, after a round has
+ * answered; at most every few hours, or sooner once downloads pass the cap.
+ * Does nothing in local mode.
+ */
+export async function trimMediaCache(referenced: () => ReadonlySet<string>, now = Date.now()): Promise<number> {
+  if (!getSupabase() || now - lastTrim < TRIM_EVERY_MS) return 0
+  lastTrim = now
+  const items = await idbAll<MediaItem>('media').catch(() => null)
+  if (!items) return 0
+  const photos = items.map(i => ({ id: i.id, bytes: i.blob?.size ?? 0, pending: i.pending }))
+  const drop = photosToTrim(photos, referenced(), shownMap(), cacheBytesMax(), now)
+  for (const id of drop) {
+    forgetURL(id)
+    forgetUse(id)
+    await idbDel('media', id).catch(() => {})
+  }
+  const left = new Set(photos.map(p => p.id).filter(id => !drop.includes(id)))
+  // what nothing here holds any more has no order to keep
+  for (const id of [...shownMap().keys()]) if (!left.has(id)) forgetUse(id)
+  cacheBytes = photos.filter(p => left.has(p.id)).reduce((n, p) => n + p.bytes, 0)
+  grownSince = 0
+  return drop.length
 }

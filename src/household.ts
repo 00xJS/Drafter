@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from './api'
-import { getSupabase } from './supabase'
+import { getSupabase, storedUserId } from './supabase'
 
 // Households: people who share this planner. Membership lives server-side;
 // the client only needs the member list (for assignees) and who "me" is.
@@ -54,7 +54,9 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
       return null
     }
   })
-  const [myId, setMyId] = useState<string | null>(info?.me.id ?? null)
+  // offline with an expired token, getSession below answers nothing for a while (and then nothing at all):
+  // the planner opens at once under the account whose session this device holds
+  const [myId, setMyId] = useState<string | null>(() => info?.me.id ?? storedUserId())
   const [error, setError] = useState<string | undefined>(undefined)
 
   /** The server's answer, kept and cached for the next launch offline; or why there is none. */

@@ -1,6 +1,7 @@
 import { unreadSince } from '../../chat'
 import { warm } from '../../lazyload'
 import { isSupabaseConfigured } from '../../supabase'
+import { syncPillLabel } from '../../sync'
 import { timeAgo } from '../../utils'
 import { Icon } from '../Icon'
 import type { PlannerCtx } from './ctx'
@@ -25,6 +26,8 @@ export function TopBar({ p }: { p: PlannerCtx }) {
   const warmSettings = () => warm(Settings.preload)
   const warmChat = () => warm(Chat.preload)
   const warmEditor = () => warm(TaskEditor.preload)
+  // what the pill says: synced, offline, the server failing, or the session gone — never "Offline" on a working connection
+  const syncLabel = syncPillLabel(isSupabaseConfigured(), store.syncInfo)
   return (
     <header className="topbar">
       {/* the phone and the compact landscape header hide the wordmark span for
@@ -83,12 +86,8 @@ export function TopBar({ p }: { p: PlannerCtx }) {
       <span className="spacer" />
       {/* local mode (no Supabase env) has no account to sync with: the pill
           says where the data is, not that the network is down */}
-      <button
-        className="sync-btn"
-        onClick={manualSync}
-        aria-label={!isSupabaseConfigured() ? 'Stored on this device — no account to sync with' : store.syncInfo.online ? 'Synced — tap to sync now' : 'Offline — tap to retry'}
-      >
-        <span className={store.syncInfo.online ? 'sync-dot on' : 'sync-dot'} />
+      <button className="sync-btn" onClick={manualSync} aria-label={syncLabel} title={syncLabel}>
+        <span className={store.syncInfo.online ? 'sync-dot on' : store.syncInfo.problem === 'server' ? 'sync-dot warn' : 'sync-dot'} />
         <span className="sync-label">
           {syncing ? 'Syncing…' : store.syncInfo.pending ? `${store.syncInfo.pending} unsynced` : store.syncInfo.lastAt ? timeAgo(store.syncInfo.lastAt).replace(' ago', '') : 'sync'}
         </span>

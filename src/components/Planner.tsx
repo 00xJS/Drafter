@@ -2,7 +2,7 @@ import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useItems } from '../store'
 import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
-import { retireDue, trackMediaInUse, watchPendingMedia, type MediaInUse } from '../media'
+import { mediaReferences, retireDue, trackMediaInUse, trimMediaCache, watchPendingMedia, type MediaInUse } from '../media'
 import { projectById } from '../taskutils'
 import { useHousehold } from '../household'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -37,6 +37,7 @@ import { useSyncAlarm } from './planner/useSyncAlarm'
 import { useCookTaskSync } from './planner/useCookTaskSync'
 import { useTaskActions } from './planner/useTaskActions'
 import { useToast } from './planner/useToast'
+import { CacheError } from './planner/CacheError'
 
 export default function Planner() {
   const household = useHousehold()
@@ -66,6 +67,18 @@ export default function Planner() {
   useEffect(() => trackMediaInUse(() => mediaInUse.current()), [])
   // a round the server answered may be the one that confirmed such an edit
   useEffect(() => void retireDue(), [store.syncInfo.lastAt])
+  // The photo cache on this device, kept in bounds once a round has answered:
+  // what no record points at any more — a note a housemate stopped sharing —
+  // and the least recently shown past its cap (src/media.ts). Every photo id
+  // the records hold, and the household's faces, count as pointed at.
+  const mediaReferenced = useRef<() => Set<string>>(() => new Set())
+  useLayoutEffect(() => {
+    mediaReferenced.current = () =>
+      mediaReferences(store.allItems, [household.info?.me.avatar, ...(household.info?.members ?? []).map(m => m.avatar)])
+  })
+  useEffect(() => {
+    if (store.syncInfo.lastAt) void trimMediaCache(() => mediaReferenced.current())
+  }, [store.syncInfo.lastAt])
   // "Sign in again" signs out, which wipes this device: a photo still waiting
   // to upload is asked about first, and with the session gone none can upload
   const signIn = useSignOut(async () => {
@@ -159,6 +172,8 @@ export default function Planner() {
       <PullToRefresh enabled={!anyOpen} onRefresh={manualSync} />
 
       <main className="content">
+        {/* this device's saved copy would not open: say so, rather than draw an empty planner over it */}
+        {!store.loaded && store.loadError && <CacheError error={store.loadError} retry={store.retryLoad} withServer={!!getSupabase()} />}
         {store.loaded && (
           <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
             {/* a screen whose chunk has not arrived holds its space, blank.
