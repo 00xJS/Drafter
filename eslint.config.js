@@ -84,9 +84,9 @@ export default tseslint.config(
   },
   {
     // Home and the cards it draws, the due badge every task list draws, and
-    // the tabs that stay mounted with them (Bills, Stats): the views a phone
-    // keeps up across midnight. Other views still read the clock as they
-    // render, and join this list as they are moved onto the hooks.
+    // Bills and Stats: views a phone is left open on overnight, and resumed
+    // on days later. Other views still read the clock as they render, and
+    // join this list as they are moved onto the hooks.
     files: [
       'src/components/Today.tsx',
       'src/components/BriefingCard.tsx',
