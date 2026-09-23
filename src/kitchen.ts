@@ -1,4 +1,4 @@
-import { GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
+import { ChecklistItem, GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
 import { outingsAt } from './places'
 import { weekRange } from './review'
 import { daysBetween } from './stats'
@@ -385,24 +385,147 @@ export function mealsForSlot(meals: readonly Meal[], date: string, slot: MealSlo
 }
 
 /** The household task a shared breakfast, lunch or dinner writes. */
-export const cookTaskId = (mealId: string): string => `task~cook~${mealId}`
+export const COOK_TASK_PREFIX = 'task~cook~'
+export const cookTaskId = (mealId: string): string => `${COOK_TASK_PREFIX}${mealId}`
 
 const SLOT_HOUR: Record<MealSlot, number> = { breakfast: 8, lunch: 12, dinner: 18 }
 
 /** Only an explicit Share writes the task — a meal on the week is not enough. */
 export const mealIsShared = (meal: Pick<Meal, 'shared'>): boolean => meal.shared === true
 
-export function cookTaskFor(meal: Meal, now = new Date().toISOString()): Task {
+/**
+ * The cook task carries the recipe with it: its steps as the checklist, its
+ * ingredients and notes in the description, so the person cooking can tick
+ * their way through and finish the task like any other, without going looking
+ * for cook mode. Kitchen owns what it writes there and keeps it in step
+ * (syncCookTask); the person's own ticks, own checklist items and own notes
+ * below COOK_NOTE_LINE are theirs and stay.
+ */
+
+/** A checklist item written from a recipe step starts with this; any other item is the person's own. */
+const COOK_STEP = 'cook~'
+
+/** The last line Kitchen writes in a cook task's description. Notes the person adds below it are kept. */
+export const COOK_NOTE_LINE = 'Kept in step with Kitchen. Add your own notes below this line.'
+
+/** What every cook task said before it carried its recipe. */
+const LEGACY_COOK_DESCRIPTION = 'Planned in Kitchen for the household.'
+
+/** A step's words, folded, hashed short (FNV-1a): the same step gets the same id on every device, so its tick survives a rebuild. */
+function stepKey(step: string): string {
+  let h = 0x811c9dc5
+  for (const ch of step.trim().toLowerCase().replace(/\s+/g, ' ')) {
+    h ^= ch.codePointAt(0) ?? 0
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
+}
+
+/** The saved recipes a cook task follows: the meal's main, then each side that is a recipe. A bought meal follows none. */
+function cookRecipes(meal: Meal, recipes: readonly Recipe[]): Recipe[] {
+  return mealRecipeIds(meal).flatMap(id => recipes.filter(r => r.id === id && !r.deletedAt).slice(0, 1))
+}
+
+/**
+ * The cook task's checklist: every step of the meal's recipes, a side's named
+ * ("Rice: Cook rice in rice cooker"), then the items the person added by hand.
+ * A step keeps its tick while its words stay the same; a step the recipe no
+ * longer has leaves the list.
+ */
+export function cookChecklist(meal: Meal, recipes: readonly Recipe[], prev: readonly ChecklistItem[] = []): ChecklistItem[] {
+  const ticked = new Map(prev.map(i => [i.id, i.done]))
+  const steps: ChecklistItem[] = []
+  for (const r of cookRecipes(meal, recipes)) {
+    const main = r.id === meal.recipeId
+    const seen = new Map<string, number>()
+    for (const raw of r.steps ?? []) {
+      const step = raw.trim()
+      if (!step) continue
+      const key = stepKey(step)
+      const n = seen.get(key) ?? 0
+      seen.set(key, n + 1)
+      // the same words twice in one recipe are two steps, with two ticks
+      const id = `${COOK_STEP}${r.id}~${key}${n ? `~${n}` : ''}`
+      steps.push({ id, text: main ? step : `${r.name}: ${step}`, done: ticked.get(id) ?? false })
+    }
+  }
+  return [...steps, ...prev.filter(i => !i.id.startsWith(COOK_STEP))]
+}
+
+const amount = (i: RecipeIngredient) => (i.qty != null ? `${i.qty}${i.unit ? ` ${i.unit}` : ''} ` : '')
+
+/** What the person wrote on a cook task themselves: below Kitchen's line, or all of it on a task Kitchen never filled in. */
+function ownCookNotes(prev: string): string {
+  const at = prev.indexOf(COOK_NOTE_LINE)
+  if (at >= 0) return prev.slice(at + COOK_NOTE_LINE.length).trim()
+  const text = prev.trim()
+  return text === LEGACY_COOK_DESCRIPTION ? '' : text
+}
+
+/** The cook task's description: what is planned, each recipe's ingredients and notes, Kitchen's line, then the person's own notes. */
+export function cookDescription(meal: Meal, recipes: readonly Recipe[], prev = ''): string {
+  const recs = cookRecipes(meal, recipes)
+  const lines = [`Planned in Kitchen for the household: ${mealLabel(meal) || 'a meal'}.`]
+  for (const r of recs) {
+    const main = r.id === meal.recipeId
+    const ingredients = (r.ingredients ?? []).filter(i => i.name?.trim())
+    if (ingredients.length) {
+      lines.push('', main ? 'Ingredients' : `${r.name}: ingredients`)
+      for (const i of ingredients) lines.push(`• ${amount(i)}${i.name.trim()}`)
+    }
+    const notes = r.notes?.trim()
+    if (notes) lines.push('', main ? 'Notes' : `${r.name}: notes`, notes)
+  }
+  if (!meal.out && !recs.some(r => (r.steps ?? []).some(s => s.trim()))) {
+    lines.push('', 'No steps yet: add them to the recipe in Kitchen and they appear here to tick off.')
+  }
+  lines.push('', COOK_NOTE_LINE)
+  const own = ownCookNotes(prev)
+  return own ? `${lines.join('\n')}\n\n${own}` : lines.join('\n')
+}
+
+const sameChecklist = (a: readonly ChecklistItem[], b: readonly ChecklistItem[]) =>
+  a.length === b.length && a.every((x, i) => x.id === b[i].id && x.text === b[i].text && x.done === b[i].done)
+
+/**
+ * An open cook task brought up to date with its meal and recipes, or null when
+ * it already is. A done or cancelled one is history and is left as it was.
+ */
+export function syncCookTask(task: Task, meal: Meal, recipes: readonly Recipe[]): Task | null {
+  if (task.deletedAt || task.status === 'done' || task.status === 'canceled') return null
+  const checklist = cookChecklist(meal, recipes, task.checklist ?? [])
+  const description = cookDescription(meal, recipes, task.description ?? '')
+  if (description === (task.description ?? '') && sameChecklist(checklist, task.checklist ?? [])) return null
+  return { ...task, description, ...(checklist.length || task.checklist ? { checklist } : {}), updatedAt: newerStamp(task.updatedAt) }
+}
+
+/** Every open cook task that is behind its meal or recipes, brought up to date: what the planner writes back. */
+export function cookTaskUpdates(tasks: readonly Task[], meals: readonly Meal[], recipes: readonly Recipe[]): Task[] {
+  const byId = new Map(meals.map(m => [m.id, m]))
+  const out: Task[] = []
+  for (const t of tasks) {
+    if (!t.id.startsWith(COOK_TASK_PREFIX)) continue
+    const meal = byId.get(t.id.slice(COOK_TASK_PREFIX.length))
+    if (!meal || meal.deletedAt) continue
+    const next = syncCookTask(t, meal, recipes)
+    if (next) out.push(next)
+  }
+  return out
+}
+
+export function cookTaskFor(meal: Meal, now = new Date().toISOString(), recipes: readonly Recipe[] = []): Task {
   const [y, mo, d] = meal.date.split('-').map(Number)
   const hour = SLOT_HOUR[meal.slot] ?? 18
   const due = Number.isFinite(y) ? new Date(y, mo - 1, d, hour, 0, 0).toISOString() : now
   const verb = meal.out ? 'Eat' : 'Cook'
   const when = meal.slot
+  const checklist = cookChecklist(meal, recipes)
   return {
     kind: 'task',
     id: cookTaskId(meal.id),
     title: `${verb} ${when}: ${mealLabel(meal)}`,
-    description: 'Planned in Kitchen for the household.',
+    description: cookDescription(meal, recipes),
+    ...(checklist.length ? { checklist } : {}),
     status: 'todo',
     priority: 'normal',
     dueAt: due,

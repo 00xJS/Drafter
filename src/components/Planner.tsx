@@ -34,6 +34,7 @@ import { useNavigation } from './planner/useNavigation'
 import { useOverlays } from './planner/useOverlays'
 import { useOwner } from './planner/useOwner'
 import { useSyncAlarm } from './planner/useSyncAlarm'
+import { useCookTaskSync } from './planner/useCookTaskSync'
 import { useTaskActions } from './planner/useTaskActions'
 import { useToast } from './planner/useToast'
 
@@ -98,6 +99,8 @@ export default function Planner() {
   useNativeShell({ store, applyLinkRef, myId: household.myId })
 
   const lifeActions = useLifeActions({ store, showToast, newTask: overlays.newTask, inHousehold })
+  // a shared meal's cook task carries its recipe's steps, ingredients and notes, kept in step
+  useCookTaskSync(store)
   const taskActions = useTaskActions({
     store,
     showToast,

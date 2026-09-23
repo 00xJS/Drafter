@@ -2,7 +2,7 @@ import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type P
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendars'
 import { newerStamp } from '../../../shared/domain.mjs'
-import { cookTaskFor, cookTaskId, mealIsShared, mealWrites } from '../../kitchen'
+import { cookTaskFor, cookTaskId, mealIsShared, mealWrites, syncCookTask } from '../../kitchen'
 import { newPlace } from '../../places'
 import { makeSnooze, snoozeBackLabel, snoozeUntil } from '../../snooze'
 import { uid } from '../../utils'
@@ -80,8 +80,10 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
       const had = store.tasks.find(t => t.id === cookId)
       if (inHousehold && mealIsShared(m)) {
         if (!had || (had.status !== 'done' && had.status !== 'canceled')) {
-          const draft = cookTaskFor(m, had?.createdAt)
-          store.upsert(had ? { ...had, title: draft.title, dueAt: draft.dueAt, placeId: draft.placeId, updatedAt: newerStamp(had.updatedAt), shared: true } : draft)
+          // the recipe comes along: its steps to tick, its ingredients and notes to read
+          const draft = cookTaskFor(m, had?.createdAt, store.recipes)
+          const moved = had ? { ...had, title: draft.title, dueAt: draft.dueAt, placeId: draft.placeId, updatedAt: newerStamp(had.updatedAt), shared: true } : draft
+          store.upsert(had ? (syncCookTask(moved, m, store.recipes) ?? moved) : draft)
         }
       } else if (had && had.status !== 'done' && had.status !== 'canceled') {
         store.remove(had.id)
