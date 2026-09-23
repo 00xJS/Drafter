@@ -1,15 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Drafter">
   <rect width="512" height="512" fill="#0f1115"/>
-  <g fill="none" stroke="#f97316" stroke-width="6">
-    <ellipse cx="256" cy="256" rx="158" ry="58" transform="rotate(48 256 256)"/>
-    <ellipse cx="256" cy="256" rx="158" ry="58" transform="rotate(-48 256 256)"/>
+  <!-- the mark at 1.25x about the centre: its widest point, an orbit's tip at
+       radius 201, stays inside the 204.8 circle a maskable icon keeps -->
+  <g transform="translate(256 256) scale(1.25) translate(-256 -256)">
+    <g fill="none" stroke="#f97316" stroke-width="6">
+      <ellipse cx="256" cy="256" rx="158" ry="58" transform="rotate(48 256 256)"/>
+      <ellipse cx="256" cy="256" rx="158" ry="58" transform="rotate(-48 256 256)"/>
+    </g>
+    <ellipse cx="256" cy="256" rx="156" ry="40" fill="none" stroke="#fdba74" stroke-width="5"/>
+    <g fill="#f97316">
+      <path d="M285 190h25v55h-25z"/>
+      <path d="M256 162 339 245h-24v77H197v-77h-24z"/>
+      <circle cx="195" cy="148" r="10"/>
+      <circle cx="195" cy="364" r="10"/>
+    </g>
+    <circle cx="378" cy="231" r="9" fill="#fdba74"/>
   </g>
-  <ellipse cx="256" cy="256" rx="156" ry="40" fill="none" stroke="#fdba74" stroke-width="5"/>
-  <g fill="#f97316">
-    <path d="M285 190h25v55h-25z"/>
-    <path d="M256 162 339 245h-24v77H197v-77h-24z"/>
-    <circle cx="195" cy="148" r="10"/>
-    <circle cx="195" cy="364" r="10"/>
-  </g>
-  <circle cx="378" cy="231" r="9" fill="#fdba74"/>
 </svg>
