@@ -3573,3 +3573,34 @@ begin
   raise notice 'ok v3.33-4: neither anon nor a signed-in client can read rate_limits or call rate_limit_take';
 end $$;
 rollback;
+
+-- ------------- v3.33-5. who uploaded a member's picture, for the service role alone
+-- /api/household signs a link to a member's picture only when that member
+-- uploaded it, so naming someone else's photo as one's own picture reads nothing.
+begin;
+insert into storage.objects (bucket_id, name, owner) values
+  ('media', 'v333-face-a', '00000000-0000-0000-0000-00000000000a'),
+  ('media', 'v333-face-b', '00000000-0000-0000-0000-00000000000b'),
+  ('media', 'v333-by-service', null),
+  ('elsewhere', 'v333-face-c', '00000000-0000-0000-0000-00000000000c');
+set local role service_role;
+do $$
+declare f constant text := 'public.media_owners(text[])';
+begin
+  if public.media_owners(array['v333-face-a', 'v333-face-b', 'v333-by-service', 'v333-face-c', 'v333-missing'])
+     is distinct from '{"v333-face-a": "00000000-0000-0000-0000-00000000000a", "v333-face-b": "00000000-0000-0000-0000-00000000000b", "v333-by-service": null}'::jsonb then
+    raise exception 'FAIL v3.33-5: media_owners should name the uploader of each media object, got %',
+      public.media_owners(array['v333-face-a', 'v333-face-b', 'v333-by-service', 'v333-face-c', 'v333-missing']);
+  end if;
+  if public.media_owners(array[]::text[]) <> '{}'::jsonb then
+    raise exception 'FAIL v3.33-5: no names should be an empty answer';
+  end if;
+  if not exists (select 1 from pg_proc p where p.oid = f::regprocedure and p.prosecdef and p.proconfig @> array['search_path=public']) then
+    raise exception 'FAIL v3.33-5: media_owners should be SECURITY DEFINER with search_path fixed to public';
+  end if;
+  if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
+    raise exception 'FAIL v3.33-5: a client role can ask who uploaded an object';
+  end if;
+  raise notice 'ok v3.33-5: media_owners names who uploaded each media object, for the service role only';
+end $$;
+rollback;

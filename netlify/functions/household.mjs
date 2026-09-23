@@ -2,7 +2,8 @@
 //   POST /api/household { action } — session-gated
 //     status | create { name } | invite { email } | remove { userId } | leave | rename { name } | me { displayName }
 // Accounts are still created by the site owner in Supabase; inviting someone
-// just links an existing account to your household.
+// just links an existing account to your household. Every answer that lists
+// the members carries a short-lived link to each one's picture (avatarLinks).
 
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
@@ -22,6 +23,49 @@ async function rest(path, init = {}) {
   if (!res.ok) throw new Error(`${path.split('?')[0]} ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const text = await res.text()
   return text ? JSON.parse(text) : null
+}
+
+/** The storage API with the service key: a signed link is made here. */
+async function storage(path, init = {}) {
+  const e = env()
+  const res = await fetch(`${e.url}/storage/v1${path}`, { ...init, headers: keyHeaders(e.key, { 'content-type': 'application/json', ...(init.headers ?? {}) }) })
+  if (!res.ok) throw new Error(`storage${path} ${res.status}: ${(await res.text()).slice(0, 160)}`)
+  return res.json()
+}
+
+/** How long a link to a member's picture lasts: it is fetched once and kept on the device after that. */
+export const AVATAR_LINK_SECONDS = 3600
+
+/**
+ * A short-lived link to each member's picture, by its media id (v3.25).
+ *
+ * A picture is kept in user_settings.avatar_media_id, in no record, and the
+ * storage policy lets a housemate read a bare-id photo only when a record they
+ * can read vouches for it (v3.18) — so the other member was refused and drew
+ * initials. The policy stays as narrow as it is: a link signed here, with the
+ * service key, for the members of the caller's own household and no one else,
+ * is how the picture reaches them.
+ *
+ * A signed link reads past every policy, so only a picture its member uploaded
+ * themselves is signed (public.media_owners, v3.33). A member could otherwise
+ * name, as their picture, the id of a photo in a note since made private, and
+ * read it back through their own face.
+ */
+async function avatarLinks(members) {
+  const named = members.filter(m => typeof m.avatar === 'string' && m.avatar && !m.avatar.includes('/') && !m.avatar.includes('..'))
+  if (!named.length) return new Map()
+  const owners = await rest('rpc/media_owners', { method: 'POST', body: JSON.stringify({ p_names: named.map(m => m.avatar) }) })
+  const theirs = named.filter(m => owners?.[m.avatar] === m.id)
+  if (!theirs.length) return new Map()
+  const signed = await storage('/object/sign/media', { method: 'POST', body: JSON.stringify({ expiresIn: AVATAR_LINK_SECONDS, paths: theirs.map(m => m.avatar) }) })
+  const expiresAt = new Date(Date.now() + AVATAR_LINK_SECONDS * 1000).toISOString()
+  const links = new Map()
+  for (const one of Array.isArray(signed) ? signed : []) {
+    const link = one?.signedURL ?? one?.signedUrl
+    if (one?.error || typeof one?.path !== 'string' || typeof link !== 'string') continue
+    links.set(one.path, { url: `${env().url}/storage/v1${link.startsWith('/') ? link : `/${link}`}`, expiresAt })
+  }
+  return links
 }
 
 async function adminUsers() {
@@ -64,7 +108,9 @@ async function describe(userId) {
       joinedAt: r.joined_at,
     }
   })
-  return { household, members }
+  // no link is not worth failing the member list for: the picture falls back to initials
+  const links = await avatarLinks(members).catch(() => new Map())
+  return { household, members: members.map(m => ({ ...m, avatarLink: (m.avatar && links.get(m.avatar)) || null })) }
 }
 
 const handler = async req => {

@@ -1,5 +1,5 @@
--- v3.33: a rate limit every instance shares, and the grants every table relies
--- on written down.
+-- v3.33: a rate limit every instance shares, who uploaded a member's picture,
+-- and the grants every table relies on written down.
 --
 -- ## 1. rate_limits
 --
@@ -23,7 +23,19 @@
 -- of client_errors and agent_tokens. SECURITY DEFINER with the search path
 -- fixed, and executable by the service role alone.
 --
--- ## 2. Grants
+-- ## 2. media_owners
+--
+-- A member's picture (v3.25) is kept in user_settings, in no record, so the
+-- v3.18 storage policy — a housemate reads a bare-id photo only when a record
+-- they can read vouches for it — refuses the other member's, and they draw
+-- initials. That policy stays as it is: /api/household now signs a short-lived
+-- link to each member's picture, for the members of the caller's household.
+-- A signed link reads past every policy, so it is signed only for a picture
+-- the member uploaded themselves; otherwise a member could name, as their
+-- picture, the id of a photo in a note since made private and read it back.
+-- This answers who uploaded each object, for the service role alone.
+--
+-- ## 3. Grants
 --
 -- supabase/config.toml: from 2026-10-30 a new public table reaches none of
 -- anon, authenticated or service_role without an explicit GRANT. The tables
@@ -105,6 +117,25 @@ $$;
 
 revoke execute on function public.rate_limit_take(text, text, integer, integer) from public, anon, authenticated;
 grant execute on function public.rate_limit_take(text, text, integer, integer) to service_role;
+
+-- --------------------------------------------------------------- media_owners
+-- { name: owner } for the named objects in the media bucket; an object the
+-- service key wrote has no owner, and a name that is not there is left out.
+create or replace function public.media_owners(p_names text[])
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_object_agg(o.name, o.owner), '{}'::jsonb)
+    from storage.objects o
+   where o.bucket_id = 'media'
+     and o.name = any(p_names)
+$$;
+
+revoke execute on function public.media_owners(text[]) from public, anon, authenticated;
+grant execute on function public.media_owners(text[]) to service_role;
 
 -- --------------------------------------------------------------------- grants
 grant select, insert, update on public.posts to authenticated;

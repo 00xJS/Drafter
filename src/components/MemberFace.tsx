@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { initials } from '../household'
-import { mediaURL, peekMediaURL } from '../media'
+import { mediaURL, onMediaLink, peekMediaURL } from '../media'
 import { PROJECT_COLORS } from '../types'
 
 // Who somebody in the household is, in one circle: their picture if they have
@@ -28,9 +28,16 @@ export function faceTint(id: string | undefined): string {
  * The picture, once it has been fetched. Held here rather than in the caller
  * so a list of members makes one request each and the object URL is reused
  * from the media cache on every later paint.
+ *
+ * A housemate's picture can only be fetched through the link /api/household
+ * signs for it (src/media.ts), and the face may be drawn before that answer
+ * comes — from the member list this device kept — so the fetch runs again
+ * when a link to it arrives.
  */
 function usePhoto(id: string | null | undefined): string | null {
   const [fetched, setFetched] = useState<{ id: string; url: string | null } | null>(null)
+  const [links, setLinks] = useState(0)
+  useEffect(() => (id ? onMediaLink(id, () => setLinks(n => n + 1)) : undefined), [id])
   useEffect(() => {
     if (!id || peekMediaURL(id)) return
     let live = true
@@ -40,7 +47,7 @@ function usePhoto(id: string | null | undefined): string | null {
     return () => {
       live = false
     }
-  }, [id])
+  }, [id, links])
   if (!id) return null
   return peekMediaURL(id) ?? (fetched?.id === id ? fetched.url : null)
 }
