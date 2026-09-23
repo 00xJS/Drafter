@@ -320,6 +320,9 @@ export function pageTitle(html) {
 
 const DROP = ['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'object', 'nav', 'header', 'footer', 'aside', 'form', 'button', 'select', 'dialog']
 
+/** Tags that style words rather than break lines: dropped with no space, as a browser draws them. */
+const INLINE_TAG = /<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|dfn|em|font|i|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)\b[^<>]*>/gi
+
 /**
  * A page's readable text, for when it has no Recipe data: its <main> when it
  * marks one, without scripts, styles, navigation, headers, footers and forms;
@@ -335,6 +338,8 @@ export function readableText(html, max = IMPORT_LIMITS.textMax) {
     .replace(/<(br|hr)\b[^<>]*>/gi, '\n')
     .replace(/<li\b[^<>]*>/gi, '\n• ')
     .replace(/<\/(p|div|li|h[1-6]|tr|section|article|ul|ol|table|blockquote|dd|dt|figcaption|header|main)\s*>/gi, '\n')
+    // inline tags sit inside a word or against its comma, as a browser draws them: "<b>there</b>," is "there,"
+    .replace(INLINE_TAG, '')
     .replace(TAG, ' ')
   const lines = decodeEntities(s)
     .split('\n')

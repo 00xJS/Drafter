@@ -1,34 +1,57 @@
 // Email-in: a per-user webhook that turns an email into a task.
 //   POST /api/inbound?key=<inbound_token>
-// Accepts Mailgun Routes (form: subject, body-plain, sender), SendGrid Inbound
-// Parse (multipart: subject, text, from), Cloudflare Email Workers / Zapier /
-// Make (JSON: { subject, text, from }). The token is the only auth, so it is
-// long, per user, and rotatable from Settings.
+// Accepts Mailgun Routes (form: subject, body-plain, body-html, sender,
+// Message-Id), SendGrid Inbound Parse (multipart: subject, text, html, from,
+// headers), Cloudflare Email Workers / Zapier / Make (JSON: { subject, text,
+// html, from, messageId }). The token is the only auth, so it is long, per
+// user and rotatable from Settings, and one token files at most so many
+// emails in ten minutes.
 //
-// After the raw task is safely stored, a best-effort AI second pass may refine
-// title / due / priority / tags without blocking the webhook.
+// The raw task is stored under its owner and the webhook answers at once. The
+// model's second pass — a title, a due date read in the owner's zone, a
+// priority — runs in the background function (lib/triage.mjs), which has a
+// minute and a half where this had nine seconds against a model that takes
+// twenty or more.
 //
-// Every outbound call runs against one deadline that fits inside Netlify's
-// ten-second function limit. None had a timeout before, so one slow answer —
-// Supabase, or the AI provider on the triage pass — held the webhook open until
-// the platform killed it, and the mail service saw an error instead of a task.
+// An email is filed once. Its task's id is made from its owner and its
+// Message-ID, so a mail service delivering it again — after a timeout, or the
+// 503 below — finds the task it made the first time rather than making a
+// second. An email with no Message-ID gets a fresh id, as before.
+//
+// Whose task it is matters most. sync_posts under the service key files a new
+// row under the site owner, and the next call hands it to the token's owner.
+// That hand-over used to be fire-and-forget, so an email sent to the other
+// member's address could stay filed as the site owner's with nothing said. It
+// is tried twice now, and when it still fails the webhook answers 503: the
+// mail service tries again, and the retry, finding the task by its id, hands
+// it over then.
+//
+// Every outbound call runs against one deadline (BUDGET_MS), so one slow
+// answer from Supabase cannot hold the webhook open until the platform kills it.
 
+import { createHash } from 'node:crypto'
 import { newerStamp } from '../../shared/domain.mts'
-import { complete, resolveProvider } from './lib/ai.mjs'
+import { resolveProvider } from './lib/ai.mjs'
+import { siteOrigin, startJob } from './lib/aijobs.mjs'
+import { slidingWindow } from './lib/ratelimit.mjs'
+import { readableText } from './lib/recipeimport.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
-import { validTimeZone, zonedTime } from './lib/timezone.mjs'
+import { validTimeZone } from './lib/timezone.mjs'
 
 const MAX_BODY = 4000
-const DAY_MS = 86_400_000
-/** An ISO date-time that carries its own offset, so already names an instant: Z, ±hh:mm or ±hhmm. */
-const WITH_OFFSET = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i
 /** The whole webhook, from arrival to answer. */
 export const BUDGET_MS = 9_000
-/** The longest any single Supabase call may take. */
+/** The longest any single call may take. */
 export const CALL_MS = 4_000
-/** Kept back after triage for writing its answer. */
-const WRITE_BACK_MS = 2_000
+/** Emails one token may file in RATE_WINDOW_MS; past it the mail service is told to try again later. */
+export const RATE_LIMIT = 30
+export const RATE_WINDOW_MS = 10 * 60_000
+
+// per token, in this instance's memory (lib/ratelimit.mjs): enough to stop a
+// forwarding loop or a leaked address filing hundreds of tasks, and asking
+// the model hundreds of times
+const perToken = slidingWindow({ limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
 
 /** Run `work(signal)`, aborting it after `ms`. */
 async function withTimeout(ms, work) {
@@ -41,87 +64,98 @@ async function withTimeout(ms, work) {
   }
 }
 
-/** `promise`'s value, or `fallback` once `ms` has passed. Nothing is cancelled; a late answer is simply not waited for. */
-async function settleWithin(promise, ms, fallback = null) {
-  let timer
-  const late = new Promise(resolve => {
-    timer = setTimeout(() => resolve(fallback), Math.max(0, ms))
-  })
+/** The first of these that has something in it: a mail service sends an empty text part as "" as often as it leaves it out. */
+const firstText = (...values) => values.map(v => (typeof v === 'string' ? v : v == null ? '' : String(v))).find(v => v.trim()) ?? ''
+
+/** A Message-ID as written, without its angle brackets, or '' for none. */
+function cleanMessageId(value) {
+  const id = String(value ?? '')
+    .trim()
+    .replace(/^<|>$/g, '')
+    .trim()
+  return id.length > 0 && id.length <= 998 && !/\s/.test(id) ? id : ''
+}
+
+/** The Message-ID in a block of raw headers (SendGrid's `headers`), folded lines and all. */
+function messageIdInHeaders(raw) {
+  const unfolded = String(raw ?? '').replace(/\r?\n[ \t]+/g, ' ')
+  return cleanMessageId(/^message-id:\s*(.+)$/im.exec(unfolded)?.[1])
+}
+
+/** The Message-ID a JSON body carries, however the sender named it. */
+function jsonMessageId(j) {
+  const direct = firstText(j.messageId, j.message_id, j.messageID, j['Message-ID'], j['Message-Id'], j['message-id'])
+  if (direct) return cleanMessageId(direct)
+  const h = j.headers
+  if (typeof h === 'string') return messageIdInHeaders(h)
+  if (Array.isArray(h)) return cleanMessageId(h.find(x => Array.isArray(x) && /^message-id$/i.test(String(x[0])))?.[1])
+  if (h && typeof h === 'object') return cleanMessageId(Object.entries(h).find(([k]) => /^message-id$/i.test(k))?.[1])
+  return ''
+}
+
+/** Mailgun's `message-headers`: a JSON list of [name, value] pairs. */
+function mailgunMessageId(raw) {
   try {
-    return await Promise.race([promise, late])
-  } finally {
-    clearTimeout(timer)
+    const list = JSON.parse(String(raw ?? ''))
+    return Array.isArray(list) ? cleanMessageId(list.find(x => Array.isArray(x) && /^message-id$/i.test(String(x[0])))?.[1]) : ''
+  } catch {
+    return ''
   }
-}
-
-async function parseBody(req) {
-  const type = req.headers.get('content-type') ?? ''
-  if (type.includes('application/json')) {
-    const j = await req.json().catch(() => ({}))
-    return { subject: j.subject ?? j.Subject ?? '', text: j.text ?? j['body-plain'] ?? j.body ?? j.plain ?? '', from: j.from ?? j.sender ?? j.From ?? '' }
-  }
-  if (type.includes('multipart/form-data') || type.includes('application/x-www-form-urlencoded')) {
-    const form = await req.formData().catch(() => null)
-    const get = k => (form?.get(k) ?? '').toString()
-    return { subject: get('subject') || get('Subject'), text: get('body-plain') || get('text') || get('stripped-text') || get('plain'), from: get('sender') || get('from') || get('From') }
-  }
-  const text = await req.text().catch(() => '')
-  return { subject: '', text, from: '' }
-}
-
-/** 'Sunday 2026-09-13 11:00' on the wall clock in `tz`: the day the model counts "Thursday" from, in the shape it answers in. */
-function wallNow(now, tz) {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-      .formatToParts(new Date(now))
-      .map(x => [x.type, x.value]),
-  )
-  return `${p.weekday} ${p.year}-${p.month}-${p.day} ${String(Number(p.hour) % 24).padStart(2, '0')}:${p.minute}`
 }
 
 /**
- * The instant a triage `dueAt` names, read the way the owner meant it. One
- * with an offset is kept as it is; one without — '2026-09-17T15:00', or a bare
- * day — is wall-clock time in their zone. Date.parse read those in the
- * server's zone, UTC on Netlify, so a 3pm appointment in London landed at 4pm.
- * Null for anything else, and for a time more than a day gone: a model that
- * guessed the week or the year wrong filed the task as long overdue.
+ * The email as the mail service sent it: subject, the text part — or, when
+ * that is empty or missing, the HTML part as readable text — sender, and
+ * Message-ID. An empty text part used to win over the HTML one, and an
+ * HTML-only email filed a task with nothing in it.
  */
-function dueAtFrom(value, tz, now) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  const ms = WITH_OFFSET.test(text) ? Date.parse(text) : zonedTime(text, tz)
-  if (!Number.isFinite(ms) || ms < now - DAY_MS) return null
-  return new Date(ms).toISOString()
+async function parseBody(req) {
+  const type = req.headers.get('content-type') ?? ''
+  let mail = { subject: '', text: '', html: '', from: '', messageId: '' }
+  if (type.includes('application/json')) {
+    const j = await req.json().catch(() => ({}))
+    const o = j && typeof j === 'object' ? j : {}
+    mail = {
+      subject: firstText(o.subject, o.Subject),
+      text: firstText(o.text, o['body-plain'], o['stripped-text'], o.body, o.plain),
+      html: firstText(o.html, o['body-html'], o['stripped-html']),
+      from: firstText(o.from, o.sender, o.From),
+      messageId: jsonMessageId(o),
+    }
+  } else if (type.includes('multipart/form-data') || type.includes('application/x-www-form-urlencoded')) {
+    const form = await req.formData().catch(() => null)
+    const get = k => (form?.get(k) ?? '').toString()
+    mail = {
+      subject: firstText(get('subject'), get('Subject')),
+      text: firstText(get('body-plain'), get('text'), get('stripped-text'), get('plain')),
+      html: firstText(get('body-html'), get('html'), get('stripped-html')),
+      from: firstText(get('sender'), get('from'), get('From')),
+      messageId: cleanMessageId(firstText(get('Message-Id'), get('Message-ID'), get('message-id'))) || mailgunMessageId(get('message-headers')) || messageIdInHeaders(get('headers')),
+    }
+  } else {
+    mail.text = await req.text().catch(() => '')
+  }
+  if (!mail.text.trim() && mail.html.trim()) mail.text = readableText(mail.html, MAX_BODY)
+  return mail
 }
 
-async function triageTask(task, { subject, text, from }, { tz, now }) {
-  if (!resolveProvider()) return null
-  const ai = await complete({
-    system:
-      'You triage personal email into a single planner task. Respond with ONLY a JSON object: {"title":"short imperative under 80 chars","dueAt":"YYYY-MM-DDTHH:MM in local time with no offset, YYYY-MM-DD for a day with no time, or null","priority":"low|normal|high|urgent","projectHint":"short name or null","tags":["optional"]}. Prefer a concrete due when the email mentions a day or time; otherwise null. Count days such as "Thursday" or "tomorrow" from Now, in its time zone. Never invent facts.',
-    prompt: `Now: ${wallNow(now, tz)} (${tz})\nFrom: ${from || '(unknown)'}\nSubject: ${subject || '(none)'}\n\n${text.slice(0, 2500)}\n\nCurrent title: ${task.title}`,
-    maxTokens: 400,
-    json: true,
-    // the webhook's own pass, with nobody at a screen: a second NVIDIA key takes it first
-    background: true,
-  })
-  if (ai.error || !ai.text) return null
-  let raw
-  try {
-    raw = JSON.parse(ai.text.replace(/^```json\s*|\s*```$/g, '').trim())
-  } catch {
-    return null
-  }
-  if (!raw || typeof raw !== 'object') return null
-  const patch = {}
-  const title = String(raw.title ?? '').trim().slice(0, 140)
-  if (title) patch.title = title
-  const dueAt = dueAtFrom(raw.dueAt, tz, now)
-  if (dueAt) patch.dueAt = dueAt
-  if (['low', 'normal', 'high', 'urgent'].includes(raw.priority)) patch.priority = raw.priority
-  const tags = Array.isArray(raw.tags) ? raw.tags.map(String).filter(Boolean).slice(0, 6) : []
-  if (tags.length) patch.tags = [...new Set([...(task.tags ?? []), ...tags])]
-  return Object.keys(patch).length ? patch : null
+/**
+ * The task's title from a subject: every "Re:", "Fwd:" and "FW:" in front of
+ * it, however many and however written ("RE[2]:", "Fwd:Re:"), taken off. The
+ * first line of the body stands in for a subject that is only those.
+ */
+export function titleFromMail(subject, text) {
+  const strip = s =>
+    String(s ?? '')
+      .replace(/^(?:\s*(?:re|fwd?|fw|aw|wg)(?:\s*\[\d+\])?\s*:)+/i, '')
+      .trim()
+  return (strip(subject) || strip(String(text ?? '').split('\n').find(l => l.trim()) ?? '') || 'Email').slice(0, 140)
+}
+
+/** The task id an email is filed under: from its owner and Message-ID when it has one, so a delivery made again finds it. */
+export function mailTaskId(userId, messageId) {
+  if (!messageId) return `mail-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `mail-${createHash('sha256').update(`${userId}\n${messageId}`).digest('base64url').slice(0, 22)}`
 }
 
 export default async req => {
@@ -132,6 +166,9 @@ export default async req => {
   const url = new URL(req.url)
   const key = url.searchParams.get('key') ?? ''
   if (key.length < 16) return new Response('Not found', { status: 404 })
+  // before anything is looked up: a flood costs this instance nothing more
+  const slot = perToken.take(key)
+  if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
   let row
   try {
     row = await withTimeout(left(), signal => settingsFind('inbound_token', key, { signal }))
@@ -141,24 +178,8 @@ export default async req => {
   }
   if (!row) return new Response('Not found', { status: 404 })
 
-  const { subject, text, from } = await parseBody(req)
-  const title = (subject || text.split('\n').find(l => l.trim()) || 'Email').toString().replace(/^(re|fwd?):\s*/i, '').trim().slice(0, 140)
+  const { subject, text, from, messageId } = await parseBody(req)
   const body = text.toString().replace(/\r\n/g, '\n').trim().slice(0, MAX_BODY)
-  const link = (body.match(/https?:\/\/\S+/) ?? [])[0]
-  const stamp = new Date().toISOString()
-  const task = {
-    kind: 'task',
-    id: `mail-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    title,
-    description: body,
-    status: 'todo',
-    priority: 'normal',
-    createdAt: stamp,
-    updatedAt: newerStamp(),
-    tags: ['email'],
-    notes: from ? `From: ${from}` : undefined,
-    link,
-  }
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
   const supabase = (path, init) =>
@@ -169,39 +190,59 @@ export default async req => {
         headers: keyHeaders(serviceKey, { 'content-type': 'application/json', ...(init.headers ?? {}) }),
       }),
     )
-  // a future cursor means the RPC returns nothing: without it every inbound
-  // email makes Postgres aggregate the entire table into one json document
-  const store = item => supabase('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [item], since: new Date(Date.now() + 86_400_000).toISOString() }) })
-  // sync_posts runs under the service key, so auth.uid() is null and the row
-  // would otherwise be attributed to the site owner. Re-point it at whoever
-  // owns this inbound token. (The LWW trigger allows this: data is unchanged.)
-  const claim = () =>
-    supabase(`posts?id=eq.${encodeURIComponent(task.id)}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: row.user_id }) }).catch(() => {})
-
-  const res = await store(task).catch(() => null)
-  if (!res?.ok) return new Response('store failed', { status: 502 })
-  await claim()
-
-  // Second pass: refine title/due after the raw task is safely stored, in
-  // whatever time is left. Running out is fine — the task is already saved.
-  let triaged = false
-  try {
-    const room = deadline - Date.now() - WRITE_BACK_MS
-    // the owner's zone, the one the digest counts their day in; none stored reads as UTC
-    const tz = validTimeZone(row.timezone) ?? 'UTC'
-    const patch = room > 0 ? await settleWithin(triageTask(task, { subject, text: body, from }, { tz, now: Date.now() }), room) : null
-    if (patch) {
-      const next = { ...task, ...patch, updatedAt: newerStamp(task.updatedAt) }
-      const up = await store(next)
-      if (up.ok) {
-        await claim()
-        triaged = true
-        Object.assign(task, patch)
-      }
+  const id = mailTaskId(row.user_id, messageId)
+  // the task to its owner: tried twice, and a refusal both times is a 503 — never a task left under the site owner in silence
+  const handOver = async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await supabase(`posts?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: row.user_id }) }).catch(() => null)
+      if (res?.ok) return true
     }
-  } catch {
-    /* triage is best-effort */
+    return false
+  }
+  const unavailable = () => new Response('Temporarily unavailable', { status: 503 })
+
+  // delivered before: the task it made then stands (and is handed over now, if it was not then)
+  if (messageId) {
+    const seen = await supabase(`posts?id=eq.${encodeURIComponent(id)}&select=user_id,data`, { method: 'GET' })
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => null)
+    if (!Array.isArray(seen)) return unavailable()
+    if (seen[0]) {
+      if (seen[0].user_id !== row.user_id && !(await handOver())) return unavailable()
+      return Response.json({ ok: true, id, title: seen[0].data?.title ?? '', duplicate: true })
+    }
   }
 
-  return Response.json({ ok: true, id: task.id, title: task.title, triaged })
+  const stamp = new Date().toISOString()
+  const task = {
+    kind: 'task',
+    id,
+    title: titleFromMail(subject, body),
+    description: body,
+    status: 'todo',
+    priority: 'normal',
+    createdAt: stamp,
+    updatedAt: newerStamp(),
+    tags: ['email'],
+    notes: from ? `From: ${from}` : undefined,
+    link: (body.match(/https?:\/\/\S+/) ?? [])[0],
+  }
+  // a future cursor means the RPC returns nothing: without it every inbound
+  // email makes Postgres aggregate the entire table into one json document
+  const stored = await supabase('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [task], since: new Date(Date.now() + 86_400_000).toISOString() }) }).catch(() => null)
+  if (!stored?.ok) return new Response('store failed', { status: 502 })
+  if (!(await handOver())) return unavailable()
+
+  // the second pass, in the background: it has time this webhook does not
+  let triage = 'off'
+  if (resolveProvider()) {
+    const started =
+      left() > 0 &&
+      (await startJob(
+        { type: 'triage', userId: row.user_id, taskId: id, updatedAt: task.updatedAt, subject, text: body, from, tz: validTimeZone(row.timezone) ?? 'UTC' },
+        { origin: siteOrigin(url.origin), timeoutMs: left() },
+      ))
+    triage = started ? 'started' : 'not started'
+  }
+  return Response.json({ ok: true, id, title: task.title, triage })
 }
