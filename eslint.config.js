@@ -99,8 +99,10 @@ export default tseslint.config(
   {
     // Home and the cards it draws, the due badge every task list draws, and
     // Bills, Finance and Stats: views a phone is left open on overnight, and
-    // resumed on days later. Other views still read the clock as they
-    // render, and join this list as they are moved onto the hooks.
+    // resumed on days later. Then every view the compiler took on once the
+    // reasons it left them as written were gone: each is compiled now, so a
+    // clock read as it draws would be kept. Other views still read the clock
+    // as they render, and join this list as they are moved onto the hooks.
     files: [
       'src/components/Today.tsx',
       'src/components/BriefingCard.tsx',
@@ -113,6 +115,42 @@ export default tseslint.config(
       'src/components/Bills.tsx',
       'src/components/Finance.tsx',
       'src/components/planner/StatsScreen.tsx',
+      'src/calendarstate.ts',
+      'src/githubboard.ts',
+      'src/components/AddressFinder.tsx',
+      'src/components/Admin.tsx',
+      'src/components/AdminOps.tsx',
+      'src/components/AssistantsSection.tsx',
+      'src/components/Calendar.tsx',
+      'src/components/Chat.tsx',
+      'src/components/ConnectAssistantSheet.tsx',
+      'src/components/GithubCard.tsx',
+      'src/components/Journal.tsx',
+      'src/components/Kitchen.tsx',
+      'src/components/MealPlanSheet.tsx',
+      'src/components/NotesView.tsx',
+      'src/components/PlanDaySheet.tsx',
+      'src/components/ProjectEditor.tsx',
+      'src/components/RecipeSuggestions.tsx',
+      'src/components/Review.tsx',
+      'src/components/RhythmSheet.tsx',
+      'src/components/SignOutGuard.tsx',
+      'src/components/TaskEditor.tsx',
+      'src/components/kitchen/RecipeCapture.tsx',
+      'src/components/kitchen/RecipeFillFlow.tsx',
+      'src/components/planner/useCalendarSync.ts',
+      'src/components/planner/useNativeShell.ts',
+      'src/components/planner/useTaskActions.ts',
+      'src/components/settings/About.tsx',
+      'src/components/settings/GoogleCalendar.tsx',
+      'src/components/stats/HeatGrid.tsx',
+      'src/components/taskeditor/VersionsPanel.tsx',
+      'src/components/wardrobe/CutoutLater.tsx',
+      'src/components/wardrobe/GarmentSheet.tsx',
+      'src/components/wardrobe/OutfitComposer.tsx',
+      'src/components/wardrobe/SnapRow.tsx',
+      'src/components/wardrobe/Wardrobe.tsx',
+      'src/components/wardrobe/WardrobeStats.tsx',
     ],
     plugins: { drafter: { rules: { 'no-render-clock': noRenderClock } } },
     rules: { 'drafter/no-render-clock': 'error' },
