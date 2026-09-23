@@ -13,11 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Push and the model are stubbed at their modules; the database is a fake
 // that keeps what the run writes, so one run sees the last one's watermark.
 
-const { pushes } = vi.hoisted(() => ({ pushes: [] as { to: string[]; title: string }[] }))
+const { pushes } = vi.hoisted(() => ({ pushes: [] as { to: string[]; title: string; tag?: string }[] }))
 vi.mock('../../netlify/functions/push.mjs', () => ({
   pushConfigured: () => true,
-  sendToAll: async (subs: { endpoint: string }[], payload: { title: string }) => {
-    pushes.push({ to: subs.map(s => s.endpoint), title: payload.title })
+  sendToAll: async (subs: { endpoint: string }[], payload: { title: string; tag?: string }) => {
+    pushes.push({ to: subs.map(s => s.endpoint), title: payload.title, tag: payload.tag })
     return { gone: [], failed: [], updated: [] }
   },
 }))
@@ -25,6 +25,8 @@ vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => nu
 
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import digestFunction from '../../netlify/functions/digest.mjs'
+import { dueNotices } from '../notify'
+import type { Task } from '../types'
 
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
@@ -136,7 +138,16 @@ describe('"Due now" goes to a browser, never to the iPhone app', () => {
     settings = [account(OWNER, [iphone('a'), browser('joe')], { last_due_check: '2026-09-23T15:00:00.000Z' })]
     rows = [task(OWNER, 'Call the vet', '2026-09-23T15:15:00.000Z')]
     await runAt('2026-09-23T15:30:00.000Z')
-    expect(nudges()).toEqual([{ to: ['https://push.example.test/joe'], title: 'Due now: Call the vet' }])
+    expect(nudges()).toEqual([{ to: ['https://push.example.test/joe'], title: 'Due now: Call the vet', tag: 'due-Call the vet' }])
+  })
+
+  it('carries the tag the browser’s own notice of the task does, so one with Drafter open shows it once', async () => {
+    settings = [account(OWNER, [browser('joe')], { last_due_check: '2026-09-23T15:00:00.000Z' })]
+    rows = [task(OWNER, 'Call the vet', '2026-09-23T15:15:00.000Z')]
+    await runAt('2026-09-23T15:30:00.000Z')
+    const [page] = dueNotices([rows[0].data as unknown as Task], Date.parse('2026-09-23T15:30:00.000Z'))
+    expect(page.tag).toBeTruthy()
+    expect(nudges().map(p => p.tag)).toEqual([page.tag])
   })
 
   it('sends an account with only the iPhone app none, and keeps its watermark moving', async () => {

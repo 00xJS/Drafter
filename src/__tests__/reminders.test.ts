@@ -338,14 +338,14 @@ describe('while the app is open (a browser’s notifications)', () => {
       ],
       on8th(15, 30),
     )
-    expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file' }])
+    expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file', tag: 'due-a' }])
   })
 
   it('a day with no time rings at 9am as the phone’s does, “due today”, never at the 00:00 it is stored at, and not once the day is over', () => {
     const bins = task('bins', { title: 'Bins out', dueAt: new Date(2026, 8, 8).toISOString() })
     expect(dueNotices([bins], on8th(0, 0))).toEqual([])
     expect(dueNotices([bins], on8th(8, 59))).toEqual([])
-    expect(dueNotices([bins], on8th(9, 0))).toEqual([{ key: 'bins', title: 'Bins out is due today', body: 'Open Drafter for the details.' }])
+    expect(dueNotices([bins], on8th(9, 0))).toEqual([{ key: 'bins', title: 'Bins out is due today', body: 'Open Drafter for the details.', tag: 'due-bins' }])
     expect(dueNotices([bins], on8th(23, 59))).toHaveLength(1)
     // overdue from midnight: Home says so, and "due today" would not be true
     expect(dueNotices([bins], new Date(2026, 8, 9, 0, 1).getTime())).toEqual([])

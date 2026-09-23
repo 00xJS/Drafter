@@ -42,20 +42,20 @@ export async function enableNotifications(): Promise<NotificationPermission | 'u
   return Notification.requestPermission()
 }
 
-async function show(title: string, body: string): Promise<boolean> {
+async function show(title: string, body: string, tag?: string): Promise<boolean> {
   // Android Chrome forbids the page-context constructor when a service worker
   // is registered — go through the registration when one exists.
   try {
     const reg = await navigator.serviceWorker?.getRegistration()
     if (reg) {
-      await reg.showNotification(title, { body })
+      await reg.showNotification(title, { body, tag })
       return true
     }
   } catch {
     /* fall through */
   }
   try {
-    new Notification(title, { body })
+    new Notification(title, { body, tag })
     return true
   } catch (e) {
     console.error('Notification failed', e)
@@ -77,6 +77,14 @@ export interface DueNotice {
   key: string
   title: string
   body: string
+  /**
+   * A task's notice is shown under the tag the server's push nudge carries
+   * (`due-<id>`, digest.mjs), so a browser with push on and Drafter open,
+   * which hears of a task both ways, shows it once: the later replaces the
+   * earlier. Push nudges go to browsers alone, so this is the one place the
+   * two can meet.
+   */
+  tag?: string
 }
 
 /** When an event is over: its end instant, or the local midnight after an all-day one (its end is exclusive). */
@@ -102,7 +110,7 @@ export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): D
     if (!(at <= now) || now - at >= MAX_AGE_MS) continue
     const timed = hasDueTime(p.dueAt)
     if (!timed && isOverdue(p.dueAt, now)) continue
-    out.push({ key: p.id, title: `${p.title || 'Untitled'} ${timed ? 'is due now' : 'is due today'}`, body: excerpt(p.description, 120) || 'Open Drafter for the details.' })
+    out.push({ key: p.id, title: `${p.title || 'Untitled'} ${timed ? 'is due now' : 'is due today'}`, body: excerpt(p.description, 120) || 'Open Drafter for the details.', tag: `due-${p.id}` })
   }
   for (const e of opts.events ?? []) {
     if (!remindsMe(e, opts.myId)) continue
@@ -125,7 +133,7 @@ export async function notifyDue(tasks: Task[], opts: NotifyOpts = {}): Promise<v
   let dirty = false
   for (const n of dueNotices(tasks, Date.now(), opts)) {
     if (already.has(n.key)) continue
-    if (await show(n.title, n.body)) {
+    if (await show(n.title, n.body, n.tag)) {
       already.add(n.key)
       dirty = true
     }
