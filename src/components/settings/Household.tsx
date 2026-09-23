@@ -9,6 +9,16 @@ import { useSignOut } from '../SignOutGuard'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
+/**
+ * Invite someone, and empty the field only once the invitation has gone out.
+ * It used to empty whatever happened, so a refused invite (a mistyped address,
+ * an account that does not exist yet) threw away what was typed along with it.
+ */
+export async function sendInvite(email: string, deps: { invite(email: string): Promise<unknown>; clear(): void }): Promise<void> {
+  await deps.invite(email)
+  deps.clear()
+}
+
 /** Household: who shares this planner, and invitations either way. Your own name and picture are under You. */
 export function Household({ store, household, supabaseOn }: SettingsCtx) {
   const [hhName, setHhName] = useState('')
@@ -75,7 +85,11 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
           </ul>
           <div className="check-add">
             <input value={invite} onChange={e => setInvite(e.target.value)} placeholder="Add a member by their account email" type="email" />
-            <button className="btn" disabled={hhBusy || !invite.trim()} onClick={() => runHh(() => householdAction('invite', { email: invite })).then(() => setInvite(''))}>
+            <button
+              className="btn"
+              disabled={hhBusy || !invite.trim()}
+              onClick={() => runHh(() => sendInvite(invite, { invite: email => householdAction('invite', { email }), clear: () => setInvite('') }))}
+            >
               Add
             </button>
           </div>
