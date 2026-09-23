@@ -10,7 +10,6 @@ import type { View } from './routes'
 // themselves (lazyload.test.ts walks the imports to hold that, and
 // scripts/check-precache.mjs checks the built launch holds no assistant code).
 export const Calendar = preloadable(() => import('../Calendar').then(m => m.Calendar), 'Calendar')
-export const Roadmap = preloadable(() => import('../Roadmap').then(m => m.Roadmap), 'Roadmap')
 export const TasksTable = preloadable(() => import('../TasksTable').then(m => m.TasksTable), 'TasksTable')
 export const Board = preloadable(() => import('../Board').then(m => m.Board), 'Board')
 // Tasks → Finance: the month of bills, the paydays and the accounts. Bills.tsx
@@ -75,7 +74,7 @@ export const NoticesSheet = preloadable(() => import('../NoticesSheet').then(m =
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
-  calendar: [Calendar.preload, Roadmap.preload],
+  calendar: [Calendar.preload],
   // four segments, and a finger cannot say which — so all four, as the lens does
   keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
@@ -93,7 +92,7 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  actions, the retrieval Ask runs), it was parsed at the front while the
  *  first sync ran, and a finger on the chat's button or the Home tab warms
  *  them anyway. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Chat, AskSheet].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Chat, AskSheet].map(c => c.preload)
 
 /** The warm-up in the iOS app: what the top bar opens from every screen, and nothing else. */
 export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings].map(c => c.preload)

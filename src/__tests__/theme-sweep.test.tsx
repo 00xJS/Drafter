@@ -4,13 +4,11 @@ import { Calendar } from '../components/Calendar'
 import { MoodChart } from '../components/Journal'
 import { Bars } from '../components/bits'
 import { PlacesStats } from '../components/PlacesStats'
-import { Roadmap } from '../components/Roadmap'
 import { WardrobeStats } from '../components/wardrobe/WardrobeStats'
 import { graphicInk, heatStyle, readableInk } from '../contrast'
 import { NO_PLACE_FILTER } from '../places'
 import type { CalendarEvent, CalendarSource, Garment, Place, Project, Recipe, Task, Wear } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
-import { sheetSource } from './source'
 
 // The call sites of the theme sweep. A colour the stylesheet cannot know (a
 // project's, a feed's, a place's) is drawn through the contrast helpers, and
@@ -98,24 +96,6 @@ describe('a user colour drawn as a mark is deepened just enough to stand out on 
     expect(html).toContain('class="person-bar zero" style="height:8%"')
     expect(html).toContain(`class="person-bar" style="height:100%;background:${fill}"`)
     expect(html).not.toContain('opacity')
-  })
-
-  it('a Timeline span, a milestone’s edge and a finished milestone’s fill', () => {
-    const milestones = [
-      { id: 'm', name: 'Launch', dueAt: sept(10) },
-      { id: 'd', name: 'Plans drawn', dueAt: sept(3), done: true },
-    ]
-    const project: Project = { kind: 'project', id: 'p', name: 'LIFE', color: amber, status: 'active', milestones, createdAt: STAMP, updatedAt: STAMP }
-    const html = renderToStaticMarkup(<Roadmap projects={[project]} tasks={[]} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
-    const ink = graphicInk(amber, 'light')
-    expect(ink).not.toBe(amber)
-    expect(html).toMatch(new RegExp(`class="rm-bar inferred" style="[^"]*background:${ink}"`))
-    expect(html).toMatch(new RegExp(`class="rm-ms" style="[^"]*border-color:${ink}"`))
-    // an open milestone stays hollow on the sheet's --surface…
-    expect(html).not.toMatch(/class="rm-ms" style="[^"]*background/)
-    // …and a finished one fills with the project's colour, where the sheet once filled it with the text colour
-    expect(html).toMatch(new RegExp(`class="rm-ms done" style="[^"]*border-color:${ink};background:${ink}"`))
-    expect(sheetSource().replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/\.rm-ms\.done\s*\{/)
   })
 
   it('the mood columns carry their mood for the sheet to set their strength, not an opacity of their own', () => {

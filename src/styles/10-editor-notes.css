@@ -241,21 +241,11 @@
     border-top: 1px solid var(--border);
     padding-top: 14px;
   }
-  .rm-label {
-    width: 180px;
-  }
 }
 
 @media (max-width: 640px) {
   .today-grid {
     grid-template-columns: 1fr;
-  }
-  .rm-label {
-    width: 140px;
-    padding: 8px;
-  }
-  .rm-label .badge {
-    display: none;
   }
 }
 
@@ -314,18 +304,6 @@
 }
 .event-list .event-row:hover {
   background: transparent;
-}
-.rm-events .rm-track {
-  min-height: 26px;
-}
-.rm-event {
-  position: absolute;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-4px) rotate(45deg);
-  border-radius: 1px;
-  opacity: 0.9;
 }
 .cal-sources {
   list-style: none;

@@ -134,7 +134,7 @@ describe('schedulePreload: after launch, one chunk at a time', () => {
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 const component = (name: string) => resolve(SRC, 'components', `${name}.tsx`)
 /** The views and overlays planner/lazy.ts loads on demand. */
-const LAZY_VIEWS = ['Calendar', 'Roadmap', 'TasksTable', 'Board', 'Finance', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'Journal', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet', 'RhythmSheet']
+const LAZY_VIEWS = ['Calendar', 'TasksTable', 'Board', 'Finance', 'NotesView', 'People', 'Places', 'PeopleStats', 'PlacesStats', 'Kitchen', 'kitchen/KitchenStats', 'Review', 'Journal', 'wardrobe/Wardrobe', 'TaskEditor', 'ProjectEditor', 'EventEditor', 'AttendancePicker', 'Search', 'Trash', 'Settings', 'Admin', 'PlanDaySheet', 'ShutdownSheet', 'WeekPlanSheet', 'AskSheet', 'ImHereSheet', 'RhythmSheet']
 /** …and what only they use, which must travel with them. */
 const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
