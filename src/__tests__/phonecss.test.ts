@@ -98,6 +98,27 @@ describe('phone chrome: no field may zoom the page', () => {
     }
   })
 
+  it('holds on any touch screen, not only below 640px', () => {
+    // an iPhone turned sideways and an iPad are wider than 640px and zoom the same
+    const opener = css.slice(css.lastIndexOf('@media', zoomGuard), css.lastIndexOf('{', zoomGuard))
+    expect(opener).toMatch(/@media \(max-width: 640px\), \(pointer: coarse\)/)
+  })
+
+  it('holds anywhere in the iOS app too, with the same arms at the same weight', () => {
+    // an iPad with a trackpad may not call its pointer coarse; :where() weighs nothing
+    const first = bare.indexOf("[contenteditable='true']")
+    expect(first).toBeLessThan(bare.lastIndexOf("[contenteditable='true']"))
+    const nativeArms = bare
+      .slice(bare.lastIndexOf('}', first) + 1, bare.indexOf('{', first))
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    expect(nativeArms).toEqual(guardArms.map(arm => `:where(html.native) ${arm}`))
+    expect(bare.slice(first)).toMatch(/^[^{]*\{\s*font-size:\s*max\(16px,\s*1rem\);\s*\}/)
+    // and the emoji field keeps its 18px there as well, declared after the catch-all
+    expect(bare.indexOf(":where(html.native) .emoji-field input:not([type='checkbox'])")).toBeGreaterThan(first)
+  })
+
   it('wins the cascade against every rule that sets a smaller field size', () => {
     // each smaller-field rule, paired with the element whose guard arm has to beat it
     const smaller: [string, string][] = [

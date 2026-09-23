@@ -67,8 +67,11 @@ describe('the style sheet: one index, partials in order, nothing across two file
     expect(imports[imports.length - 1]).toBe('19-native-shell.css')
   })
 
-  it("has one [contenteditable='true'] in the whole sheet: the anti-zoom guard's", () => {
-    expect(sheetSource().split("[contenteditable='true']")).toHaveLength(2)
+  it("has [contenteditable='true'] only in the anti-zoom guard: its app arm, then its touch-screen arm", () => {
+    // phonecss.test.ts finds the guard by the last one in the sheet
+    const holders = sheetImports().filter(f => read(`../styles/${f}`).includes("[contenteditable='true']"))
+    expect(holders).toEqual(['16-zoom-guard.css'])
+    expect(sheetSource().split("[contenteditable='true']")).toHaveLength(3)
   })
 
   it('is loaded by main.tsx alone, through styles/index.css', () => {
