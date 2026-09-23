@@ -254,6 +254,17 @@ function releaseBlocked(list: Item[], completed: readonly string[]): Item[] {
   return changed ? next : list
 }
 
+/**
+ * `list` with a repeat's next occurrence in it: in place of the record that
+ * holds its id — only ever a tombstone it replaces (nextOccurrence) — or at the
+ * end. Two records under one id are one too many: the cache and the server each
+ * keep only one of them, and a chore ticked off, undone and ticked off again
+ * used to leave its first next occurrence's tombstone beside the new one.
+ */
+function withOccurrence(list: Item[], spawn: Task): Item[] {
+  return list.some(x => x.id === spawn.id) ? list.map(x => (x.id === spawn.id ? spawn : x)) : list.concat(spawn)
+}
+
 /** The task this edit ticks off, if it does: [] or its id, for releaseBlocked. */
 const tickedOff = (next: Item, prev: Item | undefined): string[] =>
   next.kind === 'task' && next.status === 'done' && !(prev?.kind === 'task' && prev.status === 'done') ? [next.id] : []
@@ -907,6 +918,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     schedulePush()
   }
 
+  /** What this device holds under an id, tombstones included: where a repeat's next occurrence may not go. */
+  const held = (id: string): Item | undefined => index.get(id)
+
   function upsert(item: Item): void {
     const list = state.items
     const old = list.find(x => x.id === item.id)
@@ -914,11 +928,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     let next = old ? list.map(x => (x.id === item.id ? item : x)) : [...list, item]
     const touched = [item.id]
     if (item.kind === 'task' && item.status === 'done' && old?.kind === 'task' && old.status !== 'done' && item.recurrence) {
-      const spawn = nextOccurrence(item, uid)
+      const spawn = nextOccurrence(item, uid, held)
       if (spawn) {
         touched.push(spawn.id)
         const done = item
-        next = next.map(x => (x.id === done.id ? { ...done, recurrence: undefined } : x)).concat(spawn)
+        next = withOccurrence(
+          next.map(x => (x.id === done.id ? { ...done, recurrence: undefined } : x)),
+          spawn,
+        )
       }
     }
     commit(ensureProjects(releaseBlocked(next, tickedOff(item, old))), touched)
@@ -977,10 +994,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (!old || old.kind !== 'task' || old.status === status) return null
     const updated = stampStatus(old, status)
     let spawned: Task | null = null
-    if (status === 'done' && old.status !== 'done' && updated.recurrence) spawned = nextOccurrence(updated, uid)
+    if (status === 'done' && old.status !== 'done' && updated.recurrence) spawned = nextOccurrence(updated, uid, held)
     const stored: Task = spawned ? { ...updated, recurrence: undefined } : updated
     let next: Item[] = state.items.map(x => (x.id === id ? stored : x))
-    if (spawned) next = next.concat(spawned)
+    if (spawned) next = withOccurrence(next, spawned)
     commit(releaseBlocked(next, tickedOff(stored, old)), spawned ? [id, spawned.id] : [id])
     return { prev: old, next: stored, spawnedId: spawned?.id }
   }

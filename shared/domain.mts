@@ -130,13 +130,62 @@ export function localMidnightIso(dateKey: string): string | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).toISOString()
 }
 
-/** Deterministic id for the next occurrence of a recurring task. */
-export function spawnId(taskId: string, freq: string, nextDueIso: string): string {
-  const day = (nextDueIso ?? '').slice(0, 10)
-  return `${taskId}~${freq}~${day}`
+/** Every `~freq~day` an occurrence's id has had put on it; none on the task its series started from. */
+const SPAWN_TAIL = new RegExp(`(?:~(?:${RECURRENCE_FREQS.join('|')})~\\d{4}-\\d{2}-\\d{2})+$`)
+
+/**
+ * The id a repeating task's series goes by: the task it started from, every
+ * `~freq~day` taken off. An occurrence under the short id and one whose id
+ * grew under the old rule read back to the same root.
+ */
+export function seriesRoot(id: string): string {
+  const tail = typeof id === 'string' ? SPAWN_TAIL.exec(id) : null
+  return tail ? id.slice(0, tail.index) : id
 }
 
-/** The next occurrence of a recurring task, cloned from the one just completed. */
+/** The latest day anywhere in an occurrence's id — the furthest its series had got when it was written — or null for a series' first task. */
+function furthestDay(id: string): string | null {
+  const tail = SPAWN_TAIL.exec(id)
+  if (!tail) return null
+  let furthest = ''
+  for (const [day] of tail[0].matchAll(/\d{4}-\d{2}-\d{2}/g)) if (day > furthest) furthest = day
+  return furthest
+}
+
+/**
+ * Deterministic id for the next occurrence of a repeating task: the series'
+ * root and ONE `~freq~day`, so two devices that tick the same chore off on the
+ * same day write one id, and the id is as long on the thousandth time round as
+ * on the first.
+ *
+ * It used to append to the id of the occurrence just done, every completion
+ * adding some 17 characters: a daily chore's id passes a kilobyte in two
+ * months. An id grown that way is never rewritten; its next occurrence simply
+ * takes the short form.
+ *
+ * The short form names a day, not an occurrence, and a chore ticked off early
+ * enough comes round on a day its series has already had (tomorrow's, done
+ * today, is due tomorrow again). So it is used only for a day later than any
+ * the occurrence's own id names; otherwise the occurrence just done lends its
+ * id and the segment goes on the end, as it always did — an id no other
+ * occurrence can have. Each id therefore still names the furthest day its
+ * series had reached, and a series ticked off on one device never gives two
+ * of its occurrences the same short id.
+ */
+export function spawnId(taskId: string, freq: string, nextDueIso: string): string {
+  const day = (nextDueIso ?? '').slice(0, 10)
+  const furthest = furthestDay(taskId)
+  return furthest === null || day > furthest ? `${seriesRoot(taskId)}~${freq}~${day}` : `${taskId}~${freq}~${day}`
+}
+
+/** What nextOccurrence needs to know of a record already holding an id it might use. */
+export interface HeldRecord {
+  updatedAt?: string
+  deletedAt?: string
+  purged?: boolean
+}
+
+/** How many months apart the repeats that go by the month fall. */
 const MONTH_STEPS: Partial<Record<RecurrenceFreq, number>> = { monthly: 1, quarterly: 3, yearly: 12 }
 
 /** Whole months later in local time, on `day` clamped to that month's length. */
@@ -147,7 +196,18 @@ function addMonthsOnDay(date: Date, months: number, day: number): Date {
   return target
 }
 
-export function nextOccurrence(task: Task, uidFn: () => string): (Task & { spawnedFrom: string }) | null {
+/**
+ * The next occurrence of a recurring task, cloned from the one just completed.
+ *
+ * `held`, where the caller has the records, says what already holds an id. The
+ * id spawnId gives is then used only if nothing does, or a tombstone does: a
+ * chore ticked off, undone and ticked off again spawns the id its first tick
+ * did, and the new occurrence replaces that one's tombstone, stamped newer so
+ * it wins the merge. A live record keeps its id, and the occurrence just done
+ * lends its own instead, one segment longer each time it has to. The caller
+ * puts the occurrence in place of the record holding its id, never beside it.
+ */
+export function nextOccurrence(task: Task, uidFn: () => string, held?: (id: string) => HeldRecord | undefined): (Task & { spawnedFrom: string }) | null {
   if (!task.recurrence) return null
   const bill = task.bill && typeof task.bill === 'object' ? task.bill : null
   // A bill falls due on its own day however early or late it was paid; a chore
@@ -178,16 +238,27 @@ export function nextOccurrence(task: Task, uidFn: () => string): (Task & { spawn
   const dueAt = next.toISOString()
   // uidFn kept for call-site compatibility; id is deterministic so two devices agree
   void uidFn
+  const step = `~${freq}~${dueAt.slice(0, 10)}`
+  let id = spawnId(task.id, freq, dueAt)
+  let replaces: HeldRecord | undefined
+  for (let cur = held?.(id); cur; cur = held?.(id)) {
+    if (cur.deletedAt && !cur.purged) {
+      replaces = cur
+      break
+    }
+    // a live record's: the occurrence just done lends its own id, a segment longer each time it has to
+    id = id.length < task.id.length + step.length ? task.id + step : id + step
+  }
   const spawn: Task & { spawnedFrom: string } = {
     kind: 'task',
-    id: spawnId(task.id, freq, dueAt),
+    id,
     title: task.title,
     description: task.description,
     status: 'todo',
     priority: task.priority ?? 'normal',
     projectId: task.projectId,
     createdAt: now,
-    updatedAt: now,
+    updatedAt: replaces ? newerStamp(replaces.updatedAt) : now,
     dueAt,
     tags: [...(task.tags ?? [])],
     notes: task.notes,
@@ -225,9 +296,6 @@ export interface SpawnCandidate {
   purged?: boolean
 }
 
-// every `~freq~day` spawnId has appended, from the first occurrence on
-const SPAWN_TAIL = new RegExp(`(?:~(?:${RECURRENCE_FREQS.join('|')})~\\d{4}-\\d{2}-\\d{2})+$`)
-
 /**
  * Next occurrences that repeat one another: open copies spawned from the same
  * repeating chore. Ticked off on the same day on two devices, a chore spawns
@@ -250,9 +318,9 @@ export function duplicateSpawnPairs(items: readonly SpawnCandidate[]): { id: str
   const rows: readonly SpawnCandidate[] = Array.isArray(items) ? items : []
   for (const i of rows) {
     if (!i || i.kind !== 'task' || i.deletedAt || i.purged || !i.recurrence || i.status === 'done' || i.status === 'canceled') continue
-    const tail = typeof i.id === 'string' ? SPAWN_TAIL.exec(i.id) : null
-    if (!tail) continue
-    const root = i.id.slice(0, tail.index)
+    // the series' first task is not a next occurrence; every other reads back to its root, short id or grown
+    const root = seriesRoot(i.id)
+    if (root === i.id) continue
     const list = series.get(root) ?? []
     list.push({ id: i.id, day: i.id.slice(-10) })
     series.set(root, list)
