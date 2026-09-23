@@ -201,7 +201,8 @@ async function ownerDigest(userId) {
     rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
   ])
   const items = visibleItemsFor(/** @type {{ user_id: string | null, data: unknown }[]} */ (rows), userId, peers.get(userId), ownerId)
-  return { settings, timezone, digest: buildDigest(items, timezone, new Date(), settings.nudged ?? {}) }
+  // the reader, as the scheduled run passes it: the people and places lines count only their own visits
+  return { settings, timezone, digest: buildDigest(items, timezone, new Date(), settings.nudged ?? {}, userId) }
 }
 
 const handler = async req => {
