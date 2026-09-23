@@ -1197,7 +1197,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
    * handed over and not yet taken laid over it, and leave the bookkeeping, the
    * journal and the rounds to the tab that syncs.
    */
-  function follow(cached: LoadedCache): void {
+  function follow(cached: LoadedCache, recheck = true): void {
     const byId = new Map(cached.items.map(i => [i.id, i]))
     handed.clear()
     for (const h of cached.outbox) {
@@ -1216,6 +1216,19 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     written = null
     publish({ items, byKind: groupByKind(items, null), loaded: true, loadError: undefined, failures: [] })
     lead!.post({ type: 'hello', from: lead!.id })
+    // A read taken before this tab was listening (main.tsx starts it early)
+    // misses what the leader wrote meanwhile: read again, once, if it wrote.
+    if (recheck) {
+      const gen = bootGen
+      void storage
+        .readSeq!()
+        .then(async now => {
+          if (now === null || now === cached.seq || leading || gen !== bootGen) return
+          const fresh = await readCache(account, gen)
+          if (fresh && !leading && gen === bootGen) follow(fresh, false)
+        })
+        .catch(() => {})
+    }
   }
 
   /**

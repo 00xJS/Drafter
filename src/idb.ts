@@ -111,7 +111,30 @@ export function idbAll<T>(store: string): Promise<T[]> {
  * from the same moment. Undefined when nothing has ever been written there:
  * the engine then reads the v2 value, and its first write moves it over.
  */
-export async function readRecordCache(): Promise<CacheRecord | undefined> {
+export function readRecordCache(): Promise<CacheRecord | undefined> {
+  const early = prefetched
+  prefetched = null
+  return early ?? readRecordCacheNow()
+}
+
+let prefetched: Promise<CacheRecord | undefined> | null = null
+
+/**
+ * Start reading the cache now (main.tsx, for a device that opens straight to
+ * its planner): the read runs beside the planner's chunk coming in, rather
+ * than after it, and the engine's first read takes it. A read that fails is
+ * not kept — the engine reads again, and tries again after that.
+ */
+export function prefetchRecordCache(): void {
+  if (prefetched || typeof indexedDB === 'undefined') return
+  const read = readRecordCacheNow()
+  prefetched = read
+  read.catch(() => {
+    if (prefetched === read) prefetched = null
+  })
+}
+
+async function readRecordCacheNow(): Promise<CacheRecord | undefined> {
   let items: unknown[] = []
   let meta: StoredMeta | undefined
   let outbox: Handoff[] = []
