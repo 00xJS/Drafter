@@ -7,46 +7,31 @@ import { newerStamp } from '../shared/domain.mts'
 import { mealHistory } from '../shared/weekplan.mts'
 import {
   MAX_SIDES,
-  activeGroceryLines as sharedActiveGroceryLines,
-  addGroceryItem as sharedAddGroceryItem,
-  buildGroceryList as sharedBuildGroceryList,
-  cookedRecipeIds as sharedCookedRecipeIds,
-  groceryId as sharedGroceryId,
-  ingredientKey as sharedIngredientKey,
-  mealAt as sharedMealAt,
-  mealId as sharedMealId,
+  activeGroceryLines,
+  addGroceryItem,
+  buildGroceryList,
+  cookedRecipeIds,
+  groceryId,
+  ingredientKey,
+  mealAt,
+  mealId,
   mealLabel as sharedMealLabel,
-  mealRecipeIds as sharedMealRecipeIds,
-  mealSides as sharedMealSides,
+  mealRecipeIds,
+  mealSides,
   mealWithMain as sharedMealWithMain,
-  mergeIngredients as sharedMergeIngredients,
-  recipesUsed as sharedRecipesUsed,
-  removeGroceryLine as sharedRemoveGroceryLine,
-  restoreGroceryLine as sharedRestoreGroceryLine,
+  mergeIngredients,
+  recipesUsed,
+  removeGroceryLine,
+  restoreGroceryLine,
 } from '../shared/kitchen.mts'
-import type { GroceryAddOutcome, MealMain } from '../shared/kitchen.mts'
+import type { MealMain } from '../shared/kitchen.mts'
 
 // Merging, list building, ids and what a meal cooks live in shared/kitchen.mts
 // so an agent adding "milk" through the MCP server and the Kitchen tab produce
 // the same list, and count the same dinners as cooked.
 
-export const groceryId = (weekKey: string, userId?: string | null): string => sharedGroceryId(weekKey, userId)
-export const mealId = (date: string, slot: MealSlot, userId?: string | null): string => sharedMealId(date, slot, userId)
-/** The row a member writes for a day and slot — a tombstone included — found by day, not by a computed id. */
-export const mealAt = (meals: readonly { kind: string }[], date: string, slot: MealSlot, userId?: string | null): Meal | null =>
-  sharedMealAt(meals, date, slot, userId)
-export const ingredientKey = (name: string, unit?: string): string => sharedIngredientKey(name, unit)
-export const mergeIngredients = (recipes: Recipe[]): Omit<GroceryLine, 'id' | 'state'>[] => sharedMergeIngredients(recipes)
-/** The recipes these meals cook, sides included: what a grocery list is built from. */
-export const recipesUsed = (meals: Meal[], recipes: Recipe[]): Recipe[] => sharedRecipesUsed(meals, recipes)
-
+export { activeGroceryLines, addGroceryItem, buildGroceryList, cookedRecipeIds, groceryId, ingredientKey, mealAt, mealId, mealRecipeIds, mealSides, mergeIngredients, recipesUsed, removeGroceryLine, restoreGroceryLine }
 export type { MealMain }
-/** A meal's sides that can be shown. A bought meal has none. */
-export const mealSides = (meal: Meal | null | undefined): MealSide[] => sharedMealSides(meal)
-/** The saved recipes a meal cooks: its main, then its sides, each once. */
-export const mealRecipeIds = (meal: Meal | null | undefined): string[] => sharedMealRecipeIds(meal)
-/** What a meal has cooked by `todayKey`, main and sides: the one rule for "cooked" (shared/kitchen.mts). */
-export const cookedRecipeIds = (meal: Meal | null | undefined, todayKey: string): string[] => sharedCookedRecipeIds(meal, todayKey)
 /** "Chicken curry with rice and naan"; a meal with no sides is its title alone. */
 export const mealLabel = (meal: Pick<Meal, 'title'> & Partial<Meal>): string => sharedMealLabel(meal)
 
@@ -313,19 +298,6 @@ export function nextSwap(cycle: readonly string[], current: number, taken: Reado
   return null
 }
 
-/** The lines on the list: every line but the ones taken off it by hand. */
-export const activeGroceryLines = (items: GroceryLine[]): GroceryLine[] => sharedActiveGroceryLines(items)
-/** Take a line off the list, remembering the recipes that wanted it (see buildGroceryList). */
-export const removeGroceryLine = (line: GroceryLine): GroceryLine => sharedRemoveGroceryLine(line)
-/** Put a removed line back as it was. */
-export const restoreGroceryLine = (line: GroceryLine): GroceryLine => sharedRestoreGroceryLine(line)
-/** Add a line by name: never twice, and a removed line comes back instead of a copy. */
-export const addGroceryItem = (
-  items: GroceryLine[],
-  input: { name: string; qty?: number | null; unit?: string | null },
-  newId: () => string,
-): { items: GroceryLine[]; line: GroceryLine; outcome: GroceryAddOutcome } => sharedAddGroceryItem(items, input, newId)
-
 /**
  * A recipe matched by name, case- and space-insensitively — so planning
  * "Something new" with a dish you already have reuses that recipe instead of
@@ -336,10 +308,6 @@ export function recipeByName(name: string | null | undefined, recipes: Recipe[])
   if (!key) return undefined
   return recipes.find(r => !r.deletedAt && r.name.trim().toLowerCase().replace(/\s+/g, ' ') === key)
 }
-
-/** Build or refresh a week's list. Keeps have/done/manual lines the user already set. */
-export const buildGroceryList = (weekKey: string, meals: Meal[], recipes: Recipe[], prev?: GroceryList | null, now = new Date().toISOString(), owner: string | null = null): GroceryList =>
-  sharedBuildGroceryList(weekKey, meals, recipes, prev ?? null, now, owner)
 
 export function mealsInRange(meals: Meal[], start: Date, end: Date): Meal[] {
   const from = dateKey(start)

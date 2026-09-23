@@ -53,7 +53,7 @@ const JUST_ADDED_MS = 10 * 60_000
 const PRIORITY_POINTS: Partial<Record<Priority, number>> = { urgent: 3, high: 2, normal: 1, low: 0 }
 
 /**
- * Today's "Next up" ranking (src/review.ts wraps it with types). It lives here
+ * Today's "Next up" ranking (src/review.ts re-exports it). It lives here
  * so the week plan's Top 3, in the app and in the Sunday digest, ranks exactly
  * as Today does. `exclude` leaves tasks out without changing how the rest
  * score: today's focus has a card of its own and is not listed twice.

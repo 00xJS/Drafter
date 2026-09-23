@@ -2,18 +2,18 @@ import { Meal, PLACE_CATEGORY_META, Person, Place, PlaceCategory, Task } from '.
 import { tidyCoords } from './geo'
 import { monthsAndTrend, suggestRhythm, visitDays, visitSummary, visitsFor } from './people'
 import {
-  Outing,
-  PlaceCadenceState,
-  PlaceCadenceStatus,
   matchPlace as sharedMatchPlace,
   normalisePlaceText,
+  outingsAt,
   placeCadenceStatus,
-  outingsAt as sharedOutingsAt,
   tidyPlaceAddress,
   tidyPlaceAliases,
+  type Outing,
+  type PlaceCadenceState,
+  type PlaceCadenceStatus,
 } from '../shared/places.mts'
 
-export { normalisePlaceText, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases }
+export { normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases }
 export type { Outing, PlaceCadenceState, PlaceCadenceStatus }
 
 /**
@@ -218,15 +218,6 @@ export function lapsed(places: Place[], tasks: Task[], people: Person[] = [], no
  */
 export function driftedFrom(s: PlaceStats): boolean {
   return s.visits.length >= 2 && s.daysSince !== undefined && s.daysSince > Math.max(LAPSED_AFTER_DAYS, s.avgGapDays ? 2 * s.avgGapDays : 0)
-}
-
-/**
- * Everything that counts as having been to a place, newest first: done tasks
- * carrying it, plus past meals marked as eaten out there. Open tasks,
- * tombstones and FUTURE meals are ignored (rule in shared/places.mts).
- */
-export function outingsAt(placeId: string, tasks: Task[], meals: Meal[] = [], now: Date = new Date(), myId?: string | null): Outing[] {
-  return sharedOutingsAt(placeId, tasks, meals, now, myId) as Outing[]
 }
 
 export interface Companion {

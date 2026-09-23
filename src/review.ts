@@ -4,8 +4,8 @@ import { seenTasks, visitDays } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
 import { weekKeyOf } from '../shared/weeks.mts'
-import { nextUp as sharedNextUp } from '../shared/today.mts'
-import { inRange as sharedInRange, isVisit as sharedIsVisit, peopleSeen as sharedPeopleSeen, reviewLists } from '../shared/review.mts'
+import { nextUp } from '../shared/today.mts'
+import { inRange as sharedInRange, isVisit, peopleSeen as sharedPeopleSeen, reviewLists } from '../shared/review.mts'
 
 export type Period = 'week' | 'month'
 
@@ -88,8 +88,7 @@ export interface ReviewData {
   doneByDay: number[]
 }
 
-/** A logged get-together, not a piece of work: counted separately everywhere. */
-export const isVisit = (t: Task): boolean => sharedIsVisit(t)
+export { isVisit }
 
 const inRange = (iso: string | undefined, r: Range) => sharedInRange(iso, r.start, r.end)
 
@@ -170,18 +169,7 @@ export interface NextUp {
   score: number
 }
 
-/**
- * Ranked in shared/today.mts, so the week plan's Top 3 — in the app and in the
- * Sunday digest — ranks exactly as this list does. `exclude` leaves tasks out
- * without changing how the rest score: today's focus has its own card.
- */
-export function nextUp(
-  tasks: Task[],
-  projects: Project[],
-  limit = 6,
-  now = new Date(),
-  pinnedTitles: string[] = [],
-  exclude: ReadonlySet<string> = new Set(),
-): NextUp[] {
-  return sharedNextUp(tasks, projects, limit, now, pinnedTitles, exclude)
-}
+// Ranked in shared/today.mts, so the week plan's Top 3 — in the app and in the
+// Sunday digest — ranks exactly as this list does. `exclude` leaves tasks out
+// without changing how the rest score: today's focus has its own card.
+export { nextUp }

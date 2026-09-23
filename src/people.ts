@@ -1,4 +1,4 @@
-import { Cadence, CalendarEntry, Person, PersonGroup, Task } from './types'
+import { Cadence, Person, PersonGroup, Task } from './types'
 import { monthsAndTrend } from './stats'
 import { startOfDay } from './taskutils'
 import { dateKey } from './utils'
@@ -6,23 +6,26 @@ import {
   DEFAULT_CADENCE_DAYS,
   DAY_MS,
   RHYTHM_CHOICES,
+  eventVisits,
+  plannedGift,
+  plannedVisit,
   remindersOff,
   rhythmOf,
+  seenStatus,
+  seenTasks,
   suggestRhythm,
+  upcomingOccasions,
+  visitsFor,
   withRhythm,
-  visitsFor as sharedVisitsFor,
   visitDays as sharedVisitDays,
-  eventVisits as sharedEventVisits,
-  seenTasks as sharedSeenTasks,
-  plannedVisit as sharedPlannedVisit,
-  plannedGift as sharedPlannedGift,
-  seenStatus as sharedSeenStatus,
-  upcomingOccasions as sharedOccasions,
+  type Occasion,
   type Rhythm,
+  type SeenStatus,
+  type Visit,
 } from '../shared/people.mts'
 
-export { RHYTHM_CHOICES, remindersOff, rhythmOf, suggestRhythm, withRhythm }
-export type { Rhythm }
+export { RHYTHM_CHOICES, eventVisits, plannedGift, remindersOff, rhythmOf, seenTasks, suggestRhythm, upcomingOccasions, visitsFor, withRhythm }
+export type { Occasion, Rhythm, SeenStatus, Visit }
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
 // a dinner you planned, a task you did together. An event of your own they
@@ -31,14 +34,6 @@ export type { Rhythm }
 // Each one is an event; "how often" is counted in days seen, because three
 // events with the same group on one Saturday are one time you saw them, not
 // three.
-
-export interface Visit {
-  task: Task
-  at: string
-}
-
-/** 'off' is someone on No reminders: never due, never a nudge. */
-export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'off'
 
 export interface PersonStats {
   person: Person
@@ -65,10 +60,6 @@ export interface PersonStats {
   planned?: Task
 }
 
-export function visitsFor(personId: string, tasks: Task[]): Visit[] {
-  return sharedVisitsFor(personId, tasks) as Visit[]
-}
-
 /** The distinct days among these visits, on the viewer's own calendar unless told otherwise. */
 export function visitDays(visits: { at: string }[], dayKeyOf: (at: string) => string | null = dateKey): string[] {
   return sharedVisitDays(visits, dayKeyOf)
@@ -84,29 +75,6 @@ export function seenLabel(days: number, events: number): string {
 
 /** A YYYY-MM-DD key as a whole day number, so a DST hour never shortens a gap. */
 const dayNumber = (key: string) => Math.round(Date.parse(`${key}T00:00:00Z`) / DAY_MS)
-
-/**
- * Your own past events with people on them, as the done visit tasks they
- * amount to. Add them to the tasks a count reads and each counts as a
- * subscribed calendar's event does once Who was there? has logged it. They
- * are read, never saved.
- */
-export function eventVisits(entries: CalendarEntry[], now: Date = new Date()): Task[] {
-  return sharedEventVisits(entries, now)
-}
-
-/**
- * What every "have you seen them" figure reads: the tasks plus those event
- * visits. People, Today, Review, Ask and the week plan all count through it.
- *
- * `myId` narrows it to your own log (v3.24): the address book is the
- * household's, the record of who saw whom is not. Pass it wherever there is a
- * viewer — every surface in the app has one — and the household member's
- * visits stop being counted as yours.
- */
-export function seenTasks(tasks: Task[], entries: CalendarEntry[] | undefined, now: Date = new Date(), myId?: string | null): Task[] {
-  return sharedSeenTasks(tasks, entries, now, myId)
-}
 
 /** Shared last/gap/weekly rollup used by people and places. */
 // Widened to anything carrying an instant: a place's outings now include meals
@@ -167,11 +135,11 @@ export function daySummary(visits: { at: string }[], now: Date = new Date()) {
 }
 
 export function personStats(person: Person, tasks: Task[], now: Date = new Date()): PersonStats {
-  const base = sharedSeenStatus(person, tasks, now)
-  const visits = base.visits as Visit[]
+  const base = seenStatus(person, tasks, now)
+  const visits = base.visits
   const summary = visitSummary(visits, now)
   const days = daySummary(visits, now)
-  const planned = (sharedPlannedVisit(person.id, tasks) as Task | null) ?? undefined
+  const planned = plannedVisit(person.id, tasks) ?? undefined
 
   return {
     person,
@@ -186,14 +154,10 @@ export function personStats(person: Person, tasks: Task[], now: Date = new Date(
     eventsAll: visits.length,
     avgGapDays: days.avgGapDays,
     weekly: days.weekly,
-    status: base.status as SeenStatus,
+    status: base.status,
     reason: base.reason,
     planned,
   }
-}
-
-export function plannedGift(personId: string, kind: 'birthday' | 'anniversary', at: Date, tasks: Task[]): Task | null {
-  return sharedPlannedGift(personId, kind, at, tasks) as Task | null
 }
 
 /** Used when someone has no declared rhythm, so drift is still visible. */
@@ -334,21 +298,6 @@ export const NO_PERSON_FILTER: PersonFilter = { group: 'all', q: '' }
 export function personMatcher(filter: PersonFilter): (p: Person) => boolean {
   const needle = filter.q.trim().toLowerCase()
   return p => (filter.group === 'all' || p.group === filter.group) && findsPerson(p, needle)
-}
-
-export interface Occasion {
-  person: Person
-  kind: 'birthday' | 'anniversary'
-  /** Next occurrence as a local Date. */
-  at: Date
-  daysUntil: number
-  /** Age or years, when the stored date has a real year. */
-  years?: number
-}
-
-/** Birthdays and anniversaries coming up within `days` (today included). */
-export function upcomingOccasions(people: Person[], days = 14, now: Date = new Date()): Occasion[] {
-  return sharedOccasions(people, days, now) as Occasion[]
 }
 
 export interface YearRow {
