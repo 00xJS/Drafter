@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyLocalChoice, mergeRecord, same, sameContent } from '../../shared/merge.mjs'
+import { applyLocalChoice, mergeRecord, same, sameContent } from '../../shared/merge.mts'
 import { Garment, GroceryList, Habit, Outfit, Routine, Task, Wear } from '../types'
 
 const T0 = '2026-09-10T09:00:00.000Z'

@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { mealHistory } from '../../shared/weekplan.mjs'
+import { mealHistory } from '../../shared/weekplan.mts'
 import { RecipeSuggestInput, RecipeSuggestion, recipeSuggestInput, recipeTitleKey, suggestRecipes } from '../ai'
 import { newIngredient } from '../kitchen'
 import { Meal, Recipe } from '../types'

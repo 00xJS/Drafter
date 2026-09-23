@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isUntimed, localDate, localMidnightIso } from '../../shared/domain.mjs'
-import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
+import { isUntimed, localDate, localMidnightIso } from '../../shared/domain.mts'
+import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 
 describe('isUntimed / localDate', () => {
   it('treats local midnight in Europe/London July as untimed (BST)', () => {

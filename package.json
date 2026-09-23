@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "check": "npm run lint && vitest run && tsc --noEmit && tsc -p tsconfig.server.json && vite build && node scripts/check-precache.mjs",
+    "check": "npm run lint && vitest run && tsc --noEmit && tsc -p tsconfig.shared.json && tsc -p tsconfig.server.json && vite build && node scripts/check-precache.mjs",
     "lint": "eslint src netlify/functions mcp shared scripts e2e playwright.config.ts --max-warnings 0",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",

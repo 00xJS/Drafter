@@ -1,7 +1,8 @@
 // People cadence / occasions shared by the web app, digest, and MCP.
 // Dependency-free ESM.
 
-import { daysWithin, distinctDays } from './stats.mjs'
+import type { CalendarEntry, Person, Task } from '../src/types.ts'
+import { daysWithin, distinctDays } from './stats.mts'
 
 export const DEFAULT_CADENCE_DAYS = 90
 export const DAY_MS = 86_400_000
@@ -14,15 +15,18 @@ const OPEN = ['todo', 'doing', 'blocked']
  * every surface that nudges or counts who is due. Not a rhythm of 0: a 0 has
  * always meant "none set", which for a person is the 90-day default.
  */
-export function remindersOff(record) {
+export function remindersOff(record: { noReminders?: unknown } | null | undefined): boolean {
   return record?.noReminders === true
 }
 
 /** The rhythms the app offers, in days: a week, a fortnight, a month, three months, six. */
-export const RHYTHM_CHOICES = [7, 14, 30, 90, 180]
+export const RHYTHM_CHOICES: readonly number[] = [7, 14, 30, 90, 180]
+
+/** A rhythm as the setup sheet holds it: days, No reminders, or none set. */
+export type Rhythm = number | 'off' | null
 
 /** A record's rhythm as the setup sheet and withRhythm read it: 'off', its days, or null for none set. */
-export function rhythmOf(record) {
+export function rhythmOf(record: { cadenceDays?: unknown; noReminders?: unknown } | null | undefined): Rhythm {
   if (remindersOff(record)) return 'off'
   const days = Number(record?.cadenceDays)
   return Number.isFinite(days) && days > 0 ? Math.round(days) : null
@@ -33,7 +37,8 @@ export function rhythmOf(record) {
  * set. The one writer of both fields, so a rhythm clears No reminders and No
  * reminders clears the rhythm. Not stamped: the caller stamps it (newerStamp).
  */
-export function withRhythm(record, rhythm) {
+export function withRhythm<T extends { cadenceDays?: number; noReminders?: boolean }>(record: T, rhythm: Rhythm): T
+export function withRhythm(record: { cadenceDays?: number; noReminders?: boolean }, rhythm: Rhythm): { cadenceDays?: number; noReminders?: boolean } {
   const { cadenceDays: _days, noReminders: _off, ...rest } = record
   if (rhythm === 'off') return { ...rest, noReminders: true }
   return typeof rhythm === 'number' && Number.isFinite(rhythm) && rhythm > 0 ? { ...rest, cadenceDays: Math.round(rhythm) } : rest
@@ -47,7 +52,7 @@ export function withRhythm(record, rhythm) {
  * gap that implies goes to the nearest choice on a log scale. Nothing in a year
  * suggests nothing.
  */
-export function suggestRhythm(days, todayKey) {
+export function suggestRhythm(days: readonly string[] | null | undefined, todayKey: string): number | null {
   const unique = [...new Set(days ?? [])]
   const recent = daysWithin(unique, todayKey, 90)
   const n = recent || daysWithin(unique, todayKey, 365)
@@ -58,10 +63,16 @@ export function suggestRhythm(days, todayKey) {
   return best
 }
 
+/** A done task with this person on it, and when it was done. */
+export interface Visit {
+  task: Task
+  at: string
+}
+
 /** Completed tasks attached to this person, newest first. */
-export function visitsFor(personId, tasks) {
+export function visitsFor(personId: string, tasks: readonly Task[]): Visit[] {
   return (tasks ?? [])
-    .filter(t => t.status === 'done' && t.completedAt && (t.peopleIds ?? []).includes(personId))
+    .filter((t): t is Task & { completedAt: string } => t.status === 'done' && !!t.completedAt && (t.peopleIds ?? []).includes(personId))
     .map(t => ({ task: t, at: t.completedAt }))
     .sort((a, b) => b.at.localeCompare(a.at))
 }
@@ -71,7 +82,7 @@ export function visitsFor(personId, tasks) {
  * visitsFor's list): three events on one Saturday are one day seen. `dayKeyOf`
  * turns an instant into YYYY-MM-DD in the viewer's zone, so the app passes its
  * local calendar and the MCP server its clock's. The Stats rules' distinctDays
- * (shared/stats.mjs), under the name People has always used.
+ * (shared/stats.mts), under the name People has always used.
  */
 export const visitDays = distinctDays
 
@@ -84,11 +95,12 @@ export const visitDays = distinctDays
  * once it is done. Nothing counts before that time has come. Each keeps its
  * entry's id, so a visit can open the entry it came from.
  */
-export function eventVisits(entries, now = new Date()) {
+export function eventVisits(entries: readonly CalendarEntry[] | null | undefined, now: Date | string = new Date()): Task[] {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
-  const out = []
+  const out: Task[] = []
   for (const e of entries ?? []) {
-    if (!e || e.kind !== 'event' || e.deletedAt || e.work || e.taskId || !(e.peopleIds ?? []).length) continue
+    const peopleIds = e?.peopleIds ?? []
+    if (!e || e.kind !== 'event' || e.deletedAt || e.work || e.taskId || !peopleIds.length) continue
     const atMs = e.allDay ? new Date(`${e.start}T12:00`).getTime() : Date.parse(e.start)
     if (!Number.isFinite(atMs) || atMs > nowMs) continue
     out.push({
@@ -102,7 +114,7 @@ export function eventVisits(entries, now = new Date()) {
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
       tags: ['visit'],
-      peopleIds: [...e.peopleIds],
+      peopleIds: [...peopleIds],
     })
   }
   return out
@@ -124,7 +136,7 @@ export function eventVisits(entries, now = new Date()) {
  * every caller that has no viewer (a local copy, a test) counts everything,
  * exactly as it did before.
  */
-export function ownVisit(row, myId) {
+export function ownVisit(row: { ownerId?: string; assigneeId?: string } | null | undefined, myId?: string | null): boolean {
   if (!myId || !row) return true
   return !row.ownerId || row.ownerId === myId || row.assigneeId === myId
 }
@@ -139,13 +151,13 @@ export function ownVisit(row, myId) {
  * `myId` narrows it to your own log (ownVisit). Pass it wherever there is a
  * viewer to be wrong about; leave it out where there is not.
  */
-export function seenTasks(tasks, entries, now = new Date(), myId = null) {
-  const mine = row => ownVisit(row, myId)
+export function seenTasks(tasks: readonly Task[], entries: readonly CalendarEntry[] | null | undefined, now: Date | string = new Date(), myId: string | null = null): Task[] {
+  const mine = (row: { ownerId?: string; assigneeId?: string }) => ownVisit(row, myId)
   return [...(tasks ?? []).filter(mine), ...eventVisits((entries ?? []).filter(mine), now)]
 }
 
 /** Soonest open catch-up / visit plan for this person, if any. */
-export function plannedVisit(personId, tasks) {
+export function plannedVisit(personId: string, tasks: readonly Task[]): Task | null {
   return (
     (tasks ?? [])
       .filter(t => OPEN.includes(t.status) && (t.tags ?? []).includes('visit') && (t.peopleIds ?? []).includes(personId))
@@ -157,7 +169,7 @@ export function plannedVisit(personId, tasks) {
  * Open gift task for an occasion (tags include 'gift' and the kind), due within
  * `windowDays` of the occasion date. Used to suppress "Plan a gift" duplicates.
  */
-export function plannedGift(personId, kind, occasionAt, tasks, windowDays = 40) {
+export function plannedGift(personId: string, kind: 'birthday' | 'anniversary', occasionAt: Date | string, tasks: readonly Task[], windowDays = 40): Task | null {
   const atMs = occasionAt instanceof Date ? occasionAt.getTime() : Date.parse(occasionAt)
   if (!Number.isFinite(atMs)) return null
   const window = windowDays * DAY_MS
@@ -173,13 +185,28 @@ export function plannedGift(personId, kind, occasionAt, tasks, windowDays = 40) 
   )
 }
 
+/** 'off' for someone on No reminders, whatever their visits say. */
+export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'off'
+
 /**
  * Cadence status for one person. `nowMs` and optional `todayKey` (YYYY-MM-DD in
  * the viewer's zone) keep digest and client aligned. Someone on No reminders
  * is 'off' whatever their visits say: never due, never overdue, never a
  * cold-start nudge, and with no rhythm to measure against.
  */
-export function seenStatus(person, tasks, now = new Date()) {
+export function seenStatus(
+  person: Person,
+  tasks: readonly Task[],
+  now: Date | string = new Date(),
+): {
+  status: SeenStatus
+  reason: string
+  lastSeen?: string
+  daysSince?: number
+  visits: Visit[]
+  /** Null on No reminders: there is no rhythm to measure against. */
+  effectiveCadenceDays: number | null
+} {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
   const visits = visitsFor(person.id, tasks)
   const lastSeen = visits[0]?.at
@@ -187,8 +214,8 @@ export function seenStatus(person, tasks, now = new Date()) {
   const off = remindersOff(person)
   const cadence = off ? undefined : person.cadenceDays
   const effective = cadence ?? DEFAULT_CADENCE_DAYS
-  let status
-  let reason
+  let status: SeenStatus
+  let reason: string
   if (off) {
     status = 'off'
     const seen = daysSince === undefined ? 'No visits logged' : daysSince === 0 ? 'Seen today' : `Last seen ${daysSince} day${daysSince === 1 ? '' : 's'} ago`
@@ -211,15 +238,26 @@ export function seenStatus(person, tasks, now = new Date()) {
   return { status, reason, lastSeen, daysSince, visits, effectiveCadenceDays: off ? null : effective }
 }
 
+/** A birthday or an anniversary coming up. */
+export interface Occasion {
+  person: Person
+  kind: 'birthday' | 'anniversary'
+  /** Next occurrence as a Date: local midnight, or UTC midnight when read on a day key. */
+  at: Date
+  daysUntil: number
+  /** Age or years, when the stored date has a real year. */
+  years?: number
+}
+
 /**
  * Birthdays and anniversaries within `days` (today included).
  * When `todayKey` (YYYY-MM-DD) is set — digest path — compare on that calendar
  * day in UTC maths so a timezone string from user_settings stays consistent.
  * Otherwise use the runtime's local calendar (client / MCP).
  */
-export function upcomingOccasions(people, days = 14, now = new Date(), todayKey) {
+export function upcomingOccasions(people: readonly Person[], days = 14, now: Date | string | number = new Date(), todayKey?: string | null): Occasion[] {
   const useKey = todayKey && /^\d{4}-\d{2}-\d{2}$/.test(todayKey)
-  let ty, tm, td
+  let ty: number, tm: number, td: number
   if (useKey) {
     ;[ty, tm, td] = todayKey.split('-').map(Number)
   } else {
@@ -228,16 +266,16 @@ export function upcomingOccasions(people, days = 14, now = new Date(), todayKey)
     tm = d.getMonth() + 1
     td = d.getDate()
   }
-  const out = []
+  const out: Occasion[] = []
   for (const person of people ?? []) {
-    for (const kind of ['birthday', 'anniversary']) {
+    for (const kind of ['birthday', 'anniversary'] as const) {
       const raw = person[kind]
       if (!raw) continue
       const m = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})$/)
       if (!m) continue
       const year = Number(m[1])
-      let daysUntil
-      let at
+      let daysUntil: number
+      let at: Date
       if (useKey) {
         const todayUtc = Date.UTC(ty, tm - 1, td)
         let next = Date.UTC(ty, Number(m[2]) - 1, Number(m[3]))

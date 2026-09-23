@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { makeClock } from '../../shared/clock.mjs'
-import * as shared from '../../shared/wardrobe.mjs'
+import { makeClock } from '../../shared/clock.mts'
+import * as shared from '../../shared/wardrobe.mts'
 import * as app from '../wardrobe'
 import { CORE_TYPES, GARMENT_TYPES, LOOK_NOTE_MAX, MAX_PIECES } from '../types'
 import type { Garment } from '../types'
 
-// The wardrobe's rules live once, in shared/wardrobe.mjs, so an assistant
+// The wardrobe's rules live once, in shared/wardrobe.mts, so an assistant
 // counts a piece's days as the Stats screen does and logs a look as the
 // composer does. src/wardrobe.ts re-exports them under the names it always had,
 // and the screens keep importing them from there.
 
-/** What moved from src/wardrobe.ts to shared/wardrobe.mjs. */
+/** What moved from src/wardrobe.ts to shared/wardrobe.mts. */
 const MOVED = [
   'NEVER_WORN_GRACE_DAYS',
   'NOT_WORN_DAYS',

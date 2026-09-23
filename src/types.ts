@@ -1,4 +1,4 @@
-import type { PlaceCategory } from '../shared/places.mjs'
+import type { PlaceCategory } from '../shared/places.mts'
 
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
 export type TaskStatus = 'wishlist' | 'todo' | 'doing' | 'blocked' | 'done' | 'canceled'
@@ -310,7 +310,7 @@ export interface Person extends Owned {
   color: string
   group: PersonGroup
   cadenceDays?: number
-  /** No reminders: never nudged about, whatever the visits say (remindersOff in shared/people.mjs). Clears cadenceDays. */
+  /** No reminders: never nudged about, whatever the visits say (remindersOff in shared/people.mts). Clears cadenceDays. */
   noReminders?: boolean
   notes?: string
   /** YYYY-MM-DD (year optional as 0000). */
@@ -321,10 +321,10 @@ export interface Person extends Owned {
   deletedAt?: string
 }
 
-// The categories and their labels live in shared/places.mjs: one list for the
+// The categories and their labels live in shared/places.mts: one list for the
 // app and the MCP server, so an assistant can save every kind the app offers.
 export type { PlaceCategory }
-export { PLACE_CATEGORIES, PLACE_CATEGORY_META } from '../shared/places.mjs'
+export { PLACE_CATEGORIES, PLACE_CATEGORY_META } from '../shared/places.mts'
 
 /** Somewhere you go. Outings are done tasks with the place attached — same rule as people. */
 export interface Place extends Owned {
@@ -510,7 +510,7 @@ export interface GroceryLine {
   removed?: boolean
   /**
    * The recipes that wanted this line when it was removed. A rebuild that finds
-   * a recipe not in here brings the line back as need (shared/kitchen.mjs).
+   * a recipe not in here brings the line back as need (shared/kitchen.mts).
    */
   removedRecipeIds?: string[]
 }
@@ -727,7 +727,7 @@ export interface Outfit extends Owned {
   /** Absent: the UI names it by its pieces. */
   name?: string
   /**
-   * In composer order, 1..MAX_PIECES. Not a set field (shared/merge.mjs): it
+   * In composer order, 1..MAX_PIECES. Not a set field (shared/merge.mts): it
    * merges as ONE value, so two devices' edits raise a conflict instead of a
    * union nobody chose.
    */
@@ -1025,4 +1025,4 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; color: 
 
 export const PROJECT_COLORS = ['#f97316', '#fbbf24', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#f87171', '#94a3b8']
 
-export { SOCIAL_PROJECT_ID } from '../shared/domain.mjs'
+export { SOCIAL_PROJECT_ID } from '../shared/domain.mts'

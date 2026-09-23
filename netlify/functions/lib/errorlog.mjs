@@ -6,7 +6,7 @@
 // Everything takes the caller's `rest` (service-key PostgREST), as the canary
 // helpers do, so the tests hand in a fake and no helper keeps its own key.
 
-import { cleanReport } from '../../../shared/errorreport.mjs'
+import { cleanReport } from '../../../shared/errorreport.mts'
 
 /** Reports one request may carry; the app sends at most this many at a time. */
 export const MAX_REPORTS = 10
@@ -14,7 +14,7 @@ export const MAX_REPORTS = 10
 export const LIST_LIMIT = 100
 
 /**
- * The reports a request may store: each one cleaned (shared/errorreport.mjs),
+ * The reports a request may store: each one cleaned (shared/errorreport.mts),
  * the empty ones dropped, at most MAX_REPORTS, and two that are the same error
  * merged into one with their counts added — the database would refuse to
  * touch one row twice in a statement.

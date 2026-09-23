@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { withCors } from '../../netlify/functions/lib/cors.mjs'
-import { APP_ORIGIN } from '../../shared/apphost.mjs'
+import { APP_ORIGIN } from '../../shared/apphost.mts'
 
 const APP = APP_ORIGIN
 /** The shell's host before v3.25 renamed it. A phone still on that bundle must keep syncing. */

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildDigest } from '../../shared/digest.mjs'
+import { buildDigest } from '../../shared/digest.mts'
 import { Places } from '../components/Places'
 import { PlacesStats } from '../components/PlacesStats'
 import { Today } from '../components/Today'

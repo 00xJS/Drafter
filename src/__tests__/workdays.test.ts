@@ -4,7 +4,7 @@ import { sanitizeEvent } from '../schema'
 import { googleEntryBody } from '../../netlify/functions/lib/google.mjs'
 import { graphEntryBody } from '../../netlify/functions/lib/microsoft.mjs'
 import { feedFor, withOwner } from '../../netlify/functions/lib/feedrows.mjs'
-import { buildICS } from '../../shared/ics.mjs'
+import { buildICS } from '../../shared/ics.mts'
 
 // A work day is a calendar entry with a place (home or office) whose start and
 // end are the working hours, or Off / a holiday as the whole day. These pin

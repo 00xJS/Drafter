@@ -11,8 +11,8 @@ import { getSupabase } from './supabase'
 import { hasDueTime, isOpen } from './taskutils'
 import { MEAL_SLOT_META, type CalendarEntry, type GroceryList, type Item, type Meal, type Person, type Recipe, type Task } from './types'
 import { clock, dateKey, excerpt, uid } from './utils'
-import { newerStamp } from '../shared/domain.mjs'
-import { focusTasks } from '../shared/today.mjs'
+import { newerStamp } from '../shared/domain.mts'
+import { focusTasks } from '../shared/today.mts'
 
 // The iPhone's Home Screen and Lock Screen widget, and Siri's "Add to Drafter".
 //

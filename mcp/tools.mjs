@@ -5,7 +5,7 @@
 //
 // Each tool is `run(args, ctx)` with ctx = { db, clock, scopes, userId, newId, rand }:
 //   db      mcp/data.mjs — the user's own view, through the posts policies
-//   clock   shared/clock.mjs in the user's zone, so "today" is their today
+//   clock   shared/clock.mts in the user's zone, so "today" is their today
 //   newId   ids keep the `mcp-` prefix as provenance
 // `scope` is what a connection needs to see and call the tool (read, write or
 // journal), and `annotations` let the client confirm before writes and deletes.
@@ -16,14 +16,14 @@
 // The tools themselves moved here unchanged from mcp/server.mjs.
 
 import { randomBytes } from 'node:crypto'
-import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
-import { remindersOff, seenStatus, seenTasks, visitDays } from '../shared/people.mjs'
-import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
-import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
-import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealAt, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
-import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mjs'
-import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mjs'
-import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mjs'
+import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mts'
+import { remindersOff, seenStatus, seenTasks, visitDays } from '../shared/people.mts'
+import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mts'
+import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
+import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealAt, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mts'
+import { isDayKey, weekDayKeys, weekKeyOf } from '../shared/weeks.mts'
+import { bucketByDue, focusTasks, isFocusFor } from '../shared/today.mts'
+import { mealHistory, proposeWeek, weekPlanSummary } from '../shared/weekplan.mts'
 import {
   GARMENT_TYPES,
   MAX_PIECES,
@@ -44,7 +44,7 @@ import {
   outfitLabel,
   unwearable,
   wearIndex,
-} from '../shared/wardrobe.mjs'
+} from '../shared/wardrobe.mts'
 
 /** The app's own place categories, as it labels them — "fastfood (Fast food)" — for the place tools' descriptions. */
 const PLACE_CATEGORY_CHOICES = PLACE_CATEGORIES.map(c => `${c} (${PLACE_CATEGORY_META[c].label})`).join(', ')
@@ -158,7 +158,7 @@ export function resolveContext(all, { peopleIds, placeId, placeName }) {
  * and a meal shared with the household counts for both, as in the app.
  */
 export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = Date.now(), myId = null) {
-  // one rule, in shared/places.mjs: done tasks here plus past meals eaten here
+  // one rule, in shared/places.mts: done tasks here plus past meals eaten here
   const outings = outingsAt(p.id, tasks, meals, new Date(nowMs), myId)
   const last = outings[0]?.at ?? null
   const companions = new Map()
@@ -391,7 +391,7 @@ function summarizeNote(n) {
 }
 
 // ---------------------------------------------------------------------------
-// The wardrobe: the app's own rules (shared/wardrobe.mjs), and never a photo
+// The wardrobe: the app's own rules (shared/wardrobe.mts), and never a photo
 // ---------------------------------------------------------------------------
 
 const WARDROBE_KINDS = ['garment', 'outfit', 'wear']
@@ -410,7 +410,7 @@ const asGarment = g => ({ ...g, type: GARMENT_TYPES.includes(g.type) ? g.type : 
  * and the looks. These are personal kinds: the posts policies and the data
  * layer both keep a household peer's away.
  * @param {import('./data.mjs').RestData} db
- * @param {import('../shared/clock.mjs').Clock} clock
+ * @param {import('../shared/clock.mts').Clock} clock
  */
 async function wardrobeOf(db, clock) {
   const all = await db.fetchAll({ kinds: WARDROBE_KINDS, includeDeleted: true })

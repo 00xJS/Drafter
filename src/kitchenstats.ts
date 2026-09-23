@@ -1,4 +1,4 @@
-import { weekKeyStart } from '../shared/weeks.mjs'
+import { weekKeyStart } from '../shared/weeks.mts'
 import { cookedIndex, cookedRecipeIds, ingredientKey, mealSides, notLately, type CookedIndex } from './kitchen'
 import { outingsAt } from './places'
 import { countDays, dayStreaks, daysWithin, inWindow, monthBuckets, monthsAndTrend, topN, type DayWindow, type Streaks } from './stats'
@@ -10,13 +10,13 @@ import { dateKey } from './utils'
  * drawn by the Stats kit (components/stats). Every figure goes by the
  * Kitchen's own rules, so it agrees with the Recipes list and This week:
  *
- * - A recipe was cooked on a day by cookedRecipeIds (shared/kitchen.mjs): a
+ * - A recipe was cooked on a day by cookedRecipeIds (shared/kitchen.mts): a
  *   live meal, cooked rather than bought, dated today or before, with the
  *   recipe as its main or a side — the rule behind "Last cooked 3 weeks ago
  *   · 5 times". The podium and the bars count its days, so lunch and dinner
  *   from one pot are one; the Recipes list's times count its meals, and the
  *   two part only when a recipe was had twice in one day.
- * - A meal was eaten out by outingsAt (shared/places.mjs): out, at a saved
+ * - A meal was eaten out by outingsAt (shared/places.mts): out, at a saved
  *   place, its day come. Each is one of that place's outings, as its card
  *   counts them.
  * - A meal out with no place named ("Out, no place"), or at one since

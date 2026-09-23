@@ -734,7 +734,7 @@ describe('the guards around the wardrobe', () => {
 
   it('deletes a garment’s photos with Delete forever, and sends waiting photos at launch and on a pull', () => {
     const shell = plannerSource()
-    // front and back: the one list every clean-up reads (shared/media.mjs)
+    // front and back: the one list every clean-up reads (shared/media.mts)
     expect(shell).toContain("if (row?.kind === 'garment') void deleteMedia(mediaIdsOf(row))")
     expect(shell).toContain('useEffect(() => watchPendingMedia(), [])')
     expect(shell).toMatch(/const manualSync = async \(\) => \{[\s\S]*?void flushPendingMedia\(\)/)

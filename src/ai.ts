@@ -4,16 +4,16 @@ import { personStats, seenTasks } from './people'
 import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './types'
 import { dateKey } from './utils'
 import { deterministicCapture, type CaptureCtx, type CapturedFields } from './capture'
-import { mealHistory } from '../shared/weekplan.mjs'
-import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../shared/ai.mjs'
-import type { MealHistory, WeekPlan } from '../shared/weekplan.mjs'
+import { mealHistory } from '../shared/weekplan.mts'
+import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../shared/ai.mts'
+import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
 
 class AIError extends Error {}
 
-// the app and the Sunday digest share these (shared/ai.mjs); re-exported so a
+// the app and the Sunday digest share these (shared/ai.mts); re-exported so a
 // reader of this file finds them where the calls are
 export { looksLikeThinking }
 
@@ -605,7 +605,7 @@ const asData = (s: string) => s.replace(/\s+/g, ' ').replace(/</g, '‹').replac
 
 /**
  * The meal assistant's options, from the kitchen's own history
- * (shared/weekplan.mjs mealHistory, the numbers the week plan ranks by):
+ * (shared/weekplan.mts mealHistory, the numbers the week plan ranks by):
  * recipes as R1…, most cooked first, and places you eat at as L1…. Names, tags
  * and counts only. `ids` maps a reference back to its record; only the
  * references are ever sent.
@@ -772,7 +772,7 @@ export function recipeTitleKey(title: string): string {
 
 /**
  * The suggester's view of the recipe collection: names, tags, the first few
- * ingredients and how often each was cooked (shared/weekplan.mjs mealHistory,
+ * ingredients and how often each was cooked (shared/weekplan.mts mealHistory,
  * the numbers the week plan ranks by), most cooked first, as R1…. Never notes,
  * steps or ids: `ids` maps a reference back to its recipe on this side.
  * `exclude` is the deleted and still-waiting titles, newest kept when capped.
@@ -848,7 +848,7 @@ export function buildRecipeSuggestPrompt(i: RecipeSuggestInput): { system: strin
 /**
  * A model's ingredients, as the app stores them. Each is `{name}` with an
  * optional quantity and unit — the shape the grocery list adds up by
- * (`ingredientKey` in shared/kitchen.mjs) — and a plain string is a name.
+ * (`ingredientKey` in shared/kitchen.mts) — and a plain string is a name.
  * A quantity that is not a sane positive number is dropped rather than guessed,
  * because a wrong one quietly doubles a grocery line.
  *
@@ -966,7 +966,7 @@ export function parseReadRecipe(text: string): ReadRecipe {
  * ingredients and steps the app stores.
  *
  * This is the editor's only ✨, and it is here because the grocery list is
- * built from ingredients (`groceryFromRecipes` in shared/kitchen.mjs): a recipe
+ * built from ingredients (`groceryFromRecipes` in shared/kitchen.mts): a recipe
  * saved as a bare name can never put a line on it, and typing a shop's worth of
  * rows by hand one "+ Ingredient" at a time is why thirty of them were bare.
  * Nothing is saved — the fields fill in, and the cook reads them before saving.

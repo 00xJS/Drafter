@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildDigest } from '../../shared/digest.mjs'
+import { buildDigest } from '../../shared/digest.mts'
 import { dueSections } from '../components/Today'
 import type { Task } from '../types'
 
 // Today's Overdue and Today sections and the morning digest's "n overdue" and
-// "n due today" lines are one rule, shared/today.mjs bucketByDue: Today reads
+// "n due today" lines are one rule, shared/today.mts bucketByDue: Today reads
 // it on the device's calendar, the digest in the zone the account saved. In
 // the same zone they must put every task in the same place. That includes a
 // task due at 23:30, which west of Greenwich is already tomorrow in UTC, and

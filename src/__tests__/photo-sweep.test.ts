@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { garmentMediaIds, isPersonalMediaOf, mediaIdsOf, personalFolder } from '../../shared/media.mjs'
+import { garmentMediaIds, isPersonalMediaOf, mediaIdsOf, personalFolder } from '../../shared/media.mts'
 import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, TRASH_KEEPS_PHOTOS_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
 import { unwrapSnapshot } from '../backupcrypto'
 
 // Wardrobe photos are private, under personal/<user id>/ in the media bucket,
 // and nothing used to clear them out: a replaced photo, a piece aged out of
 // Trash or deleted forever all left theirs behind. These pin the rule both
-// sides share (shared/media.mjs) and the nightly sweep that runs with the
+// sides share (shared/media.mts) and the nightly sweep that runs with the
 // tombstone purge (netlify/functions/lib/backup.mjs): a photo goes only when it
 // is that account's own, no piece of clothing, live or in Trash, points at it,
 // and it is as old as a tombstone is kept. Note photos, task images and the

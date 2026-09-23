@@ -1,4 +1,4 @@
-import { DAY_MS } from '../shared/people.mjs'
+import { DAY_MS } from '../shared/people.mts'
 import { shortDay } from './kitchen'
 import { compareStats, personStats, seenTasks, upcomingOccasions, visitDays, yearReport, type Occasion, type PersonStats } from './people'
 import { countDays, dayStreaks, daysBetween, monthsAndTrend, topN, type DayWindow, type Streaks } from './stats'

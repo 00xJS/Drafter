@@ -1,5 +1,5 @@
 import type { CapacitorConfig } from '@capacitor/core'
-import { APP_HOST, APP_NAME } from './shared/apphost.mjs'
+import { APP_HOST, APP_NAME } from './shared/apphost.mts'
 
 // The iOS app is the same web app, bundled. It talks to the hosted API and
 // Supabase exactly as the browser does — nothing is duplicated natively.
@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
   // "localhost" — a name that belongs to no app (v3.25). A web origin owns its
   // storage, so the first launch after this change starts with an empty local
   // copy and syncs the account down again; nothing on the server moves. Both
-  // origins stay on the API's CORS list (shared/apphost.mjs) so a phone that
+  // origins stay on the API's CORS list (shared/apphost.mts) so a phone that
   // has not been rebuilt keeps working.
   server: { hostname: APP_HOST },
   // the light ground the app opens in (THEME_GROUND.light in src/theme.ts); the

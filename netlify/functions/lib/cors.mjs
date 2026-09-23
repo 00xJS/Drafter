@@ -8,7 +8,7 @@
 // renamed the shell's host from `localhost` to the app's own name, because
 // `localhost` was what iOS put in every permission prompt.
 
-import { APP_ORIGINS } from '../../../shared/apphost.mjs'
+import { APP_ORIGINS } from '../../../shared/apphost.mts'
 
 const ALLOWED = new Set(APP_ORIGINS)
 

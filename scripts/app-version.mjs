@@ -22,7 +22,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { bumpVersion, formatVersion, parseVersion } from '../shared/appversion.mjs'
+import { bumpVersion, formatVersion, parseVersion } from '../shared/appversion.mts'
 import { nativeTargets, parsePbxproj, versionDrift } from './lib/pbxproj.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))

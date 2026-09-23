@@ -5,7 +5,7 @@
 /** Words long enough that an answer never repeats a run of them by accident. */
 const ECHO_RUN = 6
 
-const flatten = s =>
+const flatten = (s: unknown): string =>
   String(s ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
@@ -24,7 +24,7 @@ const flatten = s =>
  * Untagged thinking that quotes nothing gets through, and should: a rule loose
  * enough to catch it would throw away real answers.
  */
-export function looksLikeThinking(text, system) {
+export function looksLikeThinking(text: string, system: string): boolean {
   const said = flatten(text)
   const brief = flatten(system).split(' ')
   if (!said || brief.length < ECHO_RUN) return false

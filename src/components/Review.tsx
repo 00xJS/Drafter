@@ -5,7 +5,7 @@ import { formatMoney } from '../bills'
 import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, localDayKey, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
 import { habitsConsistency } from '../habits'
-import { habitLines } from '../../shared/review.mjs'
+import { habitLines } from '../../shared/review.mts'
 import { JournalPeople } from './JournalCard'
 import { summarizeReview } from '../ai'
 import { newerStamp } from '../itemops'
@@ -233,7 +233,7 @@ export function Review({
         people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
         places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
         // one compact line — kept, missed and each streak — so the model can weigh
-        // it without a tally per day; Sunday's draft sends the same line (shared/review.mjs)
+        // it without a tally per day; Sunday's draft sends the same line (shared/review.mts)
         habits: habitLines(habitStats),
         reflections,
         lastTop,

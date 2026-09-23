@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { newerStamp } from '../../shared/domain.mjs'
+import { newerStamp } from '../../shared/domain.mts'
 import { MEAL_SLOT_META, Meal, MealSide, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { CookedIndex, MealMain, VisitIndex, lastCookedShort, lastWentShort, mealIsShared, mealLabel, mealSides, mealWithMain, mealWithSide, mealWithoutSide, recipeByName } from '../kitchen'
 import { placeByName, placeEmoji, placeFor } from '../places'

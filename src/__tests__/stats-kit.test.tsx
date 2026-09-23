@@ -391,7 +391,7 @@ describe('the kit stays out of the first load', () => {
       for (const m of code.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm)) {
         const base = resolve(dirname(file), m[1])
         const hit = [base, `${base}.ts`, `${base}.tsx`].find(p => existsSync(p) && statSync(p).isFile())
-        if (hit && /\.(tsx?|mjs)$/.test(hit)) todo.push(hit)
+        if (hit && /\.(tsx?|mts|mjs)$/.test(hit)) todo.push(hit)
       }
     }
     return seen

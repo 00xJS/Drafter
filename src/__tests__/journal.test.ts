@@ -12,7 +12,7 @@ import {
   peopleNameMap,
   shiftDayKey,
   streak,
-} from '../../shared/journal.mjs'
+} from '../../shared/journal.mts'
 import {
   WEEKDAY_MOOD_MIN,
   entriesInRange,

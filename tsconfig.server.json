@@ -1,6 +1,8 @@
 {
-  // The server code — Netlify functions, the MCP server, the rules shared with
-  // the app, the scripts — checked as plain JavaScript, not strict.
+  // The server code — Netlify functions, the MCP server, the scripts — checked
+  // as plain JavaScript, not strict. The rules it shares with the app are
+  // TypeScript (shared/*.mts), checked strictly by tsconfig.shared.json; they
+  // come in here through the imports that name them.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
@@ -10,14 +12,16 @@
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
+    // shared/*.mts is imported by its real name, as Node needs it to be
+    "allowImportingTsExtensions": true,
     "strict": false,
     // so the hand-written .d.mts are checked too
     "skipLibCheck": false
   },
   // Only .mjs are globbed: a .d.mts matched here pushes its .mjs out of the
   // program, as a declaration outranks its source. The .d.mts come in through
-  // the imports that resolve to them. Two are imported by nothing here, so they
-  // are listed with their modules (a listed file is always kept).
-  "files": ["mcp/server.mjs", "mcp/server.d.mts", "shared/merge.mjs", "shared/merge.d.mts"],
-  "include": ["netlify/functions/*.mjs", "netlify/functions/lib/*.mjs", "mcp/*.mjs", "shared/*.mjs", "scripts/**/*.mjs"]
+  // the imports that resolve to them. One is imported by nothing here, so it
+  // is listed with its module (a listed file is always kept).
+  "files": ["mcp/server.mjs", "mcp/server.d.mts"],
+  "include": ["netlify/functions/*.mjs", "netlify/functions/lib/*.mjs", "mcp/*.mjs", "scripts/**/*.mjs"]
 }

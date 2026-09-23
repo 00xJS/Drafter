@@ -23,7 +23,7 @@ import { shapeDataStats } from './lib/datastats.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
 import { buildPeerMap, sendEmail } from './digest.mjs'
-import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
+import { buildDigest, visibleItemsFor } from '../../shared/digest.mts'
 
 /** How long a snapshot download link stays valid. */
 const DOWNLOAD_TTL_SECONDS = 300

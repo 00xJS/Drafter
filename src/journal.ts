@@ -1,45 +1,38 @@
 import { JournalEntry, Mood, Person } from './types'
 import { dateKey } from './utils'
-import { weekDayKeys, weekStartKey } from '../shared/weeks.mjs'
+import { weekDayKeys, weekStartKey } from '../shared/weeks.mts'
 import {
-  PeopleById,
   appendEntry as sharedAppend,
   entriesBetween as sharedBetween,
-  entriesOn as sharedEntriesOn,
+  entriesOn,
   entryOn as sharedEntryOn,
   idSet,
-  journalId as sharedJournalId,
+  journalId,
   journalLines as sharedLines,
   localDayKey,
-  mentions as sharedMentions,
-  moodAverage as sharedMoodAverage,
+  mentions,
+  moodAverage,
   newEntry as sharedNewEntry,
   peopleNameMap,
   peopleNamesOf,
   shiftDayKey,
-  streak as sharedStreak,
-} from '../shared/journal.mjs'
+  streak,
+  type PeopleById,
+} from '../shared/journal.mts'
 
 // A journal entry is one day's writing. The rules (one editable entry per day,
 // append never overwrites, streaks, who the day was about) live in
-// shared/journal.mjs so the MCP server and the Sunday digest agree with the app.
+// shared/journal.mts so the MCP server and the Sunday digest agree with the app.
 
-export { localDayKey, shiftDayKey, idSet, peopleNameMap }
+export { entriesOn, idSet, journalId, localDayKey, mentions, moodAverage, peopleNameMap, shiftDayKey, streak }
 export type { PeopleById }
 
-export const journalId = (date: string): string => sharedJournalId(date)
-export const entriesOn = (entries: JournalEntry[], date: string): JournalEntry[] => sharedEntriesOn(entries, date)
 export const entryOn = (entries: JournalEntry[], date: string): JournalEntry | undefined => sharedEntryOn(entries, date) ?? undefined
 export const newEntry = (date: string, body: string, mood?: JournalEntry['mood'], peopleIds?: readonly string[]): JournalEntry =>
   sharedNewEntry(date, body, mood, undefined, undefined, peopleIds)
 export const appendEntry = (existing: JournalEntry | undefined, date: string, text: string, mood?: JournalEntry['mood']): JournalEntry =>
   sharedAppend(existing, date, text, mood != null ? { mood } : {})
-export const streak = (entries: JournalEntry[], today = localDayKey()): number => sharedStreak(entries, today)
-export const moodAverage = (entries: readonly { mood?: number }[]): number | undefined => sharedMoodAverage(entries)
 export const journalLines = (entries: JournalEntry[], max = 14, peopleById?: PeopleById): string[] => sharedLines(entries, max, 220, peopleById)
-
-/** Entries that name a person, newest day first. A mention is not a visit: it never touches cadence. */
-export const mentions = (entries: JournalEntry[], personId: string): JournalEntry[] => sharedMentions(entries, personId)
 
 /** The people an entry names, in the entry's order; ids nobody matches (deleted, another household) are skipped. */
 export function peopleOf(entry: Pick<JournalEntry, 'peopleIds'>, people: Person[]): Person[] {

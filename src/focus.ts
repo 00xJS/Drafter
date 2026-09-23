@@ -3,8 +3,8 @@ import { shiftDayKey } from './journal'
 import { nextUp, shiftRange, weekRange } from './review'
 import { compareTasks, hasDueTime } from './taskutils'
 import { clock, dateKey } from './utils'
-import { localMidnightIso, newerStamp } from '../shared/domain.mjs'
-import { isFocusFor } from '../shared/today.mjs'
+import { localMidnightIso, newerStamp } from '../shared/domain.mts'
+import { isFocusFor } from '../shared/today.mts'
 
 // Today's focus, Plan my day and Shut down: the rules behind the sheets, kept
 // pure so the sheets only render them. Nothing here saves anything — each plan

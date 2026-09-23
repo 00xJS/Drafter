@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { firstSentence, previousWeekIn, sundayDraftDue, sundayLine } from '../../netlify/functions/lib/reviewweek.mjs'
-import { habitLines } from '../../shared/review.mjs'
+import { habitLines } from '../../shared/review.mts'
 import { habitsConsistency } from '../habits'
 import { buildReview, weekRange } from '../review'
 import type { Habit, Person, Task } from '../types'
@@ -768,7 +768,7 @@ describe('sundayLine: the review’s first sentence', () => {
   })
 })
 
-describe('Sunday’s draft and Home → Week read one set of lists (shared/review.mjs)', () => {
+describe('Sunday’s draft and Home → Week read one set of lists (shared/review.mts)', () => {
   const task = (id: string, title: string, over: Partial<Task> = {}): Task => ({
     kind: 'task',
     id,

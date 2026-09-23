@@ -9,8 +9,8 @@
 // segment never looks, and its range covered the wrong seven days. West of UTC
 // the arithmetic happened to land on the right week.
 
-import { localParts } from '../../../shared/digest.mjs'
-import { weekKeyOf, weekStartKey } from '../../../shared/weeks.mjs'
+import { localParts } from '../../../shared/digest.mts'
+import { weekKeyOf, weekStartKey } from '../../../shared/weeks.mts'
 import { validTimeZone } from './timezone.mjs'
 
 const DAY = 86_400_000

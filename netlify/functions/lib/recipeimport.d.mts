@@ -1,4 +1,4 @@
-import type { IngredientLine } from '../../../shared/recipes.mjs'
+import type { IngredientLine } from '../../../shared/recipes.mts'
 
 export declare const IMPORT_LIMITS: Readonly<{
   timeoutMs: number

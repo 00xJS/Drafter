@@ -14,7 +14,7 @@ vi.mock('../media', async importOriginal => ({
     void retired.push({ gone: gone.filter((id): id is string => !!id), now: now.filter((id): id is string => !!id), garment }),
 }))
 
-import { mergeRecord } from '../../shared/merge.mjs'
+import { mergeRecord } from '../../shared/merge.mts'
 import { Clothes } from '../components/wardrobe/Clothes'
 import { Collage, GarmentInset, GarmentPhoto, GarmentView, flipLabel, hasBack, mainSide } from '../components/wardrobe/GarmentPhoto'
 import { GarmentSheet } from '../components/wardrobe/GarmentSheet'

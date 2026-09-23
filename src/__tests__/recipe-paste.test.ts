@@ -8,7 +8,7 @@ import type { Meal, Recipe } from '../types'
 
 // Thirty recipes were saved as bare names, because the only way to fill one in
 // was "+ Ingredient", one row at a time. A recipe with no ingredients can never
-// put a line on the grocery list (groceryFromRecipes in shared/kitchen.mjs), so
+// put a line on the grocery list (groceryFromRecipes in shared/kitchen.mts), so
 // the list was always empty and nobody could see why. Reading a pasted recipe
 // is the way in; these hold it to what the app stores.
 

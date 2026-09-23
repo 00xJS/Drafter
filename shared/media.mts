@@ -16,15 +16,23 @@ const USER_ID = /^[0-9a-f-]{36}$/i
 const UID = /^[0-9a-z-]{8,64}$/i
 
 /** The folder an account's wardrobe photos live in. */
-export function personalFolder(userId) {
+export function personalFolder(userId: string): string {
   return `${PERSONAL_PREFIX}${userId}/`
 }
 
 /** One of this account's own wardrobe photos: personal/<userId>/<uid>, directly in its folder, and nothing else. */
-export function isPersonalMediaOf(id, userId) {
+export function isPersonalMediaOf(id: unknown, userId: string | null | undefined): boolean {
   if (typeof id !== 'string' || typeof userId !== 'string' || !USER_ID.test(userId)) return false
   const folder = personalFolder(userId)
   return id.startsWith(folder) && UID.test(id.slice(folder.length))
+}
+
+/** A piece's photo fields, as the stores hold them: a string each, when the row is as the app writes it. */
+export interface PiecePhotos {
+  photoId?: unknown
+  thumbId?: unknown
+  backPhotoId?: unknown
+  backThumbId?: unknown
 }
 
 /**
@@ -33,8 +41,8 @@ export function isPersonalMediaOf(id, userId) {
  * and account deletion all read, so a side added later is never one of them
  * forgets.
  */
-export function mediaIdsOf(g) {
-  return [g?.photoId, g?.thumbId, g?.backPhotoId, g?.backThumbId].filter(id => typeof id === 'string' && id !== '')
+export function mediaIdsOf(g: PiecePhotos | null | undefined): string[] {
+  return [g?.photoId, g?.thumbId, g?.backPhotoId, g?.backThumbId].filter((id): id is string => typeof id === 'string' && id !== '')
 }
 
 /**
@@ -44,12 +52,15 @@ export function mediaIdsOf(g) {
  * deleted before that instant — long gone from every device's Trash — no
  * longer counts either; one whose deletion can't be read still does.
  */
-export function garmentMediaIds(records, opts = {}) {
+export function garmentMediaIds(
+  records: readonly ((PiecePhotos & { kind?: unknown; purged?: unknown; deletedAt?: unknown }) | null | undefined)[] | null | undefined,
+  opts: { expiredBefore?: string } = {},
+): Set<string> {
   const cutoff = opts.expiredBefore ? Date.parse(opts.expiredBefore) : NaN
-  const ids = new Set()
+  const ids = new Set<string>()
   for (const r of records ?? []) {
     if (r?.kind !== 'garment' || r.purged) continue
-    if (r.deletedAt && Date.parse(r.deletedAt) < cutoff) continue
+    if (r.deletedAt && Date.parse(String(r.deletedAt)) < cutoff) continue
     for (const id of mediaIdsOf(r)) ids.add(id)
   }
   return ids

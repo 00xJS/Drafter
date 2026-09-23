@@ -26,7 +26,7 @@ import { validTimeZone } from './timezone.mjs'
 import { createRestData } from '../../../mcp/data.mjs'
 import { TOOLS, defaultNewId, defaultRand } from '../../../mcp/tools.mjs'
 import { PROTOCOL_VERSIONS, SERVER_INFO, failureCode, handleBody, hasInitialize, instructionsFor } from '../../../mcp/protocol.mjs'
-import { makeClock } from '../../../shared/clock.mjs'
+import { makeClock } from '../../../shared/clock.mts'
 
 export const MAX_BODY_BYTES = 1_000_000
 export const DEADLINE_MS = 8_500

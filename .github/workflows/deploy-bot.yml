@@ -1,5 +1,5 @@
 # Deploy the bot gateway (supabase/functions/bot) whenever main changes it, or
-# changes shared/kinds.mjs, whose personal kinds the bot keeps its own copy of
+# changes shared/kinds.mts, whose personal kinds the bot keeps its own copy of
 # (mcp.test.ts holds the two equal). Deployed by hand, the bot could lag the
 # app, and a bot on an old list can hand a household member's new personal
 # kind to an automation.
@@ -16,7 +16,7 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/**'
-      - 'shared/kinds.mjs'
+      - 'shared/kinds.mts'
   # the same deploy on demand, from the Actions tab
   workflow_dispatch:
 

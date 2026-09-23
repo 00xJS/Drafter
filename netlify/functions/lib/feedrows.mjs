@@ -4,8 +4,8 @@
 // netlify/functions as a function, and a declaration file sitting beside
 // feed.mjs (feed.d.mts) was picked up as a function called "feed.d" with no
 // handler — which is what stopped the deploy of 4297356. lib/ is not scanned.
-import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../../shared/domain.mjs'
-import { readableRow } from '../../../shared/kinds.mjs'
+import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../../shared/domain.mts'
+import { readableRow } from '../../../shared/kinds.mts'
 import { keyHeaders } from './supabasekeys.mjs'
 
 const DAY = 86_400_000

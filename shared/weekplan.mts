@@ -7,13 +7,116 @@
 // the next one by itself. A planned meal fills its slot; a planned visit
 // suppresses that person.
 
-import { isMineTask, localDate, localMidnightIso } from './domain.mjs'
-import { shiftDayKey } from './journal.mjs'
-import { cookedRecipeIds, mealRecipeIds } from './kitchen.mjs'
-import { plannedVisit, seenStatus, seenTasks } from './people.mjs'
-import { outingsAt } from './places.mjs'
-import { OPEN, nextUp } from './today.mjs'
-import { isDayKey, weekDayKeys, weekKeyOf, weekStartKey } from './weeks.mjs'
+import type { CalendarEvent, Item, Meal, MealSlot, Person, Place, PlaceCategory, Priority, Recipe, Task } from '../src/types.ts'
+import { isMineTask, isRecord, localDate, localMidnightIso } from './domain.mts'
+import { shiftDayKey } from './journal.mts'
+import { cookedRecipeIds, mealRecipeIds } from './kitchen.mts'
+import { plannedVisit, seenStatus, seenTasks } from './people.mts'
+import { outingsAt, type Outing } from './places.mts'
+import { OPEN, nextUp } from './today.mts'
+import { isDayKey, weekDayKeys, weekKeyOf, weekStartKey } from './weeks.mts'
+
+export interface TargetWeek {
+  /** The Sunday it starts on. */
+  startKey: string
+  /** Its seven days, Sunday first. */
+  dayKeys: string[]
+  weekKey: string
+  /** The week before, whose review holds this week's Top 3. */
+  prevWeekKey: string
+}
+
+export interface DinnerItem {
+  key: string
+  date: string
+  recipeId: string
+  title: string
+  why: string
+  /** Recipe ids for Swap to cycle through: never another night's pick. */
+  alternatives: string[]
+  /** The event across the dinner hour, when there is one: the row starts unticked. */
+  busy: string | null
+  /** The week's one never-cooked recipe. */
+  isNew: boolean
+}
+
+export interface PersonItem {
+  key: string
+  personId: string
+  title: string
+  dueDay: string
+  why: string
+}
+
+export interface ReschedItem {
+  key: string
+  taskId: string
+  title: string
+  fromDue: string
+  toDay: string
+  why: string
+}
+
+export interface BillItem {
+  key: string
+  taskId: string
+  title: string
+  dueDay: string
+  amount: number | null
+  autopay: boolean
+}
+
+export interface TopItem {
+  key: string
+  title: string
+  taskId: string | null
+}
+
+export interface WeekPlan {
+  week: TargetWeek
+  dinners: DinnerItem[]
+  people: PersonItem[]
+  overdue: ReschedItem[]
+  bills: BillItem[]
+  top3: TopItem[]
+}
+
+/** What WeekPlanSheet hands back to the planner to apply (one Undo for all of it). */
+export interface AcceptedPlan {
+  dinners: { date: string; recipeId?: string; title: string; out?: boolean; placeId?: string }[]
+  people: { personId: string; dueDay: string; title: string }[]
+  resched: { taskId: string; toDay: string }[]
+  wishlist: string[]
+  top3: string[]
+  dismissed: string[]
+}
+
+export interface MealIdea {
+  /** idea:<day>:<slot>:<kind>:<id> — stable for the day, for dismissing. */
+  key: string
+  kind: 'recipe' | 'place'
+  id: string
+  title: string
+  /** "Cooked 6× in six months", "Not cooked in 5 weeks", "Haven't been since 3 May". */
+  why: string
+}
+
+export interface SlotIdeas {
+  slot: MealSlot
+  /** False when the slot already has a meal (cooked, eaten out, or out with no place): no ideas then. */
+  missing: boolean
+  ideas: MealIdea[]
+}
+
+export interface MealHistory {
+  /**
+   * Every recipe, by name. `cookCount` is the last six months; `timesCooked` all of them; both count a meal it
+   * was a side of. `sideOnly`: on the plan only ever as a side, so never offered as a meal.
+   */
+  recipes: { id: string; name: string; tags: string[]; cookCount: number; timesCooked: number; lastCooked: string | null; sideOnly: boolean }[]
+  /** Every place you eat at, by name. `outings` is the last six months; `visits` all of them; eaten-out meals count. */
+  places: { id: string; name: string; category: string; outings: number; visits: number; lastVisit: string | null }[]
+}
 
 const DAY_MS = 86_400_000
 /** A recipe cooked this recently is not suggested for next week's dinners. */
@@ -21,41 +124,44 @@ const COOLDOWN_DAYS = 14
 /** How far back "cooked often" counts, for the week plan and today's ideas alike. */
 const FAVOURITE_DAYS = 180
 const ALTERNATIVES = 3
-/**
- * An event across the dinner hour makes a busy night (local time).
- * @type {[string, string]}
- */
-const DINNER_HOURS = ['17:30', '20:00']
-/**
- * Anything on in the evening makes it a worse one for a catch-up.
- * @type {[string, string]}
- */
-const EVENING_HOURS = ['17:30', '22:00']
+/** An event across the dinner hour makes a busy night (local time). */
+const DINNER_HOURS: [string, string] = ['17:30', '20:00']
+/** Anything on in the evening makes it a worse one for a catch-up. */
+const EVENING_HOURS: [string, string] = ['17:30', '22:00']
 /** Overdue work is spread so that no day ends up with more than this due. */
 const MAX_DUE_PER_DAY = 3
 /** The digest's rule: someone never seen is only suggested once they have been in the app a month. */
 const NEVER_MIN_AGE_DAYS = 30
-const PRIORITY_RANK = { urgent: 3, high: 2, normal: 1, low: 0 }
-const CATCH_UP_RANK = { overdue: 0, due: 1, never: 2 }
+const PRIORITY_RANK: Partial<Record<Priority, number>> = { urgent: 3, high: 2, normal: 1, low: 0 }
+const CATCH_UP_RANK: Readonly<Record<string, number>> = { overdue: 0, due: 1, never: 2 }
 
 const IDEAS_PER_SLOT = 4
 /** Today's ideas skip anything had in the last week, and anything already planned for the week ahead. */
 const IDEA_COOLDOWN_DAYS = 7
 const IDEA_AHEAD_DAYS = 7
 /** Places you eat at, whether or not a meal was ever logged there. */
-const EATING_PLACES = ['restaurant', 'fastfood', 'cafe']
+const EATING_PLACES: string[] = ['restaurant', 'fastfood', 'cafe']
 /** What suits a slot beyond having been that meal before: recipe tags, and kinds of place. */
-const SLOT_TAGS = { breakfast: ['breakfast', 'brunch'], lunch: ['lunch', 'quick', 'easy', 'light', 'salad', 'sandwich', 'soup'], dinner: ['dinner', 'main'] }
-const SLOT_PLACES = { breakfast: ['cafe'], lunch: ['cafe', 'fastfood'], dinner: ['restaurant'] }
+const SLOT_TAGS: Partial<Record<string, string[]>> = { breakfast: ['breakfast', 'brunch'], lunch: ['lunch', 'quick', 'easy', 'light', 'salad', 'sandwich', 'soup'], dinner: ['dinner', 'main'] }
+const SLOT_PLACES: Partial<Record<string, string[]>> = { breakfast: ['cafe'], lunch: ['cafe', 'fastfood'], dinner: ['restaurant'] }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
-const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
-const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS)
-const liveItems = items => (items ?? []).filter(i => i && typeof i === 'object' && !i.deletedAt)
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS)
+const liveItems = (items: readonly unknown[] | null | undefined): Record<string, unknown>[] =>
+  (items ?? []).filter((i): i is Record<string, unknown> => isRecord(i) && !i.deletedAt)
+
+/** The records of one kind among these: a row that says its kind is written with that kind's fields. */
+function recordsOf<K extends Item['kind']>(items: readonly unknown[], kind: K): Extract<Item, { kind: K }>[] {
+  return items.filter((i): i is Extract<Item, { kind: K }> => isRecord(i) && i.kind === kind)
+}
+
+/** What the week plan reads of a calendar event: one of ours, or a subscribed feed's occurrence. */
+type Timed = Pick<CalendarEvent, 'id' | 'title' | 'start' | 'end' | 'allDay' | 'work'>
 
 /** 'YYYY-MM-DDTHH:MM' on the wall clock in `tz` — text that sorts in time order. */
-function wallClock(iso, tz) {
+function wallClock(iso: string, tz: string | undefined): string | null {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) return null
   try {
@@ -67,13 +173,13 @@ function wallClock(iso, tz) {
     return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`
   } catch {
     const d = new Date(ms)
-    const pad = n => String(n).padStart(2, '0')
+    const pad = (n: number) => String(n).padStart(2, '0')
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
 }
 
 /** Timed events overlapping `day` between two wall-clock times. A work day is working hours, not an engagement. */
-function overlapping(events, day, [from, to], tz) {
+function overlapping(events: readonly Timed[], day: string, [from, to]: [string, string], tz: string | undefined): Timed[] {
   const a = `${day}T${from}`
   const b = `${day}T${to}`
   return events
@@ -93,7 +199,16 @@ function overlapping(events, day, [from, to], tz) {
  * by this — what they propose is a meal, and the rice that went with forty
  * curries is not a dinner.
  */
-const asMain = m => (m.out || !m.recipeId ? [] : [m.recipeId])
+const asMain = (m: Meal): string[] => (m.out || !m.recipeId ? [] : [m.recipeId])
+
+/** A recipe's history on the meal plan, as recipeHistory reads it. */
+interface RecipeStats {
+  count: number
+  total: number
+  last: string
+  lastCooked: string
+  slots: Set<MealSlot>
+}
 
 /**
  * Each recipe's history on the meal plan. Per recipe: `count`, times cooked in
@@ -109,14 +224,14 @@ const asMain = m => (m.out || !m.recipeId ? [] : [m.recipeId])
  * the default, it is what a recipe has been as a meal, which decides what the
  * proposals offer and in what order.
  */
-function recipeHistory(meals, todayKey, before, roles = asMain) {
+function recipeHistory(meals: readonly Meal[], todayKey: string, before: string, roles: (m: Meal) => string[] = asMain): Map<string, RecipeStats> {
   const from = shiftDayKey(todayKey, -FAVOURITE_DAYS)
-  const out = new Map()
+  const out = new Map<string, RecipeStats>()
   for (const m of meals) {
     if (!(m.date < before)) continue
     const cooked = new Set(cookedRecipeIds(m, todayKey))
     for (const id of roles(m)) {
-      const s = out.get(id) ?? { count: 0, total: 0, last: '', lastCooked: '', slots: new Set() }
+      const s = out.get(id) ?? { count: 0, total: 0, last: '', lastCooked: '', slots: new Set<MealSlot>() }
       if (cooked.has(id)) {
         s.total++
         if (m.date >= from) s.count++
@@ -131,23 +246,23 @@ function recipeHistory(meals, todayKey, before, roles = asMain) {
 }
 
 /** Nothing with it in the last `days`, and nothing planned with it since. */
-const cooledDown = (s, todayKey, days) => !s || s.last < shiftDayKey(todayKey, -days)
+const cooledDown = (s: RecipeStats | undefined, todayKey: string, days: number): boolean => !s || s.last < shiftDayKey(todayKey, -days)
 
 /** Every day you went to a place — task outings and meals eaten there, newest first — and the meals it has been. */
-function placeHistory(p, tasks, meals, now, tz) {
+function placeHistory(p: Place, tasks: readonly Task[], meals: readonly Meal[], now: Date, tz: string | undefined): { days: string[]; slots: Set<MealSlot>; eatenOut: number } {
   // an eaten-out meal on a past day is an outing: the rule the Places tab counts by
   const outings = outingsAt(p.id, tasks, meals, now)
-  const eaten = outings.filter(o => o.kind === 'meal')
+  const eaten = outings.filter((o): o is Extract<Outing, { kind: 'meal' }> => o.kind === 'meal')
   const days = outings
     .map(o => (o.kind === 'meal' ? o.meal.date : localDate(o.at, tz)))
-    .filter(Boolean)
+    .filter((d): d is string => !!d)
     .sort()
     .reverse()
   return { days, slots: new Set(eaten.map(o => o.meal.slot)), eatenOut: eaten.length }
 }
 
 /** Somewhere you eat: a restaurant, fast food or a café — or anywhere a meal was eaten out. */
-const isEatingPlace = (p, h) => EATING_PLACES.includes(p.category) || h.eatenOut > 0
+const isEatingPlace = (p: Place, h: { eatenOut: number }): boolean => EATING_PLACES.includes(p.category) || h.eatenOut > 0
 
 /**
  * What the kitchen knows as of `dayKey`, for anything that shows or sends how
@@ -157,13 +272,12 @@ const isEatingPlace = (p, h) => EATING_PLACES.includes(p.category) || h.eatenOut
  * only ever been a side, and every place you eat at with its outings (in six
  * months and in all) and when last. Names and tags only: never notes. Sorted by
  * name.
- * @param {readonly any[]} items
- * @param {{ dayKey?: string, now?: Date, tz?: string }} [o]
  */
-export function mealHistory(items, { dayKey, now = new Date(), tz } = {}) {
-  if (!isDayKey(dayKey)) return { recipes: [], places: [] }
+export function mealHistory(items: readonly unknown[], o: { dayKey: string; now?: Date; tz?: string }): MealHistory
+export function mealHistory(items: readonly unknown[], { dayKey, now = new Date(), tz }: { dayKey?: string; now?: Date; tz?: string } = {}): MealHistory {
+  if (dayKey === undefined || !isDayKey(dayKey)) return { recipes: [], places: [] }
   const live = liveItems(items)
-  const ofKind = kind => live.filter(i => i.kind === kind)
+  const ofKind = <K extends Item['kind']>(kind: K) => recordsOf(live, kind)
   const meals = ofKind('meal')
   const tasks = ofKind('task')
   const favouriteFrom = shiftDayKey(dayKey, -FAVOURITE_DAYS)
@@ -171,7 +285,7 @@ export function mealHistory(items, { dayKey, now = new Date(), tz } = {}) {
   // on the plan, but never as the main: a side dish, not something to offer as a meal
   const onPlan = new Set(meals.flatMap(mealRecipeIds))
   const asMainEver = new Set(meals.flatMap(asMain))
-  const byName = (a, b) => cmp(a.name, b.name) || cmp(a.id, b.id)
+  const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => cmp(a.name, b.name) || cmp(a.id, b.id)
   const recipes = ofKind('recipe')
     .map(r => {
       const s = cooked.get(r.id)
@@ -203,17 +317,19 @@ export function mealHistory(items, { dayKey, now = new Date(), tz } = {}) {
  * any other day the one beginning next Sunday. `prevWeekKey` is the week before
  * it, whose review holds its Top 3 ("Top 3 for next week"). Null for a bad key.
  */
-export function targetWeek(todayKey) {
+export function targetWeek(todayKey: string): TargetWeek | null {
   const start = weekStartKey(todayKey)
   if (!start) return null
   const startKey = start === todayKey ? todayKey : shiftDayKey(start, 7)
-  return { startKey, dayKeys: weekDayKeys(startKey), weekKey: weekKeyOf(startKey), prevWeekKey: weekKeyOf(shiftDayKey(startKey, -7)) }
+  // a Sunday, and the one before it: real days, so each has a week
+  return { startKey, dayKeys: weekDayKeys(startKey), weekKey: weekKeyOf(startKey)!, prevWeekKey: weekKeyOf(shiftDayKey(startKey, -7))! }
 }
 
-function dinnerWhy(s, isNew, todayKey) {
+/** `s` is the recipe's history, which a recipe that is not new always has. */
+function dinnerWhy(s: RecipeStats | undefined, isNew: boolean, todayKey: string): string {
   if (isNew) return 'Something new: saved, never cooked'
-  const ago = daysBetween(s.lastCooked, todayKey)
-  return s.count > 0 ? `Cooked ${s.count}× in six months · last ${ago} days ago` : `Last cooked ${ago} days ago`
+  const ago = daysBetween(s!.lastCooked, todayKey)
+  return s!.count > 0 ? `Cooked ${s!.count}× in six months · last ${ago} days ago` : `Last cooked ${ago} days ago`
 }
 
 /**
@@ -224,7 +340,23 @@ function dinnerWhy(s, isNew, todayKey) {
  * on a quiet night — the weekend if one is free. The favourites go to quiet
  * nights; a busy night takes what is left and says why.
  */
-function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }) {
+function proposeDinners({
+  days,
+  todayKey,
+  startKey,
+  meals,
+  recipes,
+  busy,
+  skip,
+}: {
+  days: string[]
+  todayKey: string
+  startKey: string
+  meals: Meal[]
+  recipes: Recipe[]
+  busy: Map<string, string | null>
+  skip: Set<string>
+}): DinnerItem[] {
   const filled = new Set(meals.filter(m => m.slot === 'dinner').map(m => m.date))
   const nights = days.filter(d => !filled.has(d) && !skip.has(`dinner:${d}`))
   if (nights.length === 0 || recipes.length === 0) return []
@@ -238,16 +370,17 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
   // counts it, in the Kitchen's own numbers
   const mains = recipeHistory(meals, todayKey, startKey)
   const had = recipeHistory(meals, todayKey, startKey, mealRecipeIds)
-  const byName = (a, b) => cmp(a.name ?? '', b.name ?? '') || cmp(a.id, b.id)
+  const byName = (a: Recipe, b: Recipe) => cmp(a.name ?? '', b.name ?? '') || cmp(a.id, b.id)
+  // each of the pool has been a main, so it has both histories
   const pool = recipes
-    .filter(r => mains.get(r.id)?.total > 0 && !plannedThisWeek.has(r.id) && cooledDown(had.get(r.id), todayKey, COOLDOWN_DAYS))
-    .sort((a, b) => mains.get(b.id).count - mains.get(a.id).count || cmp(had.get(a.id).lastCooked, had.get(b.id).lastCooked) || byName(a, b))
+    .filter(r => (mains.get(r.id)?.total ?? 0) > 0 && !plannedThisWeek.has(r.id) && cooledDown(had.get(r.id), todayKey, COOLDOWN_DAYS))
+    .sort((a, b) => mains.get(b.id)!.count - mains.get(a.id)!.count || cmp(had.get(a.id)!.lastCooked, had.get(b.id)!.lastCooked) || byName(a, b))
   // the newest saved recipe never cooked: most likely the one you meant to try
   const fresh = recipes.filter(r => !everCooked.has(r.id)).sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || byName(a, b))[0] ?? null
 
   const quiet = nights.filter(d => !busy.get(d))
-  const assigned = new Map()
-  const used = new Set()
+  const assigned = new Map<string, Recipe>()
+  const used = new Set<string>()
   const newNight = fresh ? ([days[6], days[0]].find(d => quiet.includes(d)) ?? quiet[0]) : undefined
   if (fresh && newNight) {
     assigned.set(newNight, fresh)
@@ -263,7 +396,7 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
   }
   const spare = pool.filter(r => !used.has(r.id))
 
-  const out = []
+  const out: DinnerItem[] = []
   for (const d of nights) {
     const r = assigned.get(d)
     if (!r) continue
@@ -283,9 +416,27 @@ function proposeDinners({ days, todayKey, startKey, meals, recipes, busy, skip }
  * evening, earliest first. `seen` is what the People page counts (seenTasks):
  * the tasks plus your own past events with people on them; a plan is a task.
  */
-function proposePeople({ days, people, tasks, seen, now, eveningLoad, dueCount, skip }) {
+function proposePeople({
+  days,
+  people,
+  tasks,
+  seen,
+  now,
+  eveningLoad,
+  dueCount,
+  skip,
+}: {
+  days: string[]
+  people: Person[]
+  tasks: Task[]
+  seen: Task[]
+  now: Date
+  eveningLoad: Map<string, number>
+  dueCount: Map<string | null, number>
+  skip: Set<string>
+}): PersonItem[] {
   const nowMs = now.getTime()
-  const due = []
+  const due: { p: Person; s: { status: string; daysSince?: number; reason: string } }[] = []
   for (const p of people) {
     if (skip.has(`person:${p.id}`) || plannedVisit(p.id, tasks)) continue
     const s = seenStatus(p, seen, now)
@@ -300,11 +451,12 @@ function proposePeople({ days, people, tasks, seen, now, eveningLoad, dueCount, 
     (a, b) =>
       CATCH_UP_RANK[a.s.status] - CATCH_UP_RANK[b.s.status] || (b.s.daysSince ?? 0) - (a.s.daysSince ?? 0) || cmp(a.p.name ?? '', b.p.name ?? '') || cmp(a.p.id, b.p.id),
   )
+  // every day of the week has its count
   const booked = new Map(days.map(d => [d, eveningLoad.get(d) ?? 0]))
   const saturday = days[6]
   return due.map(({ p, s }) => {
-    const dueDay = booked.get(saturday) === 0 ? saturday : days.reduce((best, d) => (booked.get(d) < booked.get(best) ? d : best), days[0])
-    booked.set(dueDay, booked.get(dueDay) + 1)
+    const dueDay = booked.get(saturday) === 0 ? saturday : days.reduce((best, d) => (booked.get(d)! < booked.get(best)! ? d : best), days[0])
+    booked.set(dueDay, booked.get(dueDay)! + 1)
     dueCount.set(dueDay, (dueCount.get(dueDay) ?? 0) + 1)
     return { key: `person:${p.id}`, personId: p.id, title: `Catch up with ${p.name}`, dueDay, why: s.reason }
   })
@@ -315,19 +467,36 @@ function proposePeople({ days, people, tasks, seen, now, eveningLoad, dueCount, 
  * longest overdue, each to the least loaded day — and no day past three due,
  * counting what is already due there. What does not fit is left where it is.
  */
-function proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip }) {
+function proposeResched({
+  days,
+  todayKey,
+  tasks,
+  userId,
+  dueCount,
+  dayOf,
+  skip,
+}: {
+  days: string[]
+  todayKey: string
+  tasks: Task[]
+  userId: string | null
+  dueCount: Map<string | null, number>
+  dayOf: (iso: string) => string | null
+  skip: Set<string>
+}): ReschedItem[] {
   const overdue = tasks
     // a bill falls due on its own day: it is a heads-up, never something to move
-    .filter(t => OPEN.includes(t.status) && t.dueAt && !t.bill && isMineTask(t, userId) && !skip.has(`resched:${t.id}`))
+    .filter((t): t is Task & { dueAt: string } => OPEN.includes(t.status) && !!t.dueAt && !t.bill && isMineTask(t, userId) && !skip.has(`resched:${t.id}`))
     .map(t => ({ t, day: dayOf(t.dueAt) }))
-    .filter(x => x.day && x.day < todayKey)
+    .filter((x): x is { t: Task & { dueAt: string }; day: string } => !!x.day && x.day < todayKey)
     .sort((a, b) => (PRIORITY_RANK[b.t.priority] ?? 1) - (PRIORITY_RANK[a.t.priority] ?? 1) || cmp(a.day, b.day) || cmp(a.t.dueAt, b.t.dueAt) || cmp(a.t.id, b.t.id))
-  const out = []
+  const out: ReschedItem[] = []
+  // every day of the week has its count
   for (const { t, day } of overdue) {
-    const room = days.filter(d => dueCount.get(d) < MAX_DUE_PER_DAY)
+    const room = days.filter(d => dueCount.get(d)! < MAX_DUE_PER_DAY)
     if (room.length === 0) break
-    const toDay = room.reduce((best, d) => (dueCount.get(d) < dueCount.get(best) ? d : best))
-    dueCount.set(toDay, dueCount.get(toDay) + 1)
+    const toDay = room.reduce((best, d) => (dueCount.get(d)! < dueCount.get(best)! ? d : best))
+    dueCount.set(toDay, dueCount.get(toDay)! + 1)
     const late = daysBetween(day, todayKey)
     const urgent = t.priority === 'urgent' || t.priority === 'high' ? ` · ${t.priority}` : ''
     out.push({ key: `resched:${t.id}`, taskId: t.id, title: t.title || 'Untitled task', fromDue: t.dueAt, toDay, why: `Overdue ${late} day${late === 1 ? '' : 's'}${urgent}` })
@@ -342,35 +511,56 @@ function proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip }
  * kind; `events` adds occurrences from subscribed calendars (the app has them,
  * the digest does not). Rows whose key is in `dismissed` are left out. Null for
  * a bad `todayKey`.
- * @param {readonly any[]} items
- * @param {{ todayKey?: string, tz?: string, userId?: string | null, dismissed?: readonly string[], now?: Date, events?: readonly any[] }} [o]
  */
-export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = [], now = new Date(), events = [] } = {}) {
+export function proposeWeek(
+  items: readonly unknown[],
+  o: {
+    todayKey: string
+    tz?: string
+    userId?: string | null
+    dismissed?: readonly string[]
+    now?: Date
+    /** Occurrences from subscribed calendars; our own entries come from `items`. */
+    events?: readonly CalendarEvent[]
+  },
+): WeekPlan | null
+export function proposeWeek(
+  items: readonly unknown[],
+  {
+    todayKey,
+    tz,
+    userId = null,
+    dismissed = [],
+    now = new Date(),
+    events = [],
+  }: { todayKey?: string; tz?: string; userId?: string | null; dismissed?: readonly string[]; now?: Date; events?: readonly CalendarEvent[] } = {},
+): WeekPlan | null {
+  if (todayKey === undefined) return null
   const week = targetWeek(todayKey)
   if (!week) return null
   const skip = new Set(dismissed ?? [])
   const live = liveItems(items)
-  const ofKind = kind => live.filter(i => i.kind === kind)
+  const ofKind = <K extends Item['kind']>(kind: K) => recordsOf(live, kind)
   const tasks = ofKind('task')
   const meals = ofKind('meal')
   const reviews = ofKind('review')
   const days = week.dayKeys
-  const inWeek = new Set(days)
-  const dayOf = iso => (typeof iso === 'string' && DAY_KEY_RE.test(iso) ? iso : localDate(iso, tz))
+  const inWeek = new Set<string | null>(days)
+  const dayOf = (iso: string): string | null => (typeof iso === 'string' && DAY_KEY_RE.test(iso) ? iso : localDate(iso, tz))
   // our own entries are items already; a feed's copy of one (localId) would count it twice
-  const calendar = [...ofKind('event'), ...(events ?? []).filter(ev => ev && !ev.localId)]
+  const calendar: Timed[] = [...ofKind('event'), ...(events ?? []).filter(ev => ev && !ev.localId)]
   const busy = new Map(
-    days.map(d => {
+    days.map((d): [string, string | null] => {
       const ev = overlapping(calendar, d, DINNER_HOURS, tz)[0]
       return [d, ev ? ev.title || 'Something on' : null]
     }),
   )
   const eveningLoad = new Map(days.map(d => [d, overlapping(calendar, d, EVENING_HOURS, tz).length]))
-  const dueCount = new Map(days.map(d => [d, 0]))
+  const dueCount = new Map<string | null, number>(days.map(d => [d, 0]))
   for (const t of tasks) {
     if (!OPEN.includes(t.status) || !t.dueAt || !isMineTask(t, userId)) continue
     const d = dayOf(t.dueAt)
-    if (dueCount.has(d)) dueCount.set(d, dueCount.get(d) + 1)
+    if (dueCount.has(d)) dueCount.set(d, dueCount.get(d)! + 1)
   }
 
   const dinners = proposeDinners({ days, todayKey, startKey: week.startKey, meals, recipes: ofKind('recipe'), busy, skip })
@@ -381,12 +571,16 @@ export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = []
   const overdue = proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip })
 
   const bills = tasks
-    .filter(t => t.bill && OPEN.includes(t.status) && t.dueAt && inWeek.has(dayOf(t.dueAt)) && !skip.has(`bill:${t.id}`))
+    .filter(
+      (t): t is Task & { bill: NonNullable<Task['bill']>; dueAt: string } =>
+        !!t.bill && OPEN.includes(t.status) && !!t.dueAt && inWeek.has(dayOf(t.dueAt)) && !skip.has(`bill:${t.id}`),
+    )
     .map(t => ({
       key: `bill:${t.id}`,
       taskId: t.id,
       title: t.title || t.bill.payee || 'Bill',
-      dueDay: dayOf(t.dueAt),
+      // a day of the week, as the filter found
+      dueDay: dayOf(t.dueAt)!,
       amount: typeof t.estimateCost === 'number' && Number.isFinite(t.estimateCost) ? t.estimateCost : null,
       autopay: !!t.bill.autopay,
     }))
@@ -410,10 +604,10 @@ export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = []
 }
 
 /** "4 dinners to fill · 2 catch-ups · 3 bills due", or null when there is nothing to plan. */
-export function weekPlanSummary(plan) {
+export function weekPlanSummary(plan: WeekPlan | null | undefined): string | null {
   if (!plan) return null
-  const n = (count, one) => `${count} ${one}${count === 1 ? '' : 's'}`
-  const parts = []
+  const n = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`
+  const parts: string[] = []
   if (plan.dinners.length) parts.push(`${n(plan.dinners.length, 'dinner')} to fill`)
   if (plan.people.length) parts.push(n(plan.people.length, 'catch-up'))
   if (plan.overdue.length) parts.push(`${plan.overdue.length} overdue to move`)
@@ -427,7 +621,7 @@ export function weekPlanSummary(plan) {
  * day (local midnight in this runtime's zone), so it reads as a plan on the
  * People card — and, open, suppresses them from the next proposal.
  */
-export function catchUpTask(item, { id, now = new Date() }) {
+export function catchUpTask(item: Pick<PersonItem, 'personId' | 'title' | 'dueDay'>, { id, now = new Date() }: { id: string; now?: Date }): Task {
   const stamp = now.toISOString()
   return {
     kind: 'task',
@@ -447,19 +641,34 @@ export function catchUpTask(item, { id, now = new Date() }) {
 // ---- today's meal ideas -------------------------------------------------------
 
 /** "4 days", "5 weeks", "3 months". */
-function span(days) {
+function span(days: number): string {
   if (days < 14) return `${days} day${days === 1 ? '' : 's'}`
   if (days < 60) return `${Math.round(days / 7)} weeks`
   return `${Math.round(days / 30)} months`
 }
 
 /** "3 May", with the year only when it is not this one. */
-function dayMonth(key, todayKey) {
+function dayMonth(key: string, todayKey: string): string {
   const [y, m, d] = key.split('-').map(Number)
   return `${d} ${MONTH_NAMES[m - 1]}${key.slice(0, 4) === todayKey.slice(0, 4) ? '' : ` ${y}`}`
 }
 
-function ideaWhy(c, how, dayKey) {
+/** Something to eat today: a recipe cooked before as a meal, or a place eaten at. */
+type Candidate = {
+  id: string
+  title: string
+  /** Six months' count, and all of them: what "popular" and "old favourite" rank by. */
+  count: number
+  total: number
+  /** When it was last had. */
+  last: string
+  /** The six months' count its reason says. */
+  shownCount: number
+  slots: Set<MealSlot>
+  tags: string[]
+} & ({ kind: 'recipe'; category: null } | { kind: 'place'; category: PlaceCategory })
+
+function ideaWhy(c: Candidate, how: 'popular' | 'longAgo', dayKey: string): string {
   if (how === 'popular') return c.kind === 'recipe' ? `Cooked ${c.shownCount}× in six months` : `Been ${c.shownCount}× in six months`
   return c.kind === 'recipe' ? `Not cooked in ${span(daysBetween(c.last, dayKey))}` : `Haven't been since ${dayMonth(c.last, dayKey)}`
 }
@@ -477,13 +686,24 @@ function ideaWhy(c, how, dayKey) {
  * is nothing to go on. Lunch leans to cafés, fast food and recipes tagged for it,
  * dinner to restaurants, and whatever has been that meal before suits it; with
  * no such signal the slots are treated alike.
- * @param {readonly any[]} items
- * @param {{ dayKey?: string, slots?: readonly string[], now?: Date, dismissed?: readonly string[], tz?: string }} [o]
  */
-export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now = new Date(), dismissed = [], tz } = {}) {
-  if (!isDayKey(dayKey)) return []
+export function mealIdeasFor(
+  items: readonly unknown[],
+  o: { dayKey: string; slots?: readonly MealSlot[]; now?: Date; dismissed?: readonly string[]; tz?: string },
+): SlotIdeas[]
+export function mealIdeasFor(
+  items: readonly unknown[],
+  {
+    dayKey,
+    slots = ['lunch', 'dinner'],
+    now = new Date(),
+    dismissed = [],
+    tz,
+  }: { dayKey?: string; slots?: readonly MealSlot[]; now?: Date; dismissed?: readonly string[]; tz?: string } = {},
+): SlotIdeas[] {
+  if (dayKey === undefined || !isDayKey(dayKey)) return []
   const live = liveItems(items)
-  const ofKind = kind => live.filter(i => i.kind === kind)
+  const ofKind = <K extends Item['kind']>(kind: K) => recordsOf(live, kind)
   const meals = ofKind('meal')
   const tasks = ofKind('task')
   const skip = new Set(dismissed ?? [])
@@ -494,7 +714,7 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
   // Each candidate: `count` and `total`, what "popular" and "old favourite"
   // rank by; `last`, when it was last had; `shownCount`, the six months' count
   // its reason says.
-  const candidates = []
+  const candidates: Candidate[] = []
   // a recipe is offered, and ranked, for the meals it was the main of; a side
   // had cools it down and counts in what the reason says. A meal already on
   // the menu for the week ahead cools a recipe down like one just eaten
@@ -510,8 +730,9 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
       title: r.name ?? '',
       count: s.count,
       total: s.total,
-      last: h.lastCooked,
-      shownCount: h.count,
+      // had holds whatever mains does: sides are had too
+      last: h!.lastCooked,
+      shownCount: h!.count,
       slots: s.slots,
       tags: (r.tags ?? []).map(t => String(t).toLowerCase()),
       category: null,
@@ -526,30 +747,30 @@ export function mealIdeasFor(items, { dayKey, slots = ['lunch', 'dinner'], now =
     candidates.push({ kind: 'place', id: p.id, title: p.name ?? '', count, total: h.days.length, last: h.days[0], shownCount: count, slots: h.slots, tags: [], category: p.category })
   }
 
-  const fits = (c, slot) => c.slots.has(slot) || (c.kind === 'recipe' ? c.tags.some(t => (SLOT_TAGS[slot] ?? []).includes(t)) : (SLOT_PLACES[slot] ?? []).includes(c.category))
-  const tie = (a, b) => cmp(a.title, b.title) || cmp(a.kind, b.kind) || cmp(a.id, b.id)
+  const fits = (c: Candidate, slot: MealSlot) => c.slots.has(slot) || (c.kind === 'recipe' ? c.tags.some(t => (SLOT_TAGS[slot] ?? []).includes(t)) : (SLOT_PLACES[slot] ?? []).includes(c.category))
+  const tie = (a: Candidate, b: Candidate) => cmp(a.title, b.title) || cmp(a.kind, b.kind) || cmp(a.id, b.id)
   const planned = new Set(meals.filter(m => m.date === dayKey).map(m => m.slot))
-  const used = new Set()
-  const rows = slots.map(slot => ({ slot, missing: !planned.has(slot), ideas: [] }))
+  const used = new Set<string>()
+  const rows = slots.map((slot): SlotIdeas => ({ slot, missing: !planned.has(slot), ideas: [] }))
 
   /**
    * Top a slot up from the candidates still going. `onlyFitting` is the whole
    * point of the two passes below: every slot gets first refusal on what
    * actually suits it, before anything is handed out on suitability alone.
    */
-  const fill = (row, onlyFitting) => {
+  const fill = (row: SlotIdeas, onlyFitting: boolean) => {
     const { slot } = row
-    const keyOf = c => `idea:${dayKey}:${slot}:${c.kind}:${c.id}`
+    const keyOf = (c: Candidate) => `idea:${dayKey}:${slot}:${c.kind}:${c.id}`
     const open = candidates.filter(c => !used.has(`${c.kind}:${c.id}`) && !skip.has(keyOf(c)) && (!onlyFitting || fits(c, slot)))
-    const suits = (a, b) => Number(fits(b, slot)) - Number(fits(a, slot))
+    const suits = (a: Candidate, b: Candidate) => Number(fits(b, slot)) - Number(fits(a, slot))
     const popular = open.filter(c => c.count > 0).sort((a, b) => suits(a, b) || b.count - a.count || tie(a, b))
     const longAgo = open.filter(c => c.total >= 2).sort((a, b) => suits(a, b) || cmp(a.last, b.last) || tie(a, b))
-    const lists = [
+    const lists: [Candidate[], 'popular' | 'longAgo'][] = [
       [popular, 'popular'],
       [longAgo, 'longAgo'],
     ]
     const at = [0, 0]
-    const chosen = new Set()
+    const chosen = new Set<Candidate>()
     for (let turn = 0; row.ideas.length < IDEAS_PER_SLOT && (at[0] < popular.length || at[1] < longAgo.length); turn = 1 - turn) {
       const [list, how] = lists[turn]
       while (at[turn] < list.length && chosen.has(list[at[turn]])) at[turn]++

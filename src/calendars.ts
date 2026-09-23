@@ -1,4 +1,4 @@
-import { isMineTask } from '../shared/domain.mjs'
+import { isMineTask } from '../shared/domain.mts'
 import { CalendarEntry, CalendarSource, Item, OPEN_STATUSES, Task, TaskStatus } from './types'
 import { apiFetch } from './api'
 import { googleLedgerKey, msLedgerKey, readCursor, writeCursor, type MirrorSpec } from './calendarstate'

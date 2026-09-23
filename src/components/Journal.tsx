@@ -26,7 +26,7 @@ import {
   weekdayLabel,
   weekdayName,
 } from '../journal'
-import { weekStartKey } from '../../shared/weeks.mjs'
+import { weekStartKey } from '../../shared/weeks.mts'
 import { useMediaQuery } from '../useMediaQuery'
 import { StatTile } from './bits'
 import { JournalEditor, JournalPeople } from './JournalCard'

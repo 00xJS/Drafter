@@ -109,7 +109,7 @@ describe('removing a household member', () => {
   })
 
   it('re-attributes the shared work only, by the one list of personal kinds', () => {
-    expect(src).toContain("import { PERSONAL_KINDS } from '../../shared/kinds.mjs'")
+    expect(src).toContain("import { PERSONAL_KINDS } from '../../shared/kinds.mts'")
     // notes are excluded here and moved by a statement of their own, so a
     // private one never travels (v3.16, v3.19 — srv-household.test.ts drives it)
     expect(src).toContain("kind=not.in.(${[...PERSONAL_KINDS, 'note'].join(',')})")

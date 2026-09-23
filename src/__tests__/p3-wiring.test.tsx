@@ -11,7 +11,7 @@ import { planDayWrites, type ShutdownResult } from '../focus'
 import type { Store } from '../store'
 import type { CalendarEntry, GroceryList, Item, Meal, Recipe, Task, TaskStatus } from '../types'
 import { dateKey } from '../utils'
-import { newerStamp, nextOccurrence } from '../../shared/domain.mjs'
+import { newerStamp, nextOccurrence } from '../../shared/domain.mts'
 import { plannerSource } from './source'
 
 // The daily routines wired into the shell: what Plan my day and Shut down

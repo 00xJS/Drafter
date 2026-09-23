@@ -1,12 +1,12 @@
 // Pure digest helpers shared by the scheduled Netlify function and tests.
-// Keep declarations in shared/digest.d.mts (not under netlify/functions/).
 
-import { legacyPostToTask } from './domain.mjs'
-import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mjs'
-import { OPEN, bucketByDue, focusTasks } from './today.mjs'
-import { tonightLine } from './kitchen.mjs'
-import { placeCadenceStatus } from './places.mjs'
-import { readableRow } from './kinds.mjs'
+import type { CalendarEntry, Item, Task } from '../src/types.ts'
+import { isRecord, legacyPostToTask } from './domain.mts'
+import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mts'
+import { OPEN, bucketByDue, focusTasks } from './today.mts'
+import { tonightLine } from './kitchen.mts'
+import { placeCadenceStatus } from './places.mts'
+import { readableRow } from './kinds.mts'
 
 const DAY = 86_400_000
 /** Don't re-nag the same person (or place) more often than this. */
@@ -15,8 +15,11 @@ const NEVER_MIN_AGE_DAYS = 30
 /** How many names a Catch up / Been a while line spells out before "+n more". */
 const DIGEST_NAMES = 3
 
-/** Local hour + calendar day for an instant. Never throws: an invalid date yields nulls. */
-export function localParts(date, tz) {
+/**
+ * Local hour + calendar day for an instant. Never throws: an invalid date
+ * yields nulls. A string is read as a date (Date.parse), never as epoch ms.
+ */
+export function localParts(date: Date | string, tz: string): { hour: number | null; day: string | null; weekday: string | null } {
   const ms = date instanceof Date ? date.getTime() : Date.parse(date)
   if (!Number.isFinite(ms)) return { hour: null, day: null, weekday: null }
   try {
@@ -32,10 +35,23 @@ export function localParts(date, tz) {
   }
 }
 
-const dayKeyIn = (iso, tz) => localParts(iso, tz).day
+const dayKeyIn = (iso: string, tz: string): string | null => localParts(iso, tz).day
+
+/** A row as the digest reads it: its data (a pre-v3 post read as a task), and whose it is. */
+export type VisibleItem = Record<string, unknown> & { ownerId?: string }
+
+/** A row's own fields, whatever its data holds, and whose it is. */
+function withOwner<T>(data: T, ownerId: string | undefined): T & { ownerId: string | undefined } {
+  return { ...data, ownerId }
+}
 
 /** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
-export function visibleItemsFor(rows, userId, peerIds, ownerId) {
+export function visibleItemsFor(
+  rows: readonly { user_id: string | null; data: unknown }[] | null | undefined,
+  userId: string,
+  peerIds: Iterable<string> | null | undefined,
+  ownerId: string | null,
+): VisibleItem[] {
   const visible = new Set([userId, ...(peerIds ?? [])])
   // Mirrors the posts policy: a peer's rows are visible except PERSONAL_KINDS
   // (journal, review, calendar, habit, routine, meal and the wardrobe's garment,
@@ -48,7 +64,28 @@ export function visibleItemsFor(rows, userId, peerIds, ownerId) {
       if (r.user_id === null) return userId === ownerId
       return visible.has(r.user_id) && readableRow(r.data, r.user_id, userId)
     })
-    .map(r => ({ ...legacyPostToTask(r.data), ownerId: r.user_id ?? undefined }))
+    .map(r => withOwner(legacyPostToTask(r.data), r.user_id ?? undefined))
+}
+
+export interface Digest {
+  overdue: Task[]
+  dueToday: Task[]
+  occasions: string[]
+  peopleDue: string[]
+  /** Cadence places that are overdue a return, "Nopi (120d)"; never a place without a rhythm. */
+  placesDue: string[]
+  /** "Tonight: Pasta (7 ingredients)" when a dinner is planned today. */
+  tonight: string | null
+  /** Today's open focus tasks, the first line's names. */
+  focus: Task[]
+  weekPlan: string | null
+  lines: string[]
+  nudgedNext: Record<string, string>
+}
+
+/** The live records of one kind among the items: a row that says its kind is written with that kind's fields. */
+function liveOf<K extends Item['kind']>(items: readonly unknown[], kind: K): Extract<Item, { kind: K }>[] {
+  return items.filter((i): i is Extract<Item, { kind: K }> => isRecord(i) && i.kind === kind && !i.deletedAt)
 }
 
 /**
@@ -57,25 +94,32 @@ export function visibleItemsFor(rows, userId, peerIds, ownerId) {
  * `userId` is the reader: their focus for today opens the digest, and a
  * household member's picks are left out. `extra.weekPlan` is Sunday's week-plan
  * summary, worked out by the caller, which closes it.
- * @param {any[]} items
  */
-export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = {}) {
-  const tasks = items.filter(i => i.kind === 'task' && !i.deletedAt)
-  const people = items.filter(i => i.kind === 'person' && !i.deletedAt)
-  const places = items.filter(i => i.kind === 'place' && !i.deletedAt)
+export function buildDigest(
+  items: readonly unknown[],
+  tz: string,
+  now: Date,
+  nudged: Record<string, string> = {},
+  userId: string | null = null,
+  extra: { weekPlan?: string | null } = {},
+): Digest {
+  const tasks = liveOf(items, 'task')
+  const people = liveOf(items, 'person')
+  const places = liveOf(items, 'place')
   // household-shared: tonight's dinner, and a meal eaten out counts as going there
-  const meals = items.filter(i => i.kind === 'meal' && !i.deletedAt)
+  const meals = liveOf(items, 'meal')
   const today = localParts(now, tz).day
-  const { overdue, dueToday } = bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) })
+  // no day to go by (an instant that is not a date): nothing is overdue or due today
+  const { overdue, dueToday } = today ? bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) }) : { overdue: [], dueToday: [] }
   const nowMs = now.getTime()
-  const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
+  const nudgedNext: Record<string, string> = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 
   // your own past events count as seeing whoever was on them, as on the People
   // page — and only YOURS (userId): the address book is the household's, the
   // log of who saw whom is each member's own
-  const seen = seenTasks(tasks, items.filter(i => i.kind === 'event'), now, userId)
-  const peopleDue = []
-  const peopleIds = []
+  const seen = seenTasks(tasks, items.filter((i): i is CalendarEntry => isRecord(i) && i.kind === 'event'), now, userId)
+  const peopleDue: string[] = []
+  const peopleIds: string[] = []
   for (const p of people) {
     // an open planned visit means the nudge already did its job
     if (plannedVisit(p.id, tasks)) continue
@@ -101,8 +145,8 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
 
   // Places only nag when the user set a rhythm, and only once clearly overdue
   // (1.5× the cadence) — merely "due" stays on Today, never in the inbox.
-  const placesDue = []
-  const placeIds = []
+  const placesDue: string[] = []
+  const placeIds: string[] = []
   for (const p of places) {
     const { status, daysSince } = placeCadenceStatus(p, tasks, now, meals, userId)
     if (status !== 'overdue') continue
@@ -126,18 +170,18 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
     o => `${o.person.name}'s ${o.kind}${o.daysUntil === 0 ? ' today' : ` in ${o.daysUntil}d`}`,
   )
   // the week's meals are household-shared, so tonight's dinner is everyone's line
-  const tonight = today ? tonightLine(meals, items.filter(i => i.kind === 'recipe' && !i.deletedAt), today) : null
+  const tonight = today ? tonightLine(meals, liveOf(items, 'recipe'), today) : null
   // Today's focus, set at last night's Shut down or this morning — only what is
   // still open: a finished one needs no reminder.
   const focus = today ? focusTasks(tasks, today, userId).filter(t => OPEN.includes(t.status)) : []
   const weekPlan = typeof extra?.weekPlan === 'string' && extra.weekPlan.trim() ? extra.weekPlan.trim() : null
 
-  const lines = []
+  const lines: string[] = []
   if (focus.length) lines.push(`Focus: ${focus.slice(0, DIGEST_NAMES).map(t => t.title || 'Untitled task').join(' · ')}${focus.length > DIGEST_NAMES ? ` · +${focus.length - DIGEST_NAMES} more` : ''}`)
   if (overdue.length) lines.push(`${overdue.length} overdue: ${overdue.slice(0, 3).map(t => t.title).join(', ')}${overdue.length > 3 ? '…' : ''}`)
   if (dueToday.length) lines.push(`${dueToday.length} due today: ${dueToday.slice(0, 3).map(t => t.title).join(', ')}${dueToday.length > 3 ? '…' : ''}`)
   if (occasions.length) lines.push(`Occasions: ${occasions.join(', ')}`)
-  const named = list => `${list.slice(0, DIGEST_NAMES).join(', ')}${list.length > DIGEST_NAMES ? `, +${list.length - DIGEST_NAMES} more` : ''}`
+  const named = (list: string[]) => `${list.slice(0, DIGEST_NAMES).join(', ')}${list.length > DIGEST_NAMES ? `, +${list.length - DIGEST_NAMES} more` : ''}`
   if (peopleDue.length) lines.push(`Catch up with: ${named(peopleDue)}`)
   if (placesDue.length) lines.push(`Been a while: ${named(placesDue)}`)
   if (tonight) lines.push(tonight)

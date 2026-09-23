@@ -4,7 +4,7 @@
 // calendar hosts don't send CORS headers. Session-gated like every function.
 
 import { withCors } from './lib/cors.mjs'
-import { expandEvents, parseICS } from '../../shared/ics.mjs'
+import { expandEvents, parseICS } from '../../shared/ics.mts'
 import { listEvents, toEvent } from './lib/google.mjs'
 import { isOwnDrafterCalendar, listAccounts as msListAccounts, listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
 import { getUser } from './lib/session.mjs'

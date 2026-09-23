@@ -3,7 +3,7 @@ import { captureSeed, deterministicCapture, isSimpleDateCapture } from '../captu
 import { dueLabel, dueTone, duplicateTask } from '../taskutils'
 import { plannedGift, personStats } from '../people'
 import { nextUp } from '../review'
-import { plannedVisit } from '../../shared/people.mjs'
+import { plannedVisit } from '../../shared/people.mts'
 import { Person, Task } from '../types'
 
 const baseTask = (partial: Partial<Task> & { id: string }): Task => ({

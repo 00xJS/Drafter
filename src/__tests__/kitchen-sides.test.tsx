@@ -28,11 +28,11 @@ import {
 } from '../kitchen'
 import { sanitizeItem } from '../schema'
 import type { Meal, Recipe } from '../types'
-import { MAX_SIDES, tonightLine } from '../../shared/kitchen.mjs'
-import { mealHistory, mealIdeasFor, proposeWeek } from '../../shared/weekplan.mjs'
+import { MAX_SIDES, tonightLine } from '../../shared/kitchen.mts'
+import { mealHistory, mealIdeasFor, proposeWeek } from '../../shared/weekplan.mts'
 
 // Sides on a meal, and when a recipe was last cooked. One rule decides what a
-// meal cooks (shared/kitchen.mjs): the counts every screen shows, the grocery
+// meal cooks (shared/kitchen.mts): the counts every screen shows, the grocery
 // list, the name a meal goes by, the slot row, the recipe list and cook mode
 // all follow it. Static renders, like the other sheet tests.
 

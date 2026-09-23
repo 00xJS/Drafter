@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { newerStamp } from '../../itemops'
 import { liveById, retired, saveOutfit, wearIndex } from '../../wardrobe'
-import { outfitLabel } from '../../../shared/wardrobe.mjs'
+import { outfitLabel } from '../../../shared/wardrobe.mts'
 import { localDayKey } from '../../journal'
 import type { PlannerCtx } from './ctx'
 import { StatsLens } from './lazy'

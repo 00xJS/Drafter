@@ -3,9 +3,9 @@ import { DAY_MS, startOfDay } from './taskutils'
 import { seenTasks, visitDays } from './people'
 import { outingsAt } from './places'
 import { dateKey } from './utils'
-import { weekKeyOf } from '../shared/weeks.mjs'
-import { nextUp as sharedNextUp } from '../shared/today.mjs'
-import { inRange as sharedInRange, isVisit as sharedIsVisit, peopleSeen as sharedPeopleSeen, reviewLists } from '../shared/review.mjs'
+import { weekKeyOf } from '../shared/weeks.mts'
+import { nextUp } from '../shared/today.mts'
+import { inRange as sharedInRange, isVisit, peopleSeen as sharedPeopleSeen, reviewLists } from '../shared/review.mts'
 
 export type Period = 'week' | 'month'
 
@@ -88,8 +88,7 @@ export interface ReviewData {
   doneByDay: number[]
 }
 
-/** A logged get-together, not a piece of work: counted separately everywhere. */
-export const isVisit = (t: Task): boolean => sharedIsVisit(t)
+export { isVisit }
 
 const inRange = (iso: string | undefined, r: Range) => sharedInRange(iso, r.start, r.end)
 
@@ -99,7 +98,7 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const next = shiftRange(range, 1)
   const open = tasks.filter(t => t.status === 'todo' || t.status === 'doing' || t.status === 'blocked')
   // done, slipped and people seen are the lists Sunday's automatic draft reads
-  // too (shared/review.mjs), so the draft names what this page shows
+  // too (shared/review.mts), so the draft names what this page shows
   const { done, visitsDone, slipped } = reviewLists(tasks, range, now)
   const created = tasks.filter(t => inRange(t.createdAt, range) && !t.tags.includes('visit'))
   const upcoming = open.filter(t => inRange(t.dueAt, next)).sort((a, b) => a.dueAt!.localeCompare(b.dueAt!))
@@ -170,18 +169,7 @@ export interface NextUp {
   score: number
 }
 
-/**
- * Ranked in shared/today.mjs, so the week plan's Top 3 — in the app and in the
- * Sunday digest — ranks exactly as this list does. `exclude` leaves tasks out
- * without changing how the rest score: today's focus has its own card.
- */
-export function nextUp(
-  tasks: Task[],
-  projects: Project[],
-  limit = 6,
-  now = new Date(),
-  pinnedTitles: string[] = [],
-  exclude: ReadonlySet<string> = new Set(),
-): NextUp[] {
-  return sharedNextUp(tasks, projects, limit, now, pinnedTitles, exclude)
-}
+// Ranked in shared/today.mts, so the week plan's Top 3 — in the app and in the
+// Sunday digest — ranks exactly as this list does. `exclude` leaves tasks out
+// without changing how the rest score: today's focus has its own card.
+export { nextUp }

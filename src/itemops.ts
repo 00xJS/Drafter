@@ -1,9 +1,9 @@
 import { Item } from './types'
 import { sanitizeItem } from './schema'
-import { newerStamp } from '../shared/domain.mjs'
-import { mergeRecord, sameContent, type MergeConflict } from '../shared/merge.mjs'
+import { newerStamp } from '../shared/domain.mts'
+import { mergeRecord, sameContent, type MergeConflict } from '../shared/merge.mts'
 
-export { duplicateSpawnPairs, duplicateSpawns, newerStamp, nextOccurrence, spawnId, isUntimed, localDate, localMidnightIso } from '../shared/domain.mjs'
+export { duplicateSpawnPairs, duplicateSpawns, newerStamp, nextOccurrence, spawnId, isUntimed, localDate, localMidnightIso } from '../shared/domain.mts'
 
 /** Last-write-wins merge by id, using updatedAt (ISO strings compare lexically). */
 export function mergeItems<T extends Item>(a: T[], b: T[]): T[] {

@@ -24,7 +24,7 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { SCOPES, TOOLS, createContext } from './tools.mjs'
 import { SERVER_INFO, handleBody, instructionsFor } from './protocol.mjs'
-import { makeClock } from '../shared/clock.mjs'
+import { makeClock } from '../shared/clock.mts'
 
 export const DEFAULT_MCP_URL = 'https://drafterz.netlify.app/api/mcp'
 const USER_AGENT = 'drafter-mcp-proxy/3'

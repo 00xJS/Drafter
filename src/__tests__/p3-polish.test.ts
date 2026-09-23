@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { polishWeekPlan, weekPolishInput } from '../ai'
-import { proposeWeek } from '../../shared/weekplan.mjs'
-import type { WeekPlan } from '../../shared/weekplan.mjs'
+import { proposeWeek } from '../../shared/weekplan.mts'
+import type { WeekPlan } from '../../shared/weekplan.mts'
 import type { Meal, Person, Recipe, Task } from '../types'
 
 // The ✨ polish of a week plan is only ever a proposal: it may pick among each

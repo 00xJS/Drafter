@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { Habit } from '../types'
 import { isDueOn, isDoneOn, toggleDone, streakOf, rangeStats, habitsConsistency } from '../habits'
 import { sanitizeHabit } from '../schema'
-import { habitLines } from '../../shared/review.mjs'
+import { habitLines } from '../../shared/review.mts'
 
 function habit(over: Partial<Habit> = {}): Habit {
   return { kind: 'habit', id: 'h1', name: 'Read', done: [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', ...over }

@@ -74,11 +74,11 @@ import {
   Note,
 } from './types'
 import { CHAT_ACTIONS_MAX, CHAT_ACTION_TYPES, type ChatAction, type ChatNameRef, type ChatOutcome, type ChatOutcomeState, type ChatTaskStatus } from './types'
-import { legacyPostToTask } from '../shared/domain.mjs'
-import { MAX_SIDES } from '../shared/kitchen.mjs'
-import { SYNC_KINDS } from '../shared/kinds.mjs'
-import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
-import { isDayKey } from '../shared/weeks.mjs'
+import { legacyPostToTask } from '../shared/domain.mts'
+import { MAX_SIDES } from '../shared/kitchen.mts'
+import { SYNC_KINDS } from '../shared/kinds.mts'
+import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
+import { isDayKey } from '../shared/weeks.mts'
 import { tidyCoords } from './geo'
 import { safeHttpUrl } from './links'
 import { sanitizeHtml } from './richtext'
@@ -430,7 +430,7 @@ const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
 const ROUTINE_WHEN_SET = new Set<string>(ROUTINE_WHENS)
-/** Every kind sync_posts accepts — one list, in shared/kinds.mjs; a test holds public.record_kinds to it. */
+/** Every kind sync_posts accepts — one list, in shared/kinds.mts; a test holds public.record_kinds to it. */
 export const KNOWN_KINDS = SYNC_KINDS
 
 /** Coerce arbitrary data into a valid Person. */

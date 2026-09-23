@@ -29,7 +29,7 @@ export interface OpsHealth {
   lastSnapshotAt?: string | null
 }
 
-/** One error the devices reported, however many times. Never a record: shared/errorreport.mjs is what it may hold. */
+/** One error the devices reported, however many times. Never a record: shared/errorreport.mts is what it may hold. */
 export interface ClientError {
   id: string
   message: string

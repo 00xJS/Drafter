@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
-import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared/weekplan.mjs'
-import type { MealHistory } from '../../shared/weekplan.mjs'
-import { weekDayKeys } from '../../shared/weeks.mjs'
+import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared/weekplan.mts'
+import type { MealHistory } from '../../shared/weekplan.mts'
+import { weekDayKeys } from '../../shared/weeks.mts'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
 import { cookedIndex, visitIndex, daysAgo, daysBetween, mealAt, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
@@ -11,7 +11,7 @@ import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 
 // "Plan this week's meals" on the Kitchen tab: a pick for every empty dinner
-// (and lunch, when asked) from the kitchen's own ranking in shared/weekplan.mjs,
+// (and lunch, when asked) from the kitchen's own ranking in shared/weekplan.mts,
 // each with Swap and Pick…, plus "✨ Ask for ideas" when deciding is hard.
 // Nothing is planned until "Plan N meals" — then every meal goes through the
 // Kitchen's own save path in one go, with an Undo.

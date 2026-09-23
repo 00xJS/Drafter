@@ -6,17 +6,17 @@
 
 export const DAY_MS = 86_400_000
 
-function parts(key) {
+function parts(key: unknown): [number, number, number] | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key ?? ''))
   return m ? [Number(m[1]), Number(m[2]) - 1, Number(m[3])] : null
 }
 
-function keyOf(utcMs) {
+function keyOf(utcMs: number): string {
   return new Date(utcMs).toISOString().slice(0, 10)
 }
 
 /** True for a real calendar day in YYYY-MM-DD form: 2026-02-30 is not one. */
-export function isDayKey(key) {
+export function isDayKey(key: unknown): boolean {
   const p = parts(key)
   if (!p) return false
   const d = new Date(Date.UTC(p[0], p[1], p[2]))
@@ -24,7 +24,7 @@ export function isDayKey(key) {
 }
 
 /** The Sunday on or before this day. */
-export function weekStartKey(dateKey) {
+export function weekStartKey(dateKey: string): string | null {
   const p = parts(dateKey)
   if (!p) return null
   const ms = Date.UTC(p[0], p[1], p[2])
@@ -32,7 +32,7 @@ export function weekStartKey(dateKey) {
 }
 
 /** `2026-W37`: the week number counts Sundays from 1 January of the week's start year. */
-export function weekKeyOf(dateKey) {
+export function weekKeyOf(dateKey: string): string | null {
   const start = weekStartKey(dateKey)
   const p = start ? parts(start) : null
   if (!p) return null
@@ -42,7 +42,7 @@ export function weekKeyOf(dateKey) {
 }
 
 /** The seven day keys of the week containing `dateKey`, Sunday first. */
-export function weekDayKeys(dateKey) {
+export function weekDayKeys(dateKey: string): string[] {
   const start = weekStartKey(dateKey)
   const p = start ? parts(start) : null
   if (!p) return []
@@ -55,7 +55,7 @@ export function weekDayKeys(dateKey) {
  * the one Sunday that falls n - 1 whole weeks after 1 January, so it is the
  * first Sunday from there. Null for anything that is not a week's key.
  */
-export function weekKeyStart(weekKey) {
+export function weekKeyStart(weekKey: string): string | null {
   const m = /^(\d{4})-W(\d{2})$/.exec(String(weekKey ?? ''))
   if (!m || Number(m[2]) < 1) return null
   const from = Date.UTC(Number(m[1]), 0, 1) + (Number(m[2]) - 1) * 7 * DAY_MS
