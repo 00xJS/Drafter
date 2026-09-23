@@ -1,6 +1,15 @@
 import { Item } from './types'
 import { sanitizeItem } from './schema'
 import { getSupabase } from './supabase'
+import type { SyncInfo } from './syncengine'
+
+/**
+ * Why a round got no answer: no connection ('offline'), the server failed it
+ * ('server' — a statement timeout on a full exchange, a 500), or the session
+ * is no good ('auth'). They used to be one: anything but an expired token read
+ * as "Offline — tap to retry", on a connection that was working fine.
+ */
+export type SyncProblem = 'offline' | 'server' | 'auth'
 
 export interface SyncResult {
   /** Items newer than `since` (everything when since is null). Null when unreachable. */
@@ -47,6 +56,10 @@ export interface SyncResult {
   peerSharedKinds?: string[] | null
   /** True when the failure was an expired/invalid session rather than the network. */
   authError: boolean
+  /** Why there was no answer (items null), when it was not simply the network. */
+  problem?: SyncProblem
+  /** The server's own words, for a 'server' problem: Settings → Sync shows them. */
+  message?: string
   /**
    * True when the server answered in the object shape — it says what it
    * refused. Then a sent row that is neither rejected nor echoed was accepted
@@ -119,29 +132,61 @@ export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' 
 }
 
 /**
+ * A failed sync_posts call, told apart. No answer at all — postgrest-js says
+ * status 0 when the fetch itself failed — or a browser that knows it is
+ * offline is the network. A 401 or a token PostgREST calls expired is the
+ * session: signing in again is the fix. Anything else is the server, and its
+ * message is kept for Settings: a working connection is not the problem.
+ */
+export function classifySyncFailure(error: { message?: string; code?: string } | null | undefined, status: number | undefined, online = true): { problem: SyncProblem; message?: string } {
+  if (!online || status === 0) return { problem: 'offline' }
+  const text = `${error?.message ?? ''} ${error?.code ?? ''}`.toLowerCase()
+  if (status === 401 || text.includes('jwt') || /\bpgrst30[1-3]\b/.test(text)) return { problem: 'auth' }
+  // with no session the call runs as anon and meets "permission denied" — a
+  // 401 above; with no status to go by, that reading stands
+  if (status === undefined && text.includes('permission denied')) return { problem: 'auth' }
+  const said = error?.message?.trim()
+  return { problem: 'server', message: said ? said.slice(0, 300) : status ? `The server answered ${status}` : undefined }
+}
+
+/**
  * Delta sync against the sync_posts RPC: push dirty items, receive rows newer
  * than the synced_at cursor. `since: null` is a full exchange.
+ *
+ * A row the server refuses comes back as a bare id: sync_posts (v3.31) says
+ * which, not why, so Settings can show a reason only where an older server
+ * shape gave one. Saying why would take a sync_posts change of its own.
  */
 export async function syncNow(outgoing: Item[], since: string | null): Promise<SyncResult> {
   const sb = getSupabase()
   if (!sb) return { ...OFFLINE, authError: false }
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false
   let data: unknown
   try {
     const res = await sb.rpc('sync_posts', { incoming: outgoing, since })
     if (res.error) {
       console.error('Supabase sync failed:', res.error.message)
-      const msg = `${res.error.message} ${res.error.code ?? ''}`.toLowerCase()
-      const authError = msg.includes('jwt') || msg.includes('401') || msg.includes('permission denied')
-      return { ...OFFLINE, authError }
+      const why = classifySyncFailure(res.error, res.status, online)
+      return { ...OFFLINE, authError: why.problem === 'auth', ...why }
     }
     data = res.data
   } catch (e) {
     // a thrown fetch is the network, not the session
     console.error('Supabase sync failed:', e)
-    return { ...OFFLINE, authError: false }
+    return { ...OFFLINE, authError: false, problem: 'offline' }
   }
   const parsed = parseSyncResponse(data)
-  return parsed ? { ...parsed, authError: false } : { ...OFFLINE, authError: false }
+  return parsed ? { ...parsed, authError: false } : { ...OFFLINE, authError: false, problem: 'server', message: 'The server’s answer could not be read' }
+}
+
+/** What the top bar's sync pill says, to a screen reader and on hover. */
+export function syncPillLabel(configured: boolean, info: Pick<SyncInfo, 'online' | 'authError' | 'problem'>): string {
+  if (!configured) return 'Stored on this device — no account to sync with'
+  if (info.online) return 'Synced — tap to sync now'
+  if (info.problem === 'auth' || info.authError) return 'Session expired — sign in again to sync'
+  if (info.problem === 'server') return 'Sync failed on the server — tap to try again'
+  if (info.problem === 'offline') return 'Offline — tap to retry'
+  return 'Not synced yet — tap to sync now'
 }
 
 /**

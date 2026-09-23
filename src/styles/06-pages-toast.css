@@ -229,6 +229,11 @@
   background: var(--ok);
 }
 
+/* the connection works and the server failed the round: not the grey of offline */
+.sync-dot.warn {
+  background: var(--warn-text);
+}
+
 /* ---------- lazy views ---------- */
 
 /* the space a screen holds while its chunk arrives: no spinner and no text,

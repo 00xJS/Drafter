@@ -10,10 +10,21 @@ export function Sync({ store, supabaseOn, syncing, setSyncing }: SettingsCtx) {
       <p className={store.syncInfo.online ? 'sync-ok' : 'sync-off'}>
         {store.syncInfo.online
           ? `Connected — last synced ${store.syncInfo.lastAt ? fmtDateTime(store.syncInfo.lastAt) : 'just now'}.`
-          : store.syncInfo.authError
+          : store.syncInfo.authError || store.syncInfo.problem === 'auth'
             ? 'Session expired — sign in again to resume syncing.'
-            : 'Offline — changes stay on this device until the connection returns.'}
+            : store.syncInfo.problem === 'server'
+              ? 'The server could not complete the last sync — changes stay on this device and are tried again.'
+              : store.syncInfo.problem === 'offline' || !supabaseOn
+                ? 'Offline — changes stay on this device until the connection returns.'
+                : 'Not synced yet — the first sync is on its way.'}
       </p>
+      {/* the connection works; what the server said is the one clue there is */}
+      {!store.syncInfo.online && store.syncInfo.problem === 'server' && store.syncInfo.message && (
+        <p className="field-hint">
+          The server said: <code>{store.syncInfo.message}</code>
+          {store.syncInfo.lastAt ? ` · last synced ${fmtDateTime(store.syncInfo.lastAt)}` : ''}
+        </p>
+      )}
       <p className="field-hint">
         {supabaseOn
           ? 'Projects, tasks, notes, people, places, recipes, meals and grocery lists live in Supabase Postgres and sync to every signed-in device (phone and web). Images sync through Supabase Storage.'

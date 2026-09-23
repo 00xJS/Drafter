@@ -4,7 +4,7 @@ import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence,
 import { applyLocalChoice, mergeRecord, sameContent } from '../shared/merge.mts'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
-import { peerVisibleByKind, purgeTombstone, type SyncResult } from './sync'
+import { peerVisibleByKind, purgeTombstone, type SyncProblem, type SyncResult } from './sync'
 import { NO_BOOKKEEPING, forgetLegacyBookkeeping, parseBookkeeping, readLegacyBookkeeping, type KV, type SyncBookkeeping, type SyncFailure } from './syncstate'
 import type { AskOp, Leadership, SyncMessage } from './synclead'
 
@@ -66,6 +66,10 @@ export interface SyncInfo {
   lastAt?: string
   /** The session is expired/invalid — the fix is signing in, not waiting. */
   authError: boolean
+  /** Why the last round got no answer: the network, the server, or the session (src/sync.ts). */
+  problem?: SyncProblem
+  /** The server's own words, when it was the server. */
+  message?: string
   /** Changes waiting to push (dirty set size, refused rows included). Never set in local mode. */
   pending?: number
   /** Ids the server rejected on the last round (validation/RLS) — still dirty, retried with backoff. */
@@ -722,6 +726,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
         if (snapshot.length > 0) kv.removeItem(LEGACY_LS_KEY)
       } catch (e) {
         console.error('Failed to save the local cache', e)
+        report(e, 'local cache')
       }
       return
     }
@@ -763,6 +768,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       // later change or this retry brings, whichever comes first
       for (const id of ids) unsaved.add(id)
       console.error('Failed to save the local cache', e)
+      // a failure nobody sees on the device: the site owner hears of it
+      report(e, 'local cache')
       if (persistTimer === undefined) schedulePersist(PERSIST_RETRY_MS)
     } finally {
       inflightIds = new Set()
@@ -980,7 +987,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       } catch (e) {
         console.error('Failed to load the local cache', e)
         if (gen !== bootGen) return null
-        if (attempt >= READ_RETRY_MS.length) throw e
+        if (attempt >= READ_RETRY_MS.length) {
+          report(e, 'local cache')
+          throw e
+        }
         await pause(READ_RETRY_MS[attempt])
         if (gen !== bootGen) return null
       }
@@ -1774,10 +1784,13 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       result = await rpc!(outgoing, pullSince(since))
     } catch (e) {
       console.error('Sync failed', e)
-      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerShared: null, peerNotes: null, authError: false, reportsRejections: false }
+      result = { items: null, rejected: [], reasons: {}, stale: [], gone: [], peerShared: null, peerNotes: null, authError: false, reportsRejections: false, problem: 'offline' }
     }
     if (result.items !== null) return result
-    publish({ syncInfo: { online: false, lastAt: state.syncInfo.lastAt, authError: result.authError, pending: pendingCount(), rejected: state.syncInfo.rejected } })
+    const problem: SyncProblem = result.problem ?? (result.authError ? 'auth' : 'offline')
+    publish({
+      syncInfo: { online: false, lastAt: state.syncInfo.lastAt, authError: result.authError, problem, message: result.message, pending: pendingCount(), rejected: state.syncInfo.rejected },
+    })
     return null
   }
 
