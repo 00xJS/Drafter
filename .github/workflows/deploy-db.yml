@@ -1,11 +1,17 @@
 # Apply the pending migrations to production, then redeploy the bot. Only on
-# purpose: run it from the Actions tab (Deploy database → Run workflow) and
-# type the word apply.
+# purpose: run it from the Actions tab (Deploy database → Run workflow), from
+# main, and type the word apply.
 #
 # The steps the owner runs at the Mac, in the open: link the project, print
 # the migrations and the dry run so the log shows what is about to change,
 # push, then deploy the bot — a migration that changes what is personal needs
 # the bot's copy of that list to follow it.
+#
+# Only main: a migration on a branch has passed none of CI, and production is
+# no place for it to find out. The job runs in the `production` environment,
+# where the owner can require a review before anything is applied
+# (Settings → Environments → production → Required reviewers) and keep it to
+# main (Deployment branches). GitHub makes the environment on the first run.
 #
 # Needs three repository secrets (Settings → Secrets and variables → Actions):
 #   SUPABASE_ACCESS_TOKEN  a personal access token (supabase.com → Account → Access Tokens)
@@ -31,10 +37,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  push:
+  # What can be refused before anyone is asked to approve: the branch and the
+  # word. Either one wrong fails the run here, with nothing touched.
+  preflight:
+    name: Refuse without main and the word
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 2
     steps:
+      - name: Refuse a branch other than main
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Nothing applied::Deploy database runs from main only, not $REF. Nothing was changed."
+            exit 1
+          fi
+
       - name: Refuse without the word
         env:
           CONFIRM: ${{ inputs.confirm }}
@@ -44,6 +62,13 @@ jobs:
             exit 1
           fi
 
+  push:
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
       # Each secret reaches only the steps that spend it; this one is told
       # whether they are set, never what they are.
       - name: Check the secrets are set

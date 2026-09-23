@@ -97,11 +97,23 @@ The smoke tests and the browser tests aren't part of `check`, since Netlify has 
 
 ## Deploy
 
-- **Web.** Netlify builds `main` with `npm run check`. It needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` and `NVIDIA_API_KEY`; everything else is optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin (Settings → Household).
-- **Database.** The owner applies migrations before deploying code that needs them: `supabase db push` at the Mac, or **Deploy database** in the repository's Actions tab, which asks you to type `apply`, prints the dry run, pushes, and redeploys the bot. It needs the repository secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` and `SUPABASE_PROJECT_REF`. A new kind of record must be on the sync allow-list first, or the server refuses it.
-- **Bot.** A push to `main` that changes `supabase/functions/` or `shared/kinds.mts` deploys it (**Deploy bot**, needing `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`; without them it deploys nothing and still passes). By hand: `supabase functions deploy bot` (add `--use-api` if Docker isn't running). Either way `BOT_TOKEN` is a Supabase secret.
+- **Web.** Netlify builds `main` with `npm run check`, or, once gated deploys are on (below), when CI has passed on it. It needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` and `NVIDIA_API_KEY`; everything else is optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin (Settings → Household).
+- **Database.** The owner applies migrations before deploying code that needs them: `supabase db push` at the Mac, or **Deploy database** in the repository's Actions tab, run from `main`, which asks you to type `apply`, prints the dry run, pushes, and redeploys the bot. It runs in the `production` environment, so Settings → Environments → production can require a review before anything is applied. It needs the repository secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` and `SUPABASE_PROJECT_REF`. A new kind of record must be on the sync allow-list first, or the server refuses it.
+- **Bot.** Once CI has passed on `main`, **Deploy bot** deploys it if `supabase/functions/` or `shared/kinds.mts` changed since it was last deployed, so a change pushed while CI was red goes out with the next green run (it needs `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`; without them it deploys nothing and still passes). By hand: `supabase functions deploy bot` (add `--use-api` if Docker isn't running). Either way `BOT_TOKEN` is a Supabase secret.
 - **iPhone.** `npm run ios`, then Run in Xcode. The app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
 - **Checks.** Admin → Data → Integration health has **Test AI**, **Send test push** and **Preview my digest**; Admin → Data shows what the database holds, the last run of the nightly backup and the hourly digest, and the errors devices reported. The owner's Today gets a banner when an hourly sync check finds the server refusing a kind of record, when the digest has not run for 3 hours, when no backup has worked for 36 hours, or when a run failed.
+
+### Gated deploys
+
+Off until the owner switches them on. Netlify's build runs `npm run check` but not the database smoke tests or the browser tests, so a push that fails those on GitHub still went live. With the gate on, Netlify skips the build a push to `main` starts (`scripts/netlify-ignore.mjs`, the `ignore` line in `netlify.toml`), and CI's last job calls the site's build hook once every test has passed. Branches and pull requests are never held back.
+
+To switch it on, in this order:
+
+1. **Netlify:** Project configuration → Developer settings → Continuous deployment → Build hooks → **Add build hook**, named `CI passed`, for the `main` branch. Copy its URL.
+2. **GitHub:** Settings → Secrets and variables → Actions → **New repository secret** `NETLIFY_BUILD_HOOK`, the URL. From here on each green `main` calls it; until step 3, a push is built twice, which does no harm.
+3. **Netlify:** Project configuration → Environment variables → add `DRAFTER_GATED_DEPLOYS` with the value `1`, scoped to Builds. The next push to `main` shows as skipped in Netlify's deploy list, and goes live when CI finishes, as a deploy titled *CI passed for* its commit.
+
+To switch it off, remove `DRAFTER_GATED_DEPLOYS` first, then the secret. While it is on, `curl -X POST -d '{}' <the hook URL>` deploys `main` as it stands, without waiting: the gate never skips a build the hook starts.
 
 ### iPhone and the Apple Developer Program
 

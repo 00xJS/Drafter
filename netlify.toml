@@ -1,6 +1,10 @@
 [build]
   command = "npm run check"
   publish = "dist"
+  # Gated deploys (README → Deploy): with DRAFTER_GATED_DEPLOYS=1 set on
+  # Netlify, a push to main waits for GitHub's CI to pass every test and call
+  # the build hook. Unset, every push builds as it always has.
+  ignore = "node ./scripts/netlify-ignore.mjs"
 
   [build.environment]
     # Netlify's secrets scanner fails a build when the value of an environment

@@ -1,8 +1,16 @@
-# Deploy the bot gateway (supabase/functions/bot) whenever main changes it, or
-# changes shared/kinds.mts, whose personal kinds the bot keeps its own copy of
+# Deploy the bot gateway (supabase/functions/bot) once CI has passed on main,
+# when what it is built from has changed: supabase/functions/, or
+# shared/kinds.mts, whose personal kinds the bot keeps its own copy of
 # (mcp.test.ts holds the two equal). Deployed by hand, the bot could lag the
 # app, and a bot on an old list can hand a household member's new personal
 # kind to an automation.
+#
+# It follows CI, not the push: a bot whose copy of the kinds disagrees with the
+# app's fails mcp.test.ts, and must not reach production first. "Changed" is
+# counted from the commit this workflow last deployed the bot from, not from
+# the push before, so a change pushed while CI was red still goes out with the
+# next green run. Only the newest commit on main deploys: a run that finishes
+# after a newer push leaves the deploy to that push's own run.
 #
 # The same command the owner runs at the Mac. It needs two repository secrets
 # (Settings → Secrets and variables → Actions):
@@ -12,16 +20,17 @@
 name: Deploy bot
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'supabase/functions/**'
-      - 'shared/kinds.mts'
-  # the same deploy on demand, from the Actions tab
+  # the same deploy on demand, from the Actions tab, and only from main
   workflow_dispatch:
 
+# actions: read finds the run that last deployed the bot (the bot-deployed artifact)
 permissions:
   contents: read
+  actions: read
 
 # one deploy at a time; a second waits rather than cancelling one half done
 concurrency:
@@ -29,40 +38,117 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  decide:
+    name: Decide
+    # A green CI run of a push to this repository's main. workflow_run also
+    # follows pull requests, a fork's among them; they never deploy.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - name: Refuse a branch other than main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error title=Bot not deployed::Run Deploy bot from main: only main has passed CI. Nothing was deployed."
+          exit 1
+
+      # the whole history, so the diff can reach back to the last deploy
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Did the bot change since it was last deployed?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # whether each secret is set, never what it is: this step spends neither
+          HAVE_SECRETS: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_PROJECT_REF != '' }}
+        run: |
+          set -euo pipefail
+          answer() {
+            echo "deploy=$1" >> "$GITHUB_OUTPUT"
+            echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          }
+          if [ "$HAVE_SECRETS" != true ]; then
+            echo "::notice title=Bot not deployed::SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are not both set as repository secrets, so the bot was left as it is. Deploy it by hand with: supabase functions deploy bot --use-api"
+            answer false
+            exit 0
+          fi
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "Deploying on demand from main at ${HEAD_SHA:0:7}."
+            answer true
+            exit 0
+          fi
+          main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$main" != "$HEAD_SHA" ]; then
+            echo "main has moved on to ${main:0:7}; its own CI run decides."
+            answer false
+            exit 0
+          fi
+          # The newest bot-deployed artifact is the last deploy's receipt: its
+          # run's commit is what the bot was built from. One from anywhere but
+          # this workflow on main counts for nothing.
+          last=""
+          receipt=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=bot-deployed&per_page=1" --jq '.artifacts[0].workflow_run.id // empty')
+          if [ -n "$receipt" ]; then
+            last=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$receipt" \
+              --jq 'select(.path == ".github/workflows/deploy-bot.yml" and .head_branch == "main") | .head_sha')
+          fi
+          if [ -z "$last" ] || ! git merge-base --is-ancestor "$last" "$HEAD_SHA" 2>/dev/null; then
+            echo "No earlier deploy from this workflow to count from, so the bot is deployed."
+            answer true
+          elif git diff --quiet "$last" "$HEAD_SHA" -- supabase/functions shared/kinds.mts; then
+            echo "Nothing the bot is built from has changed since it was deployed from ${last:0:7}."
+            answer false
+          else
+            echo "Changed since the bot was deployed from ${last:0:7}:"
+            git diff --stat "$last" "$HEAD_SHA" -- supabase/functions shared/kinds.mts
+            answer true
+          fi
+
   deploy:
+    name: Deploy the bot
+    needs: decide
+    if: needs.decide.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Each secret reaches only the step that spends it; this one is told
-      # whether they are set, never what they are.
-      - name: Check the secrets are set
-        id: secrets
-        env:
-          HAVE_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
-          HAVE_REF: ${{ secrets.SUPABASE_PROJECT_REF != '' }}
-        run: |
-          if [ "$HAVE_TOKEN" != true ] || [ "$HAVE_REF" != true ]; then
-            echo "::notice title=Bot not deployed::SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are not both set as repository secrets, so the bot was left as it is. Deploy it by hand with: supabase functions deploy bot --use-api"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        if: steps.secrets.outputs.ready == 'true'
         with:
+          ref: ${{ needs.decide.outputs.sha }}
           persist-credentials: false
 
       # pinned: the version the owner's Mac deploys with, so both deploy the same way
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
-        if: steps.secrets.outputs.ready == 'true'
         with:
           version: 2.109.0
 
       # --use-api bundles on Supabase's side, so no Docker is needed here
       - name: Deploy the bot
-        if: steps.secrets.outputs.ready == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: supabase functions deploy bot --use-api --project-ref "$SUPABASE_PROJECT_REF"
+
+      # the receipt the next run counts from (Decide, above)
+      - name: Note the commit deployed
+        env:
+          SHA: ${{ needs.decide.outputs.sha }}
+        run: echo "$SHA" > bot-deployed.txt
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: bot-deployed
+          path: bot-deployed.txt
+          retention-days: 90

@@ -2,7 +2,10 @@
 # before a deploy), then the two database smoke tests Netlify cannot run
 # because it has no Postgres. scripts/lib/pgtest.sh boots its own throwaway
 # cluster from the binaries on PATH, so there is no service container. Once
-# all that has passed, the browser tests, in a job of their own.
+# all that has passed, the browser tests, in a job of their own. On main, once
+# every job has passed: the site's deploy, when the owner has switched gated
+# deploys on (the deploy job, below), and the bot's (deploy-bot.yml follows
+# this workflow).
 #
 # The repository is public, so every action below is pinned to a commit, not
 # a tag: a tag can be moved to other code, a commit cannot. The version is in
@@ -90,3 +93,40 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # Gated deploys (README → Deploy): once main has passed everything above,
+  # Netlify is asked to build it through the site's build hook. Only while the
+  # owner has switched the gate on: the NETLIFY_BUILD_HOOK secret here, and
+  # DRAFTER_GATED_DEPLOYS=1 on Netlify, which then skips the build a push
+  # starts (scripts/netlify-ignore.mjs). Without the secret this does nothing,
+  # and Netlify builds each push to main itself, as before.
+  deploy:
+    name: Deploy (Netlify build hook)
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # one at a time; a newer run waits rather than cancelling one
+    concurrency:
+      group: netlify-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Ask Netlify to build main
+        env:
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$NETLIFY_BUILD_HOOK" ]; then
+            echo "Gated deploys are off (no NETLIFY_BUILD_HOOK secret): Netlify builds each push to main itself."
+            exit 0
+          fi
+          # A hook builds whatever main is now, not this commit. So only the
+          # newest commit asks: an older run finishing late would otherwise put
+          # a newer push live before its own tests had passed.
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "main has moved on to ${head:0:7}; its own CI run deploys it once it passes."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 -X POST -d '{}' "$NETLIFY_BUILD_HOOK?trigger_title=CI+passed+for+${GITHUB_SHA:0:7}"
+          echo "Netlify is building main at ${GITHUB_SHA:0:7}."
