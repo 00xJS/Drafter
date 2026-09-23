@@ -14,6 +14,8 @@
  * in the iOS shell.
  */
 
+import { isNative } from './native'
+
 type Recogniser = {
   lang: string
   continuous: boolean
@@ -28,17 +30,22 @@ type Recogniser = {
 type SpeechEvent = { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }
 type Ctor = new () => Recogniser
 
-/** Safari and Chrome ship it prefixed; Firefox ships nothing. */
+/**
+ * Safari and Chrome ship it prefixed; Firefox ships nothing. Never inside the
+ * iOS shell, whatever the web view exposes: the app declares no microphone or
+ * speech-recognition use to iOS (Info.plist has no usage description for
+ * either), so a recogniser started there could only be refused.
+ */
 function ctor(): Ctor | null {
+  if (isNative()) return null
   const w = globalThis as { SpeechRecognition?: Ctor; webkitSpeechRecognition?: Ctor }
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
 /**
  * Whether to offer the microphone at all. False inside the iOS shell, where
- * WKWebView does not expose the API to a page and the keyboard's own dictation
- * key is the right answer anyway — a button that asked and then failed would
- * be worse than no button.
+ * the keyboard's own dictation key is the answer — a button that asked and
+ * then failed would be worse than no button.
  */
 export function speechAvailable(): boolean {
   return !!ctor()
