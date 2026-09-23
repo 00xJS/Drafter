@@ -10,8 +10,7 @@ import { PullToRefresh } from './PullToRefresh'
 import { useSignOut } from './SignOutGuard'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { garmentMediaIds } from '../../shared/media.mjs'
-import { buildPaletteCommands } from './planner/commands'
-import type { PlannerCtx } from './planner/ctx'
+import { usePlannerCtx } from './planner/ctx'
 import { CalendarScreen } from './planner/CalendarScreen'
 import { AdminScreen } from './planner/AdminScreen'
 import { ChatScreen } from './planner/ChatScreen'
@@ -113,13 +112,13 @@ export default function Planner() {
   // editor waits on the network later
   useWarmChunks(owner.isOwner)
 
-  // Everything the top bar, the screens and the overlays read, rebuilt every
-  // render and handed down as one prop (see planner/ctx.ts).
-  const p: PlannerCtx = {
+  // Everything the top bar, the screens and the overlays read, handed down as
+  // one prop, with its callbacks the same functions from render to render
+  // (see planner/ctx.ts).
+  const p = usePlannerCtx({
     store,
     household,
     projectMap,
-    paletteCommands: buildPaletteCommands(nav, overlays),
     inHousehold,
     ...nav,
     ...listFilters,
@@ -131,7 +130,7 @@ export default function Planner() {
     ...lifeActions,
     ...taskActions,
     ...focusActions,
-  }
+  })
   // what the shell itself reads: the screen switch, pull to refresh, the toast
   const { view, pushed, manualSync, anyOpen, toast, setToast } = p
 
