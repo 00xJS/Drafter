@@ -173,7 +173,8 @@ describe('a past event of your own counts toward the People figures', () => {
     const mine = personStats(mum, eventVisits([lunch], NOW), NOW)
     const feed = personStats(mum, [logged(lunch, ['mum'])], NOW)
     for (const k of ['lastSeen', 'daysSince', 'count30', 'count90', 'avgGapDays', 'weekly', 'status', 'reason'] as const) expect(mine[k], k).toEqual(feed[k])
-    expect(mine).toMatchObject({ status: 'ok', reason: 'Last seen 1 day ago', count30: 1, count90: 1 })
+    // Saturday's lunch, read on Monday morning: two calendar days, as Ask says it
+    expect(mine).toMatchObject({ status: 'ok', reason: 'Last seen 2 days ago', count30: 1, count90: 1 })
     expect(yearReport([mum], eventVisits([lunch], NOW), 2026, NOW)).toEqual(yearReport([mum], [logged(lunch, ['mum'])], 2026, NOW))
   })
 
@@ -197,7 +198,7 @@ describe('a past event of your own counts toward the People figures', () => {
   it('reads on the People page exactly as the same event from another calendar does once logged', () => {
     const mine = page({ entries: [lunch] })
     expect(mine).toBe(page({ tasks: [logged(lunch, ['mum'])] }))
-    expect(mine).toContain('Last seen 1 day ago')
+    expect(mine).toContain('Last seen 2 days ago')
     // …and on People → Stats, where the list's tiles went
     const figures = stats({ entries: [lunch] })
     expect(figures).toBe(stats({ tasks: [logged(lunch, ['mum'])] }))
@@ -283,7 +284,7 @@ describe('every other place that says whether you have seen someone counts it to
 
   it('the morning digest stops listing her under Catch up with', () => {
     const due = (extra: CalendarEntry[]) => buildDigest([mum, august, ...extra], 'Europe/London', NOW).peopleDue
-    expect(due([])).toEqual(['Mum (43d)'])
+    expect(due([])).toEqual(['Mum (44d)'])
     expect(due([lunch])).toEqual([])
   })
 
@@ -304,8 +305,8 @@ describe('every other place that says whether you have seen someone counts it to
   it('the ✨ polish of a week plan is told she was seen at the lunch, not in August', () => {
     const plan = proposeWeek([mum, august], { todayKey: '2026-09-14', now: NOW })!
     const daysSince = (entries?: CalendarEntry[]) => weekPolishInput(plan, { recipes: [], people: [mum], meals: [], tasks: [august], entries, now: NOW }).people.map(p => p.daysSince)
-    expect(daysSince()).toEqual([43])
-    expect(daysSince([lunch])).toEqual([1])
+    expect(daysSince()).toEqual([44])
+    expect(daysSince([lunch])).toEqual([2])
   })
 })
 

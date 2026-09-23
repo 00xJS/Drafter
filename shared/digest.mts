@@ -2,7 +2,7 @@
 
 import type { CalendarEntry, Item, Task } from '../src/types.ts'
 import { isMineTask, isRecord, legacyPostToTask } from './domain.mts'
-import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mts'
+import { dayKeysIn, seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mts'
 import { OPEN, bucketByDue, focusTasks } from './today.mts'
 import { tonightLine } from './kitchen.mts'
 import { placeCadenceStatus } from './places.mts'
@@ -129,7 +129,7 @@ export function buildDigest(
     // an open planned visit means the nudge already did its job
     if (plannedVisit(p.id, tasks)) continue
     // No reminders is 'off', which is neither of the two below
-    const { status, daysSince } = seenStatus(p, seen, now)
+    const { status, daysSince } = seenStatus(p, seen, now, dayKeysIn(tz))
     if (status !== 'overdue' && status !== 'never') continue
     if (status === 'never') {
       const created = Date.parse(p.createdAt ?? '')

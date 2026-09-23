@@ -58,8 +58,8 @@ describe('a list left open overnight', () => {
   })
 
   it('People counts the new day at midnight, not the morning it was opened', () => {
-    // seen at 10:00 on the 14th, every 7 days: seven days and 22 hours by 8 am on the 22nd
-    vi.setSystemTime(sept(22, 8))
+    // seen on the 14th, every 7 days: seven calendar days on the morning of the 21st
+    vi.setSystemTime(sept(21, 8))
     render(<People {...peopleProps} tasks={[visit(sept(14, 10))]} />)
     expect(screen.getByText('Last seen 7 days ago')).toBeTruthy()
     // nothing changes but the time: past midnight she is eight days out, and due

@@ -11,7 +11,7 @@ import type { CalendarEvent, Item, Meal, MealSlot, Person, Place, PlaceCategory,
 import { isMineTask, isRecord, localDate, localMidnightIso } from './domain.mts'
 import { shiftDayKey } from './journal.mts'
 import { cookedRecipeIds, mealRecipeIds } from './kitchen.mts'
-import { plannedVisit, seenStatus, seenTasks } from './people.mts'
+import { dayKeysIn, plannedVisit, seenStatus, seenTasks } from './people.mts'
 import { outingsAt, type Outing } from './places.mts'
 import { OPEN, nextUp } from './today.mts'
 import { isDayKey, weekDayKeys, weekKeyOf, weekStartKey } from './weeks.mts'
@@ -422,6 +422,7 @@ function proposePeople({
   tasks,
   seen,
   now,
+  tz,
   eveningLoad,
   dueCount,
   skip,
@@ -431,6 +432,8 @@ function proposePeople({
   tasks: Task[]
   seen: Task[]
   now: Date
+  /** The account's zone, so "days since" counts its calendar days, not the server's. */
+  tz?: string
   eveningLoad: Map<string, number>
   dueCount: Map<string | null, number>
   skip: Set<string>
@@ -439,7 +442,7 @@ function proposePeople({
   const due: { p: Person; s: { status: string; daysSince?: number; reason: string } }[] = []
   for (const p of people) {
     if (skip.has(`person:${p.id}`) || plannedVisit(p.id, tasks)) continue
-    const s = seenStatus(p, seen, now)
+    const s = seenStatus(p, seen, now, dayKeysIn(tz))
     if (!(s.status in CATCH_UP_RANK)) continue
     if (s.status === 'never') {
       const created = Date.parse(p.createdAt ?? '')
@@ -567,7 +570,7 @@ export function proposeWeek(
   // a lunch of your own with Mum on it has seen her, as the People page says —
   // and only your own visits: a housemate seeing her is not you seeing her
   const seen = seenTasks(tasks, ofKind('event'), now, userId)
-  const people = proposePeople({ days, people: ofKind('person'), tasks, seen, now, eveningLoad, dueCount, skip })
+  const people = proposePeople({ days, people: ofKind('person'), tasks, seen, now, tz, eveningLoad, dueCount, skip })
   const overdue = proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip })
 
   const bills = tasks

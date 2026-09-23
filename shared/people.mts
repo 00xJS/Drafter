@@ -207,15 +207,35 @@ export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'off'
  * a visit logged for today when it was still morning, and "Seen today" for
  * yesterday's before noon; a calendar never does either.
  */
-function calendarDaysBetween(fromMs: number, toMs: number): number {
+function calendarDaysBetween(fromMs: number, toMs: number, dayKeyOf: (ms: number) => string): number {
   const utc = (key: string) => Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, +key.slice(8, 10))
-  return Math.round((utc(localDayKey(toMs)) - utc(localDayKey(fromMs))) / DAY_MS)
+  return Math.round((utc(dayKeyOf(toMs)) - utc(dayKeyOf(fromMs))) / DAY_MS)
+}
+
+/**
+ * The day a moment falls on, in `tz` — the runtime's own zone when none is
+ * given, which is right on a device. The server runs in UTC, so the digest and
+ * the MCP server pass the account's zone: an evening visit is still that day.
+ */
+export function dayKeysIn(tz?: string): (ms: number) => string {
+  if (!tz) return ms => localDayKey(ms)
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    return ms => {
+      const p = Object.fromEntries(fmt.formatToParts(ms).map(x => [x.type, x.value]))
+      return `${p.year}-${p.month}-${p.day}`
+    }
+  } catch {
+    // a zone this runtime does not know: the runtime's own day is the nearest answer
+    return ms => localDayKey(ms)
+  }
 }
 
 export function seenStatus(
   person: Person,
   tasks: readonly Task[],
   now: Date | string = new Date(),
+  dayKeyOf: (ms: number) => string = dayKeysIn(),
 ): {
   status: SeenStatus
   reason: string
@@ -229,7 +249,7 @@ export function seenStatus(
   const visits = visitsFor(person.id, tasks)
   const lastSeen = visits[0]?.at
   // never below 0: a visit dated later today reads as today, not "-1 days ago"
-  const daysSince = lastSeen ? Math.max(0, calendarDaysBetween(Date.parse(lastSeen), nowMs)) : undefined
+  const daysSince = lastSeen ? Math.max(0, calendarDaysBetween(Date.parse(lastSeen), nowMs, dayKeyOf)) : undefined
   const off = remindersOff(person)
   const cadence = off ? undefined : person.cadenceDays
   const effective = cadence ?? DEFAULT_CADENCE_DAYS

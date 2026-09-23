@@ -17,7 +17,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mts'
-import { remindersOff, seenStatus, seenTasks, visitDays } from '../shared/people.mts'
+import { dayKeysIn, remindersOff, seenStatus, seenTasks, visitDays } from '../shared/people.mts'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mts'
 import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
 import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealAt, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mts'
@@ -950,7 +950,7 @@ export const TOOLS = [
         people: all
           .filter(i => i.kind === 'person')
           .map(p => {
-            const s = seenStatus(p, seen, new Date(nowMs))
+            const s = seenStatus(p, seen, new Date(nowMs), dayKeysIn(clock.tz))
             const within = days => s.visits.filter(v => nowMs - Date.parse(v.at) < days * DAY)
             const off = remindersOff(p)
             return {

@@ -843,7 +843,7 @@ describe('list_people counts your own past events, as the app does', () => {
 
   it('has Gran on track after tea with her, where the tasks alone said overdue', async () => {
     expect(await granIn([gran, august])).toMatchObject({ status: 'overdue', lastSeen: '2026-08-01T12:00:00.000Z' })
-    expect(await granIn([gran, august, tea])).toMatchObject({ status: 'ok', lastSeen: '2026-09-29T15:00:00.000Z', daysSince: 1, visitsLast30Days: 1 })
+    expect(await granIn([gran, august, tea])).toMatchObject({ status: 'ok', lastSeen: '2026-09-29T15:00:00.000Z', daysSince: 2, visitsLast30Days: 1 })
   })
 })
 
