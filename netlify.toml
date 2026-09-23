@@ -25,6 +25,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/recipe-import"
+  to = "/.netlify/functions/recipe-import"
+  status = 200
+
+[[redirects]]
   from = "/api/github"
   to = "/.netlify/functions/github"
   status = 200
