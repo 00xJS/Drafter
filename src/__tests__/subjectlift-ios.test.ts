@@ -101,7 +101,8 @@ describe('the plugin is in the app', () => {
   })
 
   it('keeps the deployment target at iOS 16', () => {
-    expect([...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g)].map(m => m[1])).toEqual(['16.0', '16.0', '16.0', '16.0'])
+    // the project's two configurations, the app's two and the widget's two
+    expect([...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g)].map(m => m[1])).toEqual(['16.0', '16.0', '16.0', '16.0', '16.0', '16.0'])
   })
 
   it('registers the plugin before the page loads, from the root view controller', () => {

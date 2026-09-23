@@ -14,6 +14,7 @@ import {
 } from '../../native'
 import { deviceHasServerPush, deviceReminders } from '../../reminders'
 import { fetchPushInfo } from '../../push'
+import { useWidgetBridge } from '../../widgetbridge'
 import type { useDeepLinks } from './useDeepLinks'
 
 interface Deps {
@@ -25,8 +26,8 @@ interface Deps {
 
 /**
  * The device around the app: the iOS shell's links, push taps and resume
- * sync, due reminders while the app is open, and the local notifications the
- * phone fires on its own.
+ * sync, due reminders while the app is open, the local notifications the
+ * phone fires on its own, and the widget and Siri.
  */
 export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
@@ -110,4 +111,8 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     const t = window.setTimeout(() => remindersRef.current(), 1500)
     return () => window.clearTimeout(t)
   }, [store.loaded, store.tasks, store.people, store.places, store.meals, store.events, myId])
+
+  // iOS: the Home Screen widget's snapshot of the day, and what Siri was asked
+  // to add while the app was shut (src/widgetbridge.ts)
+  useWidgetBridge(store)
 }

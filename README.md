@@ -61,6 +61,8 @@ Automations use the **bot** gateway, a Supabase Edge Function with its own `BOT_
 
 The same app in a Capacitor shell, with iOS sheets, haptics and pull to refresh; reminders the phone schedules itself and a **Plan your day** notification each morning (8:00 unless you change it); **Lock this iPhone** with Face ID, Touch ID or the passcode; Apple's own subject lifting for the cut-out on iOS 17 and later; and `drafter://` links, Home Screen quick actions and a Shortcut for the share sheet.
 
+A **Today widget** on the Home Screen (small and medium) and the Lock Screen shows the date, up to three of today's focus and due tasks with their times, the overdue count and tonight's dinner, by the same rules as Today; tap it for Today, or the medium one's **+** for a new task. With *Hide details on the lock screen* on (Settings → Reminders) it shows counts only, and it never shows the journal. Once its snapshot is 12 hours old it asks you to open Drafter. **Siri and Shortcuts** know “Add a task to Drafter”, “Add to my Drafter grocery list” and “Open Today in Drafter”; the first two work without opening the app, and what they add is saved the next time Drafter opens.
+
 ## Privacy and your data
 
 - **Local first.** Records live on the device and sync to Supabase, so the app works offline. Edits from two devices merge field by field; when both changed the same field, the newer one wins and a toast offers **Keep mine**.
@@ -102,7 +104,8 @@ The membership is on and the bundle ID is `app.drafter.ios`; sign with the paid 
 - **TestFlight.** `npm run release:ios` raises the version people read and Apple's build number, rebuilds and opens Xcode; then *Product → Archive → Distribute App → App Store Connect*. Add `-- --minor` or `-- --major` for `1.1.0` / `2.0.0`, or `--keep` to raise only the build number. `npm run build:ios` rebuilds without changing either. Settings → Data → About shows `Drafter 1.1.0 (12)` on a phone so installs can be told apart.
 - **Push (APNs).** Set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID=app.drafter.ios` on Netlify, plus `APNS_ENV=sandbox` for Xcode builds; `App.entitlements` already has `aps-environment`. Then Settings → Reminders → *Enable on this device*. Admin → Integrations shows whether it is configured.
 - **Universal Links and Password AutoFill.** Both are on the entitlements (`applinks:` and `webcredentials:drafterz.netlify.app`). The association file is written at build time from `APPLE_TEAM_ID` — see `ios/apple-app-site-association.example.json` for the shape — and `netlify.toml` serves it as JSON.
-- **Not built yet.** A Home Screen widget and a share extension.
+- **Widget and Siri.** The widget is a second target, `DrafterWidgets` (`app.drafter.ios.widgets`), embedded in the app, and the two share the App Group `group.app.drafter.ios`; automatic signing registers both the first time the paid team builds. `npm run release:ios` raises both targets' numbers together.
+- **Not planned.** A share extension: the Shortcut for the share sheet does that job.
 
 ## The icon
 
