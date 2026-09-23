@@ -50,7 +50,6 @@
     "src/components/wardrobe/WardrobeCard.tsx › WardrobeCard": "(BuildHIR::node.lowerReorderableExpression) Expression type `NewExpression` cannot be safely reordered",
     "src/components/wardrobe/WardrobeStats.tsx › WardrobeStats": "(BuildHIR::node.lowerReorderableExpression) Expression type `NewExpression` cannot be safely reordered",
     "src/githubboard.ts › useGithubProjectSync": "(BuildHIR::lowerStatement) Handle TryStatement without a catch clause",
-    "src/household.ts › useHousehold": "Support value blocks (conditional, logical, optional chaining, etc) within a try/catch statement",
     "src/lazyload.ts › <anonymous>": "skipped: Skipped due to '[object Object]' directive.",
     "src/widgetbridge.ts › useWidgetBridge": "Cannot access refs during render"
   }

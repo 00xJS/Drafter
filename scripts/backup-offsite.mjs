@@ -425,6 +425,14 @@ async function writeState(file, state) {
  * the CLI, the clock, a temporary folder, the notifier — so a test runs it
  * whole against a fake. No notifier, no notification: only the LaunchAgent's
  * own run (the bottom of this file) hands in the real one. Resolves the exit code.
+ * @param {string[]} [argv]
+ * @param {object} [opts]
+ * @param {string} [opts.home]
+ * @param {any} [opts.cli]
+ * @param {Date} [opts.now]
+ * @param {string} [opts.tmp]
+ * @param {Pick<Console, 'log' | 'error'>} [opts.out]
+ * @param {((title: string, message: string) => Promise<unknown>) | null} [opts.notify]
  */
 export async function main(argv = process.argv.slice(2), { home = homedir(), cli = null, now = new Date(), tmp = tmpdir(), out = console, notify = null } = {}) {
   let args
