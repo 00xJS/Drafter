@@ -246,7 +246,7 @@ export function createGeocodeHandler({
     }
     const q = tidy(body?.q, MAX_QUERY)
     if (!q) return Response.json({ error: 'Say what to look for: the place’s name.' }, { status: 400 })
-    const slot = perUser.take(user.id)
+    const slot = await perUser.take(user.id)
     if (!slot.ok) {
       const seconds = Math.ceil(slot.retryAfterMs / 1000)
       return Response.json({ error: 'That is a lot of lookups at once. Try again in a few minutes.' }, { status: 429, headers: { 'retry-after': String(seconds) } })

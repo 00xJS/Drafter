@@ -50,6 +50,7 @@ export declare function createGeocodeHandler(deps?: {
   fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>
   gate?: Gate
   cache?: Cache
-  perUser?: { take(key: string): Take }
+  /** Answered at once (slidingWindow) or after asking Postgres (sharedWindow). */
+  perUser?: { take(key: string): Take | Promise<Take> }
   now?: () => number
 }): (req: Request) => Promise<Response>

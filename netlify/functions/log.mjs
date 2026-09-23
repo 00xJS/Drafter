@@ -8,19 +8,19 @@
 // path or URL — so a device can never store more than that rule allows.
 //
 // A report is not worth a retry, and the app never waits on this: every answer
-// is final. Per account there is a ceiling (best effort, per warm instance, as
-// /api/ai's is), so a page stuck throwing cannot fill the table.
+// is final. Per account there is a ceiling, counted across instances as
+// /api/ai's is (lib/ratelimit.mjs), so a page stuck throwing cannot fill the table.
 
 import { withCors } from './lib/cors.mjs'
 import { cleanReports, storeReports } from './lib/errorlog.mjs'
-import { slidingWindow } from './lib/ratelimit.mjs'
+import { sharedWindow } from './lib/ratelimit.mjs'
 import { requireUser, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 
 /** The largest body read; ten reports at their caps come to under 50 KB. */
 const MAX_BODY = 64 * 1024
 // 20 requests per 10 minutes per account, each of up to ten reports
-const perUser = slidingWindow({ limit: 20, windowMs: 10 * 60_000 })
+const perUser = sharedWindow({ bucket: 'log', limit: 20, windowMs: 10 * 60_000 })
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -36,7 +36,7 @@ const handler = async req => {
   const { user, response } = await requireUser(req)
   if (response) return response
 
-  const slot = perUser.take(user.id)
+  const slot = await perUser.take(user.id)
   if (!slot.ok) {
     return Response.json({ error: 'Too many error reports from this account.' }, { status: 429, headers: { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) } })
   }
