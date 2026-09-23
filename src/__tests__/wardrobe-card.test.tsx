@@ -321,6 +321,6 @@ describe('the shell behind the card', () => {
   it('undoes an edit by writing the look back, stamped newer, and a new look by removing it', () => {
     const shell = plannerSource()
     expect(shell).toContain("onLogWear={(w, { before, msg = 'Logged for today' } = {}) => {")
-    expect(shell).toContain('before ? store.upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : store.remove(w.id)')
+    expect(shell).toContain('before ? upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : remove(w.id)')
   })
 })

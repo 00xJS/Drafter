@@ -22,7 +22,7 @@ import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
 import { VIEW_LABELS } from './planner/routes'
 import { TasksScreen } from './planner/TasksScreen'
-import { Toast } from './planner/Toast'
+import { ToastHost } from './planner/Toast'
 import { TopBar } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
 import { useDeepLinks } from './planner/useDeepLinks'
@@ -91,8 +91,8 @@ export default function Planner() {
   // their Stats are drawn in two places now (the segment's own, and the Stats
   // lens) and one figure must not read two ways on one device
   const listFilters = useListFilters({ store, personOpenId: nav.personOpenId, placeOpenId: nav.placeOpenId })
-  const toaster = useToast({ store })
-  const { showToast } = toaster
+  const toasts = useToast({ store })
+  const { showToast } = toasts
 
   const projectMap = useMemo(() => projectById(store.projects), [store.projects])
   const cal = useCalendarSync({ store, household, showToast })
@@ -135,12 +135,13 @@ export default function Planner() {
   // (see planner/ctx.ts).
   const p = usePlannerCtx({
     store,
+    ...store.actions,
     household,
     projectMap,
     inHousehold,
     ...nav,
     ...listFilters,
-    ...toaster,
+    ...toasts,
     ...cal,
     ...overlays,
     ...owner,
@@ -150,7 +151,7 @@ export default function Planner() {
     ...focusActions,
   })
   // what the shell itself reads: the screen switch, pull to refresh, the toast
-  const { view, pushed, manualSync, anyOpen, toast, setToast } = p
+  const { view, pushed, manualSync, anyOpen, toaster } = p
 
   return (
     <div className="app">
@@ -208,7 +209,7 @@ export default function Planner() {
 
       <Overlays p={p} />
 
-      <Toast toast={toast} setToast={setToast} />
+      <ToastHost toaster={toaster} />
     </div>
   )
 }

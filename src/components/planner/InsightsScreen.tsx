@@ -23,7 +23,7 @@ import { Segmented } from '../stats/Segmented'
  * on the day; reading back what you wrote is this tab's.
  */
 export function InsightsScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, showToast, insightsTab, setInsightsTab } = p
+  const { store, upsert, remove, restore, household, showToast, insightsTab, setInsightsTab } = p
   const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, openSheet, openWardrobe } = p
   return (
     <>
@@ -35,10 +35,10 @@ export function InsightsScreen({ p }: { p: PlannerCtx }) {
         <JournalView
           entries={store.journal}
           people={store.people}
-          onSave={(e: Parameters<typeof store.upsert>[0]) => store.upsert(e)}
+          onSave={(e: Parameters<typeof upsert>[0]) => upsert(e)}
           onDelete={(id: string) => {
-            store.remove(id)
-            showToast('Journal entry removed', () => store.restore([id]))
+            remove(id)
+            showToast('Journal entry removed', () => restore([id]))
           }}
           openDate={journalOpenDate}
           onOpenDateConsumed={() => setJournalOpenDate(null)}
@@ -56,13 +56,13 @@ export function InsightsScreen({ p }: { p: PlannerCtx }) {
           entries={store.events}
           // whose week this is: who you saw and where you went are yours (v3.24)
           myId={household.myId}
-          onSaveReview={r => store.upsert(r)}
+          onSaveReview={r => upsert(r)}
           onOpen={openTask}
           onStatus={changeStatus}
           onReschedule={(ids, dueAt) => {
             for (const id of ids) {
               const t = store.tasks.find(x => x.id === id)
-              if (t) store.upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
+              if (t) upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
             }
             showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
           }}

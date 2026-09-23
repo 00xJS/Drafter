@@ -20,7 +20,7 @@ import { Segmented } from '../stats/Segmented'
  * nothing underneath it.
  */
 export function KeepScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, showToast, keepTab, setKeepTab, wardrobeOpen, setWardrobeOpen } = p
+  const { store, upsert, remove, restore, household, showToast, keepTab, setKeepTab, wardrobeOpen, setWardrobeOpen } = p
   return (
     <>
       <div className="people-tab-seg keep-seg">
@@ -37,9 +37,9 @@ export function KeepScreen({ p }: { p: PlannerCtx }) {
           myId={household.myId}
           // your work days on the calendar: Outfit dresses them for work
           entries={store.events}
-          onSave={item => store.upsert(item)}
-          onRemove={id => store.remove(id)}
-          onRestore={ids => store.restore(ids)}
+          onSave={item => upsert(item)}
+          onRemove={id => remove(id)}
+          onRestore={ids => restore(ids)}
           showToast={showToast}
           open={wardrobeOpen}
           onOpenConsumed={() => setWardrobeOpen(null)}

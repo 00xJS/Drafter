@@ -4,7 +4,7 @@ import { Kitchen } from './lazy'
 
 /** Kitchen: recipes, the week's meals, the grocery list and the figures. */
 export function KitchenScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
+  const { store, upsert, remove, restore, household, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
   return (
     <Kitchen
       myId={store.myId}
@@ -18,10 +18,10 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
       onClearMeal={clearMeal}
       onCreatePlace={createPlaceInline}
       onCreateRecipe={createRecipeInline}
-      onSave={item => store.upsert(item)}
+      onSave={item => upsert(item)}
       onDelete={id => {
-        store.remove(id)
-        showToast('Removed', () => store.restore([id]))
+        remove(id)
+        showToast('Removed', () => restore([id]))
       }}
       openRecipe={kitchenRecipe}
       onOpenRecipeConsumed={() => setKitchenRecipe(null)}

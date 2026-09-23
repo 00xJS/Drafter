@@ -1,5 +1,6 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useSyncExternalStore, type Dispatch, type SetStateAction } from 'react'
 import type { Toast as ToastState } from './routes'
+import type { Toaster } from './useToast'
 
 interface Props {
   toast: ToastState | null
@@ -36,4 +37,10 @@ export function Toast({ toast, setToast }: Props) {
       </button>
     </div>
   )
+}
+
+/** The toast as the shell draws it: the one component that listens to the toaster, so a toast coming and going redraws this bar alone. */
+export function ToastHost({ toaster }: { toaster: Toaster }) {
+  const toast = useSyncExternalStore(toaster.subscribe, toaster.current, toaster.current)
+  return <Toast toast={toast} setToast={toaster.set} />
 }

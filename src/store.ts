@@ -139,7 +139,37 @@ export interface Store {
   onRetired(listener: (retired: RetiredSpawn[]) => void): () => void
   /** Records whose latest edit the server has not confirmed yet, and its last confirmed copy of each it had. */
   unconfirmed(): { ids: ReadonlySet<string>; shadows: Item[] }
+  /** The functions above on their own, as one object that outlives every edit (StoreActions). */
+  actions: StoreActions
 }
+
+/**
+ * What a view does to the records, as against what it reads. The store is a
+ * new object whenever any record changes and on every sync round, so a
+ * callback built on the whole store (`r => store.upsert(r)`) is a new one each
+ * time too, and so is every prop it is handed on in. These are the same
+ * functions for the life of the page — upsert, setStatus and retryLoad for
+ * the life of the account — so a callback built on them stays the same.
+ */
+export type StoreActions = Pick<
+  Store,
+  | 'upsert'
+  | 'remove'
+  | 'restore'
+  | 'purge'
+  | 'setStatus'
+  | 'importItems'
+  | 'syncNowManual'
+  | 'fullResync'
+  | 'retainMine'
+  | 'retrySync'
+  | 'discardLocal'
+  | 'onConflict'
+  | 'keepMine'
+  | 'onRetired'
+  | 'unconfirmed'
+  | 'retryLoad'
+>
 
 let shared: SyncEngine | null = null
 
@@ -280,18 +310,9 @@ export function useItems(myId: string | null = null): Store {
     [e, myId],
   )
 
-  // one object for as long as nothing in it changed
-  return useMemo<Store>(
+  // the engine's own functions, and the two made above: one object for the life of the account
+  const actions = useMemo<StoreActions>(
     () => ({
-      myId,
-      ...lists,
-      allItems: items,
-      visibleItems,
-      loaded: snap.loaded,
-      loadError: snap.loadError,
-      retryLoad,
-      syncInfo: snap.syncInfo,
-      failures,
       upsert,
       remove: e.remove,
       restore: e.restore,
@@ -307,7 +328,25 @@ export function useItems(myId: string | null = null): Store {
       keepMine: e.keepMine,
       onRetired: e.onRetired,
       unconfirmed: e.unconfirmed,
+      retryLoad,
     }),
-    [e, myId, lists, items, visibleItems, snap.loaded, snap.loadError, retryLoad, snap.syncInfo, failures, upsert, setStatus],
+    [e, upsert, setStatus, retryLoad],
+  )
+
+  // one object for as long as nothing in it changed
+  return useMemo<Store>(
+    () => ({
+      myId,
+      ...lists,
+      allItems: items,
+      visibleItems,
+      loaded: snap.loaded,
+      loadError: snap.loadError,
+      syncInfo: snap.syncInfo,
+      failures,
+      ...actions,
+      actions,
+    }),
+    [myId, lists, items, visibleItems, snap.loaded, snap.loadError, snap.syncInfo, failures, actions],
   )
 }

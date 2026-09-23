@@ -20,7 +20,7 @@ function RhythmsButton({ onOpen }: { onOpen(): void }) {
  * job done twice.
  */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, showToast, keepTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
+  const { store, upsert, remove, restore, household, showToast, keepTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, openSheet } = p
   // Each list's find box and chip. They live on the shell (useListFilters), not
   // here, because the Stats lens draws these same two Stats in its own tab: a
@@ -75,10 +75,10 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               meals={store.meals}
               filter={placeFilter}
               onFilter={setPlaceFilter}
-              onSave={p => store.upsert(p)}
+              onSave={p => upsert(p)}
               onDelete={id => {
-                store.remove(id)
-                showToast('Removed', () => store.restore([id]))
+                remove(id)
+                showToast('Removed', () => restore([id]))
               }}
               onLogOuting={(place, at, note, peopleIds) =>
                 logOuting({
@@ -144,12 +144,12 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               filter={peopleFilter}
               onFilter={setPeopleFilter}
               onOpenJournal={date => openJournal(date)}
-              onSave={p => store.upsert(p)}
+              onSave={p => upsert(p)}
               onDelete={id => {
-                store.remove(id)
-                showToast('Removed', () => store.restore([id]))
+                remove(id)
+                showToast('Removed', () => restore([id]))
               }}
-              onSavePlace={p => store.upsert(p)}
+              onSavePlace={p => upsert(p)}
               // Places with that row open, as search opens one; the segment moves
               // for this visit only, like any link to it
               onOpenPlace={place => openPlace(place.id)}
