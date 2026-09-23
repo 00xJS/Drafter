@@ -176,17 +176,38 @@ export function blockedOf(value: unknown): string {
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
 /**
+ * Whether a violation happened on one of the app's own pages. Netlify injects
+ * a badge and toolbar into every page it publishes (/.netlify/scripts/hud),
+ * which builds itself in a srcdoc frame out of inline scripts no policy of the
+ * app's can know the hash of; the app makes no such frame. A browser reports a
+ * frame like that by its scheme alone ("about"), never as a web address, so a
+ * violation on a page that is not http(s) is not the app's and is not kept —
+ * or every page load would add one, and Admin → Data could never show the
+ * policy clean. Only the scheme is looked at, and a report that names no page
+ * is kept.
+ */
+function onOwnPage(page: unknown): boolean {
+  const address = String(page ?? '').trim()
+  return !address || /^https?:/i.test(address)
+}
+
+/**
  * The violations in a report, in either shape a browser posts: report-uri's
  * { "csp-report": { … } } (application/csp-report), or the Reporting API's
- * [{ type: "csp-violation", body: { … } }] (application/reports+json). Only
- * the directive, the blocked origin and the disposition are read; the page's
- * address, the source file, the line and the script sample never are.
+ * [{ type: "csp-violation", url, body: { … } }] (application/reports+json),
+ * less those on a page that is not the app's (onOwnPage). Only the directive,
+ * the blocked origin and the disposition are kept; the page's address, the
+ * source file, the line and the script sample never are.
  */
 export function cspViolations(report: unknown): CspViolation[] {
   const bodies: Record<string, unknown>[] = []
-  if (isObject(report) && isObject(report['csp-report'])) bodies.push(report['csp-report'])
+  if (isObject(report) && isObject(report['csp-report'])) {
+    const body = report['csp-report']
+    if (onOwnPage(body['document-uri'])) bodies.push(body)
+  }
   if (Array.isArray(report)) {
-    for (const r of report.slice(0, CSP_REPORTS_MAX)) if (isObject(r) && r.type === 'csp-violation' && isObject(r.body)) bodies.push(r.body)
+    for (const r of report.slice(0, CSP_REPORTS_MAX))
+      if (isObject(r) && r.type === 'csp-violation' && isObject(r.body) && onOwnPage(r.body.documentURL ?? r.url)) bodies.push(r.body)
   }
   return bodies.slice(0, CSP_REPORTS_MAX).map(b => ({
     directive: directiveOf(b['effective-directive'] ?? b.effectiveDirective ?? b['violated-directive'] ?? b.violatedDirective),

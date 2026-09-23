@@ -150,6 +150,20 @@ describe('a report of what the policy would block', () => {
     expect(cspViolations(Array.from({ length: 50 }, () => REPORTING_API[1]))).toHaveLength(10)
   })
 
+  it('sets aside a violation on a page that is not the app’s: Netlify’s toolbar builds itself in a srcdoc frame', () => {
+    const on = (page: string) => ({ 'csp-report': { 'document-uri': page, 'effective-directive': 'script-src-elem', 'blocked-uri': 'inline', disposition: 'report' } })
+    // how Chromium reports the toolbar's frame, and how another browser may
+    expect(cspViolations(on('about'))).toEqual([])
+    expect(cspViolations(on('about:srcdoc'))).toEqual([])
+    expect(cspViolations([{ type: 'csp-violation', url: 'about:srcdoc', body: { documentURL: 'about', effectiveDirective: 'img-src', blockedURL: 'https://app.netlify.com/badge.svg' } }])).toEqual([])
+    expect(cspViolations([{ type: 'csp-violation', url: 'about', body: { effectiveDirective: 'style-src-elem', blockedURL: 'inline' } }])).toEqual([])
+    // the app's own pages are kept, and so is a report that names no page
+    expect(cspViolations(on('https://drafterz.netlify.app/'))).toEqual([{ directive: 'script-src-elem', blocked: 'inline', enforced: false }])
+    expect(cspViolations(on('http://localhost:5179/'))).toHaveLength(1)
+    expect(cspViolations({ 'csp-report': { 'effective-directive': 'img-src', 'blocked-uri': 'https://cdn.example/x.png' } })).toEqual([{ directive: 'img-src', blocked: 'https://cdn.example', enforced: false }])
+    expect(cspViolations([...REPORTING_API, { type: 'csp-violation', url: 'about', body: { effectiveDirective: 'script-src-elem', blockedURL: 'inline' } }])).toHaveLength(2)
+  })
+
   it('reads in Admin as an error the error log’s own rule keeps word for word', () => {
     for (const v of [...cspViolations(REPORT_URI), ...cspViolations(REPORTING_API), { directive: 'frame-ancestors', blocked: 'self', enforced: false }]) {
       const message = cspMessage(v)
