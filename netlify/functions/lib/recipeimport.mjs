@@ -4,24 +4,12 @@
 // to read with ✨ (readRecipe in src/ai.ts). netlify/functions/recipe-import.mjs
 // is the HTTP face; everything here is testable without a network.
 //
-// Why the fetch is careful. The server fetches a URL a person typed, from
-// inside Netlify's network. Left alone that is a server-side request forgery:
-// http://169.254.169.254/ reads the cloud's instance metadata, a name that
-// resolves to 10.0.0.5 reaches whatever listens there, and a public page can
-// redirect to either. So every hop is checked the same way — http(s) only, the
-// usual ports, no credentials — the name is resolved HERE and refused if ANY
-// address is private, loopback, link-local, CGNAT or otherwise not public
-// (IPv4, IPv6, and IPv4 dressed as IPv6), and the connection is made to the
-// address that was checked rather than a second lookup of the name, so a DNS
-// answer that changes between the check and the connect cannot slip through.
-// Redirects are followed by hand, at most three, each hop checked again; the
-// whole import has six seconds and two megabytes; only HTML is read.
+// The fetch is lib/safefetch.mjs, the one careful transport the calendar
+// subscriptions use too: every hop checked and pinned to a public address,
+// redirects followed by hand, at most three, each hop checked again. Here the
+// whole import has six seconds and two megabytes, and only HTML is read.
 
-import dns from 'node:dns'
-import http from 'node:http'
-import https from 'node:https'
-import net from 'node:net'
-import zlib from 'node:zlib'
+import { SafeFetchError, WEB_PORTS, checkUrl, safeGet } from './safefetch.mjs'
 import { parseIngredientLine } from '../../../shared/recipes.mts'
 import { slidingWindow } from './ratelimit.mjs'
 import { requireUser } from './session.mjs'
@@ -55,160 +43,50 @@ const REFUSED = 'Drafter won’t open that address: it isn’t a public web page
 const TOO_BIG = 'That page is too big to read (over 2 MB).'
 const TOO_SLOW = 'The site took too long to answer — try again, or paste the recipe instead.'
 
-// ---- the link ------------------------------------------------------------------
+/** The importer's own words for each way the shared transport can refuse (lib/safefetch.mjs FETCH_FAILURES). */
+const WORDS = {
+  not_a_link: () => NOT_A_LINK,
+  scheme: () => 'Only http and https links can be imported.',
+  credentials: () => 'A link with a user name or password in it can’t be imported.',
+  port: () => 'That link asks for a port Drafter doesn’t open.',
+  refused: () => REFUSED,
+  not_found: () => 'Couldn’t find that site — check the link.',
+  encoding: () => 'That page is compressed in a way Drafter can’t read.',
+  redirects: () => 'That link redirects too many times.',
+  redirect_nowhere: () => 'The site redirected without saying where to.',
+  redirect_bad: () => 'The site redirected somewhere that isn’t a web address.',
+  http: status => `The site answered ${status}, so there was nothing to read.`,
+  type: () => 'That link isn’t a web page (only pages can be imported, not files or images).',
+  too_big: () => TOO_BIG,
+  timeout: () => TOO_SLOW,
+  failed: () => 'Couldn’t open that page — check the link, or paste the recipe instead.',
+}
 
-const PORTS = new Set(['', '80', '443', '8080', '8443'])
+/** A refusal of the shared transport as the importer says it; anything else as it came. */
+function asImportError(err) {
+  if (!(err instanceof SafeFetchError)) return err
+  return new ImportError((WORDS[err.code] ?? WORDS.failed)(err.detail), err.status)
+}
+
+// ---- the link ------------------------------------------------------------------
 
 /**
  * The link as a URL the importer will fetch, or an ImportError: http and https
  * only, no user name or password in it, the usual web ports, and no fragment.
- * Run on the typed link and again on every redirect.
+ * The transport runs the same check again on every redirect.
  * @param {unknown} raw
  * @returns {URL}
  */
 export function parseImportUrl(raw) {
-  const text = typeof raw === 'string' ? raw.trim() : ''
-  if (!text || text.length > IMPORT_LIMITS.urlMax) throw new ImportError(NOT_A_LINK, 400)
-  let url
   try {
-    url = new URL(text)
-  } catch {
-    throw new ImportError(NOT_A_LINK, 400)
+    return checkUrl(typeof raw === 'string' ? raw : '', { ports: WEB_PORTS, maxLength: IMPORT_LIMITS.urlMax })
+  } catch (err) {
+    throw asImportError(err)
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ImportError('Only http and https links can be imported.', 400)
-  if (url.username || url.password) throw new ImportError('A link with a user name or password in it can’t be imported.', 400)
-  if (!PORTS.has(url.port)) throw new ImportError('That link asks for a port Drafter doesn’t open.', 400)
-  if (!url.hostname) throw new ImportError(NOT_A_LINK, 400)
-  url.hash = ''
-  return url
 }
 
-// ---- addresses -------------------------------------------------------------------
-
-const bare = ip => String(ip ?? '').replace(/^\[|\]$/g, '')
-
-/** [a, b, c, d] for a dotted IPv4 address, else null. */
-function ipv4Parts(ip) {
-  const s = bare(ip)
-  return net.isIPv4(s) ? s.split('.').map(Number) : null
-}
-
-/**
- * Whether an IPv4 address is on the public internet. Everything a request
- * from inside a data centre must never reach is refused: this network (0/8),
- * private (10/8, 172.16/12, 192.168/16), shared CGNAT space (100.64/10, where
- * Alibaba keeps its metadata), loopback (127/8), link-local (169.254/16, the
- * metadata address of AWS, Google Cloud and Azure), the IETF block (192.0.0/24,
- * Oracle's metadata), documentation and benchmarking ranges, the old 6to4
- * relay, multicast, reserved and broadcast.
- * @param {string} ip
- */
-export function isPublicIPv4(ip) {
-  const p = ipv4Parts(ip)
-  if (!p) return false
-  const [a, b, c] = p
-  if (a === 0 || a === 10 || a === 127) return false
-  if (a === 100 && b >= 64 && b <= 127) return false
-  if (a === 169 && b === 254) return false
-  if (a === 172 && b >= 16 && b <= 31) return false
-  if (a === 192 && b === 168) return false
-  if (a === 192 && b === 0 && (c === 0 || c === 2)) return false
-  if (a === 192 && b === 88 && c === 99) return false
-  if (a === 198 && (b === 18 || b === 19)) return false
-  if (a === 198 && b === 51 && c === 100) return false
-  if (a === 203 && b === 0 && c === 113) return false
-  if (a >= 224) return false
-  return true
-}
-
-/** The eight 16-bit groups of an IPv6 address, a dotted IPv4 tail included, else null. */
-export function ipv6Groups(ip) {
-  let s = bare(ip).toLowerCase()
-  // a zone ("fe80::1%en0") only exists on a local link
-  if (!s || s.includes('%') || !net.isIPv6(s)) return null
-  const lastColon = s.lastIndexOf(':')
-  const tail = s.slice(lastColon + 1)
-  if (tail.includes('.')) {
-    const v4 = ipv4Parts(tail)
-    if (!v4) return null
-    s = `${s.slice(0, lastColon + 1)}${((v4[0] << 8) | v4[1]).toString(16)}:${((v4[2] << 8) | v4[3]).toString(16)}`
-  }
-  const halves = s.split('::')
-  if (halves.length > 2) return null
-  const part = h => (h ? h.split(':') : [])
-  const head = part(halves[0])
-  const rest = halves.length === 2 ? part(halves[1]) : []
-  if (![...head, ...rest].every(g => /^[0-9a-f]{1,4}$/.test(g))) return null
-  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0
-  if (fill < 0 || (halves.length === 2 && fill < 1)) return null
-  const groups = [...head, ...Array(fill).fill('0'), ...rest].map(g => parseInt(g, 16))
-  return groups.length === 8 ? groups : null
-}
-
-/**
- * Whether an IPv6 address is on the public internet: global unicast (2000::/3)
- * outside its special blocks, or an IPv4 address carried in IPv6 (mapped,
- * translated, NAT64) that is itself public. So ::1, ::, fe80::/10, fc00::/7
- * (where AWS keeps fd00:ec2::254), multicast, documentation, Teredo, 6to4 and
- * ::ffff:127.0.0.1 are all refused.
- * @param {string} ip
- */
-export function isPublicIPv6(ip) {
-  const g = ipv6Groups(ip)
-  if (!g) return false
-  const zero = (from, to) => g.slice(from, to).every(x => x === 0)
-  const v4 = () => `${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`
-  if (zero(0, 5) && g[5] === 0xffff) return isPublicIPv4(v4())
-  if (zero(0, 4) && g[4] === 0xffff && g[5] === 0) return isPublicIPv4(v4())
-  if (g[0] === 0x64 && g[1] === 0xff9b && zero(2, 6)) return isPublicIPv4(v4())
-  if ((g[0] & 0xe000) !== 0x2000) return false
-  if (g[0] === 0x2001 && g[1] < 0x0200) return false
-  if (g[0] === 0x2001 && g[1] === 0x0db8) return false
-  if (g[0] === 0x2002) return false
-  if (g[0] === 0x3fff && g[1] < 0x1000) return false
-  return true
-}
-
-/** Whether an address, of either family, is on the public internet. A name is not an address. */
-export function isPublicAddress(ip) {
-  const s = bare(ip)
-  const family = net.isIP(s)
-  if (family === 4) return isPublicIPv4(s)
-  if (family === 6) return isPublicIPv6(s)
-  return false
-}
-
-/** Every address the system resolver gives for a name, in its own order. */
-async function systemResolve(hostname) {
-  const found = await dns.promises.lookup(hostname, { all: true, verbatim: true })
-  return found.map(r => ({ address: r.address, family: r.family }))
-}
-
-/**
- * The address to connect to for a host: the host itself when it is an
- * address, else the first the resolver answers. Refused when any answer is
- * not public, so a name that resolves both ways cannot be played for luck.
- * @param {string} hostname
- * @param {{ resolve?: (host: string) => Promise<{ address: string, family: number }[]>, isAllowed?: (ip: string) => boolean }} [opts]
- */
-export async function publicAddressOf(hostname, { resolve = systemResolve, isAllowed = isPublicAddress } = {}) {
-  const host = bare(hostname)
-  const literal = net.isIP(host)
-  if (literal) {
-    if (!isAllowed(host)) throw new ImportError(REFUSED, 403)
-    return { address: host, family: literal }
-  }
-  let found
-  try {
-    found = await resolve(host)
-  } catch {
-    throw new ImportError('Couldn’t find that site — check the link.', 502)
-  }
-  if (!Array.isArray(found) || found.length === 0) throw new ImportError('Couldn’t find that site — check the link.', 502)
-  if (found.some(r => !isAllowed(r.address))) throw new ImportError(REFUSED, 403)
-  const first = found[0]
-  return { address: bare(first.address), family: net.isIP(bare(first.address)) || first.family }
-}
+// the guard and the transport, where the importer's callers and tests have always found them
+export { ipv6Groups, isPublicAddress, isPublicIPv4, isPublicIPv6, nodeTransport } from './safefetch.mjs'
 
 // ---- the fetch ---------------------------------------------------------------------
 
@@ -219,99 +97,6 @@ const REQUEST_HEADERS = Object.freeze({
   // a browser's shape, since some recipe sites turn away anything else, and our name after it
   'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 DrafterRecipeImport/1.0',
 })
-
-/**
- * The real transport: one GET over node:http(s), CONNECTED TO `address` — the
- * one publicAddressOf checked — however the name would resolve now. The name
- * still goes in the Host header and TLS still verifies the certificate for
- * it. The body comes back decompressed.
- * @param {{ url: URL, address: string, family: number, signal: AbortSignal, headers: Record<string, string> }} req
- */
-export function nodeTransport({ url, address, family, signal, headers }) {
-  return new Promise((resolve, reject) => {
-    const client = url.protocol === 'https:' ? https : http
-    const pinned = (_host, options, callback) => {
-      const done = typeof options === 'function' ? options : callback
-      // Node asks for every address when it races IPv4 against IPv6
-      if (options && typeof options === 'object' && options.all) done(null, [{ address, family }])
-      else done(null, address, family)
-    }
-    const req = client.request(url, { method: 'GET', headers, signal, agent: false, lookup: pinned }, res => {
-      const encoding = String(res.headers['content-encoding'] ?? '')
-        .trim()
-        .toLowerCase()
-      /** @type {import('node:stream').Readable} */
-      let body = res
-      if (encoding === 'gzip' || encoding === 'x-gzip') body = res.pipe(zlib.createGunzip())
-      else if (encoding === 'br') body = res.pipe(zlib.createBrotliDecompress())
-      else if (encoding === 'deflate') body = res.pipe(zlib.createInflate())
-      else if (encoding && encoding !== 'identity') {
-        res.destroy()
-        reject(new ImportError('That page is compressed in a way Drafter can’t read.', 502))
-        return
-      }
-      if (body !== res) res.on('error', err => body.destroy(err))
-      resolve({ status: res.statusCode ?? 0, headers: res.headers, body })
-    })
-    req.on('error', reject)
-    req.end()
-  })
-}
-
-const abortError = () => Object.assign(new Error('aborted'), { name: 'AbortError' })
-
-/** The promise, or a rejection the moment the deadline passes — a DNS lookup or a stalled stream cannot be cancelled. */
-function beforeDeadline(promise, signal) {
-  if (signal.aborted) return Promise.reject(abortError())
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(abortError())
-    signal.addEventListener('abort', onAbort, { once: true })
-    promise.then(
-      value => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      err => {
-        signal.removeEventListener('abort', onAbort)
-        reject(err)
-      },
-    )
-  })
-}
-
-/** Let go of a body we will not read: a stream is destroyed, an iterator returned. */
-function discard(body) {
-  try {
-    if (body && typeof body.destroy === 'function') body.destroy()
-    else if (body && typeof body[Symbol.asyncIterator] === 'function') void body[Symbol.asyncIterator]().return?.()?.catch?.(() => {})
-  } catch {
-    /* it is going anyway */
-  }
-}
-
-/** The body, whole, refused the moment it passes `maxBytes`. */
-async function readCapped(body, maxBytes, signal) {
-  const chunks = []
-  let total = 0
-  const it = body[Symbol.asyncIterator]()
-  let finished = false
-  try {
-    for (;;) {
-      const { value, done } = await beforeDeadline(it.next(), signal)
-      if (done) {
-        finished = true
-        break
-      }
-      const chunk = typeof value === 'string' ? Buffer.from(value) : Buffer.from(value.buffer, value.byteOffset, value.byteLength)
-      total += chunk.byteLength
-      if (total > maxBytes) throw new ImportError(TOO_BIG, 413)
-      chunks.push(chunk)
-    }
-  } finally {
-    if (!finished) discard(body)
-  }
-  return Buffer.concat(chunks)
-}
 
 /** The character set a page says it is in, from its header or an early <meta>, else UTF-8. */
 function charsetOf(contentType, bytes) {
@@ -329,82 +114,29 @@ function decodeBody(bytes, contentType) {
   }
 }
 
-const REDIRECTS = new Set([301, 302, 303, 307, 308])
+const isHtml = type => /^\s*(text\/html|application\/xhtml\+xml)\b/.test(type)
 
 /**
- * @typedef {{ status: number, headers: Record<string, string | string[] | undefined>, body: AsyncIterable<Uint8Array> }} TransportResponse
- * @typedef {(req: { url: URL, address: string, family: number, signal: AbortSignal, headers: Record<string, string> }) => Promise<TransportResponse>} Transport
+ * @typedef {import('./safefetch.mjs').TransportResponse} TransportResponse
+ * @typedef {import('./safefetch.mjs').Transport} Transport
  * @typedef {{ resolve?: (host: string) => Promise<{ address: string, family: number }[]>, transport?: Transport, isAllowed?: (ip: string) => boolean, timeoutMs?: number, maxBytes?: number, maxRedirects?: number }} FetchOptions
  */
 
 /**
- * GET a page the careful way (see the top of this file): every hop checked
- * and pinned, redirects by hand, a deadline over all of it, a size cap on the
+ * GET a page the careful way (lib/safefetch.mjs): every hop checked and
+ * pinned, redirects by hand, a deadline over all of it, a size cap on the
  * decompressed body, HTML only. Answers the page's final URL and its text.
  * @param {URL} start from parseImportUrl
  * @param {FetchOptions} [opts]
  * @returns {Promise<{ url: URL, html: string }>}
  */
 export async function fetchPage(start, opts = {}) {
-  const {
-    resolve,
-    transport = nodeTransport,
-    isAllowed,
-    timeoutMs = IMPORT_LIMITS.timeoutMs,
-    maxBytes = IMPORT_LIMITS.maxBytes,
-    maxRedirects = IMPORT_LIMITS.maxRedirects,
-  } = opts
-  const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(), timeoutMs)
+  const { resolve, transport, isAllowed, timeoutMs = IMPORT_LIMITS.timeoutMs, maxBytes = IMPORT_LIMITS.maxBytes, maxRedirects = IMPORT_LIMITS.maxRedirects } = opts
   try {
-    let url = start
-    for (let hop = 0; ; hop++) {
-      const target = await beforeDeadline(publicAddressOf(url.hostname, { resolve, isAllowed }), deadline.signal)
-      const res = await beforeDeadline(
-        transport({ url, address: target.address, family: target.family, signal: deadline.signal, headers: { ...REQUEST_HEADERS } }),
-        deadline.signal,
-      )
-      const header = name => {
-        const v = res.headers?.[name]
-        return Array.isArray(v) ? v[0] : (v ?? '')
-      }
-      if (REDIRECTS.has(res.status)) {
-        discard(res.body)
-        if (hop >= maxRedirects) throw new ImportError('That link redirects too many times.', 502)
-        const location = header('location')
-        if (!location) throw new ImportError('The site redirected without saying where to.', 502)
-        let next
-        try {
-          next = new URL(location, url).toString()
-        } catch {
-          throw new ImportError('The site redirected somewhere that isn’t a web address.', 502)
-        }
-        url = parseImportUrl(next)
-        continue
-      }
-      if (res.status < 200 || res.status >= 300) {
-        discard(res.body)
-        throw new ImportError(`The site answered ${res.status}, so there was nothing to read.`, 502)
-      }
-      const type = String(header('content-type')).toLowerCase()
-      if (!/^\s*(text\/html|application\/xhtml\+xml)\b/.test(type)) {
-        discard(res.body)
-        throw new ImportError('That link isn’t a web page (only pages can be imported, not files or images).', 415)
-      }
-      const declared = Number(header('content-length'))
-      if (Number.isFinite(declared) && declared > maxBytes) {
-        discard(res.body)
-        throw new ImportError(TOO_BIG, 413)
-      }
-      const bytes = await readCapped(res.body, maxBytes, deadline.signal)
-      return { url, html: decodeBody(bytes, type) }
-    }
+    const page = await safeGet(start, { resolve, transport, isAllowed, timeoutMs, maxBytes, maxRedirects, headers: REQUEST_HEADERS, accept: isHtml })
+    return { url: page.url, html: decodeBody(page.body, page.header('content-type').toLowerCase()) }
   } catch (err) {
-    if (err instanceof ImportError) throw err
-    if (deadline.signal.aborted) throw new ImportError(TOO_SLOW, 504)
-    throw new ImportError('Couldn’t open that page — check the link, or paste the recipe instead.', 502)
-  } finally {
-    clearTimeout(timer)
+    throw asImportError(err)
   }
 }
 
