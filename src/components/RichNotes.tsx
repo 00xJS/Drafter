@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import { imageFiles, mediaURL, saveMedia } from '../media'
 import { openExternal } from '../native'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
@@ -172,14 +172,19 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     hydrateImages()
   }, [value, hydrateImages])
 
-  useEffect(() => {
+  // The page as it opens: the value it opened on, focused if asked. Once, as
+  // the pad mounts — a later value arrives through the effect above, and a
+  // later autoFocus must not pull the caret away from where it is.
+  const fill = useEffectEvent(() => {
     const el = box.current
     if (!el) return
     el.innerHTML = sanitizeHtml(value)
     lastEmitted.current = value
     hydrateImages()
     if (autoFocus) el.focus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => {
+    fill()
   }, [])
 
   const exec = (command: string, arg?: string) => {

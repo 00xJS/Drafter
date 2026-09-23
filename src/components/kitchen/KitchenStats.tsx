@@ -25,6 +25,7 @@ import { countOf } from '../../people'
 import { placeEmoji } from '../../places'
 import { MONTHS, type DayWindow } from '../../stats'
 import { MEAL_SLOT_META, type GroceryList, type Meal, type MealSlot, type Place, type Recipe } from '../../types'
+import { useDayClock } from '../../useDayClock'
 import { dateKey } from '../../utils'
 import { ChartCard, ListCard, ListRow, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, TrendBadge, WindowSwitch, type MonthDay, type StreakWords } from '../stats'
 
@@ -179,13 +180,13 @@ function ShareRow({ slot, shares }: { slot: MealSlot; shares: Shares }) {
  * Stats kit (components/stats), as the wardrobe's is, in its own chunk.
  */
 export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, onGoDay, now }: Props) {
-  const clock = now ?? new Date()
+  // One clock for the day (useDayClock), so the index is worked out when the
+  // lists change or the day does, as the Recipes list's own index is, and
+  // never again for a press of a switch or a stepper: the index reads each
+  // meal once, and everything below reads the index.
+  const clock = useDayClock(now)
   const dayKey = dateKey(clock)
-  // Worked out when the lists change or the day does, as the Recipes list's
-  // own index is, and never again for a press of a switch or a stepper: the
-  // index reads each meal once, and everything below reads the index.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const ix = useMemo(() => kitchenIndex(recipes, meals, places, clock), [recipes, meals, places, dayKey])
+  const ix = useMemo(() => kitchenIndex(recipes, meals, places, clock), [recipes, meals, places, clock])
   const thisYear = Number(dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
   const [span, setSpan] = useState<DayWindow>(30)

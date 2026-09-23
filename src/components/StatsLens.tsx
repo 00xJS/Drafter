@@ -9,6 +9,7 @@ import { outingsAt } from '../places'
 import { DAY_WINDOWS, countDays, distinctDays, monthBuckets, type DayWindow } from '../stats'
 import { inWindow } from '../../shared/stats.mts'
 import { useTheme } from '../theme'
+import { useDayClock } from '../useDayClock'
 import { MOOD_META, MOODS, type CalendarEntry, type Garment, type GroceryList, type Habit, type JournalEntry, type Meal, type Outfit, type Person, type Place, type Recipe, type Task, type Wear } from '../types'
 import type { PersonFilter } from '../people'
 import type { PlaceFilter } from '../places'
@@ -109,11 +110,9 @@ export function StatsLens(p: StatsLensProps) {
   // One clock for the day, as People's and Places' Stats keep one. A fresh
   // `new Date()` in the parameter list is a new object every render, and it is
   // a dependency of every report below — so each keystroke in a find box, each
-  // sync and each toast recomputed the lot. The first render after midnight
-  // starts the new day's clock.
-  const today = dateKey(handed ?? new Date())
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `today` is the point: a new day, a new clock
-  const now = useMemo(() => handed ?? new Date(), [handed, today])
+  // sync and each toast recomputed the lot. Midnight starts the new day's
+  // clock (useDayClock), even on a lens left open overnight.
+  const now = useDayClock(handed)
   const [span, setSpan] = useState<DayWindow>(30)
   const [year, setYear] = useState(now.getFullYear())
   // the headings read "The last {spanWords}", so 'All' has to become words that
