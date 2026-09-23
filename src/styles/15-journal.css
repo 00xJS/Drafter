@@ -91,30 +91,9 @@
   line-height: 1.5;
   cursor: pointer;
 }
-/* This week, every day of it, under today's card: seven equal cells so a day
-   you skipped is still a thing you can press, and a date field beside them for
-   anything older. The archive below only ever lists days that were written. */
-.journal-week {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
 /* ‹ week › over the strip (v3.24). Its own full-width row above the seven
    cells, so stepping never squeezes them: at 375pt the cells are already a
    seventh of the width each. */
-.journal-week-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 0 100%;
-}
-.journal-week-label {
-  color: var(--text-2);
-  font-size: calc(0.8125rem * var(--type-scale));
-  font-variant-numeric: tabular-nums;
-}
 .journal-week-days {
   list-style: none;
   padding: 0;
@@ -156,11 +135,6 @@
 .journal-week-day.today {
   border-color: var(--accent);
 }
-.journal-week-name {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .journal-week-num {
   font-size: 0.95rem;
   font-weight: 600;
@@ -194,15 +168,6 @@
 }
 .journal-month-head:first-child {
   margin-top: 0;
-}
-/* the heading only exists so the month is one for screen readers; the <li>
-   around it carries every visual property */
-.journal-month-title {
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
 }
 /* both journal scroll targets — today's card and a past day — have to clear the
    sticky .topbar the same way .today-grid > section does, or opening the journal
@@ -249,9 +214,6 @@
   padding-top: 8px;
   border-top: 1px dashed var(--border);
 }
-.review-journal .dash-title {
-  white-space: pre-wrap;
-}
 .review-habits .journal-mood {
   /* same column as the avatar circles in the People card next door */
   width: 28px;
@@ -269,10 +231,6 @@
 .journal-stats {
   margin-top: 12px;
 }
-.journal-stats-toggle {
-  width: 100%;
-  margin-bottom: 10px;
-}
 
 /* mood chart */
 .mood-chart-card {
@@ -283,111 +241,13 @@
   min-width: 0;
   overflow: hidden;
 }
-.mood-chart {
-  display: block;
-  width: 100%;
-  height: auto;
-  /* the chart's one ink: every label, line and hover below is currentColor at an opacity */
-  color: var(--viz-ink);
-  font-variant-numeric: tabular-nums;
-  /* the scrub reads clientX along the chart, so the horizontal gesture is ours
-     and the vertical one is still the page's. Never `none`: that would trap a
-     scroll that merely started on the chart. pinch-zoom stays with the browser
-     too — this is a dense 150px graphic, and magnifying it is exactly what a
-     low-vision reader needs (the anti-zoom note at the end of this sheet). */
-  touch-action: pan-y pinch-zoom;
-}
-/* fixed SVG geometry, like .tick-label above. The labels' strength is a
-   token: 0.6 of dark's softer ink fell under 4.5:1. */
-.mood-chart text {
-  fill: currentColor;
-  opacity: var(--viz-label-opacity);
-  font-size: 10px;
-}
-.mood-chart .mood-grid {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: 0.12;
-}
-.mood-chart .mood-base {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: 0.3;
-}
-.mood-chart .mood-tick {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: 0.35;
-}
-.mood-chart .mood-hit {
-  fill: currentColor;
-  fill-opacity: 0;
-}
-.mood-chart .mood-day:hover .mood-hit {
-  fill-opacity: 0.06;
-}
-/* the scrubbed day, lit the same way hover lights one */
-.mood-chart .mood-day.on .mood-hit {
-  fill-opacity: 0.12;
-}
-/* 3:1 on the scrubbed day's lit rect, which is drawn over it (theme-tokens.test.ts) */
-.mood-chart .mood-cursor {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: var(--viz-cursor-opacity);
-}
-/* a column's strength steps with its mood (--mood, 1 to 5, set on each one):
-   the theme's --viz-mood-floor at 1 up to full at 5. Height already carries
-   the mood, so light starts the ramp high enough to keep 3:1 on the card. */
-.mood-chart .mood-col {
-  fill: var(--viz-mood);
-  opacity: calc(var(--viz-mood-floor) + (var(--mood) - 1) * (1 - var(--viz-mood-floor)) / 4);
-}
 /* the weekly-average line crosses the columns, where its ink all but vanished
    (under 2:1 on the light theme's column, near 1:1 on dark's), so it runs on a
    casing of the card's own colour, as the markers do: its ground is always
    --surface, and --viz-avg-opacity holds 3:1 there */
-.mood-chart .mood-avg-casing {
-  fill: none;
-  stroke: var(--surface);
-  stroke-width: 4;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-.mood-chart .mood-avg-line {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: var(--viz-avg-opacity);
-}
-.mood-chart .mood-avg {
-  fill: currentColor;
-  stroke: var(--surface);
-  stroke-width: 2;
-}
 .mood-chart-empty {
   margin: 0;
   padding: 18px 0;
-}
-/* The scrub readout, and — once the 46px right gutter goes under 480px, where
-   the chart spends it on columns instead — the Great/Rough scale as its own
-   standing caption beside it. The readout is always in the DOM; the floor that
-   keeps a first touch from pushing the chart out from under the scrubbing thumb
-   is a touch concern, so it lives in the coarse block below and a mouse page
-   keeps no empty strip under the chart. */
-.mood-readout {
-  margin: 6px 0 0;
-  color: var(--text-2);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-.mood-scale {
-  margin: 6px 0 0;
-  color: var(--text-2);
-  font-size: 0.75rem;
-  line-height: 1.4;
 }
 
 /* journal search results.
@@ -395,10 +255,6 @@
    has to say WHEN it was and WHY it matched, and the day list said neither. */
 .journal-results {
   margin-top: 14px;
-}
-.journal-result-count {
-  margin: 0 0 8px;
-  color: var(--text-2);
 }
 .journal-hits {
   list-style: none;
@@ -427,17 +283,6 @@
 .journal-year-head:first-child {
   margin-top: 0;
 }
-/* the heading only exists so the year is one for screen readers; the <li>
-   around it carries every visual property (same as .journal-month-title) */
-.journal-year-title {
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  letter-spacing: inherit;
-}
-.journal-hit {
-  display: flex;
-}
 /* the whole row is the control — a hit is one tap from the day it came from */
 .journal-hit-row {
   flex: 1;
@@ -455,27 +300,11 @@
   font: inherit;
   cursor: pointer;
 }
-.journal-hit-row:hover {
-  border-color: var(--accent);
-}
 .journal-hit-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-}
-.journal-snippet {
-  color: var(--text-2);
-  line-height: 1.5;
-}
-/* the browser default is black-on-yellow, which ignores the accent the rest of
-   the app marks things with and sits badly on the dark surface: a wash of the
-   accent under the theme's own text reads in both */
-.journal-snippet mark {
-  background: var(--mark-bg);
-  color: var(--text);
-  border-radius: 3px;
-  padding: 0 1px;
 }
 
 /* mood by weekday: seven bars under the 12-week chart */
@@ -487,23 +316,8 @@
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
 }
-.weekday-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
 /* fixed chart geometry, like the mood chart's viewBox: the track is a scale
    from 0 to 5, so it must not stretch with the type size */
-.weekday-track {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  width: 100%;
-  height: 64px;
-  border-radius: 4px;
-  background: var(--surface-2);
-}
 .weekday-bar {
   display: block;
   width: 60%;
@@ -514,28 +328,6 @@
 }
 /* the lowest average, marked. The caption under the bars names it too — the
    one thing this chart is for must not be carried by colour alone. */
-.weekday-col.low .weekday-track {
-  box-shadow: inset 0 0 0 1px var(--viz-series-1);
-}
-.weekday-col.low .weekday-bar {
-  opacity: 1;
-}
-.weekday-col.low .weekday-value {
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-.weekday-value {
-  font-size: 0.75rem;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.weekday-letter {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-.weekday-note {
-  margin: 10px 0 0;
-}
 .weekday-empty {
   margin: 0;
   padding: 12px 0;
@@ -642,13 +434,8 @@ button.journal-yesterday {
   text-align: start;
 }
 
-
 /* Show stats reads as the control it is, across the page like the cards it
    opens rather than as a line of centred text */
-.journal-stats-toggle {
-  width: 100%;
-  margin-bottom: 12px;
-}
 @media (max-width: 640px) {
   /* Five faces low to high is a scale, and it sat in the left two-thirds of
      the card with the rest of the width empty beside it. Spread, it reads as

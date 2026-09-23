@@ -220,26 +220,11 @@
   outline: none;
 }
 
-.chart-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-}
-
 .chart-table th,
 .chart-table td {
   text-align: left;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
-}
-
-.chart-table th {
-  font-size: 0.6875rem;
-  color: var(--muted);
-}
-
-.chart-table th.num {
-  text-align: right;
 }
 
 .hbars {

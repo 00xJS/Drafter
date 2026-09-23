@@ -1,0 +1,53 @@
+/* PeopleStats's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 11-people-review-search.css ---------- */
+/* the all-time tiles lie flat in their card */
+.people-all-time .stat-tile {
+  box-shadow: none;
+}
+.face-40 {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+.podium-face {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+}
+/* a pair seen on the same days: two faces, the second over the first's edge */
+.people-pair {
+  flex: none;
+  display: inline-flex;
+}
+.people-pair .stats-face + .stats-face {
+  margin-left: -8px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.people-cal-face {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+}
+.people-cal-more {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--text-2);
+}
+@media (max-width: 640px) {
+  .people-cal-face {
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+  }
+  .people-cal-more {
+    font-size: 8px;
+    line-height: 14px;
+  }
+}

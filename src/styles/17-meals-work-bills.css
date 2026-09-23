@@ -56,10 +56,6 @@
 /* ---- Add-to-a-day menu, and meals in the day sheet --------------------- */
 /* The + on a week day header asks "task or meal?" rather than silently
    meaning task, which left no route to a meal from the calendar at all. */
-.cal-add-wrap {
-  position: relative;
-  display: inline-flex;
-}
 .cal-add-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -88,15 +84,6 @@
   font-size: calc(0.9rem * var(--type-scale));
   text-align: left;
   cursor: pointer;
-}
-.cal-add-menu button:hover,
-.cal-add-menu button:focus-visible {
-  background: var(--surface-2);
-}
-
-.cal-sheet-eating {
-  padding: 8px 16px 4px;
-  border-top: 1px solid var(--border);
 }
 .cal-sheet-eating-head {
   margin: 0 0 6px;
@@ -162,21 +149,6 @@
 /* ---- Work days --------------------------------------------------------- */
 /* A work day is a property of the day, so it is a small badge on the day
    header, never a pill that competes with the day's events and meals. */
-.cal-work-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-2);
-  font-size: calc(0.68rem * var(--type-scale));
-  line-height: 1.4;
-}
 .cal-work-badge.home {
   border-color: var(--tone-mint);
   color: var(--tone-mint);
@@ -188,65 +160,6 @@
 .cal-work-badge.off {
   border-color: var(--tone-orange);
   color: var(--tone-orange);
-}
-.cal-work-badge.holiday {
-  border-color: var(--tone-amber);
-  color: var(--tone-amber);
-}
-/* Another member's work day (v3.24). Same shape and same colour as yours, so
-   Home and the office still read at a glance, but dashed and dimmed: the day
-   is theirs, and you cannot edit or dress for it. The name is inside the
-   badge, so a day with both reads "🏠 Home 09:00–17:00" then
-   "🏢 Maria · Office 08:30–16:30" without a legend. */
-.cal-work-badge.theirs {
-  border-style: dashed;
-  opacity: 0.78;
-}
-.cal-cell .cal-work-badge {
-  margin: 0 0 2px;
-}
-.cal-weekday-open .cal-work-badge {
-  margin-top: 2px;
-}
-.cal-work-edit,
-.cal-work-set {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: calc(0.75rem * var(--type-scale));
-  cursor: pointer;
-}
-.cal-work-edit {
-  border-style: solid;
-}
-.cal-work-edit-label {
-  color: var(--muted);
-}
-/* The badge keeps its own outline everywhere it stands alone, but inside the
-   Edit button it was a bordered pill inside a bordered pill — a control drawn
-   inside a control. It gives up the outline and keeps the colour, which is
-   the part that says which kind of day this is. */
-.cal-work-edit > .cal-work-badge {
-  border: none;
-  padding: 0;
-  font-size: inherit;
-}
-/* On the day page and the day sheet this is the row's only control, and at
-   2px of padding it was a 26pt target for it. It takes the same 44pt floor as
-   every other button on a phone. */
-.cal-day-work .cal-work-edit,
-.cal-day-work .cal-work-set,
-.cal-sheet-head .cal-work-edit,
-.cal-sheet-head .cal-work-set {
-  min-height: var(--touch);
-  padding: 6px 16px;
-  font-size: calc(0.8125rem * var(--type-scale));
 }
 
 /* the editor */
@@ -324,41 +237,9 @@
   padding: 0;
   list-style: none;
 }
-.bill-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.bill-row.overdue {
-  border-color: var(--danger);
-}
 /* A paid bill steps back in ink, not opacity, which took its meta line under
    4.5:1: its title and amount take the quiet ink the meta already has, and
    only the glyph fades. */
-.bill-row.paid .bill-copy strong,
-.bill-row.paid .bill-amount {
-  color: var(--muted);
-}
-.bill-row.paid .bill-glyph {
-  opacity: 0.75;
-}
-.bill-main {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  min-height: 52px;
-  padding: 8px 12px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
 .bill-glyph {
   font-size: 1.2rem;
 }
@@ -376,11 +257,6 @@
 }
 .bill-copy small {
   color: var(--muted);
-}
-.bill-amount {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  white-space: nowrap;
 }
 .bill-pay {
   margin-right: 8px;
@@ -434,48 +310,18 @@
 .bill-list {
   grid-template-columns: minmax(0, 1fr);
 }
-.bill-row {
-  min-width: 0;
-}
-
 
 /* ---- Finance (v3.27) -----------------------------------------------------
    Bills grew into three segments: the month of bills it always was, the
    paydays that say what comes in, and the accounts whose balances make "is
    there enough before the 3rd" answerable. The rows are the bill rows, so
    only what is new is here. */
-.finance-section {
-  margin-top: 4px;
-}
 /* money in reads as money in, wherever it is: a payday's amount and a runway
    day that is still above water */
 .bill-amount.in {
   color: var(--tone-mint);
 }
 /* what is owed, and a day the runway goes under */
-.bill-amount.owed {
-  color: var(--danger);
-}
-.finance-short {
-  margin: 0 4px 12px;
-}
-.account-row {
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 12px;
-}
-.account-row.archived {
-  opacity: 0.6;
-}
-.account-name {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
 .account-actions {
   display: flex;
   flex-wrap: wrap;
@@ -492,12 +338,6 @@
 }
 /* the runway is a long list of short rows: no glyph column, and the amount
    pinned right so the balance reads as one column down the page */
-.bill-list.runway .bill-copy {
-  flex: 1;
-}
-.bill-list.runway .bill-amount {
-  margin-left: auto;
-}
 
 @media (max-width: 640px) {
   /* at 375pt the balance box and its three buttons need the full width under

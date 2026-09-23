@@ -19,15 +19,9 @@
    spacer out of the way the priority filter grows into the gap, and the action
    takes the full width it already occupies a line for. */
 @media (max-width: 640px) {
-  .posts-view > .toolbar > .spacer {
-    display: none;
-  }
   .posts-view > .toolbar > select[aria-label='Filter by priority'] {
     flex: 1;
     min-width: 0;
-  }
-  .posts-view > .toolbar > .btn:last-child {
-    flex: 1 0 100%;
   }
 }
 
@@ -43,77 +37,15 @@
   margin-bottom: 12px;
 }
 
-.posts-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.posts-table th {
-  text-align: left;
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-weight: 600;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
-}
-
-.th-sort {
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.th-sort:hover {
-  color: var(--text);
-}
-
-.posts-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.posts-table tbody tr {
-  cursor: pointer;
-}
-
-.posts-table tbody tr:hover {
-  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
-}
-
-.posts-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
 .posts-table .num,
 .chart-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.row-title {
-  font-weight: 600;
-}
-
 .row-body {
   color: var(--text-2);
   font-size: 0.8125rem;
-}
-
-.cell-date {
-  white-space: nowrap;
-  color: var(--text-2);
-  max-width: 9rem;
-  overflow: hidden;
 }
 
 .empty {

@@ -1,0 +1,86 @@
+/* Finance's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 17-meals-work-bills.css ---------- */
+.bill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.bill-row.overdue {
+  border-color: var(--danger);
+}
+/* A paid bill steps back in ink, not opacity, which took its meta line under
+   4.5:1: its title and amount take the quiet ink the meta already has, and
+   only the glyph fades. */
+.bill-row.paid .bill-copy strong,
+.bill-row.paid .bill-amount {
+  color: var(--muted);
+}
+.bill-row.paid .bill-glyph {
+  opacity: 0.75;
+}
+.bill-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.bill-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.bill-row {
+  min-width: 0;
+}
+.finance-section {
+  margin-top: 4px;
+}
+/* what is owed, and a day the runway goes under */
+.bill-amount.owed {
+  color: var(--danger);
+}
+.finance-short {
+  margin: 0 4px 12px;
+}
+.account-row {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.account-row.archived {
+  opacity: 0.6;
+}
+.account-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+/* the runway is a long list of short rows: no glyph column, and the amount
+   pinned right so the balance reads as one column down the page */
+.bill-list.runway .bill-copy {
+  flex: 1;
+}
+.bill-list.runway .bill-amount {
+  margin-left: auto;
+}

@@ -6,7 +6,7 @@ import { GITHUB_STATE_META } from '../github'
 import { SEEN_META } from '../people'
 import { THEME_GROUND, THEME_HEX } from '../theme'
 import { PRIORITY_META, PROJECT_STATUS_META, STATUS_META } from '../types'
-import { sheetImports } from './source'
+import { partialSource, sheetImports, viewSheets } from './source'
 
 /*
  * The two palettes in src/styles/01-base.css: light on the bare :root, dark on
@@ -195,7 +195,7 @@ describe('the two palettes in 01-base.css', () => {
 
   it('is the only place a colour token is declared', () => {
     const colourTokens = props(light).filter(p => !NON_COLOUR.includes(p))
-    for (const file of sheetImports().filter(f => f !== '01-base.css')) {
+    for (const file of [...sheetImports(), ...viewSheets()].filter(f => f !== '01-base.css')) {
       const declared = [...strip(read(file)).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1])
       expect(
         declared.filter(p => colourTokens.includes(p)),
@@ -300,7 +300,7 @@ describe('the light palette reads (WCAG 2.x)', () => {
 
   it('never dims a calendar pill’s time, in either theme: readableInk moves its ink only as far as 4.5:1', () => {
     expect(light).not.toHaveProperty('--pill-time-opacity')
-    expect(strip(read('03-board-calendar.css'))).not.toMatch(/\.cal-pill-time\s*\{[^}]*opacity/)
+    expect(strip(partialSource('03-board-calendar.css'))).not.toMatch(/\.cal-pill-time\s*\{[^}]*opacity/)
   })
 
   it('gives focus rings and chart series 3:1, at the strength each mark is drawn', () => {
@@ -399,7 +399,7 @@ describe('the inks changed in dark now read there (WCAG 2.x)', () => {
   })
 
   it('gives the mood chart’s scrub cursor and weekly-average line 3:1 on their own grounds, in both themes', () => {
-    const journal = strip(read('15-journal.css'))
+    const journal = strip(partialSource('15-journal.css'))
     // the scrubbed day's lit rect is drawn after the cursor, so it lies over the line and its ground alike
     const lit = Number(/\.mood-day\.on \.mood-hit\s*\{[^}]*fill-opacity:\s*([\d.]+)/.exec(journal)?.[1])
     expect(lit).toBeGreaterThan(0)

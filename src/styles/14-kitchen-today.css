@@ -30,10 +30,6 @@
   flex: 1;
   min-width: 8rem;
 }
-.kitchen-week-label {
-  font-weight: 600;
-  color: var(--text-2);
-}
 .kitchen-week-head {
   justify-content: center;
   gap: 10px;
@@ -119,13 +115,6 @@
 .recipe-suggest-inline {
   margin: 18px 0 0;
 }
-.week-strip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-  margin: 0 0 12px;
-  scroll-margin-top: calc(var(--topbar-h) + 8px + env(safe-area-inset-top));
-}
 .week-strip-day {
   display: flex;
   align-items: center;
@@ -142,15 +131,6 @@
 }
 .week-strip-day.today {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
-}
-.week-strip-dow {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--text-2);
-  line-height: 1;
-}
-.week-strip-day.today .week-strip-dow {
-  color: var(--accent-text);
 }
 .week-strip-day.set {
   background: var(--accent-soft);
@@ -443,39 +423,13 @@
 .ing-row input {
   width: 100%;
 }
-.grocery-line {
-  flex-wrap: wrap;
-}
 .grocery-states {
   margin-left: auto;
-}
-/* the filter segments and the escape hatch for the lines held on screen after
-   they were ticked. The button is always in the markup — on the phone it takes
-   its line whether or not anything is ticked, so the first tick of a shop does
-   not grow this wrapping row and shove the list down under the thumb. */
-.grocery-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  /* the list starts straight under this row; without a gap the first line's
-     border sat against the filters */
-  margin-bottom: 12px;
-}
-.grocery-filter-row .segmented {
-  flex: 1 1 auto;
 }
 /* the mouse page has no reflow problem and no row to reserve: it sits inline
    beside the segments, so with nothing to clear it simply goes */
 .grocery-clear:disabled {
   display: none;
-}
-.grocery-line.have .dash-title {
-  color: var(--muted);
-}
-.grocery-line.done .dash-title {
-  text-decoration: line-through;
-  color: var(--muted);
 }
 .kitchen-tonight-title {
   margin: 0 4px 12px;
@@ -523,10 +477,6 @@
      button out of the tab and VoiceOver order with it. The parent class is here
      to win on specificity rather than on source order, so moving the desktop
      `display: none` below this block cannot silently bring the reflow back. */
-  .grocery-filter-row .grocery-clear:disabled {
-    display: block;
-    visibility: hidden;
-  }
   .ing-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -545,28 +495,10 @@
   padding: 6px 8px;
   line-height: 1;
 }
-/* the line's name, for a screen reader ("Remove Milk", "Restore Milk"); the
-   ✕ is for the eye */
-.grocery-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 /* a line removed in this session keeps its slot until the view is cleaned —
    the tick's rule — struck through, with Restore where its state buttons were */
 .grocery-line.removed {
   border-style: dashed;
-}
-.grocery-line.removed .dash-title {
-  text-decoration: line-through;
-  color: var(--muted);
 }
 /* "Removed (n)" at the very bottom of the pane, closed until asked for */
 .grocery-removed {
@@ -586,14 +518,6 @@
   flex-direction: column;
   gap: 6px;
 }
-.grocery-removed-line {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-}
 .grocery-removed-line .dash-main {
   flex: 1;
   min-width: 0;
@@ -603,9 +527,6 @@
   /* The ✕ shares the name's line, top right, and the state buttons keep the
      full-width line under it. It is last in the markup, so a screen reader
      meets it after Have / Need / Got it, but it must not become a third line. */
-  .grocery-line .grocery-states {
-    order: 1;
-  }
   .grocery-line .dash-main {
     flex: 1 1 0;
     min-width: 0;
@@ -616,12 +537,6 @@
   }
   /* the Removed row has no ✕, so its first line is held to the ✕'s height: a
      row that came up a few px short would still nudge the list under the thumb */
-  .grocery-line.removed .dash-main {
-    min-height: 44px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
   .grocery-removed > summary {
     padding: 12px 0;
   }
@@ -970,12 +885,6 @@
 .photo-cal-cell.dinner-cooked .photo-cal-day::after {
   background: var(--viz-series-1);
 }
-.photo-cal-cell.dinner-out .photo-cal-day::after {
-  background: var(--cal-meal-out);
-}
-.photo-cal-cell.dinner-bought .photo-cal-day::after {
-  background: var(--cal-meal-bought);
-}
 /* tonight's dinner out before its outing counts here (outingsAt's midday
    UTC): a plan, dashed as a day to come is, and with no bar */
 .photo-cal-cell.dinner-planned .photo-cal-day {
@@ -985,14 +894,6 @@
 .kitchen-way-cooked {
   fill: var(--viz-series-1);
   background: var(--viz-series-1);
-}
-.kitchen-way-out {
-  fill: var(--cal-meal-out);
-  background: var(--cal-meal-out);
-}
-.kitchen-way-bought {
-  fill: var(--cal-meal-bought);
-  background: var(--cal-meal-bought);
 }
 .kitchen-month-bars .tick-label.now {
   fill: var(--text-2);
@@ -1055,23 +956,6 @@
   margin-bottom: 6px;
   font-size: 0.8125rem;
 }
-.kitchen-share-bar {
-  display: flex;
-  gap: 2px;
-  height: 14px;
-  overflow: hidden;
-  border-radius: 4px;
-}
-.kitchen-share-bar > span {
-  flex: 1 1 0;
-  min-width: 3px;
-}
-.kitchen-share-line {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.75rem;
-  color: var(--text-2);
-}
 
 /* Kitchen holds four segments since Stats joined it: on a phone their labels
    grow with Dynamic Type only so far, as Home's do, or "This week" wraps and
@@ -1089,7 +973,6 @@
   }
 }
 
-
 /* Kitchen's two period bars sit under their heading rather than beside it:
    a week range and two arrows do not share a line with a large title at
    402pt without one of them being squeezed to nothing. */
@@ -1102,14 +985,6 @@
    of its own, full width — it is the primary action here, so a wide target
    for it is the right shape anyway — and the range gets the line above
    intact (v3.28). */
-@media (max-width: 640px) {
-  .kitchen-grocery-week {
-    flex-wrap: wrap;
-  }
-  .kitchen-grocery-week > .btn.primary {
-    flex: 1 0 100%;
-  }
-}
 
 /* ============================================================
    Kitchen: filling recipes in (level-up 2)
@@ -1120,17 +995,6 @@
    and grocery lists while a recipe has nothing to shop for;
    and the Fill them in sheet, one recipe at a time.
    ============================================================ */
-.kitchen-gap {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-}
 .kitchen-gap p {
   flex: 1 1 14rem;
   min-width: 0;
@@ -1143,9 +1007,6 @@
   flex: none;
 }
 /* under the grocery list's how-it-works line, which sits tight to what is above it */
-.field-hint + .kitchen-gap {
-  margin-top: 12px;
-}
 .recipe-capture-row {
   display: flex;
   flex-wrap: wrap;

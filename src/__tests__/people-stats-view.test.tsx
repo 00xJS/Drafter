@@ -17,7 +17,7 @@ import { NO_PERSON_FILTER } from '../people'
 import { THEME_HEX, type Theme } from '../theme'
 import { PROJECT_COLORS, type CalendarEntry, type Person, type Place, type Recipe, type Task } from '../types'
 import { elements, press, propsOf, settled, type El } from './rendered'
-import { sheetSource } from './source'
+import { sheetSource, viewSheet } from './source'
 
 // People → Stats, drawn on the server as the tests see every screen: with
 // nobody, with people and nothing seen, and with a household's visits, in the
@@ -697,7 +697,12 @@ describe('?view=people-stats', () => {
 describe('its styles', () => {
   const css = sheetSource()
   const phone = [...css.matchAll(/@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n')
-  const block = css.slice(css.indexOf('People → Stats (PeopleStats)'), css.indexOf('@media (max-width: 640px)', css.indexOf('People → Stats (PeopleStats)')))
+  // its block in the partial, and the desktop half of its own sheet
+  // (styles/views/people-stats.css), which holds the rules only it draws
+  const own = viewSheet('people-stats.css')
+  const block =
+    css.slice(css.indexOf('People → Stats (PeopleStats)'), css.indexOf('@media (max-width: 640px)', css.indexOf('People → Stats (PeopleStats)'))) +
+    own.slice(0, own.indexOf('@media (max-width: 640px)'))
 
   it('keeps the phone’s rules behind the phone guard: two faces a line in a 375pt month', () => {
     expect(phone).toMatch(/\.people-cal-face \{[^}]*width: 14px/)

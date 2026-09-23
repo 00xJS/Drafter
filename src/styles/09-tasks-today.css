@@ -255,11 +255,6 @@
   padding-inline: 6px;
   font-variant-numeric: tabular-nums;
 }
-.review-top-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 .review-top-row input {
   flex: 1;
 }
@@ -337,24 +332,6 @@
   align-items: center;
   gap: 8px;
 }
-.project-card-name {
-  font-weight: 600;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.project-card-pct {
-  font-size: 0.75rem;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.project-card-sub {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-
 
 /* Who can see a record, on its row in the task list, on a board card and in
    the notes index. Both states are drawn (see ShareMark in bits.tsx), so the

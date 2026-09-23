@@ -4,6 +4,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CUTOUT_ASSETS, CUTOUT_LOADER, CUTOUT_MODEL, CUTOUT_WASM, MEDIAPIPE_VERSION, MODEL_SHA256 } from '../cutoutassets'
+import { sheetSource } from './source'
 
 /*
  * The garment cut-out's web engine spans the build, the host and three files
@@ -262,8 +263,8 @@ describe('the styles and the README', () => {
     const base = read('src/styles/01-base.css')
     expect(base.match(/--photo-white:/g)).toHaveLength(1)
     expect(base).toMatch(/--photo-white: #ffffff;/)
-    const sheet = read('src/styles/07-dialogs-dashboard.css')
-    const block = sheet.slice(sheet.indexOf('/* ---------- garment cut-out ----------')).replace(/\/\*[\s\S]*?\*\//g, '')
+    // the cut-out's rules, in its partial and in the wardrobe's own sheet
+    const block = (sheetSource().replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]*\.cutout[\w-]*[^{}]*\{[^}]*\}/g) ?? []).join('\n')
     expect(block).toContain('.cutout-white')
     expect(block).toContain('var(--photo-white)')
     expect(block).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)

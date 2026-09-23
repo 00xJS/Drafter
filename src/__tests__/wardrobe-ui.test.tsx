@@ -19,7 +19,7 @@ import { imageFiles } from '../media'
 import type { Garment, GarmentType, Item, Outfit, Wear } from '../types'
 import { liveById, unwearable, wearIndex } from '../wardrobe'
 import { button, press, propsOf, rendered, settled, textOf, typeInto } from './rendered'
-import { plannerSource } from './source'
+import { partialSource, plannerSource } from './source'
 
 // Home → Wardrobe as a server render sees it: the composer's rows and its
 // buttons, Clothes, the piece sheet and Stats, from fixtures; the segment on
@@ -700,7 +700,7 @@ describe('the guards around the wardrobe', () => {
   })
 
   it('keeps its style sheet to tokens: a piece’s colour is set inline, as a place’s is', () => {
-    const css = read('../styles/18-wardrobe.css')
+    const css = partialSource('18-wardrobe.css')
     expect(css.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g)).toBeNull()
     const index = read('../styles/index.css')
     expect(index.indexOf("'./18-habits-routines-briefing.css'")).toBeLessThan(index.indexOf("'./18-wardrobe.css'"))

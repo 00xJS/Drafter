@@ -26,9 +26,35 @@ export function sheetImports(): string[] {
   return [...read('styles/index.css').matchAll(/^@import '\.\/([^']+\.css)';$/gm)].map(m => m[1])
 }
 
-/** The whole sheet as one text: each partial index.css imports, in order, joined with nothing. */
+/**
+ * The lazy views' own sheets, styles/views/*.css, in name order: the rules only
+ * one lazy view can match, loaded with its chunk (components/planner/lazy.ts)
+ * and so after every partial — which is how the cascade has them.
+ */
+export function viewSheets(): string[] {
+  return existsSync(path('styles/views')) ? readdirSync(path('styles/views')).filter(f => f.endsWith('.css')).sort().map(f => `views/${f}`) : []
+}
+
+/**
+ * A partial as it was written: its own text, then every section of a view's
+ * sheet that came from it (each is headed "from <partial>"). A rule only one
+ * lazy view matches loads with that view now, but it is still the partial's
+ * rule, and a test about the partial's rules reads them all here.
+ */
+export function partialSource(name: string): string {
+  const own = read(`styles/${name}`)
+  const moved = viewSheets().flatMap(f => read(`styles/${f}`).split(/(?=\/\* -{10} from )/).filter(part => part.startsWith(`/* ---------- from ${name} ----------`)))
+  return [own, ...moved].join('\n')
+}
+
+/** One view's own sheet, by its file name in styles/views/. */
+export function viewSheet(name: string): string {
+  return read(`styles/views/${name}`)
+}
+
+/** The whole sheet as one text: each partial index.css imports, in order, then the views' sheets, joined with nothing. */
 export function sheetSource(): string {
-  return sheetImports()
+  return [...sheetImports(), ...viewSheets()]
     .map(f => read(`styles/${f}`))
     .join('')
 }
