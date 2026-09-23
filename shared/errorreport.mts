@@ -130,7 +130,7 @@ const KNOWN = new Set(
   android anthropic apns capacitor chrome claude drafter firefox github google icloud ios ipad iphone mac macos mediapipe
   microsoft netlify nominatim nvidia openstreetmap outlook react resend safari supabase vite webkit workbox
   asset assets js mjs css png svg jpg webp gif ico ics txt webmanifest phone phones additional helpful basic
-  rest rpc realtime graphql oauth authorize`.split(/\s+/),
+  rest rpc realtime graphql oauth authorize self trusted img navigate upgrade sandbox`.split(/\s+/),
 )
 
 /** Acronyms kept as they are written; any other word in capitals is a word like the rest. */

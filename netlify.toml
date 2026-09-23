@@ -191,6 +191,13 @@
 
 # No page of this site may be framed: the consent sheet grants an assistant
 # access to the planner, and a framed copy of it could be clickjacked.
+#
+# The rest of the Content-Security-Policy — where scripts, styles, images and
+# connections may come from — is not here: the build writes it into
+# dist/_headers (vite.config.ts, from shared/csp.mts), because it names the
+# Supabase project the build talks to and hashes index.html's inline script.
+# Netlify applies both. That one is Report-Only until CSP_ENFORCE is set on
+# the host (README → Deploy); this line is enforced either way.
 [[headers]]
   for = "/*"
   [headers.values]

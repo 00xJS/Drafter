@@ -102,6 +102,7 @@ The smoke tests and the browser tests aren't part of `check`, since Netlify has 
 - **Bot.** A push to `main` that changes `supabase/functions/` or `shared/kinds.mts` deploys it (**Deploy bot**, needing `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`; without them it deploys nothing and still passes). By hand: `supabase functions deploy bot` (add `--use-api` if Docker isn't running). Either way `BOT_TOKEN` is a Supabase secret.
 - **iPhone.** `npm run ios`, then Run in Xcode. The app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
 - **Checks.** Admin → Data → Integration health has **Test AI**, **Send test push** and **Preview my digest**; Admin → Data shows what the database holds, the last run of the nightly backup and the hourly digest, and the errors devices reported. The owner's Today gets a banner when an hourly sync check finds the server refusing a kind of record, when the digest has not run for 3 hours, when no backup has worked for 36 hours, or when a run failed.
+- **Content Security Policy.** The web app ships a report-only policy (`shared/csp.mts`, written into `dist/_headers` by the build); anything it would block shows up in Admin → Data as `CSP would block …`. To enforce it, set `CSP_ENFORCE=true` in Netlify's environment and redeploy (unset it and redeploy to go back), then check that `curl -sI https://<your-site>/ | grep -i content-security` shows `Content-Security-Policy:`.
 
 ### iPhone and the Apple Developer Program
 

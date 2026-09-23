@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +7,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { cspHeadersFile } from './shared/csp.mts'
 
 // Every build is stamped (src/appupdate.ts): index.html carries the stamp the
 // page was built with, /version.json the one the server has now. Netlify's
@@ -53,6 +55,38 @@ const buildStamp = (): Plugin => ({
     this.emitFile({ type: 'asset', fileName: 'version.json', source: `${JSON.stringify({ build: BUILD_ID })}\n` })
   },
 })
+
+/**
+ * The Content-Security-Policy, written to dist/_headers (shared/csp.mts holds
+ * the policy and why each source is in it). It is written here because two
+ * of its pieces only the build knows: the Supabase project the bundle talks to
+ * (VITE_SUPABASE_URL) and the hash of the built index.html's inline script.
+ * Reported only, until the host sets CSP_ENFORCE=true. Not for the iPhone
+ * build: Capacitor serves that bundle itself and reads no _headers.
+ */
+const CSP_ENFORCE = /^(1|true|yes)$/i.test((process.env.CSP_ENFORCE ?? '').trim())
+
+const contentSecurityPolicy = (): Plugin => {
+  let mode = ''
+  let supabaseUrl = ''
+  return {
+    name: 'drafter-content-security-policy',
+    apply: 'build',
+    // after vite:build-html, so the page it hashes is the one that ships
+    enforce: 'post',
+    configResolved(config) {
+      mode = config.mode
+      supabaseUrl = String(config.env.VITE_SUPABASE_URL ?? '')
+    },
+    generateBundle(_, bundle) {
+      if (mode === 'ios') return
+      const page = bundle['index.html']
+      if (page?.type !== 'asset') return this.error('the Content-Security-Policy hashes index.html, and this build wrote none')
+      const sha256 = (text: string) => createHash('sha256').update(text).digest('base64')
+      this.emitFile({ type: 'asset', fileName: '_headers', source: cspHeadersFile({ html: String(page.source), supabaseUrl, enforce: CSP_ENFORCE, sha256 }) })
+    },
+  }
+}
 
 // The garment cut-out's web runtime (src/cutoutweb.ts): two files from
 // @mediapipe/tasks-vision, served from our own origin in a versioned folder,
@@ -135,6 +169,7 @@ export default defineConfig({
     cutoutRuntime(),
     buildStamp(),
     appleSiteAssociation(),
+    contentSecurityPolicy(),
     VitePWA({
       registerType: 'autoUpdate',
       // the app registers the worker itself and watches for deploys (src/appupdate.ts)
