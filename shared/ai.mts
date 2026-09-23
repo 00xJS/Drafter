@@ -1,7 +1,8 @@
 // Rules about talking to a model that the app and the server both need, so
 // there is one copy and not two. The app calls these from src/ai.ts and
 // src/chatactions.ts; the server from netlify/functions/lib/ai.mjs (every
-// NVIDIA answer) and the Sunday digest from netlify/functions/digest.mjs.
+// NVIDIA answer) and from the work it does by itself — Sunday's review draft
+// and email-in's triage (netlify/functions/lib/sundaydraft.mjs, lib/triage.mjs).
 
 /** Words long enough that an answer never repeats a run of them by accident. */
 const ECHO_RUN = 6
@@ -79,3 +80,100 @@ export const JSON_ONLY = 'Reply with the JSON only — no reasoning and no comme
  */
 export const REVIEW_SYSTEM =
   'You are writing someone their own review of the period, in the second person: warm, candid, a good friend who is also organised. Name the tasks and the people. Say what went well, say plainly what slipped, and finish by naming the few things worth doing first. Where their journal explains how the period went, use their own words for it. Use only what is below — invent nothing, and leave out anything they did not do.\n\nPlain prose in short paragraphs, with "-" bullets where a list reads better. No headings, no bold, no italics. Write only the review.'
+
+/**
+ * Where the first JSON value in `text` starts, where it ends when it is
+ * complete (else -1), and where it could be cut short and still hold only
+ * whole items: `lastItem`, the end of the last complete element of a
+ * top-level array, and `wrapped`, the same for an array one level inside a
+ * top-level object ({"tags": [...]}) — with the brackets that close it.
+ * String contents never count as brackets.
+ */
+export function scanJSON(text: string): { start: number; end: number; lastItem: number; wrapped: string | null } {
+  const start = text.search(/[[{]/)
+  let end = -1
+  let lastItem = -1
+  let wrapped: string | null = null
+  if (start === -1) return { start, end, lastItem, wrapped }
+  const closers: string[] = []
+  let inString = false
+  let escaped = false
+  /** An element of the array being read ends at `i`: remember it if that array is the top level or one level inside it. */
+  const itemEnds = (i: number) => {
+    if (closers.length === 1 && closers[0] === ']') lastItem = i
+    else if (closers.length === 2 && closers[0] === '}' && closers[1] === ']') wrapped = `${text.slice(start, i + 1)}]}`
+  }
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') {
+        inString = false
+        itemEnds(i)
+      }
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{' || ch === '[') closers.push(ch === '{' ? '}' : ']')
+    else if (ch === '}' || ch === ']') {
+      closers.pop()
+      if (closers.length === 0) {
+        end = i
+        break
+      }
+      itemEnds(i)
+    }
+  }
+  return { start, end, lastItem, wrapped }
+}
+
+/** JSON as a model writes it: read as it is, or with the trailing comma taken out that models leave before a closing bracket. */
+export function parseLooseJSON<T>(json: string): T {
+  try {
+    return JSON.parse(json) as T
+  } catch {
+    try {
+      // the commonest slip: a trailing comma before a closing bracket
+      return JSON.parse(json.replace(/,\s*([}\]])/g, '$1')) as T
+    } catch {
+      throw new Error('The model returned malformed JSON — try again.')
+    }
+  }
+}
+
+/**
+ * The JSON in a model's reply. Models wrap it in ```json fences, add a
+ * sentence before or after it, leave a trailing comma, or stop mid-array when
+ * they run out of budget: take the first complete value, and failing that,
+ * keep the complete elements of a cut-off array.
+ */
+export function extractJSON<T>(text: string): T {
+  const clean = text.replace(/```(?:json)?/gi, '')
+  const { start, end, lastItem } = scanJSON(clean)
+  if (start === -1) throw new Error('The model returned no JSON — try again.')
+  if (end >= 0) return parseLooseJSON<T>(clean.slice(start, end + 1))
+  if (clean[start] === '[' && lastItem > start) return parseLooseJSON<T>(`${clean.slice(start, lastItem + 1)}]`)
+  throw new Error('The model’s answer was cut off — try again.')
+}
+
+/**
+ * Record text made safe to sit inside a prompt's fence (<week>…</week>,
+ * <email>…</email>): angle brackets turn into ‹ › so nothing in it can close
+ * the fence or open another, blank space collapses — to one line, or with
+ * `lines` to single line breaks and at most one blank line — and it is cut to
+ * `max`. The brief says what the fence holds is data, not instructions.
+ */
+export function asData(text: unknown, opts: { lines?: boolean; max?: number } = {}): string {
+  const s = String(text ?? '')
+    .replace(/</g, '‹')
+    .replace(/>/g, '›')
+  const flat = opts.lines
+    ? s
+        .replace(/\r\n?/g, '\n')
+        .replace(/[^\S\n]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+    : s.replace(/\s+/g, ' ')
+  return (opts.max ? flat.trim().slice(0, opts.max) : flat).trim()
+}
