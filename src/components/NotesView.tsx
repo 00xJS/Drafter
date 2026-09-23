@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { Note, Project } from '../types'
 import { newerStamp } from '../itemops'
 import { htmlToText, wordCountHtml } from '../richtext'
 import { excerpt, timeAgo, uid } from '../utils'
+import { useNow } from '../useNow'
 import { RichNotes } from './RichNotes'
 import { NotePane } from './notes/NotePane'
 import { NotesIndex } from './notes/NotesIndex'
@@ -66,25 +67,31 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
     timer.current = window.setTimeout(() => persist(), 800)
   }
 
-  // save when the tab goes to the background and when this pane unmounts
+  // Save when the tab goes to the background and when this pane unmounts. The
+  // listeners are set up once; what they save with is the latest render's
+  // persist (an effect event), so the save lands on the newest copy.
+  const persistNow = useEffectEvent(() => persist())
   useEffect(() => {
     const onHide = () => {
-      if (document.visibilityState === 'hidden') persist()
+      if (document.visibilityState === 'hidden') persistNow()
     }
     document.addEventListener('visibilitychange', onHide)
     return () => {
       document.removeEventListener('visibilitychange', onHide)
       window.clearTimeout(timer.current)
-      persist()
+      persistNow()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // another device edited the notes while this pane was idle: take theirs
-  useEffect(() => {
+  // another device edited the notes while this pane was idle: take theirs —
+  // when the words change, not for a pin or a rename
+  const takeTheirs = useEffectEvent(() => {
     const incoming = noteHtml(project)
     if (!dirtyRef.current && incoming !== textRef.current) setText(incoming)
-  }, [project.notesHtml, project.notes]) // eslint-disable-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => takeTheirs(), [project.notesHtml, project.notes])
+  // "Saved 3m ago" moves on with the clock (useNow), not only with the next save
+  const now = useNow()
 
   const pinned = !!project.notesPinned
   return (
@@ -107,7 +114,7 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
           {pinned ? '📌 Unpin' : '📌 Pin'}
         </button>
       </header>
-      <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt)}` : 'Autosaves as you type'} onCreateTask={title => onCreateTask(title, project.id)} />
+      <RichNotes value={text} onChange={change} autoFocus status={dirty ? 'Saving…' : savedAt ? `Saved ${timeAgo(savedAt, now)}` : 'Autosaves as you type'} onCreateTask={title => onCreateTask(title, project.id)} />
       <NoteTips root={page} />
     </div>
   )

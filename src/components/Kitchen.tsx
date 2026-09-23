@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   GROCERY_STATE_META,
   GroceryLine,
@@ -159,6 +159,15 @@ function RecipeCard({
 
 const RECIPE_VIEW_KEY = 'drafter:kitchen-recipes'
 
+/** The recipe list last chosen on this device: out here, as the React Compiler leaves a component with a choice inside a try as written. */
+function storedRecipeView(): RecipeView {
+  try {
+    return localStorage.getItem(RECIPE_VIEW_KEY) === 'lately' ? 'lately' : 'all'
+  } catch {
+    return 'all'
+  }
+}
+
 interface Props {
   /**
    * The signed-in account, null in local mode. A meal and a week's grocery
@@ -205,13 +214,7 @@ interface Props {
 export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
-  const [recipeView, setRecipeView] = useState<RecipeView>(() => {
-    try {
-      return localStorage.getItem(RECIPE_VIEW_KEY) === 'lately' ? 'lately' : 'all'
-    } catch {
-      return 'all'
-    }
-  })
+  const [recipeView, setRecipeView] = useState<RecipeView>(storedRecipeView)
   // Both seeded from the day a way in names, as `seg` is seeded from openTab.
   // The Stats lens's dinner calendar is the only sender, and it always sends
   // from another tab — so the Kitchen MOUNTS with the hand-off already set, and
@@ -378,9 +381,11 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
       setFocusDay(null)
     }
   }
+  // Each hand-off is said to be used once per ask: the parent's setters are
+  // effect events, so a new one of those is no reason to say it again.
+  const openTabUsed = useEffectEvent(() => onOpenTabConsumed?.())
   useEffect(() => {
-    if (openTab) onOpenTabConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (openTab) openTabUsed()
   }, [openTab])
   // …and a day with it, from the Stats lens's dinner calendar: the same landing
   // Stats' own days make, since it is the same calendar
@@ -393,9 +398,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
       setSeg('week')
     }
   }
+  const openDayUsed = useEffectEvent(() => onOpenDayConsumed?.())
   useEffect(() => {
-    if (openDay) onOpenDayConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (openDay) openDayUsed()
   }, [openDay])
   // …and a recipe to cook, from Today's Cook on tonight's dinner or the Stats
   // lens's Most cooked. Taken last, so it wins over a segment or a day sent with
@@ -415,9 +420,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
       setFocusDay(null)
     }
   }
+  const openRecipeUsed = useEffectEvent(() => onOpenRecipeConsumed?.())
   useEffect(() => {
-    if (openRecipe) onOpenRecipeConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+    if (openRecipe) openRecipeUsed()
   }, [openRecipe])
   /** Stats' dinner calendar: that day on This week, scrolled to and framed, for this visit only. */
   const goDay = (day: string) => {

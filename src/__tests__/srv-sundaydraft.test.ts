@@ -735,6 +735,6 @@ describe('Sunday’s draft and Home → Week read one set of lists (shared/revie
   it('the ✨ summary sends that same line', () => {
     const source = readFileSync(fileURLToPath(new URL('../components/Review.tsx', import.meta.url)), 'utf8')
     expect(source).toMatch(/habits: habitLines\(habitStats\),/)
-    expect(source).toMatch(/const habitStats = useMemo\(\(\) => habitsConsistency\(habits, range\.start, range\.end, new Date\(\)\)/)
+    expect(source).toMatch(/const habitStats = useMemo\(\(\) => habitsConsistency\(habits, range\.start, range\.end, noonOf\(todayKey\)\)/)
   })
 })

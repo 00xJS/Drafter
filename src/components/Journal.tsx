@@ -1,4 +1,4 @@
-import { CSSProperties, Fragment, RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { CSSProperties, Fragment, RefObject, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { useDayKey } from '../useDayKey'
 import {
@@ -269,6 +269,23 @@ interface ViewProps {
 }
 
 const STATS_KEY = 'drafter:journal-stats'
+
+// Whether the stats are open, as this device last left them. Out here: the
+// React Compiler leaves a component with a choice inside a try as written.
+function storedStatsOpen(): boolean {
+  try {
+    return localStorage.getItem(STATS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function storeStatsOpen(open: boolean): void {
+  try {
+    localStorage.setItem(STATS_KEY, open ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
 /**
  * Where the reader was when they last left the page. JournalView unmounts on
  * every view change, so without this "back to the journal" always means back to
@@ -299,21 +316,11 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   /** Results are their own list with their own paging; it starts fresh on every new query. */
   const [hitLimit, setHitLimit] = useState(SEARCH_PAGE)
   const narrow = useMediaQuery('(max-width: 640px)')
-  const [statsOpen, setStatsOpen] = useState(() => {
-    try {
-      return localStorage.getItem(STATS_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  const [statsOpen, setStatsOpen] = useState(storedStatsOpen)
   const toggleStats = () => {
     const next = !statsOpen
     setStatsOpen(next)
-    try {
-      localStorage.setItem(STATS_KEY, next ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
+    storeStatsOpen(next)
   }
   // the disclosure is a phone affordance: a desktop page has the room for both
   // and shows them the way it always did
@@ -321,6 +328,8 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
 
   /** True while the mount is restoring the last offset, so no scroll fights it. */
   const restored = useRef(false)
+  /** Whether the way in names a past day, which owns the scroll: read once, as the page mounts. */
+  const askedForPastDay = useEffectEvent(() => !!openDate && openDate !== today)
 
   // a layout effect, not a passive one: React runs a layout cleanup synchronously
   // in the commit that removes this page, before the browser re-lays out the
@@ -336,7 +345,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     // wins whenever nothing older was asked for, and today's card keeps the
     // scroll only on the first visit of a session.
     let restore = 0
-    if ((!openDate || openDate === today) && lastScrollY > 0) {
+    if (!askedForPastDay() && lastScrollY > 0) {
       restored.current = true
       const y = lastScrollY
       // after paint, so the restored `limit` has rendered its days and the
@@ -358,9 +367,10 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
       window.removeEventListener('scroll', onScroll)
     }
     // mount and unmount only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // once per day asked for: the parent's setter an effect event, not a reason to run
+  const openDateUsed = useEffectEvent(() => onOpenDateConsumed?.())
   useEffect(() => {
     if (!openDate) {
       // nothing to scroll to, so nothing is deferring to the restore either
@@ -373,8 +383,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     // opened later in this same visit is a target again.
     if (!restored.current) window.setTimeout(() => document.getElementById(`journal-day-${openDate}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
     restored.current = false
-    onOpenDateConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per day asked for; the callback is the parent's setter
+    openDateUsed()
   }, [openDate])
   // the list's length outlives the page, so a return lands on a day already drawn
   useEffect(() => {

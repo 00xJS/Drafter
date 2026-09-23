@@ -1,4 +1,4 @@
-import { DragEvent, useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { DragEvent, useCallback, useEffect, useEffectEvent, useId, useMemo, useState } from 'react'
 import { CalendarEvent, CalendarSource, Garment, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, Wear, WorkMode, BILL_KIND_META } from '../types'
 import { clock, dateKey, fmtTime } from '../utils'
 import {
@@ -24,6 +24,8 @@ import { MealSlotRow } from './MealSlotRow'
 import { formatMoney } from '../bills'
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
+import { useDayKey } from '../useDayKey'
+import { useNow } from '../useNow'
 import { liveById, lookOn, looksOn, orderPieces, outfitLabel, planFor, wearIndex } from '../wardrobe'
 import { Icon } from './Icon'
 import { Modal } from './Modal'
@@ -114,7 +116,8 @@ const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), 
 /** Default time for a task created from a day: 9am, same as the rest of the app. */
 const morningOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0, 0).toISOString()
 const fullDate = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-const isPast = (ev: CalendarEvent) => new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < Date.now()
+/** An event that has started by `now` (ms): the row offers Who was there? rather than a plan. */
+const isPast = (ev: CalendarEvent, now: number) => new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < now
 
 export function Calendar({
   view,
@@ -165,10 +168,11 @@ export function Calendar({
     // the day view draws the day itself, so no sheet stays open over it
     if (asked.view !== view && view === 'day') setSheetDay(null)
   }
-  // …and says so, so the next ask for the same day opens it again
+  // …and says so, so the next ask for the same day opens it again: once per
+  // day asked for, the parent's setter an effect event, not a reason to run
+  const openDayUsed = useEffectEvent(() => onOpenDayConsumed?.())
   useEffect(() => {
-    if (openDay) onOpenDayConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per day asked for; the callback is the parent's setter
+    if (openDay) openDayUsed()
   }, [openDay])
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
@@ -180,8 +184,13 @@ export function Calendar({
     () => ({ tasks: tasksByDay(tasks), events: eventsByDay(events.filter(e => !e.work)), marks: marksByDay(projects), occasions: occasionsByMonthDay(people), meals: mealsByDay(meals) }),
     [tasks, events, projects, people, meals],
   )
+  // Today, and the minute, from the app's clock hooks: read as the calendar
+  // draws, the React Compiler would keep the first answer while it stays up —
+  // the today ring on yesterday, a started event still offering a plan.
+  const todayKey = useDayKey()
+  const minute = useNow()
   // the day sheet's meal pickers say when each recipe was last cooked, as the Kitchen's do
-  const cooked = useMemo(() => cookedIndex(recipes, meals, dateKey(new Date())), [recipes, meals])
+  const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
   const visited = useMemo(() => visitIndex(places, tasks, meals), [places, tasks, meals])
   /** The saved place an event's location names (matchPlace), looked up once per location. */
   const placeAt = useMemo(() => {
@@ -249,7 +258,6 @@ export function Calendar({
   const closeSheet = useCallback(() => setSheetDay(null), [])
   const sheetTitleId = useId()
 
-  const todayKey = dateKey(new Date())
   const label =
     view === 'day' ? fullDate(cursor) : view === 'week' ? weekLabel(cursor) : cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
   const shiftBy = view === 'day' ? 'day' : view === 'week' ? 'week' : 'month'
@@ -528,11 +536,11 @@ export function Calendar({
                       onClick={() => {
                         leave()
                         if (ev.localId) onEditEvent(ev.localId)
-                        else if (isPast(ev)) onAttendance(ev)
+                        else if (isPast(ev, Date.now())) onAttendance(ev)
                         else onPlan(ev)
                       }}
                     >
-                      {ev.localId ? 'Edit' : isPast(ev) ? 'Who was there?' : 'Plan for this'}
+                      {ev.localId ? 'Edit' : isPast(ev, minute) ? 'Who was there?' : 'Plan for this'}
                     </button>
                   </li>
                 )

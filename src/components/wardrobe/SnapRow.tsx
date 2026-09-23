@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { OCCASION_META, type Garment } from '../../types'
 import { fitsOccasion, wornShort, type DayOccasion, type WearIndex } from '../../wardrobe'
 import { heldBadge } from './composer'
@@ -70,7 +70,10 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, oc
 
   const cells = () => Array.from(row.current?.querySelectorAll<HTMLElement>(':scope > .snap-cell') ?? [])
 
-  useLayoutEffect(() => {
+  // The chosen card brought to the middle: when the choice moves, or a card
+  // comes or goes — never for a piece's own edit, which leaves the row where
+  // it is. An effect event, so it reads the cards as they are by then.
+  const placeChosen = useEffectEvent(() => {
     const chosen = keyAt(at)
     const smooth = drawn.current
     drawn.current = true
@@ -82,8 +85,8 @@ export function SnapRow({ label, pieces, ix, selected, onSelect, none, small, oc
     const cell = cells()[at]
     if (!el || !cell) return
     el.scrollTo({ left: cell.offsetLeft + cell.offsetWidth / 2 - el.clientWidth / 2, behavior: smooth && !reducedMotion() ? 'smooth' : 'auto' })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [at, cards.length])
+  })
+  useLayoutEffect(() => placeChosen(), [at, cards.length])
 
   useEffect(() => {
     if (!keyed.current) return

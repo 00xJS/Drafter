@@ -331,7 +331,7 @@ describe('a saved outfit asked for from outside goes in the composer’s rows', 
     const src = read('../components/wardrobe/OutfitComposer.tsx')
     // taken as it renders, once per outfit asked for, and handed back as used after
     expect(src).toMatch(/if \(pendingSeen !== pending\) \{\s*setPendingSeen\(pending\)\s*if \(pending\) setSel\(s => load\(s, pending, rows, byId\)\)/)
-    expect(src).toMatch(/useEffect\(\(\) => \{\s*if \(pending\) onPendingUsed\?\.\(\)/)
+    expect(src).toMatch(/const pendingUsed = useEffectEvent\(\(\) => onPendingUsed\?\.\(\)\)\s*useEffect\(\(\) => \{\s*if \(pending\) pendingUsed\(\)\s*\}, \[pending\]\)/)
     // after the day's own look, so the outfit is what shows
     expect(src.indexOf('if (pendingSeen !== pending)')).toBeGreaterThan(src.indexOf('if (shownDay !== day)'))
   })

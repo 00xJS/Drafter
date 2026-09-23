@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { CalendarEntry, Garment, Habit, JournalEntry, MOOD_META, PLACE_CATEGORY_META, Person, Place, Project, Review as ReviewRecord, Task, TaskStatus, Wear } from '../types'
 import { Period, ReviewData, buildReview, defaultReviewAnchor, rangeFor, shiftRange } from '../review'
 import { formatMoney } from '../bills'
 import { countOf, seenLabel } from '../people'
 import { entriesInRange, journalLines, localDayKey, moodAverage, peopleNameMap, relativeDayLabel } from '../journal'
-import { habitsConsistency } from '../habits'
+import { habitsConsistency, type HabitConsistency } from '../habits'
 import { habitLines } from '../../shared/review.mts'
 import { JournalPeople } from './JournalCard'
 import { summarizeReview } from '../ai'
@@ -13,6 +13,7 @@ import { dateKey, excerpt, fmtDate, uid } from '../utils'
 import { liveById, outfitLabel, wearIndex, wornBetween } from '../wardrobe'
 import { DueBadge, StatTile } from './bits'
 import { useNow } from '../useNow'
+import { noonOf } from '../useDayKey'
 import type { WardrobeOpen } from './planner/useNavigation'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
 
@@ -93,6 +94,54 @@ function TaskList({ tasks, onOpen, onStatus, max = 12 }: { tasks: Task[]; onOpen
 /** Whether the summary card is open, per device. Open unless it was shut. */
 const SUMMARY_KEY = 'drafter:review-summary'
 
+// Read and kept out here: the React Compiler leaves a component with a choice
+// inside a try as written.
+function storedSummaryOpen(): boolean {
+  try {
+    return localStorage.getItem(SUMMARY_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+function storeSummaryOpen(open: boolean): void {
+  try {
+    localStorage.setItem(SUMMARY_KEY, open ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+/** What ✨ Write my summary sends: the period's lists as lines, and last period's Top 3 with what was kept of it. */
+function summaryInput(o: {
+  period: Period
+  label: string
+  data: ReviewData
+  habitStats: HabitConsistency
+  reflections: string
+  prevSaved?: ReviewRecord
+  wrote: JournalEntry[]
+  people: Person[]
+}): Parameters<typeof summarizeReview>[0] {
+  const { data, habitStats, prevSaved } = o
+  const lastTop = prevSaved?.top?.filter(Boolean) ?? []
+  return {
+    period: o.period,
+    label: o.label,
+    done: data.done.map(t => t.title),
+    slipped: data.slipped.map(t => t.title),
+    upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
+    people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
+    places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
+    // one compact line — kept, missed and each streak — so the model can weigh
+    // it without a tally per day; Sunday's draft sends the same line (shared/review.mts)
+    habits: habitLines(habitStats),
+    reflections: o.reflections,
+    lastTop,
+    kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),
+    journal: journalLines(o.wrote, 14, peopleNameMap(o.people)),
+  }
+}
+
 /** Words in a summary, for the line that stands in for it while it is hidden. */
 export function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0
@@ -151,6 +200,9 @@ export function Review({
   const [period, setPeriod] = useState<Period>('week')
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const now = useNow()
+  // today from the same clock: a day read as the page draws would be kept by
+  // the React Compiler for as long as the page stays up
+  const todayKey = localDayKey(now)
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
   // on the clock, not only on the records: at midnight what was due yesterday
   // becomes overdue here, and the bulk buttons below move exactly that list
@@ -158,10 +210,10 @@ export function Review({
   // what you wore in the period, counted in days as the Stats are: each day's
   // look, and the piece worn on the most of them
   const pieces = useMemo(() => liveById(garments), [garments])
-  const worn = useMemo(() => wornBetween(garments, wearIndex(wears, localDayKey()), dateKey(range.start), dateKey(range.end)), [garments, wears, range])
+  const worn = useMemo(() => wornBetween(garments, wearIndex(wears, todayKey), dateKey(range.start), dateKey(range.end)), [garments, wears, range, todayKey])
   const wrote = useMemo(() => entriesInRange(journal, range), [journal, range])
   const mood = moodAverage(wrote)
-  const habitStats = useMemo(() => habitsConsistency(habits, range.start, range.end, new Date()), [habits, range])
+  const habitStats = useMemo(() => habitsConsistency(habits, range.start, range.end, noonOf(todayKey)), [habits, range, todayKey])
   const saved = reviews.find(r => r.period === period && r.key === range.key)
   const prevRange = useMemo(() => shiftRange(range, -1), [range])
   const prevSaved = reviews.find(r => r.period === period && r.key === prevRange.key)
@@ -170,21 +222,11 @@ export function Review({
   const [summary, setSummary] = useState(() => reviewDraft(saved).summary)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [summaryOpen, setSummaryOpen] = useState(() => {
-    try {
-      return localStorage.getItem(SUMMARY_KEY) !== '0'
-    } catch {
-      return true
-    }
-  })
+  const [summaryOpen, setSummaryOpen] = useState(storedSummaryOpen)
   const toggleSummary = () => {
     const next = !summaryOpen
     setSummaryOpen(next)
-    try {
-      localStorage.setItem(SUMMARY_KEY, next ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
+    storeSummaryOpen(next)
   }
 
   // The drafts follow the saved review: to another week or month, and when the
@@ -193,7 +235,9 @@ export function Review({
   // page's own save, which would trim what is being typed.
   const ownStamp = useRef<string | null>(null)
   const loaded = useRef({ key: range.key, stamp: saved?.updatedAt })
-  useEffect(() => {
+  // when the period or the saved copy's stamp moves: an effect event, so a
+  // new copy of the same record is no reason to look again
+  const followSaved = useEffectEvent(() => {
     const next = { key: range.key, stamp: saved?.updatedAt }
     if (reloadDraft(loaded.current, next, ownStamp.current)) {
       const d = reviewDraft(saved)
@@ -202,8 +246,8 @@ export function Review({
       setSummary(d.summary)
     }
     loaded.current = next
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.key, saved?.updatedAt])
+  })
+  useEffect(() => followSaved(), [range.key, saved?.updatedAt])
 
   const persist = (patch: Partial<ReviewRecord>) => {
     const now = new Date().toISOString()
@@ -221,36 +265,23 @@ export function Review({
     onSaveReview({ ...prevSaved, topDone: next, updatedAt: newerStamp(prevSaved.updatedAt) })
   }
 
+  // No `finally`, and the lines put together out of the component
+  // (summaryInput): the React Compiler leaves a component with either a
+  // finally or a choice inside a try as written. The catch only sets state,
+  // so the line after it runs however the ask ended.
   const generate = async () => {
     setBusy(true)
     setError('')
     try {
-      const lastTop = prevSaved?.top?.filter(Boolean) ?? []
-      const text = await summarizeReview({
-        period,
-        label: range.label,
-        done: data.done.map(t => t.title),
-        slipped: data.slipped.map(t => t.title),
-        upcoming: data.upcoming.map(t => `${t.title} · due ${fmtDate(t.dueAt)}`),
-        people: data.people.map(p => `${p.person.name} ×${p.visits.length}`),
-        places: data.places.map(p => `${p.place.name} ×${p.visits.length}`),
-        // one compact line — kept, missed and each streak — so the model can weigh
-        // it without a tally per day; Sunday's draft sends the same line (shared/review.mts)
-        habits: habitLines(habitStats),
-        reflections,
-        lastTop,
-        kept: lastTop.map((_, i) => !!prevSaved?.topDone?.[i]),
-        journal: journalLines(wrote, 14, peopleNameMap(people)),
-      })
+      const text = await summarizeReview(summaryInput({ period, label: range.label, data, habitStats, reflections, prevSaved, wrote, people }))
       setSummary(text)
       persist({ summary: text })
       // asking for one is asking to read it, so a card shut earlier opens
       if (!summaryOpen) toggleSummary()
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   const isCurrent = range.end.getTime() > now && range.start.getTime() <= now
@@ -296,7 +327,7 @@ export function Review({
       </div>
       <div className="toolbar review-actions">
         {onPlanWeek && (
-          <button className={planWeekIsPrimary(new Date()) ? 'btn primary' : 'btn'} onClick={onPlanWeek}>
+          <button className={planWeekIsPrimary(new Date(now)) ? 'btn primary' : 'btn'} onClick={onPlanWeek}>
             Plan next week
           </button>
         )}
@@ -508,7 +539,7 @@ export function Review({
                   <button
                     type="button"
                     className="review-look"
-                    aria-label={`${relativeDayLabel(day)}: ${outfitLabel(look.garmentIds, pieces)}${looks > 1 ? `, and ${countOf(looks - 1, 'more look')}` : ''}`}
+                    aria-label={`${relativeDayLabel(day, todayKey)}: ${outfitLabel(look.garmentIds, pieces)}${looks > 1 ? `, and ${countOf(looks - 1, 'more look')}` : ''}`}
                     onClick={() => onOpenWardrobe({ date: day })}
                   >
                     <Collage ids={look.garmentIds} byId={pieces} />
@@ -573,7 +604,7 @@ export function Review({
                   </span>
                   <div className="dash-main">
                     <span className="dash-title">{excerpt(e.body, 220) || (e.mood ? MOOD_META[e.mood].label : '')}</span>
-                    <span className="dash-reason">{relativeDayLabel(e.date)}</span>
+                    <span className="dash-reason">{relativeDayLabel(e.date, todayKey)}</span>
                   </div>
                   <JournalPeople entry={e} people={people} />
                 </li>
