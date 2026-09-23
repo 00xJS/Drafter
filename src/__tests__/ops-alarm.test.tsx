@@ -95,6 +95,20 @@ describe('jobAlarms: when a scheduled job needs the owner', () => {
     expect(jobAlarms(health({ jobs: { backup: run(), digest: run({ at: edge }) }, syncCheck: check({ at: edge }) }), NOW)).toEqual([])
   })
 
+  it('once the digest has a record, a fresh sync check does not keep a stalled digest looking alive', () => {
+    // the check is written as a run STARTS: a run that went on to hang until
+    // Netlify stopped it refreshed the check every hour and never finished
+    const hung = health({ jobs: { backup: run({ at: ago(15), lastGoodAt: ago(15) }), digest: run({ at: ago(5) }) }, syncCheck: check({ at: ago(1) }) })
+    expect(jobAlarms(hung, NOW)).toEqual([
+      {
+        job: 'digest',
+        title: 'The hourly digest has stopped.',
+        sentence: 'It last ran 5 hours ago, so no digest, due-now nudge or sync check has gone out since.',
+        since: `digest-stale:${ago(5)}`,
+      },
+    ])
+  })
+
   it('an hourly digest whose last run failed', () => {
     const failed = run({ ok: false, failures: ['digest 0000000a: 403'], failureCount: 1, failingSince: ago(3) })
     expect(jobAlarms(health({ jobs: { backup: run(), digest: failed } }), NOW)).toEqual([

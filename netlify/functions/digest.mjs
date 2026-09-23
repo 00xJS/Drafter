@@ -1,7 +1,15 @@
 // Scheduled hourly. For every user with push subscriptions or the email digest
 // on: at their chosen local hour send the morning digest (overdue, due today,
 // occasions, people due a catch-up), and nudge about timed tasks that came due
-// since the last check. Email goes through Resend when RESEND_API_KEY is set.
+// since the last check. Email goes through Resend when RESEND_API_KEY is set
+// (lib/email.mjs); a send that fails is on the run's record.
+//
+// Each account's watermarks — the day its digest went, the instant up to which
+// its due tasks were nudged — are written BEFORE anything is sent. A send can
+// stall (lib/apns.mjs now stops one at 8 seconds, but Netlify stops the whole
+// run at 30), and a run killed after sending and before writing them sent the
+// same digest and nudges again an hour later. Written first, a run that dies
+// mid-send loses what it had not sent yet rather than repeating what it had.
 //
 // Sunday's review draft is for every account, push and email or not: on its
 // own Sunday, from its digest hour, last week's review is written for it once
@@ -38,6 +46,7 @@ import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mts'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
+import { emailConfigured, sendEmail } from './lib/email.mjs'
 import { recordJobRun } from './lib/jobhealth.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
@@ -330,15 +339,8 @@ async function disabledAccounts(now, ms) {
   }
 }
 
-export async function sendEmail(to, subject, text) {
-  if (!process.env.RESEND_API_KEY) return false
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ from: process.env.DIGEST_FROM || 'Drafter <onboarding@resend.dev>', to, subject, text }),
-  })
-  return res.ok
-}
+// Admin's digest preview emails through the same sender (lib/email.mjs)
+export { sendEmail }
 
 /** userId -> the set of owner ids whose records that user may see (mirrors household_user_ids()). */
 export async function buildPeerMap() {
@@ -501,8 +503,8 @@ async function digestRun(now, run) {
       const { hour, day, weekday } = localParts(now, tz)
       if (hour === null) continue
       const subs = u.push_subscriptions ?? []
-      const patch = {}
       let liveSubs = subs
+      const settingsPath = `user_settings?user_id=eq.${encodeURIComponent(u.user_id)}`
 
       const applySend = async (payload, to = liveSubs) => {
         const { gone, failed, updated } = await sendToAll(to, payload)
@@ -514,9 +516,14 @@ async function digestRun(now, run) {
         return { failed }
       }
 
+      // Everything this run will send the account is decided first, and its
+      // watermarks written, before any of it goes (see the top of this file).
+      const claim = {}
+
       // 1. morning digest — once per local day, at or after the chosen hour so a
       //    skipped or delayed run still delivers instead of silently dropping the day
       const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
+      let morning = null
       if (hour >= wantHour && u.last_digest_day !== day) {
         // Sunday's digest is the doorway to the weekly review, and to planning the week it starts
         const sunday = weekday === 'Sun'
@@ -528,20 +535,9 @@ async function digestRun(now, run) {
         // review — and the sheet writes nothing until its button is pressed. With
         // nothing to plan, Sunday opens the review on its own.
         const path = sunday ? (weekPlan ? '/?view=review&plan=week' : '/?view=review') : '/?plan=day'
-        if (digest.lines.length > 0) {
-          if (liveSubs.length && pushConfigured()) {
-            const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}${path}`, badge: digest.overdue.length + digest.dueToday.length })
-            if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
-            sent += Math.max(0, liveSubs.length - failed.length)
-          }
-          if (u.digest_email) {
-            const email = await userEmail(u.user_id).catch(() => null)
-            const plan = sunday ? (weekPlan ? `Plan the week: ${site}${path}` : null) : `Plan your day: ${site}${path}`
-            if (email) await sendEmail(email, `Today in Drafter: ${digest.dueToday.length} due, ${digest.overdue.length} overdue`, [...digest.lines, '', ...(plan ? [plan] : []), `Open Drafter: ${site}/`].join('\n'))
-          }
-        }
-        patch.last_digest_day = day
-        patch.nudged = digest.nudgedNext
+        morning = { digest, sunday, weekPlan, path }
+        claim.last_digest_day = day
+        claim.nudged = digest.nudgedNext
       }
 
       // 2. timed tasks that came due since the last check (watermarked, so a
@@ -553,8 +549,9 @@ async function digestRun(now, run) {
       //    the iOS app keeps its own task reminders with push on — 9am for a day
       //    with no time (src/reminders.ts) — so its APNs entries never get a
       //    "Due now" here, which would be the same task ringing twice.
+      const browsers = () => liveSubs.filter(s => s?.type !== 'apns')
+      let nudges = []
       if (liveSubs.length && pushConfigured()) {
-        const browsers = () => liveSubs.filter(s => s?.type !== 'apns')
         const lastCheck = Date.parse(u.last_due_check ?? '')
         const from = Math.max(Number.isFinite(lastCheck) ? lastCheck : now.getTime() - HOUR, now.getTime() - MAX_NUDGE_WINDOW)
         // rows of every kind, read here for a task's fields; soonest first
@@ -564,25 +561,57 @@ async function digestRun(now, run) {
           .filter(({ at }) => Number.isFinite(at) && at <= now.getTime() && at > from)
           .sort((a, b) => a.at - b.at)
         // At most MAX_NUDGES a run, and none skipped: when more came due, the
-        // watermark stops at the last one sent and the next run sends on from
-        // there. Tasks due at one instant go out together, even past the cap, as
-        // a watermark between them could not tell the sent from the unsent. A
-        // push service's refusal is the run's failure, on the job's record, and
-        // the watermark moves on past it as before.
+        // watermark stops at the last one to be sent and the next run sends on
+        // from there. Tasks due at one instant go out together, even past the
+        // cap, as a watermark between them could not tell the sent from the
+        // unsent. A push service's refusal is the run's failure, on the job's
+        // record, and the watermark moves on past it as before.
         let n = 0
-        while (n < due.length && (n < MAX_NUDGES || due[n].at === due[n - 1].at)) {
-          const { t } = due[n++]
-          const to = browsers()
-          const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 }, to)
-          if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
-          sent += Math.max(0, to.length - failed.length)
-        }
-        patch.last_due_check = n < due.length ? new Date(due[n - 1].at).toISOString() : now.toISOString()
+        while (n < due.length && (n < MAX_NUDGES || due[n].at === due[n - 1].at)) n++
+        nudges = due.slice(0, n).map(d => d.t)
+        claim.last_due_check = n < due.length ? new Date(due[n - 1].at).toISOString() : now.toISOString()
       }
 
-      if (liveSubs !== subs) patch.push_subscriptions = liveSubs
-      if (Object.keys(patch).length) {
-        await rest(`user_settings?user_id=eq.${encodeURIComponent(u.user_id)}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify(patch) })
+      // the claim: a write that fails sends nothing this hour, rather than
+      // something the next hour cannot know was sent
+      if (Object.keys(claim).length) {
+        try {
+          await rest(settingsPath, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify(claim) })
+        } catch (e) {
+          failures.push(`watermark ${u.user_id}: ${e?.message ?? e}`)
+          continue
+        }
+      }
+
+      if (morning && morning.digest.lines.length > 0) {
+        const { digest, sunday, weekPlan, path } = morning
+        if (liveSubs.length && pushConfigured()) {
+          const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}${path}`, badge: digest.overdue.length + digest.dueToday.length })
+          if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
+          sent += Math.max(0, liveSubs.length - failed.length)
+        }
+        // no key on the host: the switch in Settings says email is not set up here, so there is nothing to record
+        if (u.digest_email && emailConfigured()) {
+          const email = await userEmail(u.user_id).catch(() => null)
+          const plan = sunday ? (weekPlan ? `Plan the week: ${site}${path}` : null) : `Plan your day: ${site}${path}`
+          const emailed = email
+            ? await sendEmail(email, `Today in Drafter: ${digest.dueToday.length} due, ${digest.overdue.length} overdue`, [...digest.lines, '', ...(plan ? [plan] : []), `Open Drafter: ${site}/`].join('\n')).catch(() => false)
+            : false
+          if (!emailed) failures.push(`digest email ${u.user_id}: ${email ? 'the email service refused it' : 'no address to send to'}`)
+        }
+      }
+
+      for (const t of nudges) {
+        const to = browsers()
+        if (!to.length) break
+        const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 }, to)
+        if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
+        sent += Math.max(0, to.length - failed.length)
+      }
+
+      // a device the push service says is gone, or whose APNs host was learned
+      if (liveSubs !== subs) {
+        await rest(settingsPath, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ push_subscriptions: liveSubs }) })
       }
     } catch (e) {
       // one user's failure must never cost everyone else their digest

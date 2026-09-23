@@ -1,6 +1,8 @@
 export function missingApnsEnv(): string[]
 export function apnsConfigured(): boolean
 export function apnsHostFor(env: 'sandbox' | 'production'): string
+export function appLink(url: string): string
+export const APNS_TIMEOUT_MS: number
 export function makeApnsJwt(key: { keyId: string; teamId: string; privateKey: string }, nowMs?: number): string
 export function apnsPayload(p: {
   title?: string
@@ -13,7 +15,16 @@ export function isGoneReason(status: number, reason: string): boolean
 export function sendApns(
   deviceToken: string,
   payload: unknown,
-  opts?: { topic?: string; collapseId?: string; ttlSeconds?: number; env?: 'sandbox' | 'production' },
+  opts?: {
+    topic?: string
+    collapseId?: string
+    ttlSeconds?: number
+    env?: 'sandbox' | 'production'
+    /** The hard stop for the whole exchange (APNS_TIMEOUT_MS by default). */
+    timeoutMs?: number
+    /** node:http2's connect, or a test's stand-in. */
+    connect?: (authority: string) => unknown
+  },
 ): Promise<{ status: number; reason: string; env: string }>
 export function sendApnsWithRetry(
   deviceToken: string,
