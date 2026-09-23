@@ -55,6 +55,13 @@ describe('looksLikeThinking', () => {
     expect(looksLikeThinking('I named the tasks and the people.', 'Name the tasks and the people in your reply.')).toBe(false)
   })
 
+  it('counts a contraction as one word, so five words and an apostrophe are still five', () => {
+    // "isn't answered by the records" read as six — "isn", "t" — and a plain
+    // "that isn't answered by the records" was sent back as thinking
+    expect(looksLikeThinking('That isn’t answered by the records I have.', "If a question isn't answered by the records, say so plainly.")).toBe(false)
+    expect(looksLikeThinking("So if a question isn't answered by the records I say so", "If a question isn't answered by the records, say so plainly.")).toBe(true)
+  })
+
   it('reads through punctuation and case, which a model does not copy exactly', () => {
     expect(looksLikeThinking('So — PLAIN prose, in short paragraphs, with "-" bullets. Right?', 'Plain prose in short paragraphs with bullets where a list reads better.')).toBe(true)
   })

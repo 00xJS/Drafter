@@ -1,14 +1,17 @@
 // Rules about talking to a model that the app and the server both need, so
-// there is one copy and not two. The app calls these from src/ai.ts; the
-// server from netlify/functions/lib/ai.mjs (every NVIDIA answer) and the
-// Sunday digest from netlify/functions/digest.mjs.
+// there is one copy and not two. The app calls these from src/ai.ts and
+// src/chatactions.ts; the server from netlify/functions/lib/ai.mjs (every
+// NVIDIA answer) and the Sunday digest from netlify/functions/digest.mjs.
 
 /** Words long enough that an answer never repeats a run of them by accident. */
 const ECHO_RUN = 6
 
+// "isn't" is one word, not "isn" and "t": counted as two, a contraction made
+// an ordinary five-word phrase long enough to read as the brief quoted back
 const flatten = (s: unknown): string =>
   String(s ?? '')
     .toLowerCase()
+    .replace(/['’]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 

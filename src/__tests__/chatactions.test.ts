@@ -6,12 +6,16 @@ import {
   newTurn,
   recentContext,
 } from '../chat'
+import { THOUGHT_OUT_LOUD, looksLikeThinking } from '../ai'
 import {
+  CHAT_NUDGE,
   DROPPED,
   NO_ANSWER,
   applyChatAction,
+  askInThread,
   askWithActions,
   buildChatPrompt,
+  chatReplyThinks,
   buildTask,
   cardKey,
   cardState,
@@ -42,6 +46,7 @@ import {
   type ChatActionContext,
   type ChatData,
   type ChatHost,
+  type ChatReply,
 } from '../chatactions'
 import { buildEntry } from '../components/EventEditor'
 import { sanitizeChatTurn, sanitizeItem } from '../schema'
@@ -284,6 +289,130 @@ describe('an empty reply', () => {
   it('says so when the second reply is empty too', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ text: '{"":""}' })))
     await expect(askWithActions('Add paper towels', DOCS, facts, [], context())).rejects.toThrow(NO_ANSWER)
+  })
+})
+
+// 93bb7e8 told the chat what it can and cannot do, and put the JSON templates
+// in its brief; the thinking check read the whole reply against the whole
+// brief, so right answers that said either back were asked again and could
+// end in "The model thought out loud". Now only the words shown are checked,
+// and only against the rules on how to answer.
+describe('thinking out loud, told apart from a right answer', () => {
+  const facts = ['Today is Tuesday, 22 September 2026 (America/Phoenix).']
+  const brief = () => buildChatPrompt('Can you text Maria for me?', DOCS, facts, [], context())
+  const CANNOT = JSON.stringify({ answer: "I can't send messages to anyone or look anything up online, but I can add a task to text Maria.", cites: [], actions: [] })
+  const MOVE = JSON.stringify({
+    answer: 'I can move the plumber to Friday.',
+    cites: ['T1'],
+    actions: [{ type: 'update_task', ref: 'T1', date: '2026-09-25', time: '15:00', status: 'todo', priority: 'high' }],
+  })
+  const ABOUT = JSON.stringify({ answer: 'I answer questions about your tasks, people, places, meals, calendar, bills and clothes.', cites: [], actions: [] })
+  const RULES_BACK = 'The user wants the plumber moved. An existing task can be changed only through its reference from the records, so I will use T1.'
+
+  it('a right answer that says what the assistant can do, or suggests a change in its template, is not thinking', () => {
+    const { system, rules } = brief()
+    for (const r of [CANNOT, MOVE, ABOUT]) {
+      // the old check, the whole reply against the whole brief, calls every one of these thinking
+      expect(looksLikeThinking(r, system), r).toBe(true)
+      expect(chatReplyThinks(r, rules), r).toBe(false)
+    }
+    // the rules leave out who it is, what it can do and the templates, and nothing else
+    expect(rules).not.toMatch(/send messages|You are the assistant|"type":/)
+    expect(rules).toContain('Cite every fact you use from the records')
+    expect(system).toContain(rules)
+  })
+
+  it('still catches a reply that says the rules back, in its answer or with no JSON at all', () => {
+    const { rules } = brief()
+    expect(chatReplyThinks(RULES_BACK, rules)).toBe(true)
+    expect(chatReplyThinks(JSON.stringify({ answer: 'We must cite every fact you use from the records with its reference.', actions: [] }), rules)).toBe(true)
+  })
+
+  const replies = (texts: string[]) => {
+    const calls: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)))
+        return Response.json({ text: texts[Math.min(calls.length, texts.length) - 1] })
+      }),
+    )
+    return calls
+  }
+
+  it('takes a right answer that echoes the brief the first time, where it used to ask again and could fail', async () => {
+    const calls = replies([CANNOT])
+    const r = await askWithActions('Can you text Maria for me?', DOCS, facts, [], context())
+    expect(calls).toHaveLength(1)
+    expect(r.answer).toContain("I can't send messages to anyone")
+    const move = replies([MOVE])
+    expect((await askWithActions('Move the plumber to Friday at 3pm', DOCS, facts, [], context())).actions).toEqual([
+      { type: 'update_task', taskId: 't-plumber', title: 'Call the plumber', date: '2026-09-25', time: '15:00', priority: 'high' },
+    ])
+    expect(move).toHaveLength(1)
+  })
+
+  it('asks once more, with reasoning off, when the reply is the rules said back — and says so when the second is too', async () => {
+    const calls = replies([RULES_BACK, MOVE])
+    expect((await askWithActions('Move the plumber to Friday at 3pm', DOCS, facts, [], context())).answer).toBe('I can move the plumber to Friday.')
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).not.toHaveProperty('reasoning')
+    expect(calls[1]).toMatchObject({ maxTokens: 900, json: false, reasoning: 'off' })
+    expect(String(calls[1].system)).toContain(CHAT_NUDGE)
+    replies([RULES_BACK])
+    await expect(askWithActions('Move the plumber to Friday at 3pm', DOCS, facts, [], context())).rejects.toThrow(THOUGHT_OUT_LOUD)
+  })
+})
+
+describe('a question in the thread', () => {
+  const at = new Date('2026-09-23T03:30:00.000Z')
+  const answer = (text: string): ChatReply => ({ answer: text, cites: [], actions: [], dropped: [] })
+
+  it('is written at once, before the answer, and the answer after it — even within the same millisecond', async () => {
+    const written: ChatTurn[] = []
+    let answered!: (r: ChatReply) => void
+    const done = askInThread({ question: 'What is due tomorrow?', lock: { current: false }, write: t => written.push(t), ask: () => new Promise(r => (answered = r)), now: () => at })
+    await Promise.resolve()
+    // the question is there while the model is still thinking
+    expect(written.map(t => [t.role, t.text])).toEqual([['you', 'What is due tomorrow?']])
+    answered(answer('Two things.'))
+    expect(await done).toEqual({ asked: written[0] })
+    expect(written.map(t => [t.role, t.text])).toEqual([
+      ['you', 'What is due tomorrow?'],
+      ['drafter', 'Two things.'],
+    ])
+    expect(written[1].createdAt > written[0].createdAt).toBe(true)
+    expect(written[1].id > written[0].id).toBe(true)
+  })
+
+  it('is asked once however often Enter is pressed while it is out', async () => {
+    const lock = { current: false }
+    const asks: string[] = []
+    const written: ChatTurn[] = []
+    const one = (q: string) => askInThread({ question: q, lock, write: t => written.push(t), ask: async () => (asks.push(q), answer('Yes.')) })
+    const [first, second] = await Promise.all([one('Anything due?'), one('Anything due?')])
+    expect(first).not.toBeNull()
+    expect(second).toBeNull()
+    expect(asks).toEqual(['Anything due?'])
+    expect(written).toHaveLength(2)
+    // and once it is answered, the next question goes
+    expect(await one('And Friday?')).not.toBeNull()
+    expect(lock.current).toBe(false)
+  })
+
+  it('writes nothing for a failure, and Try again asks the same question without writing it twice', async () => {
+    const written: ChatTurn[] = []
+    const lock = { current: false }
+    const failed = await askInThread({ question: 'Tell me about my week', lock, write: t => written.push(t), ask: async () => Promise.reject(new Error('The server is unreachable from here')) })
+    expect(failed?.error).toBeInstanceOf(Error)
+    // only the question: the failure is said on this screen, not saved as something Drafter said
+    expect(written.map(t => t.role)).toEqual(['you'])
+    const again = await askInThread({ question: 'Tell me about my week', lock, asked: failed!.asked, write: t => written.push(t), ask: async () => answer('A quiet one.') })
+    expect(again).toEqual({ asked: failed!.asked })
+    expect(written.map(t => [t.role, t.text])).toEqual([
+      ['you', 'Tell me about my week'],
+      ['drafter', 'A quiet one.'],
+    ])
   })
 })
 

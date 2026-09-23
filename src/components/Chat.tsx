@@ -2,6 +2,7 @@ import { KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'rea
 import { CHAT_PAGE, CHAT_PROMPTS, newMessage, newTurn, recentContext, thread } from '../chat'
 import {
   applyChatAction,
+  askInThread,
   askWithActions,
   cardKey,
   cardState,
@@ -24,7 +25,7 @@ import { memberName, type HouseholdInfo } from '../household'
 import { AskDoc, AskSources, prepareAsk } from '../ask'
 import { MESSAGE_MAX, type CalendarEntry, type ChatAction, type ChatOutcomeState, type ChatTurn, type Message, type Person, type Place, type PlaceCategory, type Task } from '../types'
 import { MemberFace } from './MemberFace'
-import { askFailure } from './AskSheet'
+import { aiFailureKind, aiFailureText, failedOffline } from './AskSheet'
 import { ActionCards, type CardHandlers } from './ChatCards'
 
 // Chat: two threads that never mix (v3.26).
@@ -99,6 +100,19 @@ function scrollerOf(pane: HTMLElement): HTMLElement {
 /** Which speaker a line is drawn as: yours on the right, theirs on the left. */
 const mine = (ownerId: string | undefined, myId: string | null) => !ownerId || !myId || ownerId === myId
 
+/**
+ * What the thread says under a question that got no answer, and whether Try
+ * again can help: it can unless there is no assistant here at all. Offline is
+ * said as offline, and a rate limit in the server's own words.
+ */
+function chatFailure(error: unknown): { text: string; retry: boolean } {
+  const message = error instanceof Error ? error.message : String(error)
+  return {
+    text: aiFailureText(message, { unavailable: 'The assistant isn’t available here.', failed: 'No answer came back' }),
+    retry: failedOffline(message) || aiFailureKind(message) !== 'unavailable',
+  }
+}
+
 function DayHead({ day }: { day: string }) {
   return (
     <li className="chat-day">
@@ -107,7 +121,12 @@ function DayHead({ day }: { day: string }) {
   )
 }
 
-/** A composer: a growing box, Enter to send, Shift+Enter for a new line. */
+/**
+ * A composer: a growing box, Enter to send, Shift+Enter for a new line. While
+ * an answer is on its way the box stays open to type the next question in —
+ * disabling it would close the phone's keyboard — but Enter sends nothing, and
+ * what is typed waits in the box.
+ */
 function Composer({
   placeholder,
   disabled,
@@ -123,7 +142,7 @@ function Composer({
   const box = useRef<HTMLTextAreaElement>(null)
   const send = () => {
     const text = draft.trim()
-    if (!text) return
+    if (!text || disabled || busy) return
     setDraft('')
     onSend(text)
   }
@@ -280,6 +299,10 @@ function AssistantThread({
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(false)
   const [docs, setDocs] = useState<AskDoc[]>([])
+  /** The last question that got no answer, said here and nowhere else: a failure is not a turn, and never syncs. */
+  const [failed, setFailed] = useState<{ question: string; asked: ChatTurn | null; text: string; retry: boolean } | null>(null)
+  /** The question in flight (askInThread): an Enter pressed again while it is out is the same question. */
+  const asking = useRef(false)
   // the shell as of the latest render: an apply that waits a render between
   // suggestions, and a toast's Undo, both read the planner as it is by then
   const shellRef = useRef(shell)
@@ -291,32 +314,34 @@ function AssistantThread({
   const data = shell ?? dataOf(sources)
   const outcomes = outcomesByCard(turns)
 
-  const send = async (question: string) => {
-    setBusy(true)
-    // retrieval is local and instant: the records a question is about are
-    // picked here, and only those go to the model
-    const at = clock()
-    const prep = prepareAsk(question, sources, { now: at, tz, includeJournal: false })
-    setDocs(prep.docs)
-    const history = recentContext(turns)
-    let reply: ChatReply | null = null
-    let failure: string | undefined
-    try {
-      reply = await ask(question, prep.docs, prep.facts, history, chatActionContext(prep.question, prep.docs, sources, { now: at, tz }))
-    } catch (e) {
-      failure = askFailure((e as Error).message).text
-    } finally {
-      setBusy(false)
-    }
-    // The thread sorts on the id, and the id starts with the instant. Both
-    // turns are written in one go, so the answer is stamped a millisecond
-    // later — two rows in the same millisecond would fall back to their
-    // random suffix and the answer could come first.
-    const written = new Date()
-    const asked = newTurn('you', question, undefined, written)
-    if (asked) onWriteTurn(asked)
-    const said = newTurn('drafter', reply?.answer ?? failure ?? 'No answer came back.', reply?.cites, new Date(written.getTime() + 1), { actions: reply?.actions })
-    if (said) onWriteTurn(said)
+  /**
+   * Ask a question: it goes in the thread at once, and the answer under it when
+   * it comes (askInThread). `asked` is a question already in the thread, asked
+   * again by Try again.
+   */
+  const send = async (question: string, asked?: ChatTurn | null) => {
+    const done = await askInThread({
+      question,
+      lock: asking,
+      asked,
+      write: onWriteTurn,
+      ask: () => {
+        setBusy(true)
+        setFailed(null)
+        // retrieval is local and instant: the records a question is about are
+        // picked here, and only those go to the model
+        const at = clock()
+        const prep = prepareAsk(question, sources, { now: at, tz, includeJournal: false })
+        setDocs(prep.docs)
+        // a question asked again is already the last line of the thread: it is the question, not the conversation before it
+        const history = recentContext(asked ? turns.filter(t => t.id !== asked.id) : turns)
+        return ask(question, prep.docs, prep.facts, history, chatActionContext(prep.question, prep.docs, sources, { now: at, tz }))
+      },
+    })
+    // null: pressed again while the first was out, which is still being answered
+    if (!done) return
+    setBusy(false)
+    if ('error' in done) setFailed({ question, asked: done.asked, ...chatFailure(done.error) })
   }
 
   /** A card's words as it was suggested, for the line that settles it. */
@@ -518,10 +543,27 @@ function AssistantThread({
         </ul>
       )}
       {busy && <p className="chat-thinking">Reading your planner…</p>}
+      {failed && !busy && (
+        <p className="chat-thinking ask-failed" role="status">
+          {failed.text}{' '}
+          {failed.retry && (
+            <button type="button" className="btn subtle" onClick={() => void send(failed.question, failed.asked)}>
+              Try again
+            </button>
+          )}
+        </p>
+      )}
       <Composer placeholder="Ask about your week…" busy={busy} onSend={q => void send(q)} />
       {turns.length > 0 && (
         <p className="chat-older">
-          <button type="button" className="btn subtle" onClick={onClear}>
+          <button
+            type="button"
+            className="btn subtle"
+            onClick={() => {
+              setFailed(null)
+              onClear()
+            }}
+          >
             Clear this conversation
           </button>
         </p>
