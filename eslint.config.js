@@ -15,7 +15,8 @@ const server = ['netlify/functions', 'mcp', 'shared', 'scripts']
 
 export default tseslint.config(
   // supabase/functions/bot is Deno: its own globals and URL imports.
-  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**'] },
+  // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.
+  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist/**', 'playwright-report/**', 'test-results/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

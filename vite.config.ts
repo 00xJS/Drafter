@@ -100,8 +100,8 @@ const cutoutRuntime = (): Plugin => {
  * and eslint-plugin-react-hooks reports what it would refuse (a component it
  * cannot prove safe is left as written). The React plugin keeps it out of
  * server-side transforms, which is how vitest loads modules: the unit tests
- * run the components as written, and only a browser runs what the compiler
- * made of them.
+ * run the components as written, and only the browser tests (npm run e2e) run
+ * what the compiler made of them.
  */
 const withCompiler = {
   babel: { plugins: ['babel-plugin-react-compiler'] },
@@ -122,8 +122,9 @@ const ASSISTANT_MODULE = /\/src\/(ai|ask|chatactions|recipefill|recipeimport)\.t
 export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees and carry their own copy of
-    // every test; a run from the checkout must not collect theirs too
-    exclude: [...configDefaults.exclude, '.claude/**', 'dist/**'],
+    // every test; a run from the checkout must not collect theirs too. e2e/ is
+    // Playwright's (npm run e2e), in a browser, not vitest's.
+    exclude: [...configDefaults.exclude, '.claude/**', 'dist/**', 'e2e/**'],
     // the build host carries the site's real environment (Netlify runs `npm run
     // check` with BACKUP_PASSPHRASE set); setup.ts decides what a test sees
     // rather than letting it inherit whatever the machine happens to hold

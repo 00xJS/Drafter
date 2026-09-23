@@ -89,9 +89,10 @@ Without Supabase settings it runs in local mode, keeping everything in the brows
 npm run check        # lint, tests, both type-checks, the build and the precache check
 npm run db:smoke     # every migration on a throwaway Postgres (brew install postgresql@17)
 npm run mcp:smoke    # the real MCP server against that database
+npm run e2e          # browser tests: an iPhone in WebKit and a desktop in Chromium (npx playwright install chromium webkit, once)
 ```
 
-The smoke tests aren't part of `check`, since Netlify has no Postgres. Run `db:smoke` after any migration.
+The smoke tests and the browser tests aren't part of `check`, since Netlify has no Postgres and no browsers. Run `db:smoke` after any migration.
 
 ## Deploy
 
