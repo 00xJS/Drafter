@@ -3275,3 +3275,101 @@ begin
   raise notice 'ok v3.31-meals-2: peerShared names a housemate''s shared meal and not a Just me one, and peerSharedKinds says so';
 end $$;
 commit;
+
+-- ===== v3.32 notices =====
+-- 20261009000000_v3_32_notices: the notification hub's records. The server
+-- (the service role) writes a notice as its RECIPIENT's row — a new one
+-- straight into posts under their id, a merge into it through sync_posts,
+-- which keeps the row theirs — and the kind is personal: the recipient reads
+-- it and marks it read, and nobody else in the household sees it, not even
+-- the member it is about. The same migration keeps "Tell me when someone
+-- updates a task we share" in user_settings, on unless switched off.
+
+-- -------------- v3.32-1. the server writes a notice for the peer, and merges news into it
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  if not public.record_kind_allowed('notice') then
+    raise exception 'FAIL v3.32-1: record_kinds does not list notice';
+  end if;
+  if public.record_peer_visible('notice', null) or public.record_peer_visible('notice', 'true') then
+    raise exception 'FAIL v3.32-1: a notice should be nobody''s but its recipient''s, whatever it says about sharing';
+  end if;
+  insert into public.posts (id, updated_at, data, user_id) values (
+    'notice~b~t-bins~1', '2026-09-20T10:00:00.000Z',
+    '{"kind":"notice","id":"notice~b~t-bins~1","at":"2026-09-20T10:00:00.000Z","type":"progress","actorId":"00000000-0000-0000-0000-00000000000a","target":{"kind":"task","id":"t-bins"},"title":"Owner made progress on “Bins”","lines":["Ticked “Green bin”"],"createdAt":"2026-09-20T10:00:00.000Z","updatedAt":"2026-09-20T10:00:00.000Z"}',
+    '00000000-0000-0000-0000-00000000000b');
+  r := public.sync_posts('[{"kind":"notice","id":"notice~b~t-bins~1","at":"2026-09-20T10:05:00.000Z","type":"done","actorId":"00000000-0000-0000-0000-00000000000a","target":{"kind":"task","id":"t-bins"},"title":"Owner finished “Bins”","lines":["Ticked “Green bin”","Marked it done"],"createdAt":"2026-09-20T10:00:00.000Z","updatedAt":"2026-09-20T10:05:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 or jsonb_array_length(r -> 'stale') <> 0 then
+    raise exception 'FAIL v3.32-1: sync_posts did not take the merged notice: %', r;
+  end if;
+  if (select user_id from public.posts where id = 'notice~b~t-bins~1') is distinct from '00000000-0000-0000-0000-00000000000b' then
+    raise exception 'FAIL v3.32-1: the merge moved the notice off its recipient';
+  end if;
+  if (select kind from public.posts where id = 'notice~b~t-bins~1') is distinct from 'notice'
+     or (select data ->> 'type' from public.posts where id = 'notice~b~t-bins~1') is distinct from 'done' then
+    raise exception 'FAIL v3.32-1: the merged notice was not stored as sent';
+  end if;
+  raise notice 'ok v3.32-1: the service role writes a notice under its recipient, and a merge through sync_posts keeps it theirs';
+end $$;
+commit;
+
+-- -------------- v3.32-2. the member it is about never sees it, and cannot write over it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if 'notice~b~t-bins~1' = any(ids) then
+    raise exception 'FAIL v3.32-2: the owner''s pull returns the peer''s notice';
+  end if;
+  if (select count(*) from public.posts where id = 'notice~b~t-bins~1') <> 0 then
+    raise exception 'FAIL v3.32-2: a direct select shows the owner the peer''s notice';
+  end if;
+  r := public.sync_posts('[{"kind":"notice","id":"notice~b~t-bins~1","at":"2026-09-20T11:00:00.000Z","type":"done","title":"Rewritten","readAt":"2026-09-20T11:00:00.000Z","createdAt":"2026-09-20T10:00:00.000Z","updatedAt":"2026-09-20T11:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not ((r -> 'rejected') ? 'notice~b~t-bins~1') then
+    raise exception 'FAIL v3.32-2: the owner wrote over the peer''s notice: %', r;
+  end if;
+  raise notice 'ok v3.32-2: the member a notice is about neither reads it nor writes over it';
+end $$;
+commit;
+
+-- -------------- v3.32-3. its recipient reads it and marks it read
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if not ('notice~b~t-bins~1' = any(ids)) then
+    raise exception 'FAIL v3.32-3: the recipient''s pull should return their notice, got %', ids;
+  end if;
+  r := public.sync_posts('[{"kind":"notice","id":"notice~b~t-bins~1","at":"2026-09-20T10:05:00.000Z","type":"done","actorId":"00000000-0000-0000-0000-00000000000a","target":{"kind":"task","id":"t-bins"},"title":"Owner finished “Bins”","lines":["Ticked “Green bin”","Marked it done"],"readAt":"2026-09-20T12:00:00.000Z","createdAt":"2026-09-20T10:00:00.000Z","updatedAt":"2026-09-20T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 or jsonb_array_length(r -> 'stale') <> 0 then
+    raise exception 'FAIL v3.32-3: the recipient could not mark their notice read: %', r;
+  end if;
+  if (select data ->> 'readAt' from public.posts where id = 'notice~b~t-bins~1') is distinct from '2026-09-20T12:00:00.000Z' then
+    raise exception 'FAIL v3.32-3: the read mark was not stored';
+  end if;
+  raise notice 'ok v3.32-3: a notice''s recipient reads it and marks it read through sync_posts';
+end $$;
+commit;
+
+-- -------------- v3.32-4. the switch that decides whether task notices are written
+do $$
+begin
+  if (select column_default from information_schema.columns
+       where table_schema = 'public' and table_name = 'user_settings' and column_name = 'notify_activity') is distinct from 'true' then
+    raise exception 'FAIL v3.32-4: user_settings.notify_activity should exist and default to true';
+  end if;
+  raise notice 'ok v3.32-4: user_settings keeps "Tell me when someone updates a task we share", on by default';
+end $$;
+
+delete from public.posts where id = 'notice~b~t-bins~1';

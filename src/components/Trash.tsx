@@ -64,6 +64,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Chat'
     case 'account':
       return 'Account'
+    case 'notice':
+      return 'Notification'
   }
 }
 

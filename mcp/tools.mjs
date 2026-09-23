@@ -93,6 +93,15 @@ function oneOf(value, list, field) {
   return value
 }
 
+/**
+ * A comment, signed by the member the connection acts for, as the app signs
+ * the ones typed in it (v3.32): the task shows whose words they are, and the
+ * other member's device can say so. Without a user there is no one to name.
+ */
+function commentBy(userId, comment) {
+  return userId ? { ...comment, by: String(userId) } : comment
+}
+
 function applyStatus(task, status, stamp) {
   task.status = oneOf(status, TASK_STATUSES, 'status')
   if (status === 'done') task.completedAt = task.completedAt ?? stamp
@@ -734,13 +743,13 @@ export const TOOLS = [
       },
       required: ['id'],
     },
-    async run({ id, comment, completedAt } = {}, { db, clock, newId }) {
+    async run({ id, comment, completedAt } = {}, { db, clock, newId, userId }) {
       const task = await db.fetchItem(id, 'task')
       const wasDone = task.status === 'done'
       const stamp = clock.iso()
       task.status = 'done'
       task.completedAt = completedAt ? isoOrThrow(completedAt, 'completedAt') : (task.completedAt ?? stamp)
-      if (comment) task.comments = [...(task.comments ?? []), { id: newId(), body: String(comment), createdAt: stamp }]
+      if (comment) task.comments = [...(task.comments ?? []), commentBy(userId, { id: newId(), body: String(comment), createdAt: stamp })]
       task.updatedAt = newerStamp(task.updatedAt)
       const writes = [task]
       let spawned = null
@@ -763,10 +772,10 @@ export const TOOLS = [
     annotations: ADDS,
     description: 'Append a comment to a task’s trail: progress notes, decisions, blockers, links. Comments are timestamped and never overwrite each other.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, body: { type: 'string' } }, required: ['id', 'body'] },
-    async run({ id, body } = {}, { db, clock, newId }) {
+    async run({ id, body } = {}, { db, clock, newId, userId }) {
       if (!body || !String(body).trim()) throw new Error('body must not be empty')
       const task = await db.fetchItem(id, 'task')
-      const comment = { id: newId(), body: String(body).trim(), createdAt: clock.iso() }
+      const comment = commentBy(userId, { id: newId(), body: String(body).trim(), createdAt: clock.iso() })
       task.comments = [...(task.comments ?? []), comment]
       task.updatedAt = newerStamp(task.updatedAt)
       await db.writeItem(task)

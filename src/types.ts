@@ -21,6 +21,12 @@ export interface Comment {
   id: string
   body: string
   createdAt: string
+  /**
+   * Who wrote it: a household member's account id. Set on every comment the
+   * app or an assistant adds since notices (v3.32), so the other member can
+   * be told who said what; a comment from before then has none, and shows no name.
+   */
+  by?: string
 }
 
 export interface ChecklistItem {
@@ -130,6 +136,12 @@ export interface Task extends Owned {
   blockedBy?: string[]
   /** Household member responsible (a Supabase user id). */
   assigneeId?: string
+  /**
+   * Who handed it to them: the member who last changed "Who's doing it". A
+   * notice about the task's progress goes to them (netlify/functions/notify.mjs);
+   * a task assigned before v3.32 has none, and its owner stands in.
+   */
+  assignedBy?: string
   /**
    * Who in the household can see it. A new task is private (`false`) until
    * someone shares it, the same as a note. Tasks written before that default
@@ -969,7 +981,54 @@ export const SNOOZE_OPTIONS: { days: number; label: string; short: string }[] = 
   { days: 90, label: 'three months', short: '3m' },
 ]
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear | Snooze | Message | ChatTurn | Account
+/**
+ * What a notice is about: a member doing something to a task you share, the
+ * morning digest, or an alarm. The hub on Home lists them, newest first.
+ */
+export type NoticeType = 'assigned' | 'progress' | 'done' | 'comment' | 'changed' | 'digest' | 'alarm'
+export const NOTICE_TYPES: NoticeType[] = ['assigned', 'progress', 'done', 'comment', 'changed', 'digest', 'alarm']
+
+/**
+ * One entry in the notification hub (v3.32): "Maria finished “Take bins
+ * out”", this morning's digest, an alarm. PERSONAL: the row is its
+ * RECIPIENT's, and only their devices ever see it — not even the member it
+ * is about. The server writes them (netlify/functions/notify.mjs for a task,
+ * digest.mjs for the digest and alarms); a device only ever marks one read,
+ * which syncs to the reader's other devices like any edit.
+ *
+ * What one member does to one task within a quarter of an hour is ONE notice
+ * (`notice~<recipient>~<task>~<bucket>`): each change adds a line to it, and
+ * the latest moves it back to the top as unread. The nightly job turns a
+ * notice older than 30 days into a tombstone, so devices let it go too.
+ */
+export interface Notice extends Owned {
+  kind: 'notice'
+  id: string
+  /** When it last happened: the newest line's time, which the hub sorts on. */
+  at: string
+  type: NoticeType
+  /** The member who did it; none for the digest or an alarm. */
+  actorId?: string
+  /** What a tap opens. */
+  target?: { kind: 'task' | 'event' | 'review'; id: string }
+  /** The headline, as the lock screen said it: "Maria finished “Take bins out”". */
+  title: string
+  /** What happened, a line each, oldest first; at most eight. */
+  lines?: string[]
+  /** When its reader opened it, here or on another of their devices; unread without. */
+  readAt?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  /**
+   * Never set: a notice's words are its title. Declared so code that reads a
+   * record's name without asking its kind first (the sync engine's
+   * recordLabel) reads a notice as unnamed.
+   */
+  name?: undefined
+}
+
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear | Snooze | Message | ChatTurn | Account | Notice
 
 export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
   daily: 'Daily',

@@ -72,11 +72,15 @@ import {
   TaskStatus,
   GithubProjectSync,
   Note,
+  Notice,
+  NoticeType,
+  NOTICE_TYPES,
 } from './types'
 import { CHAT_ACTIONS_MAX, CHAT_ACTION_TYPES, type ChatAction, type ChatNameRef, type ChatOutcome, type ChatOutcomeState, type ChatTaskStatus } from './types'
 import { legacyPostToTask } from '../shared/domain.mts'
 import { MAX_SIDES } from '../shared/kitchen.mts'
 import { SYNC_KINDS } from '../shared/kinds.mts'
+import { NOTICE_LINE_MAX, NOTICE_LINES_MAX } from '../shared/notices.mts'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
 import { isDayKey } from '../shared/weeks.mts'
 import { tidyCoords } from './geo'
@@ -151,7 +155,9 @@ function comments(v: unknown): Comment[] | undefined {
     const id = str(r.id)
     const body = str(r.body)?.trim()
     const createdAt = isoDate(r.createdAt)
-    if (id && body && createdAt) out.push({ id, body, createdAt })
+    // who wrote it, when that was kept (v3.32); a comment from before has no name, and keeps none
+    const by = idOrUndefined(r.by)
+    if (id && body && createdAt) out.push(by ? { id, body, createdAt, by } : { id, body, createdAt })
   }
   out.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return out.length > 0 ? out : undefined
@@ -314,6 +320,8 @@ export function sanitizeTask(raw: unknown): Task | null {
     actualCost: money(r.actualCost),
     blockedBy: idList(r.blockedBy),
     assigneeId: idOrUndefined(r.assigneeId),
+    // who handed it over (v3.32): its notices go to them
+    assignedBy: idOrUndefined(r.assignedBy),
     // This has to survive the whitelist, as a note's does and for a sharper
     // reason: a build that dropped it would push the task back without it, and
     // an absent flag on a task reads as SHARED.
@@ -1293,6 +1301,55 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
   }
 }
 
+const NOTICE_TYPE_SET = new Set<string>(NOTICE_TYPES)
+const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review'])
+
+function noticeTarget(v: unknown): Notice['target'] {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
+  const id = str(r.id)?.trim()
+  return typeof r.kind === 'string' && NOTICE_TARGET_KINDS.has(r.kind) && id ? { kind: r.kind as 'task' | 'event' | 'review', id } : undefined
+}
+
+/**
+ * An entry in the notification hub (v3.32). The server writes them; a device
+ * only marks one read. A tombstone — the nightly job's, 30 days on — carries
+ * no words and is kept as one, or a device still holding the notice would
+ * throw the tombstone away and go on showing it. Anything else needs a kind
+ * the hub knows and a headline; the newest NOTICE_LINES_MAX lines are kept.
+ */
+export function sanitizeNotice(raw: unknown): Notice | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const deletedAt = isoDate(r.deletedAt)
+  const type = typeof r.type === 'string' && NOTICE_TYPE_SET.has(r.type) ? (r.type as NoticeType) : undefined
+  const title = str(r.title)?.trim()
+  if (!id || (!deletedAt && (!type || !title))) return null
+  const lines = (Array.isArray(r.lines) ? r.lines : [])
+    .map(l => str(l)?.trim().slice(0, NOTICE_LINE_MAX))
+    .filter((l): l is string => !!l)
+    .slice(-NOTICE_LINES_MAX)
+  const now = new Date().toISOString()
+  const at = isoDate(r.at) ?? isoDate(r.createdAt) ?? now
+  return {
+    kind: 'notice',
+    id,
+    at,
+    type: type ?? 'changed',
+    actorId: idOrUndefined(r.actorId),
+    target: noticeTarget(r.target),
+    title: (title ?? '').slice(0, 200),
+    lines: lines.length > 0 ? lines : undefined,
+    readAt: isoDate(r.readAt),
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? at,
+    updatedAt: isoDate(r.updatedAt) ?? at,
+    deletedAt,
+    purged: r.purged === true || undefined,
+  }
+}
+
 /** Coerce arbitrary data into a valid Review. */
 export function sanitizeReview(raw: unknown): Review | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1516,6 +1573,7 @@ function sanitizeKnown(converted: Record<string, unknown>): Item | null {
   if (converted.kind === 'message') return sanitizeMessage(converted)
   if (converted.kind === 'chat') return sanitizeChatTurn(converted)
   if (converted.kind === 'account') return sanitizeAccount(converted)
+  if (converted.kind === 'notice') return sanitizeNotice(converted)
   if (typeof converted.kind === 'string' && converted.kind !== '' && !KNOWN_KINDS.has(converted.kind)) return null
   return sanitizeTask(converted)
 }

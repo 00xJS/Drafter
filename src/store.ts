@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
+import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Notice, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } from './idb'
@@ -83,6 +83,8 @@ export interface Store {
   messages: Message[]
   chat: ChatTurn[]
   accounts: Account[]
+  /** Your notification hub (personal): newest first. */
+  notices: Notice[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
   /**

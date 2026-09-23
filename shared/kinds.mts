@@ -32,16 +32,22 @@
 // v3.27 adds 'account': a name, a kind and the balances you have typed in. The
 // household's, like a bill — two people who share the rent share the picture.
 //
+// v3.32 adds 'notice', an entry in the notification hub: "Maria finished
+// “Take bins out”", this morning's digest. PERSONAL, because the row is its
+// recipient's (the server writes it under their id): the member it is about
+// never reads the notice their housemate got, and neither does the backup,
+// the digest or an assistant working for anyone else.
+//
 // The app imports these (KNOWN_KINDS in src/schema.ts, PERSONAL_KINDS in
 // src/store.ts); the bot edge function cannot, and mcp.test.ts holds its copy.
 
 import { isRecord } from './domain.mts'
 
 /** The sync_posts allowlist: every kind the server stores. */
-export const SYNC_KINDS: ReadonlySet<string> = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account'])
+export const SYNC_KINDS: ReadonlySet<string> = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account', 'notice'])
 
 /** Kinds only their owner may read, even inside a household. */
-export const PERSONAL_KINDS: ReadonlySet<string> = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+export const PERSONAL_KINDS: ReadonlySet<string> = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat', 'notice'])
 
 /**
  * One field of a stored row's `data`, which is JSON: whatever the row was

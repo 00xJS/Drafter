@@ -351,6 +351,8 @@ export function pullSince(cursor: string | null): string | null {
  * would pull the whole dialog into the launch (lazyload.test.ts).
  *
  * A purged tombstone has no content left to restore. A snooze and a chat turn
- * are states rather than records — nobody came here to put a nudge back off.
+ * are states rather than records — nobody came here to put a nudge back off —
+ * and a notice is a message about a record, not one: it lives in the hub on
+ * Home, and a deleted one is gone.
  */
-export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat'
+export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat' && i.kind !== 'notice'
