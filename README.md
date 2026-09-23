@@ -112,7 +112,7 @@ To switch it on, in this order:
 
 1. **Netlify:** Project configuration → Developer settings → Continuous deployment → Build hooks → **Add build hook**, named `CI passed`, for the `main` branch. Copy its URL.
 2. **GitHub:** Settings → Secrets and variables → Actions → **New repository secret** `NETLIFY_BUILD_HOOK`, the URL. From here on each green `main` calls it; until step 3, a push is built twice, which does no harm.
-3. **Netlify:** Project configuration → Environment variables → add `DRAFTER_GATED_DEPLOYS` with the value `1`, scoped to Builds. The next push to `main` shows as skipped in Netlify's deploy list, and goes live when CI finishes, as a deploy titled *CI passed for* its commit.
+3. **Netlify:** Project configuration → Environment variables → add `DRAFTER_GATED_DEPLOYS` with the value `1`, scoped to Builds. The next push to `main` shows as skipped in Netlify's deploy list, and goes live when CI finishes, as a deploy titled *CI passed for* its commit. If that push builds on its own anyway, the variable is not reaching Netlify's ignore step: check its scope.
 
 To switch it off, remove `DRAFTER_GATED_DEPLOYS` first, then the secret. While it is on, `curl -X POST -d '{}' <the hook URL>` deploys `main` as it stands, without waiting: the gate never skips a build the hook starts.
 
