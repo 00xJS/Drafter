@@ -68,6 +68,22 @@ function scopesOf(opts) {
 
 const TIMED_OUT = Symbol('timed out')
 
+/**
+ * A failed call's cause in one word, for the log — never the message, which
+ * can quote the user's own records. The code an error carries (agentauth's
+ * 'session', 'not_configured', 'upstream'), `db_<status>` for a database
+ * answer, 'network' for a request that got none, 'tool' for a tool refusing
+ * its input or finding nothing, and 'internal' for anything else.
+ */
+export function failureCode(e) {
+  const code = e?.code
+  if (typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(code)) return code.toLowerCase()
+  if (Number.isInteger(e?.status)) return `db_${e.status}`
+  if (e instanceof TypeError && e.message === 'fetch failed') return 'network'
+  if (e?.constructor === Error) return 'tool'
+  return 'internal'
+}
+
 function withDeadline(promise, deadlineMs) {
   let timer
   const late = new Promise(resolve => {
@@ -86,22 +102,29 @@ async function callTool(id, params, opts) {
   const args = params?.arguments ?? {}
   if (!args || typeof args !== 'object' || Array.isArray(args)) return rpcError(id, -32602, 'Invalid params: arguments must be an object')
   // tools/list already hides it; a client that calls it anyway is refused here, not trusted
-  if (!scopesOf(opts).includes(tool.scope)) return rpcResult(id, toolText(SCOPE_REFUSAL, true))
+  if (!scopesOf(opts).includes(tool.scope)) {
+    opts.onToolCall?.({ name, ms: 0, isError: true, code: 'scope' })
+    return rpcResult(id, toolText(SCOPE_REFUSAL, true))
+  }
   const started = Date.now()
   let outcome
+  let code
   if (opts.deadlineMs && started >= opts.deadlineMs) {
     outcome = toolText(OUT_OF_TIME_TEXT, true)
+    code = 'out_of_time'
   } else {
     try {
       const ctx = await contextOf(opts)
       const running = Promise.resolve().then(() => tool.run(args, ctx))
       const value = opts.deadlineMs ? await withDeadline(running, opts.deadlineMs) : await running
+      if (value === TIMED_OUT) code = 'deadline'
       outcome = value === TIMED_OUT ? toolText(DEADLINE_TEXT, true) : toolText(JSON.stringify(value, null, 2), false)
     } catch (e) {
       outcome = toolText(`Error: ${e?.message ?? e}`, true)
+      code = failureCode(e)
     }
   }
-  opts.onToolCall?.({ name, ms: Date.now() - started, isError: outcome.isError })
+  opts.onToolCall?.({ name, ms: Date.now() - started, isError: outcome.isError, ...(code ? { code } : {}) })
   return rpcResult(id, outcome)
 }
 
@@ -114,7 +137,7 @@ async function callTool(id, params, opts) {
  *   serverInfo    default SERVER_INFO
  *   instructions  a string, or (ctx) => string
  *   deadlineMs    epoch ms a tool call must finish by (the hosted endpoint's function limit)
- *   onToolCall({ name, ms, isError })  for logging: never the arguments
+ *   onToolCall({ name, ms, isError, code })  for logging: never the arguments; `code` is a failure's cause in a word (failureCode)
  */
 export async function handleMessage(msg, opts = {}) {
   if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return rpcError(null, -32600, 'Invalid Request: not a JSON-RPC message')

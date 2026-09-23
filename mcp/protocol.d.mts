@@ -9,7 +9,8 @@ export interface HandleOptions {
   serverInfo?: { name: string; version: string }
   instructions?: string | ((ctx: ToolContext) => string)
   deadlineMs?: number
-  onToolCall?(call: { name: string; ms: number; isError: boolean }): void
+  /** For logging, never with the arguments. A failed call says why in `code`: see failureCode. */
+  onToolCall?(call: { name: string; ms: number; isError: boolean; code?: string }): void
 }
 
 export declare const PROTOCOL_VERSIONS: readonly string[]
@@ -20,6 +21,8 @@ export declare const OUT_OF_TIME_TEXT: string
 export declare function negotiate(requested: unknown): string
 export declare function instructionsFor(opts?: { tz?: string; scopes?: readonly string[] }): string
 export declare function hasInitialize(parsed: unknown): boolean
+/** A failed call's cause in one word, for the log: never the error's message. */
+export declare function failureCode(e: unknown): string
 export declare function handleMessage(msg: unknown, opts?: HandleOptions): Promise<JsonRpcResponse | null>
 export declare function handleBody(
   body: unknown,

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LAPSED_TEXT, mcpEndpoint } from '../../netlify/functions/lib/mcphttp.mjs'
 import { forgetAllSessions } from '../../netlify/functions/lib/agentauth.mjs'
-import { SCOPE_REFUSAL } from '../../mcp/protocol.mjs'
+import { DataError } from '../../mcp/data.mjs'
+import { SCOPE_REFUSAL, failureCode } from '../../mcp/protocol.mjs'
 import { TOOLS } from '../../mcp/tools.mjs'
 
 // /api/mcp end to end with fetch stubbed at the edge: the token check, the
@@ -39,6 +40,10 @@ let calls: Call[] = []
 let mints = 0
 /** One-off answers for the next GETs of /rest/v1/posts. */
 let postsOverrides: (() => Response)[] = []
+/** What the admin lookup of the user answers: 200 unless a test says otherwise. */
+let lookupStatus = 200
+/** agent_tokens cannot be read (Supabase is down). */
+let tokensDown = false
 
 function install() {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -50,6 +55,7 @@ function install() {
     const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } })
     switch (url.pathname) {
       case '/rest/v1/agent_tokens': {
+        if (tokensDown) return new Response('{"message":"upstream connect error"}', { status: 500 })
         const found = lastUse((url.searchParams.get('access_hash') ?? '').replace(/^eq\./, ''))
         return json(found ? [found] : [])
       }
@@ -58,7 +64,7 @@ function install() {
       case '/rest/v1/user_settings':
         return json([{ user_id: USER, timezone: 'Europe/London' }])
       case `/auth/v1/admin/users/${USER}`:
-        return json({ id: USER, email: 'owner@example.test' })
+        return lookupStatus === 200 ? json({ id: USER, email: 'owner@example.test' }) : json({ msg: 'User not found' }, lookupStatus)
       case '/auth/v1/admin/generate_link':
         return json({ properties: { hashed_token: `hash-${++mints}`, verification_type: 'magiclink' } })
       case '/auth/v1/verify':
@@ -86,6 +92,8 @@ beforeEach(() => {
   calls = []
   mints = 0
   postsOverrides = []
+  lookupStatus = 200
+  tokensDown = false
   forgetAllSessions()
   install()
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -298,5 +306,58 @@ describe('acting as the user', () => {
     expect(lines[0]).toMatch(/^mcp c0ffee12 list_tasks \d+ms$/)
     expect(lines.join('\n')).not.toContain('private words')
     expect(lines.join('\n')).not.toContain(TOKEN)
+  })
+})
+
+// A failed call used to log only "error", so "Drafter could not act as you"
+// and a tool turning its input down looked the same in the function log.
+describe('the log says why a call failed, in a word', () => {
+  const logged = () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    return () => log.mock.calls.map(args => args.join(' '))
+  }
+
+  it('names the cause of a failed tool call — never the message, which can quote the user’s records', async () => {
+    const lines = logged()
+    lookupStatus = 404
+    await post(rpc(1, 'tools/call', { name: 'list_tasks', arguments: {} }))
+    lookupStatus = 200
+    postsOverrides = [() => new Response('{"message":"could not read Pay the Hendersons back"}', { status: 500 })]
+    await post(rpc(2, 'tools/call', { name: 'list_tasks', arguments: {} }))
+    await post(rpc(3, 'tools/call', { name: 'get_note', arguments: { id: 't1' } }))
+    await post(rpc(4, 'tools/call', { name: 'create_task', arguments: { title: 'Pay the Hendersons back' } }), { token: READ_ONLY })
+    expect(lines()).toEqual([
+      expect.stringMatching(/^mcp c0ffee12 list_tasks \d+ms error session$/),
+      expect.stringMatching(/^mcp c0ffee12 list_tasks \d+ms error db_500$/),
+      expect.stringMatching(/^mcp c0ffee12 get_note \d+ms error tool$/),
+      'mcp feedface create_task 0ms error scope',
+    ])
+    expect(lines().join('\n')).not.toMatch(/Hendersons|is a task|account lookup/)
+  })
+
+  it('names why a request was turned away before any tool ran, and nothing about whose it was', async () => {
+    const lines = logged()
+    await post(rpc(1, 'tools/list'), { token: UNKNOWN })
+    await post(rpc(2, 'tools/list'), { token: LAPSED })
+    await post(rpc(3, 'tools/list'), { token: BUSY })
+    tokensDown = true
+    expect((await post(rpc(4, 'tools/list'))).status).toBe(503)
+    // no token at all is how a client starts OAuth discovery: nothing went wrong
+    await post(rpc(5, 'tools/list'), { token: null })
+    expect(lines()).toEqual(['mcp refused invalid', 'mcp refused expired', 'mcp refused rate_limited', 'mcp refused upstream'])
+    expect(lines().join('\n')).not.toContain('drft_')
+  })
+
+  it('in one safe word, whatever was thrown', () => {
+    expect(failureCode(Object.assign(new Error('Drafter could not act as you: verify answered 403.'), { status: 502, code: 'session' }))).toBe('session')
+    expect(failureCode(Object.assign(new Error('Assistants are not configured on this site.'), { status: 501, code: 'not_configured' }))).toBe('not_configured')
+    expect(failureCode(new DataError('Supabase 500: {"message":"Pay the Hendersons back"}', 500))).toBe('db_500')
+    expect(failureCode(new TypeError('fetch failed'))).toBe('network')
+    expect(failureCode(new Error('No task with id "x".'))).toBe('tool')
+    expect(failureCode(new TypeError("Cannot read properties of undefined (reading 'id')"))).toBe('internal')
+    // a code that is not a word is not trusted to be one
+    expect(failureCode(Object.assign(new Error('x'), { code: 'Pay the Hendersons back' }))).toBe('tool')
+    expect(failureCode('thrown as a string')).toBe('internal')
+    expect(failureCode(undefined)).toBe('internal')
   })
 })
