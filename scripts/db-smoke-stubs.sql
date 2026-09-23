@@ -29,6 +29,14 @@ alter table storage.objects enable row level security;
 grant select, insert, update, delete on storage.objects to authenticated, service_role;
 
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
-grant all on all tables in schema public to anon, authenticated, service_role;
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+
+-- No default privileges on public. This file used to grant every new table
+-- and function to anon, authenticated and service_role as it was created,
+-- which is what Supabase did until it stopped: from 2026-10-30 a new public
+-- table reaches none of those roles without an explicit GRANT
+-- (supabase/config.toml, [api]). With the default here, a migration that
+-- forgot its grants passed this test and then failed in production. Now a
+-- table has exactly what its migrations grant, and db-smoke-assert.sql
+-- (v3.33-1) holds every table to the list of what each role needs.
+-- Functions keep Postgres's own default, EXECUTE for PUBLIC, until a
+-- migration revokes it.

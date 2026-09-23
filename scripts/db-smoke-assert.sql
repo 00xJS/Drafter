@@ -839,9 +839,14 @@ declare
   r jsonb;
   born text := to_char((clock_timestamp() + interval '1 second') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
 begin
-  if (select count(*) from public.purged_ids) <> 0 then
-    raise exception 'FAIL v3.11-5: purged_ids must not be readable by a client';
-  end if;
+  begin
+    if (select count(*) from public.purged_ids) <> 0 then
+      raise exception 'FAIL v3.11-5: purged_ids must not be readable by a client';
+    end if;
+  exception when insufficient_privilege then
+    -- v3.33: a client holds no privilege on it at all, which is stronger still
+    null;
+  end;
   -- a device offline past the TTL pushes its live copies back, edited since the tombstone
   r := public.sync_posts('[
     {"kind":"person","id":"lu-gone","name":"Back again","color":"#888","group":"friends","createdAt":"2024-12-01T00:00:00.000Z","updatedAt":"2025-06-01T00:00:00.000Z"},
@@ -3373,3 +3378,198 @@ begin
 end $$;
 
 delete from public.posts where id = 'notice~b~t-bins~1';
+
+-- ===== v3.33: the grants every table needs, and the shared rate limit =====
+-- 20261010000000_v3_33_rate_limits_and_grants. scripts/db-smoke-stubs.sql no
+-- longer grants anything by default — Supabase will not, from 2026-10-30 — so
+-- what a table holds here is what its migrations granted, and a migration that
+-- forgets its grants fails here instead of in production.
+
+-- ------------- v3.33-1. every table has exactly the grants it needs, and no more
+-- The list is what each role needs: what the app, the MCP server, the Netlify
+-- functions and the bot do with each table (the migrations say why; v3.33 wrote
+-- them down for the tables older than explicit grants). A new table fails here
+-- until it is listed, and its own migration grants exactly that.
+do $$
+declare
+  needs constant jsonb := '{
+    "posts":             {"authenticated": ["select", "insert", "update"], "service_role": ["select", "insert", "update", "delete"]},
+    "posts_history":     {"authenticated": ["select"], "service_role": ["select", "insert", "update", "delete"]},
+    "purged_ids":        {"service_role": ["select", "insert", "update", "delete"]},
+    "post_media":        {"authenticated": ["select"], "service_role": ["select", "insert", "update", "delete"]},
+    "households":        {"authenticated": ["select"], "service_role": ["select", "insert", "update", "delete"]},
+    "household_members": {"authenticated": ["select"], "service_role": ["select", "insert", "update", "delete"]},
+    "household_invites": {"authenticated": ["select"], "service_role": ["select", "insert", "update", "delete"]},
+    "user_settings":     {"service_role": ["select", "insert", "update", "delete"]},
+    "app_config":        {"service_role": ["select", "insert", "update", "delete"]},
+    "record_kinds":      {"service_role": ["select"]},
+    "oauth_clients":     {"service_role": ["select", "insert", "update", "delete"]},
+    "agent_tokens":      {"service_role": ["select", "insert", "update", "delete"]},
+    "oauth_codes":       {"service_role": ["select", "insert", "update", "delete"]},
+    "client_errors":     {"service_role": ["select", "insert", "update", "delete"]},
+    "job_runs":          {"service_role": ["select", "insert", "update", "delete"]},
+    "rate_limits":       {"service_role": ["select", "insert", "update", "delete"]}
+  }'::jsonb;
+  t text;
+  who text;
+  priv text;
+  held boolean;
+  wanted boolean;
+  n integer := 0;
+begin
+  for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
+            where s.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S') order by 1 loop
+    if not needs ? t then
+      raise exception 'FAIL v3.33-1: public.% is not in the list of tables and what each role needs: list it here, and grant exactly that in its migration', t;
+    end if;
+  end loop;
+  for t in select jsonb_object_keys(needs) loop
+    if to_regclass('public.' || t) is null then
+      raise exception 'FAIL v3.33-1: the list names public.%, which no migration creates', t;
+    end if;
+    if not (select c.relrowsecurity from pg_class c where c.oid = ('public.' || t)::regclass) then
+      raise exception 'FAIL v3.33-1: public.% has row level security off', t;
+    end if;
+    foreach who in array array['anon', 'authenticated', 'service_role'] loop
+      foreach priv in array array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger'] loop
+        held := has_table_privilege(who, 'public.' || t, priv);
+        wanted := coalesce((needs -> t -> who) ? priv, false);
+        if held and not wanted then
+          raise exception 'FAIL v3.33-1: % holds % on public.%, which it does not need', who, priv, t;
+        elsif wanted and not held then
+          raise exception 'FAIL v3.33-1: % lacks % on public.%: nothing is granted by default, so its migration must grant it', who, priv, t;
+        end if;
+      end loop;
+    end loop;
+    n := n + 1;
+  end loop;
+  raise notice 'ok v3.33-1: all % public tables have RLS on and exactly the grants each role needs; anon holds none', n;
+end $$;
+
+-- ------------- v3.33-2. the rate limit is the service role's alone
+do $$
+declare f constant text := 'public.rate_limit_take(text, text, integer, integer)';
+begin
+  if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = 'rate_limits') then
+    raise exception 'FAIL v3.33-2: rate_limits has a policy; it must have none';
+  end if;
+  if not exists (select 1 from pg_proc p where p.oid = f::regprocedure and p.prosecdef and p.proconfig @> array['search_path=public']) then
+    raise exception 'FAIL v3.33-2: rate_limit_take should be SECURITY DEFINER with search_path fixed to public';
+  end if;
+  if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
+    raise exception 'FAIL v3.33-2: a client role can execute rate_limit_take';
+  end if;
+  if not has_function_privilege('service_role', f, 'execute') then
+    raise exception 'FAIL v3.33-2: the service role cannot execute rate_limit_take';
+  end if;
+  raise notice 'ok v3.33-2: rate_limits has RLS on and no policy; rate_limit_take is SECURITY DEFINER, search_path fixed, for the service role only';
+end $$;
+
+-- ------------- v3.33-3. one count per account and bucket, however many instances ask
+-- Inside one transaction now() stands still, so moving window_start back is
+-- how a window ends here.
+begin;
+set local role service_role;
+do $$
+declare
+  r jsonb;
+  i integer;
+  a constant text := '00000000-0000-0000-0000-00000000000a';
+  b constant text := '00000000-0000-0000-0000-00000000000b';
+begin
+  for i in 1..3 loop
+    r := public.rate_limit_take(a, 'ai', 3, 600);
+    if r is distinct from jsonb_build_object('allowed', true, 'remaining', 3 - i, 'retry_after_ms', 0) then
+      raise exception 'FAIL v3.33-3: call % of 3 should be allowed with % left, got %', i, 3 - i, r;
+    end if;
+  end loop;
+  r := public.rate_limit_take(a, 'ai', 3, 600);
+  if (r ->> 'allowed')::boolean or (r ->> 'remaining')::integer <> 0 or (r ->> 'retry_after_ms')::bigint <> 600000 then
+    raise exception 'FAIL v3.33-3: the fourth call should be refused until the window ends, ten minutes on, got %', r;
+  end if;
+  -- refused again: the count stops one past the limit, and the window does not move
+  r := public.rate_limit_take(a, 'ai', 3, 600);
+  if (r ->> 'allowed')::boolean
+     or (select window_count from public.rate_limits where subject = a and bucket = 'ai') <> 4
+     or (select window_start from public.rate_limits where subject = a and bucket = 'ai') <> now() then
+    raise exception 'FAIL v3.33-3: a refused call should leave the count at 4 and the window where it was, got %', r;
+  end if;
+  -- another bucket, and another account, count on their own
+  if not (public.rate_limit_take(a, 'geocode', 3, 600) ->> 'allowed')::boolean
+     or not (public.rate_limit_take(b, 'ai', 3, 600) ->> 'allowed')::boolean then
+    raise exception 'FAIL v3.33-3: a full ai window for one account should not refuse its geocode, or another account';
+  end if;
+  -- half way through the window it still refuses, and says how long is left
+  update public.rate_limits set window_start = now() - interval '5 minutes' where subject = a and bucket = 'ai';
+  r := public.rate_limit_take(a, 'ai', 3, 600);
+  if (r ->> 'allowed')::boolean or (r ->> 'retry_after_ms')::bigint <> 300000 then
+    raise exception 'FAIL v3.33-3: five minutes in, the wait should be five minutes, got %', r;
+  end if;
+  -- once the window is over the account starts again, in a window of its own
+  update public.rate_limits set window_start = now() - interval '601 seconds' where subject = a and bucket = 'ai';
+  r := public.rate_limit_take(a, 'ai', 3, 600);
+  if r is distinct from '{"allowed": true, "remaining": 2, "retry_after_ms": 0}'::jsonb
+     or (select window_start from public.rate_limits where subject = a and bucket = 'ai') <> now() then
+    raise exception 'FAIL v3.33-3: after the window the first call should start a new one, got %', r;
+  end if;
+  -- a window over for a day is deleted on the way, so the table stays a row per account and bucket
+  insert into public.rate_limits (subject, bucket, window_start, window_count) values ('long-gone', 'ai', now() - interval '2 days', 9);
+  r := public.rate_limit_take('site', 'csp-report', 60, 600);
+  if exists (select 1 from public.rate_limits where subject = 'long-gone') or not (r ->> 'allowed')::boolean then
+    raise exception 'FAIL v3.33-3: a window over for two days should be gone, and the site''s first report allowed, got %', r;
+  end if;
+  -- nonsense is refused, and counts nothing
+  begin
+    perform public.rate_limit_take('', 'ai', 3, 600);
+    raise exception 'FAIL v3.33-3: an empty subject was counted';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.rate_limit_take(a, repeat('x', 33), 3, 600);
+    raise exception 'FAIL v3.33-3: a bucket past 32 characters was counted';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.rate_limit_take(a, 'ai', 0, 600);
+    raise exception 'FAIL v3.33-3: a limit of 0 was counted';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.rate_limit_take(a, 'ai', 3, 86401);
+    raise exception 'FAIL v3.33-3: a window past a day was counted';
+  exception when invalid_parameter_value then null;
+  end;
+  raise notice 'ok v3.33-3: rate_limit_take allows the limit, refuses the next call until the window ends and says when, counts each account and bucket apart, starts again after the window, and prunes day-old windows';
+end $$;
+rollback;
+
+-- ------------- v3.33-4. no client, signed in or not, can read the counts or reset its own
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+begin
+  begin
+    perform count(*) from public.rate_limits;
+    raise exception 'FAIL v3.33-4: a signed-in client read rate_limits';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.rate_limit_take('00000000-0000-0000-0000-00000000000a', 'ai', 1000000, 1);
+    raise exception 'FAIL v3.33-4: a signed-in client could count its own calls';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+begin;
+set local role anon;
+do $$
+begin
+  begin
+    perform public.rate_limit_take('site', 'csp-report', 1000000, 1);
+    raise exception 'FAIL v3.33-4: anon could count calls';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'ok v3.33-4: neither anon nor a signed-in client can read rate_limits or call rate_limit_take';
+end $$;
+rollback;
