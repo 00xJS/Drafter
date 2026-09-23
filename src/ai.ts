@@ -665,7 +665,10 @@ export interface WeekPolish {
  * and the overdue titles. Never the journal, and never anyone's notes. Last
  * seen counts your own past events (`entries`), as the People page does.
  */
-export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: Person[]; meals: Meal[]; tasks: Task[]; entries?: CalendarEntry[]; now: Date }): WeekPolishInput {
+export function weekPolishInput(
+  plan: WeekPlan,
+  d: { recipes: Recipe[]; people: Person[]; meals: Meal[]; tasks: Task[]; entries?: CalendarEntry[]; now: Date; myId?: string | null },
+): WeekPolishInput {
   const recipes = new Map(d.recipes.map(r => [r.id, r]))
   const refs = new Map<string, string>()
   const refFor = (id: string) => {
@@ -684,7 +687,7 @@ export function weekPolishInput(plan: WeekPlan, d: { recipes: Recipe[]; people: 
     }),
   }))
   const byId = new Map(d.people.map(p => [p.id, p]))
-  const seen = seenTasks(d.tasks, d.entries, d.now)
+  const seen = seenTasks(d.tasks, d.entries, d.now, d.myId ?? null)
   const people = plan.people.flatMap((row, i) => {
     const p = byId.get(row.personId)
     return p ? [{ ref: `P${i + 1}`, id: p.id, name: p.name, daysSince: personStats(p, seen, d.now).daysSince ?? null }] : []

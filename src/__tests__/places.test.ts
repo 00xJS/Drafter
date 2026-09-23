@@ -419,6 +419,14 @@ describe('placeYearReport: the year in places counts outings', () => {
   ]
   const [first, second] = placeYearReport([nopi, place()], tasks, meals, 2026, now)
 
+  it("counts only the member's own outings when given one", () => {
+    const theirs = task({ id: 'peer-lunch', completedAt: local(8, 21), ownerId: 'peer' })
+    const [everyone] = placeYearReport([place()], [...tasks, theirs], meals, 2026, now)
+    const [mine] = placeYearReport([place()], [...tasks, theirs], meals, 2026, now, 'me')
+    expect(everyone.total).toBe(first.total + 1)
+    expect(mine.total).toBe(first.total)
+  })
+
   it('puts each outing in its month, a meal eaten out included and one still to come not', () => {
     expect(first.place.id).toBe('pl1')
     expect(first.months).toEqual([0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 0, 0])

@@ -117,6 +117,8 @@ interface Props {
   tasks: Task[]
   /** Your own calendar entries: a past one with someone on it counts as seeing them. */
   entries?: CalendarEntry[]
+  /** The member whose week this is: only their own visits count as seeing someone. */
+  myId?: string | null
   /** "Pick…" is MealSlotRow's picker, with the Kitchen tab's "Somewhere new…" / "Something new…". */
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe?(name: string): Recipe
@@ -128,7 +130,7 @@ interface Props {
   now?: Date
 }
 
-export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, entries, onCreatePlace, onCreateRecipe, onApply, onClose, polish = polishWeekPlan, now }: Props) {
+export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, entries, myId = null, onCreatePlace, onCreateRecipe, onApply, onClose, polish = polishWeekPlan, now }: Props) {
   const [c, setC] = useState(() => initialChoices(plan))
   const [picking, setPicking] = useState<string | null>(null)
   const [pol, setPol] = useState<Polish>({ status: 'idle' })
@@ -161,7 +163,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
   }
 
   const runPolish = async () => {
-    const input = weekPolishInput(plan, { recipes, people, meals, tasks, entries, now: now ?? new Date() })
+    const input = weekPolishInput(plan, { recipes, people, meals, tasks, entries, now: now ?? new Date(), myId })
     setPol({ status: 'busy' })
     try {
       setPol({ status: 'done', input, result: await polish(input) })

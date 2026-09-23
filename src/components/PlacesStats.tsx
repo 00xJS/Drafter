@@ -135,8 +135,8 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
   )
   const months = useMemo(() => outingsByMonth(stats, year, now), [stats, year, now])
   const report = useMemo(
-    () => placeYearReport(shown, tasks, meals, year, now).map(r => ({ ...r, key: r.place.id, name: r.place.name })),
-    [shown, tasks, meals, year, now],
+    () => placeYearReport(shown, tasks, meals, year, now, myId).map(r => ({ ...r, key: r.place.id, name: r.place.name })),
+    [shown, tasks, meals, year, now, myId],
   )
 
   if (places.length === 0)

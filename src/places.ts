@@ -271,10 +271,11 @@ function placeReason(lastAt: string | undefined, daysSince: number | undefined, 
   return `Last went ${ago} · ${count365} time${count365 === 1 ? '' : 's'} in 12 months${eating}`
 }
 
-export function companionsAt(placeId: string, people: Person[], tasks: Task[]): Companion[] {
+export function companionsAt(placeId: string, people: Person[], tasks: Task[], myId: string | null = null): Companion[] {
   const counts = new Map<string, number>()
   // Only tasks name who was there; a meal records the place, not the company.
-  for (const v of outingsAt(placeId, tasks)) {
+  // Your own outings only: who a housemate went with is theirs.
+  for (const v of outingsAt(placeId, tasks, [], undefined, myId)) {
     if (v.kind !== 'task') continue
     for (const id of v.task.peopleIds ?? []) counts.set(id, (counts.get(id) ?? 0) + 1)
   }
@@ -303,7 +304,7 @@ export function placeStats(place: Place, tasks: Task[], people: Person[], now: D
     count365: summary.count365,
     avgGapDays: summary.avgGapDays,
     weekly: summary.weekly,
-    companions: companionsAt(place.id, people, tasks),
+    companions: companionsAt(place.id, people, tasks, myId),
     eatenOut: visits.filter(v => v.kind === 'meal').length,
     eatenOut365,
     reason: nagging ? `${base} — you aimed for every ${cadence.cadenceDays} days` : base,
@@ -330,11 +331,12 @@ export interface PlaceYearRow {
  * two meals out, so here each outing counts. A meal is filed under its own
  * date (filedAt), as Kitchen and the calendar show it.
  */
-export function placeYearReport(places: Place[], tasks: Task[], meals: Meal[], year: number, now: Date = new Date()): PlaceYearRow[] {
+export function placeYearReport(places: Place[], tasks: Task[], meals: Meal[], year: number, now: Date = new Date(), myId: string | null = null): PlaceYearRow[] {
   return places
     .map(place => {
-      // re-dated after outingsAt, so a meal still to come stays out
-      const outings = outingsAt(place.id, tasks, meals, now).map(v => ({ at: filedAt(v) }))
+      // re-dated after outingsAt, so a meal still to come stays out; your own
+      // outings, as the rest of the Places Stats count them
+      const outings = outingsAt(place.id, tasks, meals, now, myId).map(v => ({ at: filedAt(v) }))
       return { place, ...monthsAndTrend(outings, year, now) }
     })
     .sort((a, b) => b.total - a.total || a.place.name.localeCompare(b.place.name))

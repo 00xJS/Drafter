@@ -170,6 +170,13 @@ describe('people', () => {
     expect(plan.people[0].why).toMatch(/you aimed for every 14 days/)
   })
 
+  it("counts only this member's own visits: a housemate's lunch with p-over is not yours", () => {
+    const theirs = task('v-peer', { status: 'done', completedAt: utc('2026-09-15', '12:00'), peopleIds: ['p-over'], tags: ['visit'], ownerId: 'peer' })
+    expect((proposeWeek([...items(), theirs], opts) as WeekPlan).people.map(p => p.personId)).toContain('p-over')
+    // with no member to ask about (local mode) everyone's visits count, as before
+    expect((proposeWeek([...items(), theirs], { ...opts, userId: null }) as WeekPlan).people.map(p => p.personId)).not.toContain('p-over')
+  })
+
   it('makes a catch-up a visit task due all day, which then suppresses them', () => {
     const t = catchUpTask(plan.people[0], { id: 'new-visit', now })
     expect(t).toMatchObject({ kind: 'task', id: 'new-visit', status: 'todo', tags: ['visit'], peopleIds: ['p-over'], dueAt: localMidnightIso('2026-09-26') })

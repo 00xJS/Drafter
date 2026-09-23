@@ -374,8 +374,9 @@ export function proposeWeek(items, { todayKey, tz, userId = null, dismissed = []
   }
 
   const dinners = proposeDinners({ days, todayKey, startKey: week.startKey, meals, recipes: ofKind('recipe'), busy, skip })
-  // a lunch of your own with Mum on it has seen her, as the People page says
-  const seen = seenTasks(tasks, ofKind('event'), now)
+  // a lunch of your own with Mum on it has seen her, as the People page says —
+  // and only your own visits: a housemate seeing her is not you seeing her
+  const seen = seenTasks(tasks, ofKind('event'), now, userId)
   const people = proposePeople({ days, people: ofKind('person'), tasks, seen, now, eveningLoad, dueCount, skip })
   const overdue = proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip })
 

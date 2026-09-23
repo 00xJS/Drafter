@@ -57,6 +57,7 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
       meals={store.meals}
       tasks={store.tasks}
       entries={store.events}
+      myId={household.myId}
       onCreatePlace={createPlaceInline}
       onCreateRecipe={createRecipeInline}
       onApply={a => {
@@ -388,6 +389,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               garments: store.garments,
               outfits: store.outfits,
               wears: store.wears,
+              myId: store.myId,
             }}
             tz={deviceZone()}
             onOpen={openAskDoc}

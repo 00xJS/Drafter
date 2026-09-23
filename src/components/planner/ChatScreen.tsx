@@ -125,6 +125,7 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
           garments: store.garments,
           outfits: store.outfits,
           wears: store.wears,
+          myId: store.myId,
         }}
         tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
         onSendMessage={m => store.upsert(m)}

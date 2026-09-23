@@ -319,6 +319,19 @@ describe('factsFor', () => {
     const pq = parseQuestion('Have I seen Sarah?', src, now)
     expect(factsFor(pq, src, now, 'UTC').find(f => f.startsWith('Sarah Jones:'))).toMatch(/no visit logged yet/)
   })
+
+  it("counts only the asker's own visits: a housemate's lunch with Mum or coffee at Nopi is not yours", () => {
+    const shared = sources()
+    shared.tasks.push(task('id-peer-visit', { title: 'Lunch', status: 'done', completedAt: at(9, 10, 13), peopleIds: ['id-mum'], tags: ['visit'], ownerId: 'u-peer' }))
+    shared.tasks.push(task('id-peer-outing', { title: 'Coffee', status: 'done', completedAt: at(9, 11, 10), placeId: 'id-nopi', ownerId: 'u-peer' }))
+    const mine = { ...shared, myId: 'u-me' }
+    const facts = factsFor(parseQuestion('When did I last see Mum at Nopi?', mine, now), mine, now, 'Europe/London')
+    expect(facts.find(f => f.startsWith('Mum:'))).toMatch(/last seen 2026-09-05/)
+    expect(facts.find(f => f.startsWith('Nopi:'))).toBe('Nopi: last went 2026-09-04 (8 days ago); 1 outing logged.')
+    // with nobody asking (local mode) every visit counts, as before
+    const anyone = factsFor(parseQuestion('When did I last see Mum at Nopi?', shared, now), shared, now, 'Europe/London')
+    expect(anyone.find(f => f.startsWith('Mum:'))).toMatch(/last seen 2026-09-10/)
+  })
 })
 
 describe('buildAskPrompt', () => {

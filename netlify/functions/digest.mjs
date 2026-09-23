@@ -188,7 +188,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
   const lists = reviewLists(tasks, meta, now)
   const done = lists.done.map(t => t.title).slice(0, 40)
   const slipped = lists.slipped.map(t => t.title).slice(0, 40)
-  const seen = peopleSeen(people, seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now), meta, iso => localParts(iso, opts.timezone || 'UTC').day)
+  const seen = peopleSeen(people, seenTasks(tasks, (items ?? []).filter(i => i.kind === 'event'), now, userId), meta, iso => localParts(iso, opts.timezone || 'UTC').day)
     .map(p => p.person.name)
     .slice(0, 20)
   // habits are personal, like the journal: only this user's own, never a

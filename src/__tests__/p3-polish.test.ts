@@ -37,6 +37,16 @@ const dismissed = ['22', '23', '24', '25', '26'].map(d => `dinner:2026-09-${d}`)
 const plan = proposeWeek([...recipes, ...meals, ...people, ...tasks], { todayKey: '2026-09-16', tz: 'UTC', userId: null, now, dismissed }) as WeekPlan
 const input = weekPolishInput(plan, { recipes, people, meals, tasks, now })
 
+describe('weekPolishInput and the member', () => {
+  it("gives days since from the member's own visits, not a housemate's", () => {
+    const theirs: Task = { ...tasks[0], id: 'id-peer-lunch', completedAt: '2026-09-14T12:00:00.000Z', ownerId: 'u-peer' }
+    const mine = weekPolishInput(plan, { recipes, people, meals, tasks: [...tasks, theirs], now, myId: 'u-me' })
+    const anyone = weekPolishInput(plan, { recipes, people, meals, tasks: [...tasks, theirs], now })
+    expect(mine.people.find(p => p.id === 'id-mum')?.daysSince).toBe(45)
+    expect(anyone.people.find(p => p.id === 'id-mum')?.daysSince).toBe(1)
+  })
+})
+
 describe('weekPolishInput', () => {
   it('offers each night its pick and alternatives under references, with tags and cook counts', () => {
     expect(input.nights.map(n => [n.date, n.weekday, n.candidates.map(c => c.ref)])).toEqual([

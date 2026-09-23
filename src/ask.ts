@@ -77,6 +77,8 @@ export interface AskSources {
   garments?: Garment[]
   outfits?: Outfit[]
   wears?: Wear[]
+  /** The member asking: "when did I last see Mum?" counts only their own visits. Absent counts everyone's, as local mode has no members. */
+  myId?: string | null
 }
 
 export type AskIntent = 'meals' | 'people' | 'journal' | 'money' | 'places' | 'tasks' | 'events' | 'wardrobe'
@@ -773,7 +775,7 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
   const today = localDayKey(now)
   const facts = [`Today is ${longDate(now, tz)} (${tz || 'local time'}).`]
   // your own past events count as seeing whoever was on them, as on the People card
-  const seen = seenTasks(src.tasks, src.entries, now)
+  const seen = seenTasks(src.tasks, src.entries, now, src.myId ?? null)
   for (const id of pq.personIds.slice(0, 3)) {
     const person = src.people.find(p => p.id === id && !p.deletedAt)
     if (!person) continue
@@ -791,7 +793,7 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
   for (const id of pq.placeIds) {
     const place = src.places.find(p => p.id === id && !p.deletedAt)
     if (!place) continue
-    const outings = outingsAt(place.id, src.tasks, src.meals, now)
+    const outings = outingsAt(place.id, src.tasks, src.meals, now, src.myId ?? null)
     const last = dayOf(outings[0]?.at)
     facts.push(
       last
