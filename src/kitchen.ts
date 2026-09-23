@@ -499,6 +499,79 @@ export function syncCookTask(task: Task, meal: Meal, recipes: readonly Recipe[])
   return { ...task, description, ...(checklist.length || task.checklist ? { checklist } : {}), updatedAt: newerStamp(task.updatedAt) }
 }
 
+/** What the person wrote on a cook task themselves: the checklist items they added, and their notes below Kitchen's line. */
+export function cookTaskAdditions(task: Pick<Task, 'checklist' | 'description'>): { steps: string[]; notes: string } {
+  const steps = (task.checklist ?? [])
+    .filter(i => !i.id.startsWith(COOK_STEP))
+    .map(i => i.text.trim())
+    .filter(Boolean)
+  return { steps, notes: ownCookNotes(task.description ?? '') }
+}
+
+const fold = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * "Save to recipe" on a cook task: what the person wrote while cooking — their
+ * own steps and notes — goes into the meal's recipe, so next time it is there
+ * from the start; a meal that is not a recipe yet becomes one, named after the
+ * dish, and is linked to it. The task then reads as if the recipe had always
+ * had them: the moved steps become recipe steps, keeping their ticks, and the
+ * notes move into the recipe's Notes. Null when there is nothing new to save.
+ */
+export function saveCookToRecipe(
+  task: Task,
+  meal: Meal,
+  recipes: readonly Recipe[],
+  o: { now: string; newId: () => string },
+): { recipe: Recipe; meal?: Meal; task: Task; created: boolean } | null {
+  if (meal.out) return null
+  const { steps, notes } = cookTaskAdditions(task)
+  const main = meal.recipeId ? recipes.find(r => r.id === meal.recipeId && !r.deletedAt) : undefined
+  let recipe: Recipe
+  let linked: Meal | undefined
+  if (main) {
+    const known = new Set((main.steps ?? []).map(fold))
+    const newSteps = steps.filter(s => !known.has(fold(s)))
+    const newNotes = notes && !fold(main.notes ?? '').includes(fold(notes)) ? notes : ''
+    if (!newSteps.length && !newNotes) return null
+    recipe = {
+      ...main,
+      steps: [...(main.steps ?? []), ...newSteps],
+      ...(newNotes ? { notes: [main.notes?.trim(), newNotes].filter(Boolean).join('\n') } : {}),
+      updatedAt: newerStamp(main.updatedAt),
+    }
+  } else {
+    const recipeNotes = [meal.notes?.trim(), notes].filter(Boolean).join('\n')
+    recipe = {
+      kind: 'recipe',
+      id: o.newId(),
+      name: meal.title.trim() || 'Untitled recipe',
+      ingredients: [],
+      ...(steps.length ? { steps } : {}),
+      tags: [],
+      ...(recipeNotes ? { notes: recipeNotes } : {}),
+      createdAt: o.now,
+      updatedAt: o.now,
+    }
+    linked = { ...meal, recipeId: recipe.id, updatedAt: newerStamp(meal.updatedAt) }
+  }
+  const mealNow = linked ?? meal
+  const after = [...recipes.filter(r => r.id !== recipe.id), recipe]
+  // the moved items leave the person's own list and come back as the recipe's
+  // steps; a step ticked before the move is still ticked after it
+  const moved = new Map((task.checklist ?? []).filter(i => !i.id.startsWith(COOK_STEP)).map(i => [fold(i.text), i.done]))
+  const kept = (task.checklist ?? []).filter(i => i.id.startsWith(COOK_STEP) || !steps.some(s => fold(s) === fold(i.text)))
+  const checklist = cookChecklist(mealNow, after, kept).map(i => (!i.done && moved.get(fold(i.text)) ? { ...i, done: true } : i))
+  const next: Task = {
+    ...task,
+    title: `Cook ${mealNow.slot}: ${mealLabel(mealNow)}`,
+    description: cookDescription(mealNow, after, ''),
+    ...(checklist.length || task.checklist ? { checklist } : {}),
+    updatedAt: newerStamp(task.updatedAt),
+  }
+  return { recipe, ...(linked ? { meal: linked } : {}), task: next, created: !main }
+}
+
 /** Every open cook task that is behind its meal or recipes, brought up to date: what the planner writes back. */
 export function cookTaskUpdates(tasks: readonly Task[], meals: readonly Meal[], recipes: readonly Recipe[]): Task[] {
   const byId = new Map(meals.map(m => [m.id, m]))

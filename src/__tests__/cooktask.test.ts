@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { COOK_NOTE_LINE, cookChecklist, cookDescription, cookTaskFor, cookTaskId, cookTaskUpdates, mealId, syncCookTask } from '../kitchen'
+import { COOK_NOTE_LINE, cookChecklist, cookDescription, cookTaskFor, cookTaskId, cookTaskUpdates, mealId, saveCookToRecipe, syncCookTask } from '../kitchen'
 import type { Meal, Recipe, Task } from '../types'
 
 // A shared dinner writes a cook task. It used to say "Planned in Kitchen for
@@ -174,5 +174,64 @@ describe('syncCookTask and cookTaskUpdates', () => {
     const [filled] = cookTaskUpdates([planned], [dinner], [steak])
     expect(filled.checklist).toHaveLength(7)
     expect(filled.description).not.toMatch(/No steps yet/)
+  })
+})
+
+describe('Save to recipe keeps what was written on a cook task for next time', () => {
+  const now = '2026-09-22T20:00:00.000Z'
+  const newId = () => 'r-new'
+
+  it('adds the steps and notes written on the task to the recipe, and the task keeps its ticks', () => {
+    const base = cookTaskFor(dinner, STAMP, [steak])
+    const withMine: Task = {
+      ...base,
+      checklist: [...(base.checklist ?? []).map((i, n) => (n === 0 ? { ...i, done: true } : i)), { id: 'own-1', text: 'Let the steak rest 5 mins', done: true }],
+      description: `${base.description}\n\nUse the cast iron`,
+    }
+    const saved = saveCookToRecipe(withMine, dinner, [steak], { now, newId })!
+    expect(saved.created).toBe(false)
+    expect(saved.recipe.steps).toEqual([...steak.steps!, 'Let the steak rest 5 mins'])
+    expect(saved.recipe.notes).toContain('Broccoli is in foil packet on top shelf')
+    expect(saved.recipe.notes).toContain('Use the cast iron')
+    expect(saved.recipe.updatedAt > steak.updatedAt).toBe(true)
+    // the moved step is now the recipe's, listed once and still ticked; the first step keeps its tick
+    const moved = saved.task.checklist!.filter(i => i.text === 'Let the steak rest 5 mins')
+    expect(moved).toHaveLength(1)
+    expect(moved[0]).toMatchObject({ done: true })
+    expect(moved[0].id.startsWith('cook~')).toBe(true)
+    expect(saved.task.checklist![0].done).toBe(true)
+    // the notes read from the recipe now, and nothing is left below Kitchen's line
+    expect(saved.task.description).toContain('Use the cast iron')
+    expect(saved.task.description!.endsWith(COOK_NOTE_LINE)).toBe(true)
+    // and the planner's own sync finds nothing more to do
+    expect(syncCookTask(saved.task, dinner, [saved.recipe])).toBeNull()
+  })
+
+  it('has nothing to save when the task holds only what the recipe has', () => {
+    expect(saveCookToRecipe(cookTaskFor(dinner, STAMP, [steak]), dinner, [steak], { now, newId })).toBeNull()
+  })
+
+  it('makes a meal that is not a recipe into one, and links the meal to it', () => {
+    const typed: Meal = { ...dinner, recipeId: undefined, title: "Grandma's chili", notes: 'Double the beans' }
+    const base = cookTaskFor(typed, STAMP, [])
+    const withMine: Task = {
+      ...base,
+      checklist: [
+        { id: 'own-1', text: 'Brown the beef', done: false },
+        { id: 'own-2', text: 'Simmer 2 hours', done: false },
+      ],
+    }
+    const saved = saveCookToRecipe(withMine, typed, [], { now, newId })!
+    expect(saved.created).toBe(true)
+    expect(saved.recipe).toMatchObject({ kind: 'recipe', id: 'r-new', name: "Grandma's chili", steps: ['Brown the beef', 'Simmer 2 hours'], notes: 'Double the beans' })
+    expect(saved.meal?.recipeId).toBe('r-new')
+    expect(saved.task.checklist!.map(i => i.text)).toEqual(['Brown the beef', 'Simmer 2 hours'])
+    expect(saved.task.description).not.toMatch(/No steps yet/)
+    expect(syncCookTask(saved.task, saved.meal!, [saved.recipe])).toBeNull()
+  })
+
+  it('leaves a meal eaten out alone', () => {
+    const out: Meal = { ...dinner, out: true, recipeId: undefined, title: 'Taco Bell' }
+    expect(saveCookToRecipe(cookTaskFor(out, STAMP, []), out, [], { now, newId })).toBeNull()
   })
 })

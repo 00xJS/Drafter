@@ -50,6 +50,11 @@ interface Props {
   /** Persist a duplicated task and open it (parent owns store + navigation). */
   onDuplicate?(copy: Task): void
   onClose(): void
+  /**
+   * On a shared meal's cook task: the recipe it follows (null when the meal is
+   * not a recipe yet), and how to keep what was written here in it for next time.
+   */
+  cookRecipe?: { name: string | null; onSave(t: Task): void }
 }
 
 export function TaskEditor({
@@ -71,6 +76,7 @@ export function TaskEditor({
   onDelete,
   onDuplicate,
   onClose,
+  cookRecipe,
 }: Props) {
   const persisted = !!task
   const [base] = useState<Task>(() => {
@@ -244,6 +250,13 @@ export function TaskEditor({
     onSave(next)
   }
 
+  /** The steps and notes written here go into the recipe; the task is saved and closed on the way. */
+  function saveToRecipe() {
+    if (!cookRecipe) return
+    flushSteps()
+    cookRecipe.onSave(merged())
+  }
+
   function duplicate() {
     if (!task || !onDuplicate) return
     flushSteps()
@@ -326,6 +339,18 @@ export function TaskEditor({
                     aiBusy={aiBusy}
                     onBreakDown={() => runAI('checklist')}
                   />
+                  {cookRecipe && (
+                    <div className="cook-recipe-save">
+                      <button type="button" className="btn" onClick={saveToRecipe}>
+                        {cookRecipe.name ? 'Save to recipe' : 'Save as recipe'}
+                      </button>
+                      <small className="muted">
+                        {cookRecipe.name
+                          ? `Adds the steps and notes you wrote here to “${cookRecipe.name}”, so they are there next time.`
+                          : 'Keeps this meal as a recipe, with the steps and notes you wrote here, to plan again.'}
+                      </small>
+                    </div>
+                  )}
                 </>
               )}
             </div>

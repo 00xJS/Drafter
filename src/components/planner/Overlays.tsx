@@ -2,6 +2,8 @@ import { Suspense, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mjs'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
 import { newerStamp } from '../../itemops'
+import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
+import type { Task } from '../../types'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
@@ -93,6 +95,41 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   // an answer's sources in Home → Chat (askRouting.ts)
   const openAskDoc = askDocOpener(p, closeSheet)
 
+  /**
+   * A shared meal's cook task can keep what was written on it: the steps and
+   * notes go into the meal's recipe (or a new one, for a meal that is not a
+   * recipe yet), so they are there the next time it is planned. One Undo puts
+   * the recipe, the meal and the task back.
+   */
+  const cookRecipeFor = (t: Task | undefined) => {
+    if (!t?.id.startsWith(COOK_TASK_PREFIX)) return undefined
+    const meal = store.meals.find(m => m.id === t.id.slice(COOK_TASK_PREFIX.length) && !m.deletedAt)
+    if (!meal || meal.out) return undefined
+    const recipe = meal.recipeId ? store.recipes.find(r => r.id === meal.recipeId && !r.deletedAt) : undefined
+    return {
+      name: recipe?.name ?? null,
+      onSave(current: Task) {
+        const saved = saveCookToRecipe(current, meal, store.recipes, { now: new Date().toISOString(), newId: () => crypto.randomUUID() })
+        if (!saved) {
+          store.upsert(current)
+          setEditor(null)
+          showToast(`Nothing new to add to “${recipe?.name ?? meal.title}” — it already has these steps and notes.`)
+          return
+        }
+        store.upsert(saved.recipe)
+        if (saved.meal) store.upsert(saved.meal)
+        store.upsert(saved.task)
+        setEditor(null)
+        showToast(saved.created ? `Saved “${saved.recipe.name}” as a recipe` : `Saved to “${saved.recipe.name}”`, () => {
+          if (saved.created) store.remove(saved.recipe.id)
+          else if (recipe) store.upsert({ ...recipe, updatedAt: newerStamp(saved.recipe.updatedAt) })
+          if (saved.meal) store.upsert({ ...meal, updatedAt: newerStamp(saved.meal.updatedAt) })
+          store.upsert({ ...current, updatedAt: newerStamp(saved.task.updatedAt) })
+        })
+      },
+    }
+  }
+
   return (
     <>
       {editor && (
@@ -134,6 +171,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               })
             }}
             onClose={() => setEditor(null)}
+            cookRecipe={cookRecipeFor(editor.task)}
           />
         </Layer>
       )}

@@ -103,6 +103,14 @@
   flex: 1;
   min-width: 160px;
 }
+/* a cook task's Save to recipe, under its checklist */
+.cook-recipe-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 12px;
+}
 
 .comment {
   background: var(--surface-2);

@@ -39,6 +39,16 @@ const render = (over: Partial<EditorProps> = {}) =>
 const descriptionOf = (html: string) => /<textarea[^>]*placeholder="What needs to happen[^"]*"[^>]*>([\s\S]*?)<\/textarea>/.exec(html)?.[1]
 
 describe('the task editor', () => {
+  it('offers Save to recipe on a cook task, naming its recipe, and Save as recipe for a meal that is not one', () => {
+    const cook = task({ id: 'task~cook~meal~2026-09-22~dinner', title: 'Cook dinner: Steak & veggies' })
+    const toRecipe = render({ task: cook, cookRecipe: { name: 'Steak & veggies', onSave: noop } })
+    expect(toRecipe).toContain('Save to recipe')
+    expect(toRecipe).toContain('“Steak &amp; veggies”')
+    expect(render({ task: cook, cookRecipe: { name: null, onSave: noop } })).toContain('Save as recipe')
+    // any other task has neither
+    expect(render({ task: task() })).not.toMatch(/Save (to|as) recipe/)
+  })
+
   it('has no project, notes, link or GitHub field — for a new task, a bill, or a saved task in a project', () => {
     for (const html of [render(), render({ preset: { bill: { kind: 'bill' } } }), render({ task: task({ projectId: 'pr1', githubUrl: 'https://github.com/00xJS/Drafter/issues/12' }) })]) {
       expect(html).not.toContain('No project')
