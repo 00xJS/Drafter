@@ -28,7 +28,7 @@ import type { AreaProps } from '../StatsLens'
  * neither place.
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
+  const { store, upsert, remove, household, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
   const { openPerson, openPlace, openCalendarDay, openKitchen, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
@@ -73,8 +73,8 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
     // — the piece would stay retired with no sign anything went wrong.
     onRetirePiece: g => {
       const gone = retired(g, true)
-      store.upsert(gone)
-      showToast(`Retired ${g.name}`, () => store.upsert({ ...retired(g, false), updatedAt: newerStamp(gone.updatedAt) }))
+      upsert(gone)
+      showToast(`Retired ${g.name}`, () => upsert({ ...retired(g, false), updatedAt: newerStamp(gone.updatedAt) }))
     },
     // the same rule the composer's Save follows: an outfit already saved is
     // named back rather than saved twice
@@ -84,8 +84,8 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
         showToast(`Already saved as “${outfit.name || outfitLabel(outfit.garmentIds, byId)}”`)
         return
       }
-      store.upsert(outfit)
-      showToast('Outfit saved', () => store.remove(outfit.id))
+      upsert(outfit)
+      showToast('Outfit saved', () => remove(outfit.id))
     },
     byId,
     wearIx,

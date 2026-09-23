@@ -99,7 +99,7 @@ export function blockerCandidates(tasks: readonly Task[], editing: Task | undefi
 
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
+  const { store, upsert, remove, restore, purge, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
   const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen } = p
@@ -135,20 +135,20 @@ export function Overlays({ p }: { p: PlannerCtx }) {
       onSave(current: Task) {
         const saved = saveCookToRecipe(current, meal, store.recipes, { now: new Date().toISOString(), newId: () => crypto.randomUUID() })
         if (!saved) {
-          store.upsert(current)
+          upsert(current)
           setEditor(null)
           showToast(`Nothing new to add to “${recipe?.name ?? meal.title}” — it already has these steps and notes.`)
           return
         }
-        store.upsert(saved.recipe)
-        if (saved.meal) store.upsert(saved.meal)
-        store.upsert(saved.task)
+        upsert(saved.recipe)
+        if (saved.meal) upsert(saved.meal)
+        upsert(saved.task)
         setEditor(null)
         showToast(saved.created ? `Saved “${saved.recipe.name}” as a recipe` : `Saved to “${saved.recipe.name}”`, () => {
-          if (saved.created) store.remove(saved.recipe.id)
-          else if (recipe) store.upsert({ ...recipe, updatedAt: newerStamp(saved.recipe.updatedAt) })
-          if (saved.meal) store.upsert({ ...meal, updatedAt: newerStamp(saved.meal.updatedAt) })
-          store.upsert({ ...current, updatedAt: newerStamp(saved.task.updatedAt) })
+          if (saved.created) remove(saved.recipe.id)
+          else if (recipe) upsert({ ...recipe, updatedAt: newerStamp(saved.recipe.updatedAt) })
+          if (saved.meal) upsert({ ...meal, updatedAt: newerStamp(saved.meal.updatedAt) })
+          upsert({ ...current, updatedAt: newerStamp(saved.task.updatedAt) })
         })
       },
     }
@@ -165,8 +165,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             projects={store.projects}
             people={store.people}
             places={store.places}
-            onSavePlace={p => store.upsert(p)}
-            onSavePerson={p => store.upsert(p)}
+            onSavePlace={p => upsert(p)}
+            onSavePerson={p => upsert(p)}
             members={inHousehold ? household.info!.members : []}
             myId={household.myId}
             candidates={candidates}
@@ -174,23 +174,23 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSave={t => {
               const before = store.tasks.find(x => x.id === t.id)
               const isNew = !before
-              store.upsert(t)
+              upsert(t)
               setEditor(null)
-              if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => store.remove(t.id))
+              if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => remove(t.id))
               if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
               if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
             }}
             onDiscard={() => showToast('Nothing to save — that task was empty.')}
-            onCommit={t => store.upsert(t)}
+            onCommit={t => upsert(t)}
             onDelete={id => {
               const t = store.tasks.find(x => x.id === id)
               if (t) deleteTask(t)
             }}
             onDuplicate={copy => {
-              store.upsert(copy)
+              upsert(copy)
               setEditor({ task: copy })
               showToast(`Duplicated “${copy.title || 'Untitled'}”`, () => {
-                store.remove(copy.id)
+                remove(copy.id)
                 setEditor(cur => (cur?.task?.id === copy.id ? null : cur))
               })
             }}
@@ -210,7 +210,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               // the editor only ever opens on the existing project, from its
               // a milestone in a calendar day or search; saving
               // closes it and leaves the person where they were
-              store.upsert(p)
+              upsert(p)
               setProjectEditor(null)
             }}
             onDelete={id => {
@@ -226,8 +226,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             }}
             templates={store.templates}
             onCreateMany={(p, ts) => {
-              store.upsert(p)
-              for (const t of ts) store.upsert(t)
+              upsert(p)
+              for (const t of ts) upsert(t)
               setProjectEditor(null)
               // a template or a drafted plan just added a batch of dated tasks
               // to the project: the Board shows them together, and the toast
@@ -237,7 +237,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               showToast(`Added ${ts.length} task${ts.length === 1 ? '' : 's'} to “${p.name}”`)
             }}
             onSaveTemplate={t => {
-              store.upsert(t)
+              upsert(t)
               showToast(`Template “${t.name}” saved — pick it in the project editor to add its tasks`)
             }}
           />
@@ -250,8 +250,8 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             event={attendance}
             people={store.people}
             places={store.places}
-            onSavePlace={p => store.upsert(p)}
-            onSavePerson={p => store.upsert(p)}
+            onSavePlace={p => upsert(p)}
+            onSavePerson={p => upsert(p)}
             onDone={(ids, placeId) => {
               logAttendance(attendance, ids, placeId)
               setAttendance(null)
@@ -304,7 +304,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             defaultStartIso={eventEditor.startIso}
             defaultWork={eventEditor.work}
             people={store.people}
-            onSavePerson={p => store.upsert(p)}
+            onSavePerson={p => upsert(p)}
             onSave={saveEvents}
             onDelete={deleteEvent}
             onClose={() => setEventEditor(null)}
@@ -357,11 +357,11 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             today={today}
             tomorrow={shiftDayKey(today, 1)}
             myId={household.myId}
-            onSaveRoutine={r => store.upsert(r)}
-            onSaveJournal={e => store.upsert(e)}
+            onSaveRoutine={r => upsert(r)}
+            onSaveJournal={e => upsert(e)}
             onDeleteJournal={id => {
-              store.remove(id)
-              showToast('Journal entry removed', () => store.restore([id]))
+              remove(id)
+              showToast('Journal entry removed', () => restore([id]))
             }}
             onApply={r => {
               closeSheet()
@@ -385,11 +385,11 @@ export function Overlays({ p }: { p: PlannerCtx }) {
           <ImHereSheet
             places={store.places}
             people={store.people}
-            onSavePlace={p => store.upsert(p)}
+            onSavePlace={p => upsert(p)}
             onLog={(place, peopleIds, note, here) => {
               closeSheet()
               if (here && place.lat == null && place.lon == null) {
-                store.upsert({ ...place, lat: here.lat, lon: here.lon, updatedAt: newerStamp(place.updatedAt) })
+                upsert({ ...place, lat: here.lat, lon: here.lon, updatedAt: newerStamp(place.updatedAt) })
               }
               logOuting({
                 at: new Date().toISOString(),
@@ -417,12 +417,12 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             // whose visits the suggestions read (v3.24)
             myId={household.myId}
             side={sheet.side}
-            onSavePlace={place => store.upsert(place)}
+            onSavePlace={place => upsert(place)}
             onSave={changes => {
               closeSheet()
-              for (const c of changes) store.upsert(c.after)
+              for (const c of changes) upsert(c.after)
               showToast(rhythmsSaved(changes), () => {
-                for (const c of changes) store.upsert({ ...c.before, updatedAt: newerStamp(c.after.updatedAt) })
+                for (const c of changes) upsert({ ...c.before, updatedAt: newerStamp(c.after.updatedAt) })
               })
             }}
             onClose={closeSheet}
@@ -442,10 +442,10 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             meals={store.meals}
             events={store.events}
             myId={household.myId}
-            onRead={n => store.upsert({ ...n, readAt: new Date().toISOString(), updatedAt: newerStamp(n.updatedAt) })}
+            onRead={n => upsert({ ...n, readAt: new Date().toISOString(), updatedAt: newerStamp(n.updatedAt) })}
             onReadAll={ns => {
               const at = new Date().toISOString()
-              for (const n of ns) store.upsert({ ...n, readAt: at, updatedAt: newerStamp(n.updatedAt) })
+              for (const n of ns) upsert({ ...n, readAt: at, updatedAt: newerStamp(n.updatedAt) })
             }}
             onOpen={hubOpener(p, closeSheet)}
             onClose={closeSheet}
@@ -490,7 +490,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             projectMap={projectMap}
             onRestore={id => {
               const row = store.allItems.find(x => x.id === id)
-              store.restore([id])
+              restore([id])
               // A restored entry goes back out to the mirrors too, or it lives only in
               // Drafter. Pushed as the live, newer record so the providers take it.
               if (row?.kind === 'event') mirrorEvent({ ...row, deletedAt: undefined, updatedAt: newerStamp(row.updatedAt) }, { revive: true })
@@ -500,7 +500,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               // read first: the purge leaves a content-free tombstone in its place
               const row = store.allItems.find(x => x.id === id)
               // queued until the server takes it: offline or refused, it stays unsynced and is retried
-              void store.purge([id]).then(done => {
+              void purge([id]).then(done => {
                 showToast(done ? 'Deleted forever' : 'Deleted here — it will be deleted everywhere at the next sync')
                 // a piece of clothing's photos, front and back, go with it, from this device and the bucket
                 if (row?.kind === 'garment') void deleteMedia(mediaIdsOf(row))

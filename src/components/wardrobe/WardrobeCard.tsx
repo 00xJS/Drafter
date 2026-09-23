@@ -45,8 +45,12 @@ interface Props {
   onLog(w: Wear, opts?: CardLog): void
   /** Pick…, Change and Forgot yesterday: Home → Wardrobe on a day. */
   onOpen(o: WardrobeOpen): void
-  /** The clock "before noon" is read from; the tests hand one in. */
-  now?: Date
+  /**
+   * The clock "before noon" is read from: Home's minute (useNow). Never a
+   * default read here — the React Compiler would keep the time the card first
+   * drew for as long as Home stays up.
+   */
+  now: Date
   /** Today's forecast; by default the one the briefing cached (the tests hand one in). */
   forecast?: Forecast | null
   /** A work day on your calendar: the one-tap looks that fit it come first, and so does a coat that does. */
@@ -119,7 +123,7 @@ function LookNote({ look, onSave }: { look: Wear; onSave(note: string): void }) 
  * in the wardrobe that buzzes. On a work day the looks whose pieces are all
  * for work, or for any time, come first.
  */
-export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now = new Date(), forecast: given, workDay = false }: Props) {
+export function WardrobeCard({ garments, outfits, wears, dayKey, onLog, onOpen, now, forecast: given, workDay = false }: Props) {
   const byId = useMemo(() => liveById(garments), [garments])
   const ix = useMemo(() => wearIndex(wears, dayKey), [wears, dayKey])
   const chips = useMemo(() => todaySuggestions(ix, outfits, byId, 3, workDay ? 'work' : undefined), [ix, outfits, byId, workDay])

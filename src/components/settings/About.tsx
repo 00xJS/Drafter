@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { APP_VERSION } from '../../appversion'
 import { isNative } from '../../native'
 
+/** Capacitor's App plugin, fetched on a phone only: out here, as the React Compiler cannot compile a component with an import() in it. */
+const loadApp = () => import('@capacitor/app')
+
 /**
  * Data → About: which build this is. On a phone every install used to say
  * "1.0"; the marketing version (1.0.1, 1.1.0) and Apple's build number now
@@ -13,7 +16,7 @@ export function About() {
 
   useEffect(() => {
     if (!isNative()) return
-    void import('@capacitor/app').then(({ App }) =>
+    void loadApp().then(({ App }) =>
       App.getInfo().then(info => {
         if (info.version) setVersion(info.version)
         if (info.build) setBuild(info.build)

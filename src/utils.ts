@@ -65,6 +65,7 @@ export function humanizeDuration(ms: number): string {
   return `${days}d`
 }
 
-export function timeAgo(iso: string): string {
-  return `${humanizeDuration(Date.now() - new Date(iso).getTime())} ago`
+/** "5m ago". A view hands in its clock (useNow): read here as it renders, the time would stay what it was when the view first drew. */
+export function timeAgo(iso: string, now: number = Date.now()): string {
+  return `${humanizeDuration(now - new Date(iso).getTime())} ago`
 }

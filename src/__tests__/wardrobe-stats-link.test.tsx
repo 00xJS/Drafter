@@ -22,8 +22,9 @@ import { elements, press, propsOf, textOf } from './rendered'
 // The Wardrobe takes a way in with an effect, and a server render runs none.
 // So while `effects.on` is set an effect runs as it is met, whenever its deps
 // have changed since the render before, as React runs it once the screen has
-// drawn; what it sets is applied by the same render, which calls the Wardrobe
-// again, so the last tree is the Wardrobe after it.
+// drawn, and an effect event is the render's own function; what it sets is
+// applied by the same render, which calls the Wardrobe again, so the last tree
+// is the Wardrobe after it.
 
 const effects = vi.hoisted(() => ({ on: false, at: 0, deps: [] as (readonly unknown[] | undefined)[] }))
 vi.mock('react', async importOriginal => {
@@ -36,7 +37,10 @@ vi.mock('react', async importOriginal => {
     effects.deps[at] = deps
     effect()
   }) as typeof react.useEffect
-  return { ...react, useEffect }
+  // an effect run as it is met is run inside the render, where React's own
+  // effect events refuse to be called: the render's own function stands in
+  const useEffectEvent = (<T extends (...args: never[]) => unknown>(fn: T): T => (effects.on ? fn : react.useEffectEvent(fn))) as typeof react.useEffectEvent
+  return { ...react, useEffect, useEffectEvent }
 })
 
 afterEach(() => {

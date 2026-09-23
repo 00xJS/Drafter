@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { readFolded, toggleFold, writeFolded } from '../homefolds'
 import { Fold, HomeFolds, useFold } from './HomeFold'
+import { CardBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import {
   MEAL_SLOT_META,
@@ -789,18 +790,20 @@ export function Today({
   const [morning] = useState(() => new Date().getHours() < 12)
   const wardrobeCard =
     garments && outfits && wears && onLogWear && onOpenWardrobe ? (
-      <WardrobeCard
-        garments={garments}
-        outfits={outfits}
-        wears={wears}
-        dayKey={todayKey}
-        // "Forgot yesterday?" asks before noon: the page's minute, not the card's own clock
-        now={at}
-        // a work day of your own on the calendar puts the looks for work first
-        workDay={workDaysOf(entries, myId).has(todayKey)}
-        onLog={onLogWear}
-        onOpen={onOpenWardrobe}
-      />
+      <CardBoundary name="the wardrobe card">
+        <WardrobeCard
+          garments={garments}
+          outfits={outfits}
+          wears={wears}
+          dayKey={todayKey}
+          // "Forgot yesterday?" asks before noon: the page's minute, not the card's own clock
+          now={at}
+          // a work day of your own on the calendar puts the looks for work first
+          workDay={workDaysOf(entries, myId).has(todayKey)}
+          onLog={onLogWear}
+          onOpen={onOpenWardrobe}
+        />
+      </CardBoundary>
     ) : null
   // NOT frozen: Today stays mounted across a night on the phone, and a routines
   // card still filtering by last night's hour would hide the morning list. The
@@ -979,7 +982,9 @@ export function Today({
   const focusTitles = new Set(focus.map(t => (t.title || '').trim().toLowerCase()).filter(Boolean))
 
   const journalCard = (
-    <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
+    <CardBoundary name="the journal card">
+      <JournalCard entries={journal} people={people} onSave={onSaveJournal} onDelete={onDeleteJournal} onOpenAll={onOpenJournal} />
+    </CardBoundary>
   )
 
   const endOfNextWeek = (() => {
@@ -1052,16 +1057,21 @@ export function Today({
         )}
       </div>
       {alarm}
-      {/* the day at a glance sits above the counters: what the day IS before what it owes */}
-      <BriefingCard events={events} habits={habits} dinner={dinner} now={at} name={name} cta={cta} myId={myId} nameOf={nameOf} />
-      <FocusCard
-        tasks={focus}
-        blocks={blocks}
-        onOpen={onOpen}
-        onStatus={onStatus}
-        onDefer={onDeferFromFocus ?? onDefer}
-        onEdit={onPlanDay ? () => onPlanDay('focus') : undefined}
-      />
+      {/* the day at a glance sits above the counters: what the day IS before what it owes.
+          Each card in a boundary of its own: one that fails leaves the rest of the day up */}
+      <CardBoundary name="the briefing">
+        <BriefingCard events={events} habits={habits} dinner={dinner} now={at} name={name} cta={cta} myId={myId} nameOf={nameOf} />
+      </CardBoundary>
+      <CardBoundary name="today's focus">
+        <FocusCard
+          tasks={focus}
+          blocks={blocks}
+          onOpen={onOpen}
+          onStatus={onStatus}
+          onDefer={onDeferFromFocus ?? onDefer}
+          onEdit={onPlanDay ? () => onPlanDay('focus') : undefined}
+        />
+      </CardBoundary>
       {morning && wardrobeCard}
       {freeTime.length > 0 && (
         <section className={card('wishlist', 'chart-card wishlist-nudge')}>
@@ -1166,7 +1176,11 @@ export function Today({
         </section>
       )}
 
-      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={at} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />}
+      {onPlanMeal && (
+        <CardBoundary name="the meal ideas">
+          <MealIdeasCard dayKey={todayKey} now={at} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />
+        </CardBoundary>
+      )}
 
       {sundayDraft?.summary && (
         <section className={card('weekreview', 'chart-card week-review-ready')}>
@@ -1195,9 +1209,13 @@ export function Today({
 
       {!morning && wardrobeCard}
 
-      <HabitsCard habits={habits} today={todayKey} onSave={onSaveHabit} onDelete={onDeleteHabit} />
+      <CardBoundary name="the habits">
+        <HabitsCard habits={habits} today={todayKey} onSave={onSaveHabit} onDelete={onDeleteHabit} />
+      </CardBoundary>
 
-      <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
+      <CardBoundary name="the routines">
+        <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
+      </CardBoundary>
 
       {top3.length > 0 && (
         <section className={card('weektop3', 'chart-card week-top3')}>

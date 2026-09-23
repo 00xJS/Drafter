@@ -6,6 +6,8 @@ import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMe
 import { cookedIndex, visitIndex, daysAgo, daysBetween, mealAt, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
 import { dateKey } from '../utils'
+import { useDayKey } from '../useDayKey'
+import { useNow } from '../useNow'
 import { aiFailureText } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
@@ -154,6 +156,16 @@ export function choiceFromSuggestion(s: MealSuggestion, ids: Record<string, { ki
   return s.newDish ? { kind: 'new', title: s.newDish, why, ai: true } : null
 }
 
+/** The assistant's ideas that point at something real, by row (`${date}|${slot}`). */
+function ideasFrom(suggestions: readonly MealSuggestion[], ids: Record<string, { kind: 'recipe' | 'place'; id: string }>, recipes: Recipe[], places: Place[]): Record<string, SlotChoice> {
+  const ideas: Record<string, SlotChoice> = {}
+  for (const s of suggestions) {
+    const choice = choiceFromSuggestion(s, ids, recipes, places)
+    if (choice) ideas[`${s.date}|${s.slot}`] = choice
+  }
+  return ideas
+}
+
 /**
  * The meals the accepted picks become. A slot planned meanwhile (another
  * device, the calendar) is never overwritten; a pick whose record has gone is
@@ -246,7 +258,11 @@ interface Props {
 
 export function MealPlanSheet({ week, items, events, recipes, places, meals, onCreatePlace, onCreateRecipe, onApply, onToast, onClose, suggest = suggestMeals, now, tz }: Props) {
   const at = () => now ?? new Date()
-  const todayKey = dateKey(at())
+  // today, and the minute for what counts as a visit yet, from the app's
+  // clock hooks: read as the sheet draws, the compiler would keep the first
+  const today = useDayKey()
+  const minute = useNow()
+  const todayKey = now ? dateKey(now) : today
   const weekStart = dateKey(week.start)
   const propose = (lunches: boolean) => proposeMealWeek({ items, events, weekStart, todayKey, lunches, now: at(), tz })
   const [lunches, setLunches] = useState(false)
@@ -260,7 +276,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
   const ids = useId()
   // Pick…'s picker says when each recipe was last cooked, as the Kitchen's does
   const cooked = useMemo(() => cookedIndex(recipes, meals, todayKey), [recipes, meals, todayKey])
-  const visited = useMemo(() => visitIndex(places, items.filter((i): i is Task => (i as Task | null)?.kind === 'task'), meals, now ?? new Date()), [places, items, meals, now])
+  const visited = useMemo(() => visitIndex(places, items.filter((i): i is Task => (i as Task | null)?.kind === 'task'), meals, now ?? new Date(minute)), [places, items, meals, now, minute])
 
   const setRow = (key: string, patch: Partial<RowState>) => setRows(cur => cur.map(r => (r.key === key ? { ...r, ...patch } : r)))
 
@@ -292,14 +308,11 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
       history: mealHistory(items, { dayKey: todayKey, now: at(), tz }),
     })
     setAssist({ status: 'busy' })
+    // the ideas are sorted out of the try (ideasFrom): the React Compiler
+    // leaves a component with a loop inside a try as written
     try {
       const res = await suggest(input)
-      const ideas: Record<string, SlotChoice> = {}
-      for (const s of res.suggestions) {
-        const choice = choiceFromSuggestion(s, refs, recipes, places)
-        if (choice) ideas[`${s.date}|${s.slot}`] = choice
-      }
-      setAssist({ status: 'done', ideas, note: res.note })
+      setAssist({ status: 'done', ideas: ideasFrom(res.suggestions, refs, recipes, places), note: res.note })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setAssist({ status: 'failed', message: aiFailureText(message, { unavailable: 'The assistant isn’t available here — the picks above still work.', failed: 'Couldn’t get ideas' }) })

@@ -137,3 +137,22 @@ export function TopBar({ p }: { p: PlannerCtx }) {
     </header>
   )
 }
+
+/**
+ * The header's stand-in when it fails to draw (Planner's boundary around it):
+ * the screen under it stays up, and this says so, with a way to try again.
+ */
+export function TopBarCrash({ retry }: { retry(): void }) {
+  return (
+    <header className="topbar" role="alert">
+      <span className="warn">The top bar hit a problem. Your data is safe.</span>
+      <span className="spacer" />
+      <button type="button" className="btn subtle" onClick={retry}>
+        Try again
+      </button>
+      <button type="button" className="btn subtle" onClick={() => window.location.reload()}>
+        Reload
+      </button>
+    </header>
+  )
+}

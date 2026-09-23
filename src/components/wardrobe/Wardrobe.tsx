@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { workDaysOf } from '../../calgrid'
 import { newerStamp } from '../../itemops'
 import { shortDay } from '../../kitchen'
@@ -107,9 +107,10 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
       else if (open.another) setLookFocus({ another: true })
     }
   }
+  // once per way in: an effect event, so the parent's setter is not a reason to run again
+  const consumed = useEffectEvent(() => onOpenConsumed())
   useEffect(() => {
-    if (open) onOpenConsumed()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per way in; the callback is the parent's setter
+    if (open) consumed()
   }, [open])
 
   /** Write a log and say so; Undo removes a new look, or writes back the copy an edit was made on. */

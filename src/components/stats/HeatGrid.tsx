@@ -28,7 +28,8 @@ export function heatDays(end: Date, weeks: number): string[] {
   return Array.from({ length: weeks * 7 }, (_, i) => dateKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)))
 }
 
-export function HeatGrid({ counts, end = new Date(), weeks = 53, label, noun = 'day', tone }: { counts: ReadonlyMap<string, number>; end?: Date; weeks?: number; label: string; noun?: string; tone?: string }) {
+/** `end` is the caller's clock (useDayKey, useNow): a default read here would be the day the grid first drew, kept by the React Compiler for as long as it stays up. */
+export function HeatGrid({ counts, end, weeks = 53, label, noun = 'day', tone }: { counts: ReadonlyMap<string, number>; end: Date; weeks?: number; label: string; noun?: string; tone?: string }) {
   const days = heatDays(end, weeks)
   const today = dateKey(end)
   const most = Math.max(1, ...days.map(d => counts.get(d) ?? 0))

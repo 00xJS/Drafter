@@ -35,7 +35,7 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
  * event editors here, over the chat, and saving one is the apply.
  */
 export function ChatScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, allEvents, setPushed, chatSide, setChatSide, markChatSeen, showToast } = p
+  const { store, upsert, remove, restore, household, allEvents, setPushed, chatSide, setChatSide, markChatSeen, showToast } = p
   const [editing, setEditing] = useState<Editing | null>(null)
   // a record named in an answer opens where it lives, which means leaving the chat
   const leave = () => setPushed(null)
@@ -77,8 +77,8 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
     events: store.events,
     myId: store.myId,
     inHousehold: p.inHousehold,
-    upsert: store.upsert,
-    remove: store.remove,
+    upsert,
+    remove,
     setStatus: p.applyStatus,
     pushToProjectBoard: p.pushToProjectBoard,
     saveMeal: p.saveMeal,
@@ -87,8 +87,8 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
     removeEvent: id => void p.removeEvent(id),
     createRecipe: p.createRecipeInline,
     createPlace: p.createPlaceInline,
-    savePerson: person => store.upsert(person),
-    savePlace: place => store.upsert(place),
+    savePerson: person => upsert(person),
+    savePlace: place => upsert(place),
     toast: showToast,
     editTask: (preset, done) => setEditing({ kind: 'task', preset, done }),
     editEvent: (entry, done) => setEditing({ kind: 'event', entry, done }),
@@ -128,15 +128,15 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
           myId: store.myId,
         }}
         tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
-        onSendMessage={m => store.upsert(m)}
+        onSendMessage={m => upsert(m)}
         onRemoveMessage={id => {
-          store.remove(id)
-          showToast('Message deleted', () => store.restore([id]))
+          remove(id)
+          showToast('Message deleted', () => restore([id]))
         }}
-        onWriteTurn={t => store.upsert(t)}
+        onWriteTurn={t => upsert(t)}
         onClearChat={ids => {
-          for (const id of ids) store.remove(id)
-          showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => store.restore(ids))
+          for (const id of ids) remove(id)
+          showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => restore(ids))
         }}
         onOpen={openAskDoc}
         shell={shell}
@@ -151,19 +151,19 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
             projects={store.projects}
             people={store.people}
             places={store.places}
-            onSavePlace={place => store.upsert(place)}
-            onSavePerson={person => store.upsert(person)}
+            onSavePlace={place => upsert(place)}
+            onSavePerson={person => upsert(person)}
             members={p.inHousehold ? (household.info?.members ?? []) : []}
             myId={household.myId}
             candidates={store.tasks.filter(t => t.status !== 'canceled')}
             getLatest={id => store.tasks.find(x => x.id === id)}
             onSave={t => {
-              store.upsert(t)
+              upsert(t)
               setEditing(null)
               editing.done(t)
             }}
             onDiscard={() => showToast('Nothing to save — that task was empty.')}
-            onCommit={t => store.upsert(t)}
+            onCommit={t => upsert(t)}
             // a task not saved yet has nothing to delete
             onDelete={() => setEditing(null)}
             onClose={() => setEditing(null)}
@@ -177,7 +177,7 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
             entry={editing.entry}
             defaultStartIso={editing.entry.allDay ? `${editing.entry.start}T09:00` : editing.entry.start}
             people={store.people}
-            onSavePerson={person => store.upsert(person)}
+            onSavePerson={person => upsert(person)}
             onSave={entries => {
               p.saveEvents(entries)
               const first = entries[0]

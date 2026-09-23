@@ -155,12 +155,13 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     void flushPendingMedia()
     setSyncing(true)
     requestWeatherRefresh()
-    try {
-      // asked for: each feed's host is asked, not the server's copy of a moment ago
+    // asked for: each feed's host is asked, not the server's copy of a moment ago
+    const refreshAll = async () => {
       await Promise.allSettled([store.syncNowManual(), calendars.refresh({ fresh: true }), googlePush.pullNow(), microsoftSync.pullNow()])
-    } finally {
-      setSyncing(false)
     }
+    // .finally rather than try/finally, which the React Compiler cannot
+    // compile; refreshAll is async, so one that throws as it starts lands here too
+    await refreshAll().finally(() => setSyncing(false))
   }
 
   /** Our own entries go out to at least one calendar — Google, or any Outlook account — so a time block shows there as busy. */

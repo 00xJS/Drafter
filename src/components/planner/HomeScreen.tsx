@@ -21,7 +21,9 @@ function todayEveningIso(): string {
  * link to all of them — linking is not owning.
  */
 export function HomeScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, allEvents, sourceMap, showToast, goTasksTab } = p
+  // the lists from the store; the callbacks on its actions, so they stay the
+  // same through every edit and sync round and Today is not drawn again for them
+  const { store, upsert, remove, restore, household, allEvents, sourceMap, showToast, goTasksTab } = p
   const { setView, setKitchenRecipe, openJournal, openReview, openKitchen, openWardrobe } = p
   const { openTask, newTask, changeStatus, defer, deferAll } = p
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
@@ -38,7 +40,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onPlanAt={planAt}
           onPlanOccasion={planOccasion}
           onSaw={sawThem}
-          onSaveReview={r => store.upsert(r)}
+          onSaveReview={r => upsert(r)}
           projects={store.projects}
           events={allEvents}
           sourceMap={sourceMap}
@@ -58,26 +60,26 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             openKitchen()
           }}
           journal={store.journal}
-          onSaveJournal={e => store.upsert(e)}
+          onSaveJournal={e => upsert(e)}
           onDeleteJournal={id => {
-            store.remove(id)
-            showToast('Journal entry removed', () => store.restore([id]))
+            remove(id)
+            showToast('Journal entry removed', () => restore([id]))
           }}
           onOpenJournal={() => openJournal(localDayKey())}
           name={household.info?.me.displayName ?? undefined}
           // whose work day is whose on the briefing strip (v3.24)
           nameOf={id => memberName(household.info, id)}
           habits={store.habits}
-          onSaveHabit={h => store.upsert(h)}
+          onSaveHabit={h => upsert(h)}
           onDeleteHabit={id => {
-            store.remove(id)
-            showToast('Habit removed', () => store.restore([id]))
+            remove(id)
+            showToast('Habit removed', () => restore([id]))
           }}
           routines={store.routines}
-          onSaveRoutine={r => store.upsert(r)}
+          onSaveRoutine={r => upsert(r)}
           onDeleteRoutine={id => {
-            store.remove(id)
-            showToast('Routine removed', () => store.restore([id]))
+            remove(id)
+            showToast('Routine removed', () => restore([id]))
           }}
           // the daily routines: whose focus is whose, each focus task's time
           // block, the strip's Plan my day / Shut down, Sunday's Plan next
@@ -95,9 +97,9 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           outfits={store.outfits}
           wears={store.wears}
           onLogWear={(w, { before, msg = 'Logged for today' } = {}) => {
-            store.upsert(w)
+            upsert(w)
             // Undo takes a new look away, or writes back the look an edit was made on, stamped newer again
-            if (msg !== null) showToast(msg, () => (before ? store.upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : store.remove(w.id)))
+            if (msg !== null) showToast(msg, () => (before ? upsert({ ...before, updatedAt: newerStamp(w.updatedAt) }) : remove(w.id)))
           }}
           onOpenWardrobe={openWardrobe}
           // the owner's sync alarm: the hourly check found the server refusing

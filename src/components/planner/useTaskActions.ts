@@ -12,6 +12,13 @@ import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
 
+/**
+ * The assistant's code (ai.ts), fetched by the first capture that asks the
+ * model, never with the shell. Out here: the React Compiler cannot compile a
+ * hook with an import() in it.
+ */
+const loadAi = () => import('../../ai')
+
 interface Deps {
   store: Store
   showToast: ReturnType<typeof useToast>['showToast']
@@ -57,9 +64,8 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     showToast(inInbox(first) ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
     const personNames = store.people.map(p => p.name)
     if (!captureNeedsModel(line, offline, personNames)) return
-    // the assistant's code (ai.ts) is fetched here, by the first capture that
-    // asks the model, never with the shell
-    void import('../../ai')
+    // the assistant's code is fetched here, by the first capture that asks the model (loadAi)
+    void loadAi()
       .then(ai => ai.parseCapture(line, { now, personNames }))
       .then(parsed => {
         const cur = tasksRef.current.find(t => t.id === id)

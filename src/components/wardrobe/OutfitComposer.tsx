@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { shiftDayKey } from '../../journal'
 import { shortDay } from '../../kitchen'
 import { GARMENT_TYPE_META, LOOK_NOTE_MAX, type Garment, type GarmentType, type Outfit, type Wear } from '../../types'
@@ -170,9 +170,10 @@ export function OutfitComposer(props: Props) {
       setNote('')
     } else if (focus?.wearId && dayLooks.some(w => w.id === focus.wearId)) setEditingId(focus.wearId)
   }
+  // once per way in: an effect event, so the parent's setter is not a reason to run again
+  const focusUsed = useEffectEvent(() => onFocusConsumed?.())
   useEffect(() => {
-    if (focus) onFocusConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per way in; the callback is the parent's setter
+    if (focus) focusUsed()
   }, [focus])
   const [shownLook, setShownLook] = useState(resolvedId)
   if (shownLook !== resolvedId) {
@@ -197,9 +198,10 @@ export function OutfitComposer(props: Props) {
     setPendingSeen(pending)
     if (pending) setSel(s => load(s, pending, rows, byId))
   }
+  // once per outfit asked for, as the way in above
+  const pendingUsed = useEffectEvent(() => onPendingUsed?.())
   useEffect(() => {
-    if (pending) onPendingUsed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per outfit asked for; the callback is the parent's setter
+    if (pending) pendingUsed()
   }, [pending])
 
   const { slots: chosen, accessories, both, onepieceMode, open, pieces, dressed } = chosenIn(sel, rows, openRows)

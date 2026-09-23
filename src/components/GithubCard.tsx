@@ -3,6 +3,7 @@ import { GITHUB_STATE_META, GithubCard as Card, fetchGithubCard, githubLabel, pa
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
 import { timeAgo } from '../utils'
+import { useNow } from '../useNow'
 
 interface Props {
   url: string
@@ -20,6 +21,12 @@ export function GithubCard({ url, onUnlink }: Props) {
   // the card's own ground (--surface-2, 'raised')
   const theme = useTheme()
 
+  // the relative time moves on with the clock, not only when the card reloads
+  const now = useNow()
+
+  // No `finally` here, and nothing in a try that picks a value: the React
+  // Compiler leaves a component with either as written. A catch that only
+  // sets state cannot throw past what follows it.
   const load = async (force = false) => {
     if (!ref) return
     setBusy(true)
@@ -28,9 +35,8 @@ export function GithubCard({ url, onUnlink }: Props) {
       setCard(await fetchGithubCard(url, force))
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   // another link: its card, never the last one's, from the render that shows it
@@ -102,7 +108,7 @@ export function GithubCard({ url, onUnlink }: Props) {
         {card?.type === 'repo' && card.openIssues !== undefined && <span>{card.openIssues} open issues</span>}
         {card?.type === 'repo' && card.stars !== undefined && <span>★ {card.stars}</span>}
         {card?.type === 'project' && card.items !== undefined && <span>{card.items} items</span>}
-        {card?.updatedAt && <span>updated {timeAgo(card.updatedAt)}</span>}
+        {card?.updatedAt && <span>updated {timeAgo(card.updatedAt, now)}</span>}
       </div>
       {card?.description && <p className="gh-desc">{card.description}</p>}
       {card && card.labels.length > 0 && (
@@ -121,16 +127,16 @@ export function GithubCard({ url, onUnlink }: Props) {
             className="btn subtle"
             disabled={busy}
             onClick={async () => {
+              const next = card.state === 'open' ? 'close' : 'reopen'
               setBusy(true)
               setError('')
               try {
-                await setIssueState(url, card.state === 'open' ? 'close' : 'reopen')
+                await setIssueState(url, next)
                 await load(true)
               } catch (e) {
                 setError((e as Error).message)
-              } finally {
-                setBusy(false)
               }
+              setBusy(false)
             }}
           >
             {card.state === 'open' ? 'Close issue on GitHub' : 'Reopen issue'}

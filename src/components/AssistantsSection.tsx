@@ -230,17 +230,19 @@ export function AssistantsSection({ className = 'settings-section g-assistants',
     if (!clean) return
     setBusy(true)
     setError('')
+    const scopes: AgentScope[] = ['read', ...(canWrite ? (['write'] as const) : []), ...(journal ? (['journal'] as const) : [])]
+    // no `finally`, and nothing in the try that picks a value: the React
+    // Compiler leaves a component with either as written. A catch that only
+    // sets state cannot throw past it.
     try {
-      const scopes: AgentScope[] = ['read', ...(canWrite ? (['write'] as const) : []), ...(journal ? (['journal'] as const) : [])]
       const out = await api.create({ name: clean, scopes })
       setCreated(out)
       setName('')
       setInfo(prev => (prev ? { ...prev, connections: [out.connection, ...prev.connections] } : prev))
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   const revoke = async (id: string) => {

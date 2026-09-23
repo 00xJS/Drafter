@@ -278,6 +278,30 @@ function storedNotices(targets: readonly MirrorSpec[]): Record<string, string> {
 }
 
 /**
+ * One pass over `list`, with the engine loaded on the way: a device with no
+ * mirror on never fetches it. What the pass reads (the records, whose they
+ * are, where a pull's changes go) is read from the refs as it goes, as the
+ * render last committed left them. Out here, not in the hook: the React
+ * Compiler leaves a hook with an import() in it as written.
+ */
+async function mirrorPassOf(
+  list: MirrorSpec[],
+  names: Record<string, string>,
+  pull: boolean,
+  from: { items: { current: Item[] }; myId: { current: string | null | undefined }; onPulled: { current: ((pulled: MirrorPulled) => void) | undefined } },
+): Promise<PassResult> {
+  try {
+    const engine = await import('./calendars')
+    const passTargets = list.map(spec => engine.passTarget(spec, from.myId.current, () => from.onPulled.current))
+    return await engine.mirrorPass(passTargets, from.items.current, names, from.myId.current, { pull })
+  } catch (e) {
+    // its chunk would not load: a failed pass like any other, retried with the same backoff
+    const why = (e as Error).message || 'The calendar mirror could not load.'
+    return { accountErrors: Object.fromEntries(list.map(t => [t.id, why])), waiting: 0, more: false, failed: true, notices: {}, signIn: {} }
+  }
+}
+
+/**
  * The React side both mirrors share: when a pass runs, and what it reports. A
  * pass runs a few seconds after any change, on focus, every half hour and when
  * the network comes back. Whatever is still owed afterwards is retried on its
@@ -311,14 +335,17 @@ function useMirrorSync(
   const debounce = useRef<number | undefined>(undefined)
   const [foreground] = useState(() => foregroundGate())
 
-  // named, so a retry can queue the next pass on the very function that is running
-  const trigger = useCallback(function requestPass(pull: boolean, asked = false): Promise<void> {
-    // one pass at a time; a request made mid-pass gets a pass of its own right
-    // after, and waits for it, so pull-to-refresh never reports done early
-    queued.current = { pull: pull || !!queued.current?.pull, asked: asked || !!queued.current?.asked }
-    if (inflight.current) return inflight.current
-    const loop = (async () => {
-      try {
+  const trigger = useCallback((pull: boolean, asked = false): Promise<void> => {
+    // The pass itself, named so a retry can queue the next pass on the very
+    // function that is running: an arrow in a const, as the React Compiler
+    // leaves a hook with a named function expression, or one that calls
+    // itself through its own useCallback, as written.
+    const requestPass = (pull: boolean, asked = false): Promise<void> => {
+      // one pass at a time; a request made mid-pass gets a pass of its own right
+      // after, and waits for it, so pull-to-refresh never reports done early
+      queued.current = { pull: pull || !!queued.current?.pull, asked: asked || !!queued.current?.asked }
+      if (inflight.current) return inflight.current
+      const loop = (async () => {
         while (queued.current) {
           const want = queued.current
           queued.current = null
@@ -326,17 +353,7 @@ function useMirrorSync(
           if (list.length === 0) continue
           setState(s => ({ ...s, pending: true }))
           const names = Object.fromEntries(projectsRef.current.map(p => [p.id, p.name]))
-          let pass: PassResult
-          try {
-            // the engine loads with the first pass: a device with no mirror on never fetches it
-            const engine = await import('./calendars')
-            const passTargets = list.map(spec => engine.passTarget(spec, myIdRef.current, () => onPulledRef.current))
-            pass = await engine.mirrorPass(passTargets, itemsRef.current, names, myIdRef.current, { pull: want.pull })
-          } catch (e) {
-            // its chunk would not load: a failed pass like any other, retried with the same backoff
-            const why = (e as Error).message || 'The calendar mirror could not load.'
-            pass = { accountErrors: Object.fromEntries(list.map(t => [t.id, why])), waiting: 0, more: false, failed: true, notices: {}, signIn: {} }
-          }
+          const pass = await mirrorPassOf(list, names, want.pull, { items: itemsRef, myId: myIdRef, onPulled: onPulledRef })
           for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
           settleSignIns(list, pass, new Date().toISOString())
           if (want.pull) foreground.done()
@@ -364,12 +381,19 @@ function useMirrorSync(
           }
           if (delay) retry.current.timer = window.setTimeout(() => void requestPass(false), delay)
         }
-      } finally {
-        inflight.current = null
-      }
-    })()
-    inflight.current = loop
-    return loop
+      })()
+        // .finally rather than try/finally, which the React Compiler cannot
+        // compile. It runs once `loop` is set below, even when the pass had
+        // nothing to ask and never waited, so no pass is left marked running;
+        // and a request made as the pass was finishing gets one of its own.
+        .finally(() => {
+          inflight.current = null
+          if (queued.current) void requestPass(false)
+        })
+      inflight.current = loop
+      return loop
+    }
+    return requestPass(pull, asked)
   }, [foreground])
 
   const signature = targets.map(t => t.key).join('\n')

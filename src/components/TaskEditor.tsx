@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react'
 import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
@@ -56,6 +56,21 @@ interface Props {
    * not a recipe yet), and how to keep what was written here in it for next time.
    */
   cookRecipe?: { name: string | null; onSave(t: Task): void }
+}
+
+/**
+ * What a new task's sentence says beyond its title: fields to take at once (a
+ * date alone), a proposal to review, or nothing. Out here, not in the editor:
+ * the React Compiler leaves a component with a choice inside a try as written.
+ */
+async function openingCapture(seed: { text: string; url?: string }, title: string, personNames: string[]): Promise<{ simple: CapturedFields } | { proposal: CapturedFields } | null> {
+  const parsed = await parseCapture(seed.text || seed.url || title, { personNames })
+  const extra = parsed.dueAt || parsed.priority || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence || parsed.title !== title
+  if (!extra) return null
+  // a date alone goes in with no Review tap, and so under the title as
+  // typed (simpleDateCapture), into fields nobody has typed in since
+  const simple = simpleDateCapture(parsed, seed.text || title)
+  return simple ? { simple } : { proposal: parsed }
 }
 
 /** The buttons that ask a server for something: the ✨ rewrites, Break it down, Suggest tags, and Create a GitHub issue. */
@@ -133,65 +148,62 @@ export function TaskEditor({
   /** Steps typed into since they were last written (see pendingRenames). */
   const typed = useRef(new Set<string>())
 
-  useEffect(() => {
-    if (task || !capture) return
-    const seed = captureSeed(base.title, base.description, base.link)
-    if (!seed.text.trim() && !seed.url) return
-    let live = true
-    ;(async () => {
-      setAiBusy('capture')
-      try {
-        // a pasted or shared URL goes into the description, where it shows as a
-        // link (a shared link is there already: the form opens with it)
-        if (seed.url) set(f => ({ description: appendOnce(f.description, seed.url!) }))
-        // people only: there is one home project, and a sentence never files a new task under one
-        const parsed = await parseCapture(seed.text || seed.url || base.title, {
-          personNames: people.map(p => p.name),
-        })
-        if (!live) return
-        const extra =
-          parsed.dueAt ||
-          parsed.priority ||
-          parsed.peopleNames?.length ||
-          parsed.tags?.length ||
-          parsed.recurrence ||
-          parsed.title !== base.title
-        if (!extra) return
-        // a date alone goes in with no Review tap, and so under the title as
-        // typed (simpleDateCapture), into fields nobody has typed in since
-        const simple = simpleDateCapture(parsed, seed.text || base.title)
-        if (simple) {
-          applyCapture(simple, initForm(base))
-          return
-        }
-        setCaptureProposal(parsed)
-      } catch {
-        /* offline / no key — deterministic path already inside parseCapture */
-      } finally {
-        if (live) setAiBusy(null)
-      }
-    })()
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   function applyCapture(c: CapturedFields, asRead?: Pick<ReturnType<typeof initForm>, 'title' | 'dueAt'>) {
     dispatch({ type: 'applyCapture', capture: c, people, asRead })
     setCaptureProposal(null)
   }
 
+  // A new task's sentence, read once as the editor opens, from what it opened
+  // on: an effect event, so no later render asks again. The busy mark goes up
+  // as the reading starts and comes down when it is done.
+  const captureOnOpen = useEffectEvent(async (alive: () => boolean) => {
+    if (task || !capture) return
+    const seed = captureSeed(base.title, base.description, base.link)
+    if (!seed.text.trim() && !seed.url) return
+    setAiBusy('capture')
+    // a pasted or shared URL goes into the description, where it shows as a
+    // link (a shared link is there already: the form opens with it)
+    if (seed.url) set(f => ({ description: appendOnce(f.description, seed.url!) }))
+    // people only: there is one home project, and a sentence never files a new task under one
+    await openingCapture(seed, base.title, people.map(p => p.name))
+      .then(found => {
+        if (!alive() || !found) return
+        if ('simple' in found) applyCapture(found.simple, initForm(base))
+        else setCaptureProposal(found.proposal)
+      })
+      .catch(() => {
+        /* offline / no key — deterministic path already inside parseCapture */
+      })
+      .finally(() => {
+        if (alive()) setAiBusy(null)
+      })
+  })
+  useEffect(() => {
+    let live = true
+    // the reading runs on its own; nothing here waits for it
+    void (async () => {
+      await captureOnOpen(() => live)
+    })()
+    return () => {
+      live = false
+    }
+  }, [])
+
   async function runAI(kind: 'tags' | 'checklist' | RefineMode) {
     const source: AiSource = kind === 'tags' || kind === 'checklist' ? kind : 'refine'
     setAiError(source, '')
     setAiBusy(kind)
+    // Worked out before the try, and no `finally`: the React Compiler leaves a
+    // component with a choice inside a try, or a finally, as written. The
+    // catch only sets state, so the line after it runs however the ask ended.
+    const refining = kind === 'clarify' || kind === 'expand' || kind === 'summarize'
+    const about = description || title
     try {
-      if (kind === 'clarify' || kind === 'expand' || kind === 'summarize') {
+      if (refining) {
         const text = await refineDescription(kind, title, description)
         setProposal({ mode: kind, text })
       } else if (kind === 'tags') {
-        const suggested = await suggestTags(description || title)
+        const suggested = await suggestTags(about)
         set(f => {
           const existing = f.tags
             .split(',')
@@ -205,9 +217,8 @@ export function TaskEditor({
       }
     } catch (e) {
       setAiError(source, (e as Error).message)
-    } finally {
-      setAiBusy(null)
     }
+    setAiBusy(null)
   }
 
   /** The freshest copy there is: a save merges onto it, and on a saved task steps and comments write straight onto it. */

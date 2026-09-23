@@ -95,13 +95,14 @@ export function FindAddress({
     setBusy(true)
     setError('')
     setFound(null)
+    // no `finally`: the React Compiler leaves a component that has one as
+    // written, and a catch that only sets state cannot throw past this line
     try {
       setFound(await run(q))
     } catch (e) {
       setError(lookupMessage(e))
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
   return (
     <div className="find-address">

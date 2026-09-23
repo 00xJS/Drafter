@@ -218,6 +218,8 @@ export function MissingAddresses({ places, lookup, onSavePlace, onDone }: { plac
     }
     inFlight.current = true
     setState({ phase: 'looking' })
+    // no `finally`: the React Compiler leaves a component that has one as
+    // written, and this catch cannot throw past the line after it
     try {
       const found = await run(latest(queue[i])!.name)
       if (alive.current) setState({ phase: 'results', found })
@@ -225,9 +227,8 @@ export function MissingAddresses({ places, lookup, onSavePlace, onDone }: { plac
       // no server, or not signed in: every other place would say the same
       const fatal = e instanceof LookupError && (e.kind === 'server' || e.kind === 'signin')
       if (alive.current) setState({ phase: 'error', error: lookupMessage(e), fatal })
-    } finally {
-      inFlight.current = false
     }
+    inFlight.current = false
   }
   const next = (outcome: 'saved' | 'skipped') => {
     if (inFlight.current) return

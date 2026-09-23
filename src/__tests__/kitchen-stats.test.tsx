@@ -574,7 +574,7 @@ describe('Kitchen’s fourth segment', () => {
     expect(storage.setItem).not.toHaveBeenCalled()
     // seen, it is let go of: Kitchen tells the shell, which clears it, so the same way in works twice
     const kitchen = readFileSync(fileURLToPath(new URL('../components/Kitchen.tsx', import.meta.url)), 'utf8')
-    expect(kitchen).toMatch(/useEffect\(\(\) => \{\s*if \(openTab\) onOpenTabConsumed\?\.\(\)[^}]*\}, \[openTab\]\)/)
+    expect(kitchen).toMatch(/const openTabUsed = useEffectEvent\(\(\) => onOpenTabConsumed\?\.\(\)\)\s*useEffect\(\(\) => \{\s*if \(openTab\) openTabUsed\(\)\s*\}, \[openTab\]\)/)
     const screen = readFileSync(fileURLToPath(new URL('../components/planner/KitchenScreen.tsx', import.meta.url)), 'utf8')
     expect(screen).toContain('onOpenTabConsumed={() => setKitchenOpen(null)}')
   })

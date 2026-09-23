@@ -7,7 +7,7 @@ import { TASKS_TABS } from './routes'
 
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
-  const { store, household, projectMap, inHousehold } = p
+  const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
   const { openTask, newTask, deleteTask, changeStatus, showToast } = p
   // counted here rather than in the list: the Trash button lives on the
@@ -86,10 +86,10 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           // the one completion path with a real undo: it restores the bill and
           // removes next month's occurrence, so an accidental tap costs nothing
           onMarkPaid={t => changeStatus(t.id, 'done')}
-          onSaveAccount={a => store.upsert(a)}
+          onSaveAccount={a => upsert(a)}
           onRemoveAccount={id => {
-            store.remove(id)
-            showToast('Account removed', () => store.restore([id]))
+            remove(id)
+            showToast('Account removed', () => restore([id]))
           }}
         />
       )}
@@ -98,7 +98,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           projects={store.projects}
           project={notesProject}
           getLatest={id => store.projects.find(x => x.id === id)}
-          onSave={p => store.upsert(p)}
+          onSave={p => upsert(p)}
           onSelectProject={id => setNotesProjectId(id)}
           onBack={() => setNotesProjectId(null)}
           onCreateTask={(title, projectId) => newTask({ title, projectId, status: 'todo' })}
@@ -109,11 +109,11 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           myId={household.myId}
           inHousehold={inHousehold}
           nameOf={id => memberName(household.info, id)}
-          onSaveNote={note => store.upsert(note)}
+          onSaveNote={note => upsert(note)}
           onDeleteNote={id => {
             const note = store.notes.find(x => x.id === id)
-            store.remove(id)
-            showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => store.restore([id]))
+            remove(id)
+            showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => restore([id]))
           }}
           // a note picked in the palette's search opens once, then is forgotten
           openNoteId={noteOpenId ?? undefined}

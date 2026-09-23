@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { useHousehold } from '../../household'
-import type { Store } from '../../store'
+import type { Store, StoreActions } from '../../store'
 import type { projectById } from '../../taskutils'
 import type { Command } from '../Search'
 import { buildPaletteCommands, type PaletteNav, type PaletteOverlays } from './commands'
@@ -21,6 +21,12 @@ import type { useToast } from './useToast'
  * and the palette's commands. Planner hands it down as one `p` prop, built by
  * usePlannerCtx below. There is no context, so a screen re-renders exactly
  * when Planner does, as it did when all of this was one component.
+ *
+ * The store's actions are here on their own as well (StoreActions: `upsert`,
+ * `remove`, `restore`…). A screen reads the lists from `store`, and builds
+ * its callbacks on these: the store is new with every edit and every sync
+ * round, and a callback built on it would be new, and draw its view again,
+ * each time too.
  */
 export type PlannerCtx = {
   store: Store
@@ -39,7 +45,8 @@ export type PlannerCtx = {
    * one control, on the record, where it can be seen and changed.
    */
   inHousehold: boolean
-} & ReturnType<typeof useNavigation> &
+} & StoreActions &
+  ReturnType<typeof useNavigation> &
   ReturnType<typeof useListFilters> &
   ReturnType<typeof useToast> &
   ReturnType<typeof useCalendarSync> &
@@ -67,10 +74,12 @@ type Fn = (...args: unknown[]) => unknown
  * drawn from the stand-ins, again only when the hour turns (which part of the
  * day it is decides the quick ones).
  *
- * A value that is itself an object built afresh every render (the household,
- * the calendar feeds) still makes a new context each render; a view memoized
- * on the lists and callbacks it is handed, rather than on the whole context,
- * is what this makes cheap.
+ * The values are kept by the hooks that make them — the household, the
+ * calendars' state and the mirrors' are each the same object until something
+ * in them changes — so a Planner render that changed nothing hands down the
+ * same context. The store is the exception, new with every edit and every
+ * sync round: a view memoized on the lists and callbacks it is handed, rather
+ * than on the whole context, is what this makes cheap.
  */
 export function createCtxMemo(clock: () => Date = () => new Date()): (parts: PlannerParts) => PlannerCtx {
   let latest: Record<string, unknown> = {}

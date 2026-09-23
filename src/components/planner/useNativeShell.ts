@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react'
 import type { Store } from '../../store'
 import { notifyDue } from '../../notify'
 import {
@@ -67,6 +67,17 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     }
   })
 
+  // What the shell's listeners call, from the render last committed: they are
+  // set up once, at mount, and never again (useEffectEvent).
+  // Only a tap on one of our own reminders may carry an `act=` that writes on
+  // arrival; a drafter:// link from Safari or a Shortcut still just navigates.
+  const openUrl = useEffectEvent((url: string, fromNotif?: boolean) => applyLinkRef.current(url, '', !!fromNotif))
+  const resumed = useEffectEvent(() => {
+    void store.syncNowManual()
+    remindersRef.current()
+    void clearAppBadge()
+  })
+
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
   useEffect(() => {
     // the effect can be torn down before initNative resolves (React's
@@ -75,14 +86,8 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     let disposed = false
     let dispose: (() => void) | null = null
     void initNative({
-      // only a tap on one of our own reminders may carry an `act=` that writes on
-      // arrival; a drafter:// link from Safari or a Shortcut still just navigates
-      onUrl: (url, fromNotif) => applyLinkRef.current(url, '', !!fromNotif),
-      onResume: () => {
-        void store.syncNowManual()
-        remindersRef.current()
-        void clearAppBadge()
-      },
+      onUrl: (url, fromNotif) => openUrl(url, fromNotif),
+      onResume: () => resumed(),
     }).then(d => {
       if (disposed) {
         d()
@@ -99,7 +104,6 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
       disposed = true
       dispose?.()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // due tasks and my events as they start, while the app is open (device-local,

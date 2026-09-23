@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { fillInputFor, fillRecipe, fillRunCurrent } from '../../recipefill'
 import type { FillInput, FillRun, RecipeDraft } from '../../recipefill'
 import type { Recipe } from '../../types'
@@ -63,29 +63,32 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
 
   const id = recipe?.id ?? null
   const needsDraft = !!recipe && !draft
+  // what the drafter is told, from the recipe as it is when the ask goes out;
+  // an effect event, so the recipe's own edits do not ask again
+  const inputNow = useEffectEvent(() => (recipe ? fillInputFor(recipe) : null))
+  // a new recipe, a new attempt, or a draft let go of: one ask
   useEffect(() => {
-    if (!recipe || !needsDraft) return
+    const input = needsDraft ? inputNow() : null
+    if (!id || !input) return
     let live = true
-    const key = `${recipe.id}#${attempt}`
+    const key = `${id}#${attempt}`
     let pending = asked.current.get(key)
     if (!pending) {
-      pending = latest.current.fill(fillInputFor(recipe))
+      pending = latest.current.fill(input)
       asked.current.set(key, pending)
     }
     // a failure is shown only for the recipe it was for (`error` below), and Retry clears its own
     pending.then(
       d => {
-        if (live) latest.current.onDraft(recipe.id, d)
+        if (live) latest.current.onDraft(id, d)
       },
       e => {
-        if (live) setFailed({ id: recipe.id, message: failure(e) })
+        if (live) setFailed({ id, message: failure(e) })
       },
     )
     return () => {
       live = false
     }
-    // a new recipe, a new attempt, or a draft let go of: the recipe's own edits do not ask again
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, needsDraft, attempt])
 
   const error = failed && failed.id === id ? failed.message : ''

@@ -50,6 +50,9 @@ function aiMessage(e: unknown, doing: string): string {
   return aiFailureText(msg, { unavailable: `${doing} needs the assistant, which isn’t available here.`, failed: `${doing} didn’t work` })
 }
 
+/** A paste the reader found neither an ingredient nor a step in. */
+const readsAsNothing = (found: Pick<ReadRecipe, 'ingredients' | 'steps'>) => !found.ingredients.length && !found.steps.length
+
 interface Props {
   /** The name typed so far: Fill in drafts from it. */
   name: string
@@ -97,6 +100,9 @@ export function RecipeCapture({ name, has, hints, openOn, note: initialNote = ''
     setError('')
   }
 
+  // No `finally` in these, and nothing in a try that picks a value: the React
+  // Compiler leaves a component with either as written. Each catch only sets
+  // state, so the line after it runs however the call ended.
   const fillIn = async () => {
     start('fill')
     try {
@@ -105,9 +111,8 @@ export function RecipeCapture({ name, has, hints, openOn, note: initialNote = ''
       setNote(draftNote(has, draft))
     } catch (e) {
       setError(aiMessage(e, 'Filling in'))
-    } finally {
-      setBusy(null)
     }
+    setBusy(null)
   }
 
   const importFrom = async (url: string) => {
@@ -121,9 +126,8 @@ export function RecipeCapture({ name, has, hints, openOn, note: initialNote = ''
       setPaste('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(null)
     }
+    setBusy(null)
   }
 
   const readPaste = async () => {
@@ -131,19 +135,18 @@ export function RecipeCapture({ name, has, hints, openOn, note: initialNote = ''
     start('paste')
     try {
       const found = await read(paste)
-      if (!found.ingredients.length && !found.steps.length) {
+      if (readsAsNothing(found)) {
         setError('Nothing in there reads like a recipe — check the text and try again.')
-        return
+      } else {
+        onFound(found)
+        setNote(foundNote(found))
+        setMode(null)
+        setPaste('')
       }
-      onFound(found)
-      setNote(foundNote(found))
-      setMode(null)
-      setPaste('')
     } catch (e) {
       setError(aiMessage(e, 'Reading a recipe'))
-    } finally {
-      setBusy(null)
     }
+    setBusy(null)
   }
 
   return (
