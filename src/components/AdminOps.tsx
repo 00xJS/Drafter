@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { type ClientError, type JobName, type JobRecord, type OpsHealth, clearClientErrors, fetchClientErrors, fetchOpsHealth } from '../ops'
+import { type BackgroundJobName, type ClientError, type JobName, type JobRecord, type OpsHealth, clearClientErrors, fetchClientErrors, fetchOpsHealth } from '../ops'
 import { BACKUP_STALE_MS, DIGEST_STALE_MS, howLong, jobAlarms } from '../syncalarm'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -10,7 +10,10 @@ import { ConfirmButton } from './ConfirmButton'
 
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : 'never')
 
-const JOB_TITLES: Record<JobName, string> = { backup: 'Nightly backup', digest: 'Hourly digest' }
+const JOB_TITLES: Record<JobName | BackgroundJobName, string> = { backup: 'Nightly backup', digest: 'Hourly digest', 'sunday-draft': 'Sunday’s draft', 'email-triage': 'Email triage' }
+
+/** What a background job's counts say, in its own words; the rest as they are named. */
+const BACKGROUND_WORDS: Record<string, string> = { asked: 'asked', drafted: 'drafted', skipped: 'skipped', noAnswer: 'no answer', triaged: 'triaged', unchanged: 'nothing to change', edited: 'edited first', gone: 'gone', noanswer: 'no answer', failed: 'failed' }
 
 function Line({ label, value, tone }: { label: ReactNode; value: ReactNode; tone?: 'ok' | 'warn' }) {
   return (
@@ -22,9 +25,15 @@ function Line({ label, value, tone }: { label: ReactNode; value: ReactNode; tone
 }
 
 /** A run's counts in words: "2 snapshots · 1,204 records · encrypted", "sent 3 · 2 subscribed". */
-export function jobSummary(job: JobName, r: JobRecord): string {
+export function jobSummary(job: JobName | BackgroundJobName, r: JobRecord): string {
   const n = (k: string) => (typeof r.counts[k] === 'number' ? (r.counts[k] as number) : null)
   const plural = (k: string, one: string) => (n(k) === null ? null : `${n(k)!.toLocaleString('en-US')} ${one}${n(k) === 1 ? '' : 's'}`)
+  // the background jobs: each count that is not nought, in its own words ("drafted 1 · no answer 1", "triaged 1")
+  if (job === 'sunday-draft' || job === 'email-triage')
+    return Object.keys(r.counts)
+      .filter(k => n(k))
+      .map(k => `${BACKGROUND_WORDS[k] ?? k} ${n(k)}`)
+      .join(' · ')
   const parts =
     job === 'backup'
       ? [plural('snapshots', 'snapshot'), plural('records', 'record'), r.counts.encrypted === true ? 'encrypted' : r.counts.encrypted === false ? 'not encrypted' : null]
@@ -38,7 +47,7 @@ export function jobSummary(job: JobName, r: JobRecord): string {
 }
 
 /** One job's lines: its last run, what it did, and what failed. */
-function JobLines({ job, record, seenAt }: { job: JobName; record: JobRecord | null | undefined; seenAt?: string | null }) {
+function JobLines({ job, record, seenAt }: { job: JobName | BackgroundJobName; record: JobRecord | null | undefined; seenAt?: string | null }) {
   if (!record) {
     return <Line label={JOB_TITLES[job]} value={seenAt ? `No record yet · last seen ${when(seenAt)}` : 'No record yet'} />
   }
@@ -75,6 +84,9 @@ export function JobsCard({ health, now = new Date() }: { health: OpsHealth | nul
         <ul className="admin-stats">
           <JobLines job="backup" record={health.jobs?.backup} seenAt={health.lastSnapshotAt} />
           <JobLines job="digest" record={health.jobs?.digest} seenAt={health.syncCheck?.record?.at} />
+          {/* the background function's jobs, once they have run: their last run, and what failed */}
+          {health.jobs?.['sunday-draft'] && <JobLines job="sunday-draft" record={health.jobs['sunday-draft']} />}
+          {health.jobs?.['email-triage'] && <JobLines job="email-triage" record={health.jobs['email-triage']} />}
         </ul>
       )}
       {health && !health.jobs && <p className="field-hint">The jobs could not be read. Their records start once the v3.29 migration is applied.</p>}

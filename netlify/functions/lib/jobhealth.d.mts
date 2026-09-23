@@ -1,7 +1,7 @@
 type Rest = (path: string, init?: RequestInit) => Promise<unknown>
 
 export type JobName = 'backup' | 'digest'
-/** The background function's jobs (ai-jobs-background.mjs): recorded like the scheduled ones, not yet read by Admin or Today. */
+/** The background function's jobs (ai-jobs-background.mjs): recorded like the scheduled ones, shown in Admin → Data, never an alarm. */
 export type BackgroundJobName = 'sunday-draft' | 'email-triage'
 
 /** What a run hands in: its counts and failures, and whether it worked. */
@@ -27,9 +27,10 @@ export interface JobRecord {
 }
 
 export declare const JOBS: JobName[]
+export declare const BACKGROUND_JOBS: BackgroundJobName[]
 export declare const FAILURES_KEPT: number
 export declare function nextJobRecord(prev: JobRecord | null | undefined, run: JobRun, now?: Date | string | number): JobRecord
-export declare function readJobs(rest: Rest): Promise<Record<JobName, JobRecord | null>>
+export declare function readJobs(rest: Rest): Promise<Record<JobName | BackgroundJobName, JobRecord | null>>
 export declare function readJob(rest: Rest, job: JobName | BackgroundJobName): Promise<JobRecord | null>
 export declare function writeJob(rest: Rest, job: JobName | BackgroundJobName, record: JobRecord): Promise<void>
 export declare function recordJobRun(rest: Rest, job: JobName | BackgroundJobName, run: JobRun, now?: Date): Promise<JobRecord | null>

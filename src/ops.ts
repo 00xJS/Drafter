@@ -5,6 +5,8 @@ import { adminAction, type SyncCheck } from './admin'
 // listErrors, clearErrors). Nobody else can ask; the server checks.
 
 export type JobName = 'backup' | 'digest'
+/** The background function's jobs: Sunday's review draft and email-in's triage, run when asked rather than on a schedule. */
+export type BackgroundJobName = 'sunday-draft' | 'email-triage'
 
 /** A scheduled job's last run, as public.job_runs keeps it (netlify/functions/lib/jobhealth.mjs). */
 export interface JobRecord {
@@ -24,7 +26,7 @@ export interface JobRecord {
 export interface OpsHealth {
   syncCheck: SyncCheck | null
   /** Each job's last run, null until it has run once; null altogether when the records cannot be read. */
-  jobs: Partial<Record<JobName, JobRecord | null>> | null
+  jobs: Partial<Record<JobName | BackgroundJobName, JobRecord | null>> | null
   /** The newest snapshot in the bucket, read only while the backup has no record of its own. */
   lastSnapshotAt?: string | null
 }
