@@ -1259,9 +1259,11 @@ export function sanitizeChatTurn(raw: unknown): ChatTurn | null {
 }
 
 /**
- * A nudge put off. The id carries the target (`snooze~person~<id>`), so a
- * second snooze on the same thing overwrites the first; `until` is what the
- * row is for, and a row with no usable instant is nothing at all.
+ * A nudge put off. The id carries the target and whose it is
+ * (`snooze~person~<id>~<member>`, or the member-less id of a row from before
+ * members had their own), so a second snooze on the same thing overwrites the
+ * first; `until` is what the row is for, and a row with no usable instant is
+ * nothing at all.
  */
 export function sanitizeSnooze(raw: unknown): Snooze | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1269,8 +1271,11 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
   const id = str(r.id)
   const deletedAt = isoDate(r.deletedAt)
   const fromId = id ? /^snooze~(person|place|event)~(.+)$/.exec(id) : null
+  // read off the id, the member at its end is the row's owner, not part of what it puts off
+  const owner = idOrUndefined(r.ownerId)
+  const idTarget = owner && fromId?.[2].endsWith(`~${owner}`) ? fromId[2].slice(0, -owner.length - 1) : fromId?.[2]
   const target = typeof r.target === 'string' && SNOOZE_TARGETS.has(r.target) ? (r.target as SnoozeTarget) : (fromId?.[1] as SnoozeTarget | undefined)
-  const targetId = str(r.targetId)?.trim() || fromId?.[2]
+  const targetId = str(r.targetId)?.trim() || idTarget
   const until = isoDate(r.until)
   if (!id || !target || !targetId || (!until && !deletedAt)) return null
   const now = new Date().toISOString()

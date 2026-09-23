@@ -3,6 +3,7 @@
 // engine plus its own storage). Not a test file itself — vitest collects only
 // *.test.ts.
 import { vi } from 'vitest'
+import { PERSONAL_KINDS } from '../../shared/kinds.mts'
 import { newerStamp } from '../itemops'
 import { sanitizeItem } from '../schema'
 import { parseSyncResponse, type SyncResult } from '../sync'
@@ -107,6 +108,12 @@ export class FakeServer {
       delete raw.ownerId
       delete raw.syncedAt
       const cur = this.rows.get(id)
+      // A row of a personal kind is its owner's alone: the policy hides it from
+      // everyone else, so another account's write onto its id is refused, not merged.
+      if (cur && cur.owner !== this.caller && PERSONAL_KINDS.has(String(cur.data.kind ?? 'task'))) {
+        rejected.push(reportsRejections(this.shape) ? { id, reason: 'new row violates row-level security policy' } : id)
+        continue
+      }
       if (!cur || (raw.updatedAt as string) > cur.updatedAt) this.rows.set(id, { data: raw, updatedAt: raw.updatedAt as string, syncedAt: this.stamp(), owner: cur?.owner ?? this.caller })
       else stale.push(id)
     }
