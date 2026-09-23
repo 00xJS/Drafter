@@ -219,7 +219,7 @@ describe('Admin → Data: the jobs and the errors', () => {
     const unread = renderToStaticMarkup(<JobsCard health={{ syncCheck: null, jobs: null }} now={NOW} />)
     expect(unread).toContain('Not recorded')
     expect(unread).toContain('v3.29 migration')
-    expect(renderToStaticMarkup(<JobsCard health={null} />)).toContain('Checking…')
+    expect(renderToStaticMarkup(<JobsCard health={null} now={NOW} />)).toContain('Checking…')
   })
 
   it('lists what devices reported: the message, how often, when last, the platform and build, and the stack folded away', () => {

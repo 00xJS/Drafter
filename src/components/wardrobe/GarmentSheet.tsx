@@ -239,7 +239,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     setSaving(true)
     // what this Save has filed so far: a Save that fails leaves none of it pending
     const filed: string[] = []
-    try {
+    const write = async () => {
       // the photos go into this device's store, and its upload queue, first; the piece then points at them
       const front = ready ? await fileAway(ready, userId, filed) : undefined
       // a back rides only with a front: its + Back photo shows once there is one
@@ -265,13 +265,18 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       if (backIds && backPicked?.offline) keptOffline(backIds.photoId)
       setLastSaved(type)
       next(type)
+    }
+    // The work is its own function, and there is no `finally`: the React
+    // Compiler leaves a component as written when a try picks a value, or has
+    // a finally. This catch cannot throw, so the line after it always runs.
+    try {
+      await write()
     } catch (err) {
       // no piece points at them: a front filed before the back failed would sit pending, and a retry would file it twice
       await deleteMedia(filed).catch(() => {})
       setFailed(failure(err))
-    } finally {
-      setSaving(false)
     }
+    setSaving(false)
   }
   // a photo made ready and not saved is the one thing here worth asking about
   const close = () => {
@@ -474,7 +479,7 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
     setChecking(null)
     setPhotoBusy(true)
     setPhotoError(null)
-    try {
+    const write = async () => {
       const p = await prepareGarmentPhoto(file, { cutout })
       const ids = await fileAway(p, userId)
       // the old ones go once these are up and the Undo has had its time, and
@@ -483,11 +488,14 @@ function EditPiece({ id, garments, outfits, byId, ix, todayKey, userId, onEdit, 
       if (side === 'back') edit(cur => withBack(cur, ids), latest.current && hasBack(latest.current) ? 'Back photo replaced' : 'Back photo added')
       else edit(cur => ({ ...cur, photoId: ids.photoId, thumbId: ids.thumbId, color: p.color ?? cur.color, updatedAt: newerStamp(cur.updatedAt) }), 'Photo replaced')
       if (offline) keptOffline(ids.photoId)
+    }
+    // as AddPiece's save: the work in its own function, and no `finally`
+    try {
+      await write()
     } catch (err) {
       setPhotoError(failure(err))
-    } finally {
-      setPhotoBusy(false)
     }
+    setPhotoBusy(false)
   }
   const close = () => {
     commitName()

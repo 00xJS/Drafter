@@ -27,6 +27,7 @@ import { MESSAGE_MAX, type CalendarEntry, type ChatAction, type ChatOutcomeState
 import { MemberFace } from './MemberFace'
 import { aiFailureKind, aiFailureText, failedOffline } from './AskSheet'
 import { ActionCards, type CardHandlers } from './ChatCards'
+import { useNow } from '../useNow'
 
 // Chat: two threads that never mix (v3.26).
 //
@@ -310,7 +311,10 @@ function AssistantThread({
     shellRef.current = shell
   })
   const clock = () => now ?? new Date()
-  const today = todayIn(tz, clock())
+  // today from the app's clock (useNow), not a reading as the thread draws:
+  // the compiler would keep that first answer for as long as the chat is open
+  const minute = useNow()
+  const today = todayIn(tz, now ?? new Date(minute))
   const data = shell ?? dataOf(sources)
   const outcomes = outcomesByCard(turns)
 
@@ -409,7 +413,7 @@ function AssistantThread({
     applyingNow.current = true
     setApplying(true)
     const done: { index: number; applied: Applied }[] = []
-    try {
+    const applyAll = async () => {
       for (const [i, item] of items.entries()) {
         const h = shellRef.current
         if (!h) break
@@ -420,10 +424,12 @@ function AssistantThread({
         // grocery line on the list the first one changed), once it is here
         if (i < items.length - 1) await nextRender()
       }
-    } finally {
+    }
+    // .finally rather than try/finally, which the React Compiler cannot compile
+    await applyAll().finally(() => {
       applyingNow.current = false
       setApplying(false)
-    }
+    })
     record(turn, done)
   }
 

@@ -110,6 +110,9 @@ export function MoveChips({ title, value, options, onChange }: { title: string; 
   )
 }
 
+/** A candidate's own reason, when the caller words none. Named out here: the React Compiler cannot compile a component whose default is a function written in place. */
+const ownReason = (c: FocusCandidate) => c.reason
+
 /**
  * The three picks on top, then what else is asking for the day in its groups.
  * Plan my day uses it for today and Shut down for tomorrow; a fourth pick is
@@ -122,7 +125,7 @@ export function FocusPicker({
   limit,
   candidates,
   groupLabel,
-  reasonOf = c => c.reason,
+  reasonOf = ownReason,
   emptyHint,
   onAdd,
   onRemove,

@@ -26,6 +26,9 @@ type Phase =
   | { step: 'leaving'; clientName: string }
   | { step: 'refused'; message: string }
 
+/** The page leaves for where the answer goes. Named out here: the React Compiler cannot compile a component whose default is a function written in place. */
+const assignLocation = (url: string) => window.location.assign(url)
+
 /**
  * "Connect Claude?" — the consent step of Drafter's OAuth server, shown over
  * the planner while a captured authorization request waits. It says who is
@@ -34,7 +37,7 @@ type Phase =
  * A request the server does not accept shows an error card and never
  * redirects anywhere.
  */
-export function ConnectAssistantSheet({ params, email, onDone, onSignOut, describe = describeRequest, approve = approveRequest, navigate = url => window.location.assign(url) }: Props) {
+export function ConnectAssistantSheet({ params, email, onDone, onSignOut, describe = describeRequest, approve = approveRequest, navigate = assignLocation }: Props) {
   const [phase, setPhase] = useState<Phase>({ step: 'checking' })
   const [canWrite, setCanWrite] = useState(true)
   const [journal, setJournal] = useState(false)

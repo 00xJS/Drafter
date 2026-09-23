@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { preloadable } from '../../lazyload'
 import { mediaURL } from '../../media'
@@ -19,6 +19,9 @@ import type { Garment } from '../../types'
 /** Check the cut-out (src/components/CutoutSheet.tsx), loaded when first opened. */
 const CutoutSheet = preloadable(() => import('../CutoutSheet').then(m => m.CutoutSheet), 'CutoutSheet')
 
+/** What reads a photo and says whether a cut-out can be made (src/cutout.ts), loaded when first asked: out here, as the React Compiler cannot compile a component with an import() in it. */
+const loadCutout = () => import('../../cutout')
+
 type Availability = 'native' | 'web' | 'offline' | 'unsupported'
 
 /** What the piece sheet says when the saved photo cannot be read to cut out. */
@@ -38,6 +41,9 @@ function readOffline(): string[] {
   }
 }
 
+/** The buttons on screen, told when the list changes (useKeptOffline). */
+const offlineWatchers = new Set<() => void>()
+
 function writeOffline(ids: string[]): void {
   try {
     if (ids.length) localStorage.setItem(OFFLINE_KEY, JSON.stringify(ids.slice(-OFFLINE_KEEP)))
@@ -45,6 +51,24 @@ function writeOffline(ids: string[]): void {
   } catch {
     /* storage blocked or full: the sheet still offers Cut out background */
   }
+  for (const watcher of [...offlineWatchers]) watcher()
+}
+
+const watchOffline = (watcher: () => void) => {
+  offlineWatchers.add(watcher)
+  return () => {
+    offlineWatchers.delete(watcher)
+  }
+}
+
+/**
+ * wasKeptOffline, for a button: read again whenever the list changes. The
+ * React Compiler keeps a plain reading for as long as the photo stays the
+ * same, so a photo turned down online would go on saying Cut out now.
+ */
+function useKeptOffline(photoId: string | undefined): boolean {
+  const read = () => wasKeptOffline(photoId)
+  return useSyncExternalStore(watchOffline, read, read)
 }
 
 /** A photo just saved as it was because no cut-out could be made offline. */
@@ -83,6 +107,14 @@ async function savedPhoto(id: string): Promise<Blob | null> {
   return response.ok ? response.blob() : null
 }
 
+/** The saved photo as the cut-out sheet takes it, named for the piece; it throws when the photo is not on this device. */
+async function photoFile(id: string, name: string): Promise<File> {
+  // a piece added on another device may have only its thumbnail here, and no connection to fetch the rest
+  const blob = await savedPhoto(id)
+  if (!blob) throw new Error(`${id} is not on this device`)
+  return new File([blob], `${name || 'garment'}.jpg`, { type: blob.type || 'image/jpeg' })
+}
+
 export function CutoutLater({
   garment,
   side = 'front',
@@ -113,7 +145,7 @@ export function CutoutLater({
     if (!small) return
     let live = true
     void savedPhoto(small)
-      .then(blob => (blob ? import('../../cutout').then(c => c.isCutOutPhoto(blob)) : null))
+      .then(blob => (blob ? loadCutout().then(c => c.isCutOutPhoto(blob)) : null))
       .then(
         cut => {
           if (live) setRead({ id: small, uncut: cut === false })
@@ -130,7 +162,7 @@ export function CutoutLater({
     if (!uncut) return
     let live = true
     const ask = () =>
-      void import('../../cutout')
+      void loadCutout()
         .then(c => c.cutoutAvailability())
         .then(
           a => {
@@ -151,21 +183,21 @@ export function CutoutLater({
   }, [uncut])
 
   const id = photoId
-  const label = cutoutLaterLabel(uncut, can, sawOffline || wasKeptOffline(id), side)
+  const wasOffline = useKeptOffline(id)
+  const label = cutoutLaterLabel(uncut, can, sawOffline || wasOffline, side)
   if (!label || !id) return null
+  // No `finally`, and nothing in the try that picks a value or throws: the
+  // React Compiler leaves a component with any of those as written. The
+  // catch cannot throw past the line after it.
   const open = async () => {
     setOpening(true)
     onError?.(null)
     try {
-      // a piece added on another device may have only its thumbnail here, and no connection to fetch the rest
-      const blob = await savedPhoto(id)
-      if (!blob) throw new Error(`${id} is not on this device`)
-      setPhoto(new File([blob], `${garment.name || 'garment'}.jpg`, { type: blob.type || 'image/jpeg' }))
+      setPhoto(await photoFile(id, garment.name))
     } catch {
       onError?.(UNREADABLE)
-    } finally {
-      setOpening(false)
     }
+    setOpening(false)
   }
   return (
     <>

@@ -76,6 +76,37 @@ export function cancelQueuedPushes(): void {
 }
 
 /**
+ * Read each board and hand on the tasks it moved. The latest tasks are read as
+ * each board's rows come back, as the hook's refs hold them. Out here, not in
+ * the hook: the React Compiler leaves a hook with an import() in it as written.
+ */
+async function pullBoards(
+  boards: Project[],
+  to: { tasks(): Task[]; warned: Set<string>; onNotice(message: string): void; onChanges(changes: ProjectPull[]): void },
+): Promise<void> {
+  const changes: ProjectPull[] = []
+  for (const board of boards) {
+    const sync = board.githubProjectSync
+    if (!sync) continue
+    try {
+      const { items, truncated } = await fetchProjectItems(board.githubUrl!, { statusFieldId: sync.statusFieldId, dateFieldId: sync.dateFieldId })
+      // what a row means for its task: the sync's rules, loaded with the first pull
+      const { reconcileProjectItems } = await import('./githubsync')
+      changes.push(...reconcileProjectItems(to.tasks().filter(t => t.projectId === board.id), items, sync))
+      // the rows past the cap are simply absent, which reconciles to
+      // "nothing moved" — indistinguishable from a board nobody touched
+      if (truncated && !to.warned.has(board.id)) {
+        to.warned.add(board.id)
+        to.onNotice(`${board.name}: only the first ${items.length} board rows sync — GitHub has more`)
+      }
+    } catch {
+      /* one board being unreachable must not stop the others */
+    }
+  }
+  if (changes.length > 0) to.onChanges(changes)
+}
+
+/**
  * Read every synced board on focus and every 30 minutes and hand the Planner
  * the tasks the board moved. Mirrors the calendar pull: build a change list,
  * apply it there with newerStamp behind an undo toast.
@@ -111,30 +142,15 @@ export function useGithubProjectSync(
     const boards = projectsRef.current.filter(projectSyncEnabled)
     if (boards.length === 0) return
     busy.current = true
-    try {
-      const changes: ProjectPull[] = []
-      for (const board of boards) {
-        const sync = board.githubProjectSync
-        if (!sync) continue
-        try {
-          const { items, truncated } = await fetchProjectItems(board.githubUrl!, { statusFieldId: sync.statusFieldId, dateFieldId: sync.dateFieldId })
-          // what a row means for its task: the sync's rules, loaded with the first pull
-          const { reconcileProjectItems } = await import('./githubsync')
-          changes.push(...reconcileProjectItems(tasksRef.current.filter(t => t.projectId === board.id), items, sync))
-          // the rows past the cap are simply absent, which reconciles to
-          // "nothing moved" — indistinguishable from a board nobody touched
-          if (truncated && !warned.current.has(board.id)) {
-            warned.current.add(board.id)
-            onNoticeRef.current?.(`${board.name}: only the first ${items.length} board rows sync — GitHub has more`)
-          }
-        } catch {
-          /* one board being unreachable must not stop the others */
-        }
-      }
-      if (changes.length > 0) onChangesRef.current?.(changes)
-    } finally {
+    // .finally rather than try/finally, which the React Compiler cannot compile
+    await pullBoards(boards, {
+      tasks: () => tasksRef.current,
+      warned: warned.current,
+      onNotice: message => onNoticeRef.current?.(message),
+      onChanges: changes => onChangesRef.current?.(changes),
+    }).finally(() => {
       busy.current = false
-    }
+    })
   }, [])
 
   useEffect(() => {

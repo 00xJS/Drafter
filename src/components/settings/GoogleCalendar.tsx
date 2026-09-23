@@ -4,6 +4,7 @@ import { clearMirrorSignIn } from '../../calendarstate'
 import { newerStamp } from '../../itemops'
 import { PROJECT_COLORS } from '../../types'
 import { timeAgo, uid } from '../../utils'
+import { useNow } from '../../useNow'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
@@ -25,6 +26,8 @@ export function GoogleCalendar({
   const myPushId = household.myId ? googlePushId(household.myId) : GOOGLE_PUSH_ID
   const pushSource = store.calendars.find(c => c.id === myPushId) ?? store.calendars.find(c => c.id === GOOGLE_PUSH_ID)
   const mirroring = !!pushSource?.enabled
+  // "pushed 5m ago" moves on with the clock, not only when the mirror next runs
+  const now = useNow()
 
   useEffect(() => {
     const loadGoogle = () =>
@@ -66,16 +69,18 @@ export function GoogleCalendar({
   const disconnectGoogle = async () => {
     if (!window.confirm('Disconnect Google Calendar? Its calendars disappear from the overlay and mirroring stops (already-mirrored events stay in Google).')) return
     setGoogleBusy(true)
+    // no `finally`, and no loop statement in the try: the React Compiler
+    // leaves a component with either as written. A catch that only sets state
+    // cannot throw past the line after it.
     try {
       await googleAction('disconnect')
-      for (const c of store.calendars.filter(isGoogleSource)) store.remove(c.id)
+      store.calendars.filter(isGoogleSource).forEach(c => store.remove(c.id))
       setGoogle(g => (g ? { ...g, connected: false, email: null } : g))
       setGoogleCals(null)
     } catch (e) {
       setGoogleError((e as Error).message)
-    } finally {
-      setGoogleBusy(false)
     }
+    setGoogleBusy(false)
   }
 
   const toggleGoogleCalendar = (cal: GoogleCalendarInfo, on: boolean) => {
@@ -159,7 +164,7 @@ export function GoogleCalendar({
               ) : googlePush.waiting ? (
                 <small>{googlePush.waiting} waiting to go out — retrying</small>
               ) : googlePush.lastAt ? (
-                <small>pushed {timeAgo(googlePush.lastAt)}</small>
+                <small>pushed {timeAgo(googlePush.lastAt, now)}</small>
               ) : null}
             </span>
           </label>

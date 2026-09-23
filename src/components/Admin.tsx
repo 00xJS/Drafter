@@ -51,6 +51,23 @@ function without(failed: Record<string, string>, name: string): Record<string, s
   return rest
 }
 
+/**
+ * A snapshot fetched through its signed link: what the file holds, and its
+ * contents when it needs no passphrase (one written before encryption). Out
+ * here, not in Admin: the React Compiler leaves a component with a lookup
+ * like this inside a try as written.
+ */
+async function fetchSnapshot(path: string): Promise<Pick<OpenedSnapshot, 'raw' | 'snapshot'>> {
+  const r = await adminAction<{ url: string }>('downloadBackup', { path })
+  const res = await fetch(r.url)
+  if (!res.ok) throw new Error(`The snapshot could not be fetched (${res.status}). Try again.`)
+  const raw: unknown = await res.json()
+  return { raw, snapshot: isEnvelope(raw) ? null : await unwrapSnapshot(raw, '') }
+}
+
+/** The assistant check, fetched when it is run: the compiler cannot compile a component with an import() in it. */
+const loadChatEval = () => import('../chateval')
+
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(1)} kB` : `${(n / 1_048_576).toFixed(1)} MB`)
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never')
 
@@ -203,13 +220,17 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
   const runNamed = async (name: string, fn: () => Promise<unknown>) => {
     setPending(name)
     setFailed(f => without(f, name))
+    // no try/finally in this component: the React Compiler leaves one that
+    // has it as written. A catch that only sets state cannot throw past it.
+    // (The error is named again for the updater: the compiler cannot follow a
+    // catch's own binding into a function inside it.)
     try {
       await fn()
     } catch (e) {
-      setFailed(f => ({ ...f, [name]: (e as Error).message }))
-    } finally {
-      setPending('')
+      const error = e as Error
+      setFailed(f => ({ ...f, [name]: error.message }))
     }
+    setPending('')
   }
 
   const copyLink = async (link: string) => {
@@ -238,20 +259,13 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
    * browser. A snapshot written before encryption was turned on opens with no
    * passphrase at all. Whatever happens is said under the snapshot's own row.
    */
-  const readSnapshot = async (path: string) => {
+  const readSnapshot = (path: string) => {
     setPending(`read:${path}`)
     setPassphrase('')
-    try {
-      const r = await adminAction<{ url: string }>('downloadBackup', { path })
-      const res = await fetch(r.url)
-      if (!res.ok) throw new Error(`The snapshot could not be fetched (${res.status}). Try again.`)
-      const raw: unknown = await res.json()
-      setOpened({ path, raw, snapshot: isEnvelope(raw) ? null : await unwrapSnapshot(raw, '') })
-    } catch (e) {
-      setOpened({ path, raw: null, snapshot: null, error: (e as Error).message })
-    } finally {
-      setPending('')
-    }
+    return fetchSnapshot(path)
+      .then(({ raw, snapshot }) => setOpened({ path, raw, snapshot }))
+      .catch(e => setOpened({ path, raw: null, snapshot: null, error: (e as Error).message }))
+      .finally(() => setPending(''))
   }
 
   const unlockSnapshot = async () => {
@@ -277,24 +291,22 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
     setPassphrase('')
   }
 
-  const download = async (path: string) => {
+  const download = (path: string) => {
     setPending(`link:${path}`)
-    try {
-      const r = await adminAction<{ url: string }>('downloadBackup', { path })
-      // the link is also shown under the row: opening after an await can trip a popup blocker
-      setLink({ path, url: r.url })
-      window.open(r.url, '_blank', 'noopener')
-    } catch (e) {
-      setLink({ path, url: '', error: (e as Error).message })
-    } finally {
-      setPending('')
-    }
+    return adminAction<{ url: string }>('downloadBackup', { path })
+      .then(r => {
+        // the link is also shown under the row: opening after an await can trip a popup blocker
+        setLink({ path, url: r.url })
+        window.open(r.url, '_blank', 'noopener')
+      })
+      .catch(e => setLink({ path, url: '', error: (e as Error).message }))
+      .finally(() => setPending(''))
   }
 
   /** Ask the chat one question of each kind through the real model (src/chateval.ts), showing each verdict as it lands. */
   const checkAssistant = () =>
     runNamed('chatCheck', async () => {
-      const { CHAT_EVAL, runChatEval } = await import('../chateval')
+      const { CHAT_EVAL, runChatEval } = await loadChatEval()
       const results: (EvalResult | undefined)[] = []
       setChatCheck({ results: [], of: CHAT_EVAL.length })
       await runChatEval({

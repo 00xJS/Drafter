@@ -68,7 +68,11 @@ export function useSignOut(signOut: () => Promise<void>, sessionExpired = false)
     latest.current = signOut
   })
   const made = useRef<ReturnType<typeof signOutFlow> | null>(null)
-  const flow = () => (made.current ??= signOutFlow(() => withMedia(latest.current), { ask: setAsk, busy: setBusy }))
+  // spelled out, not `??=`: the React Compiler cannot compile a hook that uses it
+  const flow = () => {
+    if (made.current === null) made.current = signOutFlow(() => withMedia(latest.current), { ask: setAsk, busy: setBusy })
+    return made.current
+  }
   const question =
     ask && typeof document !== 'undefined'
       ? createPortal(

@@ -173,11 +173,14 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
     write(SUGGESTIONS_KEY, next)
   }
 
+  // No `finally`, and nothing in the try that picks a value: the React
+  // Compiler leaves a component with either as written. The catch only sets
+  // state, so the line after it runs however the ask ended.
   const ask = async () => {
     setBusy(true)
     setMessage('')
+    const at = now ?? new Date()
     try {
-      const at = now ?? new Date()
       const { input, ids } = recipeSuggestInput({
         recipes: mine,
         history: mealHistory([...mine, ...meals], { dayKey: dateKey(at), now: at }),
@@ -191,9 +194,8 @@ export function RecipeSuggestions({ recipes, meals, onAccept, suggest = suggestR
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setMessage(aiFailureText(msg, { unavailable: 'Suggestions need the assistant, which isn’t available here.', failed: 'Couldn’t get ideas' }))
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   const accept = (s: PendingSuggestion) => {

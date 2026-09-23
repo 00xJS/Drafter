@@ -242,16 +242,19 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
     setTemplateFrom(dayInput(-lead))
   }
 
+  // No `finally`, and nothing in the try that picks a value: the React
+  // Compiler leaves a component with either as written. The catch only sets
+  // state, so the line after it runs however the draft ended.
   const runDraft = async () => {
     setPlanBusy(true)
     setPlanError('')
+    const about = description.trim() || undefined
     try {
-      setPlan(await draftPlan(goal.trim(), name.trim(), description.trim() || undefined))
+      setPlan(await draftPlan(goal.trim(), name.trim(), about))
     } catch (e) {
       setPlanError((e as Error).message)
-    } finally {
-      setPlanBusy(false)
     }
+    setPlanBusy(false)
   }
 
   const planAsTemplate = (): Template | null =>

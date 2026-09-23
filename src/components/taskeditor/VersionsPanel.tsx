@@ -12,6 +12,28 @@ interface Props {
   onClose(): void
 }
 
+/**
+ * A task's earlier copies, newest first; none when they cannot be read. Out
+ * here, not in the panel: the React Compiler leaves a component with a try
+ * that throws, or has a `finally`, as written.
+ */
+async function readVersions(sb: NonNullable<ReturnType<typeof getSupabase>>, id: string): Promise<TaskVersion[]> {
+  try {
+    // '*' rather than a column list: `reason` only exists once v3.11 is applied,
+    // and naming it would fail the whole query against an older database
+    const { data, error } = await sb
+      .from('posts_history')
+      .select('*')
+      .eq('id', id)
+      .order('replaced_at', { ascending: false })
+      .limit(20)
+    if (error) throw error
+    return versionRows(data)
+  } catch {
+    return []
+  }
+}
+
 /** A saved task's earlier copies from posts_history, fetched the first time the list is opened; any one can be restored. */
 export function VersionsPanel({ task, getLatest, onCommit, onClose }: Props) {
   const [versions, setVersions] = useState<TaskVersion[] | null>(null)
@@ -25,22 +47,8 @@ export function VersionsPanel({ task, getLatest, onCommit, onClose }: Props) {
       return
     }
     setVersionsBusy(true)
-    try {
-      // '*' rather than a column list: `reason` only exists once v3.11 is applied,
-      // and naming it would fail the whole query against an older database
-      const { data, error } = await sb
-        .from('posts_history')
-        .select('*')
-        .eq('id', task.id)
-        .order('replaced_at', { ascending: false })
-        .limit(20)
-      if (error) throw error
-      setVersions(versionRows(data))
-    } catch {
-      setVersions([])
-    } finally {
-      setVersionsBusy(false)
-    }
+    setVersions(await readVersions(sb, task.id))
+    setVersionsBusy(false)
   }
 
   function restoreVersion(v: Task) {

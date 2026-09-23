@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { type BackgroundJobName, type ClientError, type JobName, type JobRecord, type OpsHealth, clearClientErrors, fetchClientErrors, fetchOpsHealth } from '../ops'
 import { BACKUP_STALE_MS, DIGEST_STALE_MS, howLong, jobAlarms } from '../syncalarm'
+import { useNow } from '../useNow'
 import { ConfirmButton } from './ConfirmButton'
 
 // Admin → Data's two cards for "is it safe to run" (v3.29): each scheduled
@@ -65,8 +66,12 @@ function JobLines({ job, record, seenAt }: { job: JobName | BackgroundJobName; r
   )
 }
 
-/** Each scheduled job's last run, and the same alarms Today's banner shows the owner. */
-export function JobsCard({ health, now = new Date() }: { health: OpsHealth | null; now?: Date }) {
+/**
+ * Each scheduled job's last run, and the same alarms Today's banner shows the
+ * owner. `now` is the caller's clock (useNow): a default read here would be
+ * the time the card first drew, kept for as long as Admin stays open.
+ */
+export function JobsCard({ health, now }: { health: OpsHealth | null; now: Date }) {
   const alarms = health ? jobAlarms(health, now) : []
   const status = !health ? 'Checking…' : !health.jobs ? 'Not recorded' : alarms.length ? 'Needs a look' : 'Running'
   return (
@@ -171,6 +176,7 @@ export function AdminOps() {
   const [errors, setErrors] = useState<ClientError[] | null>(null)
   const [unavailable, setUnavailable] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const now = useNow()
 
   const loadErrors = () =>
     fetchClientErrors().then(
@@ -189,21 +195,18 @@ export function AdminOps() {
     void loadErrors()
   }, [])
 
-  const clear = async () => {
+  // a chain rather than try/finally, which the React Compiler cannot compile
+  const clear = () => {
     setBusy(true)
-    try {
-      await clearClientErrors()
-      await loadErrors()
-    } catch (e) {
-      setUnavailable((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+    return clearClientErrors()
+      .then(() => loadErrors())
+      .catch(e => setUnavailable((e as Error).message))
+      .finally(() => setBusy(false))
   }
 
   return (
     <>
-      <JobsCard health={health} />
+      <JobsCard health={health} now={new Date(now)} />
       <ErrorsCard errors={errors} unavailable={unavailable} busy={busy} onClear={() => void clear()} />
     </>
   )
