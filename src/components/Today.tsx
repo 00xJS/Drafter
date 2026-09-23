@@ -166,7 +166,7 @@ export function SyncAlarmBanner({ alarm, onOpen, onDismiss }: { alarm: SyncAlarm
   return (
     <section className="sync-alarm" role="status" aria-label="Sync check">
       <p>
-        <strong>Some edits are not reaching the server.</strong> {alarm.sentence}
+        <strong>{alarm.title ?? 'Some edits are not reaching the server.'}</strong> {alarm.sentence}
       </p>
       {onOpen && (
         <button type="button" className="btn" onClick={onOpen}>

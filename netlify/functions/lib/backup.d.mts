@@ -1,6 +1,7 @@
 export const KEEP_BACKUPS: number
 export const HISTORY_TTL_MS: number
 export const TOMBSTONE_TTL_MS: number
+export const CLIENT_ERRORS_TTL_MS: number
 export const PHOTO_GRACE_MS: number
 export const TRASH_KEEPS_PHOTOS_MS: number
 export const BUCKET: string
@@ -40,6 +41,8 @@ export interface BackupReport {
   date: string
   users: BackupWrite[]
   failures: string[]
+  /** How many of `failures` are snapshots that could not be written; the rest are housekeeping (v3.29). */
+  snapshotsFailed: number
   /** Whether this host encrypts what it writes: BACKUP_PASSPHRASE is set. */
   encrypted: boolean
   unowned: number
@@ -47,6 +50,8 @@ export interface BackupReport {
   /** Wardrobe photos no piece of clothing pointed at, deleted; null when the sweep could not run. */
   photosDeleted: number | null
   tombstonesPurged: number | null
+  /** Client error reports nobody had hit for 30 days, deleted; null when that could not run (v3.29). */
+  errorsPurged: number | null
 }
 
 /** One entry of a storage list: a folder has a null id. */
@@ -74,6 +79,7 @@ export function signSnapshotUrl(objectPath: string, expiresIn?: number): Promise
 export function backupUser(userId: string, rows: PostRow[], date?: string, exportedAt?: Date): Promise<BackupWrite>
 export function purgeHistory(now?: Date): Promise<number | null>
 export function purgeTombstones(now?: Date): Promise<number | null>
+export function purgeClientErrors(now?: Date): Promise<number | null>
 /** The paths in an account's personal/ folder that may go: its own photos, pointed at by no piece, older than `olderThan` (null: any age). */
 export function photosToSweep(userId: string, listed: readonly (ListedObject | null | undefined)[] | null | undefined, inUse: ReadonlySet<string>, olderThan: string | null): string[]
 export function sweepPersonalPhotos(now?: Date): Promise<{ deleted: number; failures: string[] }>
