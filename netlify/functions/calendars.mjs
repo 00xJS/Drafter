@@ -17,6 +17,7 @@ import { listEvents, toEvent } from './lib/google.mjs'
 import { FeedError, feedUrl, fetchFeed } from './lib/icsfeed.mjs'
 import { isOwnDrafterCalendar, listAccounts as msListAccounts, listEvents as msListEvents, toEvent as msToEvent } from './lib/microsoft.mjs'
 import { getUser } from './lib/session.mjs'
+import { validTimeZone } from './lib/timezone.mjs'
 
 const MAX_SOURCES = 12
 const DAY = 86_400_000
@@ -44,6 +45,7 @@ export function calendarsHandler(opts = {}) {
     const now = Date.now()
     const from = Number.isFinite(Date.parse(body?.from)) ? Date.parse(body.from) : now - 60 * DAY
     const to = Number.isFinite(Date.parse(body?.to)) ? Date.parse(body.to) : now + 400 * DAY
+    const readerZone = validTimeZone(body?.tz) ?? undefined
 
     const events = []
     const errors = {}
@@ -110,7 +112,8 @@ export function calendarsHandler(opts = {}) {
         try {
           // a pull-to-refresh asks the feed's server; the rest may be answered from memory
           const { text } = await fetchFeed(feedUrl(raw), { ...opts, fresh: body?.fresh === true })
-          const parsed = parseICS(text)
+          // a time the feed gives no zone is on the reader's own clock
+          const parsed = parseICS(text, { tz: readerZone })
           if (parsed.calendarName) names[id] = parsed.calendarName
           for (const ev of expandEvents(parsed, from, to)) events.push({ ...ev, sourceId: id })
         } catch (e) {

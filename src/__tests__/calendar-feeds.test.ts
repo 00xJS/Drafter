@@ -82,7 +82,7 @@ describe('/api/calendars fetches a feed only from the public internet', () => {
       }),
     )
     expect(res.status).toBe(200)
-    return (await res.json()) as { events: { title: string; sourceId: string }[]; errors: Record<string, string>; names: Record<string, string> }
+    return (await res.json()) as { events: { title: string; sourceId: string; start: string }[]; errors: Record<string, string>; names: Record<string, string> }
   }
 
   it('reads a public feed from the address it checked, webcal:// as https://', async () => {
@@ -226,6 +226,15 @@ describe('/api/calendars fetches a feed only from the public internet', () => {
       file: 'not a valid https:// or webcal:// address',
       nonsense: 'not a valid https:// or webcal:// address',
     })
+  })
+
+  it('reads a time the feed gives no zone on the reader’s own clock, the zone the app sends', async () => {
+    const floating = FEED.replace('DTSTART;VALUE=DATE:20260918', 'DTSTART:20260918T090000')
+    const opts = { resolve: resolver(PUBLIC), transport: transport({ 'https://school.example.com/cal.ics': () => ics(floating) }) }
+    const sources = [{ id: 's1', url: 'https://school.example.com/cal.ics' }]
+    expect((await ask(sources, opts, { tz: 'America/Phoenix' })).events.map(e => e.start)).toEqual(['2026-09-18T16:00:00.000Z'])
+    // a zone that is not one reads as none: UTC, as before
+    expect((await ask(sources, opts, { tz: 'Mars/Olympus_Mons' })).events.map(e => e.start)).toEqual(['2026-09-18T09:00:00.000Z'])
   })
 
   it('answers a feed asked for again a moment later from memory, and asks its server on a pull-to-refresh', async () => {

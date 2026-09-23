@@ -303,6 +303,15 @@ export function useMicrosoftSync(
   return useMirrorSync(items, projects, targets, onPulled, myId)
 }
 
+/** This device's IANA zone: a feed's time with no zone of its own is read on the reader's clock. */
+function readerZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
   const now = Date.now()
   const res = await apiFetch('/api/calendars', {
@@ -312,6 +321,7 @@ async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
       sources: sources.map(s => ({ id: s.id, url: s.url })),
       from: new Date(now - 60 * DAY).toISOString(),
       to: new Date(now + 400 * DAY).toISOString(),
+      tz: readerZone(),
     }),
     timeoutMs: 45_000,
   })
