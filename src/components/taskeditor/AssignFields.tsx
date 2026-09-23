@@ -1,12 +1,33 @@
+import { useId, useMemo, useState } from 'react'
 import { SetForm, TaskForm } from '../../taskform'
-import { PRIORITIES, PRIORITY_META, STATUS_META, Task, pickerStatuses } from '../../types'
+import { OPEN_STATUSES, PRIORITIES, PRIORITY_META, STATUS_META, Task, pickerStatuses } from '../../types'
+
+/** The most tasks the Blocked by list holds at once; past it, a box finds the rest by name. */
+export const BLOCKER_OPTIONS_MAX = 50
+
+/**
+ * What the Blocked by list offers: the open tasks (to do, doing, blocked) that
+ * are not this one and not already among its blockers, whose title holds
+ * `query` — the most recently changed first, BLOCKER_OPTIONS_MAX of them — and
+ * how many more there are. A household's whole list, one option per task,
+ * rebuilt as each letter was typed anywhere in the editor, was more than a
+ * phone's picker wheel or anyone scrolling it needs.
+ */
+export function blockerOptions(candidates: readonly Task[], taskId: string, blockedBy: readonly string[], query = ''): { options: Task[]; more: number } {
+  const q = query.trim().toLowerCase()
+  const open = candidates.filter(
+    c => c.id !== taskId && OPEN_STATUSES.includes(c.status) && !blockedBy.includes(c.id) && (!q || (c.title || 'Untitled').toLowerCase().includes(q)),
+  )
+  open.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title))
+  return { options: open.slice(0, BLOCKER_OPTIONS_MAX), more: Math.max(0, open.length - BLOCKER_OPTIONS_MAX) }
+}
 
 interface Props {
   form: Pick<TaskForm, 'assigneeId' | 'status' | 'priority' | 'blockedBy' | 'shared'>
   set: SetForm
   /** Household members (empty when not in a household). */
   members: { id: string; displayName: string }[]
-  /** Open tasks that could block this one. */
+  /** Open tasks that could block this one, and those it already waits on, so their chips have names. */
   candidates: Task[]
   /** This task's own id, never offered as its own blocker. */
   taskId: string
@@ -43,6 +64,20 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
   // says whose it is instead, exactly as a peer's note does.
   const mine = !ownerId || !myId || ownerId === myId
   const owner = mine ? undefined : members.find(m => m.id === ownerId)?.displayName
+  // The blocker list is drawn again only when what it lists could change. The
+  // editor above renders this on every keystroke in any of its fields.
+  const [find, setFind] = useState('')
+  const offered = useMemo(() => blockerOptions(candidates, taskId, blockedBy, find), [candidates, taskId, blockedBy, find])
+  const blockerOptionEls = useMemo(
+    () =>
+      offered.options.map(c => (
+        <option key={c.id} value={c.id}>
+          {c.title || 'Untitled'}
+        </option>
+      )),
+    [offered],
+  )
+  const blockerSelect = useId()
   return (
     <>
       {members.length > 1 && (
@@ -129,11 +164,15 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
       </div>
 
       {candidates.length > 0 && (
-        <label className="field">
+        <label className="field" htmlFor={blockerSelect}>
           <span>
             Blocked by <small>(unblocks itself when they're done)</small>
           </span>
+          {(find || offered.more > 0) && (
+            <input type="search" value={find} onChange={e => setFind(e.target.value)} placeholder="Find a task…" aria-label="Find a task that blocks this one" />
+          )}
           <select
+            id={blockerSelect}
             value=""
             onChange={e => {
               const id = e.target.value
@@ -143,14 +182,13 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
               }
             }}
           >
-            <option value="">Add a blocker…</option>
-            {candidates
-              .filter(c => c.id !== taskId && !blockedBy.includes(c.id))
-              .map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.title || 'Untitled'}
-                </option>
-              ))}
+            <option value="">{find && offered.options.length === 0 ? 'No open task by that name' : 'Add a blocker…'}</option>
+            {blockerOptionEls}
+            {offered.more > 0 && (
+              <option value="" disabled>
+                {`…and ${offered.more} more — find them by name above`}
+              </option>
+            )}
           </select>
           {blockedBy.length > 0 && (
             <span className="chips blockers">
