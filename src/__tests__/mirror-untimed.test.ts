@@ -38,7 +38,7 @@ describe('the calendar copies read "no time of day" by the app’s one rule', ()
     const day = dueDayKey(dueAt, tz)
     const google = googleTaskBody(task(dueAt), undefined, '', tz) as { start: { date?: string; dateTime?: string } }
     const graph = graphTaskBody(task(dueAt), undefined, '', tz) as { isAllDay: boolean; start: { dateTime: string } }
-    const [feed] = feedFor([task(dueAt)], '', tz, null) as { allDay: boolean; date?: string }[]
+    const [feed] = feedFor([task(dueAt)], '', tz, 'me') as { allDay: boolean; date?: string }[]
     expect(!!google.start.dateTime).toBe(timed)
     expect(graph.isAllDay).toBe(!timed)
     expect(feed.allDay).toBe(!timed)
@@ -53,6 +53,6 @@ describe('the calendar copies read "no time of day" by the app’s one rule', ()
     const dueAt = '2026-09-15T07:00:30.000Z'
     expect(googleTaskBody(task(dueAt), undefined, '', 'America/Phoenix').start).toEqual({ date: '2026-09-15' })
     expect(graphTaskBody(task(dueAt), undefined, '', 'America/Phoenix').isAllDay).toBe(true)
-    expect(feedFor([task(dueAt)], '', 'America/Phoenix', null)[0]).toMatchObject({ allDay: true, date: '2026-09-15' })
+    expect(feedFor([task(dueAt)], '', 'America/Phoenix', 'me')[0]).toMatchObject({ allDay: true, date: '2026-09-15' })
   })
 })
