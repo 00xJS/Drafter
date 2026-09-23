@@ -11,7 +11,8 @@ import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
-import { AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, RhythmSheet, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { AskSheet, AttendancePicker, EventEditor, ImHereSheet, NoticesSheet, PlanDaySheet, ProjectEditor, RhythmSheet, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { hubOpener } from './hubRouting'
 import type { RhythmChange } from '../RhythmSheet'
 
 /** The zone "today" and every day in the planning sheets are read in. */
@@ -424,6 +425,29 @@ export function Overlays({ p }: { p: PlannerCtx }) {
                 for (const c of changes) store.upsert({ ...c.before, updatedAt: newerStamp(c.after.updatedAt) })
               })
             }}
+            onClose={closeSheet}
+          />
+        </Layer>
+      )}
+
+      {/* The hub: a tap marks a notice read — a newer stamp, so the reader's
+          other devices take it — and opens what it is about, closing first */}
+      {sheet?.kind === 'notices' && (
+        <Layer name="Notifications">
+          <NoticesSheet
+            notices={store.notices}
+            tasks={store.tasks}
+            people={store.people}
+            places={store.places}
+            meals={store.meals}
+            events={store.events}
+            myId={household.myId}
+            onRead={n => store.upsert({ ...n, readAt: new Date().toISOString(), updatedAt: newerStamp(n.updatedAt) })}
+            onReadAll={ns => {
+              const at = new Date().toISOString()
+              for (const n of ns) store.upsert({ ...n, readAt: at, updatedAt: newerStamp(n.updatedAt) })
+            }}
+            onOpen={hubOpener(p, closeSheet)}
             onClose={closeSheet}
           />
         </Layer>

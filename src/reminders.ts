@@ -1,7 +1,7 @@
 import { CalendarEntry, Meal, OPEN_STATUSES, Person, Place, Task } from './types'
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
-import { excerpt } from './utils'
+import { excerpt, fmtTime } from './utils'
 import { hasDueTime } from '../shared/due.mts'
 import { isMineTask } from '../shared/domain.mts'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE, type PlanDayPref } from './native'
@@ -274,3 +274,85 @@ export function distinctIds(list: LocalReminder[]): LocalReminder[] {
   })
 }
 
+
+/** What a reminder that rang is about, for the hub to open. */
+export type ReminderTarget = { kind: 'task' | 'event' | 'person' | 'place'; id: string }
+
+/** A reminder that has rung, as the hub on Home lists it. */
+export interface FiredReminder {
+  /** Stable across rebuilds: what it was about, and when it rang. */
+  key: string
+  at: Date
+  /** "Reminder · Take bins out was due 9:00 AM" */
+  title: string
+  target: ReminderTarget
+}
+
+/** How far back the hub looks for reminders that rang. */
+export const FIRED_REMINDER_DAYS = 7
+
+/**
+ * The reminders this device has rung in the last `days` days, worked out again
+ * by the rules that set them — never stored. The hub on Home lists them, so
+ * one swiped away unread can still be read.
+ *
+ * A phone rings each open task of mine at its time (9am for a day with no
+ * time), each of my own events as it starts, each birthday and anniversary at
+ * 9am, and a place whose rhythm I set and clearly missed at its weekly slot
+ * (buildLocalReminders). A browser rings tasks and events alone, and only while
+ * Drafter is open (notify.ts), so `device: 'browser'` lists those two. What is
+ * done, deleted or moved since is gone from the list, as it is from the day.
+ */
+export function firedReminders(
+  data: { tasks: Task[]; people: Person[]; places: Place[]; meals: Meal[] },
+  now: Date,
+  opts: { events?: CalendarEntry[]; myId?: string | null; device: 'phone' | 'browser'; days?: number },
+): FiredReminder[] {
+  const nowMs = now.getTime()
+  const since = nowMs - (opts.days ?? FIRED_REMINDER_DAYS) * DAY_MS
+  const rang = (ms: number) => Number.isFinite(ms) && ms <= nowMs && ms > since
+  const sameDay = (a: Date) => a.getFullYear() === now.getFullYear() && a.getMonth() === now.getMonth() && a.getDate() === now.getDate()
+  const out: FiredReminder[] = []
+  for (const t of data.tasks) {
+    if (!OPEN_STATUSES.includes(t.status) || !t.dueAt || t.deletedAt || !isMineTask(t, opts.myId)) continue
+    const at = taskRemindAt(t.dueAt)
+    if (!rang(at.getTime())) continue
+    const when = hasDueTime(t.dueAt) ? `was due ${fmtTime(t.dueAt)}` : sameDay(at) ? 'is due today' : 'was due that day'
+    out.push({ key: `task:${t.id}@${at.getTime()}`, at, title: `Reminder · ${t.title || 'Untitled task'} ${when}`, target: { kind: 'task', id: t.id } })
+  }
+  for (const e of opts.events ?? []) {
+    if (!remindsMe(e, opts.myId)) continue
+    const at = eventRemindAt(e)
+    if (!at || !rang(at.getTime())) continue
+    const when = e.allDay ? (sameDay(at) ? 'is today' : 'was that day') : `started at ${fmtTime(e.start)}`
+    out.push({ key: `event:${e.id}@${at.getTime()}`, at, title: `Reminder · ${e.title || 'Untitled event'} ${when}`, target: { kind: 'event', id: e.id } })
+  }
+  if (opts.device === 'phone') {
+    const from = new Date(since)
+    for (const o of upcomingOccasions(data.people, opts.days ?? FIRED_REMINDER_DAYS, from)) {
+      const at = new Date(o.at)
+      at.setHours(MORNING, 0, 0, 0)
+      if (!rang(at.getTime())) continue
+      out.push({
+        key: `occasion:${o.person.id}:${o.kind}@${at.getTime()}`,
+        at,
+        title: `Reminder · ${o.person.name}'s ${o.kind}${sameDay(at) ? ' is today' : ''}`,
+        target: { kind: 'person', id: o.person.id },
+      })
+    }
+    // the slot a place last had, while it stays clearly overdue: the weekly
+    // nudge buildLocalReminders sets, longest overdue first and three at most
+    const overdue = data.places
+      .filter(p => p && !p.deletedAt)
+      .map(p => ({ place: p, status: placeCadenceStatus(p, data.tasks, now, data.meals, opts.myId) }))
+      .filter(x => x.status.status === 'overdue')
+      .sort((a, b) => (b.status.daysSince ?? 0) - (a.status.daysSince ?? 0) || a.place.name.localeCompare(b.place.name))
+      .slice(0, MAX_PLACE_REMINDERS)
+    for (const { place } of overdue) {
+      const at = nextPlaceMorning(place.id, from)
+      if (!rang(at.getTime())) continue
+      out.push({ key: `place:${place.id}@${at.getTime()}`, at, title: `Reminder · Been a while: ${place.name}`, target: { kind: 'place', id: place.id } })
+    }
+  }
+  return out.sort((a, b) => b.at.getTime() - a.at.getTime())
+}

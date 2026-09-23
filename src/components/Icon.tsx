@@ -37,6 +37,8 @@ export type IconName =
   | 'keep'
   | 'chat'
   | 'chevron'
+  | 'bell'
+  | 'alert'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -208,6 +210,20 @@ const PATHS: Record<IconName, JSX.Element> = {
   chat: (
     <>
       <path d="M20.4 12.6c0 3.9-3.6 7-8 7a9.6 9.6 0 0 1-2.5-.3L5.2 20.6l1.2-3.3a6.6 6.6 0 0 1-2.8-5.3c0-3.9 3.6-7 8-7s8.8 3.1 8.8 7z" />
+    </>
+  ),
+  /* the notification hub on Home (v3.32): a bell, its clapper under the rim */
+  bell: (
+    <>
+      <path d="M6.2 16.4v-5.2a5.8 5.8 0 0 1 11.6 0v5.2l1.6 2.1H4.6z" />
+      <path d="M10 20.6a2.2 2.2 0 0 0 4 0" />
+    </>
+  ),
+  /* something is wrong on the server: the hub's alarm rows */
+  alert: (
+    <>
+      <path d="M12 3.9 21.2 19.6H2.8z" />
+      <path d="M12 10v4.4M12 17.3v.1" />
     </>
   ),
   keep: (

@@ -67,10 +67,12 @@ export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskS
 export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => m.ImHereSheet), 'ImHereSheet')
 // Who, and how often: Today's cold-start card and the People and Places rows open it
 export const RhythmSheet = preloadable(() => import('../RhythmSheet').then(m => m.RhythmSheet), 'RhythmSheet')
+// The notification hub, behind the bell on Home: only the bell is in the launch
+export const NoticesSheet = preloadable(() => import('../NoticesSheet').then(m => m.NoticesSheet), 'NoticesSheet')
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload],
+  home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
   tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
   // four segments, and a finger cannot say which — so all four, as the lens does
@@ -86,7 +88,7 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  Settings and the chat sit near the front because the top bar reaches both
  *  from every screen — Settings was dead last of 29, from when it was a dialog
  *  you rarely opened rather than a screen you navigate to. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {
