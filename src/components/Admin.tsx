@@ -4,7 +4,7 @@ import { siteOrigin } from '../api'
 import { isEnvelope, unwrapSnapshot } from '../backupcrypto'
 import type { EvalResult } from '../chateval'
 import { saveFile } from '../native'
-import { SnapshotFiles, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
+import { SnapshotFiles, readableName, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
 import { AdminOps } from './AdminOps'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -266,7 +266,9 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
 
   const saveSnapshot = () => {
     if (!opened?.snapshot) return
-    const name = `${opened.path.split('/').pop()?.replace(/\.json$/, '') ?? 'snapshot'}-readable.json`
+    // whose it is goes in the name: both accounts' copies of a night used to be called the same
+    const owner = backups?.users.find(u => opened.path.startsWith(`backups/${u.userId}/`))
+    const name = readableName(opened.path, owner?.email)
     saveFile(name, new Blob([JSON.stringify(opened.snapshot, null, 2)], { type: 'application/json' })).catch(e => setOpened({ ...opened, error: (e as Error).message }))
   }
 
