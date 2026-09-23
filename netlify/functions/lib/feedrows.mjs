@@ -4,7 +4,8 @@
 // netlify/functions as a function, and a declaration file sitting beside
 // feed.mjs (feed.d.mts) was picked up as a function called "feed.d" with no
 // handler — which is what stopped the deploy of 4297356. lib/ is not scanned.
-import { isMineTask, isUntimed, legacyPostToTask, localDate } from '../../../shared/domain.mts'
+import { isMineTask, legacyPostToTask } from '../../../shared/domain.mts'
+import { dueDayKey, hasDueTime } from '../../../shared/due.mts'
 import { readableRow } from '../../../shared/kinds.mts'
 import { keyHeaders } from './supabasekeys.mjs'
 
@@ -49,7 +50,8 @@ export function feedFor(items, site, tz, myId) {
     if (!isOpen && !recentlyDone) continue
     const project = t.projectId ? projects.get(t.projectId) : null
     const start = Date.parse(t.dueAt)
-    const timed = !isUntimed(t.dueAt, tz)
+    // a day with no time is all-day, by the app's one rule for it (shared/due.mts)
+    const timed = hasDueTime(t.dueAt, tz)
     const prefix = t.status === 'done' ? '✓ ' : t.priority === 'urgent' ? '‼ ' : t.priority === 'high' ? '▲ ' : ''
     feed.push({
       uid: `task-${t.id}@drafter`,
@@ -61,7 +63,7 @@ export function feedFor(items, site, tz, myId) {
       allDay: !timed,
       // the reader's own calendar day, not the UTC one: an untimed task is
       // stored at local midnight, which is the previous day in UTC all summer
-      date: timed ? undefined : localDate(t.dueAt, tz),
+      date: timed ? undefined : dueDayKey(t.dueAt, tz),
       description: [t.description, t.checklist?.length ? `Checklist: ${t.checklist.filter(c => c.done).length}/${t.checklist.length}` : '', `Status: ${t.status} · Priority: ${t.priority}`]
         .filter(Boolean)
         .join('\n\n'),
@@ -72,10 +74,10 @@ export function feedFor(items, site, tz, myId) {
   for (const p of projects.values()) {
     if (p.status === 'archived' || p.status === 'done') continue
     if (p.ownerId && myId && p.ownerId !== myId) continue
-    if (p.targetAt) feed.push({ transparent: true, uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, date: localDate(p.targetAt, tz), description: p.description, url: site, categories: [p.name] })
+    if (p.targetAt) feed.push({ transparent: true, uid: `project-${p.id}@drafter`, title: `🎯 ${p.name} target`, start: Date.parse(p.targetAt), allDay: true, date: dueDayKey(p.targetAt, tz), description: p.description, url: site, categories: [p.name] })
     for (const m of p.milestones ?? []) {
       if (!m.dueAt) continue
-      feed.push({ transparent: true, uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: localDate(m.dueAt, tz), url: site, categories: [p.name] })
+      feed.push({ transparent: true, uid: `milestone-${p.id}-${m.id}@drafter`, title: `${m.done ? '✓' : '◆'} ${m.name} · ${p.name}`, start: Date.parse(m.dueAt), allDay: true, date: dueDayKey(m.dueAt, tz), url: site, categories: [p.name] })
     }
   }
   // Entries the user wrote themselves. These are the only rows in the feed with

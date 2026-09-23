@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { copyNotes } from './mirror.mjs'
-import { isUntimed, localDate } from '../../../shared/domain.mts'
+import { dueDayKey, hasDueTime } from '../../../shared/due.mts'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
 
@@ -255,11 +255,15 @@ export function googleReminders(remind) {
   return { useDefault: remind === true, overrides: [] }
 }
 
-/** The Google Calendar body for one task: free time, keyed on taskId, silent unless `remind`. */
+/**
+ * The Google Calendar body for one task: free time, keyed on taskId, silent
+ * unless `remind`. A task with no time of day is an all-day event on its day,
+ * by the app's one rule for that (shared/due.mts), read in the owner's zone.
+ */
 export function googleTaskBody(task, projectName, site, tz, remind = false) {
-  const timed = !isUntimed(task.dueAt, tz)
+  const timed = hasDueTime(task.dueAt, tz)
   const start = new Date(task.dueAt)
-  const dateOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
+  const dateOnly = dueDayKey(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
   return {
     summary: `${prefix}${task.title || 'Untitled task'}`,

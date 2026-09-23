@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { copyNotes } from './mirror.mjs'
-import { isUntimed, localDate } from '../../../shared/domain.mts'
+import { dueDayKey, hasDueTime } from '../../../shared/due.mts'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 /** "common" accepts both personal Microsoft accounts and work/school accounts. */
@@ -333,13 +333,14 @@ export async function drafterCalendarId(userId, accountId) {
  * The Graph body for one task: free time, keyed on TASK_PROP. Silent unless
  * `remind`: Drafter sends every reminder itself, and a copy Outlook was left to
  * default rang besides (see googleReminders in lib/google.mjs for the rule).
+ * A task with no time of day is all-day, by the app's one rule (shared/due.mts).
  */
 export function graphTaskBody(task, projectName, site, tz, remind = false) {
-  const timed = !isUntimed(task.dueAt, tz)
+  const timed = hasDueTime(task.dueAt, tz)
   const start = new Date(task.dueAt)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
   const stamp = d => d.toISOString().replace(/\.\d{3}Z$/, '')
-  const dayOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
+  const dayOnly = dueDayKey(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
   return {
     subject: `${prefix}${task.title || 'Untitled task'}`,
     body: {
