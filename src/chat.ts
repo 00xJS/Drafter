@@ -10,7 +10,7 @@ import { uid } from './utils'
 // for them apart — "so our household chat is not being overtaken by the AI
 // chat" — so they are different record kinds, different threads, and nothing
 // written in one ever appears in the other. The assistant's side is personal
-// at the database (shared/kinds.mjs), which is what makes that true rather
+// at the database (shared/kinds.mts), which is what makes that true rather
 // than merely tidy.
 //
 // Both are one row per line, never edited after it is written. A thread kept

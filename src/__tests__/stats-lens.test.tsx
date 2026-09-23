@@ -152,7 +152,7 @@ describe('the figures an adversarial review found wrong', () => {
   })
 
   it('does not count a logged visit as work finished', () => {
-    // shared/review.mjs has drawn this line since the review shipped: the Done
+    // shared/review.mts has drawn this line since the review shipped: the Done
     // tile, the weekly sparkline and the review all leave visits out
     const tasks = [done('chore', '2026-09-15', { tags: ['home'] }), done('saw-mum', '2026-09-15', { title: 'Saw Mum', tags: ['visit'], peopleIds: ['mum'] })]
     expect(taskReport(tasks, 30, NOW).done).toBe(1)

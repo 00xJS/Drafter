@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { streak as journalStreak } from '../../shared/journal.mjs'
-import * as sharedPeople from '../../shared/people.mjs'
-import { habitStreak } from '../../shared/review.mjs'
-import * as sharedStats from '../../shared/stats.mjs'
-import * as sharedWardrobe from '../../shared/wardrobe.mjs'
+import { streak as journalStreak } from '../../shared/journal.mts'
+import * as sharedPeople from '../../shared/people.mts'
+import { habitStreak } from '../../shared/review.mts'
+import * as sharedStats from '../../shared/stats.mts'
+import * as sharedWardrobe from '../../shared/wardrobe.mts'
 import * as kitchen from '../kitchen'
 import * as people from '../people'
 import {
@@ -27,7 +27,7 @@ import type { JournalEntry } from '../types'
 import { dateKey } from '../utils'
 
 // The counting every Stats view shares (src/stats.ts), and the day-key rules
-// under it that the server counts by too (shared/stats.mjs). Each figure is a
+// under it that the server counts by too (shared/stats.mts). Each figure is a
 // count of day keys, so none moves with the zone or the hour it is read at.
 
 const TODAY = '2026-09-14'

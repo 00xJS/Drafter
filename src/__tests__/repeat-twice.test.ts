@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { duplicateSpawnPairs, duplicateSpawns, spawnId } from '../../shared/domain.mjs'
+import { duplicateSpawnPairs, duplicateSpawns, spawnId } from '../../shared/domain.mts'
 import { retiredMessage, type RetiredSpawn } from '../syncengine'
 import { Task } from '../types'
 import { FakeServer, device, edit, idle, ready, task, type Device } from './sync-fakes'

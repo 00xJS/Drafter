@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { weekDayKeys } from '../../shared/weeks.mjs'
+import { weekDayKeys } from '../../shared/weeks.mts'
 import type { RecipeSuggestion } from '../ai'
 import { Kitchen } from '../components/Kitchen'
 import { MealPlanSheet, choiceFromSuggestion, mealsForPicks, proposeMealWeek } from '../components/MealPlanSheet'

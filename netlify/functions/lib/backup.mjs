@@ -10,9 +10,9 @@
 // TOMBSTONE_TTL_MS (peers have had time to see them), and forgets client
 // error reports nobody has hit for CLIENT_ERRORS_TTL_MS.
 
-import { readableRow } from '../../../shared/kinds.mjs'
+import { readableRow } from '../../../shared/kinds.mts'
 import { backupEncryptionOn, wrapSnapshot } from './backupcrypto.mjs'
-import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mjs'
+import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mts'
 import { keyHeaders } from './supabasekeys.mjs'
 
 const DAY = 86_400_000

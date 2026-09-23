@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeEvent, sanitizeItem, sanitizeTask } from '../schema'
 import { duplicateTask } from '../taskutils'
-import { nextOccurrence } from '../../shared/domain.mjs'
+import { nextOccurrence } from '../../shared/domain.mts'
 import type { CalendarEntry, Task } from '../types'
 
 // B1: today's focus lives on the task (focusOn / focusBy) and a time block on

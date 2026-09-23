@@ -1,16 +1,16 @@
-import { DAY_MS } from '../shared/journal.mjs'
-import { distinctDays } from '../shared/stats.mjs'
+import { DAY_MS } from '../shared/journal.mts'
+import { distinctDays } from '../shared/stats.mts'
 import { dateKey } from './utils'
 
 // The counting every Stats view shares: pure, no DOM, worked out once per
 // screen and handed to the kit that draws it (src/components/stats). The
 // day-key rules an assistant counts by too — a window, the distinct days, a
-// streak, the top few — live in shared/stats.mjs and are re-exported here
+// streak, the top few — live in shared/stats.mts and are re-exported here
 // under the same names; what reads this device's own calendar — a year's
 // months, the trend, a month's grid — is the app's alone.
 
-export { daysBetween, dayStreaks, daysWithin, distinctDays, inWindow, topN } from '../shared/stats.mjs'
-export type { RankBy, Streaks } from '../shared/stats.mjs'
+export { daysBetween, dayStreaks, daysWithin, distinctDays, inWindow, topN } from '../shared/stats.mts'
+export type { RankBy, Streaks } from '../shared/stats.mts'
 
 // ---- windows ---------------------------------------------------------------------
 

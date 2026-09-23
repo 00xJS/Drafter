@@ -518,7 +518,7 @@ declare r jsonb; posts_before bigint; history_before bigint;
 begin
   select count(*) into posts_before from public.posts;
   select count(*) into history_before from public.posts_history;
-  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mts
   r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine']);
   if r <> '{"ok": true, "checked": 14, "failures": []}'::jsonb then
     raise exception 'FAIL 15: the canary should pass for all 14 kinds, got %', r;
@@ -1287,7 +1287,7 @@ declare r jsonb; posts_before bigint; history_before bigint;
 begin
   select count(*) into posts_before from public.posts;
   select count(*) into history_before from public.posts_history;
-  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mts
   r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note']);
   if r <> '{"ok": true, "checked": 15, "failures": []}'::jsonb then
     raise exception 'FAIL v3.13-4: the canary should pass for all 15 kinds, got %', r;
@@ -1532,7 +1532,7 @@ declare r jsonb; posts_before bigint; history_before bigint;
 begin
   select count(*) into posts_before from public.posts;
   select count(*) into history_before from public.posts_history;
-  -- every kind the app writes: SYNC_KINDS in shared/kinds.mjs
+  -- every kind the app writes: SYNC_KINDS in shared/kinds.mts
   r := public.sync_canary(array['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear']);
   if r <> '{"ok": true, "checked": 18, "failures": []}'::jsonb then
     raise exception 'FAIL v3.14-4: the canary should pass for all 18 kinds, got %', r;
@@ -1754,7 +1754,7 @@ begin
      or (select data ->> 'purged' from public.posts where id = 'g-hat') is distinct from 'true' then
     raise exception 'FAIL v3.14-7: a piece deleted forever should be stored content-free, pointing at no photo';
   end if;
-  -- garmentMediaIds (shared/media.mjs) in SQL: every photo a live piece, or one in Trash, points at,
+  -- garmentMediaIds (shared/media.mts) in SQL: every photo a live piece, or one in Trash, points at,
   -- front and back (mediaIdsOf)
   select coalesce(array_agg(p order by p), '{}') into referenced
     from public.posts, lateral (values (data ->> 'photoId'), (data ->> 'thumbId'), (data ->> 'backPhotoId'), (data ->> 'backThumbId')) v(p)

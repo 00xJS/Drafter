@@ -1,4 +1,4 @@
-import { PERSONAL_PREFIX, isPersonalMediaOf } from '../shared/media.mjs'
+import { PERSONAL_PREFIX, isPersonalMediaOf } from '../shared/media.mts'
 import { idbAll, idbDel, idbGet, idbSet } from './idb'
 import { getSupabase, storedUserId } from './supabase'
 import { browserKV, type KV } from './syncstate'

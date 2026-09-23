@@ -4,18 +4,46 @@
 // both read these lists, so the draft never names a task, a person or a habit
 // the Week segment does not, nor counts one differently. Dependency-free ESM.
 
-import { shiftDayKey } from './journal.mjs'
-import { visitDays, visitsFor } from './people.mjs'
-import { OPEN } from './today.mjs'
-import { isDayKey } from './weeks.mjs'
+import type { Habit, Person, Task } from '../src/types.ts'
+import { shiftDayKey } from './journal.mts'
+import { visitDays, visitsFor } from './people.mts'
+import { OPEN } from './today.mts'
+import { isDayKey } from './weeks.mts'
 
-const ms = d => (d instanceof Date ? d.getTime() : Number(d))
+/** A review period, end exclusive: Dates or epoch ms. */
+export interface ReviewSpan {
+  start: Date | number
+  /** Exclusive. */
+  end: Date | number
+}
+
+/** One habit over a review period: due days kept and missed, and the streak it ended the period on. */
+export interface HabitKept<H> {
+  habit: H
+  done: number
+  due: number
+  missed: number
+  streak: number
+}
+
+export interface HabitsKept<H> {
+  rows: HabitKept<H>[]
+  done: number
+  due: number
+  /** 0–100, rounded; 0 when nothing was due. */
+  pct: number
+}
+
+/** What habitsKept reads of a habit. */
+type HabitShape = Pick<Habit, 'name' | 'done' | 'createdAt'> & Partial<Pick<Habit, 'days' | 'deletedAt' | 'archivedAt'>>
+
+const ms = (d: Date | number): number => (d instanceof Date ? d.getTime() : Number(d))
 
 /** A logged get-together, not a piece of work: counted separately everywhere. */
-export const isVisit = t => (t?.tags ?? []).includes('visit')
+export const isVisit = (t: { tags?: readonly string[] } | null | undefined): boolean => (t?.tags ?? []).includes('visit')
 
 /** Whether an instant falls inside [start, end). Dates or epoch ms; a bad instant never does. */
-export function inRange(iso, start, end) {
+export function inRange(iso: string | null | undefined, start: Date | number, end: Date | number): boolean {
   const t = Date.parse(iso ?? '')
   return Number.isFinite(t) && t >= ms(start) && t < ms(end)
 }
@@ -26,15 +54,15 @@ export function inRange(iso, start, end) {
  * due inside it, and that time has passed. `range` is { start, end }, end
  * exclusive. A bill is a task and counts like one; a wishlist item is not open.
  */
-export function reviewLists(tasks, range, now = new Date()) {
+export function reviewLists<T extends Task>(tasks: readonly T[], range: ReviewSpan, now: Date | number = new Date()): { done: T[]; visitsDone: T[]; slipped: T[] } {
   const nowMs = ms(now)
   const doneAll = (tasks ?? [])
-    .filter(t => t.status === 'done' && inRange(t.completedAt, range.start, range.end))
+    .filter((t): t is T & { completedAt: string } => t.status === 'done' && inRange(t.completedAt, range.start, range.end))
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
   return {
     done: doneAll.filter(t => !isVisit(t)),
     visitsDone: doneAll.filter(isVisit),
-    slipped: (tasks ?? []).filter(t => OPEN.includes(t.status) && inRange(t.dueAt, range.start, range.end) && Date.parse(t.dueAt) < nowMs),
+    slipped: (tasks ?? []).filter(t => OPEN.includes(t.status) && inRange(t.dueAt, range.start, range.end) && Date.parse(t.dueAt ?? '') < nowMs),
   }
 }
 
@@ -44,7 +72,12 @@ export function reviewLists(tasks, range, now = new Date()) {
  * and your own past events as the visits they amount to); `dayKeyOf` turns an
  * instant into YYYY-MM-DD in the reader's zone.
  */
-export function peopleSeen(people, seen, range, dayKeyOf) {
+export function peopleSeen<P extends Person>(
+  people: readonly P[],
+  seen: readonly Task[],
+  range: ReviewSpan,
+  dayKeyOf: (at: string) => string | null | undefined,
+): { person: P; visits: Task[]; days: number }[] {
   return (people ?? [])
     .map(p => {
       const visits = visitsFor(p.id, seen).filter(v => inRange(v.at, range.start, range.end))
@@ -55,10 +88,10 @@ export function peopleSeen(people, seen, range, dayKeyOf) {
 }
 
 /** A YYYY-MM-DD key's weekday, 0 = Sunday: the date's own, whatever the zone. */
-const weekdayOf = key => new Date(`${key}T12:00:00Z`).getUTCDay()
+const weekdayOf = (key: string): number => new Date(`${key}T12:00:00Z`).getUTCDay()
 
 /** Due on that day? No days (or an empty list) means every day. */
-const dueOn = (habit, key) => !habit?.days?.length || habit.days.includes(weekdayOf(key))
+const dueOn = (habit: { days?: readonly number[] } | null | undefined, key: string): boolean => !habit?.days?.length || habit.days.includes(weekdayOf(key))
 
 /**
  * A habit's streak as it stood on `lastKey`: the due days up to it, in a row,
@@ -68,7 +101,7 @@ const dueOn = (habit, key) => !habit?.days?.length || habit.days.includes(weekda
  * 🔥 n is this with both today, and a review counts the streak its period
  * ended on.
  */
-export function habitStreak(habit, lastKey, todayKey = lastKey) {
+export function habitStreak(habit: Partial<Pick<Habit, 'days' | 'done'>> | null | undefined, lastKey: string, todayKey: string = lastKey): number {
   if (!isDayKey(lastKey)) return 0
   const done = new Set(habit?.done ?? [])
   let streak = 0
@@ -91,8 +124,14 @@ export function habitStreak(habit, lastKey, todayKey = lastKey) {
  * in the reader's zone, as for peopleSeen: the period's edges, today and each
  * habit's first day are all read through it.
  */
-export function habitsKept(habits, range, now, dayKeyOf) {
-  const dayOf = at => dayKeyOf(new Date(ms(at)).toISOString())
+export function habitsKept<H extends HabitShape>(
+  habits: readonly H[] | null | undefined,
+  range: ReviewSpan,
+  now: Date | number,
+  dayKeyOf: (at: string) => string | null | undefined,
+): HabitsKept<H> {
+  // a day it cannot read is no day at all, and isDayKey below says so
+  const dayOf = (at: Date | number): string => dayKeyOf(new Date(ms(at)).toISOString()) ?? ''
   const startKey = dayOf(range.start)
   const lastInRange = shiftDayKey(dayOf(range.end), -1)
   const todayKey = dayOf(now)
@@ -126,7 +165,7 @@ export function habitsKept(habits, range, now, dayKeyOf) {
  * without a tally per day, or nothing when nothing was due.
  * "77% consistent (10/13 kept, 3 missed): Read 6/7 (1 missed, streak 4) · Gym 3/3 (streak 5)"
  */
-export function habitLines(kept) {
+export function habitLines(kept: HabitsKept<{ name: string }> | null | undefined): string[] {
   if (!kept?.due) return []
   const rows = kept.rows.map(r => {
     const notes = [r.missed ? `${r.missed} missed` : '', r.streak ? `streak ${r.streak}` : ''].filter(Boolean)

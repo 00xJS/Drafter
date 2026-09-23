@@ -29,9 +29,9 @@ import { htmlToText } from './richtext'
 import { hasDueTime } from './taskutils'
 import { dateKey, excerpt } from './utils'
 import { NOT_WORN_DAYS, costPerWear, liveById, mostWorn, neverWorn, notWornLately, orderPieces, outfitLabel, pieceTags, priceOf, repeatedOutfits, wearIndex } from './wardrobe'
-import { mealLabel, mealSides } from '../shared/kitchen.mjs'
-import { mealHistory } from '../shared/weekplan.mjs'
-import { isDayKey, weekStartKey } from '../shared/weeks.mjs'
+import { mealLabel, mealSides } from '../shared/kitchen.mts'
+import { mealHistory } from '../shared/weekplan.mts'
+import { isDayKey, weekStartKey } from '../shared/weeks.mts'
 
 // Ask Drafter: a question answered from your own planner.
 //

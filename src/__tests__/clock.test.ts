@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { makeClock, machineTimeZone, startOfDayMs } from '../../shared/clock.mjs'
+import { makeClock, machineTimeZone, startOfDayMs } from '../../shared/clock.mts'
 
 // The hosted MCP endpoint runs in UTC; the user does not. "Today", a due day
 // and the start of a day are all in the user's zone, across DST changes and

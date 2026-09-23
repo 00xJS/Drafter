@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { visibleItemsFor } from '../../shared/digest.mjs'
-import { localDayKey, shiftDayKey } from '../../shared/journal.mjs'
-import { groceryId } from '../../shared/kitchen.mjs'
-import { weekKeyOf } from '../../shared/weeks.mjs'
-import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS, SHARED_BY_DEFAULT, readableRow } from '../../shared/kinds.mjs'
+import { visibleItemsFor } from '../../shared/digest.mts'
+import { localDayKey, shiftDayKey } from '../../shared/journal.mts'
+import { groceryId } from '../../shared/kitchen.mts'
+import { weekKeyOf } from '../../shared/weeks.mts'
+import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS, SHARED_BY_DEFAULT, readableRow } from '../../shared/kinds.mts'
 import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
 import { readableItems } from '../../netlify/functions/lib/feedrows.mjs'
-import { makeClock } from '../../shared/clock.mjs'
+import { makeClock } from '../../shared/clock.mts'
 import { PAGE_SIZE, PERSONAL_KINDS, SINCE_WINDOW_MS, createRestData, ownerMaySee } from '../../mcp/data.mjs'
 import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext, summarizeMeal, summarizePlace, summarizeTask, textToNoteHtml } from '../../mcp/tools.mjs'
 import type { Scope } from '../../mcp/tools.mjs'
@@ -443,7 +443,7 @@ const SWEEP: Record<string, Record<string, unknown>> = {
 }
 
 describe('personal kinds stay with their owner', () => {
-  it('uses the one list in shared/kinds.mjs', () => {
+  it('uses the one list in shared/kinds.mts', () => {
     expect(PERSONAL_KINDS).toBe(SHARED_PERSONAL_KINDS)
   })
 

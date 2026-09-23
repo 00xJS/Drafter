@@ -1,7 +1,9 @@
 // Due-day bucketing, today's focus and "next up": the rules Today, the digest
 // and the planner's sheets share.
 
-export const OPEN = ['todo', 'doing', 'blocked']
+import type { Priority, Project, Task } from '../src/types.ts'
+
+export const OPEN: string[] = ['todo', 'doing', 'blocked']
 export const DAY_MS = 86_400_000
 
 /**
@@ -9,11 +11,14 @@ export const DAY_MS = 86_400_000
  * `dayKey(iso)` returns YYYY-MM-DD in the viewer's timezone (or null if bad).
  * `today` is today's YYYY-MM-DD in that same zone.
  */
-export function bucketByDue(tasks, { today, dayKey }) {
+export function bucketByDue(
+  tasks: readonly Task[],
+  { today, dayKey }: { today: string; dayKey: (iso: string) => string | null },
+): { open: Task[]; overdue: Task[]; dueToday: Task[]; dueSoon: Task[] } {
   const open = (tasks ?? []).filter(t => OPEN.includes(t.status) && !t.deletedAt)
-  const overdue = []
-  const dueToday = []
-  const dueSoon = []
+  const overdue: Task[] = []
+  const dueToday: Task[] = []
+  const dueSoon: Task[] = []
   for (const t of open) {
     if (!t.dueAt) continue
     const key = dayKey(t.dueAt)
@@ -32,20 +37,20 @@ export function bucketByDue(tasks, { today, dayKey }) {
  * accounts) or an unknown user counts as anyone's; a household member's picks
  * are theirs alone and never land in your focus.
  */
-export function isFocusFor(task, dayKey, userId) {
+export function isFocusFor(task: { focusOn?: string; focusBy?: string } | null | undefined, dayKey: string, userId?: string | null): boolean {
   if (!task || !dayKey || task.focusOn !== dayKey) return false
   return !task.focusBy || !userId || task.focusBy === userId
 }
 
 /** The day's focus: open tasks first, then the finished ones — which is what reads as "2 of 3 done". */
-export function focusTasks(tasks, dayKey, userId) {
+export function focusTasks<T extends { status: string; focusOn?: string; focusBy?: string; deletedAt?: string }>(tasks: readonly T[], dayKey: string, userId?: string | null): T[] {
   const live = (tasks ?? []).filter(t => t && !t.deletedAt && isFocusFor(t, dayKey, userId))
   return [...live.filter(t => OPEN.includes(t.status)), ...live.filter(t => t.status === 'done')]
 }
 
 /** A task created this recently is almost certainly what you are looking at the screen for. */
 const JUST_ADDED_MS = 10 * 60_000
-const PRIORITY_POINTS = { urgent: 3, high: 2, normal: 1, low: 0 }
+const PRIORITY_POINTS: Partial<Record<Priority, number>> = { urgent: 3, high: 2, normal: 1, low: 0 }
 
 /**
  * Today's "Next up" ranking (src/review.ts wraps it with types). It lives here
@@ -53,7 +58,14 @@ const PRIORITY_POINTS = { urgent: 3, high: 2, normal: 1, low: 0 }
  * as Today does. `exclude` leaves tasks out without changing how the rest
  * score: today's focus has a card of its own and is not listed twice.
  */
-export function nextUp(tasks, _projects, limit = 6, now = new Date(), pinnedTitles = [], exclude = new Set()) {
+export function nextUp<T extends Task>(
+  tasks: readonly T[],
+  _projects: readonly Pick<Project, 'id' | 'status'>[],
+  limit = 6,
+  now: Date = new Date(),
+  pinnedTitles: readonly string[] = [],
+  exclude: ReadonlySet<string> = new Set(),
+): { task: T; reason: string; score: number }[] {
   const nowMs = now.getTime()
   const open = (tasks ?? []).filter(t => OPEN.includes(t.status) && !exclude.has(t.id))
   // a project touched recently is one you are actually in the middle of

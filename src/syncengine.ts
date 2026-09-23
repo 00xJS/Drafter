@@ -1,7 +1,7 @@
 import { Item, Note, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedPeerRows, type SyncConflict } from './itemops'
-import { applyLocalChoice, sameContent } from '../shared/merge.mjs'
+import { applyLocalChoice, sameContent } from '../shared/merge.mts'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
 import { peerVisibleByKind, purgeTombstone, type SyncResult } from './sync'

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { APP_ORIGIN } from '../../shared/apphost.mjs'
-import { MESSAGE_MAX, STACK_MAX } from '../../shared/errorreport.mjs'
+import { APP_ORIGIN } from '../../shared/apphost.mts'
+import { MESSAGE_MAX, STACK_MAX } from '../../shared/errorreport.mts'
 import { MAX_REPORTS, cleanReports } from '../../netlify/functions/lib/errorlog.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import logFunction from '../../netlify/functions/log.mjs'

@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core'
-import { COUNT_MAX, cleanReport, type CleanReport, type ReportPlatform } from '../shared/errorreport.mjs'
+import { COUNT_MAX, cleanReport, type CleanReport, type ReportPlatform } from '../shared/errorreport.mts'
 import { apiFetch } from './api'
 import { pageBuild } from './appupdate'
 import { getSupabase } from './supabase'
@@ -12,7 +12,7 @@ import { getSupabase } from './supabase'
 // tells the site owner, who sees it in Admin → Data (netlify/functions/log.mjs
 // keeps it; public.client_errors holds it).
 //
-// What a report carries is decided by shared/errorreport.mjs, here and again
+// What a report carries is decided by shared/errorreport.mts, here and again
 // on the server: the error's message and stack (trimmed, with every query
 // string, email address and long quoted run taken out), the build, web or the
 // iOS shell, which screen, and the page's path. Never a record, a title or

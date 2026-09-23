@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalUnit, ingredientName, parseIngredientLine, parseQuantity } from '../../shared/recipes.mjs'
+import { canonicalUnit, ingredientName, parseIngredientLine, parseQuantity } from '../../shared/recipes.mts'
 import { buildGroceryList } from '../kitchen'
 import type { Meal, Recipe } from '../types'
 

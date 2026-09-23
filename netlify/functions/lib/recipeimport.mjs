@@ -22,7 +22,7 @@ import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
 import zlib from 'node:zlib'
-import { parseIngredientLine } from '../../../shared/recipes.mjs'
+import { parseIngredientLine } from '../../../shared/recipes.mts'
 import { slidingWindow } from './ratelimit.mjs'
 import { requireUser } from './session.mjs'
 
@@ -780,7 +780,7 @@ function stepTexts(value, depth = 0) {
 
 /**
  * A schema.org Recipe as the app stores one: name, servings, ingredients (each
- * line through the app's own reader, shared/recipes.mjs) and steps.
+ * line through the app's own reader, shared/recipes.mts) and steps.
  * @returns {{ name: string, servings?: number, ingredients: { name: string, qty?: number, unit?: string }[], steps: string[] }}
  */
 export function recipeFromJsonLd(node) {

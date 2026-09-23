@@ -19,7 +19,7 @@ import {
   seenStatus as sharedSeenStatus,
   upcomingOccasions as sharedOccasions,
   type Rhythm,
-} from '../shared/people.mjs'
+} from '../shared/people.mts'
 
 export { RHYTHM_CHOICES, remindersOff, rhythmOf, suggestRhythm, withRhythm }
 export type { Rhythm }

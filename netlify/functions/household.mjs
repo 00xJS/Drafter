@@ -7,7 +7,7 @@
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
-import { PERSONAL_KINDS } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS } from '../../shared/kinds.mts'
 
 /** A user id has to look like one before it reaches a filter. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -165,7 +165,7 @@ const handler = async req => {
       // Keep the household's SHARED work: re-attribute it to the owner.
       //
       // Shared only. A personal kind belongs to one account even inside a
-      // household (PERSONAL_KINDS, shared/kinds.mjs), and this used to move
+      // household (PERSONAL_KINDS, shared/kinds.mts), and this used to move
       // every row the member owned — their journal, their wardrobe, their
       // habits and reviews — into the creator's account, where the app
       // rendered them, the ICS feed published them, the nightly backup wrote

@@ -187,7 +187,7 @@ function staticImports(file: string): string[] {
   return specs.flatMap(spec => {
     const base = resolve(dirname(file), spec)
     const hit = [base, `${base}.ts`, `${base}.tsx`].find(p => existsSync(p) && statSync(p).isFile())
-    return hit && /\.(tsx?|mjs)$/.test(hit) ? [hit] : []
+    return hit && /\.(tsx?|mts|mjs)$/.test(hit) ? [hit] : []
   })
 }
 

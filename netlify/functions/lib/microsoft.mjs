@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { copyNotes } from './mirror.mjs'
-import { isUntimed, localDate } from '../../../shared/domain.mjs'
+import { isUntimed, localDate } from '../../../shared/domain.mts'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 /** "common" accepts both personal Microsoft accounts and work/school accounts. */

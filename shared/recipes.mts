@@ -4,10 +4,17 @@
 // ✨ Fill in (src/recipefill.ts), so a line reads the same whoever wrote it.
 // Dependency-free ESM.
 
+/** One ingredient as the app stores it, less its row id: a name a shop would know, and a quantity and unit only when given. */
+export interface IngredientLine {
+  name: string
+  qty?: number
+  unit?: string
+}
+
 /** Quantities a shopping list can add up: a real, positive, sane number, as the recipe editor allows. */
 const QTY_MAX = 10_000
 
-const VULGAR = {
+const VULGAR: Record<string, number> = {
   '½': 1 / 2,
   '⅓': 1 / 3,
   '⅔': 2 / 3,
@@ -34,17 +41,17 @@ const RANGE = `(?:\\s*(?:-|–|—|to\\b|or\\b)\\s*(?:${QTY}))?`
 const LEADING_QTY = new RegExp(`^(${QTY})${RANGE}`, 'i')
 const WHOLE_QTY = new RegExp(`^(${QTY})${RANGE}$`, 'i')
 
-const round2 = n => Math.round(n * 100) / 100
+const round2 = (n: number): number => Math.round(n * 100) / 100
 
 /** A decimal written either way, "1.5" or "1,5"; a comma before three digits separates thousands. */
-function decimal(text) {
+function decimal(text: string): number {
   const s = String(text)
   if (/^\d{1,3}(,\d{3})+$/.test(s)) return Number(s.replace(/,/g, ''))
   return Number(s.replace(',', '.'))
 }
 
 /** The value of one quantity token, or NaN. */
-function quantityValue(token) {
+function quantityValue(token: string): number {
   const q = String(token).trim()
   let m = new RegExp(`^(${NUMBER})\\s*(${VULGAR_CLASS})$`).exec(q)
   if (m) return decimal(m[1]) + VULGAR[m[2]]
@@ -56,16 +63,15 @@ function quantityValue(token) {
   return VULGAR[q] ?? NaN
 }
 
-const sane = n => (Number.isFinite(n) && n > 0 && n <= QTY_MAX ? round2(n) : undefined)
+const sane = (n: number): number | undefined => (Number.isFinite(n) && n > 0 && n <= QTY_MAX ? round2(n) : undefined)
 
 /**
  * A quantity as a number the grocery list can add up, or undefined: 2, "2",
  * "1/2", "1 1/2", "1½", "½", "2-3" (the first of a range). Anything else — "a
  * pinch", 0, a negative, ten thousand kilos — is no quantity at all, because a
  * wrong one quietly doubles a grocery line.
- * @param {unknown} v
  */
-export function parseQuantity(v) {
+export function parseQuantity(v: unknown): number | undefined {
   if (typeof v === 'number') return sane(v)
   if (typeof v !== 'string') return undefined
   const m = WHOLE_QTY.exec(v.trim())
@@ -73,9 +79,9 @@ export function parseQuantity(v) {
 }
 
 // Every spelling of a unit, and the one the app writes. The grocery list adds
-// lines up by name AND unit (ingredientKey in shared/kitchen.mjs), so "cups"
+// lines up by name AND unit (ingredientKey in shared/kitchen.mts), so "cups"
 // in one recipe and "cup" in another must be one unit or they stay two lines.
-const UNIT_SPELLINGS = {
+const UNIT_SPELLINGS: Record<string, string[]> = {
   cup: ['cup', 'cups', 'c'],
   tbsp: ['tbsp', 'tbsps', 'tbs', 'tbl', 'tablespoon', 'tablespoons'],
   tsp: ['tsp', 'tsps', 'teaspoon', 'teaspoons'],
@@ -121,9 +127,8 @@ const SIZE_WORDS = new Set(['small', 'medium', 'large', 'extra-large', 'extra la
  * The app's spelling of a unit — "Tablespoons" is "tbsp", "cups" is "cup" —
  * '' for no unit (a size word such as "large" included), and null when it is
  * not a unit this knows.
- * @param {unknown} raw
  */
-export function canonicalUnit(raw) {
+export function canonicalUnit(raw: unknown): string | null {
   const key = String(raw ?? '')
     .trim()
     .toLowerCase()
@@ -140,7 +145,7 @@ const PAREN = /^\([^()]{0,40}\)\s*/
 const PLUS = new RegExp(`^(?:\\+|plus\\b)\\s*(?:${QTY})\\s*`, 'i')
 
 /** The unit the text starts with, as written and as the app spells it, and what is left after it. */
-function leadingUnit(text) {
+function leadingUnit(text: string): { unit: string | undefined; word: string; rest: string } | null {
   const lower = text.toLowerCase()
   for (const s of TWO_WORD_UNITS) {
     if (lower.startsWith(s) && !/\p{L}/u.test(lower.charAt(s.length))) return { unit: UNITS.get(s), word: text.slice(0, s.length), rest: text.slice(s.length) }
@@ -148,7 +153,7 @@ function leadingUnit(text) {
   // a word, maybe with its abbreviation's full stop ("lbs."), ended by a space, a comma, a bracket or the line
   const m = /^(\p{L}+)(\.)?(?=[\s,()]|$)/u.exec(text)
   const unit = m ? UNITS.get(m[1].toLowerCase()) : undefined
-  return unit ? { unit, word: m[1], rest: text.slice(m[0].length) } : null
+  return m && unit ? { unit, word: m[1], rest: text.slice(m[0].length) } : null
 }
 
 /**
@@ -166,7 +171,7 @@ const PREPARATION = new Set(
   ).split(' '),
 )
 
-function dropPreparation(text) {
+function dropPreparation(text: string): string {
   const parts = text.split(',')
   let out = parts[0]
   for (let i = 1; i < parts.length; i++) {
@@ -180,13 +185,12 @@ function dropPreparation(text) {
 /**
  * An ingredient's name as a shop would know it: no preparation after a comma,
  * no size, no "to taste" — "large onions, finely chopped" is "onions".
- * @param {unknown} text
  */
-export function ingredientName(text) {
+export function ingredientName(text: unknown): string {
   return shopName(String(text ?? ''))
 }
 
-function shopName(text) {
+function shopName(text: string): string {
   let name = dropPreparation(String(text).replace(/\s+/g, ' ').trim())
     // "(about 2 cups)", "(optional)"
     .replace(/\s*\([^()]*\)/g, ' ')
@@ -211,10 +215,8 @@ function shopName(text) {
  * stores an ingredient: a name you would look for in a shop, and a quantity
  * and unit only when the line gives them. Null for a line that is no
  * ingredient: empty, or a heading such as "For the sauce:".
- * @param {unknown} line
- * @returns {{ name: string, qty?: number, unit?: string } | null}
  */
-export function parseIngredientLine(line) {
+export function parseIngredientLine(line: unknown): IngredientLine | null {
   let text = String(line ?? '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s\-–—•*·▪◦]+/, '')
@@ -222,8 +224,8 @@ export function parseIngredientLine(line) {
   if (!text) return null
   if (/:$/.test(text) && !/\d/.test(text)) return null
 
-  let qty
-  let unit
+  let qty: number | undefined
+  let unit: string | undefined
   let unitWord = ''
   const lead = LEADING_QTY.exec(text)
   if (lead) {
@@ -262,7 +264,7 @@ export function parseIngredientLine(line) {
   if (qty !== undefined && !unit) {
     const trailing = /\s(\p{L}+)$/u.exec(name)
     const after = trailing ? UNITS.get(trailing[1].toLowerCase()) : undefined
-    if (after && TRAILING_UNITS.has(after)) {
+    if (trailing && after && TRAILING_UNITS.has(after)) {
       unit = after
       name = name.slice(0, trailing.index).trim()
     }

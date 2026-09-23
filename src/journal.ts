@@ -1,6 +1,6 @@
 import { JournalEntry, Mood, Person } from './types'
 import { dateKey } from './utils'
-import { weekDayKeys, weekStartKey } from '../shared/weeks.mjs'
+import { weekDayKeys, weekStartKey } from '../shared/weeks.mts'
 import {
   PeopleById,
   appendEntry as sharedAppend,
@@ -18,11 +18,11 @@ import {
   peopleNamesOf,
   shiftDayKey,
   streak as sharedStreak,
-} from '../shared/journal.mjs'
+} from '../shared/journal.mts'
 
 // A journal entry is one day's writing. The rules (one editable entry per day,
 // append never overwrites, streaks, who the day was about) live in
-// shared/journal.mjs so the MCP server and the Sunday digest agree with the app.
+// shared/journal.mts so the MCP server and the Sunday digest agree with the app.
 
 export { localDayKey, shiftDayKey, idSet, peopleNameMap }
 export type { PeopleById }

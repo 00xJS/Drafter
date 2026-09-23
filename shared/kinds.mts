@@ -35,13 +35,27 @@
 // The app imports these (KNOWN_KINDS in src/schema.ts, PERSONAL_KINDS in
 // src/store.ts); the bot edge function cannot, and mcp.test.ts holds its copy.
 
-export const SYNC_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account'])
+import { isRecord } from './domain.mts'
 
-export const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+/** The sync_posts allowlist: every kind the server stores. */
+export const SYNC_KINDS: ReadonlySet<string> = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account'])
 
-/** A stored row's kind: rows written before `kind` existed are tasks, as `coalesce(data->>'kind', 'task')` reads them. */
-export function kindOf(data) {
-  return data?.kind ?? 'task'
+/** Kinds only their owner may read, even inside a household. */
+export const PERSONAL_KINDS: ReadonlySet<string> = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+
+/**
+ * One field of a stored row's `data`, which is JSON: whatever the row was
+ * written with, and nothing at all when the data is not an object.
+ */
+const field = (data: unknown, name: string): unknown => (isRecord(data) ? data[name] : undefined)
+
+/**
+ * A stored row's kind: rows written before `kind` existed are tasks, as
+ * `coalesce(data->>'kind', 'task')` reads them. The app writes a string; a
+ * row written some other way hands back whatever its `kind` holds.
+ */
+export function kindOf(data: unknown): unknown {
+  return field(data, 'kind') ?? 'task'
 }
 
 /**
@@ -52,7 +66,7 @@ export function kindOf(data) {
  * The kind is not the whole answer any more — a note is its owner's until they
  * share it (v3.16) — so a reader holding the row should call readableRow.
  */
-export function readableKind(kind, ownerId, readerId) {
+export function readableKind(kind: string | null | undefined, ownerId: string | null | undefined, readerId: string | null | undefined): boolean {
   return !PERSONAL_KINDS.has(kind ?? 'task') || (!!readerId && ownerId === readerId)
 }
 
@@ -71,7 +85,7 @@ export function readableKind(kind, ownerId, readerId) {
  * the default either way, which is what every row written before each change
  * carries.
  */
-export const SHARED_BY_DEFAULT = { note: false, task: true, meal: true }
+export const SHARED_BY_DEFAULT: Readonly<Record<string, boolean>> = { note: false, task: true, meal: true }
 
 /**
  * Whether `readerId` may read this row, kind AND record. Use this wherever the
@@ -86,12 +100,14 @@ export const SHARED_BY_DEFAULT = { note: false, task: true, meal: true }
  * `shared` absent reads as the kind's default: not shared for a note, shared
  * for a task.
  */
-export function readableRow(data, ownerId, readerId) {
+export function readableRow(data: unknown, ownerId: string | null | undefined, readerId: string | null | undefined): boolean {
   if (!!readerId && ownerId === readerId) return true
   const kind = kindOf(data)
-  if (PERSONAL_KINDS.has(kind)) return false
-  // the kinds whose audience is per record rather than per kind
-  if (kind in SHARED_BY_DEFAULT) return sharedFlag(data) ?? SHARED_BY_DEFAULT[kind]
+  if (typeof kind === 'string' && PERSONAL_KINDS.has(kind)) return false
+  // the kinds whose audience is per record rather than per kind; `in` reads a
+  // kind as text, whatever the row holds
+  const key = String(kind)
+  if (key in SHARED_BY_DEFAULT) return sharedFlag(data) ?? SHARED_BY_DEFAULT[key]
   return true
 }
 
@@ -107,8 +123,8 @@ export function readableRow(data, ownerId, readerId) {
  * erring the other way would serve one the database withholds, and these are
  * the readers that bypass the database entirely.
  */
-export function sharedFlag(data) {
-  const flag = data?.shared
+export function sharedFlag(data: unknown): boolean | null {
+  const flag = field(data, 'shared')
   if (flag === undefined || flag === null) return null
   return flag === true
 }

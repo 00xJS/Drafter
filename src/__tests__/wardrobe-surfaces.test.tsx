@@ -82,7 +82,7 @@ describe('one check for a planned look', () => {
 
   it('is asked in the one place every figure is read from', () => {
     // the shared rules the app and MCP both read: wearIndex asks it, and nothing else there does
-    const shared = read('../../shared/wardrobe.mjs')
+    const shared = read('../../shared/wardrobe.mts')
     const index = shared.slice(shared.indexOf('export function wearIndex'), shared.indexOf('// ---- the lists'))
     expect(index).toContain('isPlanned(w)')
     expect(shared.match(/\bisPlanned\(/g)).toHaveLength(1)

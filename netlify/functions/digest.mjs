@@ -27,19 +27,19 @@
 // answer is kept for Admin → Data, and a refusal reaches the owner through the
 // same push and email as the digest, at most every twelve hours.
 
-import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mjs'
-import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mjs'
-import { seenTasks } from '../../shared/people.mjs'
-import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/review.mjs'
-import { SYNC_KINDS } from '../../shared/kinds.mjs'
-import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
+import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
+import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mts'
+import { seenTasks } from '../../shared/people.mts'
+import { habitLines, habitsKept, peopleSeen, reviewLists } from '../../shared/review.mts'
+import { SYNC_KINDS } from '../../shared/kinds.mts'
+import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mts'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { recordJobRun } from './lib/jobhealth.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
-import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mjs'
+import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mts'
 import { pushConfigured, sendToAll } from './push.mjs'
 
 export const config = { schedule: '@hourly' }
@@ -183,7 +183,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
 
   const tasks = (items ?? []).filter(i => i.kind === 'task' && !i.deletedAt)
   const people = (items ?? []).filter(i => i.kind === 'person' && !i.deletedAt)
-  // the lists Home → Week shows for that week (shared/review.mjs); your own past
+  // the lists Home → Week shows for that week (shared/review.mts); your own past
   // events with people on them count as seeing them there, and so here
   const lists = reviewLists(tasks, meta, now)
   const done = lists.done.map(t => t.title).slice(0, 40)
@@ -193,7 +193,7 @@ export async function upsertSundayReview(userId, items, now = new Date(), opts =
     .slice(0, 20)
   // habits are personal, like the journal: only this user's own, never a
   // household peer's. Kept, missed and the streak each ended the week on, in
-  // the one line the ✨ summary on Home → Week sends (shared/review.mjs)
+  // the one line the ✨ summary on Home → Week sends (shared/review.mts)
   const habits = habitLines(
     habitsKept(
       (items ?? []).filter(i => i.kind === 'habit' && (i.ownerId == null || i.ownerId === userId)),
@@ -545,7 +545,8 @@ async function digestRun(now, run) {
       if (liveSubs.length && pushConfigured()) {
         const lastCheck = Date.parse(u.last_due_check ?? '')
         const from = Math.max(Number.isFinite(lastCheck) ? lastCheck : now.getTime() - HOUR, now.getTime() - MAX_NUDGE_WINDOW)
-        const due = items.filter(t => {
+        // rows of every kind, read here for a task's fields
+        const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (items).filter(t => {
           if (t.kind !== 'task' || t.deletedAt || !OPEN.includes(t.status) || !t.dueAt) return false
           const at = Date.parse(t.dueAt)
           return Number.isFinite(at) && at <= now.getTime() && at > from

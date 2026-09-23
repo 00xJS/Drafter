@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import householdFunction from '../../netlify/functions/household.mjs'
-import { PERSONAL_KINDS } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS } from '../../shared/kinds.mts'
 
 // Removing a member and leaving a household each stamped a household_epoch
 // setting on every member, for their apps to notice and resync. user_settings

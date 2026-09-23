@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { previousWeekIn, shiftDayKey, zonedMidnight } from '../../netlify/functions/lib/reviewweek.mjs'
-import { weekKeyOf } from '../../shared/weeks.mjs'
+import { weekKeyOf } from '../../shared/weeks.mts'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import { upsertSundayReview } from '../../netlify/functions/digest.mjs'
 

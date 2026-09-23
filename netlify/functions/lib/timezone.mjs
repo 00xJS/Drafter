@@ -1,6 +1,6 @@
 // The owner's IANA time zone, for server code that has to decide "is this task
 // untimed" or "which calendar day is this" without a browser to ask.
-import { offsetMs, startOfDayMs } from '../../../shared/clock.mjs'
+import { offsetMs, startOfDayMs } from '../../../shared/clock.mts'
 import { settingsGet, settingsSet } from './session.mjs'
 
 const DAY_MS = 86_400_000

@@ -18,7 +18,7 @@ import { addGroceryItem, buildGroceryList, groceryId, mealLabel, mealsForWeek } 
 import { weekRange } from '../review'
 import { inInbox } from '../taskutils'
 import type { CalendarEntry, GroceryList, Item, JournalEntry, Meal, Note, Person, Recipe, Task } from '../types'
-import { focusTasks } from '../../shared/today.mjs'
+import { focusTasks } from '../../shared/today.mts'
 import {
   CAPTURES_QUEUED,
   WIDGET_DEBOUNCE_MS,

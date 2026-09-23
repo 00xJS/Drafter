@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { MEAL_SLOT_META, Meal, MealSlot, Place, Recipe, Task } from '../types'
-import { mealIdeasFor } from '../../shared/weekplan.mjs'
-import type { MealIdea, SlotIdeas } from '../../shared/weekplan.mjs'
+import { mealIdeasFor } from '../../shared/weekplan.mts'
+import type { MealIdea, SlotIdeas } from '../../shared/weekplan.mts'
 import { mealWithMain } from '../kitchen'
 
 /** Lunch ideas stop being useful by mid-afternoon, and dinner ideas by the evening. */

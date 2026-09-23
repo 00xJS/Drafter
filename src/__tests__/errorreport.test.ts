@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MESSAGE_MAX, STACK_MAX, cleanPath, cleanReport, cleanView, fingerprintOf, scrubText, stripQueries } from '../../shared/errorreport.mjs'
-import type { CleanReport } from '../../shared/errorreport.mjs'
+import { MESSAGE_MAX, STACK_MAX, cleanPath, cleanReport, cleanView, fingerprintOf, scrubText, stripQueries } from '../../shared/errorreport.mts'
+import type { CleanReport } from '../../shared/errorreport.mts'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import {
   BATCH_MAX,
@@ -19,7 +19,7 @@ import {
 // device's console, and nothing listened for an error thrown outside React or
 // a promise nobody handled. The app now tells the site owner — with the
 // error's own message and stack, the build, the platform and the screen, and
-// never a record, a title or anything typed (shared/errorreport.mjs decides,
+// never a record, a title or anything typed (shared/errorreport.mts decides,
 // on the device and again on the server).
 
 const CHROME_STACK = [

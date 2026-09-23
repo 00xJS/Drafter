@@ -1,4 +1,4 @@
-import type { CleanReport } from '../../../shared/errorreport.d.mts'
+import type { CleanReport } from '../../../shared/errorreport.mts'
 
 type Rest = (path: string, init?: RequestInit) => Promise<unknown>
 

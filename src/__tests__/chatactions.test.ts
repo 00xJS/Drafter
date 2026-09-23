@@ -46,8 +46,8 @@ import {
 import { buildEntry } from '../components/EventEditor'
 import { sanitizeChatTurn, sanitizeItem } from '../schema'
 import { hasDueTime } from '../taskutils'
-import { addGroceryItem, buildGroceryList, groceryId } from '../../shared/kitchen.mjs'
-import { weekKeyOf } from '../../shared/weeks.mjs'
+import { addGroceryItem, buildGroceryList, groceryId } from '../../shared/kitchen.mts'
+import { weekKeyOf } from '../../shared/weeks.mts'
 import type { CalendarEntry, ChatAction, ChatTurn, GroceryList, Item, Meal, Note, Person, Place, Recipe, Task, TaskStatus } from '../types'
 
 // The assistant chat can suggest changes, and nothing changes until one is

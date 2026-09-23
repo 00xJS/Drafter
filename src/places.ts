@@ -11,7 +11,7 @@ import {
   outingsAt as sharedOutingsAt,
   tidyPlaceAddress,
   tidyPlaceAliases,
-} from '../shared/places.mjs'
+} from '../shared/places.mts'
 
 export { normalisePlaceText, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases }
 export type { Outing, PlaceCadenceState, PlaceCadenceStatus }
@@ -19,7 +19,7 @@ export type { Outing, PlaceCadenceState, PlaceCadenceStatus }
 /**
  * The saved place a free-text location (calendar LOCATION, a note) refers to,
  * or undefined: by its name, one of its other names or its address, as whole
- * words (rule in shared/places.mjs).
+ * words (rule in shared/places.mts).
  */
 export function matchPlace(text: string | null | undefined, places: Place[]): Place | undefined {
   return sharedMatchPlace(text, places) ?? undefined
@@ -223,7 +223,7 @@ export function driftedFrom(s: PlaceStats): boolean {
 /**
  * Everything that counts as having been to a place, newest first: done tasks
  * carrying it, plus past meals marked as eaten out there. Open tasks,
- * tombstones and FUTURE meals are ignored (rule in shared/places.mjs).
+ * tombstones and FUTURE meals are ignored (rule in shared/places.mts).
  */
 export function outingsAt(placeId: string, tasks: Task[], meals: Meal[] = [], now: Date = new Date(), myId?: string | null): Outing[] {
   return sharedOutingsAt(placeId, tasks, meals, now, myId) as Outing[]

@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from 'react'
-import { weekPlanSummary } from '../../shared/weekplan.mjs'
-import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.mjs'
+import { weekPlanSummary } from '../../shared/weekplan.mts'
+import type { AcceptedPlan, DinnerItem, WeekPlan } from '../../shared/weekplan.mts'
 import { WeekPolish, WeekPolishInput, polishWeekPlan, weekPolishInput } from '../ai'
 import { formatMoney } from '../bills'
 import { cookedIndex, visitIndex, mealId, nextSwap } from '../kitchen'
@@ -11,7 +11,7 @@ import { aiFailureKind } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 
-// "Plan next week": the proposal from shared/weekplan.mjs as rows to tick —
+// "Plan next week": the proposal from shared/weekplan.mts as rows to tick —
 // dinners, catch-ups, overdue work, bills, a Top 3. Nothing here writes. The
 // ticked rows go back to the planner as one AcceptedPlan, which it applies with
 // a single Undo; the ✨ polish only changes what is ticked here.

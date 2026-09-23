@@ -1,6 +1,6 @@
 import { complete, extractJSON } from './ai'
-import { newerStamp } from '../shared/domain.mjs'
-import { canonicalUnit, ingredientName, parseIngredientLine, parseQuantity } from '../shared/recipes.mjs'
+import { newerStamp } from '../shared/domain.mts'
+import { canonicalUnit, ingredientName, parseIngredientLine, parseQuantity } from '../shared/recipes.mts'
 import { newIngredient, recipeHasIngredients } from './kitchen'
 import type { Recipe } from './types'
 
@@ -8,7 +8,7 @@ import type { Recipe } from './types'
 // into an ordinary home version of the dish, from its name and whatever the
 // household already wrote about it. Forty recipes were saved, thirty-nine of
 // them with no ingredients, and the grocery list is built from ingredients
-// (buildGroceryList in shared/kitchen.mjs) — so it stayed empty and never said
+// (buildGroceryList in shared/kitchen.mts) — so it stayed empty and never said
 // why. A draft is only ever a proposal: it lands in the editor, or in the
 // review sheet one recipe at a time, and nothing is saved until Save.
 

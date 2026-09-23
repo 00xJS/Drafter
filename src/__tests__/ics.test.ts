@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildICS, expandEvents, parseICS } from '../../shared/ics.mjs'
+import { buildICS, expandEvents, parseICS } from '../../shared/ics.mts'
 
 const wrap = (body: string) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:Family\r\n${body}\r\nEND:VCALENDAR\r\n`
 const from = Date.UTC(2026, 8, 1)

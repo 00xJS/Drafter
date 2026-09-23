@@ -32,11 +32,11 @@ import {
   type TaskStatus,
 } from './types'
 import { fromLocalInput, uid } from './utils'
-import { makeClock } from '../shared/clock.mjs'
-import { localMidnightIso, newerStamp } from '../shared/domain.mjs'
-import { shiftDayKey } from '../shared/journal.mjs'
-import { addGroceryItem, buildGroceryList, groceryId, mealAt, mealLabel, mealRecipeIds, mealWithMain, mealsInWeekOf, type GroceryAddOutcome, type MealMain } from '../shared/kitchen.mjs'
-import { isDayKey, weekKeyOf, weekStartKey } from '../shared/weeks.mjs'
+import { makeClock } from '../shared/clock.mts'
+import { localMidnightIso, newerStamp } from '../shared/domain.mts'
+import { shiftDayKey } from '../shared/journal.mts'
+import { addGroceryItem, buildGroceryList, groceryId, mealAt, mealLabel, mealRecipeIds, mealWithMain, mealsInWeekOf, type GroceryAddOutcome, type MealMain } from '../shared/kitchen.mts'
+import { isDayKey, weekKeyOf, weekStartKey } from '../shared/weeks.mts'
 
 // The assistant chat can suggest changes, and the person decides each one.
 //

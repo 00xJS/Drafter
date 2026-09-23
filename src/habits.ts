@@ -1,7 +1,7 @@
 import { Habit } from './types'
 import { dateKey } from './utils'
 import { newerStamp } from './itemops'
-import { habitStreak, habitsKept } from '../shared/review.mjs'
+import { habitStreak, habitsKept } from '../shared/review.mts'
 
 // The rules a habit is kept by. Completions are day keys on the record; the
 // streak is derived from them and the schedule, never stored, so it can never
@@ -34,7 +34,7 @@ export function toggleDone(habit: Habit, key: string, now = newerStamp(habit.upd
  * that was missed breaks it; a day the habit isn't due on is skipped, not
  * counted, so a weekday habit's streak survives the weekend. Today counts once
  * it is ticked, but an as-yet-unticked today does not break a run you are still
- * in — it just isn't added yet. Counted in shared/review.mjs, which the
+ * in — it just isn't added yet. Counted in shared/review.mts, which the
  * weekly review and Sunday's draft read too, on calendar days, not milliseconds.
  */
 export function streakOf(habit: Habit, today = new Date()): number {
@@ -75,7 +75,7 @@ export interface HabitConsistency {
  * rather than "3/7" and the summary isn't told you are slacking. Days before
  * the habit existed are not owed either: one created and ticked on Thursday
  * is 1/1, not 1/5, and a review of last month shows nothing for it at all.
- * Counted in shared/review.mjs on this device's calendar days — the same
+ * Counted in shared/review.mts on this device's calendar days — the same
  * count Sunday's draft makes in the zone saved with your settings.
  */
 export function habitsConsistency(habits: Habit[], start: Date, end: Date, today = new Date()): HabitConsistency {

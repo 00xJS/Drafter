@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { bumpVersion, formatVersion, parseVersion } from '../../shared/appversion.mjs'
+import { bumpVersion, formatVersion, parseVersion } from '../../shared/appversion.mts'
 import { nativeTargets, parsePbxproj, versionDrift } from '../../scripts/lib/pbxproj.mjs'
 import { APP_VERSION } from '../appversion'
 
@@ -68,7 +68,7 @@ describe('the widget ships with the app’s numbers', () => {
   })
 
   it('app-version.mjs raises the version people read on both targets', () => {
-    const dir = copyOf('marketing', ['scripts/app-version.mjs', 'scripts/lib/pbxproj.mjs', 'shared/appversion.mjs', 'package.json', 'package-lock.json', 'src/appversion.ts', PBX])
+    const dir = copyOf('marketing', ['scripts/app-version.mjs', 'scripts/lib/pbxproj.mjs', 'shared/appversion.mts', 'package.json', 'package-lock.json', 'src/appversion.ts', PBX])
     const out = run(dir, 'scripts/app-version.mjs', ['--set', '9.8.7'])
     expect(out).toContain('-> 9.8.7 (App and DrafterWidgets, 4 Xcode configurations)')
     const rows = settings(dir)

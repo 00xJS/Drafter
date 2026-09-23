@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PERSONAL_KINDS } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS } from '../../shared/kinds.mts'
 import { feedFor, readableItems } from '../../netlify/functions/lib/feedrows.mjs'
 import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
 

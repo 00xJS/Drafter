@@ -3,7 +3,7 @@
 // When something breaks on a device the app sends what broke (src/errorreport.ts)
 // and this keeps a count of it for the site owner, in public.client_errors,
 // which only the service key can read (Admin → Data lists it). Each report is
-// cleaned again here with the rule the app used (shared/errorreport.mjs):
+// cleaned again here with the rule the app used (shared/errorreport.mts):
 // message at most 500 characters, stack at most 4 KB, no query string on any
 // path or URL — so a device can never store more than that rule allows.
 //

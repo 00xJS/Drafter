@@ -30,9 +30,9 @@ import { GroceryLine, GroceryList, Meal, Recipe } from '../types'
 import { sanitizeGrocery } from '../schema'
 import { weekRange } from '../review'
 import { dateKey } from '../utils'
-import { weekDayKeys, weekKeyOf, weekStartKey } from '../../shared/weeks.mjs'
-import { mealsInWeekOf, tonightLine } from '../../shared/kitchen.mjs'
-import { mergeRecord } from '../../shared/merge.mjs'
+import { weekDayKeys, weekKeyOf, weekStartKey } from '../../shared/weeks.mts'
+import { mealsInWeekOf, tonightLine } from '../../shared/kitchen.mts'
+import { mergeRecord } from '../../shared/merge.mts'
 
 const recipe = (over: Partial<Recipe> & { id: string; name: string; ingredients: Recipe['ingredients'] }): Recipe => ({
   kind: 'recipe',
@@ -233,7 +233,7 @@ describe('tonightLine is dinner only', () => {
 
 describe('day keys and week helpers', () => {
   it('isDayKey refuses impossible dates and shapes', async () => {
-    const { isDayKey } = await import('../../shared/weeks.mjs')
+    const { isDayKey } = await import('../../shared/weeks.mts')
     expect(isDayKey('2026-09-08')).toBe(true)
     expect(isDayKey('2024-02-29')).toBe(true)
     expect(isDayKey('2026-02-30')).toBe(false)
@@ -243,7 +243,7 @@ describe('day keys and week helpers', () => {
   })
 
   it('dinnerOn and groceryWeekFor follow the day and its Sunday-start week', async () => {
-    const { dinnerOn, groceryWeekFor } = await import('../../shared/kitchen.mjs')
+    const { dinnerOn, groceryWeekFor } = await import('../../shared/kitchen.mts')
     const meal = (date: string, slot: Meal['slot'], title: string): Meal => ({ kind: 'meal', id: mealId(date, slot), date, slot, title, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
     const meals = [meal('2026-09-08', 'lunch', 'Soup'), meal('2026-09-08', 'dinner', 'Pasta'), meal('2026-09-09', 'dinner', 'Curry')]
     expect(dinnerOn(meals, '2026-09-08')?.title).toBe('Pasta')

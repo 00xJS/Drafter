@@ -5,7 +5,7 @@ import { syncNow } from './sync'
 import { clearLocalData, idbGet, idbSet, readRecordCache, writeRecordChanges } from './idb'
 import { browserKV, type SyncFailure } from './syncstate'
 import { getSupabase } from './supabase'
-import { PERSONAL_KINDS } from '../shared/kinds.mjs'
+import { PERSONAL_KINDS } from '../shared/kinds.mts'
 import { listDrawer } from './kindlists'
 import { watchRealtime } from './realtime'
 import {

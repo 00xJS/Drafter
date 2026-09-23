@@ -3,7 +3,7 @@
 // that answer "is my data still there?" — no record contents ever leave the
 // server, only tallies.
 
-import { SYNC_KINDS } from '../../../shared/kinds.mjs'
+import { SYNC_KINDS } from '../../../shared/kinds.mts'
 
 /** The kinds sync_posts accepts, each counted even at zero. */
 export const KINDS = [...SYNC_KINDS]

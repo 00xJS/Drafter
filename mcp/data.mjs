@@ -11,8 +11,8 @@
 // response at max_rows = 1000, and the old server read one page and silently
 // stopped there.
 
-import { legacyPostToTask } from '../shared/domain.mjs'
-import { PERSONAL_KINDS, readableRow } from '../shared/kinds.mjs'
+import { legacyPostToTask } from '../shared/domain.mts'
+import { PERSONAL_KINDS, readableRow } from '../shared/kinds.mts'
 
 export { PERSONAL_KINDS }
 

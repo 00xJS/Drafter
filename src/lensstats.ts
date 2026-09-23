@@ -6,7 +6,7 @@ import { journalDays, weekdayOf } from './journal'
 import { countDays, dayStreaks, monthBuckets, monthsAndTrend, recentTrend, topN, type DayWindow, type Dated, type Streaks } from './stats'
 import { BILL_KIND_META, PRIORITY_META, STATUS_META, type Habit, type JournalEntry, type Priority, type Task, type TaskStatus } from './types'
 import { dateKey } from './utils'
-import { inWindow } from '../shared/stats.mjs'
+import { inWindow } from '../shared/stats.mts'
 
 /*
  * The Stats lens, counted. Pure, no DOM, worked out once per render and handed
@@ -26,7 +26,7 @@ import { inWindow } from '../shared/stats.mjs'
 /**
  * A done task, as the dated mark a chart counts: filed at the moment it was
  * finished. A logged visit ("Saw Mum", tagged 'visit') is NOT work finished —
- * shared/review.mjs has drawn that line since the review shipped, and the Done
+ * shared/review.mts has drawn that line since the review shipped, and the Done
  * tile, the weekly sparkline and the review all honour it. Counting them here
  * made a quiet week of catch-ups look like a productive one.
  */

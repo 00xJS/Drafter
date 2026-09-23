@@ -10,7 +10,7 @@ vi.mock('../api', () => ({ apiFetch: vi.fn() }))
 
 import { apiFetch } from '../api'
 import { buildRecipeSuggestPrompt, parseRecipeSuggestions, recipeSuggestInput, recipeTitleKey, suggestRecipes } from '../ai'
-import { mealHistory } from '../../shared/weekplan.mjs'
+import { mealHistory } from '../../shared/weekplan.mts'
 
 const STAMP = '2026-01-01T00:00:00.000Z'
 const DAY = '2026-09-12'

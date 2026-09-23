@@ -6,11 +6,11 @@ import { garmentTags } from './schema'
 import { dayStreaks, monthGrid, topN } from './stats'
 import { uid } from './utils'
 import { describeCode, type Forecast } from './weather'
-import { newerStamp } from '../shared/domain.mjs'
-import { shiftDayKey } from '../shared/journal.mjs'
-import { mediaIdsOf } from '../shared/media.mjs'
-import { NOT_WORN_DAYS, cleanIds, coreKey, daysWithin, isCoreType, isPlanned, liveById, looksOn, marked, orderPieces, outfitDays, outfitLabel, pieceKey, slotOf, wearable } from '../shared/wardrobe.mjs'
-import type { WearIndex } from '../shared/wardrobe.mjs'
+import { newerStamp } from '../shared/domain.mts'
+import { shiftDayKey } from '../shared/journal.mts'
+import { mediaIdsOf } from '../shared/media.mts'
+import { NOT_WORN_DAYS, cleanIds, coreKey, daysWithin, isCoreType, isPlanned, liveById, looksOn, marked, orderPieces, outfitDays, outfitLabel, pieceKey, slotOf, wearable } from '../shared/wardrobe.mts'
+import type { WearIndex } from '../shared/wardrobe.mts'
 
 // The wardrobe's rules and figures: pure, no DOM, worked out once per screen
 // from a WearIndex, the way Kitchen works from a CookedIndex and the pickers
@@ -21,7 +21,7 @@ import type { WearIndex } from '../shared/wardrobe.mjs'
 // never makes a piece "worn twice".
 //
 // The rules an assistant needs too — the ids and writers, what a look is, the
-// index and the three lists Stats shows — live in shared/wardrobe.mjs, where
+// index and the three lists Stats shows — live in shared/wardrobe.mts, where
 // the MCP server reads them, and are re-exported here under the same names.
 
 export {
@@ -47,8 +47,8 @@ export {
   wearIndex,
   wearable,
   withPieces,
-} from '../shared/wardrobe.mjs'
-export type { LookLog, WearIndex, WearWindow } from '../shared/wardrobe.mjs'
+} from '../shared/wardrobe.mts'
+export type { LookLog, WearIndex, WearWindow } from '../shared/wardrobe.mts'
 
 // ---- writers ---------------------------------------------------------------------
 
@@ -70,7 +70,7 @@ export function retired(g: Garment, on: boolean, now = new Date().toISOString())
 /**
  * What a write of a piece did to its photos — Replace photo, a back photo
  * replaced or removed, or the Undo of one: the ids it let go of, and the ones
- * it points at now, front and back alike (shared/media.mjs mediaIdsOf).
+ * it points at now, front and back alike (shared/media.mts mediaIdsOf).
  */
 export function swappedPhotos(before: Garment, after: Garment): { gone: string[]; now: string[] } {
   const now = mediaIdsOf(after)

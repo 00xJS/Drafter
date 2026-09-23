@@ -1,12 +1,14 @@
 // Domain rules shared by the web app (src/) and the MCP server (mcp/).
 // Dependency-free ESM so the MCP server stays zero-install.
 
-export const PLATFORMS = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
+import type { Platform, Priority, ProjectStatus, RecurrenceFreq, Task, TaskStatus } from '../src/types.ts'
 
-export const TASK_STATUSES = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
-export const PROJECT_STATUSES = ['active', 'paused', 'done', 'archived']
-export const PRIORITIES = ['low', 'normal', 'high', 'urgent']
-export const RECURRENCE_FREQS = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']
+export const PLATFORMS: Platform[] = ['x', 'instagram', 'threads', 'linkedin', 'facebook', 'tiktok', 'youtube']
+
+export const TASK_STATUSES: TaskStatus[] = ['wishlist', 'todo', 'doing', 'blocked', 'done', 'canceled']
+export const PROJECT_STATUSES: ProjectStatus[] = ['active', 'paused', 'done', 'archived']
+export const PRIORITIES: Priority[] = ['low', 'normal', 'high', 'urgent']
+export const RECURRENCE_FREQS: RecurrenceFreq[] = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']
 
 /** The project every migrated social post lands in (deterministic so all devices agree). */
 export const SOCIAL_PROJECT_ID = 'project-social'
@@ -16,35 +18,44 @@ export const SOCIAL_PROJECT_ID = 'project-social'
  * wins the strictly-newer-wins merge against the copy it was based on — even
  * against clock skew or a bot that wrote a slightly-future timestamp.
  */
-export function newerStamp(prevIso) {
+export function newerStamp(prevIso?: string): string {
   const prev = prevIso ? Date.parse(prevIso) : 0
   return new Date(Math.max(Date.now(), (Number.isFinite(prev) ? prev : 0) + 1)).toISOString()
 }
 
-const LEGACY_STATUS = { idea: 'wishlist', draft: 'todo', scheduled: 'todo', posted: 'done', canceled: 'canceled' }
+const LEGACY_STATUS: Record<string, TaskStatus> = { idea: 'wishlist', draft: 'todo', scheduled: 'todo', posted: 'done', canceled: 'canceled' }
+
+/** An object whose fields can be read one by one: a stored row's data, before anything in it is trusted. */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object'
+}
 
 /** True for records written before v3 (social posts without a `kind`). */
-export function isLegacyPost(raw) {
-  return !!raw && typeof raw === 'object' && raw.kind === undefined
+export function isLegacyPost(raw: unknown): boolean {
+  return isRecord(raw) && raw.kind === undefined
 }
+
+const isPlatform = (p: unknown): p is Platform => (PLATFORMS as readonly unknown[]).includes(p)
 
 /**
  * Convert a pre-v3 post into a task. Pure and idempotent on already-converted
  * input (returns it untouched), so every reader can call it defensively.
  * Rows in the database are never rewritten just for shape: the conversion
- * runs on read, in the app and in the MCP server alike.
+ * runs on read, in the app and in the MCP server alike. Callers pass a stored
+ * row's `data`; a post comes back as a task's fields, unchecked like the
+ * post's were.
  */
-export function legacyPostToTask(raw) {
-  if (!isLegacyPost(raw)) return raw
-  const platforms = Array.isArray(raw.platforms) ? raw.platforms.filter(p => PLATFORMS.includes(p)) : []
+export function legacyPostToTask<T>(raw: T): T | Record<string, unknown> {
+  if (!isRecord(raw) || !isLegacyPost(raw)) return raw
+  const platforms = Array.isArray(raw.platforms) ? raw.platforms.filter(isPlatform) : []
   const social = platforms.length > 0 || raw.metrics || raw.variants
-  const task = {
+  const task: Record<string, unknown> = {
     kind: 'task',
     id: raw.id,
     ownerId: raw.ownerId,
     title: raw.title ?? '',
     description: raw.body ?? '',
-    status: LEGACY_STATUS[raw.status] ?? (raw.postedAt ? 'done' : 'todo'),
+    status: LEGACY_STATUS[String(raw.status)] ?? (raw.postedAt ? 'done' : 'todo'),
     priority: 'normal',
     projectId: social ? SOCIAL_PROJECT_ID : raw.projectId,
     dueAt: raw.scheduledFor,
@@ -66,8 +77,8 @@ export function legacyPostToTask(raw) {
  * Wall-clock date (YYYY-MM-DD) of an instant in `tz` (IANA). Falls back to the
  * runtime's local zone when tz is missing/invalid.
  */
-export function localDate(iso, tz) {
-  const ms = typeof iso === 'number' ? iso : Date.parse(iso)
+export function localDate(iso: string | number | null | undefined, tz?: string | null): string | null {
+  const ms = typeof iso === 'number' ? iso : Date.parse(iso ?? '')
   if (!Number.isFinite(ms)) return null
   try {
     const parts = Object.fromEntries(
@@ -90,7 +101,7 @@ export function localDate(iso, tz) {
  * True when the instant is "date only" in `tz`: local midnight (no meaningful
  * wall-clock time). Used so untimed tasks mirror as all-day events.
  */
-export function isUntimed(iso, tz) {
+export function isUntimed(iso: string, tz?: string | null): boolean {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) return false
   try {
@@ -113,30 +124,30 @@ export function isUntimed(iso, tz) {
 }
 
 /** Local-midnight ISO for a YYYY-MM-DD calendar day in the runtime's local zone. */
-export function localMidnightIso(dateKey) {
+export function localMidnightIso(dateKey: string): string | null {
   const m = String(dateKey ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!m) return null
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).toISOString()
 }
 
 /** Deterministic id for the next occurrence of a recurring task. */
-export function spawnId(taskId, freq, nextDueIso) {
+export function spawnId(taskId: string, freq: string, nextDueIso: string): string {
   const day = (nextDueIso ?? '').slice(0, 10)
   return `${taskId}~${freq}~${day}`
 }
 
 /** The next occurrence of a recurring task, cloned from the one just completed. */
-const MONTH_STEPS = { monthly: 1, quarterly: 3, yearly: 12 }
+const MONTH_STEPS: Partial<Record<RecurrenceFreq, number>> = { monthly: 1, quarterly: 3, yearly: 12 }
 
 /** Whole months later in local time, on `day` clamped to that month's length. */
-function addMonthsOnDay(date, months, day) {
+function addMonthsOnDay(date: Date, months: number, day: number): Date {
   const target = new Date(date.getFullYear(), date.getMonth() + months, 1, date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
   const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
   target.setDate(Math.min(day, last))
   return target
 }
 
-export function nextOccurrence(task, uidFn) {
+export function nextOccurrence(task: Task, uidFn: () => string): (Task & { spawnedFrom: string }) | null {
   if (!task.recurrence) return null
   const bill = task.bill && typeof task.bill === 'object' ? task.bill : null
   // A bill falls due on its own day however early or late it was paid; a chore
@@ -147,7 +158,7 @@ export function nextOccurrence(task, uidFn) {
   let next = baseIso ? new Date(baseIso) : new Date()
   if (isNaN(next.getTime())) return null
   const freq = task.recurrence.freq
-  let billDay
+  let billDay: number | undefined
   if (freq === 'daily') next.setDate(next.getDate() + 1)
   else if (freq === 'weekly') next.setDate(next.getDate() + 7)
   else if (freq === 'biweekly') next.setDate(next.getDate() + 14)
@@ -167,7 +178,7 @@ export function nextOccurrence(task, uidFn) {
   const dueAt = next.toISOString()
   // uidFn kept for call-site compatibility; id is deterministic so two devices agree
   void uidFn
-  return {
+  const spawn: Task & { spawnedFrom: string } = {
     kind: 'task',
     id: spawnId(task.id, freq, dueAt),
     title: task.title,
@@ -201,6 +212,17 @@ export function nextOccurrence(task, uidFn) {
     shared: task.shared,
     spawnedFrom: task.id,
   }
+  return spawn
+}
+
+/** What duplicateSpawnPairs reads of a record: its kind, id and whether it is an open, repeating task. */
+export interface SpawnCandidate {
+  kind?: string
+  id: string
+  status?: string
+  recurrence?: unknown
+  deletedAt?: string
+  purged?: boolean
 }
 
 // every `~freq~day` spawnId has appended, from the first occurrence on
@@ -223,9 +245,10 @@ const SPAWN_TAIL = new RegExp(`(?:~(?:${RECURRENCE_FREQS.join('|')})~\\d{4}-\\d{
  * put it there. Returns each id that should go to the Trash, with `keptId`, the
  * occurrence kept in its place.
  */
-export function duplicateSpawnPairs(items) {
-  const series = new Map()
-  for (const i of Array.isArray(items) ? items : []) {
+export function duplicateSpawnPairs(items: readonly SpawnCandidate[]): { id: string; keptId: string }[] {
+  const series = new Map<string, { id: string; day: string }[]>()
+  const rows: readonly SpawnCandidate[] = Array.isArray(items) ? items : []
+  for (const i of rows) {
     if (!i || i.kind !== 'task' || i.deletedAt || i.purged || !i.recurrence || i.status === 'done' || i.status === 'canceled') continue
     const tail = typeof i.id === 'string' ? SPAWN_TAIL.exec(i.id) : null
     if (!tail) continue
@@ -234,7 +257,7 @@ export function duplicateSpawnPairs(items) {
     list.push({ id: i.id, day: i.id.slice(-10) })
     series.set(root, list)
   }
-  const out = []
+  const out: { id: string; keptId: string }[] = []
   for (const list of series.values()) {
     if (list.length < 2) continue
     list.sort((a, b) => (a.day === b.day ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.day < b.day ? -1 : 1))
@@ -245,7 +268,7 @@ export function duplicateSpawnPairs(items) {
 }
 
 /** The ids alone of the next occurrences that repeat one another (duplicateSpawnPairs): the ones that should go to the Trash. */
-export function duplicateSpawns(items) {
+export function duplicateSpawns(items: readonly SpawnCandidate[]): string[] {
   return duplicateSpawnPairs(items).map(p => p.id)
 }
 
@@ -254,7 +277,7 @@ export function duplicateSpawns(items) {
  * must not land in the owner's Google/Outlook. Unowned rows (local-only /
  * pre-household) count as mine. Assignees win when set.
  */
-export function isMineTask(task, myId) {
+export function isMineTask(task: { kind?: string; ownerId?: string; assigneeId?: string } | null | undefined, myId?: string | null): boolean {
   if (!task || task.kind !== 'task') return false
   if (!myId) return true
   if (task.assigneeId) return task.assigneeId === myId

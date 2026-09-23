@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mealIdeasFor } from '../../shared/weekplan.mjs'
+import { mealIdeasFor } from '../../shared/weekplan.mts'
 
 // Today's meal ideas: when lunch or dinner has nothing planned, a few ideas to
 // get the day's plans going — what is popular, and old favourites not had for

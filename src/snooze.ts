@@ -7,7 +7,7 @@ import { SNOOZE_OPTIONS, Snooze, SnoozeTarget } from './types'
 //
 // A snooze is never forever. Every option has a day it comes back, so nothing
 // is quietly dropped: the row simply stops counting once `until` has passed.
-// It is PERSONAL (shared/kinds.mjs), because whose nudge it is decides whose
+// It is PERSONAL (shared/kinds.mts), because whose nudge it is decides whose
 // snooze it is.
 
 /** One row per thing, so putting the same nudge off again overwrites it. */

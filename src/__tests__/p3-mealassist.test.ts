@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildMealAssistPrompt, mealAssistInput, parseMealAssist, suggestMeals } from '../ai'
-import { mealHistory } from '../../shared/weekplan.mjs'
+import { mealHistory } from '../../shared/weekplan.mts'
 
 // The Kitchen's meal assistant: its options come from the same history the
 // week plan ranks by, only names, tags and counts reach the model, and its

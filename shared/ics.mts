@@ -5,14 +5,103 @@
 
 const DAY = 86_400_000
 
+/** A date's wall-clock parts in its own zone: what recurrence steps on across a DST change. */
+interface Wall {
+  y: number
+  mo: number
+  d: number
+  h: number
+  mi: number
+  s: number
+}
+
+export interface ParsedDate {
+  allDay: boolean
+  /** UTC ms for a timed value; the UTC midnight of the calendar date for an all-day one. */
+  ms: number
+  /** The zone a TZID'd value is in. */
+  tz?: string
+  /** Its wall clock in that zone, so recurrence can step on wall-clock days. */
+  wall?: Wall
+}
+
+/** An RRULE, as far as personal calendars use one. */
+export interface RRule {
+  freq?: string
+  interval: number
+  count?: number
+  until?: number
+  byDay?: string[]
+  byMonthDay?: number[]
+  byMonth?: number[]
+}
+
+export interface ParsedEvent {
+  uid: string
+  summary?: string
+  location?: string
+  description?: string
+  start: ParsedDate
+  /** Null when DTEND is there but is not a date. */
+  end?: ParsedDate | null
+  duration?: number
+  rrule?: RRule
+  exdates: number[]
+  recurrenceId?: number
+  status?: string
+  /** TRANSP:TRANSPARENT — the time is free rather than busy. */
+  transparent?: boolean
+}
+
+export interface ParsedCalendar {
+  calendarName?: string
+  defaultTz?: string
+  events: ParsedEvent[]
+}
+
+export interface EventInstance {
+  id: string
+  uid: string
+  title: string
+  start: string
+  end: string
+  allDay: boolean
+  location?: string
+}
+
+export interface FeedItem {
+  uid: string
+  title: string
+  start: number
+  end?: number
+  allDay: boolean
+  /** All-day only: the reader's own calendar day, 'YYYY-MM-DD'. Without it the
+      day is derived from `start` in UTC, which publishes an untimed task a day
+      early anywhere east of UTC. */
+  date?: string
+  /** All-day only: last day of a multi-day event, 'YYYY-MM-DD' (inclusive). */
+  endDate?: string
+  /** Available time rather than busy: emits TRANSP:TRANSPARENT. */
+  transparent?: boolean
+  description?: string
+  url?: string
+  categories?: string[]
+}
+
+/** A VEVENT while it is read: anything may still be missing, and a date that did not parse is null. */
+type EventDraft = Omit<Partial<ParsedEvent>, 'start' | 'exdates'> & { start?: ParsedDate | null; exdates: number[] }
+
+/** A VEVENT with what every event needs: an id and a start. */
+const isComplete = (e: EventDraft): e is EventDraft & ParsedEvent => !!e.uid && !!e.start
+
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
 
 /** Unfold continuation lines and split into [name, params, value] triples. */
-function lines(text) {
+function lines(text: string): [string, Record<string, string>, string][] {
   const unfolded = text.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '')
-  const out = []
+  const out: [string, Record<string, string>, string][] = []
   for (const raw of unfolded.split('\n')) {
     if (!raw) continue
     const colon = findValueColon(raw)
@@ -20,7 +109,7 @@ function lines(text) {
     const head = raw.slice(0, colon)
     const value = raw.slice(colon + 1)
     const [name, ...paramParts] = head.split(';')
-    const params = {}
+    const params: Record<string, string> = {}
     for (const p of paramParts) {
       const eq = p.indexOf('=')
       if (eq !== -1) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1).replace(/^"|"$/g, '')
@@ -31,7 +120,7 @@ function lines(text) {
 }
 
 /** The first colon outside a quoted parameter value. */
-function findValueColon(line) {
+function findValueColon(line: string): number {
   let quoted = false
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]
@@ -41,12 +130,12 @@ function findValueColon(line) {
   return -1
 }
 
-function unescape(v) {
+function unescape(v: string): string {
   return v.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\')
 }
 
 /** Offset (ms) of an IANA zone at a UTC instant, via Intl. */
-function tzOffsetMs(utcMs, tz) {
+function tzOffsetMs(utcMs: number, tz: string): number {
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: tz,
@@ -67,7 +156,7 @@ function tzOffsetMs(utcMs, tz) {
 }
 
 /** Wall-clock time in a zone → UTC ms. */
-function zonedToUtc(y, mo, d, h, mi, s, tz) {
+function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, s: number, tz: string): number {
   const guess = Date.UTC(y, mo - 1, d, h, mi, s)
   const off1 = tzOffsetMs(guess, tz)
   const utc = guess - off1
@@ -82,7 +171,7 @@ function zonedToUtc(y, mo, d, h, mi, s, tz) {
  * When TZID is present, wall holds Y-M-D h:m:s in that zone so recurrence can
  * step on wall-clock days across DST.
  */
-export function parseDateValue(value, params = {}, defaultTz) {
+export function parseDateValue(value: string, params: Record<string, string> = {}, defaultTz?: string): ParsedDate | null {
   const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/)
   if (!m) return null
   const [, y, mo, d, h, mi, s, z] = m
@@ -99,7 +188,7 @@ export function parseDateValue(value, params = {}, defaultTz) {
   return { allDay: false, ms: Date.UTC(+y, +mo - 1, +d, +h, +mi, +(s ?? 0)) }
 }
 
-function parseDuration(v) {
+function parseDuration(v: string): number {
   const m = v.match(/^(-)?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/)
   if (!m) return 0
   const [, neg, w, d, h, mi, s] = m
@@ -107,8 +196,8 @@ function parseDuration(v) {
   return neg ? -ms : ms
 }
 
-function parseRRule(v) {
-  const rule = {}
+function parseRRule(v: string): RRule {
+  const rule: Partial<Record<string, string>> = {}
   for (const part of v.split(';')) {
     const [k, val] = part.split('=')
     if (!k || val === undefined) continue
@@ -128,12 +217,11 @@ function parseRRule(v) {
 }
 
 /** Parse an ICS document into raw VEVENT records (recurrence not yet expanded). */
-export function parseICS(text) {
-  const events = []
-  let calendarName
-  let defaultTz
-  /** @type {Partial<import('./ics.mjs').ParsedEvent> | null} */
-  let cur = null
+export function parseICS(text: string): ParsedCalendar {
+  const events: ParsedEvent[] = []
+  let calendarName: string | undefined
+  let defaultTz: string | undefined
+  let cur: EventDraft | null = null
   let depth = 0 // nested VALARM etc.
   for (const [name, params, value] of lines(text)) {
     if (name === 'X-WR-CALNAME' && !calendarName) calendarName = unescape(value)
@@ -145,7 +233,7 @@ export function parseICS(text) {
     }
     if (name === 'END') {
       if (value === 'VEVENT' && cur) {
-        if (cur.uid && cur.start) events.push(cur)
+        if (isComplete(cur)) events.push(cur)
         cur = null
       } else if (cur && depth > 0) depth--
       continue
@@ -202,7 +290,7 @@ export function parseICS(text) {
 
 const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 
-function addMonthsUTC(ms, n, dayOfMonth) {
+function addMonthsUTC(ms: number, n: number, dayOfMonth: number): number {
   const d = new Date(ms)
   const y = d.getUTCFullYear()
   const m = d.getUTCMonth() + n
@@ -213,7 +301,7 @@ function addMonthsUTC(ms, n, dayOfMonth) {
 }
 
 /** Add calendar months to a wall-clock Y-M-D, clamping the day. */
-function addMonthsWall(wall, n) {
+function addMonthsWall(wall: Wall, n: number): Wall {
   const m0 = wall.mo - 1 + n
   const y = wall.y + Math.floor(m0 / 12)
   const mo = ((m0 % 12) + 12) % 12
@@ -222,7 +310,7 @@ function addMonthsWall(wall, n) {
 }
 
 /** Wall parts of a UTC instant in an IANA zone (for recovering TZID starts without wall). */
-function wallInZone(utcMs, tz) {
+function wallInZone(utcMs: number, tz: string): Wall & { wd: number } {
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: tz,
@@ -236,7 +324,8 @@ function wallInZone(utcMs, tz) {
       weekday: 'short',
     })
     const p = Object.fromEntries(dtf.formatToParts(new Date(utcMs)).map(x => [x.type, x.value]))
-    const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[p.weekday] ?? 0
+    const weekdays: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    const wd = weekdays[p.weekday] ?? 0
     return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, s: +p.second, wd }
   } catch {
     const d = new Date(utcMs)
@@ -245,26 +334,26 @@ function wallInZone(utcMs, tz) {
 }
 
 /** Day-of-week for a wall Y-M-D (UTC date maths — calendar date, not zone). */
-function wallDow(wall) {
+function wallDow(wall: Wall): number {
   return new Date(Date.UTC(wall.y, wall.mo - 1, wall.d)).getUTCDay()
 }
 
 /** Add days to a wall Y-M-D. */
-function addDaysWall(wall, days) {
+function addDaysWall(wall: Wall, days: number): Wall {
   const t = Date.UTC(wall.y, wall.mo - 1, wall.d) + days * DAY
   const d = new Date(t)
   return { ...wall, y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate() }
 }
 
 /** Starts (UTC ms) of every occurrence of an event between from and to. */
-function occurrences(ev, fromMs, toMs) {
+function occurrences(ev: ParsedEvent, fromMs: number, toMs: number): number[] {
   const start = ev.start.ms
   if (!ev.rrule || !ev.rrule.freq) return start < toMs ? [start] : []
   const r = ev.rrule
   const until = r.until !== undefined ? Math.min(r.until, toMs) : toMs
-  const out = []
+  const out: number[] = []
   let produced = 0
-  const push = ms => {
+  const push = (ms: number) => {
     if (r.count !== undefined && produced >= r.count) return false
     produced++
     if (ms >= fromMs && ms < toMs) out.push(ms)
@@ -277,7 +366,7 @@ function occurrences(ev, fromMs, toMs) {
   // Zoned timed events: step on wall-clock dates, convert each with zonedToUtc
   // so a Europe/London 18:00 weekly stays 18:00 after the autumn DST change.
   if (tz && wall0) {
-    const toUtc = w => zonedToUtc(w.y, w.mo, w.d, w.h, w.mi, w.s, tz)
+    const toUtc = (w: Wall) => zonedToUtc(w.y, w.mo, w.d, w.h, w.mi, w.s, tz)
     if (r.freq === 'DAILY') {
       for (let i = 0; i < MAX; i++) {
         const w = addDaysWall(wall0, i * r.interval)
@@ -375,15 +464,15 @@ const MAX_INSTANCES = 20_000
 /** Events one feed may contain. A personal calendar is far below this. */
 const MAX_EVENTS = 10_000
 
-export function expandEvents(parsed, fromMs, toMs) {
-  const overrides = new Map() // uid -> Set of recurrence-id ms replaced by a detached event
+export function expandEvents(parsed: ParsedCalendar, fromMs: number, toMs: number): EventInstance[] {
+  const overrides = new Map<string, Set<number>>() // uid -> Set of recurrence-id ms replaced by a detached event
   for (const ev of parsed.events) {
     if (ev.recurrenceId !== undefined) {
       if (!overrides.has(ev.uid)) overrides.set(ev.uid, new Set())
-      overrides.get(ev.uid).add(ev.recurrenceId)
+      overrides.get(ev.uid)!.add(ev.recurrenceId)
     }
   }
-  const out = []
+  const out: EventInstance[] = []
   for (const ev of parsed.events.slice(0, MAX_EVENTS)) {
     if (out.length >= MAX_INSTANCES) break
     if (ev.status === 'CANCELLED') continue
@@ -418,12 +507,12 @@ export function expandEvents(parsed, fromMs, toMs) {
 // Emitting
 // ---------------------------------------------------------------------------
 
-function esc(v) {
+function esc(v: unknown): string {
   return String(v ?? '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
 }
 
-function fold(line) {
-  const out = []
+function fold(line: string): string {
+  const out: string[] = []
   let rest = line
   while (rest.length > 73) {
     out.push(rest.slice(0, 73))
@@ -433,7 +522,7 @@ function fold(line) {
   return out.join('\r\n')
 }
 
-const stamp = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+const stamp = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
 
 /**
  * UTC calendar day for an instant. Only correct for an all-day event when the
@@ -441,17 +530,17 @@ const stamp = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\
  * untimed task is stored at local midnight, which in Europe/London summer is
  * 23:00Z the day before, and this would then publish it a day early.
  */
-const dateOnly = ms => new Date(ms).toISOString().slice(0, 10).replace(/-/g, '')
+const dateOnly = (ms: number): string => new Date(ms).toISOString().slice(0, 10).replace(/-/g, '')
 
 /** 'YYYY-MM-DD' (or 'YYYYMMDD') -> 'YYYYMMDD'. */
-const compactDay = key => String(key).replace(/-/g, '')
+const compactDay = (key: string): string => String(key).replace(/-/g, '')
 
 /**
  * The next calendar day of a date-only key. ICS DTEND for an all-day event is
  * exclusive, so a one-day event ends on the following date. Stepped in UTC on
  * purpose: a date-only key carries no time, so no DST rule can apply to it.
  */
-const nextDay = key => {
+const nextDay = (key: string): string => {
   const m = String(key).match(/^(\d{4})-?(\d{2})-?(\d{2})$/)
   if (!m) return key
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
@@ -463,7 +552,7 @@ const nextDay = key => {
  * Build an ICS document. items: { uid, title, start (ms), end (ms, optional),
  * allDay, description, url, categories }.
  */
-export function buildICS(name, items) {
+export function buildICS(name: string, items: readonly FeedItem[]): string {
   const now = stamp(Date.now())
   const lines = [
     'BEGIN:VCALENDAR',

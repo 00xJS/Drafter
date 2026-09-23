@@ -17,7 +17,7 @@ import {
   placesWith,
   prefersAppleMaps,
 } from '../places'
-import { MAX_PLACE_ALIASES } from '../../shared/places.mjs'
+import { MAX_PLACE_ALIASES } from '../../shared/places.mts'
 import { Meal, Person, Place, Task } from '../types'
 
 function place(over: Partial<Place> = {}): Place {

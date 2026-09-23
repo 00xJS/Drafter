@@ -1,6 +1,6 @@
 // Types for mcp/tools.mjs. The tools are dependency-free JavaScript; these only keep tsc honest.
 
-import type { Clock } from '../shared/clock.mjs'
+import type { Clock } from '../shared/clock.mts'
 import type { Item, RestData } from './data.mjs'
 
 export type Scope = 'read' | 'write' | 'journal'

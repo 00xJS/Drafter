@@ -1,0 +1,16 @@
+{
+  // The rules the app, the Netlify functions and the MCP server share
+  // (shared/*.mts), checked strictly. Node also runs these files as they are,
+  // by stripping their types (the local MCP server, the scripts), so they hold
+  // only syntax that strips away — no enums, namespaces or parameter
+  // properties — and every type import says so. Imports resolve as Node
+  // resolves them: by their real names.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["shared"]
+}

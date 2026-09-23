@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { SHARED_BY_DEFAULT, SYNC_KINDS, readableRow } from '../../shared/kinds.mjs'
+import { SHARED_BY_DEFAULT, SYNC_KINDS, readableRow } from '../../shared/kinds.mts'
 
 // The bot gateway (supabase/functions/bot/index.ts) is a Deno edge function
 // that imports supabase-js from jsr:, so it cannot run here as it stands. This
@@ -473,7 +473,7 @@ describe('a meal kept to yourself', () => {
   })
 })
 
-// shared/kinds.mjs is the one rule for what a household member may read, and
+// shared/kinds.mts is the one rule for what a household member may read, and
 // the gateway cannot import it. This runs the gateway's own copy against it,
 // kind by kind and flag by flag, through both ways rows leave the gateway. A
 // kind that becomes per-record there fails here until the gateway learns it.

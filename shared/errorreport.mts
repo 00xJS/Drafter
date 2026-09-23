@@ -16,7 +16,21 @@ export const BUILD_MAX = 64
 export const VIEW_MAX = 32
 /** How many times one report may say the error happened. */
 export const COUNT_MAX = 1000
-export const PLATFORMS = ['web', 'ios']
+
+export type ReportPlatform = 'web' | 'ios'
+export const PLATFORMS: readonly ReportPlatform[] = ['web', 'ios']
+
+/** A report as the app sends it and the server stores it (public.client_errors). */
+export interface CleanReport {
+  fingerprint: string
+  message: string
+  stack: string | null
+  build: string | null
+  platform: ReportPlatform | null
+  view: string | null
+  path: string | null
+  count: number
+}
 
 /** A quoted run longer than this is somebody's text rather than code, so it is left out. */
 const QUOTED_MAX = 24
@@ -38,7 +52,7 @@ const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/g
  * Every URL's query string and fragment cut off — they carry tokens, ids and
  * search words — keeping the `:line:column` a stack frame ends with.
  */
-export function stripQueries(text) {
+export function stripQueries(text: unknown): string {
   return String(text ?? '').replace(URLS, url => {
     const cut = url.search(/[?#]/)
     if (cut === -1) return url
@@ -48,7 +62,7 @@ export function stripQueries(text) {
 }
 
 /** A message or a stack as it may be kept: no query strings, email addresses, long quoted text or control characters, at most `max` characters. */
-export function scrubText(text, max) {
+export function scrubText(text: unknown, max: number): string {
   if (text == null) return ''
   const unquoted = QUOTED.reduce((t, re) => t.replace(re, m => `${m[0]}…${m[m.length - 1]}`), stripQueries(String(text)))
   return unquoted
@@ -59,7 +73,7 @@ export function scrubText(text, max) {
 }
 
 /** A page's path, never its query string or fragment; null for anything that is not a path. */
-export function cleanPath(path) {
+export function cleanPath(path: unknown): string | null {
   if (typeof path !== 'string') return null
   const bare = path.split(/[?#]/)[0].replace(/[^A-Za-z0-9/_.~%-]/g, '')
   return bare.startsWith('/') ? bare.slice(0, PATH_MAX) : null
@@ -69,31 +83,31 @@ export function cleanPath(path) {
  * Which screen: a few lowercase words the app itself names ("home",
  * "settings", "the task editor"), or "other". Never free text.
  */
-export function cleanView(view) {
+export function cleanView(view: unknown): string | null {
   if (typeof view !== 'string' || !view.trim()) return null
   const v = view.trim().toLowerCase().replace(/’/g, "'")
   return new RegExp(`^[a-z][a-z ']{0,${VIEW_MAX - 1}}$`).test(v) ? v : 'other'
 }
 
 /** The build stamp (index.html's drafter-build meta): letters, digits, dots, dashes and underscores. */
-export function cleanBuild(build) {
+export function cleanBuild(build: unknown): string | null {
   if (typeof build !== 'string') return null
   const b = build.replace(/[^A-Za-z0-9._-]/g, '').slice(0, BUILD_MAX)
   return b || null
 }
 
-export function cleanPlatform(platform) {
-  return PLATFORMS.includes(platform) ? platform : null
+export function cleanPlatform(platform: unknown): ReportPlatform | null {
+  return PLATFORMS.find(p => p === platform) ?? null
 }
 
 /** How many times a report says the error happened: a whole number from 1 to COUNT_MAX. */
-export function cleanCount(count) {
+export function cleanCount(count: unknown): number {
   const n = Math.floor(Number(count))
   return Number.isFinite(n) ? Math.min(COUNT_MAX, Math.max(1, n)) : 1
 }
 
 /** The first line of a stack that says where it happened: Chrome's "at f (url:1:2)", Safari's "f@url:1:2". */
-function topFrame(stack) {
+function topFrame(stack: unknown): string {
   for (const raw of String(stack ?? '').split('\n')) {
     const line = raw.trim()
     if (/^at\s/.test(line) || /@.*:\d+(?::\d+)?\)?$/.test(line)) return line
@@ -106,7 +120,7 @@ function topFrame(stack) {
  * bundle file's content hash, the line and column. The same bug in the next
  * build is the same error.
  */
-function steadyFrame(frame) {
+function steadyFrame(frame: string): string {
   return frame
     .replace(/[a-z][a-z0-9+.-]*:\/\/[^/\s)]*/gi, '')
     .replace(/-[A-Za-z0-9_-]{6,}(\.m?js)\b/g, '$1')
@@ -114,13 +128,13 @@ function steadyFrame(frame) {
 }
 
 /** A message without the numbers and ids that differ each time the same thing goes wrong. */
-function steadyMessage(message) {
+function steadyMessage(message: unknown): string {
   return String(message ?? '')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '#')
     .replace(/\d{3,}/g, '#')
 }
 
-function fnv1a(text, seed) {
+function fnv1a(text: string, seed: number): string {
   let h = seed >>> 0
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i)
@@ -134,14 +148,17 @@ function fnv1a(text, seed) {
  * frame it was thrown from, on one platform. Not the build, so a bug that
  * outlives a deploy stays one line in Admin with its count still going up.
  */
-export function fingerprintOf({ message, stack, platform }) {
+export function fingerprintOf({ message, stack, platform }: { message: string; stack?: string | null; platform?: string | null }): string {
   const basis = `${platform ?? ''}\n${steadyMessage(message)}\n${steadyFrame(topFrame(stack))}`
   return fnv1a(basis, 0x811c9dc5) + fnv1a(basis, 0x5bd1e995)
 }
 
+/** An object whose fields can be read one by one, whatever they turn out to hold. */
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object'
+
 /** A report as it may be sent and stored, or null when it says nothing. */
-export function cleanReport(report) {
-  if (!report || typeof report !== 'object') return null
+export function cleanReport(report: unknown): CleanReport | null {
+  if (!isObject(report)) return null
   const message = scrubText(report.message, MESSAGE_MAX)
   if (!message) return null
   const stack = scrubText(report.stack, STACK_MAX) || null

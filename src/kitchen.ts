@@ -3,8 +3,8 @@ import { outingsAt } from './places'
 import { weekRange } from './review'
 import { daysBetween } from './stats'
 import { dateKey } from './utils'
-import { newerStamp } from '../shared/domain.mjs'
-import { mealHistory } from '../shared/weekplan.mjs'
+import { newerStamp } from '../shared/domain.mts'
+import { mealHistory } from '../shared/weekplan.mts'
 import {
   MAX_SIDES,
   activeGroceryLines as sharedActiveGroceryLines,
@@ -23,10 +23,10 @@ import {
   recipesUsed as sharedRecipesUsed,
   removeGroceryLine as sharedRemoveGroceryLine,
   restoreGroceryLine as sharedRestoreGroceryLine,
-} from '../shared/kitchen.mjs'
-import type { GroceryAddOutcome, MealMain } from '../shared/kitchen.mjs'
+} from '../shared/kitchen.mts'
+import type { GroceryAddOutcome, MealMain } from '../shared/kitchen.mts'
 
-// Merging, list building, ids and what a meal cooks live in shared/kitchen.mjs
+// Merging, list building, ids and what a meal cooks live in shared/kitchen.mts
 // so an agent adding "milk" through the MCP server and the Kitchen tab produce
 // the same list, and count the same dinners as cooked.
 
@@ -45,7 +45,7 @@ export type { MealMain }
 export const mealSides = (meal: Meal | null | undefined): MealSide[] => sharedMealSides(meal)
 /** The saved recipes a meal cooks: its main, then its sides, each once. */
 export const mealRecipeIds = (meal: Meal | null | undefined): string[] => sharedMealRecipeIds(meal)
-/** What a meal has cooked by `todayKey`, main and sides: the one rule for "cooked" (shared/kitchen.mjs). */
+/** What a meal has cooked by `todayKey`, main and sides: the one rule for "cooked" (shared/kitchen.mts). */
 export const cookedRecipeIds = (meal: Meal | null | undefined, todayKey: string): string[] => sharedCookedRecipeIds(meal, todayKey)
 /** "Chicken curry with rice and naan"; a meal with no sides is its title alone. */
 export const mealLabel = (meal: Pick<Meal, 'title'> & Partial<Meal>): string => sharedMealLabel(meal)
@@ -68,7 +68,7 @@ export function dishMark(name: string, emoji?: string): string {
 }
 /**
  * A slot's meal with a new main, keeping its notes, and its sides while it is
- * still cooked (shared/kitchen.mjs has the rule; MCP's plan_meal follows it too).
+ * still cooked (shared/kitchen.mts has the rule; MCP's plan_meal follows it too).
  */
 export const mealWithMain = (prev: Meal | null | undefined, at: { date: string; slot: MealSlot }, main: MealMain, now = new Date().toISOString(), owner: string | null = null): Meal =>
   sharedMealWithMain(prev, at, main, now, owner)
@@ -117,7 +117,7 @@ export interface CookedIndex {
 
 /**
  * When each recipe was last cooked, and how often: mealHistory's numbers
- * (shared/weekplan.mjs), the ones the week plan and the assistant read — counted
+ * (shared/weekplan.mts), the ones the week plan and the assistant read — counted
  * by cookedRecipeIds' rule, sides included. And when it is next on the plan: the
  * earliest live meal after `dayKey` that cooks it (mealRecipeIds, so never a
  * bought one).

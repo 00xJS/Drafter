@@ -6,7 +6,7 @@
 // manages it; GET without a token reports status for the signed-in user.
 
 import { withCors } from './lib/cors.mjs'
-import { buildICS } from '../../shared/ics.mjs'
+import { buildICS } from '../../shared/ics.mts'
 import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
 import { restAll } from './lib/backup.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'

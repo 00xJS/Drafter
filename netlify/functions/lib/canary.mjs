@@ -7,7 +7,7 @@
 // Everything takes the caller's `rest` (service-key PostgREST), so the digest
 // and Admin share one path without a third copy of that helper.
 
-import { SYNC_KINDS } from '../../../shared/kinds.mjs'
+import { SYNC_KINDS } from '../../../shared/kinds.mts'
 
 export const CANARY_KEY = 'sync_canary'
 const MINUTE = 60_000

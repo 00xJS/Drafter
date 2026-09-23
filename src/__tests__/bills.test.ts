@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { nextOccurrence } from '../../shared/domain.mjs'
+import { nextOccurrence } from '../../shared/domain.mts'
 import { sanitizeTask } from '../schema'
 import { CURRENCY, billMonth, formatMoney, monthlyCost, withPaidDefault } from '../bills'
 import { Task } from '../types'
@@ -37,7 +37,7 @@ describe('formatMoney: every amount in dollars', () => {
   const sources = () =>
     ['src', 'shared', 'mcp', 'netlify/functions', 'supabase/functions'].flatMap(dir =>
       readdirSync(join(ROOT, dir), { recursive: true, encoding: 'utf8' })
-        .filter(f => /\.(ts|tsx|mjs)$/.test(f) && !f.includes('__tests__'))
+        .filter(f => /\.(ts|tsx|mts|mjs)$/.test(f) && !f.includes('__tests__'))
         .map(f => ({ path: `${dir}/${f}`, text: readFileSync(join(ROOT, dir, f), 'utf8') })),
     )
 

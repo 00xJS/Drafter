@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
 import { KINDS, shapeDataStats } from '../../netlify/functions/lib/datastats.mjs'
 import { feedFor, readableItems, withOwner } from '../../netlify/functions/lib/feedrows.mjs'
-import { buildDigest, visibleItemsFor } from '../../shared/digest.mjs'
+import { buildDigest, visibleItemsFor } from '../../shared/digest.mts'
 
 // kind 'note' (v3.13) through the server's readers, which all read with the
 // service key and so decide for themselves what a row is. A note is a page of

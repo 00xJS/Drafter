@@ -13,8 +13,8 @@ import {
 } from '../focus'
 import { shiftRange, weekRange } from '../review'
 import { duplicateTask } from '../taskutils'
-import { nextOccurrence } from '../../shared/domain.mjs'
-import { focusTasks, isFocusFor } from '../../shared/today.mjs'
+import { nextOccurrence } from '../../shared/domain.mts'
+import { focusTasks, isFocusFor } from '../../shared/today.mts'
 import type { CalendarEvent, Review } from '../types'
 
 // Plan my day and Shut down write focus, dates and time blocks in one go, with

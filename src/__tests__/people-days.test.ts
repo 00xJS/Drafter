@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { makeClock } from '../../shared/clock.mjs'
-import { seenStatus as sharedSeenStatus, visitDays as sharedVisitDays } from '../../shared/people.mjs'
+import { makeClock } from '../../shared/clock.mts'
+import { seenStatus as sharedSeenStatus, visitDays as sharedVisitDays } from '../../shared/people.mts'
 import { personStats, seenLabel, visitDays, visitSummary, yearReport } from '../people'
 import { buildReview, weekRange } from '../review'
 import { CalendarEntry, Person, Task } from '../types'
@@ -91,7 +91,7 @@ describe('personStats counts days seen', () => {
   })
 })
 
-// Due and overdue are one rule (shared/people.mjs seenStatus) behind People's
+// Due and overdue are one rule (shared/people.mts seenStatus) behind People's
 // badges, Today's catch-up nudges and the morning digest: past the cadence is
 // due, past one and a half times it overdue, and someone with no cadence is
 // held to 90 days rather than never drifting at all.

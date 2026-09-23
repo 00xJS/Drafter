@@ -39,4 +39,10 @@ export default tseslint.config(
     files: server.map(dir => `${dir}/**/*.d.mts`),
     rules,
   },
+  {
+    // The rules shared with the app, in TypeScript (tsconfig.shared.json):
+    // typed properly, so nothing in them is `any`.
+    files: ['shared/**/*.mts'],
+    rules: { ...rules, '@typescript-eslint/no-explicit-any': 'error' },
+  },
 )

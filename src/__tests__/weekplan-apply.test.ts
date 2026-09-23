@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AcceptedPlan, WeekPlan } from '../../shared/weekplan.mjs'
+import type { AcceptedPlan, WeekPlan } from '../../shared/weekplan.mts'
 import { applyWeekPlanWrites, weekPlanToast, weekPlanWrites, weekWritesEmpty, type PlanPorts } from '../components/planner/useFocusActions'
 import type { Item, Meal, Review, Task } from '../types'
 

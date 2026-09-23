@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ownVisit, seenTasks } from '../../shared/people.mjs'
-import { outingsAt, placeCadenceStatus } from '../../shared/places.mjs'
+import { ownVisit, seenTasks } from '../../shared/people.mts'
+import { outingsAt, placeCadenceStatus } from '../../shared/places.mts'
 import { workDaysOf } from '../calgrid'
 import { briefingFacts } from '../components/BriefingCard'
 import { entryToEvent } from '../calendars'

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { catchUpTask, proposeWeek, targetWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
-import type { WeekPlan } from '../../shared/weekplan.mjs'
-import { localMidnightIso } from '../../shared/domain.mjs'
-import { weekKeyOf } from '../../shared/weeks.mjs'
+import { catchUpTask, proposeWeek, targetWeek, weekPlanSummary } from '../../shared/weekplan.mts'
+import type { WeekPlan } from '../../shared/weekplan.mts'
+import { localMidnightIso } from '../../shared/domain.mts'
+import { weekKeyOf } from '../../shared/weeks.mts'
 
 // "Plan next week" is recomputed from the records every time and shared by the
 // app and the Sunday digest, so these pin the proposal itself: which week,

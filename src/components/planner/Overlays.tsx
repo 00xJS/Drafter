@@ -1,6 +1,6 @@
 import { Suspense, useState, type ReactNode } from 'react'
-import { mediaIdsOf } from '../../../shared/media.mjs'
-import { proposeWeek, targetWeek } from '../../../shared/weekplan.mjs'
+import { mediaIdsOf } from '../../../shared/media.mts'
+import { proposeWeek, targetWeek } from '../../../shared/weekplan.mts'
 import { newerStamp } from '../../itemops'
 import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
 import type { Task } from '../../types'

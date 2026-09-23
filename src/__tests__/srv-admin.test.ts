@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SYNC_KINDS } from '../../shared/kinds.mjs'
+import { SYNC_KINDS } from '../../shared/kinds.mts'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import adminFunction from '../../netlify/functions/admin.mjs'
 

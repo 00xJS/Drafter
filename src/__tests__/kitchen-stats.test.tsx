@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { weekKeyOf, weekKeyStart, weekStartKey } from '../../shared/weeks.mjs'
+import { weekKeyOf, weekKeyStart, weekStartKey } from '../../shared/weeks.mts'
 import { Kitchen } from '../components/Kitchen'
 import { KitchenStats as StatsView } from '../components/kitchen/KitchenStats'
 import { KitchenStats } from '../components/planner/lazy'
@@ -714,7 +714,7 @@ describe('its chunk and its styles', () => {
       for (const m of code.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm)) {
         const base = resolve(dirname(file), m[1])
         const hit = [base, `${base}.ts`, `${base}.tsx`].find(p => existsSync(p) && statSync(p).isFile())
-        if (hit && /\.(tsx?|mjs)$/.test(hit)) todo.push(hit)
+        if (hit && /\.(tsx?|mts|mjs)$/.test(hit)) todo.push(hit)
       }
     }
     return seen

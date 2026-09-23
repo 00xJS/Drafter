@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PERSONAL_KINDS, SHARED_BY_DEFAULT, SYNC_KINDS, kindOf, readableKind, readableRow } from '../../shared/kinds.mjs'
-import { visibleItemsFor } from '../../shared/digest.mjs'
+import { PERSONAL_KINDS, SHARED_BY_DEFAULT, SYNC_KINDS, kindOf, readableKind, readableRow } from '../../shared/kinds.mts'
+import { visibleItemsFor } from '../../shared/digest.mts'
 import { KINDS } from '../../netlify/functions/lib/datastats.mjs'
 import { KNOWN_KINDS } from '../schema'
 import { readMigrations, recordKinds, recordKindsFrom, type Migration } from './recordkinds'
 
-// shared/kinds.mjs is the code's one list: the app, the digest and the
+// shared/kinds.mts is the code's one list: the app, the digest and the
 // server-side readers all import it. The database's is public.record_kinds
 // (v3.31), which sync_posts, the posts policy and account deletion all read;
 // recordKinds() replays the migrations that fill it, so a kind added by an
@@ -114,8 +114,8 @@ describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
     const src = (p: string) => readFileSync(fileURLToPath(new URL(p, root)), 'utf8')
     const store = src('src/store.ts')
     const schema = src('src/schema.ts')
-    expect(store).toMatch(/import \{[^}]*\bPERSONAL_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mjs'/)
-    expect(schema).toMatch(/import \{[^}]*\bSYNC_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mjs'/)
+    expect(store).toMatch(/import \{[^}]*\bPERSONAL_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mts'/)
+    expect(schema).toMatch(/import \{[^}]*\bSYNC_KINDS\b[^}]*\} from '\.\.\/shared\/kinds\.mts'/)
     // a second hand-written list is how the copies drifted before
     for (const [file, text] of [['src/store.ts', store], ['src/schema.ts', schema]]) {
       expect(text, `${file} keeps its own kinds list again`).not.toMatch(/new Set\(\[\s*'(task|journal)'/)

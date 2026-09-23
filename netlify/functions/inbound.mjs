@@ -13,7 +13,7 @@
 // Supabase, or the AI provider on the triage pass — held the webhook open until
 // the platform killed it, and the mail service saw an error instead of a task.
 
-import { newerStamp } from '../../shared/domain.mjs'
+import { newerStamp } from '../../shared/domain.mts'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'

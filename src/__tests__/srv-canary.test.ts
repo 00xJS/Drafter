@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SYNC_KINDS } from '../../shared/kinds.mjs'
+import { SYNC_KINDS } from '../../shared/kinds.mts'
 import { ALERT_GAP_MS, ago, canaryAlert, canarySentence, nextCanaryRecord, runSyncCanary } from '../../netlify/functions/lib/canary.mjs'
 import type { CanaryRecord, CanaryResult } from '../../netlify/functions/lib/canary.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
