@@ -59,7 +59,7 @@ describe('the build and the host', () => {
     const budget = Number(/const PRECACHE_BUDGET_KIB = (\d+)/.exec(precache)?.[1])
     // room for the app to grow, and none for a model or a library to slip in: 17.5 MB would be twelve times over
     expect(budget).toBeGreaterThan(1200)
-    expect(budget).toBeLessThanOrEqual(2048)
+    expect(budget).toBeLessThanOrEqual(2176)
     expect(precache).toContain('over its budget of')
     expect(precache).toContain('its install would fail')
   })

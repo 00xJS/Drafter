@@ -161,8 +161,11 @@ if (runtimes.length !== 1 || whole.length !== 1) {
 // reason in the commit, rather than let it creep. It is there to catch models
 // and images slipping in, not app code. Measure it as Netlify builds, in cloud
 // mode with VITE_SUPABASE_URL set: a local-mode build leaves the Supabase
-// client out and reads about 200 KiB lighter.
-const PRECACHE_BUDGET_KIB = 2048
+// client out and reads about 200 KiB lighter. Raised from 2048 when the React
+// Compiler took on the screens it had been leaving as written: its caching is
+// app code, about 90 KiB of it (37 KiB gzipped) for the first 46 of them, with
+// room for the rest.
+const PRECACHE_BUDGET_KIB = 2176
 const entries = [...sw.matchAll(/\burl:\s*"([^"]+)"|"url":\s*"([^"]+)"/g)].map(m => m[1] ?? m[2])
 const absent = entries.filter(url => !existsSync(join(dist, url)))
 if (absent.length) {
