@@ -162,7 +162,7 @@ describe('the assignee’s progress reaches whoever handed it over', () => {
     ])
     expect(noticesOf(MARIA)).toEqual([])
     expect(pushes).toEqual([
-      { to: ['https://push.example.test/joe'], title: 'Maria made progress on “Take bins out”', body: 'Ticked “Green bin”', tag: 'task-bins', url: 'https://site.test/?task=bins' },
+      { to: ['https://push.example.test/joe'], title: 'Maria made progress on “Take bins out”', body: 'Ticked “Green bin”', tag: 'task-bins', renotify: true, url: 'https://site.test/?task=bins' },
     ])
   })
 

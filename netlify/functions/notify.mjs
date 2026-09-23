@@ -158,8 +158,10 @@ const handler = async req => {
       const { gone, updated } = await sendToAll(subs, {
         title: put.notice.title,
         body: lines.length ? lines.join('\n') : 'Open Drafter for the details.',
-        // one banner per task: a later push replaces the earlier on the lock screen
+        // one banner per task: a later push replaces the earlier on the lock
+        // screen, and a browser sounds it again rather than swapping it silently
         tag: `task-${taskId}`,
+        renotify: true,
         url: `${site}/?task=${encodeURIComponent(taskId)}`,
       })
       if (gone.length || updated?.length) {
