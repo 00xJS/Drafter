@@ -36,6 +36,8 @@ let systems: string[]
 /** The key each model call carried. */
 let aiKeys: string[]
 let jobRuns: Map<string, Record<string, any>>
+/** sync_posts refuses what it is sent. */
+let rejectStore = false
 let tokenN = 0
 /** A token of its own for each test: the per-token limit is kept in the webhook's memory. */
 let KEY = ''
@@ -64,6 +66,7 @@ beforeEach(() => {
   systems = []
   aiKeys = []
   jobRuns = new Map()
+  rejectStore = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -97,6 +100,7 @@ beforeEach(() => {
       if (route === 'settings') return Response.json([settingsRow])
       if (route === 'read') return Response.json(posts.has(id) ? [structuredClone(posts.get(id))] : [])
       if (route === 'store') {
+        if (rejectStore) return Response.json({ items: [], rejected: body.incoming.map((i: { id: string }) => i.id), stale: [], gone: [] })
         const stale: string[] = []
         for (const item of body.incoming) {
           stored.push(item)
@@ -275,12 +279,20 @@ describe('whose task it is', () => {
     expect(res.status).toBe(503)
     expect([...posts.values()][0].user_id).toBe('site-owner')
     expect(started).toEqual([])
-    // the mail service tries again: the task is found by its id, and handed over now
+    // the mail service tries again: the task is found by its id, handed over now, and triaged now
     const again = await answer(retried())
     expect(again.res.status).toBe(200)
-    expect(await again.res.json()).toMatchObject({ duplicate: true })
+    expect(await again.res.json()).toMatchObject({ duplicate: true, triage: 'started' })
     expect([...posts.values()][0].user_id).toBe(OWNER)
     expect(stored).toHaveLength(1)
+    expect(started).toEqual([expect.objectContaining({ type: 'triage', userId: OWNER, updatedAt: stored[0].updatedAt })])
+  })
+
+  it('a store the database refuses is no task filed: the mail service hears so', async () => {
+    rejectStore = true
+    const { res } = await answer(retried('m3@example.test'))
+    expect(res.status).toBe(502)
+    expect(calls).toEqual(['settings', 'read', 'store'])
   })
 })
 

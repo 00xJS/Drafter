@@ -200,16 +200,24 @@ export default async req => {
     return false
   }
   const unavailable = () => new Response('Temporarily unavailable', { status: 503 })
+  // the second pass, in the background: it has time this webhook does not
+  const triage = async updatedAt => {
+    if (!resolveProvider()) return 'off'
+    const job = { type: 'triage', userId: row.user_id, taskId: id, updatedAt, subject, text: body, from, tz: validTimeZone(row.timezone) ?? 'UTC' }
+    return left() > 0 && (await startJob(job, { origin: siteOrigin(url.origin), timeoutMs: left() })) ? 'started' : 'not started'
+  }
 
-  // delivered before: the task it made then stands (and is handed over now, if it was not then)
+  // delivered before: the task it made then stands — and when the hand-over
+  // failed that time (the 503 below), it is handed over now and triaged now
   if (messageId) {
     const seen = await supabase(`posts?id=eq.${encodeURIComponent(id)}&select=user_id,data`, { method: 'GET' })
       .then(r => (r.ok ? r.json() : null))
       .catch(() => null)
     if (!Array.isArray(seen)) return unavailable()
     if (seen[0]) {
-      if (seen[0].user_id !== row.user_id && !(await handOver())) return unavailable()
-      return Response.json({ ok: true, id, title: seen[0].data?.title ?? '', duplicate: true })
+      const stranded = seen[0].user_id !== row.user_id
+      if (stranded && !(await handOver())) return unavailable()
+      return Response.json({ ok: true, id, title: seen[0].data?.title ?? '', duplicate: true, ...(stranded ? { triage: await triage(seen[0].data?.updatedAt) } : {}) })
     }
   }
 
@@ -231,18 +239,10 @@ export default async req => {
   // email makes Postgres aggregate the entire table into one json document
   const stored = await supabase('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [task], since: new Date(Date.now() + 86_400_000).toISOString() }) }).catch(() => null)
   if (!stored?.ok) return new Response('store failed', { status: 502 })
+  const verdict = await stored.json().catch(() => null)
+  if (Array.isArray(verdict?.rejected) && verdict.rejected.includes(id)) return new Response('store refused', { status: 502 })
+  // deleted forever since an earlier delivery made it: it stays deleted
+  if (Array.isArray(verdict?.gone) && verdict.gone.includes(id)) return Response.json({ ok: true, id, title: task.title, duplicate: true })
   if (!(await handOver())) return unavailable()
-
-  // the second pass, in the background: it has time this webhook does not
-  let triage = 'off'
-  if (resolveProvider()) {
-    const started =
-      left() > 0 &&
-      (await startJob(
-        { type: 'triage', userId: row.user_id, taskId: id, updatedAt: task.updatedAt, subject, text: body, from, tz: validTimeZone(row.timezone) ?? 'UTC' },
-        { origin: siteOrigin(url.origin), timeoutMs: left() },
-      ))
-    triage = started ? 'started' : 'not started'
-  }
-  return Response.json({ ok: true, id, title: task.title, triage })
+  return Response.json({ ok: true, id, title: task.title, triage: await triage(task.updatedAt) })
 }
