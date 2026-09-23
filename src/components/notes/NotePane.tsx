@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { Note } from '../../types'
 import { timeAgo } from '../../utils'
+import { useNow } from '../../useNow'
 import { ConfirmButton } from '../ConfirmButton'
 import { RichNotes } from '../RichNotes'
-import { createNoteSaver, draftOf, hasNoteText, noteIsMine, NoteDraft, UNTITLED } from './model'
+import { createNoteSaver, draftOf, hasNoteText, noteIsMine, NoteDraft, UNTITLED, type NoteSaver } from './model'
 import { NoteTips } from './NoteTips'
 import { tipAttrs } from './tips'
 
@@ -56,63 +57,74 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
   /** Set once the store has held this note, so its disappearing afterwards reads as a delete. */
   const seen = useRef(!!stored)
   const page = useRef<HTMLDivElement>(null)
-  // made once; its callbacks read the latest props through the refs above and run only from handlers, timers and effects
-  // eslint-disable-next-line react-hooks/refs -- the refs are captured here, not read: nothing calls these while rendering
-  const [saver] = useState(() =>
-    createNoteSaver({
-      note,
-      stored: () => storedRef.current,
-      save: n => {
-        known.current = n.updatedAt
-        handlers.current.onSave(n)
-      },
-      remove: id => handlers.current.onDelete?.(id),
-      onFlushed: n => {
-        setDirty(false)
-        if (n) {
-          setSavedAt(new Date().toISOString())
-          setInStore(true)
-        }
-      },
-    }),
-  )
+  // Made the first time anything asks for it — an edit, a flush, the effects
+  // below — and kept for the life of the screen. Its callbacks read the latest
+  // props through the refs above, and it is only ever reached from handlers,
+  // timers and effects: made while the screen draws, as it was, the React
+  // Compiler left the whole screen as written.
+  const made = useRef<NoteSaver | null>(null)
+  const saver = (): NoteSaver => {
+    if (made.current === null) {
+      made.current = createNoteSaver({
+        note,
+        stored: () => storedRef.current,
+        save: n => {
+          known.current = n.updatedAt
+          handlers.current.onSave(n)
+        },
+        remove: id => handlers.current.onDelete?.(id),
+        onFlushed: n => {
+          setDirty(false)
+          if (n) {
+            setSavedAt(new Date().toISOString())
+            setInStore(true)
+          }
+        },
+      })
+    }
+    return made.current
+  }
 
   const edit = (patch: Partial<NoteDraft>, saveNow = false) => {
     const next = { ...draftRef.current, ...patch }
     draftRef.current = next
     setDraft(next)
     setDirty(true)
-    saver.change(next)
-    if (saveNow) saver.flush()
+    saver().change(next)
+    if (saveNow) saver().flush()
   }
 
-  // save when the app goes to the background, and when this screen closes
+  // save when the app goes to the background, and when this screen closes:
+  // set up once, as the one saver is (an effect event)
+  const flushNow = useEffectEvent(() => void saver().flush())
   useEffect(() => {
     const onHide = () => {
-      if (document.visibilityState === 'hidden') saver.flush()
+      if (document.visibilityState === 'hidden') flushNow()
     }
     document.addEventListener('visibilitychange', onHide)
     return () => {
       document.removeEventListener('visibilitychange', onHide)
-      saver.flush()
+      flushNow()
     }
-  }, [saver])
+  }, [])
 
-  useEffect(() => {
+  // the store's copy moved: another device's edit, or the note gone
+  const followStored = useEffectEvent(() => {
     if (stored) {
       seen.current = true
       // another device changed it while nothing here was waiting to save: take theirs
-      if (stored.updatedAt !== known.current && !saver.pending()) {
+      if (stored.updatedAt !== known.current && !saver().pending()) {
         known.current = stored.updatedAt
         draftRef.current = draftOf(stored)
         setDraft(draftRef.current)
       }
     } else if (seen.current) {
       // deleted on another device: a save now would bring it back, so leave it be
-      saver.abandon()
+      saver().abandon()
       handlers.current.onBack()
     }
-  }, [stored, saver])
+  })
+  useEffect(() => followStored(), [stored])
 
   const hasText = hasNoteText(draft.body)
   const blank = !draft.title.trim() && !hasText
@@ -121,6 +133,8 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
   // could not read), so a button here would be a lie the server refuses.
   const mine = noteIsMine(stored ?? note, myId ?? null)
   const shared = mine ? !!draft.shared : true
+  // "Saved 3m ago" moves on with the clock (useNow), not only with the next save
+  const now = useNow()
   const status = blank
     ? inStore
       ? 'Not saved while it is empty'
@@ -128,7 +142,7 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
     : dirty
       ? 'Saving…'
       : savedAt
-        ? `Saved ${timeAgo(savedAt)}`
+        ? `Saved ${timeAgo(savedAt, now)}`
         : 'Autosaves as you type'
 
   return (
@@ -139,7 +153,7 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
           className="btn subtle notes-back"
           {...tipAttrs('Back to all notes')}
           onClick={() => {
-            saver.flush()
+            saver().flush()
             onBack()
           }}
         >
@@ -193,7 +207,7 @@ export function NotePane({ note, stored, onSave, onDelete, onBack, onCreateTask,
               className="btn subtle danger"
               tip="Delete: move this note to Trash, where it can be restored"
               onConfirm={() => {
-                saver.remove()
+                saver().remove()
                 onBack()
               }}
             >

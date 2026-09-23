@@ -137,6 +137,7 @@ export default tseslint.config(
       'src/components/SignOutGuard.tsx',
       'src/components/TaskEditor.tsx',
       'src/components/kitchen/RecipeCapture.tsx',
+      'src/components/notes/NotePane.tsx',
       'src/components/kitchen/RecipeFillFlow.tsx',
       'src/components/planner/useCalendarSync.ts',
       'src/components/planner/useNativeShell.ts',

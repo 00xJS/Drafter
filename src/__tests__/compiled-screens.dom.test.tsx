@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, render, screen } from './dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Garment, Project } from '../types'
+import type { Garment, Note, Project } from '../types'
 
 // Screens the React Compiler compiles now, where it used to leave them as
 // written: each is mounted as the compiler builds it (every DOM test runs its
@@ -12,6 +12,7 @@ vi.mock('../media', () => ({ mediaURL: async () => 'blob:photo', saveMedia: asyn
 vi.mock('../cutout', () => ({ isCutOutPhoto: async () => false, cutoutAvailability: async () => 'web' }))
 
 import { Calendar } from '../components/Calendar'
+import { NotePane } from '../components/notes/NotePane'
 import { NotesView } from '../components/NotesView'
 import { CutoutLater, keptOffline } from '../components/wardrobe/CutoutLater'
 
@@ -99,6 +100,36 @@ describe('a project’s notes pad', () => {
     view.unmount()
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ id: 'p1', notesPinned: true, notesHtml: '<p>Paint the hall sage</p>' })
+  })
+})
+
+describe('a note’s screen', () => {
+  const stored: Note = { kind: 'note', id: 'n1', title: 'Paint colours', body: '<p>Sage for the hall</p>', createdAt: T0, updatedAt: T0 }
+  const title = () => screen.getByRole('textbox', { name: 'Note title' })
+
+  it('saves what was typed once as it closes, onto the copy another device changed meanwhile', () => {
+    const saved: Note[] = []
+    const props = { note: stored, onSave: (n: Note) => void saved.push(n), onBack: noop, onCreateTask: noop }
+    const view = render(<NotePane {...props} stored={stored} />)
+    // pinned on the other phone while this screen is open, with nothing waiting here: taken
+    const pinned = { ...stored, pinned: true, updatedAt: '2026-09-01T10:00:00.000Z' }
+    view.rerender(<NotePane {...props} stored={pinned} />)
+    fireEvent.change(title(), { target: { value: 'Paint colours for the hall' } })
+    view.unmount()
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ id: 'n1', title: 'Paint colours for the hall', pinned: true })
+  })
+
+  it('lets go of a note deleted on another device, and saves nothing that would bring it back', () => {
+    const saved: Note[] = []
+    const back = vi.fn()
+    const props = { note: stored, onSave: (n: Note) => void saved.push(n), onBack: back, onCreateTask: noop }
+    const view = render(<NotePane {...props} stored={stored} />)
+    fireEvent.change(title(), { target: { value: 'Paint colours, and the doors' } })
+    view.rerender(<NotePane {...props} stored={undefined} />)
+    expect(back).toHaveBeenCalledTimes(1)
+    view.unmount()
+    expect(saved).toEqual([])
   })
 })
 

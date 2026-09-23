@@ -155,8 +155,8 @@ describe('a note’s screen', () => {
 
   it('reaches onDelete only through that button’s confirm, with nothing saved after it', () => {
     const src = readFileSync(new URL('../components/notes/NotePane.tsx', import.meta.url), 'utf8')
-    expect(src.match(/saver\.remove\(\)/g)).toHaveLength(1)
-    expect(src).toMatch(/<ConfirmButton\b[^>]*onConfirm=\{\(\) => \{\s*saver\.remove\(\)/)
+    expect(src.match(/saver\(\)\.remove\(\)/g)).toHaveLength(1)
+    expect(src).toMatch(/<ConfirmButton\b[^>]*onConfirm=\{\(\) => \{\s*saver\(\)\.remove\(\)/)
     expect(src.match(/onDelete\?\.\(/g)).toHaveLength(1)
   })
 

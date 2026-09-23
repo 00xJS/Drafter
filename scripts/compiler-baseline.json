@@ -2,7 +2,6 @@
   "about": "Components and hooks the React Compiler leaves as written, and why. scripts/compiler-check.mjs fails on one not listed here; take one off (--update) once it compiles.",
   "uncompiled": {
     "src/components/kitchen/KitchenStats.tsx › KitchenStats": "React Compiler has skipped optimizing this component because one or more React ESLint rules were disabled",
-    "src/components/notes/NotePane.tsx › NotePane": "Cannot access refs during render",
     "src/components/People.tsx › People": "React Compiler has skipped optimizing this component because one or more React ESLint rules were disabled",
     "src/components/People.tsx › PersonRow": "(BuildHIR::lowerStatement) Handle TryStatement with a finalizer ('finally') clause",
     "src/components/Places.tsx › Places": "React Compiler has skipped optimizing this component because one or more React ESLint rules were disabled",
