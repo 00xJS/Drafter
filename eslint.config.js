@@ -84,9 +84,9 @@ export default tseslint.config(
   },
   {
     // Home and the cards it draws, the due badge every task list draws, and
-    // Bills and Stats: views a phone is left open on overnight, and resumed
-    // on days later. Other views still read the clock as they render, and
-    // join this list as they are moved onto the hooks.
+    // Bills, Finance and Stats: views a phone is left open on overnight, and
+    // resumed on days later. Other views still read the clock as they
+    // render, and join this list as they are moved onto the hooks.
     files: [
       'src/components/Today.tsx',
       'src/components/BriefingCard.tsx',
@@ -97,6 +97,7 @@ export default tseslint.config(
       'src/components/wardrobe/WardrobeCard.tsx',
       'src/components/bits.tsx',
       'src/components/Bills.tsx',
+      'src/components/Finance.tsx',
       'src/components/planner/StatsScreen.tsx',
     ],
     plugins: { drafter: { rules: { 'no-render-clock': noRenderClock } } },
