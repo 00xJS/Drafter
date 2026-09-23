@@ -306,8 +306,9 @@ export interface SpawnCandidate {
  * id, which never changes, so every device that sees both keeps the same one
  * whatever else it has not heard yet.
  *
- * A series is read from the ids themselves (`spawnedFrom` does not survive a
- * sync), so an occurrence of an occurrence counts too. Only an open copy that
+ * A series is read from the ids themselves (`spawnedFrom` is gone from any row
+ * an older build has edited: it dropped the fields it did not list), so an
+ * occurrence of an occurrence counts too. Only an open copy that
  * still repeats is a candidate: a finished occurrence reopened by hand has no
  * repeat of its own, and neither has a copy restored from the Trash after this
  * put it there. Returns each id that should go to the Trash, with `keptId`, the
