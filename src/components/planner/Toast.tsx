@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type Dispatch, type SetStateAction } from 'react'
+import { ErrorBoundary } from '../ErrorBoundary'
 import type { Toast as ToastState } from './routes'
 import type { Toaster } from './useToast'
 
@@ -39,8 +40,17 @@ export function Toast({ toast, setToast }: Props) {
   )
 }
 
-/** The toast as the shell draws it: the one component that listens to the toaster, so a toast coming and going redraws this bar alone. */
+/**
+ * The toast as the shell draws it: the one component that listens to the
+ * toaster, so a toast coming and going redraws this bar alone. One that fails
+ * to draw is reported and left out, and the next toast is drawn afresh; the
+ * app around it stays up.
+ */
 export function ToastHost({ toaster }: { toaster: Toaster }) {
   const toast = useSyncExternalStore(toaster.subscribe, toaster.current, toaster.current)
-  return <Toast toast={toast} setToast={toaster.set} />
+  return (
+    <ErrorBoundary where="the toast" resetKey={toast} fallback={() => null}>
+      <Toast toast={toast} setToast={toaster.set} />
+    </ErrorBoundary>
+  )
 }

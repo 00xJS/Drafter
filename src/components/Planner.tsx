@@ -20,10 +20,10 @@ import { KeepScreen } from './planner/KeepScreen'
 import { SettingsScreen } from './planner/SettingsScreen'
 import { useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
-import { VIEW_LABELS } from './planner/routes'
+import { ScreenBoundary } from './planner/ScreenBoundary'
 import { TasksScreen } from './planner/TasksScreen'
 import { ToastHost } from './planner/Toast'
-import { TopBar } from './planner/TopBar'
+import { TopBar, TopBarCrash } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
 import { useDeepLinks } from './planner/useDeepLinks'
 import { useFocusActions } from './planner/useFocusActions'
@@ -155,7 +155,10 @@ export default function Planner() {
 
   return (
     <div className="app">
-      <TopBar p={p} />
+      {/* its own boundary: a header that fails leaves the screen under it up */}
+      <ErrorBoundary where="the top bar" fallback={(_, retry) => <TopBarCrash retry={retry} />}>
+        <TopBar p={p} />
+      </ErrorBoundary>
 
       {store.syncInfo.authError && (
         <div className="auth-banner">
@@ -176,7 +179,7 @@ export default function Planner() {
         {/* this device's saved copy would not open: say so, rather than draw an empty planner over it */}
         {!store.loaded && store.loadError && <CacheError error={store.loadError} retry={store.retryLoad} withServer={!!getSupabase()} />}
         {store.loaded && (
-          <ErrorBoundary where={VIEW_LABELS[view]} resetKey={view}>
+          <ScreenBoundary view={view} pushed={pushed}>
             {/* a screen whose chunk has not arrived holds its space, blank.
                 Moving between tabs is a transition, so a screen already up
                 stays up until the next one can replace it. */}
@@ -203,7 +206,7 @@ export default function Planner() {
                 </>
               )}
             </Suspense>
-          </ErrorBoundary>
+          </ScreenBoundary>
         )}
       </main>
 

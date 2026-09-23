@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
 import App, { preloadPlanner } from './App'
+import { AppBoundary } from './components/ErrorBoundary'
 import { startAppUpdates } from './appupdate'
 import { installErrorReporting } from './errorreport'
 import { prefetchRecordCache } from './idb'
@@ -45,8 +46,12 @@ if (storedUserId() || !isSupabaseConfigured()) {
   prefetchRecordCache()
 }
 
+// the root boundary: anything no screen's own boundary caught is reported and
+// ends on a plain Reload page, never a blank one
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <AppBoundary>
+      <App />
+    </AppBoundary>
   </React.StrictMode>,
 )

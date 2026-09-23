@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ErrorBoundary } from '../ErrorBoundary'
 import { tipAttrs } from '../notes/tips'
 
 /**
@@ -26,7 +27,9 @@ export function PushedScreen({ title, onBack, head, children }: { title: string;
         <span className="spacer" />
         {head}
       </header>
-      {children}
+      {/* the screen's body in a boundary of its own, under the header: a body
+          that fails to draw leaves ‹ Back on screen, and Back leaves it */}
+      <ErrorBoundary where={title}>{children}</ErrorBoundary>
     </div>
   )
 }
