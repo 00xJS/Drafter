@@ -117,6 +117,31 @@ async function callback(req, url) {
   }
 }
 
+const DAY_MS = 86_400_000
+/** The furthest back a pull reads. Google refuses an updatedMin much older (410): it keeps deletions for about a month. */
+export const PULL_MAX_BACK_MS = 20 * DAY_MS
+/** Where a pull starts with no cursor, and where one Google refused starts again. */
+export const PULL_FRESH_MS = 7 * DAY_MS
+
+/**
+ * The Drafter events changed since a device's cursor. A device that has not
+ * pulled for weeks sent a cursor Google answers 410 for, the pull failed, the
+ * cursor never moved, and it failed the same way for good. So the window is
+ * never older than PULL_MAX_BACK_MS, and a 410 all the same (Google keeps less
+ * than that) starts again from a fresh week: an edit made in Google before
+ * that is not read back, which is better than never reading one again.
+ */
+async function changedSince(userId, calendarId, sinceRaw, now = Date.now()) {
+  const asked = Date.parse(sinceRaw)
+  const since = Number.isFinite(asked) ? Math.max(asked, now - PULL_MAX_BACK_MS) : now - PULL_FRESH_MS
+  try {
+    return await listChangedMirrors(userId, calendarId, new Date(since).toISOString())
+  } catch (e) {
+    if (e?.status !== 410) throw e
+    return listChangedMirrors(userId, calendarId, new Date(now - PULL_FRESH_MS).toISOString())
+  }
+}
+
 const handler = async req => {
   const url = new URL(req.url)
   if (url.pathname.endsWith('/callback')) {
@@ -199,8 +224,7 @@ const handler = async req => {
       const at = new Date().toISOString()
       const cal = await resolveDrafterCalendar(user.id)
       const calendarId = cal.id
-      const since = Number.isFinite(Date.parse(body.since)) ? new Date(body.since).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString()
-      const { changes, entries } = googlePullRows(await listChangedMirrors(user.id, calendarId, since))
+      const { changes, entries } = googlePullRows(await changedSince(user.id, calendarId, body.since))
       return Response.json({ changes, entries, calendarId, replaced: cal.replaced, at })
     }
     if (action === 'push') {
