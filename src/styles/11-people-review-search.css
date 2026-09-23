@@ -1253,6 +1253,165 @@
   min-height: var(--touch);
 }
 
+/* ---- The assistant's suggestions -------------------------------------------
+   A card each under the answer that made them: one line to read, details on a
+   tap, and Apply · Edit · Skip. The answer's line is as wide as a card needs,
+   which is wider than a bubble of prose. The app's own line when a card is
+   tapped ("✓ Added task …") is quiet: a note in the margin, not a bubble. */
+.chat-line.has-cards {
+  max-width: min(100%, 40rem);
+  align-self: stretch;
+}
+.chat-line.has-cards .chat-bubble {
+  align-self: flex-start;
+}
+.chat-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.chat-card.applied {
+  background: var(--tone-green-bg);
+  border-color: transparent;
+}
+.chat-card.skipped .chat-card-line {
+  color: var(--text-2);
+}
+/* the line is a button (it opens the details) that reads as the card's words */
+.chat-card-line {
+  display: block;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+/* a finger's worth of target, as every button on a phone has */
+@media (pointer: coarse) {
+  .chat-card-line {
+    min-height: var(--touch);
+    padding-block: 10px;
+  }
+}
+.chat-card-details {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+  white-space: pre-wrap;
+}
+.chat-card-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.chat-card-state {
+  color: var(--tone-green);
+  font-weight: 600;
+}
+.chat-card.skipped .chat-card-state,
+.chat-card-hint {
+  color: var(--text-2);
+  font-weight: 400;
+}
+/* a name nothing matched: what was said, and the saved ones it could mean */
+.chat-card-fix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+.chat-card-fix label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 12rem;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+}
+.chat-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+.chat-card-edit > .btn {
+  align-self: flex-start;
+}
+.chat-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-card-row > .field {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.chat-card-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-card-items li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-card-items input {
+  flex: 1;
+  min-width: 0;
+}
+.chat-card-slots {
+  align-self: flex-start;
+}
+.chat-cards-all {
+  align-self: flex-start;
+}
+.chat-line.chat-outcome {
+  max-width: min(100%, 40rem);
+}
+.chat-outcome-text {
+  padding: 0 4px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* the note sheet is the note editor's own page, in a dialog */
+.chat-note-sheet .note-title-input {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
 /* Review's three rows (v3.28): the period switch, the range it is on, and
    what you can do with it. Each is its own line, so none of them squeezes
    another at 402pt. */

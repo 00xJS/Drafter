@@ -1,12 +1,31 @@
 import { KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { askDrafter } from '../ai'
 import { CHAT_PAGE, CHAT_PROMPTS, newMessage, newTurn, recentContext, thread } from '../chat'
+import {
+  applyChatAction,
+  askWithActions,
+  cardKey,
+  cardState,
+  chatActionContext,
+  chatRecordId,
+  describeAction,
+  eventRecord,
+  outcomeLine,
+  outcomesByCard,
+  taskPreset,
+  todayIn,
+  type Applied,
+  type ChatActionContext,
+  type ChatData,
+  type ChatHost,
+  type ChatReply,
+} from '../chatactions'
 import { dayLabel } from '../journal'
 import { memberName, type HouseholdInfo } from '../household'
 import { AskDoc, AskSources, prepareAsk } from '../ask'
-import { MESSAGE_MAX, type ChatTurn, type Message } from '../types'
+import { MESSAGE_MAX, type CalendarEntry, type ChatAction, type ChatOutcomeState, type ChatTurn, type Message, type Person, type Place, type PlaceCategory, type Task } from '../types'
 import { MemberFace } from './MemberFace'
 import { askFailure } from './AskSheet'
+import { ActionCards, type CardHandlers } from './ChatCards'
 
 // Chat: two threads that never mix (v3.26).
 //
@@ -20,13 +39,62 @@ import { askFailure } from './AskSheet'
 //
 // The assistant answers through exactly the machinery Ask already used:
 // retrieval runs on this device, and only the couple of dozen records a
-// question is about reach /api/ai, each under a made-up reference. It cannot
-// write anything.
+// question is about reach /api/ai, each under a made-up reference. It can
+// suggest changes — a task, a meal, the shopping, a visit, a note, an event —
+// each as a card under its answer (ChatCards.tsx), and nothing is written
+// until one of them is tapped (src/chatactions.ts).
 
 export type ChatSide = 'household' | 'assistant'
 
+/** Where an applied card's Open goes: the record, where it lives. */
+export type ChatOpen = { kind: 'task' | 'note' | 'event'; id: string } | { kind: 'meal'; day: string } | { kind: 'grocery' }
+
+/**
+ * The planner as the assistant's cards reach it: the store and the shell's own
+ * paths (ChatHost), the toast, the task and event editors, and the way out to
+ * where a record lives. The chat screen builds it; without it the cards are
+ * shown and cannot be pressed.
+ */
+export interface ChatShell extends ChatHost {
+  toast(msg: string, undo?: () => void): void
+  /** The task editor on a new task's preset; `done` runs once it saves. */
+  editTask(preset: Partial<Task>, done: (t: Task) => void): void
+  /** The event editor on an entry not saved yet; `done` runs once it saves. */
+  editEvent(entry: CalendarEntry, done: (e: CalendarEntry) => void): void
+  open(target: ChatOpen): void
+  savePerson(p: Person): void
+  savePlace(p: Place): void
+  createPlace(name: string, kind: PlaceCategory): Place
+}
+
+/**
+ * What this page can still undo, by card. A card's Undo and the toast's reach
+ * the same one, and whichever is pressed first uses it up. Kept for the page,
+ * as a toast's Undo is: after a reload an applied card shows ✓ and Open, and
+ * what it made is taken back where it lives (the Trash, its editor).
+ */
+const undos = new Map<string, { undo(h: ChatHost): boolean; said: string }>()
+
+/** A moment for the store's new copy to reach the next render, so the next suggestion is applied to the planner the last one left. */
+const nextRender = () => new Promise<void>(resolve => setTimeout(resolve, 0))
+
 /** Whether to land rather than travel: scrollTo's own smoothing ignores this. */
 const stillWanted = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+/**
+ * What scrolls the thread. The chat's own section did while it was a sheet;
+ * as a screen the page scrolls it, and scrolling a section that does not
+ * scroll did nothing — a reply, and the suggestions under it, arrived below
+ * the fold. So: the nearest box around the thread that does scroll, else the
+ * page.
+ */
+function scrollerOf(pane: HTMLElement): HTMLElement {
+  for (let box: HTMLElement | null = pane; box; box = box.parentElement) {
+    const overflow = getComputedStyle(box).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && box.scrollHeight > box.clientHeight) return box
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+}
 
 /** Which speaker a line is drawn as: yours on the right, theirs on the left. */
 const mine = (ownerId: string | undefined, myId: string | null) => !ownerId || !myId || ownerId === myId
@@ -167,12 +235,33 @@ function HouseholdThread({
   )
 }
 
+/** The planner as the cards read it when there is no shell to write through: what the question was asked of. */
+function dataOf(sources: AskSources): ChatData {
+  return {
+    people: sources.people,
+    recipes: sources.recipes,
+    places: sources.places,
+    tasks: sources.tasks,
+    meals: sources.meals,
+    mealRows: sources.meals,
+    groceries: [],
+    notes: [],
+    events: sources.entries,
+    myId: null,
+    inHousehold: false,
+  }
+}
+
+/** The model call: the question, what retrieval picked, the thread so far, and what the reply is read against. */
+type Ask = (question: string, docs: AskDoc[], facts: string[], history: readonly string[], ctx: ChatActionContext) => Promise<ChatReply>
+
 /** You and Drafter, about your own planner. */
 function AssistantThread({
   turns,
   sources,
   tz,
-  onAsk,
+  shell,
+  onWriteTurn,
   onOpen,
   onClear,
   ask,
@@ -181,41 +270,202 @@ function AssistantThread({
   turns: ChatTurn[]
   sources: AskSources
   tz: string
-  onAsk(you: string, answer: string | null, cites: string[], failure?: string): void
+  shell?: ChatShell
+  onWriteTurn(t: ChatTurn): void
   onOpen(doc: AskDoc): void
   onClear(): void
-  ask(question: string, docs: AskDoc[], facts: string[], history: readonly string[]): Promise<{ answer: string; cites: string[] }>
+  ask: Ask
   now?: Date
 }) {
   const [busy, setBusy] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [docs, setDocs] = useState<AskDoc[]>([])
+  // the shell as of the latest render: an apply that waits a render between
+  // suggestions, and a toast's Undo, both read the planner as it is by then
+  const shellRef = useRef(shell)
+  shellRef.current = shell
+  const clock = () => now ?? new Date()
+  const today = todayIn(tz, clock())
+  const data = shell ?? dataOf(sources)
+  const outcomes = outcomesByCard(turns)
 
   const send = async (question: string) => {
     setBusy(true)
     // retrieval is local and instant: the records a question is about are
     // picked here, and only those go to the model
-    const prep = prepareAsk(question, sources, { now: now ?? new Date(), tz, includeJournal: false })
+    const at = clock()
+    const prep = prepareAsk(question, sources, { now: at, tz, includeJournal: false })
     setDocs(prep.docs)
     const history = recentContext(turns)
+    let reply: ChatReply | null = null
+    let failure: string | undefined
     try {
-      const r = await ask(question, prep.docs, prep.facts, history)
-      onAsk(question, r.answer, r.cites)
+      reply = await ask(question, prep.docs, prep.facts, history, chatActionContext(prep.question, prep.docs, sources, { now: at, tz }))
     } catch (e) {
-      onAsk(question, null, [], askFailure((e as Error).message).text)
+      failure = askFailure((e as Error).message).text
     } finally {
       setBusy(false)
+    }
+    // The thread sorts on the id, and the id starts with the instant. Both
+    // turns are written in one go, so the answer is stamped a millisecond
+    // later — two rows in the same millisecond would fall back to their
+    // random suffix and the answer could come first.
+    const written = new Date()
+    const asked = newTurn('you', question, undefined, written)
+    if (asked) onWriteTurn(asked)
+    const said = newTurn('drafter', reply?.answer ?? failure ?? 'No answer came back.', reply?.cites, new Date(written.getTime() + 1), { actions: reply?.actions })
+    if (said) onWriteTurn(said)
+  }
+
+  /** A card's words as it was suggested, for the line that settles it. */
+  const lineOf = (turn: ChatTurn, index: number) => {
+    const action = turn.actions?.[index]
+    return action ? describeAction(action, data, today).line : 'a suggestion'
+  }
+
+  /** The line the app writes when cards are applied, skipped or undone. It is what every device reads a card's state from. */
+  const settle = (turnId: string, state: ChatOutcomeState, rows: { index: number; ids?: string[] }[], said: string[]) => {
+    const line = newTurn('drafter', outcomeLine(state, said), undefined, new Date(), {
+      outcomes: rows.map(r => ({ turnId, index: r.index, state, ...(r.ids?.length ? { ids: r.ids } : {}) })),
+    })
+    if (line) onWriteTurn(line)
+  }
+
+  /** Undo cards this page applied, newest first, each on the planner the last one left. */
+  const undoApplied = async (turn: ChatTurn, indexes: number[]) => {
+    const back: number[] = []
+    let refused = 0
+    const said: string[] = []
+    for (const [i, index] of [...indexes].reverse().entries()) {
+      const key = cardKey(turn.id, index)
+      const held = undos.get(key)
+      const h = shellRef.current
+      if (!held || !h) continue
+      if (held.undo(h)) {
+        undos.delete(key)
+        back.unshift(index)
+        said.unshift(held.said)
+      } else refused++
+      if (i < indexes.length - 1) await nextRender()
+    }
+    if (refused) shellRef.current?.toast(refused === 1 ? 'That has changed since, so it was left as it is.' : `${refused} of them have changed since, so they were left as they are.`)
+    if (back.length)
+      settle(
+        turn.id,
+        'undone',
+        back.map(index => ({ index })),
+        said,
+      )
+  }
+
+  /** Cards applied: remembered for Undo, settled in the thread, and said in the toast with its own Undo. */
+  const record = (turn: ChatTurn, done: { index: number; applied: Applied }[]) => {
+    const h = shellRef.current
+    if (!done.length) {
+      h?.toast('Nothing was changed: the planner has moved on since that was suggested.')
+      return
+    }
+    for (const d of done) undos.set(cardKey(turn.id, d.index), { undo: d.applied.undo, said: d.applied.said })
+    settle(
+      turn.id,
+      'applied',
+      done.map(d => ({ index: d.index, ids: d.applied.ids })),
+      done.map(d => d.applied.said),
+    )
+    h?.toast(done.length === 1 ? done[0].applied.said : `Applied ${done.length} changes`, () => void undoApplied(turn, done.map(d => d.index)))
+  }
+
+  // a second tap before the first has drawn is the same tap
+  const applyingNow = useRef(false)
+  const apply = async (turn: ChatTurn, items: { index: number; action: ChatAction }[]) => {
+    if (applyingNow.current) return
+    applyingNow.current = true
+    setApplying(true)
+    const done: { index: number; applied: Applied }[] = []
+    try {
+      for (const [i, item] of items.entries()) {
+        const h = shellRef.current
+        if (!h) break
+        const at = new Date()
+        const applied = applyChatAction(h, item.action, { turnId: turn.id, index: item.index, now: at, todayKey: todayIn(tz, at) })
+        if (applied) done.push({ index: item.index, applied })
+        // Apply all: the next card builds on what this one wrote (a second
+        // grocery line on the list the first one changed), once it is here
+        if (i < items.length - 1) await nextRender()
+      }
+    } finally {
+      applyingNow.current = false
+      setApplying(false)
+    }
+    record(turn, done)
+  }
+
+  const handlersFor = (turn: ChatTurn): CardHandlers | undefined => {
+    const h = shell
+    if (!h) return undefined
+    const removes = (id: string) => (host: ChatHost) => {
+      host.remove(id)
+      return true
+    }
+    return {
+      apply: items => void apply(turn, items),
+      skip: (index, action) => settle(turn.id, 'skipped', [{ index }], [describeAction(action, data, today).line]),
+      undo: index => {
+        if (cardState(outcomes.get(cardKey(turn.id, index))) === 'skipped') settle(turn.id, 'undone', [{ index }], [lineOf(turn, index)])
+        else void undoApplied(turn, [index])
+      },
+      canUndo: index => undos.has(cardKey(turn.id, index)),
+      edit: (index, action) => {
+        // the app's own editors, opened on the suggestion; saving one is the apply
+        if (action.type === 'create_task') {
+          h.editTask(taskPreset(action, chatRecordId('task', turn.id, index)), t =>
+            record(turn, [{ index, applied: { ids: [t.id], said: `Added task “${t.title || 'Untitled'}”`, undo: removes(t.id) } }]),
+          )
+        } else if (action.type === 'create_event') {
+          h.editEvent(eventRecord(action, { id: chatRecordId('event', turn.id, index), now: new Date() }), e =>
+            record(turn, [
+              {
+                index,
+                applied: {
+                  ids: [e.id],
+                  said: `Added “${e.title}” to the calendar`,
+                  undo: host => {
+                    host.removeEvent(e.id)
+                    return true
+                  },
+                },
+              },
+            ]),
+          )
+        }
+      },
+      saveNote: (index, note) => {
+        h.upsert(note)
+        record(turn, [{ index, applied: { ids: [note.id], said: `Added note “${note.title}”`, undo: removes(note.id) } }])
+      },
+      open: (_index, action, outcome) => {
+        const id = outcome.ids?.[0]
+        if (action.type === 'plan_meal') h.open({ kind: 'meal', day: action.date })
+        else if (action.type === 'add_grocery') h.open({ kind: 'grocery' })
+        else if (id) h.open({ kind: action.type === 'create_note' ? 'note' : action.type === 'create_event' ? 'event' : 'task', id })
+      },
+      savePerson: h.savePerson,
+      savePlace: h.savePlace,
+      createPlace: h.createPlace,
+      createRecipe: h.createRecipe,
     }
   }
 
   const byRef = new Map(docs.map(d => [d.ref, d]))
-  const rows = thread(turns, t => t.role)
+  // the app's own lines are a speaker of their own, so an answer after one still says who it is from
+  const rows = thread(turns, t => (t.outcomes?.length ? 'app' : t.role))
   return (
     <>
       {turns.length === 0 ? (
         <div className="chat-intro">
           <p className="empty">
-            Ask Drafter about your own week. It reads your planner on this device and only sends the handful of records your question is about — and it cannot change
-            anything.
+            Ask Drafter about your own week, or ask it to add or plan something. It reads your planner on this device and only sends the handful of records your
+            question is about. It can suggest changes — nothing happens until you tap Apply.
           </p>
           <div className="chat-prompts">
             {CHAT_PROMPTS.map(p => (
@@ -230,8 +480,13 @@ function AssistantThread({
           {rows.map(row =>
             'day' in row ? (
               <DayHead key={`d-${row.day}`} day={row.day} />
+            ) : row.item.outcomes?.length ? (
+              // what the app wrote when a card was tapped: a quiet line, not a bubble
+              <li key={row.item.id} className="chat-line theirs chat-outcome">
+                <span className="chat-outcome-text">{row.item.text}</span>
+              </li>
             ) : (
-              <li key={row.item.id} className={row.item.role === 'you' ? 'chat-line mine' : 'chat-line theirs drafter'}>
+              <li key={row.item.id} className={row.item.role === 'you' ? 'chat-line mine' : row.item.actions?.length ? 'chat-line theirs drafter has-cards' : 'chat-line theirs drafter'}>
                 {row.firstOfRun && row.item.role === 'drafter' && <span className="chat-who">✈ Drafter</span>}
                 <span className="chat-bubble">
                   {row.item.text}
@@ -252,6 +507,9 @@ function AssistantThread({
                     </span>
                   )}
                 </span>
+                {row.item.role === 'drafter' && (row.item.actions?.length ?? 0) > 0 && (
+                  <ActionCards turn={row.item} outcomes={outcomes} data={data} todayKey={today} busy={busy || applying} on={handlersFor(row.item)} />
+                )}
               </li>
             ),
           )}
@@ -290,8 +548,10 @@ interface Props {
   onWriteTurn(t: ChatTurn): void
   onClearChat(ids: string[]): void
   onOpen(doc: AskDoc): void
+  /** What the assistant's suggestions are applied through. Without it they are shown, and cannot be pressed. */
+  shell?: ChatShell
   /** The model call. Defaults to the one /api/ai request; the tests pass their own. */
-  ask?(question: string, docs: AskDoc[], facts: string[], history: readonly string[]): Promise<{ answer: string; cites: string[] }>
+  ask?: Ask
   now?: Date
 }
 
@@ -310,7 +570,8 @@ export function Chat({
   onWriteTurn,
   onClearChat,
   onOpen,
-  ask = askDrafter,
+  shell,
+  ask = askWithActions,
   now,
 }: Props) {
   const pane = useRef<HTMLElement>(null)
@@ -322,13 +583,13 @@ export function Chat({
    * view. scrollIntoView walks up to the nearest thing that scrolls, and the
    * sheet had nothing: it reached the backdrop, so the whole panel lurched,
    * and it ran in an effect, which is after the browser has painted — you saw
-   * the thread from the top and then it jumped. Scrolling this pane directly
-   * cannot move anything above it, and a layout effect puts the first frame
-   * where it belongs, so there is nothing left to see jump.
+   * the thread from the top and then it jumped. Scrolling the one box that
+   * scrolls the thread (scrollerOf) moves nothing else, and a layout effect
+   * puts the first frame where it belongs, so there is nothing left to see jump.
    */
   const shown = useRef<ChatSide | null>(null)
   useLayoutEffect(() => {
-    const el = pane.current
+    const el = pane.current ? scrollerOf(pane.current) : null
     if (!el) return
     // opening, and switching threads, LAND at the bottom; a message arriving
     // while you are reading travels there, so you can see that it did
@@ -336,6 +597,18 @@ export function Chat({
     shown.current = side
     el.scrollTo({ top: el.scrollHeight, behavior: jump ? 'auto' : 'smooth' })
   }, [side, messages.length, turns.length])
+  // The page scrolls the chat, so leaving it — Back, a tab, a card's Open —
+  // would leave the next screen as far down as the thread was. It starts at
+  // its top instead, before it is painted. And whatever mounts the chat
+  // again (React's development double mount among them) is opening it, which
+  // lands at the bottom rather than travelling there.
+  useLayoutEffect(
+    () => () => {
+      shown.current = null
+      ;(document.scrollingElement ?? document.documentElement).scrollTo({ top: 0 })
+    },
+    [],
+  )
   // drawing the household thread IS reading it
   const newest = messages[messages.length - 1]?.createdAt
   useEffect(() => {
@@ -360,7 +633,7 @@ export function Chat({
       {/* one quiet line, not a heading and a paragraph: a chat screen's job is
           the thread and the box you type in */}
       <p className="chat-what">
-        {side === 'household' ? 'You and the people you live with.' : 'Only you can read this. Drafter cannot change anything.'}
+        {side === 'household' ? 'You and the people you live with.' : 'Only you can read this. Nothing changes until you tap Apply.'}
       </p>
 
       {side === 'household' ? (
@@ -379,21 +652,12 @@ export function Chat({
           turns={turns}
           sources={sources}
           tz={tz}
+          shell={shell}
           ask={ask}
           now={now}
           onOpen={onOpen}
           onClear={() => onClearChat(turns.map(t => t.id))}
-          onAsk={(you, answer, cites, failure) => {
-            // The thread sorts on the id, and the id starts with the instant.
-            // Both turns are written in one go, so the answer is stamped a
-            // millisecond later — two rows in the same millisecond would fall
-            // back to their random suffix and the answer could come first.
-            const at = new Date()
-            const asked = newTurn('you', you, undefined, at)
-            if (asked) onWriteTurn(asked)
-            const said = newTurn('drafter', answer ?? failure ?? 'No answer came back.', cites, new Date(at.getTime() + 1))
-            if (said) onWriteTurn(said)
-          }}
+          onWriteTurn={onWriteTurn}
         />
       )}
     </section>

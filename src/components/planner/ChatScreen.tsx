@@ -1,7 +1,23 @@
-import { Chat } from './lazy'
+import { Suspense, useState, type ReactNode } from 'react'
+import type { CalendarEntry, Meal, Task } from '../../types'
+import type { ChatOpen, ChatShell } from '../Chat'
+import { ErrorBoundary } from '../ErrorBoundary'
+import { Chat, EventEditor, TaskEditor } from './lazy'
 import { askDocOpener } from './askRouting'
 import type { PlannerCtx } from './ctx'
 import { PushedScreen } from './PushedScreen'
+
+/** An editor the chat opened on one of the assistant's suggestions, and what to do once it saves. */
+type Editing = { kind: 'task'; preset: Partial<Task>; done(t: Task): void } | { kind: 'event'; entry: CalendarEntry; done(e: CalendarEntry): void }
+
+/** An editor's own boundaries, as Overlays gives each of its own: a chunk that fails takes down the editor, not the chat. */
+function Layer({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <ErrorBoundary where={name}>
+      <Suspense fallback={null}>{children}</Suspense>
+    </ErrorBoundary>
+  )
+}
 
 /**
  * The chat, as a screen you go into.
@@ -11,13 +27,76 @@ import { PushedScreen } from './PushedScreen'
  * are. What changed is where the door leads: a sheet, which left the tab
  * behind it showing above the fold and gave the thread two thirds of a screen
  * to live in, became a page with a back button.
+ *
+ * The assistant's suggestions are applied through the shell's own paths — the
+ * store, a meal's save that rebuilds its grocery list, an event's mirrors, a
+ * status change's GitHub write-back — so a change made from the chat behaves
+ * as the same change made anywhere else. Edit opens the app's own task and
+ * event editors here, over the chat, and saving one is the apply.
  */
 export function ChatScreen({ p }: { p: PlannerCtx }) {
   const { store, household, allEvents, setPushed, chatSide, setChatSide, markChatSeen, showToast } = p
+  const [editing, setEditing] = useState<Editing | null>(null)
   // a record named in an answer opens where it lives, which means leaving the chat
-  const openAskDoc = askDocOpener(p, () => setPushed(null))
+  const leave = () => setPushed(null)
+  const openAskDoc = askDocOpener(p, leave)
+
+  /** An applied card's Open: the record, where it lives. */
+  const open = (target: ChatOpen) => {
+    if (target.kind === 'task') {
+      const t = store.tasks.find(x => x.id === target.id)
+      if (t) {
+        leave()
+        p.openTask(t)
+      }
+    } else if (target.kind === 'note') {
+      leave()
+      p.openNote(target.id)
+    } else if (target.kind === 'event') {
+      const e = store.events.find(x => x.id === target.id)
+      if (e) p.setEventEditor({ entry: e, startIso: e.start })
+    } else if (target.kind === 'meal') {
+      leave()
+      p.openKitchenDay(target.day)
+    } else {
+      leave()
+      p.openKitchen('grocery')
+    }
+  }
+
+  const shell: ChatShell = {
+    people: store.people,
+    recipes: store.recipes,
+    places: store.places,
+    tasks: store.tasks,
+    meals: store.meals,
+    // tombstones too: a slot cleared earlier is built on, so the new meal is stamped newer than it
+    mealRows: store.allItems.filter((i): i is Meal => i.kind === 'meal'),
+    groceries: store.groceries,
+    notes: store.notes,
+    events: store.events,
+    myId: store.myId,
+    inHousehold: p.inHousehold,
+    upsert: store.upsert,
+    remove: store.remove,
+    setStatus: p.applyStatus,
+    pushToProjectBoard: p.pushToProjectBoard,
+    saveMeal: p.saveMeal,
+    clearMeal: p.clearMeal,
+    saveEvents: p.saveEvents,
+    removeEvent: id => void p.removeEvent(id),
+    createRecipe: p.createRecipeInline,
+    createPlace: p.createPlaceInline,
+    savePerson: person => store.upsert(person),
+    savePlace: place => store.upsert(place),
+    toast: showToast,
+    editTask: (preset, done) => setEditing({ kind: 'task', preset, done }),
+    editEvent: (entry, done) => setEditing({ kind: 'event', entry, done }),
+    open,
+  }
+
   return (
-    <PushedScreen title="Chat" onBack={() => setPushed(null)}>
+    <PushedScreen title="Chat" onBack={leave}>
       <Chat
         side={chatSide}
         onSide={setChatSide}
@@ -59,7 +138,55 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
           showToast(`Cleared ${ids.length} turn${ids.length === 1 ? '' : 's'}`, () => store.restore(ids))
         }}
         onOpen={openAskDoc}
+        shell={shell}
       />
+
+      {editing?.kind === 'task' && (
+        <Layer name="the task editor">
+          <TaskEditor
+            preset={editing.preset}
+            // the suggestion is already read: the editor opens on it as it stands
+            capture={false}
+            projects={store.projects}
+            people={store.people}
+            places={store.places}
+            onSavePlace={place => store.upsert(place)}
+            onSavePerson={person => store.upsert(person)}
+            members={p.inHousehold ? (household.info?.members ?? []) : []}
+            myId={household.myId}
+            candidates={store.tasks.filter(t => t.status !== 'canceled')}
+            getLatest={id => store.tasks.find(x => x.id === id)}
+            onSave={t => {
+              store.upsert(t)
+              setEditing(null)
+              editing.done(t)
+            }}
+            onDiscard={() => showToast('Nothing to save — that task was empty.')}
+            onCommit={t => store.upsert(t)}
+            // a task not saved yet has nothing to delete
+            onDelete={() => setEditing(null)}
+            onClose={() => setEditing(null)}
+          />
+        </Layer>
+      )}
+
+      {editing?.kind === 'event' && (
+        <Layer name="the event editor">
+          <EventEditor
+            entry={editing.entry}
+            defaultStartIso={editing.entry.allDay ? `${editing.entry.start}T09:00` : editing.entry.start}
+            people={store.people}
+            onSavePerson={person => store.upsert(person)}
+            onSave={entries => {
+              p.saveEvents(entries)
+              const first = entries[0]
+              setEditing(null)
+              if (first) editing.done(first)
+            }}
+            onClose={() => setEditing(null)}
+          />
+        </Layer>
+      )}
     </PushedScreen>
   )
 }
