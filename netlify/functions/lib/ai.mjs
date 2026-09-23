@@ -26,7 +26,8 @@ const NVIDIA_FALLBACK_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b',
   'nvidia/llama-3.1-nemotron-70b-instruct',
   'openai/gpt-oss-20b',
-  'nvidia/nemotron-nano-3-30b-a3b',
+  // NVIDIA's API names it as its docs page does (nvidia-nemotron-3-nano-30b-a3b)
+  'nvidia/nemotron-3-nano-30b-a3b',
 ]
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
 

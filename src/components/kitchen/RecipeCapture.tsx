@@ -6,7 +6,7 @@ import { fillRecipe, splitDraft } from '../../recipefill'
 import type { FillInput, RecipeDraft } from '../../recipefill'
 import { importRecipeLink } from '../../recipeimport'
 import type { LinkRecipe } from '../../recipeimport'
-import { aiFailureKind } from '../AskSheet'
+import { aiFailureText } from '../AskSheet'
 
 // The top of the recipe editor: the three ways to fill it without typing a
 // shop's worth of rows. ✨ Fill in drafts the dish from its name; Paste reads a
@@ -44,13 +44,10 @@ export function draftNote(has: { ingredients: boolean; steps: boolean }, draft: 
   return `Your ${kept} are kept — the draft’s are below if you want them instead.`
 }
 
-/** An AI failure the cook can act on. */
+/** An AI failure the cook can act on: the server's own wait when it is busy, and offline said as offline. */
 function aiMessage(e: unknown, doing: string): string {
   const msg = e instanceof Error ? e.message : String(e)
-  const kind = aiFailureKind(msg)
-  if (kind === 'busy') return 'The assistant is busy — try again in a minute.'
-  if (kind === 'unavailable') return `${doing} needs the assistant, which isn’t available here.`
-  return msg
+  return aiFailureText(msg, { unavailable: `${doing} needs the assistant, which isn’t available here.`, failed: `${doing} didn’t work` })
 }
 
 interface Props {

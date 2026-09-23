@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fillInputFor, fillRecipe, fillRunCurrent } from '../../recipefill'
 import type { FillInput, FillRun, RecipeDraft } from '../../recipefill'
 import type { Recipe } from '../../types'
-import { aiFailureKind } from '../AskSheet'
+import { aiFailureText } from '../AskSheet'
 import { Modal, ModalHead } from '../Modal'
 
 // "Fill them in": the recipes with no ingredients, one at a time. Each is
@@ -28,12 +28,10 @@ export function fillSummary(run: Pick<FillRun, 'saved' | 'skipped'>): string {
   return `${saved}${skipped}.${run.saved ? ' The grocery list uses them from now on.' : ''}`
 }
 
+/** Why one recipe was not filled in: the server's own wait when it is busy, and offline said as offline. */
 function failure(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  const kind = aiFailureKind(msg)
-  if (kind === 'busy') return 'The assistant is busy — try again in a minute.'
-  if (kind === 'unavailable') return 'Filling in needs the assistant, which isn’t available here.'
-  return msg
+  return aiFailureText(msg, { unavailable: 'Filling in needs the assistant, which isn’t available here.', failed: 'Couldn’t fill it in' })
 }
 
 interface Props {
