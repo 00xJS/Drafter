@@ -3,10 +3,17 @@ import ReactDOM from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
 import App from './App'
 import { startAppUpdates } from './appupdate'
+import { installErrorReporting } from './errorreport'
 import { applyPlatformClasses, syncNativeAppearance } from './native'
 import { captureAuthorizeRequest } from './oauthRequest'
 import { startTheme } from './theme'
 import './styles/index.css'
+
+// What breaks on this device reaches the site owner (src/errorreport.ts):
+// listening before anything below runs, so an error while the app starts up is
+// heard too. Built apps only — the web and the iOS shell; the dev server shows
+// its errors on the screen already.
+if (import.meta.env.PROD) installErrorReporting()
 
 // An assistant sends the browser to /oauth/authorize?…: keep that request for
 // the consent sheet (App reads it) and show "/" before anything else reads the

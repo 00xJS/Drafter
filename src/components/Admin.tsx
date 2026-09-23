@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
 import { siteOrigin } from '../api'
 import { unwrapSnapshot, type Snapshot } from '../backupcrypto'
+import { AdminOps } from './AdminOps'
 import { ConfirmButton } from './ConfirmButton'
 
 const GROUPS: { key: AdminGroup; label: string }[] = [
@@ -485,6 +486,8 @@ export function Admin({ initialGroup = 'users' }: Props) {
             Row counts read straight from the database with the service key, so they bypass every policy and show what is really there. Only tallies are returned — never
             record contents.
           </p>
+          {/* the scheduled jobs' last runs and what devices reported (v3.29); each loads on its own */}
+          <AdminOps />
           {stats ? (
             <>
               <SyncCheckCard

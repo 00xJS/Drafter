@@ -6,8 +6,9 @@
 // backups/<user_id>/<YYYY-MM-DD>.json. The newest KEEP_BACKUPS per user are
 // kept. The same pass drops posts_history rows past HISTORY_TTL_MS, deletes
 // the wardrobe photos no piece of clothing points at any more (see
-// sweepPersonalPhotos), and hard-deletes purged tombstones past
-// TOMBSTONE_TTL_MS (peers have had time to see them).
+// sweepPersonalPhotos), hard-deletes purged tombstones past
+// TOMBSTONE_TTL_MS (peers have had time to see them), and forgets client
+// error reports nobody has hit for CLIENT_ERRORS_TTL_MS.
 
 import { readableRow } from '../../../shared/kinds.mjs'
 import { backupEncryptionOn, wrapSnapshot } from './backupcrypto.mjs'
@@ -18,6 +19,8 @@ const DAY = 86_400_000
 export const KEEP_BACKUPS = 14
 export const HISTORY_TTL_MS = 60 * DAY
 export const TOMBSTONE_TTL_MS = 90 * DAY
+/** A client error report nobody has hit for this long is dropped: the list is what is still going wrong. */
+export const CLIENT_ERRORS_TTL_MS = 30 * DAY
 /**
  * A wardrobe photo nothing points at is swept only once it is this old: as old
  * as a tombstone is kept. A piece deleted forever or aged out of Trash had its
@@ -259,6 +262,19 @@ export async function purgeTombstones(now = new Date()) {
   return res ? rangeTotal(res) : null
 }
 
+/**
+ * Drop client error reports last seen before the TTL (public.client_errors,
+ * v3.29). Returns the row count, or null — also before the migration exists.
+ */
+export async function purgeClientErrors(now = new Date()) {
+  const cutoff = new Date(now.getTime() - CLIENT_ERRORS_TTL_MS).toISOString()
+  const res = await restResponse(`client_errors?last_at=lt.${encodeURIComponent(cutoff)}`, {
+    method: 'DELETE',
+    headers: { prefer: 'count=exact,return=minimal' },
+  }).catch(() => null)
+  return res ? rangeTotal(res) : null
+}
+
 /** Objects directly in an account's personal/ folder, a page at a time. A short read only ever means fewer deleted. */
 async function listPersonalFolder(userId) {
   const out = []
@@ -378,6 +394,9 @@ export async function runBackup(now = new Date()) {
       failures.push(`${userId}: ${e?.message ?? e}`)
     }
   }
+  // the snapshots are the backup; everything after them is housekeeping, and
+  // the job's record tells the two kinds of failure apart (lib/jobhealth.mjs)
+  const snapshotsFailed = failures.length
 
   // before the tombstones go: an account whose last pieces were deleted
   // forever is still one the server holds pieces for, so its photos are swept
@@ -388,6 +407,7 @@ export async function runBackup(now = new Date()) {
     date,
     users,
     failures,
+    snapshotsFailed,
     // what the Admin panel says about this host, so "are my backups readable
     // by whoever gets hold of them" has an answer on the page
     encrypted: backupEncryptionOn(),
@@ -395,5 +415,6 @@ export async function runBackup(now = new Date()) {
     historyPurged: await purgeHistory(now),
     photosDeleted: photos.deleted,
     tombstonesPurged: await purgeTombstones(now),
+    errorsPurged: await purgeClientErrors(now),
   }
 }

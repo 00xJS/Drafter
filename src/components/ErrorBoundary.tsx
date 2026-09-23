@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react'
+import { reportRenderError } from '../errorreport'
 
 interface Props {
   children: ReactNode
@@ -15,7 +16,9 @@ interface State {
 /**
  * Without this, one uncaught render error unmounts the entire app and leaves a
  * blank page — the user cannot even navigate away, and unsaved work is lost.
- * Anything inside a boundary degrades to a message with a way out instead.
+ * Anything inside a boundary degrades to a message with a way out instead,
+ * and the site owner hears of it (src/errorreport.ts), under the boundary's
+ * `where` — a name the code gives it, never anything on the page.
  */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null }
@@ -30,6 +33,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error('Drafter caught a render error:', error)
+    reportRenderError(error, this.props.where)
   }
 
   render() {

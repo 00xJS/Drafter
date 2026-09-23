@@ -2438,3 +2438,166 @@ commit;
 
 -- v3.21-1 is held by FAIL 3 above: the peer's sync includes meal~2026-09-08~dinner
 -- the way it includes the grocery list. Journal, review and calendar stay hidden.
+
+-- ===== v3.29: making it safe to run =====
+-- 20261006000000_v3_29_client_errors: what broke on a device (client_errors)
+-- and each scheduled job's last run (job_runs) are the service role's alone —
+-- RLS on, no policies, revoked from anon and authenticated — and
+-- log_client_errors counts a repeat on the row it already has.
+
+-- --------------------------- v3.29-1. RLS on, no policies, service role only
+do $$
+declare t text;
+begin
+  foreach t in array array['client_errors', 'job_runs'] loop
+    if not (select c.relrowsecurity from pg_class c where c.oid = ('public.' || t)::regclass) then
+      raise exception 'FAIL v3.29-1: % has row level security off', t;
+    end if;
+    if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t) then
+      raise exception 'FAIL v3.29-1: % has a policy; it must have none', t;
+    end if;
+    if has_table_privilege('anon', 'public.' || t, 'select') or has_table_privilege('anon', 'public.' || t, 'insert')
+       or has_table_privilege('anon', 'public.' || t, 'update') or has_table_privilege('anon', 'public.' || t, 'delete')
+       or has_table_privilege('authenticated', 'public.' || t, 'select') or has_table_privilege('authenticated', 'public.' || t, 'insert')
+       or has_table_privilege('authenticated', 'public.' || t, 'update') or has_table_privilege('authenticated', 'public.' || t, 'delete') then
+      raise exception 'FAIL v3.29-1: a client role holds a privilege on %', t;
+    end if;
+    if not (has_table_privilege('service_role', 'public.' || t, 'select') and has_table_privilege('service_role', 'public.' || t, 'insert')
+            and has_table_privilege('service_role', 'public.' || t, 'update') and has_table_privilege('service_role', 'public.' || t, 'delete')) then
+      raise exception 'FAIL v3.29-1: service_role lacks a privilege on % (a new table needs explicit grants)', t;
+    end if;
+  end loop;
+  if has_function_privilege('anon', 'public.log_client_errors(uuid, jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'public.log_client_errors(uuid, jsonb)', 'execute') then
+    raise exception 'FAIL v3.29-1: a client role can execute log_client_errors';
+  end if;
+  if not has_function_privilege('service_role', 'public.log_client_errors(uuid, jsonb)', 'execute') then
+    raise exception 'FAIL v3.29-1: service_role cannot execute log_client_errors';
+  end if;
+  raise notice 'ok v3.29-1: client_errors and job_runs have RLS on, no policies and grants for the service role only; so does log_client_errors';
+end $$;
+
+-- ------------------- v3.29-2. the service role stores reports, counting repeats
+begin;
+set local role service_role;
+do $$
+declare
+  touched integer;
+  seen integer;
+  latest text;
+  cut_message integer;
+  cut_stack integer;
+begin
+  -- one error twice in a batch, another once, and two that say nothing
+  touched := public.log_client_errors('00000000-0000-0000-0000-00000000000a', '[
+    {"fingerprint":"fp-smoke-1","message":"TypeError: a is undefined","count":2,"platform":"web","build":"b1","view":"home","path":"/"},
+    {"fingerprint":"fp-smoke-1","message":"TypeError: a is undefined","count":1,"platform":"web","build":"b2","view":"tasks","path":"/"},
+    {"fingerprint":"fp-smoke-2","message":"RangeError: Invalid time value","count":"x"},
+    {"message":"no fingerprint"},
+    "not a report"
+  ]'::jsonb);
+  if touched <> 2 then
+    raise exception 'FAIL v3.29-2: two errors should touch two rows, touched %', touched;
+  end if;
+  select e.count, e.build into seen, latest from public.client_errors e where e.fingerprint = 'fp-smoke-1';
+  if seen <> 3 or latest <> 'b2' then
+    raise exception 'FAIL v3.29-2: the error sent twice should count 3 with the later build, got % and %', seen, latest;
+  end if;
+  if (select e.count from public.client_errors e where e.fingerprint = 'fp-smoke-2') <> 1 then
+    raise exception 'FAIL v3.29-2: a count that is not a number should count once';
+  end if;
+  -- again, later: the same row, counted on
+  perform public.log_client_errors('00000000-0000-0000-0000-00000000000b', '[{"fingerprint":"fp-smoke-1","message":"TypeError: a is undefined","count":4,"platform":"ios","build":"b3"}]'::jsonb);
+  if (select (e.count, e.platform, e.user_id) from public.client_errors e where e.fingerprint = 'fp-smoke-1')
+     is distinct from (7, 'ios'::text, '00000000-0000-0000-0000-00000000000b'::uuid) then
+    raise exception 'FAIL v3.29-2: a repeat should add its count and become the row''s latest';
+  end if;
+  if (select count(*) from public.client_errors e where e.fingerprint like 'fp-smoke-%') <> 2 then
+    raise exception 'FAIL v3.29-2: a repeat made a row of its own';
+  end if;
+  -- a report past the caps is cut to them, never refused
+  perform public.log_client_errors('00000000-0000-0000-0000-00000000000a', jsonb_build_array(jsonb_build_object('fingerprint', 'fp-smoke-3', 'message', repeat('m', 900), 'stack', repeat('s', 9000), 'path', '/' || repeat('p', 400))));
+  select char_length(e.message), char_length(e.stack) into cut_message, cut_stack from public.client_errors e where e.fingerprint = 'fp-smoke-3';
+  if cut_message <> 500 or cut_stack <> 4096 then
+    raise exception 'FAIL v3.29-2: a long report should be cut to 500 / 4096, got % / %', cut_message, cut_stack;
+  end if;
+  -- the jobs' records upsert the way PostgREST writes them (on_conflict=job)
+  insert into public.job_runs (job, ran_at, ok, counts, failures, failure_count) values ('backup', now(), true, '{"snapshots":2}', '[]', 0)
+    on conflict (job) do update set ran_at = excluded.ran_at, ok = excluded.ok;
+  insert into public.job_runs (job, ran_at, ok, counts, failures, failure_count, failing_since) values ('backup', now(), false, '{}', '["storage 503"]', 1, now())
+    on conflict (job) do update set ok = excluded.ok, failures = excluded.failures, failure_count = excluded.failure_count, failing_since = excluded.failing_since;
+  if (select (j.ok, j.failure_count) from public.job_runs j where j.job = 'backup') is distinct from (false, 1) then
+    raise exception 'FAIL v3.29-2: the backup''s record should be its last run';
+  end if;
+  raise notice 'ok v3.29-2: the service role stores reports (one error twice is one row, counted 3, then 7), cuts long ones to their caps, and upserts a job''s last run';
+end $$;
+commit;
+
+-- ------------- v3.29-3. no client, signed in or not, can read or write either
+insert into public.job_runs (job, ran_at, ok) values ('digest', now(), true) on conflict (job) do nothing;
+do $$
+declare
+  who text;
+begin
+  foreach who in array array['anon', 'authenticated'] loop
+    execute format('set local role %I', who);
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"' || who || '","email":"owner@example.test"}', true);
+    begin
+      perform count(*) from public.client_errors;
+      raise exception 'FAIL v3.29-3: % could read client_errors', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    begin
+      perform count(*) from public.job_runs;
+      raise exception 'FAIL v3.29-3: % could read job_runs', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    begin
+      insert into public.client_errors (fingerprint, message) values ('fp-client', 'written by a client');
+      raise exception 'FAIL v3.29-3: % could write client_errors', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    begin
+      update public.job_runs set ok = false where job = 'digest';
+      raise exception 'FAIL v3.29-3: % could change job_runs', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    begin
+      delete from public.client_errors where true;
+      raise exception 'FAIL v3.29-3: % could delete client_errors', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    begin
+      perform public.log_client_errors('00000000-0000-0000-0000-00000000000a', '[{"fingerprint":"fp-client","message":"x"}]'::jsonb);
+      raise exception 'FAIL v3.29-3: % could call log_client_errors', who;
+    exception when insufficient_privilege then
+      null;
+    end;
+    reset role;
+  end loop;
+  if exists (select 1 from public.client_errors e where e.fingerprint = 'fp-client') or (select j.ok from public.job_runs j where j.job = 'digest') is distinct from true then
+    raise exception 'FAIL v3.29-3: a client''s write got through';
+  end if;
+  raise notice 'ok v3.29-3: anon and authenticated can neither read nor write client_errors or job_runs, nor call log_client_errors';
+end $$;
+
+-- --------- v3.29-4. an account deleted later leaves its errors behind, unnamed
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000e9', 'errors-then-gone@example.test');
+begin;
+set local role service_role;
+select public.log_client_errors('00000000-0000-0000-0000-0000000000e9', '[{"fingerprint":"fp-smoke-gone","message":"Error: then the account went"}]'::jsonb);
+commit;
+delete from auth.users where id = '00000000-0000-0000-0000-0000000000e9';
+do $$
+begin
+  if (select e.user_id from public.client_errors e where e.fingerprint = 'fp-smoke-gone') is not null
+     or not exists (select 1 from public.client_errors e where e.fingerprint = 'fp-smoke-gone') then
+    raise exception 'FAIL v3.29-4: the error should stay, with no account named';
+  end if;
+  raise notice 'ok v3.29-4: deleting an account keeps the errors it reported, with user_id cleared';
+end $$;

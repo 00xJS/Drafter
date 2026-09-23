@@ -36,6 +36,7 @@ import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
 import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
+import { recordJobRun } from './lib/jobhealth.mjs'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mjs'
@@ -398,9 +399,30 @@ async function checkSyncCanary(users, ownerId, now, site) {
   return record
 }
 
+/**
+ * The hourly run, and the record it leaves in job_runs (lib/jobhealth.mjs):
+ * when it ran, what it sent, and the first few failures. That record is how a
+ * run that failed, or runs that stopped coming, reach the owner's Today. The
+ * answer is the run's own, as it always was; a run that throws is recorded
+ * as failed and still throws.
+ */
 export default async () => {
   if (!process.env.SUPABASE_SERVICE_KEY) return new Response('not configured', { status: 200 })
   const now = new Date()
+  const run = { counts: {}, failures: [] }
+  let res
+  try {
+    res = await digestRun(now, run)
+  } catch (e) {
+    await recordJobRun(rest, 'digest', { ok: false, counts: run.counts, failures: [...run.failures, `the run stopped: ${e?.message ?? e}`] }, now)
+    throw e
+  }
+  await recordJobRun(rest, 'digest', run, now)
+  return res
+}
+
+/** One hourly run. `run` collects its counts and failures for the job's record. */
+async function digestRun(now, run) {
   const site = process.env.URL || process.env.DEPLOY_PRIME_URL || ''
   const users = await rest('user_settings?select=*')
   const ownerId = await rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null)
@@ -416,6 +438,7 @@ export default async () => {
   // Sunday's draft reads the records even with nobody subscribed, on a Sunday
   // that is due somewhere: {} stands for an account with no settings row
   const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftDue(u, now))
+  run.counts = { subscribers: active.length, sent: 0, drafted: 0 }
   if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
   // keep row ownership so each recipient only ever sees their own scope. Read a
@@ -427,7 +450,8 @@ export default async () => {
   const peers = await buildPeerMap()
   let sent = 0
   let drafted = 0
-  const failures = []
+  // the job's record reads this list as it grows, so a run that throws part-way keeps what failed before
+  const failures = run.failures
   // Sunday's drafts start only while there is time to finish them
   const deadline = now.getTime() + RUN_BUDGET_MS
 
@@ -560,5 +584,6 @@ export default async () => {
 
   const report = `${active.length ? `sent ${sent}` : 'no subscribers'}${drafted ? `; drafted ${drafted}` : ''}; ${checked}${failures.length ? `; ${failures.length} failure(s): ${failures.slice(0, 5).join(' | ')}` : ''}`
   if (failures.length) console.error('digest:', report)
+  run.counts = { subscribers: active.length, sent, drafted }
   return new Response(report, { status: 200 })
 }

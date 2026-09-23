@@ -49,6 +49,12 @@
   to = "/.netlify/functions/admin"
   status = 200
 
+# what broke on a device, for the site owner (Admin → Data)
+[[redirects]]
+  from = "/api/log"
+  to = "/.netlify/functions/log"
+  status = 200
+
 [[redirects]]
   from = "/api/inbound"
   to = "/.netlify/functions/inbound"

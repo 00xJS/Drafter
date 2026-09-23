@@ -17,6 +17,8 @@ import { apnsConfigured, missingApnsEnv } from './lib/apns.mjs'
 import { complete, completeNvidia, nvidiaKeyOrder, resolveProvider } from './lib/ai.mjs'
 import { KEEP_BACKUPS, isSnapshotPath, listAllSnapshots, removePersonalPhotos, restAll, runBackup, signSnapshotUrl } from './lib/backup.mjs'
 import { canarySentence, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
+import { clearErrors, listErrors } from './lib/errorlog.mjs'
+import { readJobs } from './lib/jobhealth.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
@@ -512,6 +514,43 @@ const handler = async req => {
       // deliberately leaves last_digest_day / nudged alone: a test send must not
       // eat the real morning digest
       return Response.json({ ...out, sent: true, pushed, emailed, error })
+    }
+
+    // ---- is it safe to run (v3.29): the scheduled jobs and what broke on devices
+    if (action === 'opsHealth') {
+      // Today's banner for the owner (src/syncalarm.ts) and Admin → Data's
+      // jobs card: the sync check, each job's last run (lib/jobhealth.mjs),
+      // and — only while the backup has no record of its own yet — the newest
+      // snapshot in the bucket. A part that cannot be read is null, never an
+      // error: the sync check's banner must not go with it.
+      const [canary, jobs] = await Promise.all([readCanary(rest).catch(() => null), readJobs(rest).catch(() => null)])
+      let lastSnapshotAt = null
+      if (!jobs?.backup) {
+        for (const s of await listAllSnapshots().catch(() => [])) {
+          for (const f of s.files) if (f.updatedAt && (!lastSnapshotAt || Date.parse(f.updatedAt) > Date.parse(lastSnapshotAt))) lastSnapshotAt = f.updatedAt
+        }
+      }
+      return Response.json({ syncCheck: syncCheck(canary), jobs, lastSnapshotAt })
+    }
+
+    if (action === 'listErrors') {
+      // what the devices reported (lib/errorlog.mjs), newest first: the
+      // message, how often, when last, the build and the platform — never a record
+      try {
+        return Response.json({ errors: await listErrors(rest) })
+      } catch (e) {
+        return Response.json({ errors: [], unavailable: `The error list could not be read (${e?.message ?? e}). It needs the v3.29 migration.` })
+      }
+    }
+
+    if (action === 'clearErrors') {
+      // one by id, or every one when no id is given
+      try {
+        return Response.json({ cleared: await clearErrors(rest, body.id ?? null) })
+      } catch (e) {
+        if (e?.status === 400) return Response.json({ error: e.message }, { status: 400 })
+        throw e
+      }
     }
 
     return Response.json({ error: 'unknown action' }, { status: 400 })
