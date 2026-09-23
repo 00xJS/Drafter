@@ -32,25 +32,29 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
+      # Each secret reaches only the step that spends it; this one is told
+      # whether they are set, never what they are.
       - name: Check the secrets are set
         id: secrets
+        env:
+          HAVE_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+          HAVE_REF: ${{ secrets.SUPABASE_PROJECT_REF != '' }}
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+          if [ "$HAVE_TOKEN" != true ] || [ "$HAVE_REF" != true ]; then
             echo "::notice title=Bot not deployed::SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are not both set as repository secrets, so the bot was left as it is. Deploy it by hand with: supabase functions deploy bot --use-api"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: steps.secrets.outputs.ready == 'true'
+        with:
+          persist-credentials: false
 
       # pinned: the version the owner's Mac deploys with, so both deploy the same way
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         if: steps.secrets.outputs.ready == 'true'
         with:
           version: 2.109.0
@@ -58,4 +62,7 @@ jobs:
       # --use-api bundles on Supabase's side, so no Docker is needed here
       - name: Deploy the bot
         if: steps.secrets.outputs.ready == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: supabase functions deploy bot --use-api --project-ref "$SUPABASE_PROJECT_REF"
