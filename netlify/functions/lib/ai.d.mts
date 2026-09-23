@@ -5,7 +5,19 @@ export interface CompletionInput {
   json?: boolean
   /** Work the server starts by itself (Sunday's draft, email-in triage): with a second NVIDIA key, that key goes first. */
   background?: boolean
+  /** When the request began (epoch ms): the budget, AI_BUDGET_MS, counts from here. Now, when not given. */
+  startedAt?: number
+  /**
+   * When every attempt must be done by (epoch ms), in place of the budget. Without it, background work
+   * is held to no deadline here: it stops waiting at one of its own.
+   */
+  deadline?: number
 }
+
+/** How long one completion may take in all, from when its request began (ms). */
+export declare const AI_BUDGET_MS: number
+/** No further attempt (the other NVIDIA key, the Anthropic fallback) starts with less than this left (ms). */
+export declare const MIN_ATTEMPT_MS: number
 
 /**
  * An answer, or why there is none. Each side names the other's fields as

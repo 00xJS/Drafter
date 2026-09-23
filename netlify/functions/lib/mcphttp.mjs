@@ -13,7 +13,10 @@
 //   5. a PostgREST 401 drops the cached session, re-mints once and retries.
 //
 // Logged per tool call: its name, milliseconds and the first 8 characters of
-// the grant id. Never a header, never an argument.
+// the grant id, and for a failed call its cause in a word (failureCode:
+// 'session', 'db_500', 'tool'…). A request refused before any tool runs logs
+// `mcp refused <why>` ('invalid', 'expired', 'rate_limited', 'not_configured'
+// …). Never a header, an argument or an error's message.
 
 import { withPublicCors } from './cors.mjs'
 import { agentAuthConfigured, dropSession, supabaseEnv, checkBearer, userAccessToken } from './agentauth.mjs'
@@ -22,7 +25,7 @@ import { settingsGet } from './session.mjs'
 import { validTimeZone } from './timezone.mjs'
 import { createRestData } from '../../../mcp/data.mjs'
 import { TOOLS, defaultNewId, defaultRand } from '../../../mcp/tools.mjs'
-import { PROTOCOL_VERSIONS, SERVER_INFO, handleBody, hasInitialize, instructionsFor } from '../../../mcp/protocol.mjs'
+import { PROTOCOL_VERSIONS, SERVER_INFO, failureCode, handleBody, hasInitialize, instructionsFor } from '../../../mcp/protocol.mjs'
 import { makeClock } from '../../../shared/clock.mjs'
 
 export const MAX_BODY_BYTES = 1_000_000
@@ -53,6 +56,9 @@ function unauthorized(tokenSent, description = '') {
   const body = { error: tokenSent ? 'invalid_token' : 'unauthorized', ...(description ? { error_description: description } : {}) }
   return json(body, 401, { 'www-authenticate': `Bearer ${challenge.join(', ')}` })
 }
+
+/** A request turned away before any tool ran, and why, in a word: nothing about who or what. */
+const refused = why => console.log(`mcp refused ${why}`)
 
 const zones = new Map()
 
@@ -98,15 +104,20 @@ export async function mcpHandler(req) {
   if (type !== 'application/json') return json({ error: 'Content-Type must be application/json' }, 415)
   const declared = Number(req.headers.get('content-length') ?? '')
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return json({ error: 'body over 1 MB' }, 413)
-  if (!agentAuthConfigured()) return json({ error: 'not configured' }, 501)
+  if (!agentAuthConfigured()) {
+    refused('not_configured')
+    return json({ error: 'not configured' }, 501)
+  }
 
   let grant
   try {
     grant = await checkBearer(bearer)
   } catch (e) {
+    refused(failureCode(e))
     if (e?.status === 501) return json({ error: 'not configured' }, 501)
     return json({ error: 'Drafter could not check the token — try again.' }, 503, { 'retry-after': '5' })
   }
+  if (grant.error) refused(grant.error)
   if (grant.error === 'rate_limited') return json({ error: 'rate_limited' }, 429, { 'retry-after': '60' })
   if (grant.error) return unauthorized(true, grant.error === 'expired' ? LAPSED_TEXT : '')
 
@@ -146,7 +157,7 @@ export async function mcpHandler(req) {
     serverInfo: SERVER_INFO,
     instructions: ctx => instructionsFor({ tz: ctx.clock.tz, scopes }),
     deadlineMs: Date.now() + DEADLINE_MS,
-    onToolCall: ({ name, ms, isError }) => console.log(`mcp ${grantId.slice(0, 8)} ${name} ${ms}ms${isError ? ' error' : ''}`),
+    onToolCall: ({ name, ms, isError, code }) => console.log(`mcp ${grantId.slice(0, 8)} ${name} ${ms}ms${isError ? ` error ${code ?? 'internal'}` : ''}`),
   })
   if (result.status === 202) return new Response(null, { status: 202 })
   return json(result.json, result.status)

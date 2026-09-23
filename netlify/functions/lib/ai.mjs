@@ -9,6 +9,11 @@
 // it was.
 // JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
 // instruction instead (current Claude models accept no temperature at all).
+//
+// Every attempt runs against one deadline. A provider that never answers used
+// to hold /api/ai open until Netlify killed the function, and the app got the
+// platform's error page instead of a reason; now the attempt is aborted when
+// the budget runs out and answers a 504 with words the app shows as they are.
 
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -20,6 +25,77 @@ const NVIDIA_FALLBACK_MODELS = [
   'nvidia/nemotron-nano-3-30b-a3b',
 ]
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
+
+/**
+ * How long one completion may take in all — every model, key and fallback it
+ * tries — counted from when the request began. Netlify stops a synchronous
+ * function at 10 s (netlify.toml sets no other limit); the last second is for
+ * the answer and whatever the handler did first. NVIDIA, tried first, may use
+ * all of it: a reasoning model filling a 2,048-token budget is slow, and a
+ * fallback gets only what is left.
+ */
+export const AI_BUDGET_MS = 9_000
+/** No further attempt (the other NVIDIA key, the Anthropic fallback) starts with less than this left. */
+export const MIN_ATTEMPT_MS = 2_000
+
+/** The answer for a provider that did not answer inside the budget: a failure like any other, so the app says so. */
+const outOfTime = provider => ({ status: 504, error: `${provider} did not answer in time — try again in a moment.` })
+
+/** Time left before `deadline`, enough for one more attempt. */
+const roomFor = deadline => deadline - Date.now() >= MIN_ATTEMPT_MS
+
+/**
+ * Run one attempt against `deadline` (epoch ms, or Infinity for none): `run`
+ * gets a signal that aborts when the deadline passes, and an attempt that
+ * ignores the signal is not waited for past it either. Answers `run`'s value,
+ * or `late` once time is up. Any other failure is thrown, as before.
+ * @template T, L
+ * @param {number} deadline
+ * @param {(signal?: AbortSignal) => Promise<T>} run
+ * @param {L} late
+ * @returns {Promise<T | L>}
+ */
+async function beforeDeadline(deadline, run, late) {
+  if (deadline === Infinity) return run(undefined)
+  const left = deadline - Date.now()
+  if (!(left > 0)) return late
+  const ctrl = new AbortController()
+  let timer
+  const timeUp = new Promise(resolve => {
+    // a timer past 2^31 - 1 ms would fire at once
+    timer = setTimeout(
+      () => {
+        ctrl.abort(new Error('the AI budget ran out'))
+        resolve(late)
+      },
+      Math.min(left, 2 ** 31 - 1),
+    )
+  })
+  const work = run(ctrl.signal)
+  // once the deadline has answered, a late failure has nobody to tell
+  work.catch(() => {})
+  try {
+    return await Promise.race([work, timeUp])
+  } catch (err) {
+    if (ctrl.signal.aborted) return late
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * When a completion must be done by: the caller's own `deadline`, or
+ * AI_BUDGET_MS from `startedAt` (when the request began; now, if not given).
+ * Background work (Sunday's draft, email-in's triage) already stops waiting at
+ * a deadline of its own, and the digest runs as a scheduled function with 30
+ * s, so it is held to none here unless it passes one.
+ */
+function deadlineOf({ deadline, startedAt, background = false }) {
+  if (Number.isFinite(deadline)) return deadline
+  if (background && !Number.isFinite(startedAt)) return Infinity
+  return (Number.isFinite(startedAt) ? startedAt : Date.now()) + AI_BUDGET_MS
+}
 
 /**
  * The model each NVIDIA key last answered with, by key name: a key whose
@@ -81,7 +157,7 @@ function stripThinking(text) {
     .trim()
 }
 
-async function callNvidia(model, messages, maxTokens, { json, temperature, apiKey }) {
+async function callNvidia(model, messages, maxTokens, { json, temperature, apiKey, signal }) {
   const body = {
     model,
     messages,
@@ -99,6 +175,7 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
       accept: 'application/json',
     },
     body: JSON.stringify(body),
+    signal,
   })
   if (res.ok) return { ok: true, data: await res.json() }
   const detail = await res.text().catch(() => '')
@@ -119,11 +196,12 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
  * answered for (null when none would), so a retry on the other key can ask the
  * same one. A failure carries the status NVIDIA answered (`upstream`), so
  * complete() can tell a rate limit or an outage, which the other key may ride
- * out, from anything else.
+ * out, from anything else. Every model tried shares `deadline` (AI_BUDGET_MS
+ * from now when none is given): past it the call is abandoned as a 504.
  * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2', model?: string | null }} input
  * @returns {Promise<{ model: string | null, result: import('./ai.mjs').Completion }>}
  */
-async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null }) {
+async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null, deadline = Date.now() + AI_BUDGET_MS }) {
   // one of the two NVIDIA names, never another variable
   const apiKey = NVIDIA_KEYS.includes(keyName) ? process.env[keyName] : undefined
   const messages = []
@@ -144,7 +222,8 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
 
   const tried = []
   for (const model of candidates) {
-    const attempt = await callNvidia(model, messages, budget, { json, temperature, apiKey })
+    const attempt = await beforeDeadline(deadline, signal => callNvidia(model, messages, budget, { json, temperature, apiKey, signal }), null)
+    if (!attempt) return { model, result: outOfTime('NVIDIA') }
     if (attempt.ok) {
       resolvedNvidiaModels.set(keyName, model)
       const choice = attempt.data?.choices?.[0]
@@ -220,7 +299,13 @@ export function anthropicRequest({ system, prompt, maxTokens, json = false, mode
   return request
 }
 
-export async function completeAnthropic({ system, prompt, maxTokens, json = false }) {
+/**
+ * One Anthropic completion, abandoned as a 504 at `deadline` (AI_BUDGET_MS from
+ * now when none is given). The SDK's own retries run inside it too.
+ * @param {import('./ai.mjs').CompletionInput} input
+ * @returns {Promise<import('./ai.mjs').Completion>}
+ */
+export async function completeAnthropic({ system, prompt, maxTokens, json = false, deadline = Date.now() + AI_BUDGET_MS }) {
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const anthropic = new Anthropic(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
   const request = anthropicRequest({
@@ -230,7 +315,12 @@ export async function completeAnthropic({ system, prompt, maxTokens, json = fals
     json,
     model: process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL,
   })
-  const response = request.betas ? await anthropic.beta.messages.create(request) : await anthropic.messages.create(request)
+  const response = await beforeDeadline(
+    deadline,
+    async signal => (request.betas ? await anthropic.beta.messages.create(request, { signal }) : await anthropic.messages.create(request, { signal })),
+    null,
+  )
+  if (!response) return outOfTime('Anthropic')
   // the whole chain declined (the fallback model can refuse too)
   if (response.stop_reason === 'refusal') return { text: '', provider: 'anthropic' }
   const text = response.content
@@ -264,8 +354,13 @@ const rideable = r => r.upstream === 429 || (r.upstream ?? 0) >= 500
  * With a second NVIDIA key, `background: true` (work the server starts by
  * itself) tries that key first, and a 429 or a 5xx from the key tried first is
  * tried once on the other, on the same model, before the Anthropic fallback.
+ *
+ * All of it runs inside one budget: AI_BUDGET_MS from `startedAt` (pass the
+ * request's own start), or a `deadline` of the caller's. A provider still
+ * silent when it runs out answers a 504; the other key and the fallback start
+ * only with MIN_ATTEMPT_MS left, and get only what is left.
  */
-export async function complete({ system = '', prompt, maxTokens = 2048, json = false, background = false }) {
+export async function complete({ system = '', prompt, maxTokens = 2048, json = false, background = false, startedAt, deadline }) {
   const primary = resolveProvider()
   if (!primary) {
     return {
@@ -274,7 +369,8 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
     }
   }
 
-  const input = { system, prompt, maxTokens, json }
+  const until = deadlineOf({ deadline, startedAt, background })
+  const input = { system, prompt, maxTokens, json, deadline: until }
   let result
   if (primary === 'nvidia') {
     const [first, other] = nvidiaKeyOrder({ background })
@@ -283,8 +379,9 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
     // with two keys, one may go first only for work nobody watches (Sunday's
     // draft, email-in), so a key NVIDIA rejects is named in the log
     if (other && (result.upstream === 401 || result.upstream === 403)) console.error(`ai: ${result.error}`)
-    // once, and only for what the other key can ride out, asking the model the first key asked
-    if (other && rideable(result)) {
+    // once, and only for what the other key can ride out, asking the model the
+    // first key asked — and only while there is time for it to answer
+    if (other && rideable(result) && roomFor(until)) {
       const retry = (await nvidiaOnKey({ ...input, keyName: other, model: tried.model }).catch(err => ({ model: null, result: thrown(err) }))).result
       // the other key's answer, or its own rate limit or outage. Anything else
       // (NVIDIA rejects that key, its account can't serve the model, no answer
@@ -298,7 +395,7 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
   }
 
   const retryable = result.status === 429 || result.status === 502
-  if (retryable && primary === 'nvidia' && process.env.ANTHROPIC_API_KEY) {
+  if (retryable && primary === 'nvidia' && process.env.ANTHROPIC_API_KEY && roomFor(until)) {
     try {
       const fallback = await completeAnthropic(input)
       if (!fallback.error) return fallback

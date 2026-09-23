@@ -306,12 +306,13 @@ const handler = async req => {
         return Response.json({ user: publicUser(updated), mode: 'set' })
       }
       // `send: true` asks Supabase to MAIL the recovery link rather than hand
-      // it back to be copied (v3.25). Whether one arrives is a project setting,
-      // not something this function can promise: with SMTP configured it goes
-      // through that, and without it through Supabase's own built-in sender,
-      // which is rate-limited to a handful an hour and is not for real use.
-      // Either way the owner still gets the link below, so a mail that never
-      // turns up costs nothing — the link is the fallback, not the plan.
+      // it back to be copied (v3.25), through its built-in sender, which is
+      // rate-limited to a handful an hour. It answers `mode: 'sent'` and NO
+      // link: Supabase keeps one recovery link per account, so minting a
+      // copyable one here as well — which this did until 2026-09-22 — replaced
+      // the emailed link before it arrived, and every reset email was dead.
+      // A link to copy is its own request (no `send`), for when the email
+      // never comes, and it cancels any email sent before it.
       if (body.send === true) {
         const back = typeof body.redirectTo === 'string' && /^https?:\/\//.test(body.redirectTo) ? body.redirectTo : undefined
         try {
@@ -319,6 +320,7 @@ const handler = async req => {
         } catch (e) {
           return Response.json({ error: `Supabase would not send it: ${e?.message ?? e}` }, { status: 502 })
         }
+        return Response.json({ email, mode: 'sent' })
       }
       const link = await authAdmin('generate_link', {
         method: 'POST',
@@ -327,7 +329,7 @@ const handler = async req => {
       return Response.json({
         email,
         actionLink: link?.action_link ?? link?.properties?.action_link ?? null,
-        mode: body.send === true ? 'sent' : 'link',
+        mode: 'link',
       })
     }
 

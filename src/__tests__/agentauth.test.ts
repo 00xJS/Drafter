@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MAX_LIVE_CONNECTIONS,
+  MINT_ATTEMPTS,
+  MINT_BUDGET_MS,
+  MINT_RETRY_PAUSE_MS,
   PREFIX,
   TOKEN_IDLE_DAYS,
   agentsHandler,
@@ -25,6 +28,11 @@ import { TOKEN_IDLE_DAYS as APP_TOKEN_IDLE_DAYS } from '../agents'
 // auth server and PostgREST are stubbed at fetch; what is pinned is the shape
 // of every request (which key goes where), the session cache, and that the
 // secret itself never leaves the function that made it.
+//
+// The auth stand-in keeps what the real one keeps: ONE magic-link token per
+// user. Each generate_link replaces the one before, and a token verifies once.
+// It used to redeem every token it had ever issued, which is how a race
+// between two function instances minting at once passed here and failed live.
 
 const DB = 'https://db.example.test'
 const U1 = '00000000-0000-0000-0000-0000000000a1'
@@ -37,7 +45,14 @@ let calls: Call[] = []
 interface AuthFake {
   banned?: string
   flatLink?: boolean
+  /** Verify types the auth server refuses outright, as a newer one refuses 'magiclink'. */
   rejectVerifyTypes?: string[]
+  /** What verify answers, try by try, instead of looking at the token: a status. Once the list runs out it looks again. */
+  verifyStatus?: number[]
+  /** Each verify moves the (faked) clock on by this much: an auth server answering slowly. */
+  verifyTakesMs?: number
+  /** generate_link answers nothing until this many links have been asked for: two instances minting at the same moment. */
+  holdLinks?: number
   session?: (userId: string, n: number) => Record<string, unknown>
   /**
    * Stored connections. One with a `hash` is a bearer: `row` is what
@@ -48,6 +63,10 @@ interface AuthFake {
 }
 let fake: AuthFake = {}
 let minted = 0
+/** userId -> the one magic-link token the auth server will redeem for them. */
+let live = new Map<string, string>()
+/** generate_link answers being held back (holdLinks). */
+let held: (() => void)[] = []
 
 function install() {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -61,12 +80,30 @@ function install() {
     if (admin) return EMAILS[admin[1]] ? json({ id: admin[1], email: EMAILS[admin[1]], banned_until: fake.banned ?? null }) : json({ msg: 'not found' }, 404)
     if (url.pathname === '/auth/v1/admin/generate_link') {
       const userId = Object.keys(EMAILS).find(k => EMAILS[k] === body.email)!
-      const props = { action_link: 'https://x', email_otp: '123456', hashed_token: `hashed~${userId}~${++minted}`, redirect_to: '', verification_type: 'magiclink' }
-      return json(fake.flatLink ? { id: userId, email: body.email, ...props } : { properties: props, user: { id: userId } })
+      const hashed = `hashed~${userId}~${++minted}`
+      // the new token replaces the user's last one, whether or not that was redeemed
+      live.set(userId, hashed)
+      const props = { action_link: 'https://x', email_otp: '123456', hashed_token: hashed, redirect_to: '', verification_type: 'magiclink' }
+      const answer = json(fake.flatLink ? { id: userId, email: body.email, ...props } : { properties: props, user: { id: userId } })
+      if (!fake.holdLinks) return answer
+      return new Promise<Response>(resolve => {
+        held.push(() => resolve(answer))
+        if (held.length >= fake.holdLinks!) {
+          fake.holdLinks = 0
+          for (const release of held.splice(0)) release()
+        }
+      })
     }
     if (url.pathname === '/auth/v1/verify') {
-      if (fake.rejectVerifyTypes?.includes(body.type)) return json({ error: 'otp_expired' }, 403)
+      if (fake.verifyTakesMs) vi.setSystemTime(Date.now() + fake.verifyTakesMs)
+      const expired = () => json({ code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' }, 403)
+      if (fake.rejectVerifyTypes?.includes(body.type)) return expired()
+      const forced = fake.verifyStatus?.shift()
+      if (forced) return json({ code: forced, msg: `HTTP ${forced}` }, forced)
       const [, userId, n] = String(body.token_hash).split('~')
+      // replaced by a later link, or redeemed already
+      if (live.get(userId) !== body.token_hash) return expired()
+      live.delete(userId)
       const session = fake.session?.(userId, Number(n)) ?? { access_token: `jwt~${userId}~${n}`, expires_in: 3600, user: { id: userId } }
       return json(session)
     }
@@ -99,6 +136,8 @@ beforeEach(() => {
   calls = []
   fake = {}
   minted = 0
+  live = new Map()
+  held = []
   forgetAllSessions()
   install()
 })
@@ -238,7 +277,8 @@ describe('userAccessToken: a real session for the user, minted without an email'
     expect(link).toMatchObject({ path: '/auth/v1/admin/generate_link', method: 'POST', body: { type: 'magiclink', email: EMAILS[U1] } })
     expect(link.headers.apikey).toBe('service-key')
     expect(link.headers.authorization).toBeUndefined()
-    expect(verify).toMatchObject({ path: '/auth/v1/verify', method: 'POST', body: { type: 'magiclink', token_hash: `hashed~${U1}~1` } })
+    // 'email' redeems a magic link; 'magiclink' is deprecated as a verify type
+    expect(verify).toMatchObject({ path: '/auth/v1/verify', method: 'POST', body: { type: 'email', token_hash: `hashed~${U1}~1` } })
     expect(verify.headers.apikey).toBe('anon-key')
     expect(verify.headers.authorization).toBeUndefined()
     expect(calls).toHaveLength(3)
@@ -249,13 +289,10 @@ describe('userAccessToken: a real session for the user, minted without an email'
     expect(await userAccessToken(U1)).toBe(`jwt~${U1}~1`)
   })
 
-  it('retries verify once with type "email" when the auth server refuses "magiclink"', async () => {
+  it('never asks verify for the deprecated "magiclink" type: one verify a try, with "email"', async () => {
     fake.rejectVerifyTypes = ['magiclink']
     expect(await userAccessToken(U1)).toBe(`jwt~${U1}~1`)
-    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.type)).toEqual(['magiclink', 'email'])
-    fake.rejectVerifyTypes = ['magiclink', 'email']
-    forgetAllSessions()
-    await expect(userAccessToken(U1)).rejects.toThrow(/verify answered 403/)
+    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.type)).toEqual(['email'])
   })
 
   it('reuses the session until a minute before it expires, then mints a new one and logs the old one out', async () => {
@@ -314,6 +351,80 @@ describe('userAccessToken: a real session for the user, minted without an email'
     await expect(userAccessToken('00000000-0000-0000-0000-00000000dead')).rejects.toThrow(/account lookup failed \(404\)/)
     fake.session = () => ({ access_token: 'jwt-of-someone-else', expires_in: 3600, user: { id: U2 } })
     await expect(userAccessToken(U1)).rejects.toThrow(/different account/)
+  })
+})
+
+/** Step the faked clock from timer to timer until `p` settles: the pauses between tries take no real time. */
+async function settle<T>(p: Promise<T>): Promise<T> {
+  let done = false
+  p.then(
+    () => (done = true),
+    () => (done = true),
+  )
+  for (let i = 0; !done && i < 1000; i++) await vi.advanceTimersToNextTimerAsync()
+  return p
+}
+
+// On Netlify each concurrent request runs in an instance of its own, so the
+// `minting` map shares nothing between them. On 2026-09-22 an assistant ran six
+// read-only tools at once and the calls failed with "verify answered 403":
+// each generate_link replaced the link before it, so only the last one could
+// be redeemed, and nothing tried again.
+describe('minting while another instance mints for the same user', () => {
+  /** A fresh copy of the module, as a second function instance holds one. */
+  async function instance() {
+    vi.resetModules()
+    return import('../../netlify/functions/lib/agentauth.mjs')
+  }
+
+  it('both end up signed in: the one whose link was replaced asks for another', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const first = await instance()
+    const second = await instance()
+    expect(first.userAccessToken).not.toBe(userAccessToken)
+    expect(second.userAccessToken).not.toBe(first.userAccessToken)
+    // both links are made before either is redeemed, so the second replaces the first
+    fake.holdLinks = 2
+    const [a, b] = await Promise.all([first.userAccessToken(U1), second.userAccessToken(U1)])
+    expect([a, b].sort()).toEqual([`jwt~${U1}~2`, `jwt~${U1}~3`])
+    // the first link was dead when it was redeemed; the retry's link went through
+    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.token_hash)).toEqual([`hashed~${U1}~1`, `hashed~${U1}~2`, `hashed~${U1}~3`])
+    // a retry asks for a new link, not for the account again
+    expect(calls.filter(c => c.path === `/auth/v1/admin/users/${U1}`)).toHaveLength(2)
+  })
+
+  it('gives up after MINT_ATTEMPTS refused links, pausing a random 100–500 ms before each new one', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    const draws = [0, 0.5, 0.999]
+    vi.spyOn(Math, 'random').mockImplementation(() => draws.shift() ?? 0)
+    fake.verifyStatus = Array(MINT_ATTEMPTS).fill(403)
+    const started = Date.now()
+    await expect(settle(userAccessToken(U1))).rejects.toThrow(`Drafter could not act as you: verify answered 403 on each of ${MINT_ATTEMPTS} tries.`)
+    expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(MINT_ATTEMPTS)
+    expect(calls.filter(c => c.path === '/auth/v1/verify')).toHaveLength(MINT_ATTEMPTS)
+    // three pauses: the bottom of the range, its middle and its top (499.6, which a timer keeps as 499)
+    expect(Date.now() - started).toBe(100 + 300 + 499)
+    expect([MINT_ATTEMPTS, ...MINT_RETRY_PAUSE_MS]).toEqual([4, 100, 500])
+  })
+
+  it('starts no try once MINT_BUDGET_MS has gone, so a slow auth server leaves the tool call its time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    fake.verifyStatus = Array(MINT_ATTEMPTS).fill(403)
+    fake.verifyTakesMs = 1_500
+    await expect(settle(userAccessToken(U1))).rejects.toThrow('Drafter could not act as you: verify answered 403 on each of 3 tries.')
+    expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(3)
+    expect(MINT_BUDGET_MS).toBe(4_000)
+  })
+
+  it('does not retry what a fresh link cannot fix: the auth server\'s rate limit, or the auth server failing', async () => {
+    for (const status of [429, 500, 503]) {
+      calls = []
+      forgetAllSessions()
+      fake.verifyStatus = [status]
+      await expect(userAccessToken(U1), String(status)).rejects.toThrow(`Drafter could not act as you: verify answered ${status}.`)
+      expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link'), String(status)).toHaveLength(1)
+    }
   })
 })
 

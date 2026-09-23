@@ -7,7 +7,8 @@
 // every policy, so the gateway applies the owner's view itself: the owner's
 // rows (and legacy unowned ones) plus household members' rows of shared
 // kinds — never a member's journal, review, calendar subscription, habit,
-// routine or wardrobe, and nothing belonging to anyone outside the household.
+// routine or wardrobe, nor a note, task or meal they kept to themselves, and
+// nothing belonging to anyone outside the household.
 //
 // A sync answers { posts: { items, rejected, stale, gone } }: the rows the bot
 // may read; the ids refused; the ids whose write lost to a newer edit (the
@@ -66,6 +67,20 @@ type Admin = ReturnType<typeof adminClient>
 // second copy of that list — keep it in step (src/__tests__/srv-kinds.test.ts checks).
 const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
 
+/**
+ * The kinds whose audience is decided per record, and what a record that
+ * carries no `shared` means: shared/kinds.mjs SHARED_BY_DEFAULT, the second
+ * copy for the same reason (src/__tests__/mcp.test.ts holds the two together,
+ * and bot-gateway.test.ts holds this gateway to readableRow). A note is private
+ * until shared (v3.16); a task (v3.19) and a meal (v3.22) are the household's
+ * until withheld.
+ */
+const SHARED_BY_DEFAULT: Record<string, boolean> = { note: false, task: true, meal: true }
+
+/** The per-record kinds, and whether a kind is one: an own key only, so a stored kind of "constructor" is not. */
+const PER_RECORD_KINDS = Object.keys(SHARED_BY_DEFAULT)
+const perRecord = (kind: string) => Object.prototype.hasOwnProperty.call(SHARED_BY_DEFAULT, kind)
+
 /** The owner the bot acts as, and the other members of the owner's households. */
 type Scope = { owner: string | null; peers: string[] }
 
@@ -87,29 +102,31 @@ async function scopeOf(admin: Admin): Promise<Scope> {
 /**
  * The posts policy as the owner meets it (migration 20260915): their own rows
  * and legacy unowned ones, and a household member's unless the kind is
- * personal — or unless the record itself decides. Two kinds do: a note is
- * private until shared (v3.16, 20260925) and a task is the household's until
- * withheld (v3.19, 20260928). The same test decides what a read returns and
- * which existing rows a write may land on.
+ * personal — or unless the record itself decides, as it does for each kind in
+ * SHARED_BY_DEFAULT: a note is private until shared (v3.16, 20260925), a task
+ * the household's until withheld (v3.19, 20260928), and a meal the same as a
+ * task (v3.22, 20261001). The same test decides what a read returns and which
+ * existing rows a write may land on.
  *
  * `shared` arrives as a JSON boolean from a row's data and as the text 'true'
  * or 'false' when PostgREST projected it with ->>; both spellings mean the
- * same thing here, and anything else is the kind's default — which is how the
- * policy's coalesce reads an absent flag too.
+ * same thing here. Absent (or null) is the kind's default, which is how the
+ * policy's coalesce reads it too.
  */
 function inScope(scope: Scope, userId: unknown, kind: unknown, shared?: unknown): boolean {
   if (userId === null || (scope.owner !== null && userId === scope.owner)) return true
   if (!(typeof userId === 'string' && scope.peers.includes(userId))) return false
   const k = typeof kind === 'string' ? kind : 'task'
   if (PERSONAL_KINDS.has(k)) return false
-  if (k === 'note') return shared === true || shared === 'true'
-  // Said positively, the way the policy says it: coalesce(->>'shared','true')
-  // = 'true' passes an ABSENT flag and the word true, and nothing else. Phrased
-  // as "not false" instead, any other value — a number, an object, a typo in a
-  // hand-written row — read as shared here while the database withheld it, and
-  // the gateway holds the service key, so its answer is the only one there is.
-  if (k === 'task') return shared === undefined || shared === null || shared === true || shared === 'true'
-  return true
+  if (!perRecord(k)) return true
+  // Said positively, the way the policy says it: coalesce(->>'shared', default)
+  // = 'true' passes the word true, an ABSENT flag only when the default is to
+  // share, and nothing else. Phrased as "not false" instead, any other value —
+  // a number, an object, a typo in a hand-written row — read as shared here
+  // while the database withheld it, and the gateway holds the service key, so
+  // its answer is the only one there is.
+  if (shared === true || shared === 'true') return true
+  return (shared === undefined || shared === null) && SHARED_BY_DEFAULT[k]
 }
 
 /** The same rule as a PostgREST filter, so `limit` counts only rows the bot may read. */
@@ -123,18 +140,17 @@ function scopeFilter(scope: Scope): string {
   // the row-by-row backstop, so a mistake in this string can only narrow the
   // answer, never widen it.
   //
-  // A task's term needs all three of its branches: `data->>shared` is NULL for
-  // the tasks that carry no flag, which is most of them, and `neq.false` on a
-  // NULL is NULL — not true — so without `is.null` every ordinary task of a
-  // housemate's would drop out of the page.
+  // A kind shared by default needs all three branches of its term:
+  // `data->>shared` is NULL for the rows that carry no flag, which is most of
+  // them, and `eq.true` on a NULL is NULL — not true — so without `is.null`
+  // every ordinary task or meal of a housemate's would drop out of the page.
   const branches = ['user_id.is.null']
   if (scope.owner) branches.push(`user_id.eq.${scope.owner}`)
   if (scope.peers.length) {
     const peers = scope.peers.join(',')
     const kinds = [...PERSONAL_KINDS].join(',')
-    branches.push(
-      `and(user_id.in.(${peers}),kind.not.in.(${kinds}),or(kind.neq.note,data->>shared.eq.true),or(kind.neq.task,data->>shared.is.null,data->>shared.neq.false))`,
-    )
+    const perRecordTerms = PER_RECORD_KINDS.map(k => `or(kind.neq.${k},${SHARED_BY_DEFAULT[k] ? 'data->>shared.is.null,' : ''}data->>shared.eq.true)`)
+    branches.push(`and(user_id.in.(${peers}),kind.not.in.(${kinds}),${perRecordTerms.join(',')})`)
   }
   return branches.join(',')
 }
@@ -153,8 +169,9 @@ async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
   const stored: Stored = new Map()
   // a page of ids per request keeps the query string short
   for (let i = 0; i < ids.length; i += 100) {
-    // `shared` decides a note's audience per record, so the stored flag is needed
-    // here as well as the kind — the whole row's data would be far heavier
+    // `shared` decides a note's, a task's or a meal's audience per record, so the
+    // stored flag is needed here as well as the kind — the whole row's data
+    // would be far heavier
     const { data, error } = await admin.from('posts').select('id,user_id,kind,deleted,shared:data->shared').in('id', ids.slice(i, i + 100))
     if (error) throw new Error(error.message)
     for (const r of (data ?? []) as { id: string; user_id: string | null; kind: string; deleted: boolean; shared: unknown }[]) {
@@ -166,10 +183,11 @@ async function storedRows(admin: Admin, incoming: unknown[]): Promise<Stored> {
 
 /**
  * Ids in a write batch that already belong to a row the owner could not write
- * in the app: a member's personal row, a member's shared row being turned
- * into a personal one, or anything outside the household. The service role
- * would let sync_posts land on those; RLS would not, so they come back in
- * `rejected` like any refused write while the rest of the batch stores.
+ * in the app: a member's personal row or the note, task or meal they kept to
+ * themselves, a member's shared row being made personal or private, or
+ * anything outside the household. The service role would let sync_posts land
+ * on those; RLS would not, so they come back in `rejected` like any refused
+ * write while the rest of the batch stores.
  */
 function refusedIds(scope: Scope, incoming: unknown[], stored: Stored): string[] {
   const writes = new Map(postsOf(incoming).map(p => [p.id, p]))
@@ -177,7 +195,7 @@ function refusedIds(scope: Scope, incoming: unknown[], stored: Stored): string[]
     .filter(
       ([id, r]) =>
         // the row as stored, and the row the write would leave behind: a peer's
-        // shared note may be edited, but not turned back into a private one
+        // shared note, task or meal may be edited, but not made private
         !inScope(scope, r.user_id, r.kind, r.shared) || !inScope(scope, r.user_id, writes.get(id)?.kind, writes.get(id)?.shared),
     )
     .map(([id]) => id)

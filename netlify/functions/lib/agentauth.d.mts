@@ -41,6 +41,12 @@ export type BearerCheck =
   | (Grant & { error?: undefined })
   | { error: 'invalid' | 'rate_limited' | 'expired'; grantId?: undefined; userId?: undefined; scopes?: undefined; kind?: undefined }
 export declare function checkBearer(bearer: string | null | undefined, opts?: { limit?: number }): Promise<BearerCheck>
+/** One mint's tries at generate_link then verify: the first, and more while verify refuses the link a parallel mint replaced. */
+export declare const MINT_ATTEMPTS: number
+/** The random pause before another try, [least, most] in ms. */
+export declare const MINT_RETRY_PAUSE_MS: readonly [number, number]
+/** No further try starts once a mint has run this long (ms). */
+export declare const MINT_BUDGET_MS: number
 export declare function userAccessToken(userId: string): Promise<string>
 export declare function dropSession(userId: string): void
 export declare function forgetAllSessions(): void
