@@ -1,13 +1,17 @@
 // Record kinds, for code that has to agree with the database about them.
 //
-// SYNC_KINDS is the sync_posts allowlist (v3.9, 20260918; 'note' in v3.13,
-// 20260922; the wardrobe's 'garment', 'outfit' and 'wear' in v3.14, 20260923): a
-// kind the server has not been told about is rejected, and the row sits on one
-// device looking saved. PERSONAL_KINDS belong to one account even inside a household: the
-// "household access" policies on posts and posts_history hide them from peers
-// (v3.10, 20260919; the wardrobe in v3.14, 20260923), so anything that reads
-// with the service key — which bypasses every policy — has to apply the same
-// rule itself.
+// The database's list is public.record_kinds (v3.31, 20261008000000): a row per
+// kind, saying whether it is personal and, for a kind whose audience is decided
+// per record, what a row without `shared` means. sync_posts, the posts policy
+// and account deletion all read it, so a kind reaches the database through one
+// insert migration. This file is the code's copy of the same three facts, and
+// src/__tests__/srv-kinds.test.ts holds the two together.
+//
+// SYNC_KINDS is every kind sync_posts stores: a kind the server has not been
+// told about is rejected, and the row sits on one device looking saved.
+// PERSONAL_KINDS belong to one account even inside a household: the posts
+// policy hides them from peers, so anything that reads with the service key —
+// which bypasses every policy — has to apply the same rule itself.
 //
 // 'meal' joined them in v3.15 because the ids carried no owner (meal~date~slot)
 // and two people planning the same slot overwrote each other. The id now
@@ -28,9 +32,8 @@
 // v3.27 adds 'account': a name, a kind and the balances you have typed in. The
 // household's, like a bill — two people who share the rent share the picture.
 //
-// The app still carries its own copies (KNOWN_KINDS in src/schema.ts,
-// PERSONAL_KINDS in src/store.ts); src/__tests__/srv-kinds.test.ts holds them,
-// the migrations and this file together until they import from here.
+// The app imports these (KNOWN_KINDS in src/schema.ts, PERSONAL_KINDS in
+// src/store.ts); the bot edge function cannot, and mcp.test.ts holds its copy.
 
 export const SYNC_KINDS = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account'])
 

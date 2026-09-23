@@ -2645,3 +2645,589 @@ begin
   raise notice 'ok v3.30-3: a publication FOR ALL TABLES already carries posts and is left alone';
 end $$;
 drop publication supabase_realtime;
+
+-- ===== v3.31 one table decides the record kinds =====
+-- 20261008000000_v3_31_record_kinds: sync_posts, the posts policy, account
+-- deletion and posts_private_flag read public.record_kinds instead of a list
+-- written into each. It is a refactor, so most of this proves nothing moved:
+-- the v3.26 / v3.27 rules are restated below word for word, as plain
+-- predicates, and run next to the real thing over every kind v3.27 stored and
+-- four it never named, each with every shape `shared` can take. The rest
+-- proves the point of it: a kind inserted into the table is stored, hidden or
+-- decided per record with nothing redefined. Every block rolls back.
+--
+-- These pin what v3.27 decided, so a later migration that deliberately changes
+-- a kind's audience updates them; one that only adds a kind does not.
+
+-- The kinds as v3.27 stored them, and who could read each.
+create function pg_temp.v327_kinds() returns table (kind text, personal boolean, shared_default boolean)
+language sql immutable as $$
+  values ('task', false, true), ('project', false, null), ('calendar', true, null), ('person', false, null),
+         ('place', false, null), ('review', true, null), ('template', false, null), ('recipe', false, null),
+         ('meal', false, true), ('grocery', false, null), ('journal', true, null), ('event', false, null),
+         ('habit', true, null), ('routine', true, null), ('note', false, false), ('garment', true, null),
+         ('outfit', true, null), ('wear', true, null), ('snooze', true, null), ('message', false, null),
+         ('chat', true, null), ('account', false, null)
+$$;
+
+-- The v3.26 posts policy: what a household peer could read of someone else's row …
+create function pg_temp.v326_peer_reads(data jsonb) returns boolean language sql immutable as $$
+  select coalesce(data ->> 'kind', 'task') not in ('journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat')
+     and (coalesce(data ->> 'kind', 'task') <> 'note' or coalesce(data ->> 'shared', 'false') = 'true')
+     and (coalesce(data ->> 'kind', 'task') <> 'task' or coalesce(data ->> 'shared', 'true') = 'true')
+     and (coalesce(data ->> 'kind', 'task') <> 'meal' or coalesce(data ->> 'shared', 'true') = 'true')
+$$;
+
+-- … and what one could write onto someone else's row (its with check)
+create function pg_temp.v326_peer_writes(data jsonb) returns boolean language sql immutable as $$
+  select (coalesce(data ->> 'kind', 'task') <> 'note' or coalesce(data ->> 'shared', 'false') = 'true')
+     and (coalesce(data ->> 'kind', 'task') <> 'task' or coalesce(data ->> 'shared', 'true') = 'true')
+     and (coalesce(data ->> 'kind', 'task') <> 'meal' or coalesce(data ->> 'shared', 'true') = 'true')
+$$;
+
+-- The v3.26 account deletion: a row deleted rather than handed to the heir, …
+create function pg_temp.v326_deletes_row(data jsonb) returns boolean language sql immutable as $$
+  select coalesce(data ->> 'kind', 'task') = any (array['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+      or (coalesce(data ->> 'kind', 'task') = 'note' and coalesce(data ->> 'shared', 'false') <> 'true')
+      or (coalesce(data ->> 'kind', 'task') in ('task', 'meal') and coalesce(data ->> 'shared', 'true') <> 'true')
+$$;
+
+-- … a row every version of which goes (its private_rows) …
+create function pg_temp.v326_withheld(data jsonb) returns boolean language sql immutable as $$
+  select coalesce(data ->> 'kind', 'task') in ('task', 'meal') and coalesce(data ->> 'shared', 'true') <> 'true'
+$$;
+
+-- … and a version that goes
+create function pg_temp.v326_deletes_version(data jsonb, row_id text, withheld text[]) returns boolean language sql immutable as $$
+  select coalesce(data ->> 'kind', 'task') = any (array['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+      or coalesce(data ->> 'kind', 'task') = 'note'
+      or row_id = any (withheld)
+      or (coalesce(data ->> 'kind', 'task') in ('task', 'meal') and coalesce(data ->> 'shared', 'true') <> 'true')
+$$;
+
+-- The v3.22 posts_private_flag: does a write keep a stored false?
+create function pg_temp.v322_keeps_false(was jsonb, sent jsonb) returns boolean language sql immutable as $$
+  select coalesce(coalesce(was ->> 'kind', 'task') in ('task', 'meal')
+                  and coalesce(sent ->> 'kind', 'task') = coalesce(was ->> 'kind', 'task')
+                  and was ->> 'shared' = 'false'
+                  and not (sent ? 'shared'), false)
+$$;
+
+-- Every kind v3.27 stored, a legacy row with no kind, a JSON-null kind, a kind
+-- no migration ever named and an empty one; each with every shape `shared`
+-- takes: absent, true, false, three strings, a JSON null, a number, an object.
+create function pg_temp.v331_shapes() returns table (label text, data jsonb) language sql immutable as $$
+  select k.label || '~' || s.label, '{"title":"Shape"}'::jsonb || k.part || s.part
+    from (select v.kind, jsonb_build_object('kind', v.kind) from pg_temp.v327_kinds() v
+          union all select 'nokind', '{}'::jsonb
+          union all select 'jsonnull', '{"kind":null}'::jsonb
+          union all select 'widget', '{"kind":"smoke_widget"}'::jsonb
+          union all select 'empty', '{"kind":""}'::jsonb) k(label, part),
+         (values ('absent', '{}'::jsonb), ('true', '{"shared":true}'::jsonb), ('false', '{"shared":false}'::jsonb),
+                 ('strtrue', '{"shared":"true"}'::jsonb), ('strfalse', '{"shared":"false"}'::jsonb),
+                 ('stryes', '{"shared":"yes"}'::jsonb), ('null', '{"shared":null}'::jsonb), ('one', '{"shared":1}'::jsonb),
+                 ('object', '{"shared":{}}'::jsonb)) s(label, part)
+$$;
+
+-- ------------- v3.31-1. record_kinds is the database's alone to read and write
+-- RLS on, no policies, no privilege for a client role: the deny-all convention.
+-- A client asks through the helpers; the service role may read it; only a
+-- migration writes it.
+do $$
+declare priv text; f text;
+begin
+  if not (select c.relrowsecurity from pg_class c where c.oid = 'public.record_kinds'::regclass) then
+    raise exception 'FAIL v3.31-1: record_kinds has row level security off';
+  end if;
+  if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = 'record_kinds') then
+    raise exception 'FAIL v3.31-1: record_kinds has a policy; it must have none';
+  end if;
+  foreach priv in array array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger'] loop
+    if has_table_privilege('anon', 'public.record_kinds', priv) or has_table_privilege('authenticated', 'public.record_kinds', priv) then
+      raise exception 'FAIL v3.31-1: a client role holds % on record_kinds', priv;
+    end if;
+  end loop;
+  if not has_table_privilege('service_role', 'public.record_kinds', 'select') then
+    raise exception 'FAIL v3.31-1: the service role should be able to read record_kinds';
+  end if;
+  if has_table_privilege('service_role', 'public.record_kinds', 'insert') or has_table_privilege('service_role', 'public.record_kinds', 'update')
+     or has_table_privilege('service_role', 'public.record_kinds', 'delete') or has_table_privilege('service_role', 'public.record_kinds', 'truncate') then
+    raise exception 'FAIL v3.31-1: the service role can change record_kinds; only a migration may';
+  end if;
+  foreach f in array array['public.record_kind_allowed(text)', 'public.record_kind_shared_default(text)',
+                           'public.record_shared(text, text)', 'public.record_peer_visible(text, text)'] loop
+    if not exists (select 1 from pg_proc p
+                    where p.oid = f::regprocedure and p.prosecdef and p.provolatile = 's'
+                      and p.proconfig @> array['search_path=public']) then
+      raise exception 'FAIL v3.31-1: % should be SECURITY DEFINER, STABLE, with search_path fixed to public', f;
+    end if;
+    if has_function_privilege('anon', f, 'execute') then
+      raise exception 'FAIL v3.31-1: anon can execute %', f;
+    end if;
+    if not (has_function_privilege('authenticated', f, 'execute') and has_function_privilege('service_role', f, 'execute')) then
+      raise exception 'FAIL v3.31-1: authenticated and service_role must be able to execute %: the policy and sync_posts run as them', f;
+    end if;
+  end loop;
+end $$;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+begin
+  begin
+    perform count(*) from public.record_kinds;
+    raise exception 'FAIL v3.31-1: a signed-in client read record_kinds';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.record_kinds (kind) values ('smoke_sprout');
+    raise exception 'FAIL v3.31-1: a signed-in client added a kind';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.record_kinds set personal = not personal;
+    raise exception 'FAIL v3.31-1: a signed-in client changed who may read a kind';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from public.record_kinds;
+    raise exception 'FAIL v3.31-1: a signed-in client deleted the kinds';
+  exception when insufficient_privilege then null;
+  end;
+  -- what it may do is ask
+  if not public.record_kind_allowed('journal') or public.record_kind_allowed('smoke_bogus')
+     or public.record_peer_visible('journal', null) or not public.record_peer_visible('grocery', 'false') then
+    raise exception 'FAIL v3.31-1: the helpers gave a signed-in client the wrong answers';
+  end if;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+begin
+  begin
+    perform count(*) from public.record_kinds;
+    raise exception 'FAIL v3.31-1: anon read record_kinds';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.record_kinds (kind) values ('smoke_sprout');
+    raise exception 'FAIL v3.31-1: anon added a kind';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.record_kind_allowed('task');
+    raise exception 'FAIL v3.31-1: anon asked a helper';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'ok v3.31-1: record_kinds has RLS on, no policies and no client privilege; the service role reads it; its helpers are SECURITY DEFINER, STABLE, search_path fixed, for authenticated and service_role only';
+end $$;
+rollback;
+
+-- ----------- v3.31-2. the seed is what v3.27 enforced: no kind lost or gained
+-- "Gained" at the switch is the migration's own guard, which db:smoke runs when
+-- it applies the file over the real v3.27 definitions: it compares the seed
+-- with the live allowlist, policy, account deletion and flag trigger and
+-- refuses to apply on any difference. Here: every v3.27 kind is still there
+-- with the audience it had, and sync_posts stores exactly the kinds the table
+-- holds — no more, whatever a later migration has added.
+do $$
+declare lost text; changed text;
+begin
+  select string_agg(v.kind, ', ' order by v.kind) into lost
+    from pg_temp.v327_kinds() v
+   where not exists (select 1 from public.record_kinds r where r.kind = v.kind);
+  if lost is not null then
+    raise exception 'FAIL v3.31-2: kinds v3.27 stored are missing from record_kinds: %', lost;
+  end if;
+  select string_agg(v.kind, ', ' order by v.kind) into changed
+    from pg_temp.v327_kinds() v join public.record_kinds r on r.kind = v.kind
+   where r.personal is distinct from v.personal or r.shared_default is distinct from v.shared_default;
+  if changed is not null then
+    raise exception 'FAIL v3.31-2: record_kinds decides these differently from v3.27: %', changed;
+  end if;
+end $$;
+
+begin;
+-- one probe per kind the table holds, per kind v3.27 held, and a few it never did
+create temp table v331_probe on commit drop as
+  select k as kind, exists (select 1 from public.record_kinds r where r.kind = k) as stored
+    from (select kind from public.record_kinds
+          union select kind from pg_temp.v327_kinds()
+          union select unnest(array['smoke_bogus', 'smoke_widget', 'Task', 'task ', ''])) s(k);
+grant select on v331_probe to authenticated;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; wrong text; n integer;
+begin
+  r := public.sync_posts(
+    (select jsonb_agg(jsonb_build_object('kind', p.kind, 'id', 'probe~' || md5(p.kind),
+                                         'createdAt', '2026-09-22T09:00:00.000Z', 'updatedAt', '2026-09-22T09:00:00.000Z'))
+       from v331_probe p)
+    -- a row whose kind is JSON null is a task, as it always was
+    || '[{"kind":null,"id":"probe~jsonnull","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}]'::jsonb,
+    '2099-01-01');
+  select string_agg(format('%L', p.kind), ', ' order by p.kind) into wrong
+    from v331_probe p
+   where ((r -> 'rejected') ? ('probe~' || md5(p.kind))) = p.stored;
+  if wrong is not null then
+    raise exception 'FAIL v3.31-2: sync_posts and record_kinds disagree about %', wrong;
+  end if;
+  if (r -> 'rejected') ? 'probe~jsonnull' then
+    raise exception 'FAIL v3.31-2: a row with a JSON-null kind should store as a task';
+  end if;
+  select count(*) into n from v331_probe where stored;
+  raise notice 'ok v3.31-2: every kind v3.27 stored is in record_kinds with the audience it had, and sync_posts stores exactly the % kinds the table holds', n;
+end $$;
+rollback;
+
+-- -------------- v3.31-3. the posts policy reads and writes exactly as v3.26 did
+-- One row of every shape, owned by the peer, written straight to the table (a
+-- member can do that over PostgREST); the owner reads it exactly when v3.26
+-- let a peer read it, and may write a row attributed to the peer exactly when
+-- v3.26's with check took it — personal kinds included, as then.
+begin;
+insert into public.posts (id, updated_at, synced_at, data, user_id)
+select 'shape~' || s.label, '2026-09-22T09:00:00.000Z', now(),
+       s.data || jsonb_build_object('id', 'shape~' || s.label), '00000000-0000-0000-0000-00000000000b'
+  from pg_temp.v331_shapes() s;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; wrong text; shape record; took boolean; n integer := 0;
+begin
+  select string_agg(s.label, ', ' order by s.label) into wrong
+    from pg_temp.v331_shapes() s
+   where exists (select 1 from public.posts p where p.id = 'shape~' || s.label) is distinct from pg_temp.v326_peer_reads(s.data);
+  if wrong is not null then
+    raise exception 'FAIL v3.31-3: the owner reads these of the peer''s rows differently from v3.26: %', wrong;
+  end if;
+  r := public.sync_posts('[]'::jsonb, null);
+  select string_agg(s.label, ', ' order by s.label) into wrong
+    from pg_temp.v331_shapes() s
+   where exists (select 1 from jsonb_array_elements(r -> 'items') x where x ->> 'id' = 'shape~' || s.label)
+         is distinct from pg_temp.v326_peer_reads(s.data);
+  if wrong is not null then
+    raise exception 'FAIL v3.31-3: a full sync hands the owner these differently from v3.26: %', wrong;
+  end if;
+  for shape in select * from pg_temp.v331_shapes() loop
+    begin
+      insert into public.posts (id, updated_at, synced_at, data, user_id)
+      values ('shape-w~' || shape.label, '2026-09-22T09:00:00.000Z', now(),
+              shape.data || jsonb_build_object('id', 'shape-w~' || shape.label), '00000000-0000-0000-0000-00000000000b');
+      took := true;
+    exception when insufficient_privilege then
+      took := false;
+    end;
+    if took is distinct from pg_temp.v326_peer_writes(shape.data) then
+      raise exception 'FAIL v3.31-3: a row attributed to the peer, %, was % where v3.26 %', shape.label,
+        case when took then 'taken' else 'refused' end, case when took then 'refused it' else 'took it' end;
+    end if;
+    n := n + 1;
+  end loop;
+  raise notice 'ok v3.31-3: the posts policy reads and writes all % shapes of a peer''s row exactly as v3.26 did', n;
+end $$;
+rollback;
+
+-- ----------------- v3.31-4. account deletion decides exactly as v3.26 did
+-- A leaving member with a row of every shape, and for each row a version of
+-- every shape of its own kind plus a person and a shared note (a row whose kind
+-- changed). Which rows and versions go, and which pass to the heir, is worked
+-- out first with v3.26's own predicates, then the real function runs.
+begin;
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000a31', 'shapes@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-000000000a31', 'member');
+insert into public.posts (id, updated_at, synced_at, data, user_id)
+select 'del~' || s.label, '2026-09-22T09:00:00.000Z', now(),
+       s.data || jsonb_build_object('id', 'del~' || s.label), '00000000-0000-0000-0000-000000000a31'
+  from pg_temp.v331_shapes() s;
+insert into public.posts_history (id, updated_at, user_id, data, replaced_at)
+select 'del~' || s.label, '2026-09-22T08:00:00.000Z', '00000000-0000-0000-0000-000000000a31',
+       v.data || jsonb_build_object('id', 'del~' || s.label, 'version', v.label), now()
+  from pg_temp.v331_shapes() s
+  join pg_temp.v331_shapes() v
+    on split_part(v.label, '~', 1) = split_part(s.label, '~', 1) or v.label in ('person~absent', 'note~true');
+create temp table v331_goes on commit drop as
+  select p.id, null::text as version, pg_temp.v326_deletes_row(p.data) as goes
+    from public.posts p where p.user_id = '00000000-0000-0000-0000-000000000a31'
+  union all
+  select h.id, h.data ->> 'version',
+         pg_temp.v326_deletes_version(h.data, h.id,
+           coalesce((select array_agg(p.id) from public.posts p
+                      where p.user_id = '00000000-0000-0000-0000-000000000a31' and pg_temp.v326_withheld(p.data)), '{}'))
+    from public.posts_history h where h.user_id = '00000000-0000-0000-0000-000000000a31';
+create temp table v331_answer (r jsonb) on commit drop;
+grant insert on v331_answer to service_role;
+set local role service_role;
+insert into v331_answer select public.admin_prepare_user_deletion('00000000-0000-0000-0000-000000000a31', '00000000-0000-0000-0000-00000000000a');
+reset role;
+do $$
+declare wrong text; want jsonb; got jsonb;
+begin
+  select string_agg(g.id || coalesce(' @' || g.version, ''), ', ' order by g.id, g.version) into wrong
+    from v331_goes g
+   where case when g.version is null
+              then exists (select 1 from public.posts p where p.id = g.id and p.user_id = '00000000-0000-0000-0000-00000000000a')
+              else exists (select 1 from public.posts_history h
+                            where h.id = g.id and h.data ->> 'version' = g.version and h.user_id = '00000000-0000-0000-0000-00000000000a')
+         end = g.goes;
+  if wrong is not null then
+    raise exception 'FAIL v3.31-4: account deletion kept or dropped these differently from v3.26: %', wrong;
+  end if;
+  if exists (select 1 from public.posts where user_id = '00000000-0000-0000-0000-000000000a31')
+     or exists (select 1 from public.posts_history where user_id = '00000000-0000-0000-0000-000000000a31') then
+    raise exception 'FAIL v3.31-4: rows still point at the leaving account';
+  end if;
+  select r into got from v331_answer;
+  select jsonb_build_object(
+           'deleted', count(*) filter (where version is null and goes),
+           'reassigned', count(*) filter (where version is null and not goes),
+           'historyDeleted', count(*) filter (where version is not null and goes),
+           'historyReassigned', count(*) filter (where version is not null and not goes))
+    into want from v331_goes;
+  if got is distinct from want then
+    raise exception 'FAIL v3.31-4: admin_prepare_user_deletion answered %, v3.26 would have answered %', got, want;
+  end if;
+  raise notice 'ok v3.31-4: account deletion keeps and drops every shape of row and version exactly as v3.26 did: %', got;
+end $$;
+rollback;
+
+-- ------------------- v3.31-5. posts_private_flag keeps a stored false as v3.22 did
+-- Every shape of row, each written again four ways: the same kind without the
+-- flag, turned into a task, turned into a note, and saying `shared: true`.
+begin;
+create temp table v331_flag on commit drop as
+  select 'flag~' || s.label || '~' || w.how as id,
+         s.data || jsonb_build_object('id', 'flag~' || s.label || '~' || w.how) as was,
+         case w.how
+           when 'same' then s.data - 'shared'
+           when 'totask' then (s.data - 'shared') || '{"kind":"task"}'::jsonb
+           when 'tonote' then (s.data - 'shared') || '{"kind":"note"}'::jsonb
+           else (s.data - 'shared') || '{"shared":true}'::jsonb
+         end || jsonb_build_object('id', 'flag~' || s.label || '~' || w.how, 'title', 'Edited') as sent
+    from pg_temp.v331_shapes() s, (values ('same'), ('totask'), ('tonote'), ('saysso')) w(how);
+grant select on v331_flag to authenticated;
+insert into public.posts (id, updated_at, synced_at, data, user_id)
+select f.id, '2026-09-22T09:00:00.000Z', now(), f.was, '00000000-0000-0000-0000-00000000000a' from v331_flag f;
+-- the owner's own writes, as the app makes them
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+update public.posts p set data = f.sent, updated_at = '2026-09-22T10:00:00.000Z' from v331_flag f where p.id = f.id;
+do $$
+declare wrong text; n integer;
+begin
+  select string_agg(f.id, ', ' order by f.id) into wrong
+    from v331_flag f join public.posts p on p.id = f.id
+   where p.data is distinct from
+         case when pg_temp.v322_keeps_false(f.was, f.sent) then jsonb_set(f.sent, '{shared}', 'false'::jsonb) else f.sent end;
+  if wrong is not null then
+    raise exception 'FAIL v3.31-5: posts_private_flag treated these writes differently from v3.22: %', wrong;
+  end if;
+  select count(*) into n from v331_flag f where pg_temp.v322_keeps_false(f.was, f.sent);
+  raise notice 'ok v3.31-5: posts_private_flag keeps a stored false on exactly the % writes v3.22 kept it on', n;
+end $$;
+rollback;
+
+-- ------ v3.31-6. a kind added to the table is stored, with nothing redefined
+begin;
+insert into public.record_kinds (kind) values ('smoke_sprout');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"smoke_sprout","id":"sprout-1","title":"Seed tray","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"},
+    {"kind":"smoke_sprig","id":"sprig-1","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if (r -> 'rejected') is distinct from '["sprig-1"]'::jsonb then
+    raise exception 'FAIL v3.31-6: the inserted kind should store and the other be refused, got %', r -> 'rejected';
+  end if;
+  if (select user_id from public.posts where id = 'sprout-1') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.31-6: the new kind''s row was not stored under the owner';
+  end if;
+end $$;
+-- and the hourly canary covers it, the way the digest calls it
+set local role service_role;
+select set_config('request.jwt.claims', '', true);
+do $$
+begin
+  if public.sync_canary(array['smoke_sprout']) <> '{"ok": true, "checked": 1, "failures": []}'::jsonb then
+    raise exception 'FAIL v3.31-6: the canary should pass the inserted kind, got %', public.sync_canary(array['smoke_sprout']);
+  end if;
+  if public.sync_canary(array['smoke_sprig']) <> '{"ok": false, "checked": 1, "failures": [{"kind": "smoke_sprig", "reason": "rejected"}]}'::jsonb then
+    raise exception 'FAIL v3.31-6: the canary should fail a kind the table does not hold';
+  end if;
+end $$;
+rollback;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[{"kind":"smoke_sprout","id":"sprout-2","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["sprout-2"]'::jsonb then
+    raise exception 'FAIL v3.31-6: with the insert rolled back the kind should be refused again, got %', r -> 'rejected';
+  end if;
+  raise notice 'ok v3.31-6: a kind inserted into record_kinds is stored and passes the canary with nothing redefined, and is refused again once the insert is gone';
+end $$;
+rollback;
+
+-- ---------- v3.31-7. marking a kind personal hides a peer's row of it, and
+-- account deletion treats it as personal too
+begin;
+insert into public.record_kinds (kind) values ('smoke_sprout');
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000a32', 'sprouts@example.test');
+insert into public.household_members (household_id, user_id, role) values
+  ('00000000-0000-0000-0000-0000000000f0', '00000000-0000-0000-0000-000000000a32', 'member');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[{"kind":"smoke_sprout","id":"sprout-1","title":"Seed tray","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.31-7: the owner''s sprout was refused: %', r -> 'rejected';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  if not exists (select 1 from jsonb_array_elements(r -> 'items') x where x ->> 'id' = 'sprout-1')
+     or not exists (select 1 from public.posts where id = 'sprout-1') then
+    raise exception 'FAIL v3.31-7: a kind that is not personal should be the household''s';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000a32","role":"authenticated","email":"sprouts@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"smoke_sprout","id":"sprout-a32","title":"Cress","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"},
+    {"kind":"task","id":"task-a32","title":"Water the cress","status":"todo","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.31-7: the leaving member''s rows were refused: %', r -> 'rejected';
+  end if;
+end $$;
+reset role;
+update public.record_kinds set personal = true where kind = 'smoke_sprout';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  if exists (select 1 from jsonb_array_elements(r -> 'items') x where x ->> 'id' = 'sprout-1')
+     or exists (select 1 from public.posts where id = 'sprout-1') then
+    raise exception 'FAIL v3.31-7: once personal, the owner''s sprout still reaches the peer';
+  end if;
+  r := public.sync_posts('[{"kind":"smoke_sprout","id":"sprout-1","title":"Mine now","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["sprout-1"]'::jsonb then
+    raise exception 'FAIL v3.31-7: the peer wrote over a personal row, got %', r;
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+begin
+  if (select data ->> 'title' from public.posts where id = 'sprout-1') is distinct from 'Seed tray' then
+    raise exception 'FAIL v3.31-7: the owner should still read their own sprout, untouched';
+  end if;
+end $$;
+set local role service_role;
+select set_config('request.jwt.claims', '', true);
+do $$
+declare r jsonb;
+begin
+  r := public.admin_prepare_user_deletion('00000000-0000-0000-0000-000000000a32', '00000000-0000-0000-0000-00000000000a');
+  if exists (select 1 from public.posts where id = 'sprout-a32') then
+    raise exception 'FAIL v3.31-7: an heir inherited a row of a kind the table calls personal, got %', r;
+  end if;
+  if (select user_id from public.posts where id = 'task-a32') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.31-7: the household''s task should still pass to the heir, got %', r;
+  end if;
+  raise notice 'ok v3.31-7: marking a kind personal in record_kinds hides a peer''s row of it, refuses the peer''s write, and account deletion drops it rather than hand it on';
+end $$;
+rollback;
+
+-- ------ v3.31-8. a per-record kind's default decides a row that carries no flag
+begin;
+insert into public.record_kinds (kind, shared_default) values ('smoke_sprout', false);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"smoke_sprout","id":"sprout-quiet","title":"No flag","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"},
+    {"kind":"smoke_sprout","id":"sprout-open","title":"Shared","shared":true,"createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"},
+    {"kind":"smoke_sprout","id":"sprout-shut","title":"Withheld","shared":false,"createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.31-8: the owner''s sprouts were refused: %', r -> 'rejected';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  select coalesce(array_agg(id order by id), '{}') into ids from public.posts where id like 'sprout-%';
+  if ids <> array['sprout-open'] then
+    raise exception 'FAIL v3.31-8: with a default of false the peer should read only the shared sprout, read %', ids;
+  end if;
+  -- and may not un-share it by writing it without the flag: the with check reads the default too
+  r := public.sync_posts('[{"kind":"smoke_sprout","id":"sprout-open","title":"Shared","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T12:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not (r -> 'rejected') @> '["sprout-open"]'::jsonb then
+    raise exception 'FAIL v3.31-8: a peer un-shared the owner''s sprout, got %', r;
+  end if;
+end $$;
+reset role;
+update public.record_kinds set shared_default = true where kind = 'smoke_sprout';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare ids text[];
+begin
+  select coalesce(array_agg(id order by id), '{}') into ids from public.posts where id like 'sprout-%';
+  if ids <> array['sprout-open', 'sprout-quiet'] then
+    raise exception 'FAIL v3.31-8: with a default of true the peer should read every sprout but the withheld one, read %', ids;
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  -- a write without the flag keeps a stored false, now that the kind shares by default
+  r := public.sync_posts('[{"kind":"smoke_sprout","id":"sprout-shut","title":"Withheld, edited","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T13:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.31-8: the owner''s own edit was refused: %', r -> 'rejected';
+  end if;
+  if (select data ->> 'shared' from public.posts where id = 'sprout-shut') is distinct from 'false' then
+    raise exception 'FAIL v3.31-8: a write with no flag made a withheld sprout the household''s';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+begin
+  if exists (select 1 from public.posts where id = 'sprout-shut') then
+    raise exception 'FAIL v3.31-8: the withheld sprout reached the peer after its owner''s edit';
+  end if;
+  raise notice 'ok v3.31-8: a per-record kind''s default decides a row with no flag, both ways; the with check reads it, and posts_private_flag keeps a withheld row withheld once the default is true';
+end $$;
+rollback;
+
+drop function pg_temp.v331_shapes();
+drop function pg_temp.v322_keeps_false(jsonb, jsonb);
+drop function pg_temp.v326_deletes_version(jsonb, text, text[]);
+drop function pg_temp.v326_withheld(jsonb);
+drop function pg_temp.v326_deletes_row(jsonb);
+drop function pg_temp.v326_peer_writes(jsonb);
+drop function pg_temp.v326_peer_reads(jsonb);
+drop function pg_temp.v327_kinds();
