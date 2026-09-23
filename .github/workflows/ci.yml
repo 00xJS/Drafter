@@ -41,8 +41,15 @@ jobs:
       # again because Netlify only runs `check`.
       - run: npm run lint
 
-      # lint + vitest + tsc + vite build
+      # lint + vitest + tsc + vite build. The build reads the two Supabase
+      # settings, and without them leaves the Supabase client out (local mode),
+      # so its precache measured about 220 KiB under the one production ships.
+      # Placeholders build the real bundle; nothing is ever asked of them, and
+      # the unit tests never see them (src/__tests__/setup.ts clears both).
       - run: npm run check
+        env:
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: placeholder-anon-key
 
       # Supabase runs Postgres 17 (supabase/config.toml) and so does local
       # development, so the migrations are applied to 17 here too, from the
