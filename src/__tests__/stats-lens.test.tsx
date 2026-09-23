@@ -643,8 +643,9 @@ describe('the Insights tab', () => {
     // the wardrobe's figures get a chunk entry of their own, so the lens does
     // not drag the composer, the clothes grid and the photo pipeline in with them
     expect(lazySrc).toContain("import('../wardrobe/WardrobeStats')")
-    // …and a finger on the Stats tab warms every view it can draw
-    expect(lazySrc).toMatch(/insights: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload\]/)
+    // …and a finger on the Insights tab warms every view it can draw: the
+    // lens's areas, then the journal's archive and the review
+    expect(lazySrc).toMatch(/insights: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload, JournalView\.preload, Review\.preload\]/)
     // the lens reaches them through lazy.ts, never by importing the files
     const lens = readSource('components/StatsLens.tsx')
     expect(lens).toContain("from './planner/lazy'")

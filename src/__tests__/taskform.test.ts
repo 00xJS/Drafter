@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CapturedFields } from '../ai'
+import type { CapturedFields } from '../capture'
 import { sanitizePerson } from '../schema'
 import {
   FormPatch,

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import type { AskDoc } from '../ask'
-import { buildCapturedTask } from '../ai'
+import { buildCapturedTask } from '../capture'
 import {
   CHAT_PROMPTS,
   newTurn,

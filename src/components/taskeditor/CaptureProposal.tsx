@@ -1,4 +1,4 @@
-import { CapturedFields } from '../../ai'
+import type { CapturedFields } from '../../capture'
 import { fmtDateTime } from '../../utils'
 
 interface Props {

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CapturedFields } from '../ai'
+import type { CapturedFields } from '../capture'
 
 // The model's reading is set per test; the offline half of the capture is the real one.
 const model = vi.hoisted(() => ({ parse: vi.fn() }))
@@ -22,6 +22,11 @@ import { fmtDateTime } from '../utils'
 const T0 = '2026-09-01T09:00:00.000Z'
 const LIFE: Project = { kind: 'project', id: 'p-life', name: 'LIFE', emoji: '🌱', color: '#f97316', status: 'active', createdAt: T0, updatedAt: T0 }
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+/** The model's reading comes through a dynamic import of ai.ts (kept out of the shell): wait until it is asked, then for its answer. */
+const settle = async () => {
+  await vi.waitFor(() => expect(model.parse).toHaveBeenCalled())
+  await flush()
+}
 
 /** A store with LIFE in it, and captureTask as the shell hands it out. */
 function setup() {
@@ -58,7 +63,7 @@ describe('Shift+Enter: a capture waits in the Inbox, never under the project', (
     const { tasks, toasts, capture } = setup()
     capture('paint the fence')
     expect(toasts).toEqual(['Captured to Inbox'])
-    await flush()
+    await settle()
     expect(tasks).toHaveLength(1)
     expect(tasks[0]).toMatchObject({ title: 'Paint the fence', tags: ['garden'] })
     expect('projectId' in tasks[0]).toBe(false)
@@ -71,7 +76,7 @@ describe('Shift+Enter: a capture waits in the Inbox, never under the project', (
     model.parse.mockResolvedValue({ title: 'Paint the fence', projectName: 'LIFE' } as CapturedFields)
     const { tasks, toasts, capture } = setup()
     capture('paint the fence')
-    await flush()
+    await settle()
     expect(model.parse).toHaveBeenCalledTimes(1)
     const ctx = model.parse.mock.calls[0][1] as Record<string, unknown>
     expect(ctx).not.toHaveProperty('projectNames')
@@ -86,7 +91,7 @@ describe('Shift+Enter: a capture waits in the Inbox, never under the project', (
     model.parse.mockResolvedValue({ title: 'Paint the fence', dueAt: due } satisfies CapturedFields)
     const { tasks, toasts, capture } = setup()
     capture('paint the fence next weekend')
-    await flush()
+    await settle()
     expect(tasks[0].dueAt).toBe(due)
     expect(inInbox(tasks[0])).toBe(false)
     expect(toasts).toEqual(['Captured to Inbox', `Due ${fmtDateTime(due)}`])

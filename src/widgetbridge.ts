@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { useEffect, useRef, useState } from 'react'
-import { buildCapturedTask, quickCaptureFields } from './ai'
+import { buildCapturedTask, quickCaptureFields } from './capture'
 import { dueSections } from './components/Today'
 import { blocksOn } from './focus'
 import { addGroceryItem, buildGroceryList, groceryId, mealLabel, mealsForWeek, tonightDinner } from './kitchen'

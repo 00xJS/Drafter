@@ -1,4 +1,4 @@
-import type { CalendarState, GooglePushState } from '../../calendars'
+import type { CalendarState, GooglePushState } from '../../calendarstate'
 import type { HouseholdInfo } from '../../household'
 import type { Store } from '../../store'
 import type { FeedInfo } from './useFeedInfo'

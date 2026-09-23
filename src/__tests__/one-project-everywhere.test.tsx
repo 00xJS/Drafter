@@ -150,7 +150,7 @@ describe('a capture is never filed under the project', () => {
 
   it('the model is not asked for one, and the editor’s suggestion has no Project row', () => {
     const ai = read('../ai.ts')
-    const parse = ai.slice(ai.indexOf('export async function parseCapture'), ai.indexOf('export function quickCaptureFields'))
+    const parse = ai.slice(ai.indexOf('export async function parseCapture'), ai.indexOf('export interface WeekPolishInput'))
     expect(parse).not.toMatch(/project/i)
     const html = renderToStaticMarkup(
       <CaptureProposal

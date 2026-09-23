@@ -1,6 +1,6 @@
 import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type Person, type Place, type PlaceCategory, type Recipe, type SnoozeTarget } from '../../types'
 import type { Store } from '../../store'
-import { eventStartDate, prepDueFor } from '../../calendars'
+import { eventStartDate, prepDueFor } from '../../calendarstate'
 import { newerStamp } from '../../../shared/domain.mjs'
 import { cookTaskFor, cookTaskId, mealIsShared, mealWrites } from '../../kitchen'
 import { newPlace } from '../../places'

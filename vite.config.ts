@@ -95,6 +95,9 @@ const cutoutRuntime = (): Plugin => {
   }
 }
 
+/** The assistant's own modules: the lazy views load them, the launch never does (see chunkFileNames below). */
+const ASSISTANT_MODULE = /\/src\/(ai|ask|chatactions|recipefill|recipeimport)\.ts$/
+
 export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees and carry their own copy of
@@ -186,14 +189,22 @@ export default defineConfig({
           // stable vendor chunks survive app-code deploys in the service-worker cache
           if (id.includes('node_modules/react-dom/') || /node_modules\/react\//.test(id)) return 'vendor-react'
           if (id.includes('node_modules/@supabase/')) return 'vendor-supabase'
-          // The assistant's prompts and parsers, and the retrieval Ask Drafter
-          // runs over the device. Nothing on Today touches either: every view
-          // that does is lazy. But ten of those lazy views share them, and a
-          // module shared by several async chunks is hoisted into their common
-          // parent — the shell — so first paint was paying for both.
-          if (/\/src\/(ai|ask)\.ts$/.test(id)) return 'assistant'
           return undefined
         },
+        // The assistant's code — its prompts and parsers (ai.ts), the retrieval
+        // Ask runs over the device (ask.ts), the chat's actions and the recipe
+        // fill and import — is loaded by a dozen lazy views and by nothing the
+        // launch draws. A chunk that is the assistant's (its entry is one of
+        // those modules, or it has no entry and holds one) is NAMED for it, so
+        // scripts/check-precache.mjs can hold it out of the launch. It is not a
+        // manualChunks rule: that form moves every module the assistant imports
+        // into the named chunk too (the API and Supabase clients, the schema,
+        // the kitchen…), and the entry, which needs those, then loaded the
+        // whole assistant first — what 3d22024 shipped.
+        chunkFileNames: chunk =>
+          (chunk.facadeModuleId ? ASSISTANT_MODULE.test(chunk.facadeModuleId) : chunk.moduleIds.some(id => ASSISTANT_MODULE.test(id)))
+            ? 'assets/assistant-[hash].js'
+            : 'assets/[name]-[hash].js',
       },
     },
   },
