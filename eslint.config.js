@@ -69,7 +69,8 @@ const noRenderClock = {
 }
 
 export default tseslint.config(
-  // supabase/functions/bot is Deno: its own globals and URL imports.
+  // supabase/functions/bot is Deno: its own globals and jsr: imports, so
+  // Deno lints and type-checks it (the bot job in .github/workflows/ci.yml).
   // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.
   { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist/**', 'playwright-report/**', 'test-results/**'] },
   js.configs.recommended,

@@ -18,7 +18,9 @@
 // record rewritten as one, or one brought back from Trash — as the app never
 // makes a second.
 
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+// Pinned, so a deploy builds exactly the client CI type-checked (the bot job in
+// .github/workflows/ci.yml). Dependabot does not read jsr: imports: raise it by hand.
+import { createClient } from 'jsr:@supabase/supabase-js@2.117.0'
 
 /**
  * The key this gateway reads the database with: its own `BOT_DB_KEY` when one

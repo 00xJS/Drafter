@@ -1,0 +1,11 @@
+{
+  // The build's own configuration, run by Node through Vite and the Capacitor
+  // CLI and never bundled into the app: vite.config.ts and capacitor.config.ts,
+  // checked as strictly as the app. playwright.config.ts is checked with the
+  // browser tests (e2e/tsconfig.json).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts", "capacitor.config.ts"]
+}

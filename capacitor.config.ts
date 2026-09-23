@@ -1,4 +1,4 @@
-import type { CapacitorConfig } from '@capacitor/core'
+import type { CapacitorConfig } from '@capacitor/cli'
 import { APP_HOST, APP_NAME } from './shared/apphost.mts'
 
 // The iOS app is the same web app, bundled. It talks to the hosted API and

@@ -69,6 +69,28 @@ jobs:
 
       - run: npm run mcp:smoke
 
+  # The bot gateway (supabase/functions/bot) is Deno, so neither tsc nor ESLint
+  # reads it: Deno type-checks and lints it here, against the exact supabase-js
+  # its import pins. No node_modules in this job, so Deno is told not to look
+  # for one beside the repository's package.json, and to write no lockfile.
+  # no-import-prefix asks for an import map: the bot deploys as one file with
+  # its jsr: import inline, and a deno.json beside it would change the deploy.
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.6
+
+      - run: deno check --no-lock --node-modules-dir=none supabase/functions/bot/index.ts
+
+      - run: deno lint --rules-exclude=no-import-prefix supabase/functions/bot
+
   # The browser tests (npm run e2e): Playwright drives a local-mode build of the
   # app in WebKit, as an iPhone with the iOS look, and in Chromium, as a desktop.
   # Not part of `check`, which Netlify runs and which has no browsers; here, once
@@ -109,7 +131,7 @@ jobs:
   # and Netlify builds each push to main itself, as before.
   deploy:
     name: Deploy (Netlify build hook)
-    needs: [check, e2e]
+    needs: [check, bot, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
