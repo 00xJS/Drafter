@@ -13,6 +13,12 @@ export interface PushInfo {
   publicKey: string | null
   subscriptions: string[]
   digestEmail: boolean
+  /**
+   * Whether this site can send the digest by email at all. Without it the
+   * switch is not offered: it was, and a digest that never came looked like
+   * one that had. An older server leaves it out, which reads as yes.
+   */
+  emailConfigured?: boolean
   digestHour: number
   /** Sunday's unattended review draft may read the week's journal (off by default). */
   digestJournal: boolean
@@ -58,24 +64,96 @@ export function apnsRegistrationError(raw: string): string {
   return raw
 }
 
-/** Ask iOS for permission and a device token. */
-async function nativeToken(): Promise<string> {
-  const { PushNotifications } = await import('@capacitor/push-notifications')
-  let perm = await PushNotifications.checkPermissions()
-  if (perm.receive !== 'granted') perm = await PushNotifications.requestPermissions()
+/** The part of the push plugin a token is asked through: the real one, or a test's. */
+export interface TokenSource {
+  checkPermissions(): Promise<{ receive: string }>
+  requestPermissions(): Promise<{ receive: string }>
+  addListener(event: 'registration', fn: (t: { value: string }) => void): Promise<{ remove(): Promise<void> }>
+  addListener(event: 'registrationError', fn: (e: { error: string }) => void): Promise<{ remove(): Promise<void> }>
+  register(): Promise<void>
+}
+
+const loadPlugin = async (): Promise<TokenSource> => (await import('@capacitor/push-notifications')).PushNotifications as unknown as TokenSource
+
+/**
+ * Ask iOS for a device token: after asking for permission when `ask` is on,
+ * or only when it is already given (the launch's quiet re-check).
+ *
+ * Each attempt takes its two listeners away again once it has an answer. They
+ * used to stay, so every later attempt — each Enable, and now each launch —
+ * left one more pair behind, all of them answering the next token at once.
+ * The listeners are in place before register() runs: Apple can answer at once
+ * with a token it has already issued, and the plugin keeps no answer nobody
+ * was listening for.
+ */
+export async function nativeToken({ ask = true, plugin }: { ask?: boolean; plugin?: TokenSource } = {}): Promise<string> {
+  const push = plugin ?? (await loadPlugin())
+  let perm = await push.checkPermissions()
+  if (perm.receive !== 'granted' && ask) perm = await push.requestPermissions()
   if (perm.receive !== 'granted') throw new Error('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Apple did not hand back a device token. The build needs the push capability and the phone needs to be online.')), 15_000)
-    void PushNotifications.addListener('registration', t => {
-      clearTimeout(timer)
-      resolve(t.value)
+  const handles: { remove(): Promise<void> }[] = []
+  let settled = false
+  const dropListeners = () => {
+    settled = true
+    for (const h of handles.splice(0)) void h.remove().catch(() => {})
+  }
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Apple did not hand back a device token. The build needs the push capability and the phone needs to be online.')), 15_000)
+      const answer = (fn: () => void) => {
+        clearTimeout(timer)
+        fn()
+      }
+      Promise.all([
+        push.addListener('registration', t => answer(() => resolve(t.value))),
+        push.addListener('registrationError', e => answer(() => reject(new Error(apnsRegistrationError(e.error))))),
+      ])
+        .then(added => {
+          handles.push(...added)
+          // an attempt that timed out while its listeners were being added takes them away at once
+          if (settled) dropListeners()
+          else return push.register()
+        })
+        .catch(e => answer(() => reject(e instanceof Error ? e : new Error(String(e)))))
     })
-    void PushNotifications.addListener('registrationError', e => {
-      clearTimeout(timer)
-      reject(new Error(apnsRegistrationError(e.error)))
-    })
-    void PushNotifications.register()
-  })
+  } finally {
+    dropListeners()
+  }
+}
+
+/**
+ * The launch's check on this iPhone's device token, while push is on here.
+ *
+ * Apple may hand an app a new token — after a restore, a reinstall, or for
+ * reasons of its own — and every push the server then sends to the old one
+ * goes nowhere, with nothing on the phone to say so. So each launch asks again,
+ * without prompting (permission taken away in the Settings app is left
+ * alone), and when the answer is a different token the server's entry is
+ * swapped for the new one: the new one added first, so a failure in between
+ * leaves a working entry rather than none.
+ */
+export async function refreshNativePush({ plugin, post = postPush }: { plugin?: TokenSource; post?: typeof postPush } = {}): Promise<'off' | 'unchanged' | 'updated'> {
+  const stored = storedApnsToken()
+  if (!isNative() || !stored) return 'off'
+  const token = await nativeToken({ ask: false, plugin })
+  if (token === stored) return 'unchanged'
+  await post({ action: 'subscribe', subscription: { type: 'apns', token }, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  rememberApnsToken(token)
+  await post({ action: 'unsubscribe', endpoint: `apns:${stored}` }).catch(() => {})
+  return 'updated'
+}
+
+function rememberApnsToken(token: string): void {
+  try {
+    localStorage.setItem(APNS_KEY, token)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** One POST to /api/push, answered with the subscriptions the account now has. */
+function postPush(body: Record<string, unknown>): Promise<{ subscriptions: string[] }> {
+  return apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(json<{ subscriptions: string[] }>)
 }
 
 export function fetchPushInfo(): Promise<PushInfo> {
@@ -120,13 +198,9 @@ async function activeRegistration(): Promise<ServiceWorkerRegistration> {
 export async function enablePush(publicKey: string): Promise<string[]> {
   if (isNative()) {
     const token = await nativeToken()
-    try {
-      localStorage.setItem(APNS_KEY, token)
-    } catch {
-      /* ignore */
-    }
+    rememberApnsToken(token)
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    const r = await apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'subscribe', subscription: { type: 'apns', token }, timezone }) }).then(json<{ subscriptions: string[] }>)
+    const r = await postPush({ action: 'subscribe', subscription: { type: 'apns', token }, timezone })
     return r.subscriptions
   }
   if (!pushSupported()) throw new Error('This browser does not support push notifications.')

@@ -12,6 +12,7 @@ import {
   requestLocalNotificationPermission,
   scheduleLocalReminders,
 } from '../../native'
+import { refreshNativePush } from '../../push'
 import { deviceReminders } from '../../reminders'
 import { useWidgetBridge } from '../../widgetbridge'
 import type { useDeepLinks } from './useDeepLinks'
@@ -82,6 +83,9 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
       dispose = d
       // resume does not fire at launch, so a cold start clears the badge here
       void clearAppBadge()
+      // while server push is on for this iPhone, the token Apple holds for it
+      // is asked for again, and the server told when it changed
+      void refreshNativePush().catch(() => {})
     })
     return () => {
       disposed = true
