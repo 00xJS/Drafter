@@ -13,12 +13,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Push is stubbed at its module and logs into the same list as the database
 // writes, so the order is visible.
 
-const { log } = vi.hoisted(() => ({ log: [] as { what: string; title?: string; body?: string; badge?: number; to?: string[] }[] }))
+const { log, push } = vi.hoisted(() => ({ log: [] as { what: string; title?: string; body?: string; badge?: number; to?: string[] }[], push: { fails: false } }))
 vi.mock('../../netlify/functions/push.mjs', () => ({
   pushConfigured: () => true,
   sendToAll: async (subs: { endpoint: string }[], payload: { title: string; body?: string; badge?: number }) => {
     log.push({ what: 'push', title: payload.title, body: payload.body, badge: payload.badge, to: subs.map(s => s.endpoint) })
-    return { gone: [], failed: [], updated: [] }
+    return { gone: [], failed: push.fails ? subs.map(s => ({ endpoint: s.endpoint, statusCode: 500 })) : [], updated: [] }
   },
 }))
 vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => null, complete: async () => ({ error: 'no model here' }) }))
@@ -40,6 +40,8 @@ let jobRecord: Record<string, any> | null
 let failWatermark: boolean
 let resendOk: boolean
 let emails: { to: string; subject: string }[]
+/** Notices the run kept in the hub, as inserted into posts. */
+let kept: { id: string; user_id: string; data: Record<string, any> }[]
 
 const browser = (who: string) => ({ endpoint: `https://push.example.test/${who}`, keys: { p256dh: 'p', auth: 'a' } })
 /** An account in UTC whose digest hour is midnight, so a run on any hour of a new day sends it. */
@@ -70,6 +72,8 @@ beforeEach(() => {
   failWatermark = false
   resendOk = true
   emails = []
+  kept = []
+  push.fails = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -113,7 +117,10 @@ beforeEach(() => {
       // the digest's own notice for the hub, when it writes one
       if (path.startsWith('rpc/record_kind_allowed')) return Response.json(true)
       if (path.startsWith('posts?id=eq.') && method === 'GET') return Response.json([])
-      if (path === 'posts' && method === 'POST') return new Response(null, { status: 201 })
+      if (path === 'posts' && method === 'POST') {
+        kept.push(body)
+        return new Response(null, { status: 201 })
+      }
       if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })
       throw new Error(`unexpected ${method} ${path}`)
     }),
@@ -212,5 +219,44 @@ describe('the digest by email', () => {
     expect(report).toContain(`digest email ${ME}: the email service refused it`)
     expect(jobRecord?.ok).toBe(false)
     expect(jobRecord?.failures).toEqual([`digest email ${ME}: the email service refused it`])
+  })
+})
+
+describe('the digest that went out is kept in the hub', () => {
+  it('under its reader, a notice a day, as the lock screen said it', async () => {
+    settings = [account(ME)]
+    rows = [task(ME, 'Renew the insurance', { dueAt: '2026-09-22T10:00:00.000Z' })]
+    await runAt('2026-09-23T15:00:00.000Z')
+    expect(kept).toEqual([
+      {
+        id: `notice~${ME}~digest~2026-09-23`,
+        user_id: ME,
+        updated_at: '2026-09-23T15:00:00.000Z',
+        data: {
+          kind: 'notice',
+          id: `notice~${ME}~digest~2026-09-23`,
+          at: '2026-09-23T15:00:00.000Z',
+          type: 'digest',
+          title: 'Good morning — today in Drafter',
+          lines: ['1 overdue: Renew the insurance'],
+          createdAt: '2026-09-23T15:00:00.000Z',
+          updatedAt: '2026-09-23T15:00:00.000Z',
+        },
+      },
+    ])
+  })
+
+  it('on a Sunday it opens the review, as the push does', async () => {
+    settings = [account(ME)]
+    await runAt('2026-09-27T15:00:00.000Z')
+    expect(kept[0].data).toMatchObject({ type: 'digest', target: { kind: 'review', id: '2026-09-27' }, lines: ['Sunday: your weekly review is ready.'] })
+  })
+
+  it('only when it reached them: a digest every device refused is not kept', async () => {
+    push.fails = true
+    settings = [account(ME)]
+    rows = [task(ME, 'Renew the insurance', { dueAt: '2026-09-22T10:00:00.000Z' })]
+    await runAt('2026-09-23T15:00:00.000Z')
+    expect(kept).toEqual([])
   })
 })

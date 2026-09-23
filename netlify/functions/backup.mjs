@@ -4,9 +4,15 @@
 // only the schedule, and the record each scheduled run leaves in job_runs
 // (lib/jobhealth.mjs), which is how a night that failed, or a schedule that
 // stopped, reaches the owner rather than only this function's log.
+//
+// After the snapshots, the hub's notices older than thirty days are let go
+// (lib/notices.mjs expireNotices): each becomes the tombstone "Delete forever"
+// writes, so its reader's devices drop it too, and the tombstone ages out with
+// the rest. Nightly housekeeping only — Back up now leaves notices alone.
 
 import { rest, runBackup } from './lib/backup.mjs'
 import { recordJobRun } from './lib/jobhealth.mjs'
+import { expireNotices } from './lib/notices.mjs'
 
 export const config = { schedule: '@daily' }
 
@@ -22,7 +28,12 @@ export default async () => {
     await recordJobRun(rest, 'backup', { ok: false, good: false, failures: [`the run stopped: ${e?.message ?? e}`] }, now)
     throw e
   }
-  const { users, failures } = result
+  const { users } = result
+  const failures = [...result.failures]
+  const noticesExpired = await expireNotices(now).catch(e => {
+    failures.push(`notices: ${e?.message ?? e}`)
+    return null
+  })
   await recordJobRun(
     rest,
     'backup',
@@ -37,6 +48,7 @@ export default async () => {
         photosDeleted: result.photosDeleted,
         tombstonesPurged: result.tombstonesPurged,
         errorsPurged: result.errorsPurged,
+        noticesExpired,
       },
       failures,
     },

@@ -34,6 +34,10 @@
 // of every kind through sync_posts and rolls it back (public.sync_canary). The
 // answer is kept for Admin → Data, and a refusal reaches the owner through the
 // same push and email as the digest, at most every twelve hours.
+//
+// A digest or an alarm that went out is also kept for its reader as a notice
+// (v3.32, lib/notices.mjs): the hub on Home lists it, so one swiped away
+// unread on the lock screen can still be read.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 import { isMineTask } from '../../shared/domain.mts'
@@ -48,6 +52,8 @@ import { restAll } from './lib/backup.mjs'
 import { canaryAlert, nextCanaryRecord, readCanary, runSyncCanary, writeCanary } from './lib/canary.mjs'
 import { emailConfigured, sendEmail } from './lib/email.mjs'
 import { recordJobRun } from './lib/jobhealth.mjs'
+import { putNotice } from './lib/notices.mjs'
+import { noticeId } from '../../shared/notices.mts'
 import { previousWeekIn, sundayDraftDue, sundayLine } from './lib/reviewweek.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../../shared/ai.mts'
@@ -399,10 +405,34 @@ async function checkSyncCanary(users, ownerId, now, site) {
       const email = await userEmail(ownerId).catch(() => null)
       if (email && (await sendEmail(email, title, `${text}\n\nOpen Drafter: ${site}/`).catch(() => false))) told = true
     }
-    if (told) record.alertedAt = now.toISOString()
+    if (told) {
+      record.alertedAt = now.toISOString()
+      // kept in the owner's hub too, as the push or email was worded
+      await keepNotice(ownerId, { id: noticeId(ownerId, 'alarm', record.alertedAt), type: 'alarm', title, lines: [body] }, now).catch(e =>
+        console.error(`digest: the alarm's notice was not kept: ${e?.message ?? e}`),
+      )
+    }
   }
   await writeCanary(rest, record).catch(() => {})
   return record
+}
+
+/**
+ * A server push that is not about a task — the morning digest, an alarm — kept
+ * for its reader in the notification hub, as the lock screen said it. Resolves
+ * false when the kind is not stored yet (the v3.32 migration), and throws when
+ * the database could not be reached.
+ * @param {string} userId
+ * @param {{ id: string, type: import('../../src/types.ts').NoticeType, title: string, lines: string[], target?: import('../../src/types.ts').Notice['target'] }} what
+ * @param {Date} now
+ */
+async function keepNotice(userId, { id, type, title, lines, target }, now) {
+  const stamp = now.toISOString()
+  const put = await putNotice(
+    { kind: 'notice', id, at: stamp, type, title, lines: lines.slice(0, 8), ...(target ? { target } : {}), createdAt: stamp, updatedAt: stamp },
+    userId,
+  )
+  return put.ok
 }
 
 /**
@@ -585,10 +615,14 @@ async function digestRun(now, run) {
 
       if (morning && morning.digest.lines.length > 0) {
         const { digest, sunday, weekPlan, path } = morning
+        const title = 'Good morning — today in Drafter'
+        let delivered = false
         if (liveSubs.length && pushConfigured()) {
-          const { failed } = await applySend({ title: 'Good morning — today in Drafter', body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}${path}`, badge: digest.overdue.length + digest.dueToday.length })
+          const to = liveSubs.length
+          const { failed } = await applySend({ title, body: digest.lines.join('\n'), tag: 'digest', url: `${site || ''}${path}`, badge: digest.overdue.length + digest.dueToday.length })
           if (failed.length) failures.push(`digest ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
           sent += Math.max(0, liveSubs.length - failed.length)
+          delivered = to > failed.length
         }
         // no key on the host: the switch in Settings says email is not set up here, so there is nothing to record
         if (u.digest_email && emailConfigured()) {
@@ -598,6 +632,13 @@ async function digestRun(now, run) {
             ? await sendEmail(email, `Today in Drafter: ${digest.dueToday.length} due, ${digest.overdue.length} overdue`, [...digest.lines, '', ...(plan ? [plan] : []), `Open Drafter: ${site}/`].join('\n')).catch(() => false)
             : false
           if (!emailed) failures.push(`digest email ${u.user_id}: ${email ? 'the email service refused it' : 'no address to send to'}`)
+          delivered ||= emailed
+        }
+        // the digest that went out, kept in the hub; Sunday's opens the review, as its push does
+        if (delivered) {
+          await keepNotice(u.user_id, { id: noticeId(u.user_id, 'digest', day), type: 'digest', title, lines: digest.lines, ...(sunday ? { target: { kind: 'review', id: day } } : {}) }, now).catch(e =>
+            failures.push(`digest notice ${u.user_id}: ${e?.message ?? e}`),
+          )
         }
       }
 

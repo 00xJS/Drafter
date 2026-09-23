@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SYNC_KINDS } from '../../shared/kinds.mts'
 import { ALERT_GAP_MS, ago, canaryAlert, canarySentence, nextCanaryRecord, runSyncCanary } from '../../netlify/functions/lib/canary.mjs'
 import type { CanaryRecord, CanaryResult } from '../../netlify/functions/lib/canary.mjs'
+import { forgetNoticesStored } from '../../netlify/functions/lib/notices.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import digestFunction from '../../netlify/functions/digest.mjs'
 
@@ -123,6 +124,8 @@ describe('the hourly digest runs the canary once a run and tells the owner at mo
   let canaryCalls: { kinds: string[] }[]
   let emails: { to: string; subject: string; text: string }[]
   let settings: Record<string, unknown>[]
+  /** Notices the run kept, as inserted into posts. */
+  let kept: { id: string; user_id: string; data: Record<string, unknown> }[]
 
   beforeEach(() => {
     vi.stubEnv('SUPABASE_URL', SUPABASE)
@@ -133,6 +136,8 @@ describe('the hourly digest runs the canary once a run and tells the owner at mo
     stored = null
     canaryCalls = []
     emails = []
+    kept = []
+    forgetNoticesStored()
     // digest_hour 24 never comes round, so nothing but the canary can send
     settings = [OWNER, PEER].map(user_id => ({ user_id, digest_email: true, push_subscriptions: [], digest_hour: 24, timezone: 'UTC' }))
     vi.stubGlobal(
@@ -161,6 +166,13 @@ describe('the hourly digest runs the canary once a run and tells the owner at mo
         if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) return new Response('[]', { headers: { 'content-range': '*/0' } })
         if (path === 'household_members?select=household_id,user_id') return Response.json([])
         if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })
+        // the alarm, kept in the owner's hub (lib/notices.mjs)
+        if (path === 'rpc/record_kind_allowed' && method === 'POST') return Response.json(true)
+        if (path.startsWith('posts?id=eq.') && method === 'GET') return Response.json(kept.filter(k => k.id === decodeURIComponent(path.slice(12).split('&')[0])))
+        if (path === 'posts' && method === 'POST') {
+          kept.push(JSON.parse(String(init?.body)))
+          return new Response(null, { status: 201 })
+        }
         throw new Error(`unexpected ${method} ${path}`)
       }),
     )
@@ -201,6 +213,18 @@ describe('the hourly digest runs the canary once a run and tells the owner at mo
     await runAt('2026-09-12T22:00:00Z')
     expect(emails).toHaveLength(2)
     expect(stored?.alertedAt).toBe('2026-09-12T22:00:00.000Z')
+  })
+
+  it('keeps each alarm that reached the owner in their hub, as the message said it, and nobody else’s', async () => {
+    answer = { ok: false, checked: 14, failures: [{ kind: 'habit', reason: 'rejected' }] }
+    await runAt('2026-09-12T10:00:00Z')
+    expect(kept).toHaveLength(1)
+    expect(kept[0]).toMatchObject({ user_id: OWNER, data: { kind: 'notice', type: 'alarm', title: 'Drafter: the server is refusing writes', at: '2026-09-12T10:00:00.000Z' } })
+    expect(kept[0].id).toBe(`notice~${OWNER}~alarm~2026-09-12T10:00:00.000Z`)
+    // the next alarm, twelve hours on, is an entry of its own; the runs between keep nothing
+    await runAt('2026-09-12T11:00:00Z')
+    await runAt('2026-09-12T22:00:00Z')
+    expect(kept.map(k => k.id)).toEqual([`notice~${OWNER}~alarm~2026-09-12T10:00:00.000Z`, `notice~${OWNER}~alarm~2026-09-12T22:00:00.000Z`])
   })
 
   it('still checks when nobody is subscribed, and with no way to reach the owner tries again next run', async () => {

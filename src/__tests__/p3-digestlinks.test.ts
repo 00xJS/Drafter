@@ -65,6 +65,8 @@ beforeEach(() => {
       if (path === 'household_members?select=household_id,user_id') return Response.json([])
       if (path.startsWith('user_settings?user_id=eq.') && method === 'PATCH') return new Response(null, { status: 204 })
       if (path.startsWith('posts?deleted=eq.true') && method === 'DELETE') return new Response(null, { status: 204 })
+      // the hub's copy of what went out (lib/notices.mjs): notices are not stored here, so none is kept
+      if (path === 'rpc/record_kind_allowed' && method === 'POST') return Response.json(false)
       throw new Error(`unexpected ${method} ${path}`)
     }),
   )
