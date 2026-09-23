@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { BILL_KIND_META, RECURRENCE_META, Task } from '../types'
 import { billMonth, formatMoney, isBill, monthlyCost } from '../bills'
+import { noonOf, useDayKey } from '../useDayKey'
 
 // The household's payments, one month at a time: what is overdue, what is
 // still to come, what has been paid, and what an average month costs. Every
@@ -26,7 +27,10 @@ export function Bills({
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
-  const month = useMemo(() => billMonth(tasks, cursor), [tasks, cursor])
+  // on the day as well as the records: at midnight a bill due yesterday moves
+  // to Overdue, one due today having stayed out of it all day (shared/due.mts)
+  const today = useDayKey()
+  const month = useMemo(() => billMonth(tasks, cursor, noonOf(today)), [tasks, cursor, today])
   const perMonth = useMemo(() => monthlyCost(tasks), [tasks])
   const any = useMemo(() => tasks.some(isBill), [tasks])
   const monthName = cursor.toLocaleDateString(undefined, { month: 'long' })

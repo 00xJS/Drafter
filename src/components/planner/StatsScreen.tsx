@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { newerStamp } from '../../itemops'
 import { liveById, retired, saveOutfit, wearIndex } from '../../wardrobe'
 import { outfitLabel } from '../../../shared/wardrobe.mts'
-import { localDayKey } from '../../journal'
+import { useDayKey } from '../../useDayKey'
 import type { PlannerCtx } from './ctx'
 import { StatsLens } from './lazy'
 import type { AreaProps } from '../StatsLens'
@@ -34,11 +34,13 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
 
   // What the wardrobe's figures are read from. Wardrobe.tsx works these out for
   // itself; here they are the screen's, so the lens stays a view.
-  // The day key is read in the body and is a dependency of the index, as it is
-  // in Wardrobe.tsx: store.wears keeps its identity when a sync changes nothing,
-  // so an index memoized on the list alone would still call yesterday "today"
-  // after midnight on a device left open.
-  const today = localDayKey()
+  // The day key is a dependency of the index, as it is in Wardrobe.tsx:
+  // store.wears keeps its identity when a sync changes nothing, so an index
+  // memoized on the list alone would still call yesterday "today" after
+  // midnight on a device left open. And it comes from useDayKey, not
+  // localDayKey() read as this renders, which the React Compiler keeps from
+  // the first render on — the same yesterday by another road.
+  const today = useDayKey()
   const byId = useMemo(() => liveById(store.garments), [store.garments])
   const wearIx = useMemo(() => wearIndex(store.wears, today), [store.wears, today])
 

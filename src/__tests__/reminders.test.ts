@@ -62,9 +62,11 @@ describe('local reminders', () => {
     expect(r.actionTypeId).toBe('DRAFTER_TASK')
   })
 
-  it('moves a date-only (midnight) due to the morning instead of 00:00', () => {
-    const [r] = buildLocalReminders([task('a', { dueAt: new Date(2026, 8, 9, 0, 0).toISOString() })], [], [], [], NOW)
-    expect([r.at.getHours(), r.at.getMinutes()]).toEqual([9, 0])
+  it('moves a date-only (midnight) due to the morning instead of 00:00, and says it is due today rather than now', () => {
+    const [r] = buildLocalReminders([task('a', { title: 'Bins out', dueAt: new Date(2026, 8, 9, 0, 0).toISOString() })], [], [], [], NOW)
+    expect([r.at.getDate(), r.at.getHours(), r.at.getMinutes()]).toEqual([9, 9, 0])
+    // a day with no time is due all of it, so 9am is no deadline
+    expect(r.title).toBe('Due today: Bins out')
   })
 
   it('skips done, undated, past and far-future work', () => {
@@ -93,13 +95,26 @@ describe('local reminders', () => {
     expect(list[0].actionTypeId).toBe('DRAFTER_OCCASION')
   })
 
-  it('skips task due rows when skipTaskDue is set (APNs already subscribed)', () => {
-    const due = new Date(2026, 8, 8, 18, 30)
-    const list = buildLocalReminders([task('a', { title: 'Bins out', dueAt: due.toISOString() })], [person('mum', '1960-09-12')], [], [], NOW, 30, {
-      skipTaskDue: true,
-    })
-    expect(list.every(r => !r.url.startsWith('/?task='))).toBe(true)
-    expect(list.some(r => r.title.includes('birthday'))).toBe(true)
+  // The owner's call (2026-09-23): a chore assigned to the other member rang
+  // on both phones. It rings for the person doing it, by the rule the mirrors
+  // and feeds already use (isMineTask): the assignee, or whoever filed it
+  // when nobody is.
+  it('rings only for the person doing the task: its assignee, or whoever filed it when nobody is', () => {
+    const ME = 'me-0001'
+    const THEM = 'partner-0002'
+    const due = new Date(2026, 8, 8, 18, 30).toISOString()
+    const tasks = [
+      task('assigned-to-me', { dueAt: due, ownerId: THEM, assigneeId: ME }),
+      task('assigned-to-them', { dueAt: due, ownerId: ME, assigneeId: THEM }),
+      task('filed-by-me', { dueAt: due, ownerId: ME }),
+      task('filed-by-them', { dueAt: due, ownerId: THEM }),
+      task('from-before-accounts', { dueAt: due }),
+    ]
+    const urls = (myId?: string | null) => buildLocalReminders(tasks, [], [], [], NOW, 30, { myId }).map(r => r.url)
+    expect(urls(ME)).toEqual(['/?task=assigned-to-me', '/?task=filed-by-me', '/?task=from-before-accounts'])
+    expect(urls(THEM)).toEqual(['/?task=assigned-to-them', '/?task=filed-by-them', '/?task=from-before-accounts'])
+    // no account (local mode): every task is yours
+    expect(urls(null)).toHaveLength(5)
   })
 })
 
@@ -189,10 +204,6 @@ describe('place cadence reminders', () => {
     expect(list.map(r => r.url)).toEqual(['/?task=bins', '/?saw=mum', '/?place=ivy'])
   })
 
-  it('still nudges when server push owns the due rows', () => {
-    const list = buildLocalReminders([outing('v1', 'nopi', 63)], [], [place('nopi', 'Nopi', 30)], [], NOW, 30, { skipTaskDue: true })
-    expect(list.map(r => r.url)).toEqual(['/?place=nopi'])
-  })
 })
 
 // Drafter alone reminds: the copies of my events in Google and Outlook carry
@@ -212,7 +223,7 @@ describe('my own events', () => {
     ownerId: ME,
     ...extra,
   })
-  const build = (events: CalendarEntry[], opts: { generic?: boolean; skipTaskDue?: boolean } = {}) => buildLocalReminders([], [], [], [], NOW, 30, { events, myId: ME, ...opts })
+  const build = (events: CalendarEntry[], opts: { generic?: boolean } = {}) => buildLocalReminders([], [], [], [], NOW, 30, { events, myId: ME, ...opts })
 
   it('fires at a timed event’s start, saying where, and opens the calendar', () => {
     const [r] = build([event('e1', { title: 'Dentist', location: 'High Street' })])
@@ -244,9 +255,9 @@ describe('my own events', () => {
     expect(list.map(r => r.id).sort()).toEqual([reminderId('event:mine'), reminderId('event:unowned')].sort())
   })
 
-  it('still fires when server push owns the due rows: push nudges about tasks alone', () => {
-    const list = buildLocalReminders([task('a', { dueAt: new Date(2026, 8, 8, 18, 30).toISOString() })], [], [], [], NOW, 30, { skipTaskDue: true, events: [event('e1', {})], myId: ME })
-    expect(list.map(r => r.url)).toEqual(['/?view=calendar'])
+  it('rings for my event and my task alike: server push takes neither off the phone, as its nudges go to browsers alone', () => {
+    const list = buildLocalReminders([task('a', { dueAt: new Date(2026, 8, 8, 18, 30).toISOString() })], [], [], [], NOW, 30, { events: [event('e1', {})], myId: ME })
+    expect(list.map(r => r.url)).toEqual(['/?view=calendar', '/?task=a'])
   })
 
   it('keeps the title and the place off a generic lock screen', () => {
@@ -327,6 +338,23 @@ describe('while the app is open (a browser’s notifications)', () => {
       ],
       on8th(15, 30),
     )
-    expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file' }])
+    expect(list).toEqual([{ key: 'a', title: 'Task a is due now', body: 'Card on file', tag: 'due-a' }])
+  })
+
+  it('a day with no time rings at 9am as the phone’s does, “due today”, never at the 00:00 it is stored at, and not once the day is over', () => {
+    const bins = task('bins', { title: 'Bins out', dueAt: new Date(2026, 8, 8).toISOString() })
+    expect(dueNotices([bins], on8th(0, 0))).toEqual([])
+    expect(dueNotices([bins], on8th(8, 59))).toEqual([])
+    expect(dueNotices([bins], on8th(9, 0))).toEqual([{ key: 'bins', title: 'Bins out is due today', body: 'Open Drafter for the details.', tag: 'due-bins' }])
+    expect(dueNotices([bins], on8th(23, 59))).toHaveLength(1)
+    // overdue from midnight: Home says so, and "due today" would not be true
+    expect(dueNotices([bins], new Date(2026, 8, 9, 0, 1).getTime())).toEqual([])
+  })
+
+  it('rings only for the person doing the task', () => {
+    const due = new Date(2026, 8, 8, 15, 0).toISOString()
+    const tasks = [task('mine', { dueAt: due, ownerId: 'x', assigneeId: ME }), task('theirs', { dueAt: due, ownerId: ME, assigneeId: 'partner-0002' }), task('unowned', { dueAt: due })]
+    expect(dueNotices(tasks, on8th(15, 30), { myId: ME }).map(n => n.key)).toEqual(['mine', 'unowned'])
+    expect(dueNotices(tasks, on8th(15, 30)).map(n => n.key)).toEqual(['mine', 'theirs', 'unowned'])
   })
 })

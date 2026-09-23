@@ -152,7 +152,9 @@ export function Review({
   const [anchor, setAnchor] = useState(() => defaultReviewAnchor(new Date()))
   const now = useNow()
   const range = useMemo(() => rangeFor(period, anchor), [period, anchor])
-  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(), places, entries, myId), [range, tasks, projects, people, places, entries, myId])
+  // on the clock, not only on the records: at midnight what was due yesterday
+  // becomes overdue here, and the bulk buttons below move exactly that list
+  const data: ReviewData = useMemo(() => buildReview(range, tasks, projects, people, new Date(now), places, entries, myId), [range, tasks, projects, people, now, places, entries, myId])
   // what you wore in the period, counted in days as the Stats are: each day's
   // look, and the piece worn on the most of them
   const pieces = useMemo(() => liveById(garments), [garments])
@@ -385,6 +387,8 @@ export function Review({
               <h3>Slipped &amp; overdue</h3>
               <p className="chart-sub">Decide once: push to next week, or let it go</p>
             </div>
+            {/* Home's Overdue, no more (review.ts overdueNow): a task due today,
+                with no time or a time gone by, is not swept to Monday */}
             {data.overdueNow.length > 0 && (
               <div className="review-bulk">
                 <button className="btn" onClick={() => onReschedule(data.overdueNow.map(t => t.id), nextMonday())}>

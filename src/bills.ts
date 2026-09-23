@@ -1,4 +1,5 @@
 import { Bill, OPEN_STATUSES, RecurrenceFreq, Task, isIncomeKind } from './types'
+import { isOverdue } from '../shared/due.mts'
 
 // Household payments: the rules behind the Bills view and the calendar's money
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
@@ -83,9 +84,9 @@ function perMonth(tasks: Task[], pick: (t: Task) => boolean): number {
 }
 
 export interface BillMonth {
-  /** Unpaid and past due. Only in the current month's view, where it is owed now. */
+  /** Unpaid, and its day is over (shared/due.mts). Only in the current month's view, where it is owed now. */
   overdue: Task[]
-  /** Unpaid and due in the month (from now on, when it is the current month). */
+  /** Unpaid and due in the month (from today on, when it is the current month). */
   upcoming: Task[]
   /** Paid, with the payment made in the month. */
   paid: Task[]
@@ -106,8 +107,10 @@ export function billMonth(tasks: Task[], month: Date, now: Date = new Date()): B
   const bills = tasks.filter(isBill)
   const open = bills.filter(t => OPEN_STATUSES.includes(t.status) && t.dueAt)
   const byDue = (a: Task, b: Task) => (a.dueAt ?? '').localeCompare(b.dueAt ?? '')
-  const overdue = isCurrent ? open.filter(t => at(t.dueAt) < nowMs).sort(byDue) : []
-  const upcoming = open.filter(t => inMonth(t.dueAt) && (!isCurrent || at(t.dueAt) >= nowMs)).sort(byDue)
+  // Home's rule: a bill due today is today's, not overdue, until the day is out —
+  // one with no time at all from 00:00, and one whose time has gone by too
+  const overdue = isCurrent ? open.filter(t => isOverdue(t.dueAt, now)).sort(byDue) : []
+  const upcoming = open.filter(t => inMonth(t.dueAt) && (!isCurrent || !isOverdue(t.dueAt, now))).sort(byDue)
   const paid = bills
     .filter(t => t.status === 'done' && inMonth(t.completedAt))
     .sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? ''))

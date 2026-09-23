@@ -6,6 +6,7 @@ import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
 import { OPEN_STATUSES, type Task } from '../../types'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
+import { useDayKey } from '../../useDayKey'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
@@ -104,7 +105,11 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
-  const today = localDayKey()
+  // From useDayKey, never localDayKey() as this renders: the React Compiler
+  // keeps that from the first render for as long as the planner is up, and
+  // Plan my day and Shut down WRITE with it — a focus picked on the phone's
+  // third morning landed on the day the app was opened.
+  const today = useDayKey()
   // drawn again when a task changes or another is opened, never as the editor is typed in
   const editing = editor?.task
   const candidates = useMemo(() => blockerCandidates(store.tasks, editing), [store.tasks, editing])

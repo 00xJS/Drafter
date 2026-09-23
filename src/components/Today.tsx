@@ -39,9 +39,10 @@ import { eventStartDate } from '../calendarstate'
 import { workDaysOf } from '../calgrid'
 import { haptic } from '../native'
 import { lockAxis } from '../pull'
-import { useDayKey } from '../useDayKey'
+import { dayStartMs, noonOf, useDayKey } from '../useDayKey'
 import { useNow } from '../useNow'
 import { clock, dateKey, excerpt, fmtTime, timeAgo } from '../utils'
+import { dayLabel } from '../journal'
 import { bucketByDue, focusTasks } from '../../shared/today.mts'
 import type { MealIdea } from '../../shared/weekplan.mts'
 import { DueBadge, PriorityMark, StatTile } from './bits'
@@ -600,16 +601,16 @@ export function FocusCard({
 
 const EVENT_HORIZON_DAYS = 14
 
-function eventWhen(ev: CalendarEvent): string {
+function eventWhen(ev: CalendarEvent, now: Date): string {
   const start = eventStartDate(ev)
-  const off = dayOffset(start.toISOString())
+  const off = dayOffset(start.toISOString(), now)
   const day = off === 0 ? 'Today' : off === 1 ? 'Tomorrow' : start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
   return ev.allDay ? day : `${day} ${fmtTime(ev.start)}`
 }
 
-function plannedLabel(dueAt?: string): string {
+function plannedLabel(dueAt: string | undefined, now: Date): string {
   if (!dueAt) return 'Planned'
-  const off = dayOffset(dueAt)
+  const off = dayOffset(dueAt, now)
   if (off === 0) return 'Planned · Today'
   if (off === 1) return 'Planned · Tomorrow'
   return `Planned · ${new Date(dueAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`
@@ -692,10 +693,23 @@ export function Today({
    */
   const todayKey = useDayKey()
   // what is still coming up moves on as the hours pass, not only when the list changes
-  const now = useNow()
-  const weekly = useMemo(() => doneByWeek(tasks), [tasks])
-  const thisWeek = useMemo(() => weekRange(new Date()), [])
-  const isSunday = new Date().getDay() === 0
+  const minute = useNow()
+  /**
+   * The page's one reading of the clock, and the only one: nothing below may
+   * call `new Date()` as it renders (eslint.config.js says so). The React
+   * Compiler caches a value worked out from nothing that changes, so a date
+   * read that way is the date Home was first drawn on — for days, on the
+   * phone, where Home stays mounted. Everything here comes from the two hooks
+   * instead: `noon`, on today's date, for what goes by the day, and `at`,
+   * this minute, for what goes by the time. The day key rolls at midnight and
+   * the minute a moment later, so the later of the two stands.
+   */
+  const now = Math.max(minute, dayStartMs(todayKey))
+  const at = useMemo(() => new Date(now), [now])
+  const noon = useMemo(() => noonOf(todayKey), [todayKey])
+  const weekly = useMemo(() => doneByWeek(tasks, 12, noon), [tasks, noon])
+  const thisWeek = useMemo(() => weekRange(noon), [noon])
+  const isSunday = noon.getDay() === 0
   /**
    * Where the journal card sits: with the other once-a-day cards in the
    * evening, below the task sections in the morning. Frozen at mount — the
@@ -727,6 +741,8 @@ export function Today({
         outfits={outfits}
         wears={wears}
         dayKey={todayKey}
+        // "Forgot yesterday?" asks before noon: the page's minute, not the card's own clock
+        now={at}
         // a work day of your own on the calendar puts the looks for work first
         workDay={workDaysOf(entries, myId).has(todayKey)}
         onLog={onLogWear}
@@ -736,40 +752,40 @@ export function Today({
   // NOT frozen: Today stays mounted across a night on the phone, and a routines
   // card still filtering by last night's hour would hide the morning list. The
   // card itself holds the hour still while an edit is open.
-  const hour = new Date().getHours()
+  const hour = at.getHours()
   // Top 3 is written during last week's review as "for next week"
   const weekReview = useMemo(() => {
     const prev = shiftRange(thisWeek, -1)
     return reviews.find(r => r.period === 'week' && r.key === prev.key) ?? reviews.find(r => r.period === 'week' && r.key === thisWeek.key)
   }, [reviews, thisWeek])
   const sundayDraft = useMemo(() => {
-    const anchor = defaultReviewAnchor(new Date())
+    const anchor = defaultReviewAnchor(noon)
     const range = weekRange(anchor)
     return reviews.find(r => r.period === 'week' && r.key === range.key && r.summary?.trim())
-  }, [reviews])
+  }, [reviews, noon])
   const top3 = useMemo(() => (weekReview?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3), [weekReview])
   const topDone = useMemo(() => weekReview?.topDone ?? [], [weekReview])
   // today's focus has its own card: the lists below leave it out and say so
   const focus = useMemo(() => focusTasks(tasks, todayKey, myId), [tasks, todayKey, myId])
   const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
   const blocks = useMemo(() => blocksOn(entries, todayKey), [entries, todayKey])
-  const occasions = useMemo(() => upcomingOccasions(people, 21), [people])
+  const occasions = useMemo(() => upcomingOccasions(people, 21, noon), [people, noon])
   // What you have put off, by what it was put off (v3.24). Read once here so
   // three lists can ask it; a row whose day has come back is simply absent.
   const putOff = useMemo(
     () => ({
-      people: snoozedIds(snoozes, 'person'),
-      places: snoozedIds(snoozes, 'place'),
-      events: snoozedIds(snoozes, 'event'),
+      people: snoozedIds(snoozes, 'person', at),
+      places: snoozedIds(snoozes, 'place', at),
+      events: snoozedIds(snoozes, 'event', at),
     }),
-    [snoozes],
+    [snoozes, at],
   )
   const { peopleNudges, neverLogged } = useMemo(() => {
     // your own events that have happened count as seeing the people on them, as on People.
     // myId is what makes this YOUR log: the address book is the household's,
     // but the other member seeing their mother is not you having called her (v3.24).
-    const seen = seenTasks(tasks, entries, new Date(), myId)
-    const stats = people.map(p => personStats(p, seen))
+    const seen = seenTasks(tasks, entries, at, myId)
+    const stats = people.map(p => personStats(p, seen, at))
     // peopleToNudge, not a filter here: the rule about who Today asks after —
     // the drifting, then two nobody has logged, taking turns by day — lives
     // with the rest of the people rules. What is put off is handed to it, so
@@ -778,23 +794,22 @@ export function Today({
       peopleNudges: peopleToNudge(stats, { todayKey, putOff: putOff.people }),
       neverLogged: stats.filter(s => s.status === 'never').length,
     }
-  }, [people, tasks, entries, myId, putOff, todayKey])
+  }, [people, tasks, entries, myId, putOff, todayKey, at])
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
   // A meal eaten out there counts as going, as it does on Places.
   const placeNudges = useMemo(() => {
-    const now = new Date()
     const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
     for (const place of places) {
       if (putOff.places.has(place.id)) continue
-      const s = placeCadenceStatus(place, tasks, now, meals, myId)
+      const s = placeCadenceStatus(place, tasks, at, meals, myId)
       if (s.status === 'due' || s.status === 'overdue') out.push({ place, status: s.status, reason: s.reason, daysSince: s.daysSince ?? 0 })
     }
     return out
       .sort((a, b) => (a.status === b.status ? b.daysSince - a.daysSince : a.status === 'overdue' ? -1 : 1))
       .slice(0, 4)
-  }, [places, tasks, meals, myId, putOff])
-  const dinner = useMemo(() => tonightDinner(meals, recipes), [meals, recipes])
-  const plates = useMemo(() => platesOn(meals, recipes), [meals, recipes])
+  }, [places, tasks, meals, myId, putOff, at])
+  const dinner = useMemo(() => tonightDinner(meals, recipes, noon), [meals, recipes, noon])
+  const plates = useMemo(() => platesOn(meals, recipes, noon), [meals, recipes, noon])
   const upcomingEvents = useMemo(() => {
     const horizon = now + EVENT_HORIZON_DAYS * DAY_MS
     return events
@@ -813,10 +828,10 @@ export function Today({
       .slice(0, 10)
   }, [events, putOff, now])
 
+  // the sections move at midnight and "already past" as the minutes go, not only when a task changes
   const s = useMemo(() => {
-    const now = new Date()
-    const nowMs = now.getTime()
-    const { open, overdue, today, late, week } = dueSections(tasks, now)
+    const nowMs = at.getTime()
+    const { open, overdue, today, late, week } = dueSections(tasks, at)
     const doing = open.filter(t => t.status === 'doing' && !t.dueAt).sort(compareTasks)
     const blocked = open.filter(t => t.status === 'blocked').sort(compareTasks)
     const stale = open
@@ -831,7 +846,7 @@ export function Today({
     const doneRecent = doneRecentAll.filter(t => !isVisit(t))
     const visitsRecent = doneRecentAll.filter(isVisit)
     return { open, overdue, today, late, week, doing, blocked, stale, inbox, doneRecent, visitsRecent }
-  }, [tasks])
+  }, [tasks, at])
 
   const toggleTop = (index: number) => {
     if (!weekReview) return
@@ -843,7 +858,7 @@ export function Today({
 
   // A clear day — no events, nothing due, nothing overdue — is the moment to
   // surface the wishlist: the things you said you would do if there were time.
-  const clearDay = !briefingFacts(events, habits, new Date()).events && s.overdue.length === 0 && s.today.length === 0
+  const clearDay = !briefingFacts(events, habits, at).events && s.overdue.length === 0 && s.today.length === 0
   const freeTime = clearDay ? freeTimeWishlist(tasks) : []
 
   // the owner's sync alarm tops the page, the empty one too
@@ -909,7 +924,7 @@ export function Today({
   )
 
   const endOfNextWeek = (() => {
-    const d = nextWeekday(new Date(), 0)
+    const d = nextWeekday(noon, 0)
     d.setDate(d.getDate() + 7)
     d.setHours(17, 0, 0, 0)
     return d.toISOString()
@@ -921,9 +936,7 @@ export function Today({
       <header className="today-head">
         <div>
           <h2>Today</h2>
-          <p className="chart-sub">
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
+          <p className="chart-sub">{dayLabel(todayKey)}</p>
         </div>
         {/* Review rides on the title line: it is the one of these that is about
             a span of days rather than a thing you keep, so it belongs with the
@@ -966,7 +979,7 @@ export function Today({
       </div>
       {alarm}
       {/* the day at a glance sits above the counters: what the day IS before what it owes */}
-      <BriefingCard events={events} habits={habits} dinner={dinner} now={new Date()} name={name} cta={cta} myId={myId} nameOf={nameOf} />
+      <BriefingCard events={events} habits={habits} dinner={dinner} now={at} name={name} cta={cta} myId={myId} nameOf={nameOf} />
       <FocusCard
         tasks={focus}
         blocks={blocks}
@@ -1079,7 +1092,7 @@ export function Today({
         </section>
       )}
 
-      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={new Date()} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />}
+      {onPlanMeal && <MealIdeasCard dayKey={todayKey} now={at} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />}
 
       {sundayDraft?.summary && (
         <section className={card('weekreview', 'chart-card week-review-ready')}>
@@ -1266,7 +1279,7 @@ export function Today({
                   </button>
                   {s.planned ? (
                       <button className="btn" onClick={() => onOpen(s.planned!)}>
-                        {plannedLabel(s.planned.dueAt)}
+                        {plannedLabel(s.planned.dueAt, at)}
                       </button>
                     ) : (
                       <button className="btn" onClick={() => onPlanWith(s.person)}>
@@ -1335,7 +1348,7 @@ export function Today({
                 <div className="dash-main">
                   <span className="dash-title">{ev.title}</span>
                   <span className="dash-reason">
-                    {eventWhen(ev)}
+                    {eventWhen(ev, at)}
                     {ev.location ? ` · ${ev.location}` : ''}
                   </span>
                 </div>

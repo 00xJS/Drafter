@@ -1,5 +1,9 @@
 import { OPEN_STATUSES, PRIORITY_META, Project, Task } from './types'
 import { fmtDate, fmtTime, uid } from './utils'
+import { hasDueTime, isLate, isOverdue } from '../shared/due.mts'
+
+// The midnight rule lives in shared/due.mts, where the digest reads it too
+export { hasDueTime, isOverdue }
 
 export const DAY_MS = 86_400_000
 
@@ -31,20 +35,14 @@ export function inInbox(t: Task): boolean {
 
 export type DueTone = 'overdue' | 'late' | 'today' | 'soon' | 'later' | 'none'
 
-/** A due date stored at local midnight is a day with no time (the editor, reminders and calendar all read it so). */
-export function hasDueTime(iso: string): boolean {
-  const d = new Date(iso)
-  return d.getHours() + d.getMinutes() > 0
-}
-
 export function dueTone(t: Task, now: Date = new Date()): DueTone {
   if (!t.dueAt || !isOpen(t)) return 'none'
+  if (isOverdue(t.dueAt, now)) return 'overdue'
   const off = dayOffset(t.dueAt, now)
-  if (off < 0) return 'overdue'
   // "late" means a time that has passed. An untimed task is due all day, so it
   // stays "today" until midnight and is overdue from then — its 00:00 stamp is
   // a day, not a deadline, and must not read as late from the moment you wake.
-  if (off === 0) return hasDueTime(t.dueAt) && new Date(t.dueAt).getTime() < now.getTime() ? 'late' : 'today'
+  if (off === 0) return isLate(t.dueAt, now) ? 'late' : 'today'
   if (off <= 7) return 'soon'
   return 'later'
 }
@@ -60,7 +58,7 @@ export function dueLabel(t: Task, now: Date = new Date()): string {
   const time = hasTime ? ` ${fmtTime(t.dueAt)}` : ''
   if (isOpen(t) && off < 0) return `Overdue ${-off}d`
   // same rule as dueTone: only a time can already have passed today
-  if (isOpen(t) && off === 0 && hasTime && dueDate.getTime() < now.getTime()) return `Was${time}`
+  if (isOpen(t) && off === 0 && isLate(t.dueAt, now)) return `Was${time}`
   if (off === 0) return `Today${time}`
   if (off === 1) return `Tomorrow${time}`
   if (off > 1 && off <= 6) return `${WEEKDAY_FMT.format(dueDate)}${time}`

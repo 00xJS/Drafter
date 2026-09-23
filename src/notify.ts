@@ -1,13 +1,15 @@
 import { CalendarEntry, OPEN_STATUSES, Task } from './types'
 import { excerpt } from './utils'
-import { eventRemindAt, remindsMe } from './reminders'
+import { eventRemindAt, remindsMe, taskRemindAt } from './reminders'
+import { hasDueTime, isOverdue } from '../shared/due.mts'
+import { isMineTask } from '../shared/domain.mts'
 
 // Reminders are device-local by design: each open device notifies once per
-// task, and once as each of my own events starts — their copies in Google and
-// Outlook no longer ring, so this is where a browser hears of them. Nothing
-// here writes to the synced store (a UI event must never win a data merge).
-// While the app is closed no reminder fires — server-side push would be the
-// upgrade path.
+// task of mine, and once as each of my own events starts — their copies in
+// Google and Outlook no longer ring, so this is where a browser hears of them.
+// Nothing here writes to the synced store (a UI event must never win a data
+// merge). While the app is closed no reminder fires here; server push nudges a
+// browser about timed tasks then (netlify/functions/digest.mjs).
 
 const SEEN_KEY = 'drafter:notified'
 
@@ -40,20 +42,20 @@ export async function enableNotifications(): Promise<NotificationPermission | 'u
   return Notification.requestPermission()
 }
 
-async function show(title: string, body: string): Promise<boolean> {
+async function show(title: string, body: string, tag?: string): Promise<boolean> {
   // Android Chrome forbids the page-context constructor when a service worker
   // is registered — go through the registration when one exists.
   try {
     const reg = await navigator.serviceWorker?.getRegistration()
     if (reg) {
-      await reg.showNotification(title, { body })
+      await reg.showNotification(title, { body, tag })
       return true
     }
   } catch {
     /* fall through */
   }
   try {
-    new Notification(title, { body })
+    new Notification(title, { body, tag })
     return true
   } catch (e) {
     console.error('Notification failed', e)
@@ -66,7 +68,7 @@ const MAX_AGE_MS = 86_400_000 // don't nag about tasks overdue by more than a da
 export interface NotifyOpts {
   /** Drafter's own events (store.events). Never a feed's: its own calendar reminds about that. */
   events?: CalendarEntry[]
-  /** Only my own events remind me: a household member's evening is theirs. */
+  /** Only my own events, and only the tasks I am doing (isMineTask), remind me: a household member's evening, and chore, is theirs. */
   myId?: string | null
 }
 
@@ -75,6 +77,14 @@ export interface DueNotice {
   key: string
   title: string
   body: string
+  /**
+   * A task's notice is shown under the tag the server's push nudge carries
+   * (`due-<id>`, digest.mjs), so a browser with push on and Drafter open,
+   * which hears of a task both ways, shows it once: the later replaces the
+   * earlier. Push nudges go to browsers alone, so this is the one place the
+   * two can meet.
+   */
+  tag?: string
 }
 
 /** When an event is over: its end instant, or the local midnight after an all-day one (its end is exclusive). */
@@ -84,20 +94,23 @@ function eventEndMs(e: CalendarEntry): number {
 }
 
 /**
- * What should ring now: each open task whose due time arrived in the last day,
- * and each of my own events on the phone's rule (remindsMe and eventRemindAt: a
- * timed one at its start, an all-day one at 9am on its first day, never a work
- * day or a household member's) that has not ended yet — "starts now" about an
- * event already over is no reminder.
+ * What should ring now: each open task of mine (isMineTask) on the phone's
+ * rule (taskRemindAt: at its time, or at 9am on a day with no time — never at
+ * the 00:00 it is stored at) in the last day, and each of my own events on the
+ * phone's rule too (remindsMe and eventRemindAt: a timed one at its start, an
+ * all-day one at 9am on its first day, never a work day or a household
+ * member's) that has not ended yet — "starts now" about an event already over
+ * is no reminder, and neither is "due today" about a day that is over.
  */
 export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): DueNotice[] {
   const out: DueNotice[] = []
   for (const p of tasks) {
-    if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt) continue
-    const due = new Date(p.dueAt).getTime()
-    if (due <= now && now - due < MAX_AGE_MS) {
-      out.push({ key: p.id, title: `${p.title || 'Untitled'} is due now`, body: excerpt(p.description, 120) || 'Open Drafter for the details.' })
-    }
+    if (!OPEN_STATUSES.includes(p.status) || !p.dueAt || p.deletedAt || !isMineTask(p, opts.myId)) continue
+    const at = taskRemindAt(p.dueAt).getTime()
+    if (!(at <= now) || now - at >= MAX_AGE_MS) continue
+    const timed = hasDueTime(p.dueAt)
+    if (!timed && isOverdue(p.dueAt, now)) continue
+    out.push({ key: p.id, title: `${p.title || 'Untitled'} ${timed ? 'is due now' : 'is due today'}`, body: excerpt(p.description, 120) || 'Open Drafter for the details.', tag: `due-${p.id}` })
   }
   for (const e of opts.events ?? []) {
     if (!remindsMe(e, opts.myId)) continue
@@ -113,14 +126,14 @@ export function dueNotices(tasks: Task[], now: number, opts: NotifyOpts = {}): D
   return out
 }
 
-/** Fire a reminder for every open task whose due time has arrived, and for each of my own events as it starts. */
+/** Fire a reminder for each open task of mine as it comes due, and for each of my own events as it starts. */
 export async function notifyDue(tasks: Task[], opts: NotifyOpts = {}): Promise<void> {
   if (!notificationsSupported() || Notification.permission !== 'granted') return
   const already = seen()
   let dirty = false
   for (const n of dueNotices(tasks, Date.now(), opts)) {
     if (already.has(n.key)) continue
-    if (await show(n.title, n.body)) {
+    if (await show(n.title, n.body, n.tag)) {
       already.add(n.key)
       dirty = true
     }

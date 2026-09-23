@@ -2,19 +2,25 @@ import { CalendarEntry, Meal, OPEN_STATUSES, Person, Place, Task } from './types
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
 import { excerpt } from './utils'
-import { currentEndpoint } from './push'
+import { hasDueTime } from '../shared/due.mts'
+import { isMineTask } from '../shared/domain.mts'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE, type PlanDayPref } from './native'
 
-// Reminders the phone can fire by itself: one at each task's due time, one at
-// the start of each of your own events, one on the morning of a birthday or
-// anniversary, and a morning nudge for a place whose rhythm you set and
-// clearly missed. No server, no account, works with the app closed. The set is
-// rebuilt from local data whenever it changes, so it is only ever as current
-// as the last time the app ran — which for a phone that opens Drafter daily is
-// current enough. The morning's Plan your day is the one that repeats by
-// itself, so it comes whether or not the app ran. Drafter alone reminds: the
-// copies the mirrors write into Google and Outlook stay silent unless the
-// owner asks for theirs too.
+// Reminders the phone can fire by itself: one at each of your tasks' due
+// times, one at the start of each of your own events, one on the morning of a
+// birthday or anniversary, and a morning nudge for a place whose rhythm you
+// set and clearly missed. No server, no account, works with the app closed.
+// The set is rebuilt from local data whenever it changes, so it is only ever
+// as current as the last time the app ran — which for a phone that opens
+// Drafter daily is current enough. The morning's Plan your day is the one that
+// repeats by itself, so it comes whether or not the app ran. Drafter alone
+// reminds: the copies the mirrors write into Google and Outlook stay silent
+// unless the owner asks for theirs too.
+//
+// The phone keeps its task reminders with server push on, too. The server's
+// "Due now" nudges go to browsers only (netlify/functions/digest.mjs), so the
+// two never ring for the same task, and the phone's own rule — 9am for a day
+// with no time — is the one an iPhone hears.
 
 export interface LocalReminder {
   /** Stable integer id — iOS identifies pending notifications by number. */
@@ -78,10 +84,14 @@ function nextPlaceMorning(placeId: string, now: Date): Date {
  */
 const MAX_PLACE_REMINDERS = 3
 
-/** A due date stored at local midnight means "that day": remind in the morning, not at 00:00. */
-function remindAt(dueAt: string): Date {
+/**
+ * When a task reminds: at its time, or, for a due date with no time (stored at
+ * local midnight, shared/due.mts), at 9am on its day — never at 00:00. The
+ * phone and a browser with Drafter open both go by this.
+ */
+export function taskRemindAt(dueAt: string): Date {
   const d = new Date(dueAt)
-  if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(MORNING, 0, 0, 0)
+  if (!hasDueTime(dueAt)) d.setHours(MORNING, 0, 0, 0)
   return d
 }
 
@@ -105,13 +115,6 @@ export function remindsMe(e: CalendarEntry | null | undefined, myId?: string | n
 
 export interface BuildReminderOpts {
   /**
-   * When this device is already on the server's APNs/web-push list, skip local
-   * "Due now" rows so phone and server don't both fire. Occasion and place
-   * rows stay — the server's channel for those is the emailed digest, not a
-   * banner, so they cannot double up.
-   */
-  skipTaskDue?: boolean
-  /**
    * Keep titles and names off the lock screen: "Something is due" / "An
    * occasion today" with the detail one tap away inside the app.
    */
@@ -122,7 +125,7 @@ export interface BuildReminderOpts {
    * reminds about that.
    */
   events?: CalendarEntry[]
-  /** Only my own events remind me: a household member's evening is theirs. */
+  /** Only my own events, and only the tasks I am doing, remind me: a household member's evening, and chore, is theirs. */
   myId?: string | null
 }
 
@@ -139,25 +142,26 @@ export function buildLocalReminders(
   const nowMs = now.getTime()
   const until = nowMs + horizonDays * DAY_MS
   const out: LocalReminder[] = []
-  if (!opts.skipTaskDue) {
-    for (const t of tasks) {
-      if (!OPEN_STATUSES.includes(t.status) || !t.dueAt) continue
-      const at = remindAt(t.dueAt)
-      const ms = at.getTime()
-      if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
-      out.push({
-        id: reminderId(`task:${t.id}`),
-        title: opts.generic ? 'Something is due' : `Due now: ${t.title || 'Untitled task'}`,
-        body: opts.generic ? 'Open Drafter to see what.' : t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
-        at,
-        url: `/?task=${encodeURIComponent(t.id)}`,
-        ...(opts.generic ? {} : { actionTypeId: TASK_ACTION_TYPE }),
-      })
-    }
+  for (const t of tasks) {
+    // only the person doing it: its assignee, or whoever filed it when nobody
+    // is (isMineTask). A chore assigned to the other member rang on both phones.
+    if (!OPEN_STATUSES.includes(t.status) || !t.dueAt || !isMineTask(t, opts.myId)) continue
+    const at = taskRemindAt(t.dueAt)
+    const ms = at.getTime()
+    if (!Number.isFinite(ms) || ms <= nowMs || ms > until) continue
+    const title = t.title || 'Untitled task'
+    out.push({
+      id: reminderId(`task:${t.id}`),
+      // a day with no time is due all of it, so its 9am says so rather than "now"
+      title: opts.generic ? 'Something is due' : hasDueTime(t.dueAt) ? `Due now: ${title}` : `Due today: ${title}`,
+      body: opts.generic ? 'Open Drafter to see what.' : t.description ? excerpt(t.description, 100) : 'Open Drafter for the details.',
+      at,
+      url: `/?task=${encodeURIComponent(t.id)}`,
+      ...(opts.generic ? {} : { actionTypeId: TASK_ACTION_TYPE }),
+    })
   }
-  // My own events (remindsMe), on the rule a task's due date follows. Never
-  // skipped for server push, which nudges about tasks alone. There is nothing
-  // a banner's button could do about an event, so it carries none.
+  // My own events (remindsMe), on the rule a task's due date follows. There is
+  // nothing a banner's button could do about an event, so it carries none.
   for (const e of opts.events ?? []) {
     if (!remindsMe(e, opts.myId)) continue
     const at = eventRemindAt(e)
@@ -270,8 +274,3 @@ export function distinctIds(list: LocalReminder[]): LocalReminder[] {
   })
 }
 
-/** True when this device's push endpoint is already registered server-side. */
-export async function deviceHasServerPush(subscriptions: string[]): Promise<boolean> {
-  const ep = await currentEndpoint()
-  return !!ep && subscriptions.includes(ep)
-}

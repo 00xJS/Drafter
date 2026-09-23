@@ -6,7 +6,7 @@ import { newerStamp } from '../itemops'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, OPEN_STATUSES, RECURRENCE_META, type Account, type AccountType, type Task } from '../types'
 import { uid } from '../utils'
 import { shiftDayKey } from '../journal'
-import { useDayKey } from '../useDayKey'
+import { noonOf, useDayKey } from '../useDayKey'
 import { Bills } from './Bills'
 import { StatTile } from './bits'
 import { ConfirmButton } from './ConfirmButton'
@@ -181,8 +181,11 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
   const [segment, setSegment] = useState<Segment>('bills')
   const [adding, setAdding] = useState<AccountType | null>(null)
   const nameOf = (id: string | undefined) => (id ? (members.find(m => m.id === id)?.displayName ?? null) : null)
-  // read once, so the runway is not rebuilt on every render by a fresh clock
-  const at = useMemo(() => now ?? new Date(), [now])
+  // read by the day, so the runway is not rebuilt on every render by a fresh
+  // clock, and still starts from today once midnight has passed on a phone
+  // left open here, as the bills beside it do (useDayKey)
+  const today = useDayKey()
+  const at = useMemo(() => now ?? noonOf(today), [now, today])
 
   const paydays = useMemo(
     () => tasks.filter(t => isPayday(t) && OPEN_STATUSES.includes(t.status)).sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999')),
