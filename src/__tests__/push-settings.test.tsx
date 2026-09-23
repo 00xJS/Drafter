@@ -14,18 +14,28 @@ type Handler = (req: Request) => Promise<Response>
 const push = pushFunction as Handler
 const SUPABASE = 'https://db.example.test'
 const USER = 'user-1'
+let row: Record<string, unknown>
+let saved: Record<string, unknown>[]
 
 beforeEach(() => {
+  row = { user_id: USER, digest_email: true }
+  saved = []
   vi.stubEnv('SUPABASE_URL', SUPABASE)
   vi.stubEnv('SUPABASE_ANON_KEY', 'anon-key')
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   vi.stubEnv('RESEND_API_KEY', '')
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === `${SUPABASE}/auth/v1/user`) return Response.json({ id: USER, email: 'me@example.test' })
-      if (url.startsWith(`${SUPABASE}/rest/v1/user_settings?user_id=eq.${USER}`)) return Response.json([{ user_id: USER, digest_email: true }])
+      if (url.startsWith(`${SUPABASE}/rest/v1/user_settings?user_id=eq.${USER}`)) return Response.json([row])
+      if (url === `${SUPABASE}/rest/v1/user_settings?on_conflict=user_id` && init?.method === 'POST') {
+        const { user_id: _id, ...patch } = JSON.parse(String(init.body))
+        saved.push(patch)
+        row = { ...row, ...patch }
+        return new Response(null, { status: 201 })
+      }
       throw new Error(`unexpected ${url}`)
     }),
   )
@@ -37,6 +47,32 @@ afterEach(() => {
 })
 
 const get = async () => (await push(new Request('https://site.test/api/push', { headers: { authorization: 'Bearer session' } }))).text()
+const post = (body: Record<string, unknown>) =>
+  push(new Request('https://site.test/api/push', { method: 'POST', headers: { authorization: 'Bearer session', 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+
+describe('"Tell me when someone updates a task we share"', () => {
+  it('reads as on until switched off, as a row from before the switch does', async () => {
+    expect(JSON.parse(await get())).toMatchObject({ notifyActivity: true })
+    row = { ...row, notify_activity: false }
+    expect(JSON.parse(await get())).toMatchObject({ notifyActivity: false })
+  })
+
+  it('saves on a host with no push at all, since the hub keeps notices anyway', async () => {
+    for (const key of ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_PRIVATE_KEY', 'APNS_BUNDLE_ID']) vi.stubEnv(key, '')
+    expect((await post({ action: 'prefs', digestEmail: false, digestHour: 8, notifyActivity: false })).status).toBe(200)
+    expect(saved).toContainEqual({ notify_activity: false })
+    expect(JSON.parse(await get())).toMatchObject({ notifyActivity: false })
+  })
+
+  it('saves with the other push preferences, and only when it is sent', async () => {
+    vi.stubEnv('VAPID_PUBLIC_KEY', 'public')
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'private')
+    await post({ action: 'prefs', digestEmail: false, digestHour: 7, notifyActivity: false, timezone: 'America/Phoenix' })
+    expect(saved).toEqual([{ digest_email: false, notify_activity: false, timezone: 'America/Phoenix', digest_hour: 7 }])
+    await post({ action: 'prefs', digestEmail: false, digestHour: 7, timezone: 'America/Phoenix' })
+    expect(saved[1]).not.toHaveProperty('notify_activity')
+  })
+})
 
 describe('/api/push says whether the digest can go by email', () => {
   it('no, on a site with no way to send it', async () => {

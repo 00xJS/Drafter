@@ -1,5 +1,5 @@
 // Web push subscriptions and digest preferences, per user.
-//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, emailConfigured, digestJournal, timezone, sundayDraft, aiConfigured }
+//   GET  /api/push            { configured, publicKey, subscriptions, digestEmail, emailConfigured, digestJournal, notifyActivity, timezone, sundayDraft, aiConfigured }
 //   POST /api/push { action } subscribe | unsubscribe | test | prefs
 // VAPID keys come from the host: `npx web-push generate-vapid-keys` →
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (+ VAPID_SUBJECT, a mailto: or https:).
@@ -127,6 +127,9 @@ const handler = async req => {
         // without it Settings does not offer the switch. A yes or no only
         emailConfigured: emailConfigured(),
         digestJournal: !!s?.digest_journal,
+        // "Tell me when someone updates a task we share" (notify.mjs reads it):
+        // on unless switched off, as a row without the v3.32 column reads
+        notifyActivity: s?.notify_activity !== false,
         // the client must render the SAVED hour, else an unrelated toggle
         // writes its default back over the user's choice
         digestHour: Number.isInteger(s?.digest_hour) ? s.digest_hour : 8,
@@ -143,9 +146,11 @@ const handler = async req => {
     if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
     const body = await req.json().catch(() => ({}))
     if (!configured) {
-      // without push only Sunday's journal switch saves; the email digest and its hour stay push's
+      // without push only Sunday's journal switch saves, and whether a shared
+      // task's updates are written to the hub; the email digest and its hour stay push's
       if (body.action !== 'prefs' || !settingsStoreConfigured()) return Response.json({ error: `Push is not configured on the host: set ${missing.join(', ')}` }, { status: 501 })
       if (typeof body.digestJournal === 'boolean') await settingsSet(user.id, { digest_journal: body.digestJournal })
+      if (typeof body.notifyActivity === 'boolean') await settingsSet(user.id, { notify_activity: body.notifyActivity })
       // the zone Sunday is counted in, for an account that has none yet
       await adoptTimeZone(user.id, body.timezone)
       return Response.json({ ok: true })
@@ -199,6 +204,8 @@ const handler = async req => {
         // opt-in: Sunday's unattended draft may read the week's journal; only written when sent,
         // so a toggle saved before migration 20260915 lands does not fail on the missing column
         ...(typeof body.digestJournal === 'boolean' ? { digest_journal: body.digestJournal } : {}),
+        // the same for the task-updates switch and v3.32's column
+        ...(typeof body.notifyActivity === 'boolean' ? { notify_activity: body.notifyActivity } : {}),
         timezone: typeof body.timezone === 'string' ? body.timezone : (s.timezone ?? null),
         digest_hour: Number.isInteger(body.digestHour) ? Math.min(23, Math.max(0, body.digestHour)) : (s.digest_hour ?? 8),
       })

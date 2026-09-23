@@ -22,6 +22,12 @@ export interface PushInfo {
   digestHour: number
   /** Sunday's unattended review draft may read the week's journal (off by default). */
   digestJournal: boolean
+  /**
+   * "Tell me when someone updates a task we share": whether the other member's
+   * changes reach this account's hub and devices (on by default). An older
+   * server leaves it out, which reads as on.
+   */
+  notifyActivity?: boolean
   timezone: string | null
   /** Sunday's review draft runs for this account — push or not — and its journal switch can be saved. */
   sundayDraft: boolean
@@ -242,7 +248,7 @@ export function testPush(): Promise<{ sent: number }> {
   return apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'test' }) }).then(json<{ sent: number }>)
 }
 
-export function savePushPrefs(prefs: { digestEmail: boolean; digestHour: number; digestJournal?: boolean }): Promise<{ ok: true }> {
+export function savePushPrefs(prefs: { digestEmail: boolean; digestHour: number; digestJournal?: boolean; notifyActivity?: boolean }): Promise<{ ok: true }> {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   return apiFetch('/api/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'prefs', ...prefs, timezone }) }).then(json<{ ok: true }>)
 }
