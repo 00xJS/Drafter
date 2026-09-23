@@ -99,8 +99,25 @@ describe('/api/log', () => {
     expect(twice.count).toBe(5)
   })
 
+  it('cleans what an older app sent by today’s rule: no title, name or number it quoted or not', async () => {
+    const res = await send(`good-${account()}`, {
+      reports: [
+        report({
+          message: 'Error: Could not save Pick up dry cleaning for Maria Gonzalez, +1 (602) 555-0142',
+          stack: 'Error: Could not save Pick up dry cleaning\n    at saveTask (https://site/assets/index-abc12345.js:1:2)',
+        }),
+      ],
+    })
+    expect(res.status).toBe(200)
+    const [{ message, stack }] = stored[0].p_reports as { message: string; stack: string }[]
+    expect(`${message}\n${stack}`).not.toMatch(/Pick|dry|cleaning|Maria|Gonzalez|602|555|0142|saveTask/)
+    expect(message).toBe('Error: Could not save … up … for …, <number>')
+    expect(stack).toBe('at /assets/index-abc12345.js:1:2')
+  })
+
   it('reads at most ten reports a request, and refuses a body past 64 KB', async () => {
-    expect(cleanReports(Array.from({ length: 25 }, (_, i) => report({ message: `failure number ${'x'.repeat(i + 1)}` })))).toHaveLength(MAX_REPORTS)
+    // numbers of three digits or fewer survive cleaning, so these are 25 different errors
+    expect(cleanReports(Array.from({ length: 25 }, (_, i) => report({ message: `failure number ${i}` })))).toHaveLength(MAX_REPORTS)
     const huge = JSON.stringify({ reports: [report({ message: 'x'.repeat(70_000) })] })
     expect((await send(`good-${account()}`, huge)).status).toBe(413)
     expect((await send(`good-${account()}`, '{not json')).status).toBe(400)

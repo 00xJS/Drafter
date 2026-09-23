@@ -3,9 +3,10 @@
 // When something breaks on a device the app sends what broke (src/errorreport.ts)
 // and this keeps a count of it for the site owner, in public.client_errors,
 // which only the service key can read (Admin → Data lists it). Each report is
-// cleaned again here with the rule the app used (shared/errorreport.mts):
-// message at most 500 characters, stack at most 4 KB, no query string on any
-// path or URL — so a device can never store more than that rule allows.
+// cleaned again here with the rule the app used (shared/errorreport.mts): a
+// message of at most 500 characters with every word that is not an error's
+// own masked, a stack of file:line:column frames, no query string on any path
+// or URL — so a device, or an older build, can never store more than that.
 //
 // A report is not worth a retry, and the app never waits on this: every answer
 // is final. Per account there is a ceiling, counted across instances as

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MESSAGE_MAX, STACK_MAX, cleanPath, cleanReport, cleanView, fingerprintOf, scrubText, stripQueries } from '../../shared/errorreport.mts'
+import { FRAMES_MAX, MASK, MESSAGE_MAX, STACK_MAX, cleanPath, cleanReport, cleanView, fingerprintOf, scrubMessage, scrubStack, stripQueries } from '../../shared/errorreport.mts'
 import type { CleanReport } from '../../shared/errorreport.mts'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import {
@@ -35,19 +35,19 @@ describe('what a report may carry', () => {
     expect(stripQueries('capacitor://drafter/index.html#/tasks?open=t1')).toBe('capacitor://drafter/index.html')
   })
 
-  it('takes out email addresses and long quoted text, which is somebody’s words, and keeps short code-like quotes', () => {
-    const said = scrubText(`Unexpected token 'B', "Buy a present for Maria’s birthday on Friday" is not valid JSON; mail jo.smith+x@example.co.uk`, MESSAGE_MAX)
+  it('takes out email addresses and quoted text, which is somebody’s words, and keeps a quoted token or property', () => {
+    const said = scrubMessage(`Unexpected token 'B', "Buy a present for Maria’s birthday on Friday" is not valid JSON; mail jo.smith+x@example.co.uk`, MESSAGE_MAX)
     expect(said).not.toContain('present')
     expect(said).not.toContain('jo.smith')
     expect(said).toContain("token 'B'")
     expect(said).toContain('<email>')
-    expect(scrubText("Cannot read properties of undefined (reading 'title')", MESSAGE_MAX)).toBe("Cannot read properties of undefined (reading 'title')")
+    expect(scrubMessage("Cannot read properties of undefined (reading 'title')", MESSAGE_MAX)).toBe("Cannot read properties of undefined (reading 'title')")
     // Safari's frames look like name@url, and are not email addresses
-    expect(scrubText('render@https://drafterz.netlify.app/assets/index.js:1:2', STACK_MAX)).toBe('render@https://drafterz.netlify.app/assets/index.js:1:2')
+    expect(scrubStack('render@https://drafterz.netlify.app/assets/index.js:1:2', STACK_MAX)).toBe('at /assets/index.js:1:2')
   })
 
   it('caps the message at 500 characters and the stack at 4 KB', () => {
-    const r = cleanReport({ message: 'x'.repeat(2000), stack: `${'at f (a.js:1:1)\n'.repeat(1000)}`, platform: 'web' })!
+    const r = cleanReport({ message: `Error: ${'failed to load '.repeat(100)}`, stack: `${'at f (a.js:1:1)\n'.repeat(1000)}`, platform: 'web' })!
     expect(r.message).toHaveLength(MESSAGE_MAX)
     expect(r.stack!.length).toBeLessThanOrEqual(STACK_MAX)
     expect(cleanReport({ message: '   ' })).toBeNull()
@@ -74,6 +74,134 @@ describe('what a report may carry', () => {
     // the numbers that change each time are not part of the name
     expect(fingerprintOf({ message: 'Request timed out after 30012 ms' })).toBe(fingerprintOf({ message: 'Request timed out after 30187 ms' }))
     expect(fingerprintOf({ message: 'boom' })).toMatch(/^[0-9a-f]{16}$/)
+  })
+})
+
+describe('what a message may say', () => {
+  // A throw that interpolates a record puts it in the message whether or not
+  // it quotes it, so the rule is about words: the words error messages are
+  // made of and whatever reads as code stay, and every other word, number, id,
+  // date or address is masked. These are the shapes the app's own throws and
+  // the server's answers take, with what must not survive them.
+  const survives = (message: string, ...private_: string[]) => {
+    const kept = scrubMessage(message)
+    for (const bit of private_) expect(kept, `"${bit}" survived in ${kept}`).not.toContain(bit)
+    return kept
+  }
+
+  it('masks a task title interpolated without quotes, and keeps the message around it', () => {
+    expect(survives('Error: Could not save Pick up dry cleaning before Friday', 'Pick', 'dry', 'cleaning', 'Friday')).toBe(`Error: Could not save ${MASK} up ${MASK} before ${MASK}`)
+    expect(survives('Error: Renew passport could not be moved to Done', 'Renew', 'passport', 'moved')).toBe(`Error: ${MASK} could not be ${MASK} to Done`)
+    // one lower-case word is a title too, when it is not a word errors use
+    expect(survives('Error: dentist', 'dentist')).toBe(`Error: ${MASK}`)
+    expect(survives('Error: BUY MILK', 'BUY', 'MILK')).toBe(`Error: ${MASK}`)
+  })
+
+  it('masks a person’s name, capitalised or not, in quotes or out', () => {
+    expect(survives('Error: No place found for Maria Gonzalez', 'Maria', 'Gonzalez')).toBe(`Error: No place found for ${MASK}`)
+    expect(survives("TypeError: Cannot read properties of undefined (reading 'Maria')", 'Maria')).toBe(`TypeError: Cannot read properties of undefined (reading '${MASK}')`)
+    expect(survives('Error: José and Zoë', 'José', 'Zoë')).toBe(`Error: ${MASK} and ${MASK}`)
+    expect(survives('Error: invite for “Maria Gonzalez” expired', 'Maria', 'Gonzalez')).toBe(`Error: invite for “${MASK}” expired`)
+  })
+
+  it('takes a phone number, a date and an email address out whole, and cuts other numbers to two digits', () => {
+    expect(survives('Error: Invalid phone +1 (602) 555-0142', '602', '555', '0142')).toBe('Error: Invalid phone <number>')
+    expect(survives('Error: call 602.555.0142 or 555-0142', '602', '555', '0142')).toBe('Error: call <number> or <number>')
+    expect(survives('Error: Journal 2026-09-22T10:30:00.000Z failed', '2026', '09-22')).toBe('Error: Journal <date> failed')
+    expect(survives('Error: no account for jo.smith@example.co.uk', 'jo.smith', 'example')).toBe('Error: no account for <email>')
+    expect(scrubMessage('Request timed out after 30012 ms')).toBe(`Request timed out after 30${MASK} ms`)
+    // a status, a position or a version stays
+    expect(scrubMessage('Error: status 404 at position 12, line 1 column 13, build 1.1.2')).toBe('Error: status 404 at position 12, line 1 column 13, build 1.1.2')
+  })
+
+  it('keeps an id’s first four characters, and no more', () => {
+    expect(survives('Error: 3f2b8c1e-1111-4a4a-9b9b-0123456789ab is not on this device', '8c1e', '0123456789ab')).toBe(`Error: 3f2b${MASK} is not on this device`)
+    expect(survives('Error: item a1b2c3d4e5f6 missing', 'c3d4e5f6')).toBe(`Error: item a1b2${MASK} missing`)
+    // a head that would read as a word the next time round goes too
+    expect(survives('Error: token eyJhbGciOiJIUzI1NiJ9 expired', 'eyJh', 'IUzI1NiJ9')).toBe(`Error: token ${MASK} expired`)
+  })
+
+  it('keeps a URL’s host and masks what its path says: a recipe’s name, an address, a private token', () => {
+    const ics = survives(
+      'Error: Could not read https://calendar.google.com/calendar/ical/joseph%40gmail.com/private-0123456789abcdef0123/basic.ics?ctz=America/Phoenix',
+      'joseph',
+      'gmail',
+      '0123456789abcdef',
+      'Phoenix',
+    )
+    expect(ics).toMatch(/^Error: Could not read https:\/\/calendar\.google\.com\//)
+    expect(survives('Couldn’t import https://www.allrecipes.com/recipe/12345/grandmas-chocolate-chip-muffins/', 'grandma', 'chocolate', 'muffins', '12345')).toMatch(
+      /^Couldn’t import https:\/\/www\.allrecipes\.com\/recipe\//,
+    )
+    // the app's own chunks, the API and the database's endpoints read as they are
+    expect(scrubMessage('Failed to fetch dynamically imported module: https://drafterz.netlify.app/assets/Settings-B-zFXg-i.js')).toBe(
+      'Failed to fetch dynamically imported module: https://drafterz.netlify.app/assets/Settings-B-zFXg-i.js',
+    )
+    expect(scrubMessage('POST https://x.supabase.co/rest/v1/rpc/sync_posts failed: 401')).toBe('POST https://x.supabase.co/rest/v1/rpc/sync_posts failed: 401')
+  })
+
+  it('keeps what error messages are made of: the class, their words and code', () => {
+    for (const message of [
+      "TypeError: Cannot read properties of undefined (reading 'title')",
+      "Failed to execute 'put' on 'IDBObjectStore': Evaluating the object store's key path did not yield a value.",
+      'TypeError: $(t).filter is not a function',
+      'NotAllowedError: The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.',
+      'new row violates row-level security policy for table "posts"',
+      'Drafter’s server could not be reached — try again in a moment.',
+      'unionPlanes: masks of different sizes',
+      'A non-Error was thrown (undefined)',
+      'JWT expired',
+      `SyntaxError: Unexpected token '<', "${MASK}"... is not valid JSON`,
+    ]) {
+      expect(scrubMessage(message)).toBe(message)
+    }
+  })
+
+  it('changes nothing the second time, so the server’s pass agrees with the app’s', () => {
+    for (const message of [
+      'Error: Could not save Pick up dry cleaning before Friday',
+      'Error: Invalid phone +1 (602) 555-0142 for jo@example.com on 2026-09-22',
+      'Error: Could not read https://calendar.google.com/calendar/ical/joseph%40gmail.com/private-0123456789abcdef0123/basic.ics',
+      'household_members 409: {"code":"23505","details":"Key (household_id, user_id)=(00000000-0000-0000-0000-0000000000f1, 3f2b8c1e-1111-4a4a-9b9b-0123456789ab)"}',
+      'Request timed out after 30012 ms; retry 4096 of 0123',
+      "TypeError: Cannot read properties of undefined (reading 'birthday')",
+    ]) {
+      const once = scrubMessage(message)
+      expect(scrubMessage(once)).toBe(once)
+    }
+  })
+})
+
+describe('what a stack may say', () => {
+  const CHROME = [
+    "TypeError: Cannot read properties of undefined (reading 'Buy milk')",
+    '    at TaskCard (https://drafterz.netlify.app/assets/Planner-Do0Ui_vC.js:12:3456)',
+    '    at async saveTitle (https://drafterz.netlify.app/assets/index-C4YVs1Io.js:1:99)',
+    '    at Array.map (<anonymous>)',
+    '    at eval (eval at <anonymous> (https://x.example/a.js:1:2), <anonymous>:1:1)',
+  ].join('\n')
+  const SAFARI = [
+    'render@capacitor://drafter/assets/index-C4YVs1Io.js:1:2',
+    'global code@https://drafterz.netlify.app/?task=Buy%20milk&token=abc:3:4',
+    '[native code]',
+    '@blob:https://drafterz.netlify.app/3f2b8c1e-1111-4a4a-9b9b-0123456789ab:10:20',
+  ].join('\n')
+
+  it('is each frame’s file, line and column: no message, no function names, no origin, no query', () => {
+    expect(scrubStack(CHROME)).toBe(['at /assets/Planner-Do0Ui_vC.js:12:3456', 'at /assets/index-C4YVs1Io.js:1:99'].join('\n'))
+    expect(scrubStack(SAFARI)).toBe(['at /assets/index-C4YVs1Io.js:1:2', 'at /:3:4', 'at blob:10:20'].join('\n'))
+    const kept = `${scrubStack(CHROME)}\n${scrubStack(SAFARI)}`
+    expect(kept).not.toMatch(/Buy|milk|TaskCard|saveTitle|token|drafterz|3f2b8c1e|TypeError/)
+  })
+
+  it('keeps at most twenty frames, changes nothing the second time, and still names the error by its top frame', () => {
+    const deep = Array.from({ length: 50 }, (_, i) => `    at f${i} (https://site/assets/a-${i}.js:${i + 1}:1)`).join('\n')
+    expect(scrubStack(deep).split('\n')).toHaveLength(FRAMES_MAX)
+    for (const stack of [CHROME, SAFARI, deep]) expect(scrubStack(scrubStack(stack))).toBe(scrubStack(stack))
+    const msg = "TypeError: Cannot read properties of undefined (reading 'title')"
+    const next = CHROME.replace('Planner-Do0Ui_vC.js:12:3456', 'Planner-Xy12Ab34.js:14:77')
+    expect(cleanReport({ message: msg, stack: CHROME, platform: 'web' })!.fingerprint).toBe(cleanReport({ message: msg, stack: next, platform: 'web' })!.fingerprint)
+    expect(scrubStack(null)).toBe('')
   })
 })
 
@@ -188,9 +316,11 @@ describe('the reporter', () => {
     const { reporter, sent, tick } = harness()
     reporter.capture(new Error('Could not save "Tell Maria about the surprise party on Saturday" for jo@example.com'))
     reporter.capture({ message: 'insert failed', details: 'Key (title)=(Tell Maria about the surprise party)' })
+    // and not when the code that threw put it in its message unquoted
+    reporter.capture(new Error('Could not save Pick up dry cleaning before Friday for Maria Gonzalez, 602-555-0142'))
     await tick()
     const wire = JSON.stringify(sent)
-    expect(wire).not.toMatch(/surprise|Maria|jo@example/)
+    expect(wire).not.toMatch(/surprise|Maria|jo@example|Pick|dry|cleaning|Friday|Gonzalez|555|0142/)
   })
 
   it('ignores browser noise, and never throws — not even when sending does', async () => {
@@ -242,7 +372,7 @@ describe('installed on the page', () => {
   it('hears an uncaught error and an unhandled rejection, and sends what waits as the page goes away', async () => {
     const sent: Sent = []
     installErrorReporting(into(sent, { platform: () => 'ios', view: () => 'calendar' }), target)
-    listeners.get('error')!({ error: new TypeError('boom'), message: 'Uncaught TypeError: boom' } as unknown as Event)
+    listeners.get('error')!({ error: new TypeError('x is undefined'), message: 'Uncaught TypeError: x is undefined' } as unknown as Event)
     listeners.get('unhandledrejection')!({ reason: new Error('fetch failed') } as unknown as Event)
     // an image that did not load says nothing here
     listeners.get('error')!({ error: null, message: '' } as unknown as Event)
@@ -251,7 +381,7 @@ describe('installed on the page', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0].keepalive).toBe(true)
     expect(sent[0].reports.map(r => [r.message, r.platform, r.view])).toEqual([
-      ['TypeError: boom', 'ios', 'calendar'],
+      ['TypeError: x is undefined', 'ios', 'calendar'],
       ['Error: fetch failed', 'ios', 'calendar'],
     ])
   })
@@ -261,10 +391,10 @@ describe('installed on the page', () => {
     // once per page: a second install hands back the first
     expect(installErrorReporting(into([]), target)).toBe(reporter)
     new ErrorBoundary({ where: 'Tasks', children: null }).componentDidCatch(new Error('TDZ'))
-    reportRenderError(new Error('from a layer'), 'the event editor')
+    reportRenderError(new Error('from a sheet'), 'the event editor')
     expect(reporter.waiting().map(r => [r.message, r.view])).toEqual([
       ['Error: TDZ', 'tasks'],
-      ['Error: from a layer', 'the event editor'],
+      ['Error: from a sheet', 'the event editor'],
     ])
   })
 
