@@ -114,7 +114,7 @@ The membership is on and the bundle ID is `app.drafter.ios`; sign with the paid 
 
 ## The icon
 
-`public/icon.svg` is the mark, and everything else is drawn from it. After changing it, run `node scripts/launch-logo.mjs` to redraw the iPhone launch screen's artwork; `launchscreen.test.ts` fails if they drift apart.
+`public/icon.svg` is the mark, and everything else is drawn from it. After changing it, run `node scripts/app-icons.mjs` to redraw the iPhone and web icons (opaque RGB, as the App Store requires) and `node scripts/launch-logo.mjs` to redraw the iPhone launch screen's artwork; `launchscreen.test.ts` fails if they drift apart.
 
 ## Garment cut-out
 
