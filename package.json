@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "check": "npm run lint && vitest run && tsc --noEmit && tsc -p tsconfig.shared.json && tsc -p tsconfig.server.json && tsc -p tsconfig.config.json && vite build && node scripts/check-precache.mjs",
-    "lint": "eslint src netlify/functions mcp shared scripts e2e playwright.config.ts --max-warnings 0",
+    "check": "npm run lint && node scripts/compiler-check.mjs && vitest run && tsc --noEmit && tsc -p tsconfig.shared.json && tsc -p tsconfig.server.json && tsc -p tsconfig.config.json && vite build && node scripts/check-precache.mjs",
+    "lint": "eslint src netlify/functions mcp shared scripts e2e playwright.config.ts vite.config.ts capacitor.config.ts --max-warnings 0",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "test": "vitest run",
@@ -44,6 +44,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
     "@eslint/js": "^9.35.0",

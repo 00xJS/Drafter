@@ -4,12 +4,21 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 // What src is held to. The server code — Netlify functions, the MCP server,
-// the rules shared with the app, and the scripts — is held to the same.
+// the rules shared with the app, and the scripts — is held to the same, and
+// so are the build's own config files.
 const rules = {
   '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-  '@typescript-eslint/no-explicit-any': 'off',
+  '@typescript-eslint/no-explicit-any': 'error',
   'no-empty': ['error', { allowEmptyCatch: true }],
 }
+
+/**
+ * Where `any` stays allowed: the hand-written declarations of the server's
+ * JavaScript, whose records are loose by design (mcp/data.d.mts `Item`), and
+ * the tests, whose stand-ins for Deno, fetch or a client are typed only as far
+ * as the test needs. Everything the app and the server run is typed.
+ */
+const looseAny = { '@typescript-eslint/no-explicit-any': 'off' }
 
 const server = ['netlify/functions', 'mcp', 'shared', 'scripts']
 
@@ -84,6 +93,10 @@ export default tseslint.config(
     rules: { ...reactHooks.configs['recommended-latest'].rules, ...rules },
   },
   {
+    files: ['src/__tests__/**/*.{ts,tsx}'],
+    rules: looseAny,
+  },
+  {
     // Home and the cards it draws, the due badge every task list draws, and
     // Bills, Finance and Stats: views a phone is left open on overnight, and
     // resumed on days later. Other views still read the clock as they
@@ -114,12 +127,19 @@ export default tseslint.config(
   {
     // The hand-written declarations beside those modules.
     files: server.map(dir => `${dir}/**/*.d.mts`),
+    rules: { ...rules, ...looseAny },
+  },
+  {
+    // The build's own configuration, run by Node through Vite, the Capacitor
+    // CLI and Playwright (tsconfig.config.json and e2e/tsconfig.json type-check them).
+    files: ['vite.config.ts', 'capacitor.config.ts', 'playwright.config.ts'],
+    languageOptions: { globals: globals.node },
     rules,
   },
   {
     // The rules shared with the app, in TypeScript (tsconfig.shared.json):
     // typed properly, so nothing in them is `any`.
     files: ['shared/**/*.mts'],
-    rules: { ...rules, '@typescript-eslint/no-explicit-any': 'error' },
+    rules,
   },
 )

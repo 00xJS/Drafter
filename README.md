@@ -87,13 +87,13 @@ npm run dev          # http://localhost:5173
 Without Supabase settings it runs in local mode, keeping everything in the browser. For cloud mode, copy `.env.example` to `.env.local`; it names every environment variable and what each turns on.
 
 ```bash
-npm run check        # lint, tests, type-checks (app, shared rules, server, build config), the build and the precache check
+npm run check        # lint, the React Compiler check, tests, type-checks (app, shared rules, server, build config), the build and the precache check
 npm run db:smoke     # every migration on a throwaway Postgres (brew install postgresql@17)
 npm run mcp:smoke    # the real MCP server against that database
 npm run e2e          # browser tests: an iPhone in WebKit and a desktop in Chromium (npx playwright install chromium webkit, once)
 ```
 
-The smoke tests and the browser tests aren't part of `check`, since Netlify has no Postgres and no browsers; CI runs them on every push, and type-checks and lints the Deno bot (`deno check` and `deno lint`), which `check` doesn't read either. Run `db:smoke` after any migration.
+The smoke tests and the browser tests aren't part of `check`, since Netlify has no Postgres and no browsers; CI runs them on every push, and type-checks and lints the Deno bot (`deno check` and `deno lint`), which `check` doesn't read either. Run `db:smoke` after any migration. The React Compiler check fails when a component or hook it used to compile is left as written (an eslint-disable of the hooks rules is the usual cause); `scripts/compiler-baseline.json` lists the ones still left, and `node scripts/compiler-check.mjs --update` takes one off once it compiles.
 
 ## Deploy
 
