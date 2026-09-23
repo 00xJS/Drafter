@@ -103,6 +103,7 @@ function storedSummaryOpen(): boolean {
     return true
   }
 }
+
 function storeSummaryOpen(open: boolean): void {
   try {
     localStorage.setItem(SUMMARY_KEY, open ? '1' : '0')

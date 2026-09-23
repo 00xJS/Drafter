@@ -279,6 +279,7 @@ function storedStatsOpen(): boolean {
     return false
   }
 }
+
 function storeStatsOpen(open: boolean): void {
   try {
     localStorage.setItem(STATS_KEY, open ? '1' : '0')
@@ -286,6 +287,7 @@ function storeStatsOpen(open: boolean): void {
     /* ignore */
   }
 }
+
 /**
  * Where the reader was when they last left the page. JournalView unmounts on
  * every view change, so without this "back to the journal" always means back to
