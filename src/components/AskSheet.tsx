@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AskDoc, AskKind, AskPrep, AskSources, parseAskAnswer, prepareAsk } from '../ask'
 import { askDrafter } from '../ai'
+import { ASK_HELP, isHelpQuestion } from '../assistanthelp'
 import { relativeDayLabel } from '../journal'
 import { excerpt } from '../utils'
 import { Modal, ModalHead } from './Modal'
@@ -83,6 +84,15 @@ type Phase =
 
 type Answer = { answer: string; cites: string[] }
 
+/**
+ * What a question starts as. One about Ask itself is answered at once, with
+ * no model call: matched against the planner it found nothing, and said so.
+ */
+function firstPhase(next: Request): Phase {
+  if (isHelpQuestion(next.question)) return { kind: 'answered', parts: [ASK_HELP], also: [] }
+  return worthAsking(next.prep) ? { kind: 'busy' } : { kind: 'empty' }
+}
+
 interface Props {
   /** From the palette's "Ask Drafter: “…”" row: asked as soon as the sheet opens. Empty from the palette command. */
   initialQuestion?: string
@@ -108,7 +118,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
     const question = initialQuestion.trim()
     return question ? { id: 1, question, prep: prepare(question, journal) } : null
   })
-  const [phase, setPhase] = useState<Phase>(() => (!req ? { kind: 'idle' } : worthAsking(req.prep) ? { kind: 'busy' } : { kind: 'empty' }))
+  const [phase, setPhase] = useState<Phase>(() => (req ? firstPhase(req) : { kind: 'idle' }))
   const askRef = useRef(ask)
   useLayoutEffect(() => {
     askRef.current = ask
@@ -119,11 +129,11 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
   /** Ask this, now: it reads as busy, or as empty when nothing matched, before the effect below sends it. */
   const startAsking = (next: Request) => {
     setReq(next)
-    setPhase(worthAsking(next.prep) ? { kind: 'busy' } : { kind: 'empty' })
+    setPhase(firstPhase(next))
   }
 
   useEffect(() => {
-    if (!req || !worthAsking(req.prep)) return
+    if (!req || isHelpQuestion(req.question) || !worthAsking(req.prep)) return
     if (inflight.current?.id !== req.id) inflight.current = { id: req.id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts) }
     const pending = inflight.current.answer
     let live = true
@@ -209,7 +219,7 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
         {req && (
           <section className="ask-answer-wrap" aria-live="polite">
             {phase.kind === 'busy' && <p className="ask-note">Reading your planner…</p>}
-            {phase.kind === 'empty' && <p className="ask-note">Nothing in your planner matches that.</p>}
+            {phase.kind === 'empty' && <p className="ask-note">Nothing in your planner matches that. General questions go to the chat.</p>}
             {phase.kind === 'failed' && (
               <p className="ask-note ask-failed">
                 {phase.text}{' '}

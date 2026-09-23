@@ -147,11 +147,13 @@ export function writeChatSeen(at: string): void {
 }
 
 /**
- * What the composer offers as a starting point for the assistant: questions it
- * can answer from the planner, and two asks that come back as suggestions to
- * apply rather than as an answer.
+ * What the composer offers as a starting point for the assistant: what it can
+ * do (answered from its own help, src/assistanthelp.ts), questions it can
+ * answer from the planner, and two asks that come back as suggestions to apply
+ * rather than as an answer.
  */
 export const CHAT_PROMPTS = [
+  'What can you do?',
   'Tell me about my week',
   'What is due for me tomorrow?',
   'Add milk and eggs to the grocery list',

@@ -96,10 +96,18 @@ describe('AskSheet', () => {
   })
 
   it('makes no call when nothing matches, and opens empty from the palette command', () => {
-    expect(sheet('Where is the moon?')).toContain('Nothing in your planner matches that.')
+    expect(sheet('Where is the moon?')).toContain('Nothing in your planner matches that. General questions go to the chat.')
     const empty = sheet('')
     expect(empty).not.toContain('Sources')
     expect(empty).toContain('When did I last see Mum? What did we eat last week?')
+  })
+
+  it('answers a question about itself at once, where it used to say nothing matched', () => {
+    // matched against the planner, "What can you do?" found nothing and said so
+    const html = sheet('What can you do?')
+    expect(html).toContain('Ask looks through your planner')
+    expect(html).not.toContain('Nothing in your planner matches that.')
+    expect(html).not.toContain('Reading your planner…')
   })
 
   it('words a failed answer: busy, not here at all, or worth another try', () => {

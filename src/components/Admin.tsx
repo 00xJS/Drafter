@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
 import { siteOrigin } from '../api'
 import { isEnvelope, unwrapSnapshot } from '../backupcrypto'
+import type { EvalResult } from '../chateval'
 import { saveFile } from '../native'
 import { SnapshotFiles, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
 import { AdminOps } from './AdminOps'
@@ -140,6 +141,8 @@ export function Admin({ initialGroup = 'users' }: Props) {
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
   const [link, setLink] = useState<SnapshotLink | null>(null)
   const [aiTest, setAiTest] = useState<AiTest | null>(null)
+  /** The assistant check: one reply per kind of answer, as each lands. */
+  const [chatCheck, setChatCheck] = useState<{ results: (EvalResult | undefined)[]; of: number } | null>(null)
   const [pushTest, setPushTest] = useState<PushTest | null>(null)
   const [digestTest, setDigestTest] = useState<DigestTest | null>(null)
   const [error, setError] = useState('')
@@ -262,6 +265,20 @@ export function Admin({ initialGroup = 'users' }: Props) {
       setPending('')
     }
   }
+
+  /** Ask the chat one question of each kind through the real model (src/chateval.ts), showing each verdict as it lands. */
+  const checkAssistant = () =>
+    runNamed('chatCheck', async () => {
+      const { CHAT_EVAL, runChatEval } = await import('../chateval')
+      const results: (EvalResult | undefined)[] = []
+      setChatCheck({ results: [], of: CHAT_EVAL.length })
+      await runChatEval({
+        onResult: (r, i) => {
+          results[i] = r
+          setChatCheck({ results: [...results], of: CHAT_EVAL.length })
+        },
+      })
+    })
 
   const isOwnerRow = (u: AdminUser) => !!ownerEmail && u.email.toLowerCase() === ownerEmail.toLowerCase()
 
@@ -763,6 +780,24 @@ export function Admin({ initialGroup = 'users' }: Props) {
                       </p>
                     ))}
                   </>
+                )}
+                <div className="check-add">
+                  <button className="btn" disabled={busy} onClick={checkAssistant}>
+                    {pending === 'chatCheck' ? `Checking… ${chatCheck?.results.filter(Boolean).length ?? 0} of ${chatCheck?.of ?? '…'}` : 'Check the assistant'}
+                  </button>
+                </div>
+                <p className="field-hint">
+                  Asks the chat one question of each kind it should handle (about itself, a general question, a thank-you, a change) through the real model, with nothing
+                  from anyone's planner, and says which came back as they should. About a minute.
+                </p>
+                {chatCheck?.results.map(
+                  r =>
+                    r && (
+                      <p key={r.case.question} className="field-hint">
+                        <span className={r.pass ? 'sync-ok' : 'warn'}>{r.pass ? 'OK' : 'Off'}</span> {r.case.label}: “{r.case.question}” — {r.why}
+                        {!r.pass && r.answer && <> · said “{r.answer.length > 160 ? `${r.answer.slice(0, 157)}…` : r.answer}”</>}
+                      </p>
+                    ),
                 )}
               </HealthCard>
 
