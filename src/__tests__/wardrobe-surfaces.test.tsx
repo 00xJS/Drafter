@@ -27,7 +27,7 @@ import {
   wornBetween,
   yourUniform,
 } from '../wardrobe'
-import { plannerSource } from './source'
+import { partialSource, plannerSource } from './source'
 
 // The wardrobe beyond Home → Wardrobe: the palette finds pieces and saved
 // outfits, Ask draws on what was worn, the Calendar and the Week review show
@@ -619,7 +619,7 @@ describe('the Calendar shows a day’s look', () => {
 
     it('in the day sheet through the same line, which holds at 375pt in either theme: one line, cut short, in theme tokens', () => {
       expect(read('../components/Calendar.tsx')).toContain('const plan = on ? undefined : planFor(wears ?? [], k)')
-      const css = read('../styles/18-wardrobe.css')
+      const css = partialSource('18-wardrobe.css')
       expect(/\.cal-look-label \{([^}]*)\}/.exec(css)![1]).toMatch(/min-width: 0;\s*white-space: nowrap;\s*overflow: hidden;\s*text-overflow: ellipsis;/)
       const rule = /\.cal-look\.planned [^{]*\{([^}]*)\}/.exec(css)![1]
       expect(rule).toMatch(/color: var\(--[a-z0-9-]+\);/)
@@ -649,7 +649,7 @@ describe('the Calendar shows a day’s look', () => {
   it('outlines Today like the arrows, and the title flexes so › sits with it on the right', () => {
     // `period-end`: Today is the bar's trailing action now (v3.28)
     expect(render('day')).toContain('<button class="btn period-end">Today</button>')
-    const title = /\.cal-toolbar h2 \{([^}]*)\}/.exec(read('../styles/03-board-calendar.css'))![1]
+    const title = /\.cal-toolbar h2 \{([^}]*)\}/.exec(partialSource('03-board-calendar.css'))![1]
     expect(title).toMatch(/flex:\s*1/)
     expect(title).toMatch(/min-width:\s*0/)
     // and the month sits between the arrows rather than shoved to the left
@@ -657,7 +657,7 @@ describe('the Calendar shows a day’s look', () => {
   })
 
   it('paints Off and a holiday as their own work badges', () => {
-    const css = read('../styles/17-meals-work-bills.css')
+    const css = partialSource('17-meals-work-bills.css')
     expect(css).toMatch(/\.cal-work-badge\.off \{[^}]*--tone-orange/)
     expect(css).toMatch(/\.cal-work-badge\.holiday \{[^}]*--tone-amber/)
   })
@@ -810,7 +810,7 @@ describe('Stats: streaks, the photo calendar, the podium, your uniform and cost 
 })
 
 describe('the wardrobe’s new styles', () => {
-  const css = read('../styles/18-wardrobe.css')
+  const css = partialSource('18-wardrobe.css')
 
   it('lays the photo calendar in seven columns that shrink rather than scroll at 375pt', () => {
     expect(css).toMatch(/\.photo-cal-head,\s*\.photo-cal \{[^}]*grid-template-columns: repeat\(7, minmax\(0, 1fr\)\);/)

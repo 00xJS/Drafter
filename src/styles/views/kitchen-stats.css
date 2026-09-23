@@ -1,0 +1,53 @@
+/* KitchenStats's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 05-stats-charts.css ---------- */
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.chart-table th {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+.chart-table th.num {
+  text-align: right;
+}
+
+/* ---------- from 14-kitchen-today.css ---------- */
+.photo-cal-cell.dinner-out .photo-cal-day::after {
+  background: var(--cal-meal-out);
+}
+.photo-cal-cell.dinner-bought .photo-cal-day::after {
+  background: var(--cal-meal-bought);
+}
+.kitchen-way-out {
+  fill: var(--cal-meal-out);
+  background: var(--cal-meal-out);
+}
+.kitchen-way-bought {
+  fill: var(--cal-meal-bought);
+  background: var(--cal-meal-bought);
+}
+.kitchen-share-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.kitchen-share-bar > span {
+  flex: 1 1 0;
+  min-width: 3px;
+}
+.kitchen-share-line {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}

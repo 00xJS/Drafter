@@ -33,10 +33,6 @@
 }
 
 /* ---- the sheet */
-.notices-read-all {
-  margin-left: auto;
-  margin-right: 4px;
-}
 .notices-day + .notices-day {
   margin-top: 16px;
 }
@@ -72,83 +68,6 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.notice-row:hover {
-  background: var(--surface-2);
-}
-.notice-row.unread {
-  background: var(--accent-softer);
-  border-color: var(--accent-soft);
-}
-.notice-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--text-2);
-}
-.notice-icon.is-done {
-  background: var(--tone-green-bg);
-  color: var(--tone-green);
-}
-.notice-icon.is-comment {
-  background: var(--tone-sky-bg);
-  color: var(--tone-sky);
-}
-.notice-icon.is-assigned {
-  background: var(--tone-violet-bg);
-  color: var(--tone-violet);
-}
-.notice-icon.is-progress {
-  background: var(--tone-amber-bg);
-  color: var(--tone-amber);
-}
-.notice-icon.is-alarm {
-  background: var(--tone-rose-bg);
-  color: var(--tone-rose);
-}
-.notice-icon.is-digest,
-.notice-icon.is-reminder {
-  background: var(--tone-orange-bg);
-  color: var(--tone-orange);
-}
-.notice-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.notice-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-.notice-row.unread .notice-title {
-  font-weight: 700;
-}
-.notice-line {
-  font-size: 0.8125rem;
-  line-height: 1.35;
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
-.notice-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  font-size: 0.6875rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.notice-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-}
 .notices-empty {
   display: flex;
   flex-direction: column;
@@ -164,14 +83,4 @@
 .notices-empty p:first-of-type {
   color: var(--text);
   font-weight: 600;
-}
-
-/* the phone: rows a thumb can hit, and a line that reads at arm's length */
-@media (max-width: 640px) {
-  .notice-row {
-    padding: 12px 8px;
-  }
-  .notice-title {
-    font-size: 0.9375rem;
-  }
 }

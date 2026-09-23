@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { imageFiles, mediaURL, saveMedia } from '../media'
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
+import { imageFiles, mediaURL } from '../media'
+import { savePicture } from '../picture'
 import { openExternal } from '../native'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
 import { Icon } from './Icon'
@@ -172,14 +173,19 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     hydrateImages()
   }, [value, hydrateImages])
 
-  useEffect(() => {
+  // The page as it opens: the value it opened on, focused if asked. Once, as
+  // the pad mounts — a later value arrives through the effect above, and a
+  // later autoFocus must not pull the caret away from where it is.
+  const fill = useEffectEvent(() => {
     const el = box.current
     if (!el) return
     el.innerHTML = sanitizeHtml(value)
     lastEmitted.current = value
     hydrateImages()
     if (autoFocus) el.focus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useEffect(() => {
+    fill()
   }, [])
 
   const exec = (command: string, arg?: string) => {
@@ -215,7 +221,8 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     if (list.length === 0) return
     box.current?.focus()
     for (const file of list) {
-      const id = await saveMedia(file)
+      // at the size the app keeps a picture, not the camera's full photo
+      const id = await savePicture(file)
       const url = await mediaURL(id)
       insertHtml(`<p><img data-media="${id}" src="${url ?? ''}" alt="${file.name.replace(/"/g, '')}"></p>`)
     }

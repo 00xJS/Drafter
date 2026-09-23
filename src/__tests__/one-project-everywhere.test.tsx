@@ -7,7 +7,6 @@ import { Landing } from '../components/Landing'
 import { NotesIndex } from '../components/notes/NotesIndex'
 import { NotesView } from '../components/NotesView'
 import { ProjectEditor } from '../components/ProjectEditor'
-import { Roadmap } from '../components/Roadmap'
 import { Search } from '../components/Search'
 import { TaskCard } from '../components/TaskCard'
 import { Today } from '../components/Today'
@@ -77,13 +76,6 @@ describe('nothing starts a second project', () => {
     expect(commands.filter(c => /project/i.test(c.label)).map(c => c.label)).toEqual([])
   })
 
-  it('the Timeline has no + New project, and with no project says so plainly', () => {
-    const html = renderToStaticMarkup(<Roadmap projects={[]} tasks={[]} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
-    expect(html).toContain('<h2>No projects</h2>')
-    expect(html).not.toMatch(/New project|<button/)
-    expect(read('../components/Roadmap.tsx')).not.toMatch(/New project|onNewProject/)
-  })
-
   it('Notes has no "Notes live inside projects" hero', () => {
     const html = renderToStaticMarkup(<NotesView projects={[]} getLatest={() => undefined} onSave={noop} onSelectProject={noop} onBack={noop} onCreateTask={noop} />)
     expect(html).not.toMatch(/Notes live inside projects|New project|<button/)
@@ -91,7 +83,7 @@ describe('nothing starts a second project', () => {
 
   it('the shell hands nothing a way to start one', () => {
     expect(plannerSource()).not.toMatch(/newProject|onNewProject/)
-    for (const f of ['../components/NotesView.tsx', '../components/Roadmap.tsx']) expect(read(f), f).not.toMatch(/onNewProject|\+ New project/)
+    expect(read('../components/NotesView.tsx')).not.toMatch(/onNewProject|\+ New project/)
   })
 
   it('still opens the one project from a calendar day and from search', () => {
@@ -110,20 +102,6 @@ describe('nothing starts a second project', () => {
 })
 
 describe('no progress for the project', () => {
-  it('the Timeline draws LIFE’s span with no progress bar, count or fill', () => {
-    const tasks = [task('1', { status: 'done', dueAt: '2026-09-02T09:00:00.000Z' }), task('2', { dueAt: '2026-09-03T09:00:00.000Z' })]
-    const html = renderToStaticMarkup(<Roadmap projects={[LIFE]} tasks={tasks} events={[]} sourceMap={new Map()} onOpenProject={noop} onOpenTask={noop} />)
-    expect(html).toContain('class="rm-bar inferred"')
-    expect(html).toContain('LIFE')
-    expect(html).not.toMatch(/rm-progress|rm-bar-fill|progress|1\/2/)
-  })
-
-  it('nothing on the Timeline works it out, and its rules are gone from the sheet', () => {
-    const src = read('../components/Roadmap.tsx')
-    for (const gone of ['ProgressBar', 'projectProgress', 'rm-progress', 'rm-bar-fill']) expect(src, gone).not.toContain(gone)
-    expect(sheetSource()).not.toMatch(/\.rm-progress|\.rm-bar-fill/)
-  })
-
   it('the project’s own editor has no progress bar or count of tasks done, and keeps the rest', () => {
     const tasks = [task('1', { status: 'done' }), task('2'), task('3', { status: 'canceled' })]
     const html = renderToStaticMarkup(<ProjectEditor project={LIFE} tasks={tasks} getLatest={() => LIFE} onSave={noop} onDelete={noop} onClose={noop} onOpenNotes={noop} />)

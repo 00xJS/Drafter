@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useNow } from '../useNow'
+import { useDayKey } from '../useDayKey'
+import { timeOn } from '../useDayClock'
+import { localDayKey } from '../journal'
 import {
   Meal,
   CADENCE_META,
@@ -90,6 +93,24 @@ const SORTS: { key: SortKey; label: string }[] = [
 
 // Needs attention: overdue, due, never (a rhythm but no outing yet), then the rest by most recently been.
 const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3, off: 3 }
+
+const byName = (a: PlaceStats, b: PlaceStats) => a.place.name.localeCompare(b.place.name)
+/** When a row last went, '' for never: sorted as text, never first. */
+const lastWent = (s: PlaceStats) => s.lastAt ?? ''
+
+/**
+ * Each sort's order, out here rather than in the list: written inline there,
+ * one of them (a `??` feeding an `||` chain) is a shape the React Compiler
+ * (1.0) does not handle yet, and it left the whole list as written for it.
+ */
+const PLACE_SORTS: Record<SortKey, (a: PlaceStats, b: PlaceStats) => number> = {
+  attention: (a, b) => ATTENTION_RANK[a.status] - ATTENTION_RANK[b.status] || lastWent(b).localeCompare(lastWent(a)) || byName(a, b),
+  az: byName,
+  za: (a, b) => byName(b, a),
+  most: (a, b) => b.visits.length - a.visits.length,
+  longest: (a, b) => lastWent(a).localeCompare(lastWent(b)) || byName(a, b),
+  recent: (a, b) => lastWent(b).localeCompare(lastWent(a)) || byName(a, b),
+}
 
 export function PlaceForm({
   place,
@@ -268,10 +289,8 @@ function LogOuting({
   onLog(atIso: string, note: string, peopleIds: string[]): void
   onClose(): void
 }) {
-  const today = new Date()
-  const [date, setDate] = useState(
-    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
-  )
+  // today, read once as the sheet opens, as Saw them does on People
+  const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [ids, setIds] = useState<string[]>([])
   return (
@@ -541,19 +560,25 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
     if (wantOpen && wantOpen !== asked.wantOpen) setOpenId(wantOpen)
     if (openAdd && !asked.openAdd) setEditing({})
   }
+  // Once per ask, as on People: a new setter alone is no new ask
+  const openConsumed = useEffectEvent(() => onOpenConsumed?.())
+  const addConsumed = useEffectEvent(() => onAddConsumed?.())
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
-    onOpenConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+    openConsumed()
   }, [wantOpen])
   useEffect(() => {
-    if (openAdd) onAddConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+    if (openAdd) addConsumed()
   }, [openAdd])
 
-  const allStats = useMemo(() => places.map(p => placeStats(p, tasks, people, new Date(), meals, myId)), [places, tasks, people, meals, myId])
+  // counted at the time what they count changes, and again when the day does
+  const today = useDayKey()
+  const allStats = useMemo(() => {
+    const now = timeOn(today)
+    return places.map(p => placeStats(p, tasks, people, now, meals, myId))
+  }, [places, tasks, people, meals, myId, today])
 
   // who you go out with most, first: the With row offers them, "+ Who" everyone
   const company = useMemo(
@@ -570,39 +595,24 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
   // the ideas on screen were asked for someone else, or not at all
   const askAgain = !!ideasError || (askedWith !== null && !sameIds(askedWith, withPeople.map(p => p.id)))
 
-  const getIdeas = async () => {
+  // a chain rather than try/catch/finally, which the React Compiler cannot
+  // compile; the question is put together inside it, so a failure there is
+  // said too, and the button is freed whatever happened
+  const getIdeas = () => {
     const asked = withPeople.map(p => p.id)
     setIdeasBusy(true)
     setIdeasError('')
     setAskedWith(asked)
-    try {
-      setIdeas(await suggestOuting(outingIdeasInput({ places, people, tasks, meals, withIds: asked })))
-    } catch (e) {
-      setIdeasError((e as Error).message)
-    } finally {
-      setIdeasBusy(false)
-    }
+    void Promise.resolve()
+      .then(() => suggestOuting(outingIdeasInput({ places, people, tasks, meals, withIds: asked })))
+      .then(setIdeas, (e: Error) => setIdeasError(e.message))
+      .then(() => setIdeasBusy(false))
   }
 
   const shown = useMemo(() => {
     // Places → Stats counts by this same rule, so its figures and these rows agree
     const matches = placeMatcher(places, filter)
-    const list = allStats.filter(s => matches(s.place))
-    const sorted = [...list]
-    if (sort === 'attention')
-      sorted.sort(
-        (a, b) =>
-          ATTENTION_RANK[a.status] - ATTENTION_RANK[b.status] ||
-          (b.lastAt ?? '').localeCompare(a.lastAt ?? '') ||
-          a.place.name.localeCompare(b.place.name),
-      )
-    else if (sort === 'az') sorted.sort((a, b) => a.place.name.localeCompare(b.place.name))
-    else if (sort === 'za') sorted.sort((a, b) => b.place.name.localeCompare(a.place.name))
-    else if (sort === 'most') sorted.sort((a, b) => b.visits.length - a.visits.length)
-    else if (sort === 'longest')
-      sorted.sort((a, b) => (a.lastAt ?? '').localeCompare(b.lastAt ?? '') || a.place.name.localeCompare(b.place.name))
-    else sorted.sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? '') || a.place.name.localeCompare(b.place.name))
-    return sorted
+    return allStats.filter(s => matches(s.place)).sort(PLACE_SORTS[sort])
   }, [allStats, places, filter, sort])
 
   // The tiles and the year in places moved to Places → Stats (PlacesStats),

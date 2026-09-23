@@ -1,18 +1,8 @@
-import { Priority, PRIORITY_META, Project, Task } from '../types'
+import { Priority, PRIORITY_META, Task } from '../types'
 import { dueLabel, dueTone } from '../taskutils'
 import { useNow } from '../useNow'
 import { graphicInk } from '../contrast'
 import { useTheme } from '../theme'
-
-export function ProjectChip({ project, compact }: { project: Project; compact?: boolean }) {
-  return (
-    <span className="pchip static" title={project.name}>
-      <span className="pdot" style={{ background: project.color }} />
-      {project.emoji && <span className="pchip-emoji">{project.emoji}</span>}
-      {!compact && <span className="pchip-name">{project.name}</span>}
-    </span>
-  )
-}
 
 export function PriorityMark({ priority, withLabel }: { priority: Priority; withLabel?: boolean }) {
   if (priority === 'normal' && !withLabel) return null

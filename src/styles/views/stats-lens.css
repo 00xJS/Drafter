@@ -1,0 +1,158 @@
+/* StatsLens's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 18-stats-lens.css ---------- */
+/* A run of cards under one heading, rather than a page of equal white boxes:
+   the heading sits OUTSIDE the cards, on the page ground, so a section reads
+   as a group before you read any figure in it. */
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stats-section > h2 {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* the line under a section heading, for a section whose counting needs a word */
+.stats-section > h2 + .stats-note {
+  margin-top: -6px;
+}
+.stats-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+/* The lens's own head: the segmented track, then the window the figures count.
+   Sticky under the top bar so the window you chose stays in reach down a long
+   page — the bar's own height is a token, never a number kept here.
+
+   z-index 2, the same as every other sticky header in the app (the journal's
+   month header sits at the same `top` with the same 2). It has to stay UNDER
+   the pull-to-refresh disc, which is z 10 (19-native-shell.css): above it, the
+   whole tab pulled with a haptic and a spin the person never saw. */
+.stats-bar {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+.stats-window {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The window is the page's own filter, not an aside in a card head, so it
+   takes the same track as the segments above it rather than staying the row
+   of outlined pills the kit draws inside a chart card. */
+.stats-window > .segmented {
+  flex: 1 1 200px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  max-width: 320px;
+}
+.lens-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.lens-row:last-child {
+  border-bottom: none;
+}
+.lens-row-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lens-row-name > b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.lens-row-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.lens-row-value {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A bar that fills its own row, for a share that needs no gutter of labels.
+   The track is a surface step rather than --viz-empty at its opacity: opacity
+   here would fade the fill inside it too. */
+.lens-meter {
+  flex: 1 1 90px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  min-width: 60px;
+}
+.lens-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--viz-series-1);
+}
+.mood-bar {
+  width: 100%;
+  max-width: 48px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--viz-mood);
+  min-height: 3px;
+}
+.mood-face {
+  font-size: 1rem;
+  line-height: 1;
+}
+.mood-count {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.stats-lens > .stats-section {
+  animation: stats-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.stats-lens > .stats-section:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.stats-lens > .stats-section:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.stats-lens > .stats-section:nth-child(n + 4) {
+  animation-delay: 0.12s;
+}
+/* On a phone the window switch spans the page like the tab track above it.
+   The 320px cap it shares with the desktop left it stopping at 86% of the
+   line, just short of the full-width track directly above — which reads as a
+   control that failed to finish rather than one sized on purpose. The cap
+   still earns its keep on a wide page, where three words stretched across
+   1200px would look worse (v3.28). */
+@media (max-width: 640px) {
+  .stats-window > .segmented {
+    width: 100%;
+    max-width: none;
+  }
+}

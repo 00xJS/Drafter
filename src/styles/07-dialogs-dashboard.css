@@ -21,38 +21,10 @@
   align-items: center;
 }
 
-.media-thumb {
-  position: relative;
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-2);
-}
-
 .media-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.media-remove {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  border: none;
-  background: var(--media-scrim);
-  color: var(--on-media);
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  /* a glyph in a fixed-size tap target */
-  font-size: 10px;
-  line-height: 1;
 }
 
 .media-add {
@@ -67,10 +39,6 @@
 .media-add:hover {
   border-color: var(--accent);
   color: var(--accent-ink);
-}
-
-.media-missing {
-  color: var(--muted);
 }
 
 .card-flag {
@@ -174,24 +142,6 @@
 .dash-reason {
   font-size: 0.75rem;
   color: var(--danger);
-}
-
-.dash-when {
-  text-align: right;
-  white-space: nowrap;
-  display: flex;
-  flex-direction: column;
-}
-
-.dash-when small {
-  color: var(--muted);
-}
-
-.dash-fix {
-  color: var(--accent-ink);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 /* ---------- new interaction chrome ---------- */
@@ -333,14 +283,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.filter-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-2);
-}
-
 .show-all {
   display: block;
   margin: 12px auto;
@@ -361,59 +303,11 @@
   gap: 8px;
 }
 
-.mpost {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-}
-
 .mpost-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-}
-
-.mpost-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 0.75rem;
-  color: var(--muted);
-  flex-wrap: wrap;
-}
-
-.action-menu {
-  position: relative;
-}
-
-.action-menu summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.action-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.action-menu[open] .action-menu-items {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-pop);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  min-width: 180px;
 }
 
 /* ---------- garment cut-out ----------
@@ -444,23 +338,6 @@
   min-width: 0;
 }
 
-.cutout-pane figcaption {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.cutout-stage {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 340px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
 .cutout-stage img,
 .cutout-dot {
   position: absolute;
@@ -470,46 +347,8 @@
   object-fit: contain;
 }
 
-.cutout-white {
-  background: var(--photo-white);
-}
-
-button.cutout-pick {
-  cursor: crosshair;
-}
-
-.cutout[data-state='preparing'] .cutout-stage img {
-  opacity: 0.5;
-}
-
-.cutout-dot {
-  pointer-events: none;
-}
-
-/* a mark on the photo, not on the page: the photo tokens, the same in both
-   themes, so a white ring and a dark halo keep it seen on any garment */
-.cutout-dot circle {
-  fill: var(--accent);
-  stroke: var(--on-media);
-  stroke-width: 2px;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 1.5px var(--media-scrim));
-}
-
 /* transform only, so it keeps turning while the segmenter holds the main
    thread; a quick turn, like the pull-to-refresh disc, under the 400ms cap */
-.cutout-spinner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 36px;
-  height: 36px;
-  margin: -18px 0 0 -18px;
-  border-radius: 50%;
-  border: 3px solid var(--border-strong);
-  border-top-color: var(--accent);
-  animation: cutout-spin 0.4s linear infinite;
-}
 
 @keyframes cutout-spin {
   to {
@@ -524,51 +363,15 @@ button.cutout-pick {
   color: var(--text-2);
 }
 
-.cutout-bar {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-
 .cutout-bar span {
   display: block;
   height: 100%;
   background: var(--accent);
 }
 
-.cutout-note {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--warn-bg);
-  color: var(--warn-text);
-  font-size: 0.8125rem;
-}
-
-.cutout-small {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-/* the hint under the cut-out, with + Add another beside it; they wrap on a narrow phone */
-.cutout-hint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 10px;
-}
-
 /* the switch is for the phone's single stage; a desktop shows both panes */
-.cutout-seg {
-  display: none;
-}
 
 @media (max-width: 640px) {
-  .cutout-seg {
-    display: flex;
-  }
 
   .cutout-seg .seg {
     flex: 1 1 0;
@@ -578,18 +381,9 @@ button.cutout-pick {
     grid-template-columns: 1fr;
   }
 
-  .cutout-panes.two[data-view='cutout'] .cutout-photo,
-  .cutout-panes.two[data-view='photo'] .cutout-result {
-    display: none;
-  }
-
   /* the switch above names the stage */
   .cutout-pane figcaption {
     display: none;
-  }
-
-  .cutout-stage {
-    height: min(56vh, 420px);
   }
 }
 
@@ -597,15 +391,6 @@ button.cutout-pick {
   .cutout-sheet .modal-foot .btn,
   .cutout-sheet .cutout-hint .toggle {
     min-height: 44px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* busy as a state, not a motion */
-  .cutout-spinner {
-    animation: none;
-    border-color: var(--accent);
-    opacity: 0.7;
   }
 }
 

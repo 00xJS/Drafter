@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
 import { PersonFilter, PersonStats, SEEN_META, cadenceChoice, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
-import { mentions } from '../journal'
+import { localDayKey, mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { Bars } from './bits'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
+import { useDayKey } from '../useDayKey'
+import { timeOn } from '../useDayClock'
 
 interface Props {
   people: Person[]
@@ -195,8 +197,9 @@ function LogVisit({
   onSavePlace?(p: Place): void
   onClose(): void
 }) {
-  const today = new Date()
-  const [date, setDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
+  // today, read once as the sheet opens: a clock read as it renders is one
+  // the React Compiler would keep for as long as the sheet is open
+  const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [placeId, setPlaceId] = useState<string | undefined>()
   return (
@@ -292,12 +295,15 @@ export function PersonRow({
   // the cadence badge or the digest's people nudges.
   const inJournal = useMemo(() => (open && journal ? mentions(journal, person.id) : []), [open, journal, person.id])
 
-  const getIdeas = async () => {
+  // A chain rather than try/catch/finally, which the React Compiler cannot
+  // compile: the question is put together inside it, so a failure there is
+  // said on the row as well, and the button is freed whatever happened.
+  const getIdeas = () => {
     setIdeasBusy(true)
     setIdeasError('')
-    try {
-      setIdeas(
-        await suggestCatchUp({
+    void Promise.resolve()
+      .then(() =>
+        suggestCatchUp({
           name: person.name,
           group: person.group,
           notes: person.notes,
@@ -307,11 +313,8 @@ export function PersonRow({
           notYetTogether: (favouriteNames ?? []).filter(n => !together.some(r => r.place.name === n)).slice(0, 3),
         }),
       )
-    } catch (e) {
-      setIdeasError((e as Error).message)
-    } finally {
-      setIdeasBusy(false)
-    }
+      .then(setIdeas, (e: Error) => setIdeasError(e.message))
+      .then(() => setIdeasBusy(false))
   }
 
   return (
@@ -467,23 +470,30 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
     if (wantOpen && wantOpen !== asked.wantOpen) setOpenId(wantOpen)
     if (openAdd && !asked.openAdd) setEditing({})
   }
+  // Once per ask: the parent's setters are told as an ask is taken, and a new
+  // setter alone is no new ask
+  const openConsumed = useEffectEvent(() => onOpenConsumed?.())
+  const addConsumed = useEffectEvent(() => onAddConsumed?.())
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
     window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
-    onOpenConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+    openConsumed()
   }, [wantOpen])
   useEffect(() => {
-    if (openAdd) onAddConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask; the callback is the parent's setter
+    if (openAdd) addConsumed()
   }, [openAdd])
   // An event of your own counts as seeing the people on it once it has
   // happened, the way a subscribed calendar's does once Who was there? logs
   // them: read as the visit task that would have been logged, it reaches
   // every number below. Places still come from tasks: an event names none.
-  const seen = useMemo(() => seenTasks(tasks, entries, new Date(), myId), [tasks, entries, myId])
-  const allStats = useMemo(() => people.map(p => personStats(p, seen)), [people, seen])
+  // Counted at the time they change, and again when the day does.
+  const today = useDayKey()
+  const allStats = useMemo(() => {
+    const now = timeOn(today)
+    const seen = seenTasks(tasks, entries, now, myId)
+    return people.map(p => personStats(p, seen, now))
+  }, [people, tasks, entries, myId, today])
   const favouriteNames = useMemo(() => favourites(places, tasks, people).map(s => s.place.name), [places, tasks, people])
 
   // a visit an event made opens that event: it is not a task, and saved as

@@ -140,6 +140,27 @@ describe('phone chrome: no field may zoom the page', () => {
 /** The sheet with its comments removed, so brace matching and rule lookup are exact. */
 const bare = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
+/**
+ * The sheet's unconditional rules alone, every @media and @supports block cut
+ * out: what a desktop draws. The views' own sheets come after the partials
+ * (source.ts), so a view's unconditional rule can follow a partial's phone
+ * rule for the same selector in the text, and the first match there is no
+ * longer the unconditional one.
+ */
+const top = (() => {
+  let out = ''
+  let depth = 0
+  let inAt = 0
+  for (let i = 0; i < bare.length; i++) {
+    const c = bare[i]
+    if (c === '@' && depth === 0) inAt = 1
+    if (c === '{') depth++
+    if (!inAt) out += c
+    if (c === '}' && --depth === 0 && inAt) inAt = 0
+  }
+  return out
+})()
+
 /** The text between the braces of the block that opens at or after `at`. */
 function blockBody(at: number): string {
   const open = bare.indexOf('{', at)
@@ -287,13 +308,13 @@ describe('phone: the journal look-back is readable', () => {
     // stops covering that text the moment --type-scale leaves 1, which is the
     // layout jump the strip exists to prevent.
     expect(rule(floor!.body, '.mood-readout')).toMatch(/min-height:\s*calc\(1\.4 \* 0\.75rem\)/)
-    expect(rule(bare, '.mood-readout'), 'the mouse page keeps no empty strip').not.toMatch(/min-height:/)
+    expect(rule(top, '.mood-readout'), 'the mouse page keeps no empty strip').not.toMatch(/min-height:/)
     const taller = narrow.find(b => rule(b.body, '.mood-readout'))
     expect(taller, 'the phone readout needs room for two lines').toBeTruthy()
     expect(rule(taller!.body, '.mood-readout')).toMatch(/min-height:\s*calc\(2 \* 1\.4 \* 0\.75rem\)/)
     // and the units are the ones the text is actually set in
-    expect(rule(bare, '.mood-readout')).toMatch(/font-size:\s*0\.75rem/)
-    expect(rule(bare, '.mood-readout')).toMatch(/line-height:\s*1\.4/)
+    expect(rule(top, '.mood-readout')).toMatch(/font-size:\s*0\.75rem/)
+    expect(rule(top, '.mood-readout')).toMatch(/line-height:\s*1\.4/)
   })
 
   it('gives the stats disclosure the 44pt floor, since it is the only way to the chart', () => {
@@ -449,7 +470,9 @@ describe('phone: the grocery list survives a real shop', () => {
     // appearing on the first tick would push the list down under the thumb
     // the parent class puts the phone rule a class ahead of the desktop
     // `display: none`, so it wins wherever either one is declared
-    const off = rule(clear!.body, '.grocery-filter-row .grocery-clear:disabled')
+    // in the Kitchen's own sheet (styles/views/kitchen.css): only the Kitchen draws the filter row
+    const kept = narrow.find(b => rule(b.body, '.grocery-filter-row .grocery-clear:disabled'))
+    const off = kept ? rule(kept.body, '.grocery-filter-row .grocery-clear:disabled') : ''
     expect(off, 'the phone must keep the line whether or not anything is ticked').toMatch(/visibility:\s*hidden/)
     expect(off).not.toMatch(/display:\s*none/)
   })
@@ -644,19 +667,15 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(rule(bare, '.snap-add')).toMatch(/scroll-snap-align:\s*none/)
   })
 
-  it('caps the Home segment labels on a phone, where four share one row', () => {
-    const capped = narrow.find(b => rule(b.body, '.home-seg .seg'))
-    expect(capped, 'no @media (max-width: 640px) rule for .home-seg .seg').toBeTruthy()
-    expect(rule(capped!.body, '.home-seg .seg')).toMatch(/font-size:\s*calc\(13px \* min\(1\.15, var\(--type-scale\)\)\)/)
-    expect(bare.match(/\.home-seg \.seg\s*\{/g), 'the desktop row keeps its size: the cap is declared only there').toHaveLength(1)
-  })
-
-  it('narrows the native Home track’s thumbs on a phone, outranking the shared padding', () => {
-    const sel = '.native .people-tab-seg.home-seg .segmented .seg'
+  it('narrows the native Keep track’s thumbs on a phone, outranking the shared padding', () => {
+    // Home has had one segment since v3.29, and its track rules went with the
+    // rest; Keep's four are where "Wardrobe" is on a track now
+    const sel = '.native .people-tab-seg.keep-seg .segmented .seg'
     const block = narrow.find(b => rule(b.body, sel))
-    expect(block, 'no phone rule for the native Home segments').toBeTruthy()
+    expect(block, 'no phone rule for the native Keep segments').toBeTruthy()
     expect(rule(block!.body, sel)).toMatch(/padding-inline:\s*6px/)
     expect(compare(specificity(sel), specificity('.native .people-tab-seg .segmented .seg'))).toBeGreaterThan(0)
+    expect(bare).not.toMatch(/\.home-seg/)
   })
 
   it('sticks the action bar just above the tab bar on a phone, without spending the keyboard', () => {

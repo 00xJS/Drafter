@@ -1,0 +1,202 @@
+/* Chat's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 11-people-review-search.css ---------- */
+.chat-what {
+  margin: 0 0 4px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+}
+.chat-line {
+  display: flex;
+  flex-direction: column;
+  max-width: min(80%, 40rem);
+  gap: 2px;
+}
+.chat-line.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.chat-line.theirs {
+  align-self: flex-start;
+}
+.chat-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+}
+.chat-bubble {
+  display: block;
+  padding: 8px 12px;
+  /* an iOS bubble is round except where it meets its speaker */
+  border-radius: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  line-height: 1.35;
+  /* a pasted paragraph keeps its line breaks; a long word still wraps */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-line.mine .chat-bubble {
+  border-bottom-right-radius: 6px;
+}
+.chat-line.theirs .chat-bubble {
+  border-bottom-left-radius: 6px;
+}
+.chat-line.mine .chat-bubble {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.chat-line.drafter .chat-bubble {
+  background: var(--surface);
+}
+/* Shown on the last line of a run and on hover, not stamped under every
+   bubble: a column of times down the thread is the web-form tell. */
+.chat-at {
+  display: block;
+  margin-top: 2px;
+  opacity: 0;
+  font-size: calc(0.68rem * var(--type-scale));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: 0;
+  overflow: hidden;
+  transition: opacity 120ms ease;
+}
+.chat-line:last-of-type .chat-at,
+.chat-line:hover .chat-at,
+.chat-line:focus-within .chat-at {
+  opacity: 0.65;
+  height: auto;
+}
+.chat-thinking {
+  align-self: flex-start;
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.chat-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.chat-older {
+  align-self: center;
+  margin: 4px 0;
+}
+/* The chat's way out travels with its own track rather than sitting in a
+   header it does not have. */
+.chat-seg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-seg > .segmented {
+  flex: 1;
+  min-width: 0;
+}
+.chat-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px 0;
+  background: var(--bg);
+}
+@media (max-width: 640px) {
+  /* The composer needs a ground and an edge of its own, because the thread
+     scrolls under it. It does NOT need the tab bar's clearance any more:
+     that was from the chat's page days, under the bar. A sheet is over the
+     bar and owes only the home indicator, which .chat-modal .chat-composer
+     gives it — so the bottom is left alone here rather than set twice.
+
+     Gone with it: a `.content:has(.chat)` rule and a 100dvh floor on .chat,
+     both sizing a page that no longer exists. */
+  .chat-composer {
+    margin: 0 -12px;
+    padding-top: 8px;
+    padding-inline: 12px;
+    border-top: 1px solid var(--hairline);
+  }
+}
+/* The shell gives every textarea 88px so a note or a description opens with
+   room to write in. A chat composer is the one textarea that should not: it
+   opened three lines tall and empty, under a thread with one message in it,
+   which is not what a message box looks like anywhere else on the phone. It
+   starts at one line and grows to 40vh, as it always did on the web. */
+.native .chat-composer textarea {
+  min-height: var(--touch);
+}
+.chat-line.has-cards {
+  max-width: min(100%, 40rem);
+  align-self: stretch;
+}
+.chat-line.has-cards .chat-bubble {
+  align-self: flex-start;
+}
+.chat-card.skipped .chat-card-line {
+  color: var(--text-2);
+}
+.chat-card-state {
+  color: var(--tone-green);
+  font-weight: 600;
+}
+.chat-card.skipped .chat-card-state,
+.chat-card-hint {
+  color: var(--text-2);
+  font-weight: 400;
+}
+/* a name nothing matched: what was said, and the saved ones it could mean */
+.chat-card-fix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+.chat-card-fix label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 12rem;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+}
+.chat-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+.chat-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-cards-all {
+  align-self: flex-start;
+}
+.chat-line.chat-outcome {
+  max-width: min(100%, 40rem);
+}
+.chat-outcome-text {
+  padding: 0 4px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* the note sheet is the note editor's own page, in a dialog */
+.chat-note-sheet .note-title-input {
+  width: 100%;
+  margin-bottom: 8px;
+}

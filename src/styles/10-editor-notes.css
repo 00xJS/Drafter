@@ -14,17 +14,8 @@
   flex-direction: column;
   gap: 14px;
 }
-.editor-side {
-  border-left: 1px solid var(--border);
-  padding-left: 24px;
-}
 .segmented.wrap .seg {
   flex: 1 1 auto;
-}
-.ai-inline {
-  align-self: flex-start;
-  padding: 2px 6px;
-  font-size: 0.75rem;
 }
 .swatches {
   display: flex;
@@ -104,25 +95,11 @@
   min-width: 160px;
 }
 /* a cook task's Save to recipe, under its checklist */
-.cook-recipe-save {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  margin-top: 12px;
-}
 
 .comment {
   background: var(--surface-2);
   border-radius: 8px;
   padding: 8px 10px;
-}
-.comment-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.6875rem;
-  color: var(--muted);
 }
 .comment-meta .btn {
   padding: 0 4px;
@@ -235,27 +212,11 @@
   .editor-grid {
     grid-template-columns: 1fr;
   }
-  .editor-side {
-    border-left: 0;
-    padding-left: 0;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-  }
-  .rm-label {
-    width: 180px;
-  }
 }
 
 @media (max-width: 640px) {
   .today-grid {
     grid-template-columns: 1fr;
-  }
-  .rm-label {
-    width: 140px;
-    padding: 8px;
-  }
-  .rm-label .badge {
-    display: none;
   }
 }
 
@@ -314,18 +275,6 @@
 }
 .event-list .event-row:hover {
   background: transparent;
-}
-.rm-events .rm-track {
-  min-height: 26px;
-}
-.rm-event {
-  position: absolute;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-4px) rotate(45deg);
-  border-radius: 1px;
-  opacity: 0.9;
 }
 .cal-sources {
   list-style: none;
@@ -630,15 +579,6 @@
   align-items: stretch;
   min-height: 140px;
 }
-.notes-card-preview {
-  display: block;
-  font-size: 0.78125rem;
-  color: var(--text-2);
-  max-height: 150px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
-  mask-image: linear-gradient(to bottom, #000 70%, transparent);
-}
 .notes-card-preview h1,
 .notes-card-preview h2,
 .notes-card-preview h3 {
@@ -701,9 +641,6 @@
 .notes-editable a {
   cursor: text;
 }
-.notes-card-preview {
-  white-space: pre-wrap;
-}
 
 .trash-actions {
   display: flex;
@@ -737,10 +674,6 @@
   font-size: 0.75rem;
   text-decoration: none;
 }
-.link-chip:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
 .link-chip-text {
   min-width: 0;
   overflow: hidden;
@@ -756,12 +689,6 @@
   gap: 14px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
-}
-.editor-bottom-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px 24px;
-  align-items: start;
 }
 .editor-bottom .versions {
   margin-top: 0;
@@ -801,18 +728,12 @@
   font-size: 0.8125rem;
   color: var(--muted);
 }
-@media (max-width: 900px) {
-  .editor-bottom-row {
-    grid-template-columns: 1fr;
-  }
-}
 @media (pointer: coarse) {
   .link-chip {
     min-height: 44px;
     padding: 6px 14px;
   }
 }
-
 
 /* ===================== Notes: the list and one note ========================
    Tasks → Notes once the shell passes `notes`: one list of note records and
@@ -853,9 +774,6 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-.note-row:hover {
-  border-color: var(--muted);
-}
 .note-row-head {
   display: flex;
   align-items: center;
@@ -870,16 +788,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note-row-pin {
-  flex: none;
-  font-size: 0.8125rem;
-}
-.note-row-when {
-  flex: none;
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
 .note-row-excerpt {
   display: block;
   min-width: 0;
@@ -888,19 +796,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.note-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.note-row-tag {
-  font-size: 0.6875rem;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border-radius: 999px;
-  padding: 1px 8px;
 }
 /* Only a SHARED note is marked, so this is never on most rows: private is the
    default and a badge on every row would say nothing. It sits between the
@@ -911,11 +806,6 @@
   color: var(--muted);
 }
 /* a row dims under a finger, as a .btn does */
-@media (pointer: coarse) {
-  .note-row:active {
-    background: var(--surface-2);
-  }
-}
 
 /* one note.
    The header carries four controls now — back, share, pin and delete — and on
@@ -998,51 +888,6 @@
   background: var(--surface-2);
   border-radius: 999px;
   padding: 4px 10px;
-}
-/* a heading-sized field: two classes and the element outrank the phone's
-   anti-zoom floor (16-zoom-guard.css), which would otherwise pin it at 16px;
-   at every type scale it stays above that floor on its own */
-.notes-page.note-page input.note-title-input {
-  width: 100%;
-  padding: 4px 2px 6px;
-  font-size: 1.375rem;
-  font-weight: 700;
-  line-height: 1.25;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-}
-.notes-page.note-page input.note-title-input:focus-visible {
-  outline: none;
-  border-bottom-color: var(--focus-ring);
-}
-/* the title sits above the editor, so it starts a little shorter than a pad's */
-.note-page .notes-editable {
-  min-height: max(240px, calc(100vh - 380px));
-}
-/* a notes page's tooltips (NoteTips): the words each button carries in
-   data-tip, shown at once on hover or keyboard focus. Fixed and placed by
-   NoteTips inside the window, so no toolbar overflow or page edge clips it;
-   over the top bar (20), under dialogs (50) and toasts (100). It never takes
-   the pointer, so it is never in the way of a click. The inverse pair reads
-   against the ground in either scheme, as the inverted pill does */
-.notes-tip {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 40;
-  max-width: min(260px, calc(100vw - 16px));
-  padding: 5px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--inverse-bg);
-  color: var(--inverse-text);
-  box-shadow: var(--shadow-md);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.35;
-  text-align: center;
-  pointer-events: none;
 }
 /* ===================== end Notes: the list and one note ===================== */
 

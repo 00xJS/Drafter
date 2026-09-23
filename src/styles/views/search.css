@@ -1,0 +1,55 @@
+/* Search's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 11-people-review-search.css ---------- */
+/* search palette */
+.search-backdrop {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.search-palette {
+  width: 640px;
+  /* a gutter on a phone, where 100% put the panel's edges against the screen's
+     while every other surface in the app keeps one */
+  max-width: min(100%, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-palette);
+  overflow: hidden;
+}
+.search-input:focus-visible {
+  outline: none;
+}
+.search-mic {
+  flex: none;
+  margin-right: 8px;
+  color: var(--text-2);
+}
+.search-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+/* a command row (jump / do) reads as an affordance, not a found record: its
+   glyph carries the accent so the palette's "what you can do" is scannable
+   apart from the "what you have" below it */
+.search-hit.command .search-kind {
+  color: var(--accent-text);
+}
+@media (max-width: 640px) {
+  .search-hit.create small {
+    display: none;
+  }
+}
+/* the palette's ask row is something to do, so its glyph reads like a command's */
+.search-hit.ask .search-kind {
+  color: var(--accent-text);
+}

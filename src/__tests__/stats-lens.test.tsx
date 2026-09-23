@@ -601,10 +601,11 @@ describe('the Insights tab', () => {
 
   it('keeps one clock per day rather than a new one per render', () => {
     // `now = new Date()` in the parameter list is a fresh object every render,
-    // and it is a dependency of every report in the file
+    // and it is a dependency of every report in the file; the day's clock is
+    // useDayClock's, which moves at midnight (lists-compiled.dom.test.tsx)
     const src = readSource('components/StatsLens.tsx')
     expect(src).not.toMatch(/now = new Date\(\) \} = p/)
-    expect(src).toContain('const now = useMemo(() => handed ?? new Date(), [handed, today])')
+    expect(src).toContain('const now = useDayClock(handed)')
   })
 
   it('stamps the retire Undo newer than the write it undoes, not than the piece', () => {

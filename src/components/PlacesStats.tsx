@@ -6,6 +6,7 @@ import { NO_PLACE_FILTER, kindOn, placeEmoji, placeMatcher, placeStats, placeYea
 import { companyOnOutings, kindChips, mealsOut, mostVisited, neverBeen, notBeenBack, outingsByKind, outingsByMonth, placesByDay, placesTiles, usualCompany } from '../placestats'
 import { MONTHS } from '../stats'
 import { useTheme } from '../theme'
+import { useDayClock } from '../useDayClock'
 import { PLACE_CATEGORY_META, type Meal, type Person, type Place, type Task } from '../types'
 import { dateKey } from '../utils'
 import { PersonFace } from './PersonFace'
@@ -106,10 +107,9 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
   // One clock for the day. PeopleScreen re-renders with every Planner render
   // (a sync, a toast, a record changed on another device), so each figure is
   // worked out once and kept until what it reads changes, as the list keeps
-  // its rows; the first render after midnight starts the new day's clock.
-  const today = dateKey(handed ?? new Date())
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `today` is the point: a new day, a new clock
-  const now = useMemo(() => handed ?? new Date(), [handed, today])
+  // its rows; midnight starts the new day's clock (useDayClock).
+  const now = useDayClock(handed)
+  const today = dateKey(now)
   const thisYear = now.getFullYear()
   const [year, setYear] = useState(thisYear)
   // The list's kind chips and find box, which the shell holds for both:

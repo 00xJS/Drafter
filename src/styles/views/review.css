@@ -1,0 +1,93 @@
+/* Review's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 09-tasks-today.css ---------- */
+.review-top-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
+.review-summary-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.review-summary-toggle {
+  flex: none;
+}
+.review-bulk {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Week review: days seen per person, the events under them when some shared a day */
+.seen-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.review-range {
+  margin-bottom: 10px;
+}
+
+/* ---------- from 15-journal.css ---------- */
+.review-journal .dash-title {
+  white-space: pre-wrap;
+}
+
+/* ---------- from 18-wardrobe.css ---------- */
+.review-look {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.6875rem;
+}
+.review-look .collage {
+  width: 44px;
+  height: 56px;
+  border-radius: 8px;
+}
+.review-look .collage-badge {
+  width: 16px;
+  height: 16px;
+}
+.review-look:focus-visible,
+.review-most-worn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.review-most-worn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+}
+.review-most-worn-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -3,6 +3,7 @@
 // screenshot), then two JPEGs drawn from it — the 1200px photo the piece sheet
 // shows and the 360px thumbnail every row, grid and card uses, because a closet
 // of 60 full-size photos would decode about 400MB of bitmaps in a WKWebView.
+// A task's or a note's picture goes through the same decode (preparePicture).
 // The maths is pure and tested; the DOM part is thin.
 
 /** The photo cannot be decoded here: a HEIC in desktop Chrome, or a file that is no image at all. */
@@ -109,6 +110,63 @@ function centreColour(canvas: HTMLCanvasElement): string | undefined {
  */
 export function keepsAsIs(type: string, width: number, height: number, cutout: boolean): boolean {
   return cutout && type === 'image/jpeg' && Math.max(width, height) <= PHOTO_EDGE
+}
+
+// ---- a task's or a note's picture
+//
+// Pictures on a task or in a note were saved as they were picked: the
+// camera's 12MP photo, 2–5 MB, kept on the device, uploaded whole, and
+// decoded whole (48 MB of bitmap) by every device that drew it, even as a
+// 64px square in the task editor. They go through the same one decode as a
+// garment's now, at a size of their own.
+
+/**
+ * A task's or a note's picture, longest edge: more than a garment's 1200,
+ * as a photographed receipt, label or page has to stay legible when zoomed,
+ * and still a sixth of a 12MP photo's pixels.
+ */
+export const PICTURE_EDGE = 1600
+
+/** Kept as they are without a decode: a redraw would still a GIF and flatten an SVG. */
+const KEPT_WHOLE = new Set(['image/gif', 'image/svg+xml'])
+/** Types every browser shows: one within the edge needs no redraw. A HEIC is not one. */
+const SHOWN_EVERYWHERE = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+/**
+ * Whether a picture is kept byte for byte: a GIF or an SVG, or a JPEG, PNG or
+ * WebP already within PICTURE_EDGE — a screenshot, an image saved from a page
+ * — where drawing it again would only lose detail (and a PNG its
+ * transparency). Anything else is drawn afresh: the camera's full-size photo,
+ * and a HEIC, which the other member's browser might not show at all.
+ */
+export function keepsPicture(type: string, width: number, height: number): boolean {
+  return KEPT_WHOLE.has(type) || (SHOWN_EVERYWHERE.has(type) && Math.max(width, height) <= PICTURE_EDGE)
+}
+
+/**
+ * A task's or a note's picture made ready to save: the picture to keep —
+ * the file itself when keepsPicture, else drawn at PICTURE_EDGE as a JPEG
+ * (0.82) on white — and a THUMB_EDGE thumbnail (JPEG 0.72) for the task
+ * editor's squares, null when the picture is no bigger than one or is kept
+ * whole. One decode, through an <img>, so a photo keeps the way the camera
+ * held it. Throws PhotoUnreadable when this browser cannot decode the file (a
+ * HEIC in desktop Chrome); the caller then keeps the file as it came.
+ */
+export async function preparePicture(file: Blob): Promise<{ picture: Blob; thumb: Blob | null }> {
+  if (KEPT_WHOLE.has(file.type)) return { picture: file, thumb: null }
+  const { img, release } = await decode(file)
+  try {
+    const [w, h] = [img.naturalWidth, img.naturalHeight]
+    const big = keepsPicture(file.type, w, h) ? null : drawn(img, w, h, PICTURE_EDGE)
+    const small = Math.max(w, h) > THUMB_EDGE ? drawn(img, w, h, THUMB_EDGE) : null
+    const [picture, thumb] = await Promise.all([big ? jpeg(big, 0.82) : file, small ? jpeg(small, 0.72) : null])
+    // let go of the pixels now, not whenever the canvases are collected
+    if (big) big.width = big.height = 0
+    if (small) small.width = small.height = 0
+    return { picture, thumb }
+  } finally {
+    release()
+  }
 }
 
 /**

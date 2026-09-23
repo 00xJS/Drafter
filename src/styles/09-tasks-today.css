@@ -9,36 +9,7 @@
   color: var(--muted);
 }
 
-/* project chips: the Board's cards, Today's stalled list and the notes index
-   name a project with one; nothing selects projects with them any more */
-.pchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: 0.8125rem;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-.pchip:hover {
-  background: var(--surface-2);
-}
-.pchip.static {
-  padding: 1px 8px 1px 4px;
-  font-size: 0.6875rem;
-  cursor: default;
-  background: var(--surface-2);
-  border-color: transparent;
-  max-width: 180px;
-}
-.pchip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* a record's colour as a dot: a project's, a calendar's, a year table's row */
 .pdot {
   width: 9px;
   height: 9px;
@@ -191,8 +162,7 @@
 .tlist .trow.swipe-row:hover .swipe-face {
   background: color-mix(in srgb, var(--accent) 4%, var(--surface));
 }
-.warn-card .swipe-face,
-.next-up .swipe-face {
+.warn-card .swipe-face {
   background: var(--surface);
 }
 .swipe-tray {
@@ -285,11 +255,6 @@
   padding-inline: 6px;
   font-variant-numeric: tabular-nums;
 }
-.review-top-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 .review-top-row input {
   flex: 1;
 }
@@ -367,175 +332,6 @@
   align-items: center;
   gap: 8px;
 }
-.project-card-name {
-  font-weight: 600;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.project-card-pct {
-  font-size: 0.75rem;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.project-card-sub {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-/* roadmap */
-.roadmap .toolbar {
-  margin-bottom: 12px;
-}
-.rm-scroll {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-.rm-canvas {
-  min-width: 100%;
-}
-.rm-header,
-.rm-row {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-}
-.rm-row:last-child {
-  border-bottom: 0;
-}
-.rm-label {
-  width: 260px;
-  flex: none;
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  text-align: left;
-  border-top: 0;
-  border-bottom: 0;
-  border-left: 0;
-  border-radius: 0;
-  color: var(--text);
-  font: inherit;
-}
-.rm-label-head {
-  font-size: 0.75rem;
-  color: var(--muted);
-  padding: 6px 12px;
-}
-.rm-name {
-  font-weight: 600;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rm-track {
-  position: relative;
-  flex: none;
-  min-height: 56px;
-}
-.rm-header .rm-track {
-  min-height: 28px;
-}
-.rm-month {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  padding: 6px 8px;
-  font-size: 0.75rem;
-  color: var(--muted);
-  border-left: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.rm-gridline {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid var(--surface-2);
-}
-.rm-today {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 2px solid var(--danger);
-  opacity: 0.6;
-  z-index: 1;
-}
-.rm-bar {
-  position: absolute;
-  top: 14px;
-  height: 18px;
-  border-radius: 6px;
-  border: 0;
-  opacity: var(--viz-bar-opacity);
-  overflow: hidden;
-  padding: 0;
-}
-.rm-bar.inferred {
-  opacity: 0.35;
-  outline: 2px dashed currentColor;
-  outline-offset: -2px;
-}
-.rm-ms {
-  position: absolute;
-  top: 12px;
-  width: 14px;
-  height: 14px;
-  transform: translateX(-7px) rotate(45deg);
-  background: var(--surface);
-  border: 2px solid;
-  border-radius: 2px;
-  padding: 0;
-  z-index: 2;
-}
-/* a finished milestone is filled with its project's colour, set inline through
-   graphicInk like its edge (Roadmap.tsx), never the text colour */
-.rm-ms-name {
-  position: absolute;
-  left: 14px;
-  top: -6px;
-  transform: rotate(-45deg);
-  transform-origin: left top;
-  /* rotated into the roadmap's fixed track geometry, like .tick-label */
-  font-size: 10px;
-  color: var(--text-2);
-  white-space: nowrap;
-  pointer-events: none;
-  padding-left: 8px;
-}
-.rm-task {
-  position: absolute;
-  top: 38px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  transform: translateX(-4px);
-  border: 0;
-  padding: 0;
-  opacity: 0.9;
-  /* a pale project colour keeps an edge on white; the ring is clear in dark */
-  box-shadow: inset 0 0 0 1px var(--dot-ring);
-}
-.rm-task.done {
-  background: var(--viz-empty);
-}
-.rm-task.blocked {
-  outline: 2px solid var(--tone-rose);
-  outline-offset: 1px;
-}
-
 
 /* Who can see a record, on its row in the task list, on a board card and in
    the notes index. Both states are drawn (see ShareMark in bits.tsx), so the

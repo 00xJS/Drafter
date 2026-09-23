@@ -128,8 +128,9 @@ describe('a tip through a scroll', () => {
 })
 
 describe('the tooltip’s look', () => {
-  it('lives in the notes partial: fixed, never taking the pointer, in the theme’s tokens', () => {
-    const notes = read('../styles/10-editor-notes.css')
+  it('lives in the notes view’s own sheet: fixed, never taking the pointer, in the theme’s tokens', () => {
+    // only the notes page draws it, so it loads with that chunk (styles/views/)
+    const notes = read('../styles/views/notes.css')
     const at = notes.indexOf('.notes-tip {')
     const rule = notes.slice(at, notes.indexOf('}', at))
     for (const line of ['position: fixed', 'pointer-events: none', 'background: var(--inverse-bg)', 'color: var(--inverse-text)']) expect(rule, line).toContain(line)

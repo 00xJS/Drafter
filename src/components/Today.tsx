@@ -841,6 +841,8 @@ export function Today({
     // myId is what makes this YOUR log: the address book is the household's,
     // but the other member seeing their mother is not you having called her (v3.24).
     const seen = seenTasks(tasks, entries, at, myId)
+    // everyone's visits and plans are read off one filing of `seen`
+    // (shared/visitindex.mts), not two walks of it per person
     const stats = people.map(p => personStats(p, seen, at))
     // peopleToNudge, not a filter here: the rule about who Today asks after —
     // the drifting, then two nobody has logged, taking turns by day — lives
@@ -852,7 +854,9 @@ export function Today({
     }
   }, [people, tasks, entries, myId, putOff, todayKey, at])
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
-  // A meal eaten out there counts as going, as it does on Places.
+  // A meal eaten out there counts as going, as it does on Places. The tasks and
+  // meals are filed by place once per change of either, so the minute's re-run
+  // reads each place's own few outings rather than both lists again.
   const placeNudges = useMemo(() => {
     const out: { place: Place; status: 'due' | 'overdue'; reason: string; daysSince: number }[] = []
     for (const place of places) {

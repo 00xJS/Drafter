@@ -1,13 +1,18 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { sheetImports, sheetSource } from './source'
+import { sheetImports, sheetSource, viewSheets } from './source'
 
 /*
  * The style sheet is styles/index.css plus the partials it imports, in cascade
- * order; Vite inlines them into one sheet. These pin the shape that keeps the
- * split safe to edit — one way in, one order, no block across two files — so
- * the cascade phonecss.test.ts reasons about is the one that ships.
+ * order; Vite inlines them into one sheet, which loads before the first paint.
+ * The rules only one lazy view can match are in that view's own sheet
+ * (styles/views/), which loads with the view's chunk and so comes after every
+ * partial. These pin the shape that keeps the split safe to edit — one way
+ * in for each, one order, no block across two files, and no rule in a view's
+ * sheet that anything the launch draws could need — so the cascade
+ * phonecss.test.ts reasons about is the one that ships.
  */
 
 const path = (rel: string) => fileURLToPath(new URL(rel, import.meta.url))
@@ -78,8 +83,73 @@ describe('the style sheet: one index, partials in order, nothing across two file
     expect(cssImports(read('../main.tsx'))).toEqual(['./styles/index.css'])
   })
 
-  it('is imported by no component or other module', () => {
-    const importers = modules().filter(f => f !== '../main.tsx' && cssImports(read(f)).length > 0)
+  it('is imported by no component or other module, the views\u2019 own sheets aside', () => {
+    const importers = modules().filter(f => f !== '../main.tsx' && cssImports(read(f)).some(css => !css.includes('/styles/views/')))
     expect(importers).toEqual([])
+  })
+})
+
+/** The modules a launch loads: main.tsx and the Planner chunk, and whatever they import statically. */
+function launchModules(): Set<string> {
+  const seen = new Set<string>()
+  const todo = [path('../main.tsx'), path('../components/Planner.tsx')]
+  while (todo.length) {
+    const file = todo.pop()!
+    if (seen.has(file)) continue
+    seen.add(file)
+    for (const m of readFileSync(file, 'utf8').matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/gm)) {
+      const base = resolve(dirname(file), m[1])
+      const hit = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find(p => existsSync(p) && statSync(p).isFile())
+      if (hit && /\.tsx?$/.test(hit)) todo.push(hit)
+    }
+  }
+  return seen
+}
+
+/** The classes a selector list names. */
+const classesOf = (selector: string) => [...selector.replace(/\[[^\]]*\]/g, '').matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map(m => m[1])
+
+describe('each lazy view\u2019s own sheet', () => {
+  const lazy = read('../components/planner/lazy.ts')
+
+  it('is loaded by planner/lazy.ts, once, with the view it is for', () => {
+    const sheets = viewSheets()
+    expect(sheets.length).toBeGreaterThan(0)
+    for (const sheet of sheets) {
+      const loads = [...lazy.matchAll(new RegExp(`withSheet\\(import\\('[^']+'\\), import\\('\\.\\./\\.\\./styles/${sheet.replace(/[.]/g, '\\.')}'\\)\\)`, 'g'))]
+      expect(loads, sheet).toHaveLength(1)
+    }
+    // …and nothing else imports one
+    const importers = modules().filter(f => cssImports(read(f)).some(css => css.includes('/styles/views/')))
+    expect(importers).toEqual(['../components/planner/lazy.ts'])
+    expect(cssImports(lazy).filter(css => css.includes('/styles/views/'))).toHaveLength(sheets.length)
+  })
+
+  it('balances its braces', () => {
+    expect(viewSheets().filter(f => braceDepth(read(`../styles/${f}`)) !== 0)).toEqual([])
+  })
+
+  it('holds only rules the launch cannot need: each selector names a class nothing the launch loads uses', () => {
+    // The shell draws before any view's sheet has loaded, and a view's sheet
+    // may not load at all: a rule the shell's own elements could match
+    // belongs in a partial, or they are drawn without it.
+    // what the launch's modules could put in a class attribute: their strings
+    // and templates, comments left out (a class is never an identifier)
+    const strings = /'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g
+    const shell = [...launchModules()]
+      .map(f => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''))
+      .flatMap(code => code.match(strings) ?? [])
+      .join('\n')
+    const inShell = (c: string) => new RegExp(`(^|[^\\w-])${c}([^\\w-]|$)`).test(shell)
+    const wrong: string[] = []
+    for (const sheet of viewSheets()) {
+      const css = read(`../styles/${sheet}`).replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const m of css.matchAll(/([^{};]+)\{/g)) {
+        const list = m[1].trim()
+        if (list.startsWith('@')) continue
+        for (const selector of list.split(',')) if (classesOf(selector).every(inShell)) wrong.push(`${sheet}: ${selector.trim()}`)
+      }
+    }
+    expect(wrong).toEqual([])
   })
 })

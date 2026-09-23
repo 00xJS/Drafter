@@ -27,6 +27,14 @@ export interface MediaItem {
   personal?: true
   /** A piece's thumbnail: the id of the photo it was made from, so the two count as one photo. */
   thumbOf?: string
+  /**
+   * A task's or a note's picture: its small copy, made as it was saved here
+   * (savePicture in src/picture.ts) and drawn by the task editor's squares
+   * (mediaThumbURL). It stays on this device, in this entry, and goes
+   * wherever the picture does; a device that downloads the picture has none,
+   * and draws the picture instead.
+   */
+  thumb?: Blob
 }
 
 /** The images among files picked, pasted or dropped: a note takes these inline, and Add clothing takes them as photos. */
@@ -48,7 +56,10 @@ export class NotSignedIn extends Error {
  * access token has expired. With neither it is refused, never given a bare id.
  * In local mode the id is a bare uid, as a note photo's always is.
  */
-export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean; userId?: string | null; thumbOf?: string } = {}): Promise<string> {
+export async function saveMedia(
+  file: Blob & { name?: string },
+  opts: { personal?: boolean; userId?: string | null; thumbOf?: string; thumb?: Blob } = {},
+): Promise<string> {
   const sb = getSupabase()
   let id = uid()
   if (opts.personal && sb) {
@@ -59,6 +70,7 @@ export async function saveMedia(file: Blob & { name?: string }, opts: { personal
   const item: MediaItem = { id, name: file.name ?? id, type: file.type, blob: file }
   if (opts.personal) item.personal = true
   if (opts.thumbOf) item.thumbOf = opts.thumbOf
+  if (opts.thumb) item.thumb = opts.thumb
   if (sb) item.pending = true
   await idbSet('media', id, item)
   // just made: it belongs to an edit that may not be saved yet, so no trim takes it
@@ -342,7 +354,7 @@ export async function deleteMedia(ids: readonly (string | undefined)[]): Promise
   const gone = ids.filter((id): id is string => !!id)
   if (gone.length === 0) return
   for (const id of gone) {
-    forgetURL(id)
+    forgetURLs(id)
     forgetUse(id)
     await idbDel('media', id).catch(() => {})
   }
@@ -387,14 +399,23 @@ function keepURL(id: string, url: string, bytes: number): void {
   }
 }
 
-/** The URL for this id, moved up as the most recently asked for. */
-function cachedURL(id: string): string | null {
-  const had = urlCache.get(id)
+/** The URL kept under this key, moved up as the most recently asked for; `id` is the photo it shows, noted as used. */
+function cachedURL(key: string, id = key): string | null {
+  const had = urlCache.get(key)
   if (!had) return null
-  urlCache.delete(id)
-  urlCache.set(id, had)
+  urlCache.delete(key)
+  urlCache.set(key, had)
   noteUse(id)
   return had.url
+}
+
+/** Where a picture's small copy keeps its URL, beside the picture's own. */
+const thumbKey = (id: string) => `${id}#thumb`
+
+/** A photo's URLs, its small copy's included: gone from this device, or the photo is. */
+function forgetURLs(id: string): void {
+  forgetURL(id)
+  forgetURL(thumbKey(id))
 }
 
 /** The object URL already made for this id, if any: a thumbnail seen once paints at once the next time. */
@@ -412,6 +433,33 @@ export function mediaURL(id: string): Promise<string | null> {
     lookups.set(id, pending)
   }
   return pending
+}
+
+/**
+ * The URL to draw a picture small by: its small copy, when this device saved
+ * one with it (savePicture in src/picture.ts), else the picture itself. A 64px square of a
+ * camera photo decodes a 360px bitmap instead of the whole picture. One
+ * lookup at a time per picture, as mediaURL's.
+ */
+export function mediaThumbURL(id: string): Promise<string | null> {
+  const key = thumbKey(id)
+  const cached = cachedURL(key, id)
+  if (cached) return Promise.resolve(cached)
+  let pending = lookups.get(key)
+  if (!pending) {
+    pending = lookUpThumb(id).finally(() => lookups.delete(key))
+    lookups.set(key, pending)
+  }
+  return pending
+}
+
+async function lookUpThumb(id: string): Promise<string | null> {
+  const thumb = (await idbGet<MediaItem>('media', id))?.thumb
+  if (!thumb) return mediaURL(id)
+  noteUse(id)
+  const url = URL.createObjectURL(thumb)
+  keepURL(thumbKey(id), url, thumb.size)
+  return url
 }
 
 async function lookUp(id: string): Promise<string | null> {
@@ -622,10 +670,11 @@ export async function trimMediaCache(referenced: () => ReadonlySet<string>, now 
   lastTrim = now
   const items = await idbAll<MediaItem>('media').catch(() => null)
   if (!items) return 0
-  const photos = items.map(i => ({ id: i.id, bytes: i.blob?.size ?? 0, pending: i.pending }))
+  // a picture's small copy is in its entry, and goes with it
+  const photos = items.map(i => ({ id: i.id, bytes: (i.blob?.size ?? 0) + (i.thumb?.size ?? 0), pending: i.pending }))
   const drop = photosToTrim(photos, referenced(), shownMap(), cacheBytesMax(), now)
   for (const id of drop) {
-    forgetURL(id)
+    forgetURLs(id)
     forgetUse(id)
     await idbDel('media', id).catch(() => {})
   }

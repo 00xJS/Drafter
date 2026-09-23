@@ -3,7 +3,6 @@ import {
   CAL_MODE_KEY,
   CALENDAR_MODES,
   COMPACT_TABS,
-  HOME_TABS,
   INNER_VIEWS,
   INNER_VIEW_KEYS,
   LEGACY_VIEW_TO_HOME,
@@ -61,8 +60,8 @@ describe('five tabs, the same on the phone and the desktop', () => {
 
   it('keeps the segments each tab holds', () => {
     // Home IS the day at v3.29: the Wardrobe went to Keep, the Week and the
-    // Journal archive to Insights, and the Chat to a sheet off the top bar
-    expect(HOME_TABS.map(t => t.key)).toEqual(['today'])
+    // Journal archive to Insights, and the Chat to a sheet off the top bar —
+    // so Home draws no segments, and HomeTab is 'today' alone
     expect(TASKS_TABS.map(t => t.key)).toEqual(['list', 'board', 'bills', 'notes'])
     expect(CALENDAR_MODES).toEqual(['month', 'week', 'day'])
   })
@@ -128,7 +127,6 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(VIEWS).toHaveLength(5)
     expect(VIEWS as string[]).not.toContain('wardrobe')
     // it left Home in v3.29 for the tab that holds the other things you keep
-    expect((HOME_TABS as { key: string }[]).find(t => t.key === 'wardrobe')).toBeUndefined()
     expect(KEEP_TABS.find(t => t.key === 'wardrobe')?.label).toBe('Wardrobe')
     expect(WARDROBE_TABS.map(t => [t.key, t.label])).toEqual([
       ['outfit', 'Outfit'],
@@ -167,8 +165,7 @@ describe('old links still land on a segment', () => {
     // ?view=review names Insights' Review segment now
     expect(LEGACY_VIEW_TO_INSIGHTS.review).toBe('review')
     expect(LEGACY_VIEW_TO_INSIGHTS.journal).toBe('journal')
-    const segments = HOME_TABS.map(t => t.key) as string[]
-    for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(segments).toContain(tab)
+    for (const tab of Object.values(LEGACY_VIEW_TO_HOME)) expect(tab).toBe('today')
     // and every view that stopped being a tab lands on the segment it named
     const kept = KEEP_TABS.map(t => t.key) as string[]
     for (const tab of Object.values(LEGACY_VIEW_TO_KEEP)) expect(kept).toContain(tab)

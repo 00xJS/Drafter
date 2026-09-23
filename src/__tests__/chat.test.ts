@@ -6,6 +6,7 @@ import { PERSONAL_KINDS, SYNC_KINDS, readableRow } from '../../shared/kinds.mts'
 import { buildAskPrompt } from '../ask'
 import { sanitizeChatTurn, sanitizeItem, sanitizeMessage } from '../schema'
 import { MESSAGE_MAX, type Message } from '../types'
+import { sheetSource } from './source'
 
 // Two chats, and the whole point of them is that they are two: the household's
 // thread, and yours with the assistant. "I want both so our household chat is
@@ -147,7 +148,8 @@ describe('the assistant is reminded of the conversation, not fed by it', () => {
  */
 describe('the chat is a screen, and the page scrolls it', () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
-  const css = read('../styles/11-people-review-search.css')
+  // the chat's partial and its own sheet (styles/views/chat.css), in cascade order
+  const css = sheetSource()
   const chat = read('../components/Chat.tsx')
   /** One rule's declarations, by selector. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''

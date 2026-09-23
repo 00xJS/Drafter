@@ -23,6 +23,7 @@ import { Wardrobe } from '../components/wardrobe/Wardrobe'
 import type { Garment, GarmentType, Item } from '../types'
 import { liveById, wearIndex, withBack } from '../wardrobe'
 import { elements, propsOf, settled } from './rendered'
+import { partialSource } from './source'
 
 // A piece's back photo (a shirt whose logo is there): the other side drawn
 // small in the corner of the card-size views, a button that swaps the two in
@@ -125,7 +126,7 @@ describe('the composer’s cards', () => {
   })
 
   it('leave the row to scroll from the inset and snap as ever, the target at 44pt however small the card', () => {
-    const css = read('../styles/18-wardrobe.css')
+    const css = partialSource('18-wardrobe.css')
     const block = (sel: string) => css.match(new RegExp(`\\n${sel.replace(/\./g, '\\.')} \\{([^}]*)\\}`))?.[1] ?? ''
     for (const sel of ['.garment-inset', '.snap-flip']) {
       expect(block(sel), sel).not.toBe('')

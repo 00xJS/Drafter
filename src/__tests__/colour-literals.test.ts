@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { viewSheets } from './source'
 
 /*
  * Every colour the app paints is a theme token. src/styles/01-base.css holds
@@ -105,7 +106,8 @@ describe('colour lives in the theme tokens', () => {
   })
 
   it('writes no colour in the stylesheet outside the two palettes in 01-base.css', () => {
-    const sheets = readdirSync(path('styles')).filter(f => f.endsWith('.css'))
+    // the partials and the lazy views' own sheets
+    const sheets = [...readdirSync(path('styles')).filter(f => f.endsWith('.css')), ...viewSheets()]
     expect(sheets).toContain('01-base.css')
     expect(sheets.flatMap(f => cssLiterals(f, read(`styles/${f}`))), HINT).toEqual([])
   })
@@ -113,7 +115,7 @@ describe('colour lives in the theme tokens', () => {
   it('draws every focus cue in --focus-ring, never the plain accent', () => {
     const sample = '.a:focus {\n  border-color: var(--accent);\n}\n.b:focus-visible { outline-color: var(--accent-ink); }\n.c:hover { color: var(--accent); }\n@media (x) {\n  .d:focus-within { box-shadow: 0 0 0 2px var(--accent); }\n}'
     expect(focusInAccent('x.css', sample).map(h => h.split(':')[1])).toEqual(['1', '7'])
-    const sheets = readdirSync(path('styles')).filter(f => f.endsWith('.css'))
+    const sheets = [...readdirSync(path('styles')).filter(f => f.endsWith('.css')), ...viewSheets()]
     expect(
       sheets.flatMap(f => focusInAccent(f, read(`styles/${f}`))),
       'a focus indicator reads var(--focus-ring)',

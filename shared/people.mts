@@ -3,6 +3,7 @@
 
 import type { CalendarEntry, Person, Task } from '../src/types.ts'
 import { daysWithin, distinctDays } from './stats.mts'
+import { doneWithTime, openVisitPlan, taskIndex } from './visitindex.mts'
 
 export const DEFAULT_CADENCE_DAYS = 90
 export const DAY_MS = 86_400_000
@@ -69,12 +70,16 @@ export interface Visit {
   at: string
 }
 
-/** Completed tasks attached to this person, newest first. */
+/**
+ * Completed tasks attached to this person, newest first. Read off the list's
+ * index (shared/visitindex.mts), filed once for everyone asked about.
+ */
 export function visitsFor(personId: string, tasks: readonly Task[]): Visit[] {
-  return (tasks ?? [])
-    .filter((t): t is Task & { completedAt: string } => t.status === 'done' && !!t.completedAt && (t.peopleIds ?? []).includes(personId))
-    .map(t => ({ task: t, at: t.completedAt }))
-    .sort((a, b) => b.at.localeCompare(a.at))
+  const index = taskIndex(tasks)
+  const done = index
+    ? (index.visits.get(personId) ?? [])
+    : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneWithTime(t) && (t.peopleIds ?? []).includes(personId))
+  return done.map(t => ({ task: t, at: t.completedAt })).sort((a, b) => b.at.localeCompare(a.at))
 }
 
 /**
@@ -156,13 +161,14 @@ export function seenTasks(tasks: readonly Task[], entries: readonly CalendarEntr
   return [...(tasks ?? []).filter(mine), ...eventVisits((entries ?? []).filter(mine), now)]
 }
 
-/** Soonest open catch-up / visit plan for this person, if any. */
+/** Soonest open catch-up / visit plan for this person, if any. Read off the list's index, as visitsFor is. */
 export function plannedVisit(personId: string, tasks: readonly Task[]): Task | null {
-  return (
-    (tasks ?? [])
-      .filter(t => OPEN.includes(t.status) && (t.tags ?? []).includes('visit') && (t.peopleIds ?? []).includes(personId))
-      .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999') || a.updatedAt.localeCompare(b.updatedAt))[0] ?? null
-  )
+  const index = taskIndex(tasks)
+  // a copy to sort: the index's entry keeps the list's order for the next question
+  const open = index
+    ? [...(index.plans.get(personId) ?? [])]
+    : (tasks ?? []).filter(t => openVisitPlan(t) && (t.peopleIds ?? []).includes(personId))
+  return open.sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999') || a.updatedAt.localeCompare(b.updatedAt))[0] ?? null
 }
 
 /**
