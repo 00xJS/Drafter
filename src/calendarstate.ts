@@ -142,19 +142,27 @@ const SIGN_IN_DISMISSED = 'drafter:mirror-signin-dismissed'
 
 const providerOf = (key: string): SignInTrouble['provider'] => (key.startsWith('ms:') ? 'microsoft' : 'google')
 
+/**
+ * How often a target waiting on a sign-in is asked once more all the same: the
+ * account may have been signed in again on another device, which this one
+ * would otherwise hear of only from Settings or a pull-to-refresh. The server
+ * refuses a grant it let go at once, so a day's ask costs one quick answer.
+ */
+export const SIGN_IN_PROBE_MS = 24 * 3_600_000
+
 /** The dead sign-in stored for one mirror target (its ledger key), if any. */
-export function readSignIn(key: string): SignInTrouble | null {
+export function readSignIn(key: string): (SignInTrouble & { triedAt?: string }) | null {
   try {
     const raw = localStorage.getItem(SIGN_IN_PREFIX + key)
-    const v = raw ? (JSON.parse(raw) as { since?: unknown; message?: unknown }) : null
+    const v = raw ? (JSON.parse(raw) as { since?: unknown; message?: unknown; triedAt?: unknown }) : null
     if (!v || typeof v.since !== 'string' || typeof v.message !== 'string') return null
-    return { id: `${key}|${v.since}`, provider: providerOf(key), since: v.since, message: v.message }
+    return { id: `${key}|${v.since}`, provider: providerOf(key), since: v.since, message: v.message, ...(typeof v.triedAt === 'string' ? { triedAt: v.triedAt } : {}) }
   } catch {
     return null
   }
 }
 
-function writeSignIn(key: string, value: { since: string; message: string } | null): void {
+function writeSignIn(key: string, value: { since: string; message: string; triedAt?: string } | null): void {
   try {
     if (value) localStorage.setItem(SIGN_IN_PREFIX + key, JSON.stringify(value))
     else localStorage.removeItem(SIGN_IN_PREFIX + key)
@@ -175,10 +183,20 @@ function storedSignIns(targets: readonly MirrorSpec[]): Record<string, SignInTro
 /**
  * Which of the targets a pass asks. One whose sign-in died waits for the
  * account to be signed in again — retrying every half hour could never mend
- * it — unless the pass was asked for (pull-to-refresh, a switch in Settings).
+ * it — unless the pass was asked for (pull-to-refresh, a switch in Settings),
+ * or a day has gone by since it was last tried (SIGN_IN_PROBE_MS).
  */
-export function passTargetsFor<T extends { key: string }>(targets: readonly T[], asked: boolean, read: (key: string) => unknown = readSignIn): T[] {
-  return asked ? [...targets] : targets.filter(t => !read(t.key))
+export function passTargetsFor<T extends { key: string }>(
+  targets: readonly T[],
+  asked: boolean,
+  read: (key: string) => { since: string; triedAt?: string } | null = readSignIn,
+  now = Date.now(),
+): T[] {
+  if (asked) return [...targets]
+  return targets.filter(t => {
+    const waiting = read(t.key)
+    return !waiting || now - Date.parse(waiting.triedAt ?? waiting.since) >= SIGN_IN_PROBE_MS
+  })
 }
 
 /**
@@ -191,11 +209,11 @@ export function settleSignIns(
   pass: Pick<PassResult, 'signIn' | 'accountErrors'>,
   now: string,
   read: (key: string) => { since: string } | null = readSignIn,
-  write: (key: string, value: { since: string; message: string } | null) => void = writeSignIn,
+  write: (key: string, value: { since: string; message: string; triedAt?: string } | null) => void = writeSignIn,
 ): void {
   for (const t of ran) {
     const message = pass.signIn[t.id]
-    if (message) write(t.key, { since: read(t.key)?.since ?? now, message })
+    if (message) write(t.key, { since: read(t.key)?.since ?? now, message, triedAt: now })
     else if (!pass.accountErrors[t.id] && read(t.key)) write(t.key, null)
   }
 }

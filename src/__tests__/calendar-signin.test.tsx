@@ -5,7 +5,7 @@ import { gapi, googleNeedsSignIn, reconnectPatch } from '../../netlify/functions
 import { accessToken as outlookToken, connectAccount, listAccounts, publicAccount } from '../../netlify/functions/lib/microsoft.mjs'
 import { signInLine } from '../../netlify/functions/lib/signins.mjs'
 import { type GoogleStatus, type PassTarget, mirrorPass } from '../calendars'
-import { clearMirrorSignIn, dismissSignIn, passTargetsFor, readSignIn, readSignInDismissed, settleSignIns, signInBanner } from '../calendarstate'
+import { SIGN_IN_PROBE_MS, clearMirrorSignIn, dismissSignIn, passTargetsFor, readSignIn, readSignInDismissed, settleSignIns, signInBanner } from '../calendarstate'
 import { openingGroup } from '../components/Settings'
 import { GoogleCalendar } from '../components/settings/GoogleCalendar'
 import type { SettingsCtx } from '../components/settings/context'
@@ -201,10 +201,17 @@ describe('the hooks stop asking until the account is signed in again', () => {
   const google = { id: 'google', key: 'google:me' }
   const outlook = { id: 'acct-9', key: 'ms:acct-9' }
 
-  it('an automatic pass leaves a dead sign-in out; one that was asked for tries it', () => {
-    settleSignIns([google], { signIn: { google: 'Google Calendar needs you to sign in again.' }, accountErrors: { google: 'x' } }, '2026-09-20T08:00:00.000Z')
-    expect(passTargetsFor([google, outlook], false)).toEqual([outlook])
-    expect(passTargetsFor([google, outlook], true)).toEqual([google, outlook])
+  it('an automatic pass leaves a dead sign-in out; one that was asked for tries it, and so does one a day on', () => {
+    const at = Date.parse('2026-09-20T08:00:00.000Z')
+    settleSignIns([google], { signIn: { google: 'Google Calendar needs you to sign in again.' }, accountErrors: { google: 'x' } }, new Date(at).toISOString())
+    expect(passTargetsFor([google, outlook], false, undefined, at + 60_000)).toEqual([outlook])
+    expect(passTargetsFor([google, outlook], true, undefined, at + 60_000)).toEqual([google, outlook])
+    // signed in again on another device, perhaps: asked once more a day later
+    expect(passTargetsFor([google, outlook], false, undefined, at + SIGN_IN_PROBE_MS)).toEqual([google, outlook])
+    // …and that try, refused again, waits another day, the streak still the one it was
+    settleSignIns([google], { signIn: { google: 'Google Calendar needs you to sign in again.' }, accountErrors: { google: 'x' } }, new Date(at + SIGN_IN_PROBE_MS).toISOString())
+    expect(passTargetsFor([google, outlook], false, undefined, at + SIGN_IN_PROBE_MS + 60_000)).toEqual([outlook])
+    expect(readSignIn('google:me')?.since).toBe('2026-09-20T08:00:00.000Z')
   })
 
   it('a streak keeps the time it began, ends when the account works again, and not on another failure', () => {
