@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { saveFile } from '../../native'
 import { STORAGE_VERSION, migrateStored } from '../../schema'
+import type { Store } from '../../store'
 import type { SettingsCtx } from './context'
 
 // Taking your data out, and putting it back.
@@ -12,27 +13,68 @@ import type { SettingsCtx } from './context'
 // belongs with the other data controls, not on the page you work from daily.
 //
 // Nothing about what they DO has changed — the same payload out, the same
-// tolerant reader back in.
+// tolerant reader back in — except that a server snapshot is only taken back
+// by the account it is a snapshot of (importRefusal).
 
-export function ImportExport({ store }: SettingsCtx) {
+/** What an export or import has to say, and whether it went well: a failure is not drawn in the success green. */
+export interface Notice {
+  text: string
+  ok: boolean
+}
+
+/**
+ * Why this file must not be imported into the signed-in account, or null when
+ * it may be. A nightly snapshot names the account it was taken of (`userId`),
+ * and importing merges by id and files every record under whoever imports it:
+ * the other member's snapshot would come back as the importer's own records,
+ * their journal included. A file that names no account — an export from here,
+ * an older backup — is taken as before, and so is anything in local mode,
+ * where there is no account to file it under.
+ */
+export function importRefusal(raw: unknown, myId: string | null, signedIn: boolean): string | null {
+  const owner = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { userId?: unknown }).userId : undefined
+  if (typeof owner !== 'string' || !owner || !signedIn) return null
+  if (!myId) return 'Nothing was imported: Drafter could not tell which account is signed in, so it could not check whose backup this is. Try again in a moment.'
+  if (owner !== myId) return 'Nothing was imported: this backup is of another account. Import it while signed in as that account — here, its records would be filed as yours.'
+  return null
+}
+
+/** Read one file and merge it into the store, or say why not. */
+export async function importFile(file: Blob, ctx: { myId: string | null; signedIn: boolean; importItems: Store['importItems'] }): Promise<Notice> {
+  try {
+    const raw: unknown = JSON.parse(await file.text())
+    const refused = importRefusal(raw, ctx.myId, ctx.signedIn)
+    if (refused) return { text: refused, ok: false }
+    const migrated = migrateStored(raw)
+    if (!migrated) throw new Error('expected a Drafter backup (array, {version, posts} or {version, items})')
+    const s = ctx.importItems(migrated)
+    return { text: `Imported: ${s.added} new, ${s.updated} updated, ${s.unchanged} unchanged.`, ok: true }
+  } catch (e) {
+    return { text: `Import failed: ${(e as Error).message}`, ok: false }
+  }
+}
+
+/** An export's or import's outcome: green when it went well, and said as a warning when it did not. */
+export function ImportNotice({ notice }: { notice: Notice }) {
+  return (
+    <p className={notice.ok ? 'sync-ok' : 'warn'} role={notice.ok ? undefined : 'alert'}>
+      {notice.text}
+    </p>
+  )
+}
+
+export function ImportExport({ store, household, supabaseOn }: SettingsCtx) {
   const file = useRef<HTMLInputElement>(null)
-  const [notice, setNotice] = useState('')
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   function exportJSON() {
     const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.visibleItems }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    saveFile(`drafter-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(e => setNotice(`Export failed: ${(e as Error).message}`))
+    saveFile(`drafter-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(e => setNotice({ text: `Export failed: ${(e as Error).message}`, ok: false }))
   }
 
   async function onFile(f: File) {
-    try {
-      const migrated = migrateStored(JSON.parse(await f.text()))
-      if (!migrated) throw new Error('expected a Drafter backup (array, {version, posts} or {version, items})')
-      const s = store.importItems(migrated)
-      setNotice(`Imported: ${s.added} new, ${s.updated} updated, ${s.unchanged} unchanged.`)
-    } catch (e) {
-      setNotice(`Import failed: ${(e as Error).message}`)
-    }
+    setNotice(await importFile(f, { myId: household.myId, signedIn: supabaseOn, importItems: store.importItems }))
   }
 
   return (
@@ -61,7 +103,7 @@ export function ImportExport({ store }: SettingsCtx) {
           }}
         />
       </div>
-      {notice && <p className="sync-ok">{notice}</p>}
+      {notice && <ImportNotice notice={notice} />}
     </section>
   )
 }
