@@ -388,6 +388,19 @@ export async function askDrafter(question: string, docs: AskDoc[], facts: string
   return { answer, cites: [...new Set([...listed, ...inline.map(d => d.ref)])] }
 }
 
+/**
+ * The assistant chat's one model call (Home → Chat), beside Ask's: the same
+ * retrieved records and facts, and the reply may also suggest changes to the
+ * planner. src/chatactions.ts writes the prompt and reads the reply — JSON with
+ * an answer, its citations and the suggestions — so this is only the call:
+ * JSON mode and 900 tokens, through complete() like every call here (NVIDIA
+ * first, and one more ask when the JSON comes back cut off). A failure
+ * throws, and the chat writes it as a failed turn.
+ */
+export async function askDrafterChat(system: string, prompt: string): Promise<string> {
+  return complete(system, prompt, 900, true)
+}
+
 export interface DraftedPlan {
   durationDays: number
   tasks: { title: string; offsetDays: number; priority?: 'low' | 'normal' | 'high' | 'urgent'; checklist?: string[] }[]
