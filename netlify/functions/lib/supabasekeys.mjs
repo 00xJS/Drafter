@@ -18,13 +18,20 @@ export function legacyKey(key) {
 }
 
 /**
+ * The apikey header, when there is a key to put on it. A key the host has not
+ * set is left off rather than sent as the word "undefined": Supabase refuses
+ * the call either way, and every header left is a string, as fetch expects.
+ */
+const apikey = key => (typeof key === 'string' ? { apikey: key } : {})
+
+/**
  * Headers for a call the key itself is the credential for: the service key's
  * reads and writes, the admin auth API, the storage API. `extra` — a content
  * type, a `prefer`, a caller's own headers — is merged last, as each call site
  * merged its own.
  */
 export function keyHeaders(key, extra = {}) {
-  return legacyKey(key) ? { apikey: key, authorization: `Bearer ${key}`, ...extra } : { apikey: key, ...extra }
+  return legacyKey(key) ? { ...apikey(key), authorization: `Bearer ${key}`, ...extra } : { ...apikey(key), ...extra }
 }
 
 /**
@@ -34,5 +41,5 @@ export function keyHeaders(key, extra = {}) {
  * quietly turn the call into an anonymous one.
  */
 export function userHeaders(key, accessToken, extra = {}) {
-  return { apikey: key, authorization: `Bearer ${accessToken}`, ...extra }
+  return { ...apikey(key), authorization: `Bearer ${accessToken}`, ...extra }
 }

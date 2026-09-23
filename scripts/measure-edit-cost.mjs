@@ -76,6 +76,7 @@ function disk() {
   const d = {
     written: 0,
     cloneMs: 0,
+    /** @type {((value?: unknown) => void) | null} resolves next() when the write lands */
     landed: null,
     next() {
       return new Promise(resolve => (d.landed = resolve))

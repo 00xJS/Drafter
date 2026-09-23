@@ -1,8 +1,9 @@
 {
   // The server code — Netlify functions, the MCP server, the scripts — checked
-  // as plain JavaScript, not strict. The rules it shares with the app are
-  // TypeScript (shared/*.mts), checked strictly by tsconfig.shared.json; they
-  // come in here through the imports that name them.
+  // as plain JavaScript: not strict, but a value that may be null or undefined
+  // must be shown not to be before it is used. The rules it shares with the
+  // app are TypeScript (shared/*.mts), checked strictly by
+  // tsconfig.shared.json; they come in here through the imports that name them.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
@@ -15,6 +16,7 @@
     // shared/*.mts is imported by its real name, as Node needs it to be
     "allowImportingTsExtensions": true,
     "strict": false,
+    "strictNullChecks": true,
     // so the hand-written .d.mts are checked too
     "skipLibCheck": false
   },

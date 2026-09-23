@@ -54,7 +54,11 @@ export function viewboxAround(point, radiusKm = AREA_RADIUS_KM) {
   return [f(clamp(point.lon - dLon, 180)), f(clamp(point.lat + dLat, 90)), f(clamp(point.lon + dLon, 180)), f(clamp(point.lat - dLat, 90))].join(',')
 }
 
-/** The search URL: jsonv2 with the parts of each address, at most `limit`, leaning to (or, bounded, kept inside) the box. */
+/**
+ * The search URL: jsonv2 with the parts of each address, at most `limit`, leaning to (or, bounded, kept inside) the box.
+ * @param {string} q
+ * @param {{ viewbox?: string | null, bounded?: boolean, limit?: number }} [options]
+ */
 export function searchUrl(q, { viewbox = null, bounded = false, limit = MAX_CANDIDATES } = {}) {
   const params = new URLSearchParams({ q, format: 'jsonv2', addressdetails: '1', limit: String(limit) })
   if (viewbox) {

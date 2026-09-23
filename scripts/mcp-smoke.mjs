@@ -91,6 +91,11 @@ let queryCount = 0
  * verification run as the superuser so no grant or policy can mask a row. The
  * result is captured with `\o` so psql's command tags can never contaminate it.
  */
+/**
+ * @param {string} sql
+ * @param {string | null} [role] the role the statement runs as; none is the superuser
+ * @param {Record<string, unknown> | null} [claims] the JWT claims it sees
+ */
 function psqlValue(sql, role = null, claims = null) {
   const n = queryCount++
   const qfile = join(dbDir, `q${n}.sql`)
@@ -359,7 +364,7 @@ function whoIs(headers) {
  * nothing until that many links have been asked for, so two mints can be made
  * to collide on purpose.
  */
-const auth = { live: new Map(), mints: 0, verifyTypes: [], refused: 0, logouts: 0, rejectMagiclink: true, hold: 0, held: [] }
+const auth = { live: new Map(), mints: 0, verifyTypes: /** @type {unknown[]} */ ([]), refused: 0, logouts: 0, rejectMagiclink: true, hold: 0, held: /** @type {(() => unknown)[]} */ ([]) }
 
 function authRoute(method, path, headers, body, reply) {
   const bearer = /^Bearer\s+(.+)$/i.exec(headers.authorization ?? '')?.[1] ?? ''
@@ -424,7 +429,7 @@ function startShim() {
     const chunks = []
     req.on('data', c => chunks.push(c))
     req.on('end', () => {
-      const url = new URL(req.url, 'http://shim')
+      const url = new URL(req.url ?? '/', 'http://shim')
       const headers = req.headers
       const reply = (code, payload, extra = {}) => {
         if (payload === undefined) {
@@ -457,13 +462,13 @@ function startShim() {
           plan = { sql: 'select to_json(public.owner_user_id())', kind: 'value' }
         } else if (req.method === 'POST' && rpc && RPCS[rpc]) {
           plan = { sql: rpcSql(rpc, body), kind: RPCS[rpc] === 'void' ? 'void' : 'value' }
-        } else if (REST_TABLES.has(table) && req.method === 'GET') {
+        } else if (table && REST_TABLES.has(table) && req.method === 'GET') {
           const s = selectSql(table, params, headers)
           plan = { sql: s.sql, offset: s.offset, kind: 'rows' }
-        } else if (REST_TABLES.has(table) && req.method === 'POST') {
+        } else if (table && REST_TABLES.has(table) && req.method === 'POST') {
           const r = insertSql(table, params, headers, body)
           plan = { sql: r.sql, kind: r.rows ? 'created-rows' : 'created' }
-        } else if (REST_TABLES.has(table) && req.method === 'PATCH') {
+        } else if (table && REST_TABLES.has(table) && req.method === 'PATCH') {
           const r = updateSql(table, params, headers, body)
           plan = { sql: r.sql, kind: r.rows ? 'rows' : 'none' }
         } else {
@@ -529,10 +534,10 @@ async function startSite(shimUrl) {
     try {
       const chunks = []
       for await (const c of req) chunks.push(c)
-      const url = new URL(req.url, process.env.URL)
+      const url = new URL(req.url ?? '/', process.env.URL)
       const headers = new Headers()
       for (const [k, v] of Object.entries(req.headers)) headers.set(k, Array.isArray(v) ? v.join(', ') : String(v))
-      const request = new Request(url, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) })
+      const request = new Request(url, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method ?? 'GET') ? undefined : Buffer.concat(chunks) })
       const handler = url.pathname === '/api/mcp' ? mcpEndpoint : routeOf(url.pathname) ? oauthHandler : null
       const response = handler ? await handler(request, {}) : new Response('Not found', { status: 404 })
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()))
@@ -1356,7 +1361,8 @@ async function main() {
 
     console.log(`mcp-smoke: PASS (${step} assertions)`)
   } finally {
-    for (const m of [proxy, keyOnly].filter(Boolean)) {
+    for (const m of [proxy, keyOnly]) {
+      if (!m) continue
       m.child.stdin.end()
       m.child.kill()
     }

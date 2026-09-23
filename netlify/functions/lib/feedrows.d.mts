@@ -5,7 +5,7 @@
 export declare function withOwner<T>(item: T, userId: string | null | undefined): T & { ownerId?: string }
 
 /** Headers for a service-key read, and the Supabase URL it goes to. A new-style key rides on apikey alone (lib/supabasekeys.mjs). */
-export declare function serviceHeaders(): Record<string, string | undefined>
+export declare function serviceHeaders(): Record<string, string>
 export declare function baseUrl(): string | undefined
 
 /** Service-key rows as `readerId` may see them: a household member's personal kinds dropped, each row carrying its owner. */

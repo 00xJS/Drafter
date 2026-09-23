@@ -53,6 +53,7 @@ const withOwner = row => ({ ...legacyPostToTask(row.data), ownerId: row.user_id 
  *   auth()           -> Promise<{ apikey, bearer }>, called per request (lazily: nothing is minted until a tool reads)
  *   userId           whose view this is: the rows are read, filtered and written as this user
  *   onUnauthorized() -> called once on a 401 before the request is retried (the hosted endpoint drops the session)
+ * @param {Parameters<typeof import('./data.mjs').createRestData>[0]} options
  */
 export function createRestData({ baseUrl, auth, userId, onUnauthorized = null }) {
   if (!userId) throw new Error('the data layer reads as a user, and needs their id')

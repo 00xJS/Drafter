@@ -241,7 +241,7 @@ export async function describeAuthorizeRequest(userId, params) {
   } catch {
     /* only a hint */
   }
-  return { ok: true, clientName: v.client.client_name, redirectHost: host, loopback: LOOPBACK.has(host), requestedScopes: v.requestedScopes, existingConnectionId }
+  return { ok: true, clientName: v.client.client_name, redirectHost: host, loopback: host !== null && LOOPBACK.has(host), requestedScopes: v.requestedScopes, existingConnectionId }
 }
 
 /**

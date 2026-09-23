@@ -48,6 +48,8 @@ const handler = async req => {
 
   const { user, response } = await getUser(req)
   if (response) return response
+  // a site without its auth settings answers with no user and no response
+  if (!user) return Response.json({ error: 'sign in required' }, { status: 401 })
 
   let body
   try {

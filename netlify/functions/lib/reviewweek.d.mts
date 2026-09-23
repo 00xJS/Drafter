@@ -5,10 +5,11 @@ export declare function zonedMidnight(dayKey: string, tz: string | null | undefi
 
 export declare function shiftDayKey(key: string, days: number): string | null
 
+/** Throws a RangeError for a Date that is no date. */
 export declare function previousWeekIn(
   now: Date,
   tz: string | null | undefined,
-): { key: string | null; label: string; startKey: string | null; endKey: string | null; start: Date; end: Date }
+): { key: string; label: string; startKey: string; endKey: string; start: Date; end: Date }
 
 /** Whether Sunday's review draft is due for an account (its user_settings row, or {}) at `now`. */
 export declare function sundayDraftDue(settings: { timezone?: string | null; digest_hour?: number | null } | null | undefined, now: Date): boolean

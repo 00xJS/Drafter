@@ -33,7 +33,9 @@ describe('which headers a Supabase key goes on', () => {
   it('counts anything that is not a JWT as new style, a key the host has not set included', () => {
     expect(legacyKey(undefined)).toBe(false)
     expect(legacyKey('')).toBe(false)
-    expect(keyHeaders(undefined)).toStrictEqual({ apikey: undefined })
+    // no key, no header: never the word "undefined" on the wire
+    expect(keyHeaders(undefined)).toStrictEqual({})
+    expect(userHeaders(undefined, 'jwt-of-the-user')).toStrictEqual({ authorization: 'Bearer jwt-of-the-user' })
   })
 
   it('passes the content type and everything else a caller sends through, and lets it win', () => {
