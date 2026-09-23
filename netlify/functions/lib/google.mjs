@@ -306,6 +306,68 @@ export function editedSinceCancelled(existing, record) {
   return !!existing && existing.status === 'cancelled' && Date.parse(record?.updatedAt) > Date.parse(existing.updated)
 }
 
+// ---- creating a copy once ------------------------------------------------------
+//
+// Two devices can each find no copy of a record and each create one: the phone
+// and the laptop both sweeping the same new entry, or a create whose answer was
+// lost and is sent again. Google takes an id the client chooses, so a copy is
+// created under an id worked out from the record — the second create of the
+// same record is then refused with a 409, and writes over the first instead.
+
+const BASE32HEX = '0123456789abcdefghijklmnopqrstuv'
+
+/** RFC 4648's base32hex of a string's UTF-8 bytes, lower case and unpadded: the alphabet Google allows in an event id. */
+export function base32hex(text) {
+  let out = ''
+  let buffer = 0
+  let bits = 0
+  for (const byte of new TextEncoder().encode(String(text))) {
+    buffer = ((buffer << 8) | byte) & 0xfff
+    bits += 8
+    while (bits >= 5) {
+      out += BASE32HEX[(buffer >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+  }
+  if (bits > 0) out += BASE32HEX[(buffer << (5 - bits)) & 31]
+  return out
+}
+
+/**
+ * The id the Google copy of a record is created under: its kind and id in
+ * base32hex. Google wants 5 to 1024 of those characters; a record whose id
+ * would not fit gets no id of its own, and Google makes one as before.
+ * @param {'task' | 'event'} kind
+ * @param {string} recordId
+ */
+export function googleEventId(kind, recordId) {
+  const id = base32hex(`${kind}:${recordId}`)
+  return id.length >= 5 && id.length <= 1024 ? id : null
+}
+
+/**
+ * Create a record's copy under its own id. A 409 says a copy with that id is
+ * already there — another device's create got in first, or Google took an
+ * earlier try whose answer never arrived — so this version is written over it,
+ * and a copy Drafter had cancelled is confirmed again: the plan only creates
+ * when Drafter's record is newer than any cancellation.
+ */
+async function createCopy(userId, calendarId, eventId, body) {
+  const events = `/calendars/${encodeURIComponent(calendarId)}/events`
+  if (!eventId) {
+    await gapi(userId, events, { method: 'POST', body: JSON.stringify(body) })
+    return 'created'
+  }
+  try {
+    await gapi(userId, events, { method: 'POST', body: JSON.stringify({ ...body, id: eventId }) })
+    return 'created'
+  } catch (e) {
+    if (e?.status !== 409 || e?.reason) throw e
+    await gapi(userId, `${events}/${encodeURIComponent(eventId)}`, { method: 'PATCH', body: JSON.stringify({ ...body, status: 'confirmed' }) })
+    return 'updated'
+  }
+}
+
 async function findMirrored(userId, calendarId, taskId) {
   // showDeleted so we don't recreate an event the user deleted in Google
   const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`taskId=${taskId}`)}&showDeleted=true&maxResults=5`)
@@ -344,8 +406,7 @@ export async function pushTask(userId, calendarId, task, projectName, site, opts
     await gapi(userId, evPath(live.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
-  return 'created'
+  return createCopy(userId, calendarId, googleEventId('task', task.id), body)
 }
 
 /**
@@ -411,13 +472,12 @@ export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
     })
     return 'removed'
   }
-  const body = JSON.stringify(googleEntryBody(entry, site, { remind: opts.remind === true }))
+  const body = googleEntryBody(entry, site, { remind: opts.remind === true })
   if (plan.op === 'patch') {
-    await gapi(userId, evPath(plan.id), { method: 'PATCH', body })
+    await gapi(userId, evPath(plan.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body })
-  return 'created'
+  return createCopy(userId, calendarId, googleEventId('event', entry.id), body)
 }
 
 // ---- what moved in Google ---------------------------------------------------------

@@ -67,6 +67,10 @@ export declare function pushTask(
   site: string,
   opts?: { tz?: string | null; remind?: boolean },
 ): Promise<PushOutcome>
+/** RFC 4648's base32hex of a string's UTF-8 bytes, lower case and unpadded. */
+export declare function base32hex(text: string): string
+/** The id a record's Google copy is created under (its kind and id in base32hex), or null when too long for Google. */
+export declare function googleEventId(kind: 'task' | 'event', recordId: string): string | null
 /** Mirror one calendar entry; `opts.revive` brings back a copy Drafter itself cancelled (Undo); `opts.remind` as for pushTask. */
 export declare function pushEntry(userId: string, calendarId: string, entry: EntryLike, site: string, opts?: { revive?: boolean; remind?: boolean }): Promise<PushOutcome>
 

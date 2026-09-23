@@ -74,6 +74,8 @@ export interface TaskLike {
   [key: string]: unknown
 }
 export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
+/** The transactionId a record's Outlook copy is created with: its kind, id and version, hashed into a GUID's shape. */
+export declare function graphTransactionId(kind: 'task' | 'event', record: { id: string; updatedAt?: string }): string
 /**
  * Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none);
  * `opts.remind` keeps Outlook's own reminder on the copy (off: Drafter sends them).

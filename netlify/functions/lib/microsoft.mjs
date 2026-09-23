@@ -3,7 +3,7 @@
 // work): each one's refresh token lives in that user's own user_settings row,
 // which only the service role can read, so the browser never holds a token.
 
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { copyNotes } from './mirror.mjs'
 import { dueDayKey, hasDueTime } from '../../../shared/due.mts'
@@ -366,11 +366,52 @@ export function graphTaskBody(task, projectName, site, tz, remind = false) {
   }
 }
 
-async function findMirrored(userId, accountId, calendarId, taskId) {
-  const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(TASK_PROP)} and ep/value eq ${odataLiteral(taskId)})`
+/** A copy of ours in the calendar, found by the extended property carrying the record's id. */
+async function findByProp(userId, accountId, calendarId, prop, recordId) {
+  const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(prop)} and ep/value eq ${odataLiteral(recordId)})`
   const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(filter)}`
   const page = await graph(userId, accountId, q)
   return page.value?.[0] ?? null
+}
+
+const findMirrored = (userId, accountId, calendarId, taskId) => findByProp(userId, accountId, calendarId, TASK_PROP, taskId)
+
+/**
+ * The transactionId a copy is created with: the record, its kind and the
+ * version being written, hashed into a GUID's shape. Graph uses it to refuse a
+ * second create of the same thing — two devices sweeping the same new entry, or
+ * a create sent again after its answer was lost. It names the version, not just
+ * the record, because Outlook may remember it after the copy is deleted, and a
+ * record put back from the Trash must still get a copy.
+ * @param {'task' | 'event'} kind
+ * @param {{ id: string, updatedAt?: string }} record
+ */
+export function graphTransactionId(kind, record) {
+  const h = createHash('sha256').update(`drafter:${kind}:${record.id}@${record.updatedAt ?? ''}`).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
+}
+
+/**
+ * Create a record's copy once. A 409 means Graph has this create already (the
+ * same transactionId): the copy another device or an earlier try made is found
+ * by its property and this version written over it. Found nowhere — the copy
+ * that used the id is gone — it is created again without one.
+ */
+async function createCopy(userId, accountId, calendarId, prop, kind, record, body) {
+  const events = `/me/calendars/${encodeURIComponent(calendarId)}/events`
+  try {
+    await graph(userId, accountId, events, { method: 'POST', body: JSON.stringify({ ...body, transactionId: graphTransactionId(kind, record) }) })
+    return 'created'
+  } catch (e) {
+    if (e?.status !== 409 || e?.reason) throw e
+  }
+  const there = await findByProp(userId, accountId, calendarId, prop, record.id)
+  if (there) {
+    await graph(userId, accountId, `${events}/${encodeURIComponent(there.id)}`, { method: 'PATCH', body: JSON.stringify(body) })
+    return 'updated'
+  }
+  await graph(userId, accountId, events, { method: 'POST', body: JSON.stringify(body) })
+  return 'created'
 }
 
 /**
@@ -397,8 +438,7 @@ export async function pushTask(userId, accountId, calendarId, task, projectName,
     await graph(userId, accountId, path(existing.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await graph(userId, accountId, `/me/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
-  return 'created'
+  return createCopy(userId, accountId, calendarId, TASK_PROP, 'task', task, body)
 }
 
 /**
@@ -441,9 +481,7 @@ export function graphEntryBody(entry, site, opts = {}) {
 
 /** Mirror one entry; `opts.remind` as for pushTask. */
 export async function pushEntry(userId, accountId, calendarId, entry, site, opts = {}) {
-  const filter = `singleValueExtendedProperties/any(ep: ep/id eq ${odataLiteral(EVENT_PROP)} and ep/value eq ${odataLiteral(entry.id)})`
-  const q = `/me/calendars/${encodeURIComponent(calendarId)}/events?$top=2&$select=id&$filter=${encodeURIComponent(filter)}`
-  const existing = (await graph(userId, accountId, q)).value?.[0] ?? null
+  const existing = await findByProp(userId, accountId, calendarId, EVENT_PROP, entry.id)
   const path = id => `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`
   const plan = graphEntryPlan(existing, entry)
   if (plan.op === 'skip') return 'skipped'
@@ -453,13 +491,12 @@ export async function pushEntry(userId, accountId, calendarId, entry, site, opts
     })
     return 'removed'
   }
-  const body = JSON.stringify(graphEntryBody(entry, site, { remind: opts.remind === true }))
+  const body = graphEntryBody(entry, site, { remind: opts.remind === true })
   if (plan.op === 'patch') {
-    await graph(userId, accountId, path(plan.id), { method: 'PATCH', body })
+    await graph(userId, accountId, path(plan.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await graph(userId, accountId, `/me/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body })
-  return 'created'
+  return createCopy(userId, accountId, calendarId, EVENT_PROP, 'event', entry, body)
 }
 
 /**
