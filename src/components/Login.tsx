@@ -1,6 +1,34 @@
 import { FormEvent, useState } from 'react'
 import { getSupabase, isSupabaseConfigured } from '../supabase'
-import { siteOrigin } from '../api'
+import { OFFLINE_MESSAGE, siteOrigin } from '../api'
+
+/** How Supabase says a request went wrong, as far as the reset answer needs it. */
+type ResetFailure = { name?: string; status?: number; message?: string } | null | undefined
+
+/**
+ * What Forgot password says once Supabase has answered. It said "on its way"
+ * whatever happened — offline, or with Drafter's email allowance used up —
+ * so a reset that never went out read as one that had.
+ *
+ * The form is public, so nothing here may tell an address with an account
+ * from one without, and only failures that do not depend on the address are
+ * said: no connection, and the site's email limit. Supabase's other limit,
+ * "you can only request this after N seconds", comes only for an account that
+ * exists and was sent a link a moment ago; saying it would give the account
+ * away, and that link is on its way, so it gets the ordinary answer. So does
+ * every other refusal, which Supabase may give only for a real account.
+ */
+export function resetReply(to: string, failure: ResetFailure): { sent: string } | { error: string } {
+  const sent = { sent: `If ${to} has an account, a link to set a new password is on its way. It can take a minute.` }
+  if (!failure) return sent
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  // status 0: the request never reached Supabase
+  if (offline || (failure.name === 'AuthRetryableFetchError' && !failure.status)) return { error: OFFLINE_MESSAGE }
+  if (failure.status === 429 && !/only request this after|for security purposes/i.test(failure.message ?? '')) {
+    return { error: 'No reset email went out: Drafter can send only a few emails an hour, and it has just sent them. Try again later.' }
+  }
+  return sent
+}
 
 interface Props {
   onBack?: () => void
@@ -26,7 +54,7 @@ export function Login({ onBack, connecting = false }: Props) {
    * Ask Supabase to email a recovery link. The reply is deliberately the same
    * whether or not that address has an account: this form is public, and a
    * different answer for a real one turns it into a way to find out who has
-   * one. The link comes back to this site and App shows SetPassword.
+   * one (resetReply). The link comes back to this site and App shows SetPassword.
    */
   async function forgot() {
     const sb = getSupabase()
@@ -34,11 +62,20 @@ export function Login({ onBack, connecting = false }: Props) {
     if (!sb || !to) return setError('Type your email address first, then tap this again.')
     setBusy(true)
     setError('')
-    // the hosted site, never the shell's own origin: a capacitor:// URL is
-    // not somewhere Supabase can send anyone back to
-    await sb.auth.resetPasswordForEmail(to, { redirectTo: siteOrigin() })
+    setSent('')
+    let reply: ReturnType<typeof resetReply>
+    try {
+      // the hosted site, never the shell's own origin: a capacitor:// URL is
+      // not somewhere Supabase can send anyone back to
+      const { error: failure } = await sb.auth.resetPasswordForEmail(to, { redirectTo: siteOrigin() })
+      reply = resetReply(to, failure)
+    } catch {
+      // thrown before any request was made, so nothing about the address
+      reply = { error: 'The reset email could not be asked for just now. Try again in a moment.' }
+    }
     setBusy(false)
-    setSent(`If ${to} has an account, a link to set a new password is on its way. It can take a minute.`)
+    if ('error' in reply) setError(reply.error)
+    else setSent(reply.sent)
   }
 
   async function submit(e: FormEvent) {
