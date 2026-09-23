@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -19,7 +17,7 @@ vi.mock('../calendars', async importOriginal => ({
   },
 }))
 
-import type { GoogleStatus } from '../calendars'
+import { beginNativeOAuth, finishOAuthReturn, type GoogleStatus } from '../calendars'
 import { oauthSettledMessage, useDeepLinks } from '../components/planner/useDeepLinks'
 import { GoogleCalendar } from '../components/settings/GoogleCalendar'
 import type { SettingsCtx } from '../components/settings/context'
@@ -78,41 +76,72 @@ function links() {
   return { apply: (raw: string) => handed[handed.length - 1].current(raw), calls }
 }
 
+/** A turn of the event loop: long enough for the calendars module, loaded already, to be handed over. */
+const tick = () => new Promise(r => setTimeout(r, 0))
+const CONNECTED = 'Google Calendar connected — pick the calendars to show in Settings.'
+
 describe('coming back from a calendar sign-in', () => {
-  it('in the app, opens Settings and waits for the exchange before saying anything', () => {
-    for (const raw of ['drafter://oauth?google=connected&code=c0de&state=st4te', 'drafter://oauth?microsoft=connected&code=c0de&state=st4te', 'drafter://oauth?google=error&reason=access_denied']) {
-      const { apply, calls } = links()
-      apply(raw)
-      expect(calls, raw).toEqual(['settingsNonce [null]', 'pushed ["settings"]'])
-    }
+  it('in the app, opens Settings and says nothing until the code has been exchanged', async () => {
+    const { apply, calls } = links()
+    const url = 'drafter://oauth?google=connected&code=c0de&state=st4te'
+    await beginNativeOAuth('google')
+    apply(url)
+    expect(calls).toEqual(['settingsNonce [null]', 'pushed ["settings"]'])
+    await tick()
+    await finishOAuthReturn(url, async () => {})
+    expect(calls.filter(c => c.startsWith('toast'))).toEqual([`toast ["${CONNECTED}"]`])
+  })
+
+  it('in the app, says why the exchange was refused, for either provider', async () => {
+    const { apply, calls } = links()
+    const url = 'drafter://oauth?microsoft=connected&code=c0de&state=st4te'
+    await beginNativeOAuth('microsoft')
+    apply(url)
+    await tick()
+    await finishOAuthReturn(url, async () => {
+      throw new Error('invalid_grant')
+    })
+    expect(calls.filter(c => c.startsWith('toast'))).toEqual(['toast ["Outlook could not be connected: invalid_grant"]'])
+  })
+
+  it('says it once, and nothing for a return this app did not start', async () => {
+    const { apply, calls } = links()
+    const url = 'drafter://oauth?google=connected&code=c0de&state=st4te'
+    // no sign-in waiting on this phone: finishOAuthReturn lets it go, and so does the toast
+    apply(url)
+    await tick()
+    await expect(finishOAuthReturn(url, async () => {})).resolves.toBeNull()
+    expect(calls.filter(c => c.startsWith('toast'))).toEqual([])
+    // a real one after it is said exactly once
+    await beginNativeOAuth('google')
+    apply(url)
+    await tick()
+    await finishOAuthReturn(url, async () => {})
+    expect(calls.filter(c => c.startsWith('toast'))).toEqual([`toast ["${CONNECTED}"]`])
+  })
+
+  it('says a refusal handed back in the link at once: there is nothing to exchange', () => {
+    const { apply, calls } = links()
+    apply('drafter://oauth?google=error&reason=access_denied')
+    expect(calls[0]).toBe('toast ["Google Calendar could not be connected (access was refused or the sign-in was cancelled)."]')
   })
 
   it('on the web, where the callback has already finished it, says the outcome at once', () => {
     const ok = links()
     ok.apply('/?google=connected')
-    expect(ok.calls[0]).toBe('toast ["Google Calendar connected — pick the calendars to show in Settings."]')
+    expect(ok.calls[0]).toBe(`toast ["${CONNECTED}"]`)
     const refused = links()
     refused.apply('/?microsoft=error&reason=access_denied')
     expect(refused.calls[0]).toBe('toast ["Outlook could not be connected (access was refused or the sign-in was cancelled)."]')
   })
 
-  it('says what the exchange came to, for either provider', () => {
-    expect(oauthSettledMessage({ provider: 'google', ok: true })).toBe('Google Calendar connected — pick the calendars to show in Settings.')
+  it('words what the exchange came to', () => {
+    expect(oauthSettledMessage({ provider: 'google', ok: true })).toBe(CONNECTED)
     expect(oauthSettledMessage({ provider: 'microsoft', ok: true })).toBe('Outlook connected — pick the calendars to show in Settings.')
     // finishOAuthReturn's own sentence is kept as it is
     expect(oauthSettledMessage({ provider: 'google', ok: false, error: 'Google Calendar could not be connected (access denied).' })).toBe(
       'Google Calendar could not be connected (access denied).',
     )
-    // the server's words for a refused exchange are said against the provider
-    expect(oauthSettledMessage({ provider: 'microsoft', ok: false, error: 'invalid_grant' })).toBe('Outlook could not be connected: invalid_grant')
     expect(oauthSettledMessage({ provider: 'google', ok: false })).toBe('Google Calendar could not be connected.')
   })
-
-  it('hears every sign-in the app settles, for as long as the planner is up', () => {
-    // effects do not run in a server render, so the one line that wires the
-    // outcome to the toast is held here
-    const hook = readFileSync(fileURLToPath(new URL('../components/planner/useDeepLinks.ts', import.meta.url)), 'utf8')
-    expect(hook).toMatch(/useEffect\(\(\) => onOAuthSettled\(r => toastRef\.current\(oauthSettledMessage\(r\)\)\), \[\]\)/)
-  })
 })
-

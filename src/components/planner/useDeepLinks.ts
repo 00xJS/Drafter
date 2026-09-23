@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { TaskStatus } from '../../types'
 import type { Store } from '../../store'
-import { onOAuthSettled, type OAuthSettled } from '../../calendars'
+import type { OAuthSettled } from '../../calendars'
 import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
@@ -81,6 +81,10 @@ export function useDeepLinks({
   // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
   // consent screen. Anything that needs data waits for the store to load.
   const pendingLink = useRef<PendingLink | null>(null)
+  // a calendar sign-in's outcome, said once the app has finished it (waitForOAuth)
+  const oauthWait = useRef<(() => void) | null>(null)
+  const toastRef = useRef(showToast)
+  const awaitOAuthOutcome = () => waitForOAuth(oauthWait, message => toastRef.current(message))
   // `fromNotification` is the only way an `act=` button is honoured: a reminder's
   // Done writes on arrival, so the web query string and the share target must not
   // be able to ask for it.
@@ -97,11 +101,12 @@ export function useDeepLinks({
     if (parsed.oauth) {
       void closeExternal()
       // On the web the callback has finished the sign-in before this page
-      // loads, so its answer is the outcome. In the app, drafter://oauth only
-      // hands back a code, which finishOAuthReturn still has to exchange: it
-      // said "connected" before that had happened, and a failed exchange was
-      // never mentioned. The app's toast waits for the outcome (see below).
-      if (host !== 'oauth') {
+      // loads, and a refusal is final wherever it comes back, so either is
+      // said at once. A code handed back to the app still has to be exchanged
+      // (finishOAuthReturn): this said "connected" before that had happened,
+      // and a failed exchange was never mentioned. It waits for the outcome.
+      if (host === 'oauth' && parsed.oauth.ok) awaitOAuthOutcome()
+      else {
         const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
         showToast(
           parsed.oauth.ok
@@ -307,17 +312,11 @@ export function useDeepLinks({
   const applyLinkRef = useRef(applyLink)
   // the deferred "Add" on a web ?journal= link must append to the entry as it is when pressed
   const journalRef = useRef(store.journal)
-  const toastRef = useRef(showToast)
   useLayoutEffect(() => {
     applyLinkRef.current = applyLink
     journalRef.current = store.journal
     toastRef.current = showToast
   })
-  // A calendar sign-in the app finished itself — the code exchanged for this
-  // account, or the reason it was not — is said once it has happened. Only the
-  // app settles one; the web's callback finishes its own.
-  useEffect(() => onOAuthSettled(r => toastRef.current(oauthSettledMessage(r))), [])
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if ([...params.keys()].length) {
@@ -343,5 +342,33 @@ export function useDeepLinks({
     [],
   )
 
+  // the sign-in outcome being waited for, if any, is let go of with the planner
+  useEffect(() => () => oauthWait.current?.(), [])
+
   return { applyLinkRef }
+}
+
+/**
+ * Say how a calendar sign-in the app is finishing itself turned out, once it
+ * has: the code exchanged for this account, or the reason it was not. The
+ * calendars module is loaded by then — it started this sign-in, and it is
+ * what finishes it — so it is fetched here rather than in the first load.
+ */
+function waitForOAuth(wait: { current: (() => void) | null }, say: (message: string) => void): void {
+  wait.current?.()
+  let done = false
+  let off = () => {}
+  const stop = () => {
+    done = true
+    off()
+    if (wait.current === stop) wait.current = null
+  }
+  wait.current = stop
+  void import('../../calendars').then(({ onOAuthSettled }) => {
+    if (done) return
+    off = onOAuthSettled(r => {
+      stop()
+      say(oauthSettledMessage(r))
+    })
+  })
 }
