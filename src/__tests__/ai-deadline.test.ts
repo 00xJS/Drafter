@@ -120,9 +120,9 @@ function watch<T>(p: Promise<T>) {
 const TIMED_OUT = { status: 504, error: 'NVIDIA did not answer in time — try again in a moment.' }
 
 describe('one budget for every attempt', () => {
-  it('is nine seconds, and a second attempt needs two of them left', () => {
-    expect(AI_BUDGET_MS).toBe(9_000)
-    expect(MIN_ATTEMPT_MS).toBe(2_000)
+  it('is 55 seconds, inside Netlify\'s fixed 60, and a second attempt needs five of them left', () => {
+    expect(AI_BUDGET_MS).toBe(55_000)
+    expect(MIN_ATTEMPT_MS).toBe(5_000)
   })
 
   it('a provider that never answers — and ignores the abort — ends at the deadline as a 504', async () => {

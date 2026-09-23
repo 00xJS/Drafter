@@ -29,14 +29,14 @@ const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
 /**
  * How long one completion may take in all — every model, key and fallback it
  * tries — counted from when the request began. Netlify stops a synchronous
- * function at 10 s (netlify.toml sets no other limit); the last second is for
- * the answer and whatever the handler did first. NVIDIA, tried first, may use
- * all of it: a reasoning model filling a 2,048-token budget is slow, and a
- * fallback gets only what is left.
+ * function at 60 s, a limit no setting or plan changes; the last five seconds
+ * are for the answer and whatever the handler did first. NVIDIA, tried first,
+ * may use all of it: the reasoning model takes 20 to 60 seconds on a recipe
+ * draft (measured on the live site), and a fallback gets only what is left.
  */
-export const AI_BUDGET_MS = 9_000
+export const AI_BUDGET_MS = 55_000
 /** No further attempt (the other NVIDIA key, the Anthropic fallback) starts with less than this left. */
-export const MIN_ATTEMPT_MS = 2_000
+export const MIN_ATTEMPT_MS = 5_000
 
 /** The answer for a provider that did not answer inside the budget: a failure like any other, so the app says so. */
 const outOfTime = provider => ({ status: 504, error: `${provider} did not answer in time — try again in a moment.` })
