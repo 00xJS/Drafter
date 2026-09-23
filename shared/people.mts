@@ -76,7 +76,9 @@ export interface Visit {
  */
 export function visitsFor(personId: string, tasks: readonly Task[]): Visit[] {
   const index = taskIndex(tasks)
-  const done = index ? (index.visits.get(personId) ?? []) : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneWithTime(t) && (t.peopleIds ?? []).includes(personId))
+  const done = index
+    ? (index.visits.get(personId) ?? [])
+    : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneWithTime(t) && (t.peopleIds ?? []).includes(personId))
   return done.map(t => ({ task: t, at: t.completedAt })).sort((a, b) => b.at.localeCompare(a.at))
 }
 
@@ -163,7 +165,9 @@ export function seenTasks(tasks: readonly Task[], entries: readonly CalendarEntr
 export function plannedVisit(personId: string, tasks: readonly Task[]): Task | null {
   const index = taskIndex(tasks)
   // a copy to sort: the index's entry keeps the list's order for the next question
-  const open = index ? [...(index.plans.get(personId) ?? [])] : (tasks ?? []).filter(t => openVisitPlan(t) && (t.peopleIds ?? []).includes(personId))
+  const open = index
+    ? [...(index.plans.get(personId) ?? [])]
+    : (tasks ?? []).filter(t => openVisitPlan(t) && (t.peopleIds ?? []).includes(personId))
   return open.sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999') || a.updatedAt.localeCompare(b.updatedAt))[0] ?? null
 }
 

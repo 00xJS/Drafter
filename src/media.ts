@@ -56,7 +56,10 @@ export class NotSignedIn extends Error {
  * access token has expired. With neither it is refused, never given a bare id.
  * In local mode the id is a bare uid, as a note photo's always is.
  */
-export async function saveMedia(file: Blob & { name?: string }, opts: { personal?: boolean; userId?: string | null; thumbOf?: string; thumb?: Blob } = {}): Promise<string> {
+export async function saveMedia(
+  file: Blob & { name?: string },
+  opts: { personal?: boolean; userId?: string | null; thumbOf?: string; thumb?: Blob } = {},
+): Promise<string> {
   const sb = getSupabase()
   let id = uid()
   if (opts.personal && sb) {

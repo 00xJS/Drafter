@@ -207,7 +207,9 @@ export function outingsAt(placeId: string, tasks: readonly Task[], meals: readon
   // each list's outings filed by place once (shared/visitindex.mts), so asking
   // about every place reads the lists once rather than once per place
   const index = taskIndex(tasks)
-  const done = index ? (index.outings.get(placeId) ?? []) : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneOuting(t) && t.placeId === placeId)
+  const done = index
+    ? (index.outings.get(placeId) ?? [])
+    : (tasks ?? []).filter((t): t is Task & { completedAt: string } => doneOuting(t) && t.placeId === placeId)
   const out = mealOutings(meals)
   const eaten = out ? (out.get(placeId) ?? []) : (meals ?? []).filter(m => mealOut(m) && m.placeId === placeId)
   const fromTasks = done.filter(t => ownVisit(t, myId)).map((t): Outing => ({ kind: 'task', task: t, at: t.completedAt }))
