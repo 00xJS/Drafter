@@ -73,6 +73,7 @@ import {
   GithubProjectSync,
   Note,
 } from './types'
+import { CHAT_ACTIONS_MAX, CHAT_ACTION_TYPES, type ChatAction, type ChatNameRef, type ChatOutcome, type ChatOutcomeState, type ChatTaskStatus } from './types'
 import { legacyPostToTask } from '../shared/domain.mjs'
 import { MAX_SIDES } from '../shared/kitchen.mjs'
 import { SYNC_KINDS } from '../shared/kinds.mjs'
@@ -1066,9 +1067,168 @@ export function sanitizeMessage(raw: unknown): Message | null {
 }
 
 /**
+ * How long each part of an assistant's suggestion may be. The model is held to
+ * these as its answer is read (src/chatactions.ts), and every copy that syncs
+ * is held to them here, so one answer cannot fill a sync exchange.
+ */
+export const CHAT_LIMITS = {
+  title: 200,
+  notes: 1000,
+  text: MESSAGE_MAX,
+  name: 80,
+  /** A visit's note: what you did. */
+  note: 200,
+  item: 80,
+  items: 20,
+  tag: 40,
+  tags: 8,
+  people: 8,
+  id: 200,
+  /** Records one outcome can name: an apply writes one, or a meal and its recipe. */
+  ids: 12,
+} as const
+
+const CHAT_ACTION_TYPE_SET = new Set<string>(CHAT_ACTION_TYPES)
+const CHAT_STATUS_SET = new Set<string>(['todo', 'done', 'canceled'])
+const CHAT_OUTCOME_SET = new Set<string>(['applied', 'skipped', 'undone'])
+const CLOCK_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** One line of text, capped; undefined when there is none. */
+function chatLine(v: unknown, max: number): string | undefined {
+  const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max).trim() : ''
+  return s || undefined
+}
+
+/** A paragraph or more: line breaks kept, capped. */
+function chatText(v: unknown, max: number): string | undefined {
+  const s = typeof v === 'string' ? v.replace(/\r\n?/g, '\n').trim().slice(0, max).trim() : ''
+  return s || undefined
+}
+
+const chatDay = (v: unknown): string | undefined => (typeof v === 'string' && isDayKey(v) ? v : undefined)
+const chatClock = (v: unknown): string | undefined => (typeof v === 'string' && CLOCK_RE.test(v) ? v : undefined)
+
+function chatName(v: unknown): ChatNameRef | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
+  const name = chatLine(r.name, CHAT_LIMITS.name)
+  if (!name) return undefined
+  const id = chatLine(r.id, CHAT_LIMITS.id)
+  return id ? { name, id } : { name }
+}
+
+const chatNames = (v: unknown, max: number): ChatNameRef[] => (Array.isArray(v) ? v.map(chatName).filter((n): n is ChatNameRef => !!n).slice(0, max) : [])
+
+/**
+ * One suggestion, as a turn stores it. Anything that is not one of the seven
+ * shapes, or is missing what its shape needs, is dropped: a card that cannot
+ * say what it would do must not offer to do it.
+ */
+export function sanitizeChatAction(raw: unknown): ChatAction | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.type !== 'string' || !CHAT_ACTION_TYPE_SET.has(r.type)) return null
+  const date = chatDay(r.date)
+  const priority = typeof r.priority === 'string' && PRIORITY_SET.has(r.priority) ? (r.priority as Priority) : undefined
+  switch (r.type) {
+    case 'create_task': {
+      const title = chatLine(r.title, CHAT_LIMITS.title)
+      if (!title) return null
+      const time = date ? chatClock(r.time) : undefined
+      const tags = Array.isArray(r.tags)
+        ? [...new Set(r.tags.map(t => chatLine(t, CHAT_LIMITS.tag)?.toLowerCase()).filter((t): t is string => !!t))].slice(0, CHAT_LIMITS.tags)
+        : []
+      const people = chatNames(r.people, CHAT_LIMITS.people)
+      const notes = chatText(r.notes, CHAT_LIMITS.notes)
+      return {
+        type: 'create_task',
+        title,
+        ...(date ? { date } : {}),
+        ...(time ? { time } : {}),
+        ...(priority ? { priority } : {}),
+        ...(tags.length ? { tags } : {}),
+        ...(people.length ? { people } : {}),
+        ...(notes ? { notes } : {}),
+      }
+    }
+    case 'update_task': {
+      const taskId = chatLine(r.taskId, CHAT_LIMITS.id)
+      const status = typeof r.status === 'string' && CHAT_STATUS_SET.has(r.status) ? (r.status as ChatTaskStatus) : undefined
+      const time = date ? chatClock(r.time) : undefined
+      if (!taskId || (!date && !status && !priority)) return null
+      return {
+        type: 'update_task',
+        taskId,
+        title: chatLine(r.title, CHAT_LIMITS.title) ?? '',
+        ...(date ? { date } : {}),
+        ...(time ? { time } : {}),
+        ...(status ? { status } : {}),
+        ...(priority ? { priority } : {}),
+      }
+    }
+    case 'add_grocery': {
+      const items: string[] = []
+      for (const v of Array.isArray(r.items) ? r.items : []) {
+        const item = chatLine(v, CHAT_LIMITS.item)
+        if (item && !items.some(x => x.toLowerCase() === item.toLowerCase())) items.push(item)
+      }
+      if (!items.length) return null
+      return { type: 'add_grocery', items: items.slice(0, CHAT_LIMITS.items), ...(date ? { date } : {}) }
+    }
+    case 'plan_meal': {
+      const slot = typeof r.slot === 'string' && MEAL_SLOT_SET.has(r.slot) ? (r.slot as MealSlot) : undefined
+      if (!date || !slot) return null
+      if (r.out === true) {
+        const place = chatName(r.place)
+        const title = chatLine(r.title, CHAT_LIMITS.title)
+        return { type: 'plan_meal', date, slot, out: true, ...(place ? { place } : {}), ...(title ? { title } : {}) }
+      }
+      const dish = chatName(r.dish)
+      if (!dish) return null
+      return { type: 'plan_meal', date, slot, dish, ...(r.newDish === true && !dish.id ? { newDish: true } : {}) }
+    }
+    case 'log_visit': {
+      const people = chatNames(r.people, CHAT_LIMITS.people)
+      if (!date || !people.length) return null
+      const place = chatName(r.place)
+      const note = chatLine(r.note, CHAT_LIMITS.note)
+      return { type: 'log_visit', people, date, ...(place ? { place } : {}), ...(note ? { note } : {}) }
+    }
+    case 'create_note': {
+      const title = chatLine(r.title, CHAT_LIMITS.title) ?? ''
+      const text = chatText(r.text, CHAT_LIMITS.text) ?? ''
+      if (!title && !text) return null
+      return { type: 'create_note', title, text }
+    }
+    case 'create_event': {
+      const title = chatLine(r.title, CHAT_LIMITS.title)
+      if (!title || !date) return null
+      const start = chatClock(r.start)
+      // zero-padded HH:MM compares correctly as text
+      const end = start ? chatClock(r.end) : undefined
+      return { type: 'create_event', title, date, ...(start ? { start } : {}), ...(end && end > start! ? { end } : {}) }
+    }
+  }
+  return null
+}
+
+/** What became of one suggestion: which answer and which of its cards, and what an apply wrote. */
+export function sanitizeChatOutcome(raw: unknown): ChatOutcome | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const turnId = chatLine(r.turnId, CHAT_LIMITS.id)
+  const index = typeof r.index === 'number' && Number.isInteger(r.index) && r.index >= 0 && r.index < CHAT_ACTIONS_MAX ? r.index : null
+  const state = typeof r.state === 'string' && CHAT_OUTCOME_SET.has(r.state) ? (r.state as ChatOutcomeState) : null
+  if (!turnId || index === null || !state) return null
+  const ids = Array.isArray(r.ids) ? r.ids.map(v => chatLine(v, CHAT_LIMITS.id)).filter((v): v is string => !!v).slice(0, CHAT_LIMITS.ids) : []
+  return { turnId, index, state, ...(ids.length ? { ids } : {}) }
+}
+
+/**
  * One turn of the assistant conversation. `role` decides which side of the
  * thread it is drawn on, so a row whose role cannot be read is dropped rather
- * than guessed at and put in the wrong voice.
+ * than guessed at and put in the wrong voice. Suggestions and outcomes are the
+ * assistant's side only: a line you typed never carries either.
  */
 export function sanitizeChatTurn(raw: unknown): ChatTurn | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1080,12 +1240,16 @@ export function sanitizeChatTurn(raw: unknown): ChatTurn | null {
   if (!id || !role || (!text.trim() && !deletedAt)) return null
   const now = new Date().toISOString()
   const cites = Array.isArray(r.cites) ? r.cites.map(c => str(c)).filter((c): c is string => !!c).slice(0, 12) : undefined
+  const actions = role === 'drafter' && Array.isArray(r.actions) ? r.actions.map(sanitizeChatAction).filter((a): a is ChatAction => !!a).slice(0, CHAT_ACTIONS_MAX) : []
+  const outcomes = role === 'drafter' && Array.isArray(r.outcomes) ? r.outcomes.map(sanitizeChatOutcome).filter((o): o is ChatOutcome => !!o).slice(0, CHAT_ACTIONS_MAX * 2) : []
   return {
     kind: 'chat',
     id,
     role,
     text,
     cites: cites?.length ? cites : undefined,
+    actions: actions.length ? actions : undefined,
+    outcomes: outcomes.length ? outcomes : undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

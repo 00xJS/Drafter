@@ -861,9 +861,70 @@ export interface ChatTurn extends Owned {
   text: string
   /** On an answer: the references it cited (T3, J1), for the chips under it. */
   cites?: string[]
+  /**
+   * On an answer: the changes it suggested, each waiting for Apply, Edit or
+   * Skip (src/chatactions.ts). Written with the answer and never edited, like
+   * the rest of the turn — what became of each is said by the turns after it.
+   */
+  actions?: ChatAction[]
+  /** On a line the app wrote when a suggestion was applied, skipped or undone: which ones it settles. */
+  outcomes?: ChatOutcome[]
   createdAt: string
   updatedAt: string
   deletedAt?: string
+}
+
+/** The most suggestions one answer may carry. */
+export const CHAT_ACTIONS_MAX = 6
+
+/**
+ * A person, recipe or place a suggestion names: the name as it was said, and
+ * the saved record it matched. No id means nothing matched it, or more than
+ * one thing did, and the suggestion waits until one is picked.
+ */
+export interface ChatNameRef {
+  name: string
+  id?: string
+}
+
+/** What a suggestion may do to a task's status: finish it, drop it, or reopen it. */
+export type ChatTaskStatus = 'todo' | 'done' | 'canceled'
+
+/**
+ * A change the assistant suggested. Days are local YYYY-MM-DD keys and times
+ * 24-hour HH:MM, as the planner reads them on this device. An existing task is
+ * named by its id, found through a reference the model was shown; nothing else
+ * that exists is changed.
+ */
+export type ChatAction =
+  | { type: 'create_task'; title: string; date?: string; time?: string; priority?: Priority; tags?: string[]; people?: ChatNameRef[]; notes?: string }
+  | { type: 'update_task'; taskId: string; title: string; date?: string; time?: string; status?: ChatTaskStatus; priority?: Priority }
+  /** Lines for the grocery list of the week holding `date`; no date is this week's. */
+  | { type: 'add_grocery'; items: string[]; date?: string }
+  /**
+   * A meal on a day: cooked (`dish`, a saved recipe — or a new one, once
+   * `newDish` says so), or bought (`out`), from a saved `place` or under a
+   * `title` of its own.
+   */
+  | { type: 'plan_meal'; date: string; slot: MealSlot; dish?: ChatNameRef; newDish?: boolean; out?: boolean; place?: ChatNameRef; title?: string }
+  | { type: 'log_visit'; people: ChatNameRef[]; date: string; place?: ChatNameRef; note?: string }
+  | { type: 'create_note'; title: string; text: string }
+  /** With no start it is all day; with a start and no end it is an hour, as the event editor makes one. */
+  | { type: 'create_event'; title: string; date: string; start?: string; end?: string }
+
+export type ChatActionType = ChatAction['type']
+export const CHAT_ACTION_TYPES: ChatActionType[] = ['create_task', 'update_task', 'add_grocery', 'plan_meal', 'log_visit', 'create_note', 'create_event']
+
+/** What became of one suggestion. `undone` puts it back to waiting. */
+export type ChatOutcomeState = 'applied' | 'skipped' | 'undone'
+
+export interface ChatOutcome {
+  /** The answer that made the suggestion, and which of its suggestions it was. */
+  turnId: string
+  index: number
+  state: ChatOutcomeState
+  /** What an apply wrote, so its card can open it. */
+  ids?: string[]
 }
 
 /**

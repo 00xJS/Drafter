@@ -1,3 +1,4 @@
+import { localDayKey } from './journal'
 import { ChatTurn, MESSAGE_MAX, Message } from './types'
 import { uid } from './utils'
 
@@ -37,12 +38,27 @@ export function newMessage(body: string, about?: Message['about'], at = new Date
   return { kind: 'message', id: threadId('message', at), body: text, about, createdAt: stamp, updatedAt: stamp }
 }
 
-/** One turn of the assistant conversation, yours or its. */
-export function newTurn(role: ChatTurn['role'], text: string, cites?: string[], at = new Date()): ChatTurn | null {
+/**
+ * One turn of the assistant conversation, yours or its. An answer can carry
+ * the changes it suggested, and a line the app writes when one is applied,
+ * skipped or undone carries which (src/chatactions.ts); a turn is never edited
+ * afterwards, so both are said once, here.
+ */
+export function newTurn(role: ChatTurn['role'], text: string, cites?: string[], at = new Date(), more: Pick<ChatTurn, 'actions' | 'outcomes'> = {}): ChatTurn | null {
   const said = text.trim().slice(0, MESSAGE_MAX)
   if (!said) return null
   const stamp = at.toISOString()
-  return { kind: 'chat', id: threadId('chat', at), role, text: said, cites: cites?.length ? cites : undefined, createdAt: stamp, updatedAt: stamp }
+  return {
+    kind: 'chat',
+    id: threadId('chat', at),
+    role,
+    text: said,
+    cites: cites?.length ? cites : undefined,
+    ...(more.actions?.length ? { actions: more.actions } : {}),
+    ...(more.outcomes?.length ? { outcomes: more.outcomes } : {}),
+    createdAt: stamp,
+    updatedAt: stamp,
+  }
 }
 
 /** A row in a thread: a day's heading, or something somebody said. */
@@ -52,13 +68,18 @@ export type ThreadRow<T> = { day: string } | { item: T; firstOfRun: boolean }
  * A thread as it is drawn: oldest first, a heading whenever the day changes,
  * and each line told whether it starts a new run by the same speaker — so a
  * burst of four messages carries one name rather than four.
+ *
+ * The day is the reader's own. The stamp is UTC, and reading the day off its
+ * first ten characters headed every Phoenix evening after five with
+ * tomorrow's date.
  */
 export function thread<T extends { id: string; createdAt: string; ownerId?: string }>(items: readonly T[], speakerOf: (item: T) => string): ThreadRow<T>[] {
   const out: ThreadRow<T>[] = []
   let day = ''
   let speaker = ''
   for (const item of items) {
-    const itsDay = item.createdAt.slice(0, 10)
+    const at = new Date(item.createdAt)
+    const itsDay = Number.isNaN(at.getTime()) ? item.createdAt.slice(0, 10) : localDayKey(at)
     if (itsDay !== day) {
       out.push({ day: itsDay })
       day = itsDay
@@ -76,9 +97,14 @@ export function thread<T extends { id: string; createdAt: string; ownerId?: stri
  * The conversation so far, as the assistant is reminded of it: the last few
  * turns, oldest first, each on one line. Only the words — a reference the
  * model made up earlier must not come back as though the planner had said it.
+ *
+ * The lines the app wrote when a suggestion was applied, skipped or undone
+ * are left out. Nobody said them: fed back, they would read as the person's
+ * words or as the model's own, and "✓ Added task" is neither.
  */
 export function recentContext(turns: readonly ChatTurn[], limit = CHAT_CONTEXT_TURNS): string[] {
   return turns
+    .filter(t => !t.outcomes?.length)
     .slice(-limit)
     .map(t => `${t.role === 'you' ? 'Them' : 'You'}: ${t.text.replace(/\s+/g, ' ').trim()}`)
     .filter(line => line.length > 5)
@@ -120,5 +146,16 @@ export function writeChatSeen(at: string): void {
   }
 }
 
-/** What the composer offers as a starting point for the assistant. Questions it can actually answer from the planner. */
-export const CHAT_PROMPTS = ['Tell me about my week', 'What is due for me tomorrow?', 'Who have I not seen lately?', 'What did I cook last week?']
+/**
+ * What the composer offers as a starting point for the assistant: questions it
+ * can answer from the planner, and two asks that come back as suggestions to
+ * apply rather than as an answer.
+ */
+export const CHAT_PROMPTS = [
+  'Tell me about my week',
+  'What is due for me tomorrow?',
+  'Add milk and eggs to the grocery list',
+  'Plan tacos for Tuesday dinner',
+  'Who have I not seen lately?',
+  'What did I cook last week?',
+]

@@ -14,7 +14,7 @@ In a household, the address book is shared but the log is not: who you saw, wher
 - **Plan my day** and **Shut down** guide the morning and the evening, each with one Undo. Any nudge — a person, a place, something coming up — can be put off with ×, for a week to three months and never for good.
 - **Week** sits on the Today line, and **Review** beside it: what got done, what slipped, who you saw, where you went and what you wore. ✨ can draft it, and each Sunday it's drafted for you. **Plan next week** proposes dinners, catch-ups and new days for overdue tasks.
 - **Journal · Notes · Wardrobe** are three cards below. Journal is one private entry a day, with an optional mood, the people it was about, a streak and mood charts; a day you already wrote opens to be read rather than edited.
-- **Chat** is in the top bar, two threads that never mix — the household's, and yours with Drafter's assistant ("tell me about my week"). What you ask the assistant is personal; the household thread is the household's.
+- **Chat** is in the top bar, two threads that never mix — the household's, and yours with Drafter's assistant ("tell me about my week"). The assistant can also suggest changes — a task, a meal, the grocery list, a visit, a note, an event, or a move or tick on a task it was shown — each as a card with Apply, Edit and Skip; nothing changes until you tap one. What you ask the assistant is personal; the household thread is the household's.
 
 ### Tasks
 
