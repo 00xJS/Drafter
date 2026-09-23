@@ -8,6 +8,7 @@ import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mts'
 import { listDrawer } from './kindlists'
 import { watchRealtime } from './realtime'
+import { noteTaskEdit, watchActivity } from './activity'
 import {
   createSyncEngine,
   recordLabel,
@@ -236,13 +237,27 @@ export function useItems(myId: string | null = null): Store {
     })
   }, [snap.failures, items])
 
+  // Telling the other member what you changed on a task you share
+  // (src/activity.ts): these two are where a local edit is made, so they note
+  // it; a pull from the server never comes through here, so it never does.
+  useEffect(() => (myId && getSupabase() ? watchActivity({ myId, pending: id => e.unconfirmed().ids.has(id) }) : undefined), [e, myId])
+  const upsert = useCallback(
+    (item: Item) => {
+      const before = item.kind === 'task' ? e.getState().items.find(i => i.id === item.id) : undefined
+      e.upsert(item)
+      noteTaskEdit(before, item, myId)
+    },
+    [e, myId],
+  )
+
   const setStatus = useCallback(
     (id: string, status: TaskStatus) => {
       const change = e.setStatus(id, status)
       if (change && status === 'done' && change.prev.status !== 'done') void haptic('success')
+      if (change) noteTaskEdit(change.prev, change.next, myId)
       return change
     },
-    [e],
+    [e, myId],
   )
 
   // one object for as long as nothing in it changed
@@ -255,7 +270,7 @@ export function useItems(myId: string | null = null): Store {
       loaded: snap.loaded,
       syncInfo: snap.syncInfo,
       failures,
-      upsert: e.upsert,
+      upsert,
       remove: e.remove,
       restore: e.restore,
       purge: e.purge,
@@ -271,6 +286,6 @@ export function useItems(myId: string | null = null): Store {
       onRetired: e.onRetired,
       unconfirmed: e.unconfirmed,
     }),
-    [e, myId, lists, items, visibleItems, snap.loaded, snap.syncInfo, failures, setStatus],
+    [e, myId, lists, items, visibleItems, snap.loaded, snap.syncInfo, failures, upsert, setStatus],
   )
 }
