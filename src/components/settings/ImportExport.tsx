@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { saveFile } from '../../native'
 import { STORAGE_VERSION, migrateStored } from '../../schema'
 import type { SettingsCtx } from './context'
 
@@ -20,12 +21,7 @@ export function ImportExport({ store }: SettingsCtx) {
   function exportJSON() {
     const payload = { version: STORAGE_VERSION, exportedAt: new Date().toISOString(), items: store.visibleItems }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `drafter-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    saveFile(`drafter-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(e => setNotice(`Export failed: ${(e as Error).message}`))
   }
 
   async function onFile(f: File) {

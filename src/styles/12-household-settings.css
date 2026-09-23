@@ -327,6 +327,21 @@
   flex: 1;
   min-width: 0;
 }
+/* Admin → Backups: what Read it or Download brought back, under its own row.
+   The bottom margin keeps it clear of the phone's tab bar when it scrolls in. */
+.backup-open {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  scroll-margin: 12px 0 calc(var(--tabbar-h) + var(--safe-b) + 16px);
+}
+.backup-open p {
+  margin: 0 0 4px;
+}
+.backup-open .check-add {
+  margin-top: 4px;
+}
 
 /* the Data / Backups health lists: label left, figure right, scannable */
 .admin-stats {

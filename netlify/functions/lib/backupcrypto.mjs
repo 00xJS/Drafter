@@ -13,7 +13,7 @@
 // salt is per snapshot, so two nights of the same data are different files and
 // one cracked file buys nothing.
 //
-// The server encrypts and NEVER decrypts. Admin's Restore reads the envelope
+// The server encrypts and NEVER decrypts. Admin's Read it fetches the envelope
 // and decrypts in the browser from a passphrase the owner types, so an owner
 // session on its own — or a leaked signed link — is not enough to read anyone's
 // journal. src/backupcrypto.ts is the other half, and unwrapSnapshot there
@@ -87,7 +87,7 @@ export async function wrapSnapshot(snapshot) {
     userId: snapshot.userId,
     exportedAt: snapshot.exportedAt,
     items: null,
-    note: 'Encrypted with BACKUP_PASSPHRASE. Admin → Backups → Restore decrypts it in your browser.',
+    note: 'Encrypted with BACKUP_PASSPHRASE. Admin → Backups → Read it decrypts it in your browser.',
   }
   return { body: JSON.stringify(envelope), encrypted: true }
 }

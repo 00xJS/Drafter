@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
 import { siteOrigin } from '../api'
-import { unwrapSnapshot, type Snapshot } from '../backupcrypto'
+import { isEnvelope, unwrapSnapshot } from '../backupcrypto'
+import { saveFile } from '../native'
+import { SnapshotFiles, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
 import { AdminOps } from './AdminOps'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -136,7 +138,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [backups, setBackups] = useState<BackupList | null>(null)
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
-  const [downloadUrl, setDownloadUrl] = useState('')
+  const [link, setLink] = useState<SnapshotLink | null>(null)
   const [aiTest, setAiTest] = useState<AiTest | null>(null)
   const [pushTest, setPushTest] = useState<PushTest | null>(null)
   const [digestTest, setDigestTest] = useState<DigestTest | null>(null)
@@ -152,7 +154,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
   /** The account a reset mail has just gone to, so the note under it names them. */
   const [sentTo, setSentTo] = useState('')
   /** A snapshot fetched for reading, and its contents once they can be read. */
-  const [opened, setOpened] = useState<{ path: string; raw: unknown; snapshot: Snapshot | null; error?: string } | null>(null)
+  const [opened, setOpened] = useState<OpenedSnapshot | null>(null)
   const [passphrase, setPassphrase] = useState('')
   const busy = pending !== ''
 
@@ -208,22 +210,25 @@ export function Admin({ initialGroup = 'users' }: Props) {
    * netlify/functions/lib/backupcrypto.mjs), so the file is fetched through
    * its signed link and opened here, with a passphrase that stays in this
    * browser. A snapshot written before encryption was turned on opens with no
-   * passphrase at all.
+   * passphrase at all. Whatever happens is said under the snapshot's own row.
    */
-  const readSnapshot = (path: string) =>
-    runNamed(path, async () => {
+  const readSnapshot = async (path: string) => {
+    setPending(`read:${path}`)
+    setPassphrase('')
+    try {
       const r = await adminAction<{ url: string }>('downloadBackup', { path })
-      const data: unknown = await fetch(r.url).then(res => res.json())
-      setPassphrase('')
-      try {
-        setOpened({ path, raw: data, snapshot: await unwrapSnapshot(data, '') })
-      } catch {
-        // encrypted, or unreadable: either way the passphrase box is next
-        setOpened({ path, raw: data, snapshot: null })
-      }
-    })
+      const res = await fetch(r.url)
+      if (!res.ok) throw new Error(`The snapshot could not be fetched (${res.status}). Try again.`)
+      const raw: unknown = await res.json()
+      setOpened({ path, raw, snapshot: isEnvelope(raw) ? null : await unwrapSnapshot(raw, '') })
+    } catch (e) {
+      setOpened({ path, raw: null, snapshot: null, error: (e as Error).message })
+    } finally {
+      setPending('')
+    }
+  }
 
-  const openSnapshot = async () => {
+  const unlockSnapshot = async () => {
     if (!opened) return
     try {
       setOpened({ ...opened, snapshot: await unwrapSnapshot(opened.raw, passphrase), error: undefined })
@@ -233,13 +238,30 @@ export function Admin({ initialGroup = 'users' }: Props) {
     }
   }
 
-  const download = (path: string) =>
-    runNamed(path, async () => {
+  const saveSnapshot = () => {
+    if (!opened?.snapshot) return
+    const name = `${opened.path.split('/').pop()?.replace(/\.json$/, '') ?? 'snapshot'}-readable.json`
+    saveFile(name, new Blob([JSON.stringify(opened.snapshot, null, 2)], { type: 'application/json' })).catch(e => setOpened({ ...opened, error: (e as Error).message }))
+  }
+
+  const closeSnapshot = () => {
+    setOpened(null)
+    setPassphrase('')
+  }
+
+  const download = async (path: string) => {
+    setPending(`link:${path}`)
+    try {
       const r = await adminAction<{ url: string }>('downloadBackup', { path })
-      // the link is also shown below: opening after an await can trip a popup blocker
-      setDownloadUrl(r.url)
+      // the link is also shown under the row: opening after an await can trip a popup blocker
+      setLink({ path, url: r.url })
       window.open(r.url, '_blank', 'noopener')
-    })
+    } catch (e) {
+      setLink({ path, url: '', error: (e as Error).message })
+    } finally {
+      setPending('')
+    }
+  }
 
   const isOwnerRow = (u: AdminUser) => !!ownerEmail && u.email.toLowerCase() === ownerEmail.toLowerCase()
 
@@ -621,94 +643,20 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 </div>
               )}
 
-              {backups.users.map(u => (
-                <div key={u.userId} className="admin-health">
-                  <p className="sync-line">
-                    <strong>{u.email ?? `${u.userId.slice(0, 8)}… (no account)`}</strong>
-                    <span>
-                      {u.files.length} snapshot{u.files.length === 1 ? '' : 's'} · {bytes(u.bytes)}
-                    </span>
-                  </p>
-                  <ul className="cal-sources admin-users">
-                    {u.files.map(f => (
-                      <li key={f.path} className="cal-source">
-                        <span className="cal-source-name">
-                          {f.date}
-                          <small> · {bytes(f.size)}</small>
-                        </span>
-                        <button className="btn subtle" disabled={busy} onClick={() => readSnapshot(f.path)}>
-                          {pending === f.path ? 'Fetching…' : 'Read it'}
-                        </button>
-                        <button className="btn subtle" disabled={busy} onClick={() => download(f.path)}>
-                          Download
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-              {downloadUrl && (
-                <div className="copy-row">
-                  <input readOnly value={downloadUrl} onFocus={e => e.currentTarget.select()} />
-                  <a className="btn" href={downloadUrl} target="_blank" rel="noreferrer">
-                    Open
-                  </a>
-                </div>
-              )}
-              {opened && (
-                <div className="admin-health">
-                  <p className="sync-line">
-                    <strong>{opened.path}</strong>
-                    <span className={opened.snapshot ? 'sync-ok' : 'warn'}>{opened.snapshot ? `${opened.snapshot.items.length} records` : 'Encrypted'}</span>
-                  </p>
-                  {opened.snapshot ? (
-                    <>
-                      <p className="field-hint">
-                        Written {when(opened.snapshot.exportedAt)}. This was decrypted here, in this browser — the passphrase was not sent anywhere.
-                      </p>
-                      <div className="check-add">
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            const url = URL.createObjectURL(new Blob([JSON.stringify(opened.snapshot, null, 2)], { type: 'application/json' }))
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = `${opened.path.split('/').pop()?.replace(/\.json$/, '') ?? 'snapshot'}-readable.json`
-                            a.click()
-                            URL.revokeObjectURL(url)
-                          }}
-                        >
-                          Save the readable copy
-                        </button>
-                        <button className="btn subtle" onClick={() => setOpened(null)}>
-                          Close
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="field-hint">Type the passphrase this host encrypts with (<code>BACKUP_PASSPHRASE</code> on Netlify). It stays in this browser.</p>
-                      <div className="check-add">
-                        <input
-                          type="password"
-                          autoComplete="off"
-                          value={passphrase}
-                          placeholder="Backup passphrase"
-                          onChange={e => setPassphrase(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && openSnapshot()}
-                        />
-                        <button className="btn primary" disabled={!passphrase} onClick={openSnapshot}>
-                          Open it
-                        </button>
-                        <button className="btn subtle" onClick={() => setOpened(null)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  {opened.error && <p className="warn">{opened.error}</p>}
-                </div>
-              )}
+              <SnapshotFiles
+                users={backups.users}
+                busy={busy}
+                pending={pending}
+                opened={opened}
+                link={link}
+                passphrase={passphrase}
+                onPassphrase={setPassphrase}
+                onRead={readSnapshot}
+                onDownload={download}
+                onUnlock={unlockSnapshot}
+                onSave={saveSnapshot}
+                onClose={closeSnapshot}
+              />
               <p className="field-hint">Download links are signed for five minutes; the bucket itself stays private.</p>
             </>
           ) : (

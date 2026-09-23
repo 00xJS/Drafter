@@ -68,6 +68,33 @@ export async function openExternal(url: string): Promise<void> {
 }
 
 /**
+ * Hand a file over to be kept. A download link goes nowhere in the iOS shell:
+ * WKWebView has no downloads, and Capacitor passes the blob: link on to
+ * Safari, which cannot open it, so the button did nothing at all. There the
+ * share sheet is the download ("Save to Files"); every browser gets the plain
+ * one. Call it straight from the tap: the sheet needs the gesture.
+ */
+export async function saveFile(name: string, blob: Blob): Promise<void> {
+  if (isNative()) {
+    if (typeof navigator.share !== 'function') throw new Error('This phone cannot hand files to other apps. Save it from a computer instead.')
+    try {
+      await navigator.share({ files: [new File([blob], name, { type: blob.type })] })
+    } catch (e) {
+      // closing the sheet without picking anything is not a failure
+      if ((e as Error).name !== 'AbortError') throw e
+    }
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  // revoked later rather than at once: Safari can still be reading it
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/**
  * Start an OAuth consent flow. On native, opens Safari's sheet and returns
  * 'native' so the caller can clear busy state; on web, navigates away.
  */

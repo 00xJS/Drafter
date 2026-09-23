@@ -1,5 +1,5 @@
 import { webcrypto } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ENVELOPE_VERSION, backupEncryptionOn, isEnvelope, wrapSnapshot } from '../../netlify/functions/lib/backupcrypto.mjs'
 import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
 import { CannotDecrypt, unwrapSnapshot } from '../backupcrypto'
@@ -26,6 +26,7 @@ const ROWS = [
 
 afterEach(() => {
   delete process.env.BACKUP_PASSPHRASE
+  vi.unstubAllGlobals()
 })
 
 describe('a snapshot written with a passphrase', () => {
@@ -76,6 +77,28 @@ describe('a snapshot written with a passphrase', () => {
     await expect(unwrapSnapshot(JSON.parse(body), 'not it')).rejects.toBeInstanceOf(CannotDecrypt)
     // and says so, rather than asking for a passphrase that was already given
     await expect(unwrapSnapshot(JSON.parse(body), '')).rejects.toThrow(/encrypted/i)
+  })
+
+  it('opens with a passphrase pasted with a space or a line break, as the host trims its own', async () => {
+    // the host derives its key from the trimmed variable, so the typed one is trimmed the same way
+    process.env.BACKUP_PASSPHRASE = `  ${PASSPHRASE}\n`
+    const snapshot = buildSnapshot('u1', ROWS)
+    const { body } = await wrapSnapshot(snapshot)
+    await expect(unwrapSnapshot(JSON.parse(body), PASSPHRASE)).resolves.toEqual(snapshot)
+    await expect(unwrapSnapshot(JSON.parse(body), `${PASSPHRASE} `)).resolves.toEqual(snapshot)
+    await expect(unwrapSnapshot(JSON.parse(body), `\t${PASSPHRASE}\r\n`)).resolves.toEqual(snapshot)
+    // only the ends: a space inside is part of the passphrase
+    await expect(unwrapSnapshot(JSON.parse(body), PASSPHRASE.replace(' ', '  '))).rejects.toBeInstanceOf(CannotDecrypt)
+    // and whitespace alone is still no passphrase at all
+    await expect(unwrapSnapshot(JSON.parse(body), '   ')).rejects.toThrow(/encrypted/i)
+  })
+
+  it('says a browser without WebCrypto cannot decrypt, rather than calling the passphrase wrong', async () => {
+    process.env.BACKUP_PASSPHRASE = PASSPHRASE
+    const { body } = await wrapSnapshot(buildSnapshot('u1', ROWS))
+    vi.stubGlobal('crypto', {})
+    await expect(unwrapSnapshot(JSON.parse(body), PASSPHRASE)).rejects.toThrow(/cannot decrypt snapshots/i)
+    await expect(unwrapSnapshot(JSON.parse(body), PASSPHRASE)).rejects.not.toThrow(/passphrase does not open/i)
   })
 
   it('refuses an envelope from a newer build rather than guessing at it', async () => {

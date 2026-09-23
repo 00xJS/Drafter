@@ -70,10 +70,15 @@ export async function unwrapSnapshot(data: unknown, passphrase: string): Promise
     throw new CannotDecrypt('That file is not a Drafter snapshot.')
   }
   if (data.drafterBackup > 1) throw new CannotDecrypt('That snapshot was written by a newer version of Drafter than this one.')
-  if (!passphrase) throw new CannotDecrypt('This snapshot is encrypted. Type the backup passphrase to read it.')
+  // the host trims BACKUP_PASSPHRASE before deriving its key, so a pasted
+  // passphrase that brought a space or a line break with it is still the same one
+  const typed = passphrase.trim()
+  if (!typed) throw new CannotDecrypt('This snapshot is encrypted. Type the backup passphrase to read it.')
+  // said apart from a wrong passphrase, which the catch below would call it
+  if (!globalThis.crypto?.subtle) throw new CannotDecrypt('This browser cannot decrypt snapshots. Open Admin in another browser or on a computer.')
   let text: string
   try {
-    const key = await deriveKey(passphrase, bytes(data.salt), Number(data.iterations) || 310_000)
+    const key = await deriveKey(typed, bytes(data.salt), Number(data.iterations) || 310_000)
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(data.iv) as BufferSource }, key, bytes(data.ct) as BufferSource)
     text = new TextDecoder().decode(plain)
   } catch {
