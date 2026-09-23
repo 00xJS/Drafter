@@ -8,6 +8,7 @@ import {
 } from '../chat'
 import {
   DROPPED,
+  NO_ANSWER,
   applyChatAction,
   askWithActions,
   buildChatPrompt,
@@ -37,6 +38,7 @@ import {
   todayIn,
   visitTask,
   withPick,
+  withoutClaims,
   type ChatActionContext,
   type ChatData,
   type ChatHost,
@@ -222,7 +224,7 @@ describe('what the model is told', () => {
     expect(prompt).not.toContain('Person 45')
   })
 
-  it('makes one JSON call of 900 tokens, and reads the reply', async () => {
+  it('makes one plain-text call of 900 tokens, and reads the JSON out of the reply', async () => {
     const calls: Record<string, unknown>[] = []
     vi.stubGlobal(
       'fetch',
@@ -233,17 +235,62 @@ describe('what the model is told', () => {
     )
     const r = await askWithActions('Add milk and eggs', DOCS, facts, [], context())
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({ maxTokens: 900, json: true })
+    // not NVIDIA's JSON mode: forced to JSON, the model answered this prompt with {"":""}
+    expect(calls[0]).toMatchObject({ maxTokens: 900, json: false })
     // a reference it was never shown is dropped from the words, as Ask drops one
     expect(r.answer).toBe('I can add those.')
     expect(r.actions).toEqual([{ type: 'add_grocery', items: ['milk', 'eggs'] }])
   })
 })
 
+describe('a suggestion is not a change', () => {
+  it('drops a sentence that reports the change as made while it waits for Apply', () => {
+    // what the live model wrote above its one card, before anyone tapped anything
+    const r = parseChatReply(reply([{ type: 'add_grocery', items: ['paper towels'] }], 'Added paper towels to the grocery list.'), context())
+    expect(r.answer).toBe('Here is a change you could make.')
+    expect(r.actions).toEqual([{ type: 'add_grocery', items: ['paper towels'] }])
+    expect(withoutClaims("You already have milk on the list. I've added eggs.")).toBe('You already have milk on the list.')
+    expect(withoutClaims('I have planned tacos for Tuesday. Enjoy!')).toBe('Enjoy!')
+    expect(withoutClaims('I can add eggs for you.')).toBe('I can add eggs for you.')
+  })
+
+  it('leaves the answer alone when nothing is proposed', () => {
+    expect(parseChatReply(reply([], 'Added nothing: milk is already on the list.'), context()).answer).toBe('Added nothing: milk is already on the list.')
+  })
+})
+
+describe('an empty reply', () => {
+  const facts = ['Today is Tuesday, 22 September 2026 (America/Phoenix).']
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('is asked for once more, and the second reply is read', async () => {
+    const texts = ['{"":""}', reply([{ type: 'add_grocery', items: ['paper towels'] }], 'I can add paper towels.')]
+    const calls: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)))
+        return Response.json({ text: texts[calls.length - 1] })
+      }),
+    )
+    const r = await askWithActions('Add paper towels', DOCS, facts, [], context())
+    expect(calls).toHaveLength(2)
+    expect(String(calls[1].system)).toMatch(/Fill in "answer"/)
+    expect(r.actions).toEqual([{ type: 'add_grocery', items: ['paper towels'] }])
+  })
+
+  it('says so when the second reply is empty too', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ text: '{"":""}' })))
+    await expect(askWithActions('Add paper towels', DOCS, facts, [], context())).rejects.toThrow(NO_ANSWER)
+  })
+})
+
 describe('reading the reply leniently', () => {
   it('finds the JSON in fences and chatter', () => {
-    const r = parseChatReply(`Sure! \`\`\`json\n${reply([{ type: 'create_note', title: 'Gift ideas', text: 'A scarf' }], 'Noted [T1].')}\n\`\`\` Hope that helps`, context())
-    expect(r.answer).toBe('Noted [T1].')
+    const r = parseChatReply(`Sure! \`\`\`json\n${reply([{ type: 'create_note', title: 'Gift ideas', text: 'A scarf' }], 'I can save that [T1].')}\n\`\`\` Hope that helps`, context())
+    expect(r.answer).toBe('I can save that [T1].')
     expect(r.cites).toEqual(['T1'])
     expect(r.actions).toHaveLength(1)
   })

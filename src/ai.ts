@@ -398,7 +398,11 @@ export async function askDrafter(question: string, docs: AskDoc[], facts: string
  * throws, and the chat writes it as a failed turn.
  */
 export async function askDrafterChat(system: string, prompt: string): Promise<string> {
-  return complete(system, prompt, 900, true)
+  // Plain text, not NVIDIA's JSON mode: forced to JSON, the default reasoning
+  // model answered this prompt with {"":""} — whole, valid and empty, so
+  // nothing retried it. The prompt asks for the JSON, and parseChatReply takes
+  // it out of whatever fences or sentences come with it.
+  return complete(system, prompt, 900, false)
 }
 
 export interface DraftedPlan {

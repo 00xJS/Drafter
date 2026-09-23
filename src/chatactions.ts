@@ -799,6 +799,26 @@ export function readActions(v: unknown, ctx: ChatActionContext): { actions: Chat
  * drops one; every suggestion is checked (readAction). A reply that ignored the
  * JSON altogether is taken as the answer, with nothing to apply.
  */
+/** What parseChatReply throws for a reply with nothing in it to say or to apply. */
+export const NO_ANSWER = 'The model returned no answer.'
+
+/**
+ * A sentence reporting a change as made — "Added paper towels to the grocery
+ * list.", "I've planned tacos for Tuesday." — which the model writes even when
+ * told the change waits for Apply. Such sentences are dropped while the change
+ * is still a card; the card says what it will do.
+ */
+const CLAIMED = /^\s*(?:i(?:['\u2019]ve| have)?\s+)?(?:(?:gone ahead and|just|now)\s+)?(?:added|planned|created|logged|scheduled|moved|marked|rescheduled|completed|updated|noted|put|set up|booked|saved)\b/i
+
+export function withoutClaims(answer: string): string {
+  const sentences = answer.match(/[^.!?\n]+[.!?]*/g) ?? []
+  return sentences
+    .filter(s => !CLAIMED.test(s))
+    .map(s => s.trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
 export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply {
   const clean = withoutThinking(reply)
   let raw: Record<string, unknown> | null = null
@@ -819,7 +839,9 @@ export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply
   const listedCites = (raw && Array.isArray(raw.cites) ? raw.cites : []).map(c => known.get(String(c).trim().toUpperCase())).filter((r): r is string => !!r)
   const cites = [...new Set([...listedCites, ...inline.map(d => d.ref)])]
   const { actions, dropped } = readActions(raw?.actions, ctx)
-  if (!answer && !actions.length) throw new Error('The model returned no answer.')
+  if (!answer && !actions.length) throw new Error(NO_ANSWER)
+  // a suggestion is not a change: "Added paper towels to the list" before anyone tapped Apply is untrue
+  if (actions.length) answer = withoutClaims(answer)
   if (!answer) answer = actions.length === 1 ? 'Here is a change you could make.' : 'Here are some changes you could make.'
   if (dropped.length) answer = `${answer}\n\n${droppedLine(dropped)}`
   return { answer: answer.slice(0, MESSAGE_MAX), cites, actions, dropped }
@@ -828,7 +850,13 @@ export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply
 /** The chat's question, answered: the prompt, the one call, and the reply read. */
 export async function askWithActions(question: string, docs: AskDoc[], facts: string[], history: readonly string[], ctx: ChatActionContext): Promise<ChatReply> {
   const { system, prompt } = buildChatPrompt(question, docs, facts, history, ctx)
-  return parseChatReply(await askDrafterChat(system, prompt), ctx)
+  try {
+    return parseChatReply(await askDrafterChat(system, prompt), ctx)
+  } catch (e) {
+    // an empty reply ({"":""} came back once) is asked for again, once, more plainly
+    if (!(e instanceof Error) || e.message !== NO_ANSWER) throw e
+    return parseChatReply(await askDrafterChat(`${system}\nFill in "answer" with a sentence, and "actions" with any changes.`, prompt), ctx)
+  }
 }
 
 // ---- what a card says ------------------------------------------------------------
