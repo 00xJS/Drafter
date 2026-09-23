@@ -134,6 +134,17 @@ describe('what frees a blocked task on one device', () => {
     expect(held(d, 'c')?.status).toBe('blocked')
   })
 
+  it('sending its last blocker to the Trash, as surely as ticking it off', async () => {
+    const d = await one(task('a'), task('b'), task('c', { status: 'blocked', blockedBy: ['a', 'b'] }), task('e', { status: 'blocked', blockedBy: ['a', 'gone'] }))
+    d.engine.remove('a')
+    // b still holds c; e waits on a task this device has never seen
+    expect(held(d, 'c')?.status).toBe('blocked')
+    expect(held(d, 'e')?.status).toBe('blocked')
+    d.engine.remove('b')
+    expect(held(d, 'c')?.status).toBe('todo')
+    expect(held(d, 'e')?.status).toBe('blocked')
+  })
+
   it('reads a blocker in the Trash as out of the way, and one it does not hold as still in it', async () => {
     const d = await one(task('a'), task('b'), task('c', { status: 'blocked', blockedBy: ['a', 'b'] }), task('e', { status: 'blocked', blockedBy: ['a', 'gone'] }))
     d.engine.remove('b')

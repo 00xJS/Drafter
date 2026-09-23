@@ -224,9 +224,10 @@ const defaultTimers: SyncTimers = {
 }
 
 /**
- * A blocked task moves to To do when the edit that completes its last blocker
- * lands — that edit and no other. `completed` holds the tasks this edit ticked
- * off; a task none of whose blockers is among them is left as it is.
+ * A blocked task moves to To do when the edit that takes its last blocker out
+ * of the way lands — ticked off, or sent to the Trash — that edit and no
+ * other. `completed` holds the tasks this edit did that to; a task none of
+ * whose blockers is among them is left as it is.
  *
  * It used to run over every blocked task on every edit, and read a blocker
  * this device does not hold as out of the way. A housemate's private task is
@@ -943,12 +944,13 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   function remove(id: string): void {
     const list = state.items
-    if (!list.some(p => p.id === id)) return
+    const gone = list.find(p => p.id === id)
+    if (!gone) return
     const deletedAt = new Date(now()).toISOString()
-    commit(
-      list.map(p => (p.id === id ? { ...p, deletedAt, updatedAt: newerStamp(p.updatedAt) } : p)),
-      [id],
-    )
+    const next = list.map(p => (p.id === id ? { ...p, deletedAt, updatedAt: newerStamp(p.updatedAt) } : p))
+    // a blocker sent to the Trash is out of the way as surely as one ticked
+    // off, and this is the edit that moved it: what it alone held is released
+    commit(gone.kind === 'task' && !gone.deletedAt ? releaseBlocked(next, [id]) : next, [id])
   }
 
   function restore(ids: string[]): void {
