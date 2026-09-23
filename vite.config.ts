@@ -64,11 +64,10 @@ const buildStamp = (): Plugin => ({
  * Reported only, until the host sets CSP_ENFORCE=true. Not for the iPhone
  * build: Capacitor serves that bundle itself and reads no _headers.
  */
-const CSP_ENFORCE = /^(1|true|yes)$/i.test((process.env.CSP_ENFORCE ?? '').trim())
-
 const contentSecurityPolicy = (): Plugin => {
   let mode = ''
   let supabaseUrl = ''
+  let enforced = false
   return {
     name: 'drafter-content-security-policy',
     apply: 'build',
@@ -77,13 +76,14 @@ const contentSecurityPolicy = (): Plugin => {
     configResolved(config) {
       mode = config.mode
       supabaseUrl = String(config.env.VITE_SUPABASE_URL ?? '')
+      enforced = /^(1|true|yes)$/i.test((process.env.CSP_ENFORCE ?? '').trim())
     },
     generateBundle(_, bundle) {
       if (mode === 'ios') return
       const page = bundle['index.html']
       if (page?.type !== 'asset') return this.error('the Content-Security-Policy hashes index.html, and this build wrote none')
       const sha256 = (text: string) => createHash('sha256').update(text).digest('base64')
-      this.emitFile({ type: 'asset', fileName: '_headers', source: cspHeadersFile({ html: String(page.source), supabaseUrl, enforce: CSP_ENFORCE, sha256 }) })
+      this.emitFile({ type: 'asset', fileName: '_headers', source: cspHeadersFile({ html: String(page.source), supabaseUrl, enforce: enforced, sha256 }) })
     },
   }
 }

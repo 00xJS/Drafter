@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CSP_REPORT_PATH, WEATHER_ORIGIN, blockedOf, contentSecurityPolicy, cspHeadersFile, cspMessage, cspViolations, inlineScripts, originOf } from '../../shared/csp.mts'
 import { cleanReport } from '../../shared/errorreport.mts'
 
@@ -57,6 +57,8 @@ describe('the policy', () => {
 })
 
 describe('dist/_headers', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it('hashes the theme script index.html actually carries, and nothing else is inline', () => {
     const scripts = inlineScripts(INDEX)
     expect(scripts).toHaveLength(1)
@@ -77,6 +79,8 @@ describe('dist/_headers', () => {
   })
 
   it('is written by the build (vite.config.ts), which the iPhone build skips', async () => {
+    // what the host says decides the header, so the test says it rather than inherit it
+    vi.stubEnv('CSP_ENFORCE', '')
     const config = (await import('../../vite.config')).default as { plugins: unknown[] }
     const plugin = config.plugins.flat(3).find(p => (p as { name?: string } | null)?.name === 'drafter-content-security-policy') as
       | {
@@ -92,9 +96,14 @@ describe('dist/_headers', () => {
     plugin!.generateBundle.call(context, {}, { 'index.html': { type: 'asset', source: INDEX } })
     expect(emitted.map(f => f.fileName)).toEqual(['_headers'])
     expect(emitted[0].source).toBe(cspHeadersFile({ html: INDEX, supabaseUrl: SUPABASE, sha256 }))
+    // CSP_ENFORCE on the host, and the same policy is enforced
+    vi.stubEnv('CSP_ENFORCE', 'true')
+    plugin!.configResolved({ mode: 'production', env: { VITE_SUPABASE_URL: SUPABASE } })
+    plugin!.generateBundle.call(context, {}, { 'index.html': { type: 'asset', source: INDEX } })
+    expect(emitted[1].source).toBe(cspHeadersFile({ html: INDEX, supabaseUrl: SUPABASE, enforce: true, sha256 }))
     plugin!.configResolved({ mode: 'ios', env: { VITE_SUPABASE_URL: SUPABASE } })
     plugin!.generateBundle.call(context, {}, { 'index.html': { type: 'asset', source: INDEX } })
-    expect(emitted).toHaveLength(1)
+    expect(emitted).toHaveLength(2)
   })
 })
 
