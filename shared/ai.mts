@@ -1,6 +1,7 @@
 // Rules about talking to a model that the app and the server both need, so
 // there is one copy and not two. The app calls these from src/ai.ts; the
-// Sunday digest calls them from netlify/functions/digest.mjs.
+// server from netlify/functions/lib/ai.mjs (every NVIDIA answer) and the
+// Sunday digest from netlify/functions/digest.mjs.
 
 /** Words long enough that an answer never repeats a run of them by accident. */
 const ECHO_RUN = 6
@@ -10,6 +11,30 @@ const flatten = (s: unknown): string =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
+
+/**
+ * A reasoning model's thinking, out of its text. Models tag it `<think>`,
+ * `<thinking>` or `<reasoning>`, and some NIM builds `◁think▷`. Three shapes
+ * reach here: a closed block; a close with no open, when the chat template
+ * opened the block in the prompt and the model only ever wrote `</think>`;
+ * and an open that never closed, when the budget ran out mid-thought. The
+ * server used to know only the first and the last, so a lone `</think>` came
+ * through with all the reasoning before it, and only the chat, which had its
+ * own copy of this, took it out.
+ *
+ * Untagged thinking is the other half, and no rule here sees it; that is
+ * `looksLikeThinking`, where the answer is read.
+ */
+export function stripThinking(text: unknown): string {
+  return String(text ?? '')
+    .replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '')
+    .replace(/◁(think|thinking)▷[\s\S]*?◁\/\1▷/g, '')
+    .replace(/^[\s\S]*?<\/(think|thinking|reasoning)>/i, '')
+    .replace(/^[\s\S]*?◁\/(think|thinking)▷/, '')
+    .replace(/<(think|thinking|reasoning)>[\s\S]*$/i, '')
+    .replace(/◁(think|thinking)▷[\s\S]*$/, '')
+    .trim()
+}
 
 /**
  * Whether a plain-text reply is the model thinking rather than answering.

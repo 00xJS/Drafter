@@ -3,6 +3,11 @@ export interface CompletionInput {
   prompt: string
   maxTokens?: number
   json?: boolean
+  /**
+   * 'off' asks a model that has a switch for it (Nemotron 3) to answer without thinking first; 'on' asks it to
+   * think. Unset, and for a model with no switch, nothing is sent and the model does what it always does.
+   */
+  reasoning?: 'off' | 'on'
   /** Work the server starts by itself (Sunday's draft, email-in triage): with a second NVIDIA key, that key goes first. */
   background?: boolean
   /** When the request began (epoch ms): the budget, AI_BUDGET_MS, counts from here. Now, when not given. */

@@ -1,5 +1,6 @@
-// Drafter's hosted AI proxy. The browser posts { system, prompt, maxTokens, json }
-// and gets back { text, provider }. Provider selection and fallback live in lib/ai.mjs.
+// Drafter's hosted AI proxy. The browser posts { system, prompt, maxTokens, json,
+// reasoning } and gets back { text, provider }. Provider selection and fallback
+// live in lib/ai.mjs.
 //
 // The owner's AI keys sit behind this, so it fails closed: no valid session is
 // a 401, and a host missing its auth settings answers 503. It used to skip the
@@ -12,6 +13,13 @@ import { requireUser } from './lib/session.mjs'
 
 /** The most one call may ask for, whatever the client sends. */
 const MAX_TOKENS = 4096
+/**
+ * The most text one call may send, brief and prompt together. The app's
+ * biggest — a pasted recipe, the recipe suggester's sixty recipes — are well
+ * under half of it; anything past it is a runaway, not a question, and is
+ * turned away before it costs a request of the account's thirty.
+ */
+const MAX_TEXT_BYTES = 64 * 1024
 // About 30 calls per 10 minutes per account. Per warm instance and best effort
 // (see lib/ratelimit.mjs): it stops a runaway loop or a leaked session from
 // draining the provider's quota, not someone spreading calls over cold starts.
@@ -41,8 +49,14 @@ const handler = async req => {
   const system = typeof body?.system === 'string' ? body.system : ''
   const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
   if (!prompt) return Response.json({ error: 'prompt is required' }, { status: 400 })
+  if (Buffer.byteLength(system, 'utf8') + Buffer.byteLength(prompt, 'utf8') > MAX_TEXT_BYTES) {
+    return Response.json({ error: 'That is more text than the assistant takes at once — try again with less.' }, { status: 413 })
+  }
   const maxTokens = Math.min(Math.max(Number(body?.maxTokens) || 2048, 256), MAX_TOKENS)
   const json = !!body?.json
+  // the utility calls (tags, steps, a capture, a recipe) ask for an answer
+  // without the model's thinking first; anything else is not a setting
+  const reasoning = body?.reasoning === 'off' || body?.reasoning === 'on' ? body.reasoning : undefined
 
   // counted only for a call that would actually reach the provider
   const slot = perUser.take(user.id)
@@ -56,10 +70,10 @@ const handler = async req => {
 
   let result
   try {
-    result = await complete({ system, prompt, maxTokens, json, startedAt })
+    result = await complete({ system, prompt, maxTokens, json, reasoning, startedAt })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return Response.json({ error: `AI request failed: ${message}` }, { status: 502 })
+    console.error(`ai: the request failed: ${err instanceof Error ? err.message : String(err)}`)
+    return Response.json({ error: 'The assistant couldn’t answer — try again in a moment.' }, { status: 502 })
   }
   if (result.error) return Response.json({ error: result.error }, { status: result.status ?? 502 })
   return Response.json({ text: result.text, provider: result.provider })

@@ -83,6 +83,11 @@ describe('the NVIDIA request', () => {
       '<thinking>Still going</thinking>\nThe answer.',
       '<reasoning>Hmm</reasoning> The answer.',
       '◁think▷weighing it◁/think▷The answer.',
+      // the chat template opened the block in the prompt, so only the close
+      // came back — with every word of the reasoning before it, which the
+      // server used to pass on and only the chat's own copy of the rule took out
+      'The user wants tags for a paint job, so home and diy.</think>The answer.',
+      'weighing it ◁/think▷The answer.',
       // the budget ran out mid-thought, so the close never arrived
       '<think>I should start by considering',
     ]
