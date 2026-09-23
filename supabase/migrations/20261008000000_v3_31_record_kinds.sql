@@ -23,15 +23,16 @@
 -- to add a word to one line. Those now read public.record_kinds through the
 -- helpers below. This is a refactor: the table is seeded with exactly what
 -- the v3.27 definitions enforce (the guard below refuses to apply otherwise),
--- and every signature, grant, return shape and outcome stays the same.
+-- and every signature, grant and outcome stays the same — with one addition:
+-- sync_posts' `peerShared` now covers every per-record kind (meals too), and a
+-- new `peerSharedKinds` names them, so a meal made Just me after it was shared
+-- leaves the other member's device (peerVisibleByKind in src/sync.ts).
 --
 -- What still names kinds, on purpose:
 --   * sync_posts' status check for a task and a project — validation of a
 --     field, not which kinds exist;
---   * sync_posts' `peerNotes` (note) and `peerShared` (note, task) — the
---     revocation lists the shipped clients read (peerVisibleByKind in
---     src/sync.ts). A meal decides per record too and has never been listed;
---     listing it would change the answer, which a refactor does not;
+--   * sync_posts' `peerNotes` (note) — v3.16's revocation list, kept for the
+--     clients that predate v3.19;
 --   * sync_canary, not redefined: its CASE only adds realistic fields, and
 --     any other kind, one added by an insert included, goes through its
 --     `else '{}'`, which sync_posts accepts.
@@ -230,6 +231,18 @@ as $$
     true)
 $$;
 
+-- The kinds whose audience is decided per record, sorted: what sync_posts'
+-- peerShared lists rows of, and names in peerSharedKinds.
+create or replace function public.record_kinds_per_record()
+returns text[]
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(array_agg(r.kind order by r.kind), '{}') from public.record_kinds r where r.shared_default is not null
+$$;
+
 revoke execute on function public.record_kind_allowed(text) from public, anon;
 revoke execute on function public.record_kind_shared_default(text) from public, anon;
 revoke execute on function public.record_shared(text, text) from public, anon;
@@ -238,6 +251,8 @@ grant execute on function public.record_kind_allowed(text) to authenticated, ser
 grant execute on function public.record_kind_shared_default(text) to authenticated, service_role;
 grant execute on function public.record_shared(text, text) to authenticated, service_role;
 grant execute on function public.record_peer_visible(text, text) to authenticated, service_role;
+revoke execute on function public.record_kinds_per_record() from public, anon;
+grant execute on function public.record_kinds_per_record() to authenticated, service_role;
 
 -- ------------------------------------------------------------------ sync_posts
 -- The 20261005000000 body with the allowlist read from record_kinds. Nothing
@@ -367,12 +382,18 @@ begin
     -- no longer select is simply absent from their delta, which is exactly what
     -- "nothing changed" looks like.
     -- `kind` is the stored generated column, so posts_kind_idx serves this.
-    -- Notes and tasks: the kinds the shipped clients revoke. Not read from
-    -- record_kinds (a meal is per record and was never listed) — see the top.
+    -- Every per-record kind (record_kinds), meals included from v3.31: a meal
+    -- made Just me after it was shared used to stay on the other member's
+    -- device. A client from before v3.31 revokes only notes and tasks from this
+    -- list and ignores the meal ids in it.
     'peerShared', coalesce(
-      (select jsonb_agg(p4.id) from public.posts p4 where p4.kind in ('note', 'task') and p4.user_id <> me),
+      (select jsonb_agg(p4.id) from public.posts p4 where p4.kind = any(public.record_kinds_per_record()) and p4.user_id <> me),
       '[]'::jsonb
-    )
+    ),
+    -- The kinds peerShared speaks for, so a client revokes a kind only when the
+    -- server that answered lists it: read as covering meals, an older server's
+    -- note-and-task list would drop every meal a housemate shares.
+    'peerSharedKinds', to_jsonb(public.record_kinds_per_record())
   );
 end;
 $$;

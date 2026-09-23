@@ -3231,3 +3231,47 @@ drop function pg_temp.v326_deletes_row(jsonb);
 drop function pg_temp.v326_peer_writes(jsonb);
 drop function pg_temp.v326_peer_reads(jsonb);
 drop function pg_temp.v327_kinds();
+
+-- ===== v3.31: meals in the peer revocation list =====
+-- sync_posts' peerShared now lists every per-record kind a peer may read, meals
+-- included, and peerSharedKinds names those kinds, so a client drops a meal a
+-- housemate made Just me only when the server says the list covers meals.
+
+-- -------------- v3.31-meals-1. the owner writes a shared meal and a private one
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[
+    {"kind":"meal","id":"mv-shared","date":"2099-01-05","slot":"dinner","title":"Tacos","createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"},
+    {"kind":"meal","id":"mv-private","date":"2099-01-05","slot":"lunch","title":"Leftovers","shared":false,"createdAt":"2026-09-22T09:00:00.000Z","updatedAt":"2026-09-22T09:00:00.000Z"}
+  ]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.31-meals-1: sync_posts rejected the owner''s own meals: %', r -> 'rejected';
+  end if;
+  raise notice 'ok v3.31-meals-1: the owner stores a shared meal and a Just me one';
+end $$;
+commit;
+
+-- -------------- v3.31-meals-2. the peer is told about the shared meal only
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  if not ((r -> 'peerShared') @> '["mv-shared"]'::jsonb) then
+    raise exception 'FAIL v3.31-meals-2: peerShared should name the shared meal, got %', r -> 'peerShared';
+  end if;
+  if (r -> 'peerShared') @> '["mv-private"]'::jsonb then
+    raise exception 'FAIL v3.31-meals-2: peerShared named a Just me meal, got %', r -> 'peerShared';
+  end if;
+  if (r -> 'peerSharedKinds') <> '["meal", "note", "task"]'::jsonb then
+    raise exception 'FAIL v3.31-meals-2: peerSharedKinds should be meal, note, task, got %', r -> 'peerSharedKinds';
+  end if;
+  raise notice 'ok v3.31-meals-2: peerShared names a housemate''s shared meal and not a Just me one, and peerSharedKinds says so';
+end $$;
+commit;

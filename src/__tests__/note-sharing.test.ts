@@ -132,6 +132,26 @@ describe('which list speaks for which kind', () => {
     expect(peerVisibleByKind({ peerShared: ['a'], peerNotes: null })).toEqual({ note: ['a'], task: ['a'] })
   })
 
+  it('a v3.31 server names the kinds its list covers, meals among them', () => {
+    expect(parseSyncResponse({ items: [], rejected: [], peerShared: ['m1'], peerSharedKinds: ['meal', 'note', 'task'] })!.peerSharedKinds).toEqual(['meal', 'note', 'task'])
+    expect(peerVisibleByKind({ peerShared: ['m1'], peerNotes: null, peerSharedKinds: ['meal', 'note', 'task'] })).toEqual({ meal: ['m1'], note: ['m1'], task: ['m1'] })
+  })
+
+  it('without peerSharedKinds, peerShared says nothing about meals, so none is dropped', () => {
+    expect(peerVisibleByKind({ peerShared: ['t1'], peerNotes: null }).meal).toBeUndefined()
+    expect(parseSyncResponse({ items: [], rejected: [], peerShared: ['t1'] })!.peerSharedKinds).toBeNull()
+  })
+
+  it('drops a housemate\'s meal once the list that covers meals leaves it out, and never your own', () => {
+    const meal = (id: string, ownerId: string) => ({ kind: 'meal', id, ownerId, date: '2026-09-22', slot: 'dinner', title: id, createdAt: at, updatedAt: at }) as unknown as Item
+    const current = [meal('theirs-now-private', PEER), meal('theirs-shared', PEER), meal('mine', ME)]
+    const v31 = peerVisibleByKind({ peerShared: ['theirs-shared'], peerNotes: null, peerSharedKinds: ['meal', 'note', 'task'] })
+    expect([...revokedPeerRows(current, v31, new Set(), ME)]).toEqual(['theirs-now-private'])
+    // the same list from a v3.19 server revokes no meal at all
+    const v19 = peerVisibleByKind({ peerShared: ['theirs-shared'], peerNotes: null })
+    expect([...revokedPeerRows(current, v19, new Set(), ME)]).toEqual([])
+  })
+
   it('a v3.16 server speaks for notes and stays silent about tasks', () => {
     // the window between the migration and the next iOS build: the phone's
     // notes still revoke, and not one task of a housemate's is dropped

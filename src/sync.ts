@@ -39,6 +39,12 @@ export interface SyncResult {
    * kind; nothing else should read either field.
    */
   peerNotes: string[] | null
+  /**
+   * The kinds `peerShared` speaks for, when the server says (v3.31: note, meal,
+   * task). Absent, a v3.19 server's list covers notes and tasks alone — read as
+   * covering meals too, it would drop every meal a housemate shares.
+   */
+  peerSharedKinds?: string[] | null
   /** True when the failure was an expired/invalid session rather than the network. */
   authError: boolean
   /**
@@ -81,7 +87,7 @@ function rows(list: unknown[]): RemoteRow[] {
 export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' | 'items'> & { items: Item[] }) | null {
   if (Array.isArray(data)) return { ...OFFLINE, items: rows(data) }
   if (!data || typeof data !== 'object') return null
-  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown; peerNotes?: unknown; peerShared?: unknown }
+  const obj = data as { items?: unknown; rejected?: unknown; reasons?: unknown; stale?: unknown; gone?: unknown; peerNotes?: unknown; peerShared?: unknown; peerSharedKinds?: unknown }
   const rejected: string[] = []
   const reasons: Record<string, string> = {}
   for (const entry of Array.isArray(obj.rejected) ? obj.rejected : []) {
@@ -107,6 +113,7 @@ export function parseSyncResponse(data: unknown): (Omit<SyncResult, 'authError' 
     // only an array is an answer; a server that says nothing revokes nothing
     peerShared: Array.isArray(obj.peerShared) ? ids(obj.peerShared) : null,
     peerNotes: Array.isArray(obj.peerNotes) ? ids(obj.peerNotes) : null,
+    peerSharedKinds: Array.isArray(obj.peerSharedKinds) ? ids(obj.peerSharedKinds) : null,
     reportsRejections: true,
   }
 }
@@ -185,13 +192,15 @@ export function purgeTombstone(kind: Item['kind'], id: string, now: string, dele
 /**
  * Which list is authoritative for each per-record kind.
  *
- * A v3.19 server answers `peerShared`, which covers notes AND tasks; a v3.16
- * one answers `peerNotes`, which covers notes alone and has nothing to say
- * about tasks. Null is "no information" for that kind, and the caller revokes
- * nothing — reading a note-only list as the whole answer would drop every task
- * a housemate owns.
+ * A v3.31 server answers `peerShared` with `peerSharedKinds` naming the kinds
+ * it covers (note, meal, task); a v3.19 one answers `peerShared` alone, which
+ * covers notes AND tasks; a v3.16 one answers `peerNotes`, which covers notes
+ * alone and has nothing to say about tasks. A kind left out is "no
+ * information", and the caller revokes nothing of it — reading a note-only
+ * list as the whole answer would drop every task a housemate owns.
  */
-export function peerVisibleByKind(r: Pick<SyncResult, 'peerShared' | 'peerNotes'>): { note: string[] | null; task: string[] | null } {
+export function peerVisibleByKind(r: Pick<SyncResult, 'peerShared' | 'peerNotes' | 'peerSharedKinds'>): Partial<Record<string, string[] | null>> {
+  if (r.peerShared && r.peerSharedKinds) return Object.fromEntries(r.peerSharedKinds.map(kind => [kind, r.peerShared]))
   if (r.peerShared) return { note: r.peerShared, task: r.peerShared }
   return { note: r.peerNotes, task: null }
 }

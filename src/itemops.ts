@@ -145,7 +145,7 @@ function isConcurrent(remote: Item, local: Item, sent: Item | undefined, base: I
  */
 export function revokedPeerRows(
   current: Item[],
-  visible: { note: string[] | null; task: string[] | null },
+  visible: Partial<Record<string, string[] | null>>,
   dirty: Set<string>,
   account: string | null,
   refused: ReadonlySet<string> = new Set(),
