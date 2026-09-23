@@ -101,6 +101,12 @@ describe('a member’s picture', () => {
     const { members } = await status()
     expect(members.find(m => m.id === MEMBER)).toMatchObject({ avatar: 'note-photo', avatarLink: null })
     expect(signed()[0].body).toEqual({ expiresIn: 3600, paths: ['face-owner'] })
+    // naming the other member's picture as one's own borrows nothing either
+    settings[1].avatar_media_id = 'face-owner'
+    calls = []
+    const borrowed = (await status()).members
+    expect(borrowed.find(m => m.id === OWNER)!.avatarLink).not.toBeNull()
+    expect(borrowed.find(m => m.id === MEMBER)).toMatchObject({ avatar: 'face-owner', avatarLink: null })
     // an object the service key wrote has no uploader, and is not signed either
     owners['face-owner'] = null
     calls = []

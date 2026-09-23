@@ -417,18 +417,20 @@ export function mediaURL(id: string): Promise<string | null> {
 async function lookUp(id: string): Promise<string | null> {
   let item = await idbGet<MediaItem>('media', id)
   if (!item) {
-    // not on this device — pull from the cloud bucket and cache it
+    // not on this device — pull from the cloud bucket (a housemate's picture
+    // through its signed link, which the bucket would refuse) and cache it
     const sb = getSupabase()
     if (!sb) return null
-    let data = await throughLink(id)
-    if (!data) {
-      const got = await sb.storage.from('media').download(id)
-      if (got.error || !got.data) return null
-      data = got.data
+    let fetched = await throughLink(id)
+    if (!fetched) {
+      const { data, error } = await sb.storage.from('media').download(id)
+      if (error || !data) return null
+      fetched = data
     }
-    item = { id, name: id, type: data.type, blob: data }
+    const blob = fetched
+    item = { id, name: id, type: blob.type, blob }
     idbSet('media', id, item)
-      .then(() => grew(data.size))
+      .then(() => grew(blob.size))
       .catch(() => {})
   }
   noteUse(id)

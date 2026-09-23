@@ -37,7 +37,7 @@ async function storage(path, init = {}) {
 export const AVATAR_LINK_SECONDS = 3600
 
 /**
- * A short-lived link to each member's picture, by its media id (v3.25).
+ * A short-lived link to each member's picture (v3.25), by the member's id.
  *
  * A picture is kept in user_settings.avatar_media_id, in no record, and the
  * storage policy lets a housemate read a bare-id photo only when a record they
@@ -59,13 +59,14 @@ async function avatarLinks(members) {
   if (!theirs.length) return new Map()
   const signed = await storage('/object/sign/media', { method: 'POST', body: JSON.stringify({ expiresIn: AVATAR_LINK_SECONDS, paths: theirs.map(m => m.avatar) }) })
   const expiresAt = new Date(Date.now() + AVATAR_LINK_SECONDS * 1000).toISOString()
-  const links = new Map()
+  const byPicture = new Map()
   for (const one of Array.isArray(signed) ? signed : []) {
     const link = one?.signedURL ?? one?.signedUrl
     if (one?.error || typeof one?.path !== 'string' || typeof link !== 'string') continue
-    links.set(one.path, { url: `${env().url}/storage/v1${link.startsWith('/') ? link : `/${link}`}`, expiresAt })
+    byPicture.set(one.path, { url: `${env().url}/storage/v1${link.startsWith('/') ? link : `/${link}`}`, expiresAt })
   }
-  return links
+  // each link goes to the member whose own upload it is, and to no one naming the same id
+  return new Map(theirs.filter(m => byPicture.has(m.avatar)).map(m => [m.id, byPicture.get(m.avatar)]))
 }
 
 async function adminUsers() {
@@ -110,7 +111,7 @@ async function describe(userId) {
   })
   // no link is not worth failing the member list for: the picture falls back to initials
   const links = await avatarLinks(members).catch(() => new Map())
-  return { household, members: members.map(m => ({ ...m, avatarLink: (m.avatar && links.get(m.avatar)) || null })) }
+  return { household, members: members.map(m => ({ ...m, avatarLink: links.get(m.id) ?? null })) }
 }
 
 const handler = async req => {
