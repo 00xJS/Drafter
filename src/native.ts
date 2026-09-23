@@ -739,8 +739,7 @@ export function pastLockGrace(awayAt: number, now: number): boolean {
  * launch events from initNative.
  */
 export async function watchAppLock(onLock: () => void): Promise<() => void> {
-  // when the app was last seen leaving (0 = not yet): the tab hiding or the
-  // native `pause`, whichever reports it — in the app both mark one departure
+  // when the app was last seen leaving (0 = not yet)
   let awayAt = 0
   // Synchronously, before onLock: raising the lock is a React state change, and
   // `resume` and `localNotificationActionPerformed` arrive in the same burst of
@@ -751,12 +750,21 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
     setAppLockShowing(true)
     onLock()
   }
+  // a browser tab: hidden, then shown again
   const onVis = () => {
     if (document.visibilityState === 'hidden') awayAt = Date.now()
     else if (appLockEnabled() && awayAt && pastLockGrace(awayAt, Date.now())) lock()
   }
-  document.addEventListener('visibilitychange', onVis)
-  if (!isNative()) return () => document.removeEventListener('visibilitychange', onVis)
+  const byVisibility = () => {
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }
+  if (!isNative()) return byVisibility()
+  // In the app only the app itself leaving counts: Capacitor's `pause` and
+  // `resume`. The web view is also hidden by screens of the app's own — the
+  // in-app Safari sheet a link opens in, the camera — and timing those from
+  // `visibilitychange` asked for Face ID after twelve seconds of reading a
+  // link inside Drafter.
   try {
     const { App } = await import('@capacitor/app')
     const pause = await App.addListener('pause', () => {
@@ -768,12 +776,12 @@ export async function watchAppLock(onLock: () => void): Promise<() => void> {
       if (appLockEnabled() && (!awayAt || pastLockGrace(awayAt, Date.now()))) lock()
     })
     return () => {
-      document.removeEventListener('visibilitychange', onVis)
       void pause.remove()
       void resume.remove()
     }
   } catch {
-    return () => document.removeEventListener('visibilitychange', onVis)
+    // with no app plugin to hear, the web view's own hiding is better than no lock at all
+    return byVisibility()
   }
 }
 

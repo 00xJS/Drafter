@@ -304,6 +304,14 @@ export function Review({
           {busy ? 'Writing…' : summary ? '✨ Rewrite summary' : '✨ Write my summary'}
         </button>
       </div>
+      {/* under the button that asked, not in the summary card: that sits below
+          last week's Top 3 and the figures, a screen or two down on a phone,
+          and a summary already written stays readable there */}
+      {error && (
+        <p className="warn" role="alert">
+          {error}
+        </p>
+      )}
 
       {prevSaved && (prevSaved.top?.length || prevSaved.reflections) && (
         <section className="chart-card you-said">
@@ -339,29 +347,24 @@ export function Review({
         {wrote.length > 0 && <StatTile label="Journal" value={String(wrote.length)} sub={mood ? `days written · mood ${mood}/5` : 'days written'} />}
       </div>
 
-      {(summary || error) && (
+      {summary && (
         <section className="chart-card review-summary">
           <header className="chart-head">
             <div>
               <h3>Summary</h3>
               <p className="chart-sub">
-                {error
-                  ? 'The model could not write it'
-                  : summaryOpen
-                    ? "Written by the model from this period's data and your reflections"
-                    : `${wordCount(summary)} ${wordCount(summary) === 1 ? 'word' : 'words'}, hidden`}
+                {summaryOpen
+                  ? "Written by the model from this period's data and your reflections"
+                  : `${wordCount(summary)} ${wordCount(summary) === 1 ? 'word' : 'words'}, hidden`}
               </p>
             </div>
-            {/* An error is the one thing here worth reading, so it is never
-                behind the toggle; a summary is long, and on a phone it pushes
-                everything the period actually holds off the screen. */}
-            {!error && (
-              <button type="button" className="btn subtle review-summary-toggle" aria-expanded={summaryOpen} onClick={toggleSummary}>
-                {summaryOpen ? 'Hide' : 'Show'}
-              </button>
-            )}
+            {/* a summary is long, and on a phone it pushes everything the
+                period actually holds off the screen */}
+            <button type="button" className="btn subtle review-summary-toggle" aria-expanded={summaryOpen} onClick={toggleSummary}>
+              {summaryOpen ? 'Hide' : 'Show'}
+            </button>
           </header>
-          {error ? <p className="warn">{error}</p> : summaryOpen && <div className="review-summary-text">{summary}</div>}
+          {summaryOpen && <div className="review-summary-text">{summary}</div>}
         </section>
       )}
 

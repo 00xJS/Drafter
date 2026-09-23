@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { TaskStatus } from '../../types'
 import type { Store } from '../../store'
+import type { OAuthSettled } from '../../calendars'
 import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
@@ -38,6 +39,15 @@ interface Deps {
   defer: (id: string, day: Date) => void
 }
 
+/** What a calendar sign-in the app finished itself came to, in the toast's words. */
+export function oauthSettledMessage(r: OAuthSettled): string {
+  const who = r.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+  if (r.ok) return `${who} connected — pick the calendars to show in Settings.`
+  const why = (r.error ?? '').trim()
+  if (!why) return `${who} could not be connected.`
+  return why.startsWith(who) ? why : `${who} could not be connected: ${why}`
+}
+
 /**
  * Every inbound link — the web query string, the share target, a drafter://
  * URL, a notification tap, a calendar consent return — read in one place, held
@@ -71,6 +81,10 @@ export function useDeepLinks({
   // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
   // consent screen. Anything that needs data waits for the store to load.
   const pendingLink = useRef<PendingLink | null>(null)
+  // a calendar sign-in's outcome, said once the app has finished it (waitForOAuth)
+  const oauthWait = useRef<(() => void) | null>(null)
+  const toastRef = useRef(showToast)
+  const awaitOAuthOutcome = () => waitForOAuth(oauthWait, message => toastRef.current(message))
   // `fromNotification` is the only way an `act=` button is honoured: a reminder's
   // Done writes on arrival, so the web query string and the share target must not
   // be able to ask for it.
@@ -86,12 +100,20 @@ export function useDeepLinks({
     const parsed = parseLink(params, { host, allowAct })
     if (parsed.oauth) {
       void closeExternal()
-      const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
-      showToast(
-        parsed.oauth.ok
-          ? `${who} connected — pick the calendars to show in Settings.`
-          : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
-      )
+      // On the web the callback has finished the sign-in before this page
+      // loads, and a refusal is final wherever it comes back, so either is
+      // said at once. A code handed back to the app still has to be exchanged
+      // (finishOAuthReturn): this said "connected" before that had happened,
+      // and a failed exchange was never mentioned. It waits for the outcome.
+      if (host === 'oauth' && parsed.oauth.ok) awaitOAuthOutcome()
+      else {
+        const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+        showToast(
+          parsed.oauth.ok
+            ? `${who} connected — pick the calendars to show in Settings.`
+            : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
+        )
+      }
       setSettingsNonce(n => n + 1)
       setPushed('settings')
       return
@@ -293,8 +315,8 @@ export function useDeepLinks({
   useLayoutEffect(() => {
     applyLinkRef.current = applyLink
     journalRef.current = store.journal
+    toastRef.current = showToast
   })
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if ([...params.keys()].length) {
@@ -320,5 +342,33 @@ export function useDeepLinks({
     [],
   )
 
+  // the sign-in outcome being waited for, if any, is let go of with the planner
+  useEffect(() => () => oauthWait.current?.(), [])
+
   return { applyLinkRef }
+}
+
+/**
+ * Say how a calendar sign-in the app is finishing itself turned out, once it
+ * has: the code exchanged for this account, or the reason it was not. The
+ * calendars module is loaded by then — it started this sign-in, and it is
+ * what finishes it — so it is fetched here rather than in the first load.
+ */
+function waitForOAuth(wait: { current: (() => void) | null }, say: (message: string) => void): void {
+  wait.current?.()
+  let done = false
+  let off = () => {}
+  const stop = () => {
+    done = true
+    off()
+    if (wait.current === stop) wait.current = null
+  }
+  wait.current = stop
+  void import('../../calendars').then(({ onOAuthSettled }) => {
+    if (done) return
+    off = onOAuthSettled(r => {
+      stop()
+      say(oauthSettledMessage(r))
+    })
+  })
 }

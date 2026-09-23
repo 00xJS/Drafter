@@ -46,6 +46,28 @@ interface Props {
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(1)} kB` : `${(n / 1_048_576).toFixed(1)} MB`)
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never')
 
+/**
+ * What Save the readable copy calls a snapshot: its date and whose it is, by
+ * the email's first half. Both accounts' copies of one night used to be
+ * `<date>-readable.json`, so which was which could only be told by opening
+ * them — and importing the other person's copy re-files their records under
+ * yours. `path` is the snapshot's own, `backups/<user id>/<date>.json`; with no
+ * email known the account's id stands in.
+ */
+export function readableName(path: string, email: string | null | undefined): string {
+  const [owner = '', file = ''] = path.split('/').slice(-2)
+  const date = file.replace(/\.json$/i, '') || 'snapshot'
+  const who =
+    (email ?? '')
+      .split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '') ||
+    owner.slice(0, 8) ||
+    'account'
+  return `${date}-${who}-readable.json`
+}
+
 export function SnapshotFiles({ users, busy, pending, opened, link, passphrase, onPassphrase, onRead, onDownload, onUnlock, onSave, onClose }: Props) {
   const panel = useRef<HTMLLIElement>(null)
   const field = useRef<HTMLInputElement>(null)

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { BackupList } from '../admin'
-import { SnapshotFiles, type OpenedSnapshot, type SnapshotLink } from '../components/AdminBackups'
+import { SnapshotFiles, readableName, type OpenedSnapshot, type SnapshotLink } from '../components/AdminBackups'
 
 // Admin → Backups → Read it fetched the snapshot and opened the passphrase box
 // after every account's list — nineteen rows below the button on a phone and
@@ -109,5 +109,24 @@ describe('reading a snapshot in Admin → Backups', () => {
     const linkRow = linking.split('<li').find(li => li.includes('Fetching…'))!
     expect(linkRow).toContain('Read it')
     expect(linkRow.indexOf('Fetching…')).toBeGreaterThan(linkRow.indexOf('Read it'))
+  })
+})
+
+describe('what Save the readable copy calls the file', () => {
+  it('says whose snapshot it is, so two accounts’ copies of one night are told apart', () => {
+    const owner = readableName(path(OWNER, '2026-09-22'), 'owner@example.com')
+    const member = readableName(path(MEMBER, '2026-09-22'), 'member@example.com')
+    expect(owner).toBe('2026-09-22-owner-readable.json')
+    expect(member).toBe('2026-09-22-member-readable.json')
+    expect(owner).not.toBe(member)
+  })
+
+  it('keeps the name to what a file name can hold', () => {
+    expect(readableName(path(OWNER, '2026-09-22'), 'Joseph.S+drafter@live.com')).toBe('2026-09-22-joseph.s-drafter-readable.json')
+  })
+
+  it('names an account with no email by the start of its id', () => {
+    expect(readableName(path(MEMBER, '2026-09-21'), null)).toBe('2026-09-21-5b0c2f1e-readable.json')
+    expect(readableName(path(MEMBER, '2026-09-21'), '')).toBe('2026-09-21-5b0c2f1e-readable.json')
   })
 })

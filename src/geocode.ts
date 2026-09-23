@@ -1,5 +1,6 @@
-import { ApiError, apiFetch } from './api'
+import { OFFLINE_MESSAGE, apiFetch, isOffline } from './api'
 import { centroidOf, type Coord } from './geo'
+import { isNative } from './native'
 import { isSupabaseConfigured } from './supabase'
 import type { Place } from './types'
 import { readCache } from './weather'
@@ -92,6 +93,15 @@ export class LookupError extends Error {
 export const NEEDS_SERVER =
   "Finding an address needs Drafter's server: it works on the hosted site and in the iPhone app, not in a copy of the app running on its own."
 
+/**
+ * The same answer where there IS a server: the iPhone app always talks to the
+ * hosted site, so telling it the lookup works "in the iPhone app" was no help.
+ */
+export const SERVER_DID_NOT_ANSWER = "Drafter's server did not answer the lookup. Try again in a moment."
+
+/** What a server that is missing or said nothing usable means here. */
+const noServer = () => (isNative() ? SERVER_DID_NOT_ANSWER : NEEDS_SERVER)
+
 /** Lookups from this device go at least this far apart, whoever asks: OpenStreetMap allows one a second. */
 export const LOOKUP_GAP_MS = 1100
 
@@ -128,11 +138,14 @@ export async function findAddress(q: string, area: LookupArea | null, deps: Look
   try {
     res = await (deps.fetch ?? apiFetch)('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), timeoutMs: 15_000 })
   } catch (e) {
-    throw new LookupError(e instanceof ApiError || !isSupabaseConfigured() ? NEEDS_SERVER : 'The lookup did not go through. Try again in a moment.', 'server')
+    // Offline is its own answer: it used to read as a copy with no server, in
+    // the app too. A copy with no backend at all still has no server to reach.
+    const why = isOffline(e) ? OFFLINE_MESSAGE : !isNative() && !isSupabaseConfigured() ? NEEDS_SERVER : 'The lookup did not go through. Try again in a moment.'
+    throw new LookupError(why, 'server')
   }
   // a copy served without the functions answers the app page, or a 404
   const json = (await res.json().catch(() => null)) as { candidates?: unknown; area?: unknown; error?: unknown } | null
-  if (!json || res.status === 404 || res.status === 405) throw new LookupError(NEEDS_SERVER, 'server')
+  if (!json || res.status === 404 || res.status === 405) throw new LookupError(noServer(), 'server')
   const said = typeof json.error === 'string' ? json.error : ''
   if (res.status === 401 || res.status === 503) throw new LookupError('Sign in to Drafter to look up addresses.', 'signin')
   if (res.status === 429) throw new LookupError(said || 'Too many lookups just now. Try again in a minute.', 'busy')

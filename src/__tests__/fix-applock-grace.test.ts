@@ -90,14 +90,35 @@ describe('the app lock on the iPhone', () => {
     stop()
   })
 
-  it('times the absence from the web view hiding as well as from pause', async () => {
+  it('does not ask after the in-app Safari sheet or the camera, which only hide the web view', async () => {
+    // a link read for a minute in the sheet the app opens it in: the app never left
     const onLock = vi.fn()
     const stop = await watchAppLock(onLock)
     hide()
+    clock += 60_000
+    show()
+    expect(onLock).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('times a real trip away from the app leaving, not from the web view hiding before it', async () => {
+    // the Safari sheet open for half a minute, then the app away for five seconds
+    const onLock = vi.fn()
+    const stop = await watchAppLock(onLock)
+    hide()
+    clock += 30_000
+    fire('pause')
     clock += 5_000
     fire('resume')
     show()
     expect(onLock).not.toHaveBeenCalled()
+    // …and the same with the app away past the grace locks, once
+    hide()
+    fire('pause')
+    clock += APP_LOCK_GRACE_MS + 1
+    fire('resume')
+    show()
+    expect(onLock).toHaveBeenCalledTimes(1)
     stop()
   })
 
@@ -126,6 +147,25 @@ describe('the app lock on the iPhone', () => {
     stop()
     await Promise.resolve()
     expect(env.listeners.size).toBe(0)
+  })
+})
+
+describe('the app lock in an app whose App plugin will not load', () => {
+  it('falls back to the web view’s own hiding rather than never locking', async () => {
+    vi.resetModules()
+    vi.doMock('@capacitor/app', () => {
+      throw new Error('plugin missing')
+    })
+    const { watchAppLock: watch, APP_LOCK_GRACE_MS: grace } = await import('../native')
+    const onLock = vi.fn()
+    const stop = await watch(onLock)
+    hide()
+    clock += grace + 1
+    show()
+    expect(onLock).toHaveBeenCalledTimes(1)
+    stop()
+    vi.doUnmock('@capacitor/app')
+    vi.resetModules()
   })
 })
 

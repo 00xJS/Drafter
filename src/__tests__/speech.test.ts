@@ -1,4 +1,15 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// the iOS shell, or a browser: flipped by the tests that need the app
+const env = vi.hoisted(() => ({ native: false }))
+vi.mock('@capacitor/core', () => ({
+  Capacitor: { isNativePlatform: () => env.native, getPlatform: () => (env.native ? 'ios' : 'web') },
+  registerPlugin: () => ({}),
+}))
+
+import { Search } from '../components/Search'
 import { listen, speechAvailable } from '../speech'
 
 /*
@@ -57,12 +68,22 @@ afterEach(() => {
   delete g.webkitSpeechRecognition
   FakeRecogniser.last = null
   FakeRecogniser.failToStart = false
+  env.native = false
 })
 
 describe('speechAvailable', () => {
-  it('is false with no recogniser, which is the iPhone shell', () => {
+  it('is false with no recogniser', () => {
     expect(speechAvailable()).toBe(false)
     expect(listen({ onText: vi.fn(), onEnd: vi.fn(), onError: vi.fn() })).toBeNull()
+  })
+
+  it('is false inside the iPhone app even where the web view offers a recogniser, and never starts one there', () => {
+    // the app declares no microphone or speech use to iOS, so the keyboard's own 🎤 is the way to dictate
+    env.native = true
+    install()
+    expect(speechAvailable()).toBe(false)
+    expect(listen({ onText: vi.fn(), onEnd: vi.fn(), onError: vi.fn() })).toBeNull()
+    expect(FakeRecogniser.last).toBeNull()
   })
 
   it('takes the prefixed constructor Safari and Chrome ship, as well as the plain one', () => {
@@ -144,5 +165,24 @@ describe('listen', () => {
     install()
     FakeRecogniser.failToStart = true
     expect(listen({ onText: vi.fn(), onEnd: vi.fn(), onError: vi.fn() })).toBeNull()
+  })
+})
+
+describe('the palette’s microphone', () => {
+  const noop = () => {}
+  const palette = () =>
+    renderToStaticMarkup(
+      createElement(Search, { tasks: [], projects: [], people: [], onOpenTask: noop, onOpenProject: noop, onOpenPerson: noop, onCreateTask: noop, onClose: noop }),
+    )
+
+  it('is offered in a browser that can listen', () => {
+    install()
+    expect(palette()).toContain('aria-label="Dictate"')
+  })
+
+  it('is not drawn in the iPhone app', () => {
+    install()
+    env.native = true
+    expect(palette()).not.toContain('aria-label="Dictate"')
   })
 })

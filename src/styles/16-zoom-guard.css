@@ -14,8 +14,23 @@
    on the viewport meta — that also blocks deliberate pinch-zoom, which is an
    accessibility control.
 
+   Not only below 640px: an iPhone turned sideways and an iPad are wider than
+   that and zoom all the same, so the guard holds on any touch screen, and
+   anywhere in the iOS app — an iPad with a trackpad may not call its pointer
+   coarse. :where() weighs nothing, so the app's arms win and lose exactly as
+   the touch-screen arms do.
+
    Fields that are already ABOVE 16px never zoomed and are restored after it. */
-@media (max-width: 640px) {
+:where(html.native) input:not([type='checkbox']):not([type='radio']),
+:where(html.native) select:not([hidden]):not([multiple]),
+:where(html.native) textarea:not([hidden]):not([disabled]),
+:where(html.native) [contenteditable='true']:not([hidden]) {
+  font-size: max(16px, 1rem);
+}
+:where(html.native) .emoji-field input:not([type='checkbox']) {
+  font-size: max(18px, 1.125rem);
+}
+@media (max-width: 640px), (pointer: coarse) {
   input:not([type='checkbox']):not([type='radio']),
   select:not([hidden]):not([multiple]),
   textarea:not([hidden]):not([disabled]),
@@ -31,4 +46,3 @@
     font-size: max(18px, 1.125rem);
   }
 }
-

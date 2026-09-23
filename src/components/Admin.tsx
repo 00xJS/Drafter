@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, DataStats, DigestTest, PushTest, SyncCheck, adminAction } from '../admin'
 import { siteOrigin } from '../api'
 import { isEnvelope, unwrapSnapshot } from '../backupcrypto'
 import type { EvalResult } from '../chateval'
 import { saveFile } from '../native'
-import { SnapshotFiles, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
+import { SnapshotFiles, readableName, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
 import { AdminOps } from './AdminOps'
 import { ConfirmButton } from './ConfirmButton'
 
@@ -32,6 +32,23 @@ type Stats = DataStats & { syncCheck?: SyncCheck }
 interface Props {
   /** The section it opens on: Users, unless another is asked for (Today's sync alarm opens Data). */
   initialGroup?: Group
+  /** Tests and previews: start from these instead of fetching, with these actions already failed (by name, as `pending` names them). */
+  initial?: { users?: AdminUser[]; ownerEmail?: string | null; status?: AdminStatus; stats?: Stats; backups?: BackupList; failed?: Record<string, string> }
+}
+
+/** An action's failure, said under the button that ran it. */
+function Failed({ error }: { error?: string }) {
+  return error ? (
+    <p className="warn" role="alert">
+      {error}
+    </p>
+  ) : null
+}
+
+/** `failed` without `name`'s: an action starting again takes its last failure away. */
+function without(failed: Record<string, string>, name: string): Record<string, string> {
+  const { [name]: _gone, ...rest } = failed
+  return rest
 }
 
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(1)} kB` : `${(n / 1_048_576).toFixed(1)} MB`)
@@ -92,7 +109,7 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 }
 
 /** Admin → Data's card for the hourly sync check: what it last found, the kinds that failed, and a way to run it now. */
-function SyncCheckCard({ check, busy, checking, onCheck }: { check?: SyncCheck; busy: boolean; checking: boolean; onCheck(): void }) {
+function SyncCheckCard({ check, busy, checking, error, onCheck }: { check?: SyncCheck; busy: boolean; checking: boolean; error?: string; onCheck(): void }) {
   const record = check?.record ?? null
   return (
     <div className={record && !record.ok ? 'admin-health admin-alarm' : 'admin-health'}>
@@ -113,6 +130,7 @@ function SyncCheckCard({ check, busy, checking, onCheck }: { check?: SyncCheck; 
           {checking ? 'Checking…' : 'Check now'}
         </button>
       </div>
+      <Failed error={error} />
       <p className="field-hint">
         Every hour the digest writes one test row of each kind through <code>sync_posts</code> and rolls it back, so nothing is kept. If the server refuses one, you
         are told through the digest’s push or email, at most every 12 hours.
@@ -131,13 +149,13 @@ function TestLine({ ok, detail, error }: { ok: boolean; detail?: string; error?:
   )
 }
 
-export function Admin({ initialGroup = 'users' }: Props) {
+export function Admin({ initialGroup = 'users', initial }: Props) {
   const [group, setGroup] = useState<Group>(initialGroup)
-  const [users, setUsers] = useState<AdminUser[] | null>(null)
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null)
-  const [status, setStatus] = useState<AdminStatus | null>(null)
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [backups, setBackups] = useState<BackupList | null>(null)
+  const [users, setUsers] = useState<AdminUser[] | null>(initial?.users ?? null)
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(initial?.ownerEmail ?? null)
+  const [status, setStatus] = useState<AdminStatus | null>(initial?.status ?? null)
+  const [stats, setStats] = useState<Stats | null>(initial?.stats ?? null)
+  const [backups, setBackups] = useState<BackupList | null>(initial?.backups ?? null)
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
   const [link, setLink] = useState<SnapshotLink | null>(null)
   const [aiTest, setAiTest] = useState<AiTest | null>(null)
@@ -145,7 +163,12 @@ export function Admin({ initialGroup = 'users' }: Props) {
   const [chatCheck, setChatCheck] = useState<{ results: (EvalResult | undefined)[]; of: number } | null>(null)
   const [pushTest, setPushTest] = useState<PushTest | null>(null)
   const [digestTest, setDigestTest] = useState<DigestTest | null>(null)
-  const [error, setError] = useState('')
+  /** Why opening Admin could not load everything. */
+  const [loadError, setLoadError] = useState('')
+  // Why each action last failed, by the name it runs under (as `pending`), so
+  // the failure is said under its own button. One line at the foot of the
+  // page was a scroll away from all of them.
+  const [failed, setFailed] = useState<Record<string, string>>(initial?.failed ?? {})
   const [pending, setPending] = useState('')
   const [createEmail, setCreateEmail] = useState('')
   const [createPassword, setCreatePassword] = useState('')
@@ -171,23 +194,23 @@ export function Admin({ initialGroup = 'users' }: Props) {
   const refreshBackups = () => adminAction<BackupList>('listBackups').then(setBackups)
 
   useEffect(() => {
+    if (initial) return
     // load every panel up front: the whole point of Data and Backups is that
     // they answer "is my data still there?" the moment Admin opens
-    Promise.all([refreshUsers(), refreshStatus(), refreshStats(), refreshBackups()]).catch(e => setError((e as Error).message))
-  }, [])
+    Promise.all([refreshUsers(), refreshStatus(), refreshStats(), refreshBackups()]).catch(e => setLoadError((e as Error).message))
+  }, [initial])
 
   const runNamed = async (name: string, fn: () => Promise<unknown>) => {
     setPending(name)
-    setError('')
+    setFailed(f => without(f, name))
     try {
       await fn()
     } catch (e) {
-      setError((e as Error).message)
+      setFailed(f => ({ ...f, [name]: (e as Error).message }))
     } finally {
       setPending('')
     }
   }
-  const run = (fn: () => Promise<unknown>) => runNamed('busy', fn)
 
   const copyLink = async (link: string) => {
     setLinkOut(link)
@@ -202,7 +225,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
 
   /** Link only: a reset link to copy. Supabase keeps one per account, so this cancels any reset email sent before it. */
   const makeResetLink = () =>
-    run(async () => {
+    runNamed('linkOnly', async () => {
       const r = await adminAction<{ actionLink?: string | null }>('resetPassword', { email: resetEmail })
       setSentTo('')
       if (r.actionLink) await copyLink(r.actionLink)
@@ -243,7 +266,9 @@ export function Admin({ initialGroup = 'users' }: Props) {
 
   const saveSnapshot = () => {
     if (!opened?.snapshot) return
-    const name = `${opened.path.split('/').pop()?.replace(/\.json$/, '') ?? 'snapshot'}-readable.json`
+    // whose it is goes in the name: both accounts' copies of a night used to be called the same
+    const owner = backups?.users.find(u => opened.path.startsWith(`backups/${u.userId}/`))
+    const name = readableName(opened.path, owner?.email)
     saveFile(name, new Blob([JSON.stringify(opened.snapshot, null, 2)], { type: 'application/json' })).catch(e => setOpened({ ...opened, error: (e as Error).message }))
   }
 
@@ -292,6 +317,12 @@ export function Admin({ initialGroup = 'users' }: Props) {
             </button>
           ))}
         </nav>
+        {/* opening Admin loads every section at once, so what stopped it is said above them all */}
+        {loadError && (
+          <p className="warn" role="alert">
+            Admin could not load everything: {loadError}
+          </p>
+        )}
 
         <section className="settings-section g-users">
           <h3>Accounts</h3>
@@ -329,7 +360,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
               className="btn primary"
               disabled={busy || !createEmail.trim() || createPassword.length < 8}
               onClick={() =>
-                run(async () => {
+                runNamed('create', async () => {
                   await adminAction('createUser', { email: createEmail, password: createPassword })
                   setCreateEmail('')
                   setCreatePassword('')
@@ -340,6 +371,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
               Create
             </button>
           </div>
+          <Failed error={failed.create} />
           <details className="admin-optional">
             <summary>Invite them instead</summary>
             <p className="field-hint">Makes a one-time link that sets up their account when they open it, so there is no temporary password to pass on.</p>
@@ -349,7 +381,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 className="btn"
                 disabled={busy || !inviteEmail.trim()}
                 onClick={() =>
-                  run(async () => {
+                  runNamed('invite', async () => {
                     const r = await adminAction<{ actionLink: string | null }>('inviteUser', { email: inviteEmail })
                     setInviteEmail('')
                     if (r.actionLink) await copyLink(r.actionLink)
@@ -360,6 +392,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 Generate invite link
               </button>
             </div>
+            <Failed error={failed.invite} />
           </details>
 
           <h4>Reset someone's password</h4>
@@ -384,7 +417,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
               className="btn primary"
               disabled={busy || !resetEmail.trim()}
               onClick={() =>
-                run(async () => {
+                runNamed('sendReset', async () => {
                   await adminAction<{ mode: string }>('resetPassword', {
                     email: resetEmail,
                     send: true,
@@ -411,6 +444,8 @@ export function Admin({ initialGroup = 'users' }: Props) {
               </button>
             )}
           </div>
+          <Failed error={failed.sendReset} />
+          <Failed error={failed.linkOnly} />
           {sentTo && (
             <p className="sync-ok">
               Sent to {sentTo}. The link in that email is the one to use. Supabase's built-in sender allows only a few emails an hour, so if nothing has come in a few
@@ -430,7 +465,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 className="btn"
                 disabled={busy || !resetEmail.trim() || resetPassword.trim().length < 8}
                 onClick={() =>
-                  run(async () => {
+                  runNamed('setPassword', async () => {
                     await adminAction('resetPassword', { email: resetEmail, password: resetPassword })
                     setResetPassword('')
                     setSentTo('')
@@ -441,6 +476,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 Set it
               </button>
             </div>
+            <Failed error={failed.setPassword} />
           </details>
 
           {linkOut && (
@@ -466,51 +502,58 @@ export function Admin({ initialGroup = 'users' }: Props) {
           {users ? (
             <ul className="cal-sources admin-users">
               {users.map(u => (
-                <li key={u.id} className="cal-source">
-                  <span className="cal-source-name">
-                    {u.email || u.id}
-                    {isOwnerRow(u) && (
-                      <>
-                        {' '}
-                        <small className="tag">owner</small>
-                      </>
-                    )}
-                    {u.disabled && <small className="warn"> · disabled</small>}
-                    {u.lastSignInAt && <small> · last sign-in {new Date(u.lastSignInAt).toLocaleDateString()}</small>}
-                  </span>
-                  <ConfirmButton
-                    className="btn subtle danger"
-                    confirmLabel={u.disabled ? 'Enable?' : 'Disable?'}
-                    onConfirm={() =>
-                      run(async () => {
-                        await adminAction('setDisabled', { userId: u.id, disabled: !u.disabled })
-                        await refreshUsers()
-                      })
-                    }
-                  >
-                    {u.disabled ? 'Enable' : 'Disable'}
-                  </ConfirmButton>
-                  {!isOwnerRow(u) && (
+                <Fragment key={u.id}>
+                  <li className="cal-source">
+                    <span className="cal-source-name">
+                      {u.email || u.id}
+                      {isOwnerRow(u) && (
+                        <>
+                          {' '}
+                          <small className="tag">owner</small>
+                        </>
+                      )}
+                      {u.disabled && <small className="warn"> · disabled</small>}
+                      {u.lastSignInAt && <small> · last sign-in {new Date(u.lastSignInAt).toLocaleDateString()}</small>}
+                    </span>
                     <ConfirmButton
                       className="btn subtle danger"
-                      confirmLabel="Delete for good?"
-                      title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted, and their wardrobe photos with them.`}
+                      confirmLabel={u.disabled ? 'Enable?' : 'Disable?'}
                       onConfirm={() =>
-                        run(async () => {
-                          const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number; photosDeleted?: number }>('deleteUser', {
-                            userId: u.id,
-                          })
-                          setLinkOut(
-                            `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s), ${r.historyDeleted} history row(s) and ${r.photosDeleted ?? 0} wardrobe photo(s) were deleted.`,
-                          )
-                          await Promise.all([refreshUsers(), refreshStats()])
+                        runNamed(`disable:${u.id}`, async () => {
+                          await adminAction('setDisabled', { userId: u.id, disabled: !u.disabled })
+                          await refreshUsers()
                         })
                       }
                     >
-                      Delete
+                      {u.disabled ? 'Enable' : 'Disable'}
                     </ConfirmButton>
+                    {!isOwnerRow(u) && (
+                      <ConfirmButton
+                        className="btn subtle danger"
+                        confirmLabel="Delete for good?"
+                        title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted, and their wardrobe photos with them.`}
+                        onConfirm={() =>
+                          runNamed(`delete:${u.id}`, async () => {
+                            const r = await adminAction<{ email: string | null; reassigned: number; deleted: number; historyDeleted: number; photosDeleted?: number }>('deleteUser', {
+                              userId: u.id,
+                            })
+                            setLinkOut(
+                              `Deleted ${r.email ?? u.email}. ${r.reassigned} shared record(s) are now yours; ${r.deleted} personal record(s), ${r.historyDeleted} history row(s) and ${r.photosDeleted ?? 0} wardrobe photo(s) were deleted.`,
+                            )
+                            await Promise.all([refreshUsers(), refreshStats()])
+                          })
+                        }
+                      >
+                        Delete
+                      </ConfirmButton>
+                    )}
+                  </li>
+                  {(failed[`disable:${u.id}`] || failed[`delete:${u.id}`]) && (
+                    <li className="warn" role="alert">
+                      {failed[`disable:${u.id}`] || failed[`delete:${u.id}`]}
+                    </li>
                   )}
-                </li>
+                </Fragment>
               ))}
             </ul>
           ) : (
@@ -532,6 +575,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                 check={stats.syncCheck}
                 busy={busy}
                 checking={pending === 'syncCheck'}
+                error={failed.syncCheck}
                 onCheck={() =>
                   runNamed('syncCheck', async () => {
                     const check = await adminAction<SyncCheck>('runSyncCanary')
@@ -638,6 +682,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                   {pending === 'runBackup' ? 'Backing up…' : 'Back up now'}
                 </button>
               </div>
+              <Failed error={failed.runBackup} />
 
               {backupReport && (
                 <div className="admin-health">
@@ -714,6 +759,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                     {pending === 'testPush' ? 'Sending…' : 'Send test push'}
                   </button>
                 </div>
+                <Failed error={failed.testPush} />
                 <p className="field-hint">Goes to every device subscribed on this account, browser and iOS alike. Dead endpoints are dropped as they are found.</p>
                 {pushTest && (
                   <>
@@ -766,6 +812,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                     {pending === 'testAi' ? 'Asking…' : 'Test AI'}
                   </button>
                 </div>
+                <Failed error={failed.testAi} />
                 {aiTest && (
                   <>
                     <TestLine
@@ -786,6 +833,7 @@ export function Admin({ initialGroup = 'users' }: Props) {
                     {pending === 'chatCheck' ? `Checking… ${chatCheck?.results.filter(Boolean).length ?? 0} of ${chatCheck?.of ?? '…'}` : 'Check the assistant'}
                   </button>
                 </div>
+                <Failed error={failed.chatCheck} />
                 <p className="field-hint">
                   Asks the chat one question of each kind it should handle (about itself, a general question, a thank-you, a change) through the real model, with nothing
                   from anyone's planner, and says which came back as they should. About a minute.
@@ -827,6 +875,8 @@ export function Admin({ initialGroup = 'users' }: Props) {
                     </ConfirmButton>
                   )}
                 </div>
+                <Failed error={failed.previewDigest} />
+                <Failed error={failed.sendDigest} />
                 <p className="field-hint">
                   Preview builds your own digest from live records without sending anything. A real send goes out immediately and deliberately leaves the daily watermark
                   alone, so the scheduled morning digest still arrives.
@@ -860,8 +910,6 @@ export function Admin({ initialGroup = 'users' }: Props) {
           )}
           </details>
         </section>
-
-        {error && <p className="warn">{error}</p>}
     </div>
   )
 }

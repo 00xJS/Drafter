@@ -58,6 +58,17 @@ interface Props {
   cookRecipe?: { name: string | null; onSave(t: Task): void }
 }
 
+/** The buttons that ask a server for something: the ✨ rewrites, Break it down, Suggest tags, and Create a GitHub issue. */
+type AiSource = 'refine' | 'checklist' | 'tags' | 'github'
+
+/** A button's failure, said directly under it. */
+const failure = (message: string | undefined) =>
+  message ? (
+    <p className="warn" role="alert">
+      {message}
+    </p>
+  ) : null
+
 export function TaskEditor({
   task,
   preset,
@@ -108,7 +119,11 @@ export function TaskEditor({
   const { title, description } = form
 
   const [aiBusy, setAiBusy] = useState<AiBusy>(null)
-  const [aiError, setAiError] = useState('')
+  // Why each ✨ button (or the GitHub issue button) last failed, kept by the
+  // button, so each failure is said beside it. One line at the foot of the
+  // form was two to four screens below the button on a phone.
+  const [aiErrors, setAiErrors] = useState<Partial<Record<AiSource, string>>>({})
+  const setAiError = (source: AiSource, message: string) => setAiErrors(e => ({ ...e, [source]: message }))
   /** A proposed rewrite of the description, waiting for the user to accept or discard it. */
   const [proposal, setProposal] = useState<RefineProposal | null>(null)
   const [captureProposal, setCaptureProposal] = useState<CapturedFields | null>(null)
@@ -168,7 +183,8 @@ export function TaskEditor({
   }
 
   async function runAI(kind: 'tags' | 'checklist' | RefineMode) {
-    setAiError('')
+    const source: AiSource = kind === 'tags' || kind === 'checklist' ? kind : 'refine'
+    setAiError(source, '')
     setAiBusy(kind)
     try {
       if (kind === 'clarify' || kind === 'expand' || kind === 'summarize') {
@@ -188,7 +204,7 @@ export function TaskEditor({
         addChecks(steps)
       }
     } catch (e) {
-      setAiError((e as Error).message)
+      setAiError(source, (e as Error).message)
     } finally {
       setAiBusy(null)
     }
@@ -330,7 +346,9 @@ export function TaskEditor({
               {details && (
                 <>
                   <DescriptionField description={description} set={set} aiBusy={aiBusy} onRefine={runAI} proposal={proposal} setProposal={setProposal} />
-                  <DescriptionLinks form={form} set={set} project={project} aiBusy={aiBusy} setAiError={setAiError} />
+                  {failure(aiErrors.refine)}
+                  <DescriptionLinks form={form} set={set} project={project} aiBusy={aiBusy} setAiError={message => setAiError('github', message)} />
+                  {failure(aiErrors.github)}
                   <ChecklistField
                     checklist={form.checklist}
                     onType={onType}
@@ -341,6 +359,7 @@ export function TaskEditor({
                     aiBusy={aiBusy}
                     onBreakDown={() => runAI('checklist')}
                   />
+                  {failure(aiErrors.checklist)}
                   {cookRecipe && (
                     <div className="cook-recipe-save">
                       <button type="button" className="btn" onClick={saveToRecipe}>
@@ -364,7 +383,7 @@ export function TaskEditor({
                 <BillCost form={form} set={set} showCosts={costsVisible(form, base)} members={members} />
                 <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
                 <Images mediaIds={form.mediaIds} set={set} />
-                <Attachments attachments={form.attachments} set={set} setAiError={setAiError} />
+                <Attachments attachments={form.attachments} set={set} />
               </aside>
             )}
           </div>
@@ -375,8 +394,7 @@ export function TaskEditor({
                 <RepeatField freq={form.freq} set={set} />
                 <TagsField form={form} set={set} aiBusy={aiBusy} onSuggestTags={() => runAI('tags')} />
               </div>
-
-              {aiError && <p className="warn">{aiError}</p>}
+              {failure(aiErrors.tags)}
 
               <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
 

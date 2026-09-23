@@ -457,6 +457,21 @@
   flex: 1;
   min-height: 0;
   gap: 8px;
+  /* what the Open ↗ under a tapped link is placed against */
+  position: relative;
+}
+/* A tapped link's way out. The pad is always editable, so on a phone a tap
+   on a link only places the caret; this offers to open it (RichNotes). */
+.notes-link-tip {
+  position: absolute;
+  z-index: 5;
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+}
+@media (pointer: coarse) {
+  .notes-link-tip {
+    min-height: 44px;
+  }
 }
 .notes-toolbar {
   display: flex;
