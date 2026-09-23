@@ -417,20 +417,78 @@ export function mediaURL(id: string): Promise<string | null> {
 async function lookUp(id: string): Promise<string | null> {
   let item = await idbGet<MediaItem>('media', id)
   if (!item) {
-    // not on this device — pull from the cloud bucket and cache it
+    // not on this device — pull from the cloud bucket (a housemate's picture
+    // through its signed link, which the bucket would refuse) and cache it
     const sb = getSupabase()
     if (!sb) return null
-    const { data, error } = await sb.storage.from('media').download(id)
-    if (error || !data) return null
-    item = { id, name: id, type: data.type, blob: data }
+    let fetched = await throughLink(id)
+    if (!fetched) {
+      const { data, error } = await sb.storage.from('media').download(id)
+      if (error || !data) return null
+      fetched = data
+    }
+    const blob = fetched
+    item = { id, name: id, type: blob.type, blob }
     idbSet('media', id, item)
-      .then(() => grew(data.size))
+      .then(() => grew(blob.size))
       .catch(() => {})
   }
   noteUse(id)
   const url = URL.createObjectURL(item.blob)
   keepURL(id, url, item.blob.size)
   return url
+}
+
+// ---- a housemate's picture ---------------------------------------------------------
+//
+// A member's picture (v3.25) is in no record, so the storage policy — which
+// lets a housemate read a photo only when a record they can read vouches for
+// it — refuses the other member's, and they saw initials. /api/household signs
+// a short-lived link to each member's picture instead (src/household.ts hands
+// them here). A picture fetched through one is kept on this device like any
+// other photo, so the link is needed once.
+
+/** A link is left alone this long before it expires: a fetch under way should not outlive it. */
+const LINK_MARGIN_MS = 60_000
+
+const mediaLinks = new Map<string, { url: string; until: number }>()
+const linkWaiters = new Map<string, Set<() => void>>()
+
+/**
+ * Signed links to pictures, as /api/household answers them: the newest for
+ * each id wins, one already expired is ignored, and a view waiting on one is
+ * told it has come.
+ */
+export function rememberMediaLinks(links: Iterable<{ id: string; url: string; expiresAt: string }>, now = Date.now()): void {
+  for (const { id, url, expiresAt } of links) {
+    const until = Date.parse(expiresAt)
+    if (!id || !/^https:\/\//.test(url) || !(until - LINK_MARGIN_MS > now)) continue
+    mediaLinks.set(id, { url, until })
+    for (const tell of linkWaiters.get(id) ?? []) tell()
+  }
+}
+
+/** Be told when a link to this picture comes; returns the unsubscribe. */
+export function onMediaLink(id: string, tell: () => void): () => void {
+  const waiting = linkWaiters.get(id) ?? new Set()
+  waiting.add(tell)
+  linkWaiters.set(id, waiting)
+  return () => {
+    waiting.delete(tell)
+    if (!waiting.size) linkWaiters.delete(id)
+  }
+}
+
+/** The picture through its signed link, or null when there is no live link or it fails. */
+async function throughLink(id: string): Promise<Blob | null> {
+  const link = mediaLinks.get(id)
+  if (!link || link.until - LINK_MARGIN_MS <= Date.now()) return null
+  try {
+    const res = await fetch(link.url)
+    return res.ok ? await res.blob() : null
+  } catch {
+    return null
+  }
 }
 
 // ---- the photo cache on this device -----------------------------------------------

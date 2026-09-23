@@ -8,7 +8,7 @@
 
 import { withCors } from './lib/cors.mjs'
 import { complete, resolveProvider } from './lib/ai.mjs'
-import { slidingWindow } from './lib/ratelimit.mjs'
+import { sharedWindow } from './lib/ratelimit.mjs'
 import { requireUser } from './lib/session.mjs'
 
 /** The most one call may ask for, whatever the client sends. */
@@ -20,10 +20,10 @@ const MAX_TOKENS = 4096
  * turned away before it costs a request of the account's thirty.
  */
 const MAX_TEXT_BYTES = 64 * 1024
-// About 30 calls per 10 minutes per account. Per warm instance and best effort
-// (see lib/ratelimit.mjs): it stops a runaway loop or a leaked session from
-// draining the provider's quota, not someone spreading calls over cold starts.
-const perUser = slidingWindow({ limit: 30, windowMs: 10 * 60_000 })
+// About 30 calls per 10 minutes per account, counted across every instance
+// (lib/ratelimit.mjs, public.rate_limit_take), so a runaway loop or a leaked
+// session cannot drain the provider's quota by landing on fresh cold starts.
+const perUser = sharedWindow({ bucket: 'ai', limit: 30, windowMs: 10 * 60_000 })
 
 const handler = async req => {
   // the AI budget counts from here: checking the session spends some of it
@@ -59,7 +59,7 @@ const handler = async req => {
   const reasoning = body?.reasoning === 'off' || body?.reasoning === 'on' ? body.reasoning : undefined
 
   // counted only for a call that would actually reach the provider
-  const slot = perUser.take(user.id)
+  const slot = await perUser.take(user.id)
   if (!slot.ok) {
     const seconds = Math.ceil(slot.retryAfterMs / 1000)
     return Response.json(

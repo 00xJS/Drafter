@@ -1,4 +1,5 @@
 import type { IngredientLine } from '../../../shared/recipes.mts'
+import type { Take } from './ratelimit.mjs'
 
 export declare const IMPORT_LIMITS: Readonly<{
   timeoutMs: number
@@ -74,4 +75,6 @@ export declare function recipeFromHtml(html: string): ImportedRecipe | null
 export type ImportResult = { recipe: ImportedRecipe; sourceUrl: string } | { text: string; title: string; sourceUrl: string }
 export declare function importRecipe(rawUrl: unknown, opts?: FetchOptions): Promise<ImportResult>
 
-export declare function recipeImportHandler(opts?: FetchOptions & { limit?: number }): (req: Request) => Promise<Response>
+export declare function recipeImportHandler(
+  opts?: FetchOptions & { limit?: number; perUser?: { take(key: string): Take | Promise<Take> } },
+): (req: Request) => Promise<Response>

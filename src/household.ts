@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from './api'
+import { rememberMediaLinks } from './media'
 import { getSupabase, storedUserId } from './supabase'
 
 // Households: people who share this planner. Membership lives server-side;
@@ -15,6 +16,12 @@ export interface Member {
    * on a task you handed them.
    */
   avatar?: string | null
+  /**
+   * A short-lived link to that picture, signed by /api/household: the storage
+   * policy lets a housemate read a photo only through a record, and a picture
+   * is in none. Absent from a server that predates it.
+   */
+  avatarLink?: { url: string; expiresAt: string } | null
   role: string
   joinedAt: string
 }
@@ -44,16 +51,23 @@ export function householdAction<T = HouseholdInfo>(action: string, payload: Reco
 
 const CACHE_KEY = 'drafter:household'
 
+/** The member list this device kept from the last answer, or null. */
+function cachedInfo(): HouseholdInfo | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    return raw ? (JSON.parse(raw) as HouseholdInfo) : null
+  } catch {
+    return null
+  }
+}
+
+/** The links to the members' pictures, for the media cache to fetch them through (src/media.ts). */
+export const pictureLinks = (info: HouseholdInfo | null): { id: string; url: string; expiresAt: string }[] =>
+  (info?.members ?? []).flatMap(m => (m.avatar && m.avatarLink?.url ? [{ id: m.avatar, url: m.avatarLink.url, expiresAt: m.avatarLink.expiresAt }] : []))
+
 /** Member list + my id, cached so assignee chips render offline. */
 export function useHousehold(): { info: HouseholdInfo | null; myId: string | null; refresh(): Promise<void>; error?: string } {
-  const [info, setInfo] = useState<HouseholdInfo | null>(() => {
-    try {
-      const raw = localStorage.getItem(CACHE_KEY)
-      return raw ? (JSON.parse(raw) as HouseholdInfo) : null
-    } catch {
-      return null
-    }
-  })
+  const [info, setInfo] = useState<HouseholdInfo | null>(cachedInfo)
   // offline with an expired token, getSession below answers nothing for a while (and then nothing at all):
   // the planner opens at once under the account whose session this device holds
   const [myId, setMyId] = useState<string | null>(() => info?.me.id ?? storedUserId())
@@ -63,6 +77,7 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
   const read = (): Promise<void> =>
     householdAction('status').then(
       next => {
+        rememberMediaLinks(pictureLinks(next))
         setInfo(next)
         setMyId(next.me.id)
         setError(undefined)
@@ -81,6 +96,8 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
   useEffect(() => {
     const sb = getSupabase()
     if (!sb) return
+    // the links the last answer carried, while they last: a relaunch draws the pictures before the next answer
+    rememberMediaLinks(pictureLinks(cachedInfo()))
     sb.auth.getSession().then(({ data }) => {
       if (data.session) setMyId(data.session.user.id)
     })

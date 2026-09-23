@@ -839,12 +839,13 @@ export async function importRecipe(rawUrl, opts = {}) {
  * The /api/recipe-import handler. Signed-in accounts only, by the same check
  * /api/ai makes (requireUser: no session is a 401, a host missing its auth
  * settings a 503), and at most 20 imports in ten minutes per account, since
- * each one is a fetch from our servers to somewhere a person chose.
- * @param {FetchOptions & { limit?: number }} [opts] the fetch's parts, which tests replace
+ * each one is a fetch from our servers to somewhere a person chose. The
+ * endpoint hands in a limit counted across instances (sharedWindow); by
+ * default it is this instance's own.
+ * @param {FetchOptions & { limit?: number, perUser?: { take(key: string): { ok: boolean, retryAfterMs: number } | Promise<{ ok: boolean, retryAfterMs: number }> } }} [opts] the fetch's parts and the limit, which tests replace
  */
 export function recipeImportHandler(opts = {}) {
-  const { limit = 20, ...fetchOptions } = opts
-  const perUser = slidingWindow({ limit, windowMs: 10 * 60_000 })
+  const { limit = 20, perUser = slidingWindow({ limit, windowMs: 10 * 60_000 }), ...fetchOptions } = opts
   return async req => {
     if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
     const { user, response } = await requireUser(req)
@@ -857,7 +858,7 @@ export function recipeImportHandler(opts = {}) {
     }
     const url = typeof body?.url === 'string' ? body.url.trim() : ''
     if (!url) return Response.json({ error: 'url is required' }, { status: 400 })
-    const slot = perUser.take(user.id)
+    const slot = await perUser.take(user.id)
     if (!slot.ok) {
       const seconds = Math.ceil(slot.retryAfterMs / 1000)
       return Response.json(

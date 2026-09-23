@@ -13,10 +13,11 @@ import { getSupabase } from './supabase'
 // keeps it; public.client_errors holds it).
 //
 // What a report carries is decided by shared/errorreport.mts, here and again
-// on the server: the error's message and stack (trimmed, with every query
-// string, email address and long quoted run taken out), the build, web or the
-// iOS shell, which screen, and the page's path. Never a record, a title or
-// anything typed.
+// on the server: the error's class and the words of its message that error
+// messages are made of (any other word, number, id, address or date masked,
+// quoted or not), the file, line and column of each frame of its stack, the
+// build, web or the iOS shell, which screen, and the page's path. Never a
+// record, a title or anything typed.
 //
 // Reports wait a moment and go together; the same error again within ten
 // minutes is counted on the one still waiting, or not sent at all. Offline or

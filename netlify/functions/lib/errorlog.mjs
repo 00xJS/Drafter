@@ -31,7 +31,11 @@ export function cleanReports(list) {
   return [...byFingerprint.values()]
 }
 
-/** Store cleaned reports for `userId`: one upsert through public.log_client_errors. Resolves how many rows it touched. */
+/**
+ * Store cleaned reports for `userId` — null for one no account sent, a
+ * Content-Security-Policy violation's — in one upsert through
+ * public.log_client_errors. Resolves how many rows it touched.
+ */
 export async function storeReports(rest, userId, reports) {
   if (!reports.length) return 0
   const n = await rest('rpc/log_client_errors', { method: 'POST', body: JSON.stringify({ p_user: userId, p_reports: reports }) })

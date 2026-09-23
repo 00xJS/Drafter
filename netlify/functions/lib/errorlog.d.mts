@@ -18,6 +18,7 @@ export interface StoredError {
 export declare const MAX_REPORTS: number
 export declare const LIST_LIMIT: number
 export declare function cleanReports(list: unknown): CleanReport[]
-export declare function storeReports(rest: Rest, userId: string, reports: CleanReport[]): Promise<number>
+/** `userId` is null for a report no account sent: a Content-Security-Policy violation's. */
+export declare function storeReports(rest: Rest, userId: string | null, reports: CleanReport[]): Promise<number>
 export declare function listErrors(rest: Rest, limit?: number): Promise<StoredError[]>
 export declare function clearErrors(rest: Rest, id?: string | null): Promise<number>
