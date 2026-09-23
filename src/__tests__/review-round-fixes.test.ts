@@ -79,26 +79,8 @@ describe('the recipe quantity box', () => {
   })
 })
 
-describe('the app lock', () => {
-  const src = read('../components/LockGate.tsx')
-
-  it('watches for a resume even when the lock is off at mount', () => {
-    // the effect runs once, and iOS resumes the page rather than reloading it,
-    // so switching the lock on in Settings left nothing listening: it did not
-    // engage until the next cold start
-    const watch = src.indexOf('watchAppLock(')
-    const guard = src.indexOf('if (!appLockEnabled())')
-    expect(watch).toBeGreaterThan(-1)
-    expect(guard).toBeGreaterThan(watch)
-  })
-
-  it('makes the planner behind it inert, so Enter cannot press a hidden button', () => {
-    // the overlay was opaque but only paint: the planner kept its place in the
-    // tab order and the accessibility tree underneath
-    expect(src).toContain('el.inert = locked')
-    expect(src).toContain('card.current?.focus')
-  })
-})
+// The app lock's two fixes (a resume after the lock is turned on, and the
+// planner inert behind it) are run in a document: lockgate.dom.test.tsx.
 
 describe('removing a household member', () => {
   const src = read('../../netlify/functions/household.mjs')

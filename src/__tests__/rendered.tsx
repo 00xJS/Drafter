@@ -2,8 +2,9 @@ import type { ReactElement, ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 /*
- * vitest runs in node with no DOM, so a component with hooks cannot be
- * clicked. It can be called, though, inside a server render: its hooks are
+ * Most tests run in node with no DOM, so a component with hooks cannot be
+ * clicked there (a *.dom.test.tsx runs in a document and can: dom.ts). It can
+ * be called, though, inside a server render: its hooks are
  * then that render's own, and what it returns is a tree of elements holding
  * the real handlers. These helpers call a component that way and press what
  * it returns, as place-kind.test.tsx presses the hook-free ones. A component

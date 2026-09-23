@@ -4,10 +4,10 @@ import { TaskEditor } from '../components/TaskEditor'
 import type { Person, Project, Task } from '../types'
 
 /*
- * The task editor's first render (vitest runs in node, so no effects and no
+ * The task editor's first render (a server render: no effects and no
  * typing): which fields it has, what the description opens with, what sits
  * under it, and the order of the foot of the form. The rules behind each are
- * in taskform.test.ts.
+ * in taskform.test.ts; typing, saving and closing are in taskeditor.dom.test.tsx.
  */
 
 const OPENED = '2026-09-01T09:00:00.000Z'

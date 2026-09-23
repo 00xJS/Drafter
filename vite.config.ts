@@ -97,10 +97,11 @@ const cutoutRuntime = (): Plugin => {
 /**
  * The React Compiler memoises the app's components and hooks as it builds them,
  * and eslint-plugin-react-hooks reports what it would refuse (a component it
- * cannot prove safe is left as written). The React plugin keeps it out of
- * server-side transforms, which is how vitest loads modules: the unit tests
- * run the components as written, and only the browser tests (npm run e2e) run
- * what the compiler made of them.
+ * cannot prove safe is left as written; scripts/compiler-check.mjs keeps count).
+ * The React plugin keeps it out of server-side transforms, which is how vitest
+ * loads modules for a test in node: those run the components as written. The
+ * DOM tests (*.dom.test.tsx, in happy-dom) load them as a browser does, and run
+ * what the compiler made of them, as the browser tests (npm run e2e) do.
  */
 const withCompiler = {
   babel: { plugins: ['babel-plugin-react-compiler'] },
@@ -128,6 +129,9 @@ export default defineConfig({
     // check` with BACKUP_PASSPHRASE set); setup.ts decides what a test sees
     // rather than letting it inherit whatever the machine happens to hold
     setupFiles: ['./src/__tests__/setup.ts'],
+    // Node, with no document. A *.dom.test.tsx says `// @vitest-environment
+    // happy-dom` on its first line and runs in one instead (src/__tests__/dom.ts).
+    environment: 'node',
   },
   plugins: [
     react(withCompiler),
