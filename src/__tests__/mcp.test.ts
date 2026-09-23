@@ -357,8 +357,15 @@ function household(): Row[] {
     at(PEER, { kind: 'outfit', id: 'peer-o', name: `${SECRET} outfit`, garmentIds: ['peer-g'] }),
     // a look has no text of its own, so the marker rides in its piece ids
     at(PEER, { kind: 'wear', id: `wear~${today}~peer000001`, date: today, garmentIds: ['peer-g', `${SECRET}-scarf`] }),
+    // the notification hub's entries (v3.32): the peer's is personal like the
+    // rest, and the owner's own is no assistant's business either (HUB_ONLY)
+    at(PEER, { kind: 'notice', id: `notice~${PEER}~peer-task~1`, at: STAMP, type: 'done', title: `${SECRET} notice`, lines: [SECRET] }),
+    at(OWNER, { kind: 'notice', id: `notice~${OWNER}~t1~1`, at: STAMP, type: 'comment', actorId: PEER, target: { kind: 'task', id: 't1' }, title: `${HUB_ONLY} notice`, lines: [HUB_ONLY] }),
   ]
 }
+
+/** Written into the owner's own notice: the hub's, and in no tool's answer. */
+const HUB_ONLY = 'HUB-ONLY'
 
 /** The kind filter PostgREST applies: eq. or in.(), a row with no kind reading as a task. */
 function kindMatches(filter: string | null, kind: string) {
@@ -548,6 +555,27 @@ describe('personal kinds stay with their owner', () => {
     serveHousehold(household())
     const added = (await tool('add_journal_entry').run({ text: 'A walk' }, ctxFor())) as { entry: { id: string; body: string } }
     expect(added.entry).toMatchObject({ id: `journal~${localDayKey()}~own`, body: 'Mine to read\nA walk' })
+  })
+
+  it('no tool returns a notice, even the owner’s own: they are the hub’s, not records to act on', async () => {
+    for (const t of TOOLS) {
+      serveHousehold(household())
+      const out = JSON.stringify(await t.run(SWEEP[t.name], ctxFor()))
+      expect(out, t.name).not.toContain(HUB_ONLY)
+    }
+  })
+
+  it('signs a comment with the member the connection acts for, as the app does', async () => {
+    let sent = serveHousehold(household())
+    await tool('add_comment').run({ id: 't1', body: 'Quote came in' }, ctxFor())
+    expect(sent[0].comments.at(-1)).toMatchObject({ body: 'Quote came in', by: OWNER })
+    sent = serveHousehold(household())
+    await tool('complete_task').run({ id: 't1', comment: 'Paid' }, ctxFor())
+    expect(sent[0].comments.at(-1)).toMatchObject({ body: 'Paid', by: OWNER })
+    // a connection with no user behind it names nobody
+    sent = serveHousehold(household())
+    await tool('add_comment').run({ id: 't1', body: 'Anonymous' }, createContext({ db: ownerData(), clock: makeClock() }))
+    expect(sent[0].comments.at(-1).by).toBeUndefined()
   })
 
   it('every read names the kinds it needs, so no tool pulls the whole table', async () => {

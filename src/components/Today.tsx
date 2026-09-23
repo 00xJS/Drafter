@@ -12,6 +12,7 @@ import {
   JournalEntry,
   Meal,
   MealSlot,
+  Notice,
   Outfit,
   PLACE_CATEGORY_META,
   Person,
@@ -61,6 +62,7 @@ import { canDress } from '../wardrobe'
 import { WardrobeCard, type CardLog } from './wardrobe/WardrobeCard'
 import type { WardrobeOpen } from './planner/useNavigation'
 import type { SyncAlarm } from '../syncalarm'
+import { bellLabel, hubUnread, useFiredReminders, useHubSeen } from '../hub'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
 // and no project chips — a bar that never fills and a chip on every row would
@@ -161,6 +163,11 @@ interface Props {
    * nobody has logged yet: one sheet sets a rhythm for everyone at once.
    */
   onSetUpRhythms?(): void
+  // ---- the notification hub (v3.32). Optional: without it there is no bell.
+  /** Your notices, newest first (store.notices): the bell counts the unread. */
+  notices?: Notice[]
+  /** Open the hub. */
+  onOpenNotices?(): void
 }
 
 /**
@@ -192,6 +199,7 @@ export function SyncAlarmBanner({ alarm, onOpen, onDismiss }: { alarm: SyncAlarm
 const STALE_DAYS = 14
 const NO_ENTRIES: CalendarEntry[] = []
 const NO_SNOOZES: Snooze[] = []
+const NO_NOTICES: Notice[] = []
 
 /**
  * How long "hide this event" has to last: until the day it is for has gone by,
@@ -679,6 +687,8 @@ export function Today({
   onSnooze,
   onOpenNotes,
   onSetUpRhythms,
+  notices = NO_NOTICES,
+  onOpenNotices,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -726,6 +736,12 @@ export function Today({
     })
   /** A section's class, with the fold on it when it is shut. */
   const card = (id: string, cls = 'chart-card') => (folded.includes(id) ? `${cls} folded` : cls)
+
+  // The bell's number: notices not yet read, and reminders this device rang
+  // since the hub was last opened here (src/hub.ts)
+  const rang = useFiredReminders({ tasks, people, places, meals, events: entries, myId })
+  const hubSeen = useHubSeen()
+  const unreadNotices = hubUnread(notices, rang, hubSeen)
 
   const [evening] = useState(() => new Date().getHours() >= 17)
   /**
@@ -864,9 +880,10 @@ export function Today({
   // the owner's sync alarm tops the page, the empty one too
   const alarm = syncAlarm ? <SyncAlarmBanner alarm={syncAlarm} onOpen={onOpenSyncCheck} onDismiss={onDismissSyncAlarm} /> : null
 
-  // a wardrobe that can dress you has its card to show, tasks or not
+  // a wardrobe that can dress you has its card to show, tasks or not; and
+  // news in the hub is something to see, so its bell has the page to sit on
   const dressable = !!(wardrobeCard && garments && canDress(garments))
-  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable) {
+  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable && notices.length === 0) {
     return (
       <>
         {alarm}
@@ -938,14 +955,29 @@ export function Today({
           <h2>Today</h2>
           <p className="chart-sub">{dayLabel(todayKey)}</p>
         </div>
-        {/* Review rides on the title line: it is the one of these that is about
-            a span of days rather than a thing you keep, so it belongs with the
-            date rather than in the row of places below (v3.29). */}
-        {onOpenReview && (
-          <button type="button" className="btn today-review" onClick={onOpenReview}>
-            Review
-          </button>
-        )}
+        <div className="today-head-actions">
+          {/* The hub rides on the title line too: what happened while you were
+              away is news about the day, and a bell is where a phone keeps it.
+              Small, so the line still fits beside the date at 375pt. */}
+          {onOpenNotices && (
+            <button type="button" className="btn subtle icon-btn today-bell" aria-label={bellLabel(unreadNotices)} title="Notifications" onClick={onOpenNotices}>
+              <Icon name="bell" size={20} />
+              {unreadNotices > 0 && (
+                <span className="today-bell-count" aria-hidden>
+                  {unreadNotices > 99 ? '99+' : unreadNotices}
+                </span>
+              )}
+            </button>
+          )}
+          {/* Review rides on the title line: it is the one of these that is about
+              a span of days rather than a thing you keep, so it belongs with the
+              date rather than in the row of places below (v3.29). */}
+          {onOpenReview && (
+            <button type="button" className="btn today-review" onClick={onOpenReview}>
+              Review
+            </button>
+          )}
+        </div>
       </header>
 
       {/* The places Home opens, as cards rather than as a row of small buttons.

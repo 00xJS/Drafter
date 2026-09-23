@@ -156,6 +156,8 @@ beforeEach(() => {
         return new Response(null, { status: 201 })
       }
       if (rest === 'household_members?select=household_id,user_id') return Response.json([])
+      // the nightly let-go of old notices (lib/notices.mjs): not stored here, so nothing to let go
+      if (rest === 'rpc/record_kind_allowed' && method === 'POST') return Response.json(false)
       throw new Error(`unexpected ${method} ${url}`)
     }),
   )

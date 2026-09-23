@@ -37,7 +37,25 @@ function providerToken(force = false) {
   return cached.token
 }
 
-/** The web-push payload, translated. `url` rides along for the tap handler. */
+/**
+ * The link a push carries, as the iPhone app reads it. Pushes are written with
+ * the site's full address, which a browser needs; the app's page is
+ * capacitor://drafter, where that address names some other host and the tap
+ * opened nothing. So Apple is handed the path and query alone — which every
+ * build of the app reads, the ones from before src/links.ts inAppLink too.
+ */
+export function appLink(url) {
+  const raw = String(url)
+  if (!/^https?:\/\//i.test(raw)) return raw
+  try {
+    const u = new URL(raw)
+    return `${u.pathname || '/'}${u.search}`
+  } catch {
+    return raw
+  }
+}
+
+/** The web-push payload, translated. `url` rides along for the tap handler, as the app's own link (appLink). */
 export function apnsPayload({ title, body, tag, url, badge }) {
   return {
     aps: {
@@ -46,7 +64,7 @@ export function apnsPayload({ title, body, tag, url, badge }) {
       ...(tag ? { 'thread-id': String(tag) } : {}),
       ...(Number.isFinite(badge) ? { badge: Math.max(0, Math.floor(badge)) } : {}),
     },
-    ...(url ? { url: String(url) } : {}),
+    ...(url ? { url: appLink(url) } : {}),
   }
 }
 
@@ -58,35 +76,76 @@ export const isGoneReason = (status, reason) =>
   status === 410 || reason === 'Unregistered' || reason === 'DeviceTokenNotForTopic'
 
 /**
+ * The longest one notification may take, from connecting to Apple's answer.
+ * Twice this (a BadDeviceToken retried on the other host) still leaves the
+ * hourly digest time for everyone else inside Netlify's 30 seconds.
+ */
+export const APNS_TIMEOUT_MS = 8_000
+
+/**
  * One notification to one device. Resolves { status, reason, env } for any HTTP
- * outcome; rejects only when Apple could not be reached at all.
+ * outcome; rejects when Apple could not be reached, or did not answer within
+ * `timeoutMs`.
+ *
+ * That last one is the hard stop. A connection that stalls — TLS that never
+ * completes, a stream Apple never answers — emits nothing at all: no error, no
+ * end. The stream's own timeout only closed the stream, which settled nothing
+ * either, so the promise waited for ever and the hourly digest sat on it until
+ * Netlify killed the run. Now one timer covers the whole exchange: when it
+ * fires the session is destroyed and the send rejects, like any other failure
+ * to reach Apple. A stream that closes with no answer rejects at once.
+ * `connect` is node:http2's, or a test's stand-in.
  * @param {string} deviceToken
  * @param {unknown} payload
- * @param {{ topic?: string, collapseId?: string, ttlSeconds?: number, env?: string }} [opts]
+ * @param {{ topic?: string, collapseId?: string, ttlSeconds?: number, env?: string, timeoutMs?: number, connect?: typeof http2.connect }} [opts]
  */
-export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE_ID, collapseId, ttlSeconds = 6 * 3600, env } = {}) {
+export function sendApns(
+  deviceToken,
+  payload,
+  { topic = process.env.APNS_BUNDLE_ID, collapseId, ttlSeconds = 6 * 3600, env, timeoutMs = APNS_TIMEOUT_MS, connect = http2.connect } = {},
+) {
   const useEnv = env === 'sandbox' || env === 'production' ? env : defaultEnv()
   return new Promise((resolve, reject) => {
-    const client = http2.connect(apnsHostFor(useEnv))
+    let client = null
     let settled = false
-    const done = (fn, v) => {
+    const done = (fn, v, broken = false) => {
       if (settled) return
       settled = true
-      client.close()
+      clearTimeout(timer)
+      try {
+        // a session that stalled has nothing worth a polite goodbye
+        if (broken) client?.destroy()
+        else client?.close()
+      } catch {
+        /* already gone */
+      }
       fn(v)
     }
-    client.on('error', e => done(reject, e))
-    const headers = {
-      ':method': 'POST',
-      ':path': `/3/device/${deviceToken}`,
-      authorization: `bearer ${providerToken()}`,
-      'apns-topic': topic,
-      'apns-push-type': 'alert',
-      'apns-priority': '10',
-      'apns-expiration': String(Math.floor(Date.now() / 1000) + ttlSeconds),
-      ...(collapseId ? { 'apns-collapse-id': String(collapseId).slice(0, 64) } : {}),
+    const timer = setTimeout(() => done(reject, new Error(`APNs did not answer within ${timeoutMs} ms`), true), timeoutMs)
+    try {
+      client = connect(apnsHostFor(useEnv))
+    } catch (e) {
+      done(reject, e, true)
+      return
     }
-    const req = client.request(headers)
+    client.on('error', e => done(reject, e, true))
+    let req
+    try {
+      req = client.request({
+        ':method': 'POST',
+        ':path': `/3/device/${deviceToken}`,
+        authorization: `bearer ${providerToken()}`,
+        'apns-topic': topic,
+        'apns-push-type': 'alert',
+        'apns-priority': '10',
+        'apns-expiration': String(Math.floor(Date.now() / 1000) + ttlSeconds),
+        ...(collapseId ? { 'apns-collapse-id': String(collapseId).slice(0, 64) } : {}),
+      })
+    } catch (e) {
+      // a key that will not sign, or a session already gone: a failure like any other, and the timer stops
+      done(reject, e, true)
+      return
+    }
     let status = 0
     let text = ''
     req.on('response', h => {
@@ -106,8 +165,9 @@ export function sendApns(deviceToken, payload, { topic = process.env.APNS_BUNDLE
       if (reason === 'ExpiredProviderToken') providerToken(true)
       done(resolve, { status, reason, env: useEnv })
     })
-    req.on('error', e => done(reject, e))
-    req.setTimeout(10_000, () => req.close())
+    req.on('error', e => done(reject, e, true))
+    // after 'end' this settles nothing; before it, the stream is gone without an answer
+    req.on('close', () => done(reject, new Error('APNs closed the stream without an answer'), true))
     req.end(JSON.stringify(payload))
   })
 }

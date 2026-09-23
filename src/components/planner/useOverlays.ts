@@ -7,8 +7,9 @@ import type { PlanStep } from '../PlanDaySheet'
  * The planning sheet over the screen. There is one slot, so opening a sheet
  * replaces whichever was up. Each kind is a render in Overlays.tsx inside its
  * own Layer and a chunk in lazy.ts: Plan my day, Shut down, Plan next week,
- * Ask Drafter (on the palette's Ask row's question, or empty), I'm here, and
- * Who, and how often (the rhythms, on its People or Places side).
+ * Ask Drafter (on the palette's Ask row's question, or empty), I'm here,
+ * Who, and how often (the rhythms, on its People or Places side), and the
+ * notification hub behind the bell on Home.
  */
 export type Sheet =
   | { kind: 'day'; step?: PlanStep }
@@ -17,6 +18,7 @@ export type Sheet =
   | { kind: 'ask'; question?: string }
   | { kind: 'imhere' }
   | { kind: 'rhythms'; side?: 'people' | 'places' }
+  | { kind: 'notices' }
 
 /**
  * A screen you go INTO and come back from, drawn over whichever tab you were

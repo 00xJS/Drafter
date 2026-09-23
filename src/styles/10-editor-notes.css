@@ -128,6 +128,11 @@
   padding: 0 4px;
   font-size: 0.6875rem;
 }
+/* whose words they are (v3.32): the name leads the time, in the text's own colour */
+.comment-by {
+  color: var(--text-2);
+  font-weight: 600;
+}
 .comment-body {
   white-space: pre-wrap;
   font-size: 0.8125rem;

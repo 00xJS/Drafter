@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
+import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Notice, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { Capacitor } from '@capacitor/core'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
@@ -11,6 +11,7 @@ import { getSupabase } from './supabase'
 import { PERSONAL_KINDS } from '../shared/kinds.mts'
 import { listDrawer } from './kindlists'
 import { watchRealtime } from './realtime'
+import { noteTaskEdit, watchActivity } from './activity'
 import {
   createSyncEngine,
   recordLabel,
@@ -86,6 +87,8 @@ export interface Store {
   messages: Message[]
   chat: ChatTurn[]
   accounts: Account[]
+  /** Your notification hub (personal): newest first. */
+  notices: Notice[]
   /** Everything including tombstones — for sync only. */
   allItems: Item[]
   /**
@@ -254,13 +257,27 @@ export function useItems(myId: string | null = null): Store {
 
   const retryLoad = useCallback(() => void e.boot(myId), [e, myId])
 
+  // Telling the other member what you changed on a task you share
+  // (src/activity.ts): these two are where a local edit is made, so they note
+  // it; a pull from the server never comes through here, so it never does.
+  useEffect(() => (myId && getSupabase() ? watchActivity({ myId, pending: id => e.unconfirmed().ids.has(id) }) : undefined), [e, myId])
+  const upsert = useCallback(
+    (item: Item) => {
+      const before = item.kind === 'task' ? e.getState().items.find(i => i.id === item.id) : undefined
+      e.upsert(item)
+      noteTaskEdit(before, item, myId)
+    },
+    [e, myId],
+  )
+
   const setStatus = useCallback(
     (id: string, status: TaskStatus) => {
       const change = e.setStatus(id, status)
       if (change && status === 'done' && change.prev.status !== 'done') void haptic('success')
+      if (change) noteTaskEdit(change.prev, change.next, myId)
       return change
     },
-    [e],
+    [e, myId],
   )
 
   // one object for as long as nothing in it changed
@@ -275,7 +292,7 @@ export function useItems(myId: string | null = null): Store {
       retryLoad,
       syncInfo: snap.syncInfo,
       failures,
-      upsert: e.upsert,
+      upsert,
       remove: e.remove,
       restore: e.restore,
       purge: e.purge,
@@ -291,6 +308,6 @@ export function useItems(myId: string | null = null): Store {
       onRetired: e.onRetired,
       unconfirmed: e.unconfirmed,
     }),
-    [e, myId, lists, items, visibleItems, snap.loaded, snap.loadError, retryLoad, snap.syncInfo, failures, setStatus],
+    [e, myId, lists, items, visibleItems, snap.loaded, snap.loadError, retryLoad, snap.syncInfo, failures, upsert, setStatus],
   )
 }

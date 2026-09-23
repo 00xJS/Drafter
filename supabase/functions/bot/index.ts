@@ -65,7 +65,7 @@ type Admin = ReturnType<typeof adminClient>
  */
 // Deno cannot reach shared/kinds.mjs from here, so this is the one deliberate
 // second copy of that list — keep it in step (src/__tests__/srv-kinds.test.ts checks).
-const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat'])
+const PERSONAL_KINDS = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat', 'notice'])
 
 /**
  * The kinds whose audience is decided per record, and what a record that

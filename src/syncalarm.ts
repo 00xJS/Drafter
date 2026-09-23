@@ -108,6 +108,12 @@ function failedRun(r: JobRecord, now: number): string {
  * nothing — records begin with the v3.29 deploy — except that the sync check
  * the digest runs stands in for the digest's, and the newest snapshot in the
  * bucket for the backup's (admin.mjs sends it while there is no record).
+ *
+ * The sync check stands in only while the digest has no record of its own.
+ * It is written at the START of a run, so a run that went on to hang — a
+ * stalled push, until Netlify stopped it — refreshed it every hour and never
+ * wrote the record that says it finished: the check kept the digest looking
+ * alive while nothing went out. Admin's Run the check now refreshes it too.
  */
 export function jobAlarms(health: OpsHealth | null | undefined, now: Date): SyncAlarm[] {
   const t = now.getTime()
@@ -132,7 +138,7 @@ export function jobAlarms(health: OpsHealth | null | undefined, now: Date): Sync
   }
 
   const digest = health?.jobs?.digest ?? null
-  const heard = [digest?.at, health?.syncCheck?.record?.at].map(s => Date.parse(s ?? '')).filter(Number.isFinite)
+  const heard = (digest ? [digest.at] : [health?.syncCheck?.record?.at]).map(s => Date.parse(s ?? '')).filter(Number.isFinite)
   const lastRun = heard.length ? Math.max(...heard) : null
   if (lastRun !== null && t - lastRun > DIGEST_STALE_MS) {
     out.push({

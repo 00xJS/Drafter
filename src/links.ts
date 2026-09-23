@@ -169,6 +169,25 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
   return out
 }
 
+/**
+ * A tapped push's link, as the app's own. The server writes the site's full
+ * address into a push (the digest's `https://…/?plan=day`, a task's
+ * `https://…/?task=…`), which a browser opens as it is. Inside the iPhone app
+ * the page is capacitor://drafter, so that address named some other host and
+ * parseLink ignored it: the tap opened the app and nothing in it. Only what
+ * the app reads is kept — the path and the query. A drafter:// link, or one
+ * already relative, is left as it is.
+ */
+export function inAppLink(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return url
+  try {
+    const u = new URL(url)
+    return `${u.pathname || '/'}${u.search}`
+  } catch {
+    return url
+  }
+}
+
 /** Extract host + search params from any absolute or relative URL / drafter:// string. */
 export function paramsOf(raw: string): { host: string; params: URLSearchParams } {
   const base = typeof window !== 'undefined' ? window.location.origin : 'https://drafter.local'

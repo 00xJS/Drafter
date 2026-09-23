@@ -86,9 +86,11 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
           <select
             value={assigneeId}
             onChange={e => {
-              // handing it to the other member shares it: they cannot do a task they cannot see
+              // handing it to the other member shares it: they cannot do a task they cannot see.
+              // Whoever changes it is who handed it over, and hears how it goes (notify.mjs)
               const id = e.target.value
-              set(myId && id && id !== myId ? { assigneeId: id, shared: true } : { assigneeId: id })
+              const by = { assignedBy: myId ?? '' }
+              set(myId && id && id !== myId ? { assigneeId: id, shared: true, ...by } : { assigneeId: id, ...by })
             }}
           >
             <option value="">Anyone</option>

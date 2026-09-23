@@ -1,7 +1,7 @@
 // Pure digest helpers shared by the scheduled Netlify function and tests.
 
 import type { CalendarEntry, Item, Task } from '../src/types.ts'
-import { isRecord, legacyPostToTask } from './domain.mts'
+import { isMineTask, isRecord, legacyPostToTask } from './domain.mts'
 import { seenStatus, seenTasks, upcomingOccasions, plannedVisit } from './people.mts'
 import { OPEN, bucketByDue, focusTasks } from './today.mts'
 import { tonightLine } from './kitchen.mts'
@@ -94,6 +94,11 @@ function liveOf<K extends Item['kind']>(items: readonly unknown[], kind: K): Ext
  * `userId` is the reader: their focus for today opens the digest, and a
  * household member's picks are left out. `extra.weekPlan` is Sunday's week-plan
  * summary, worked out by the caller, which closes it.
+ *
+ * Overdue and due today are the reader's own work, by the rule the phones
+ * remind by (isMineTask): what is assigned to them, and what they filed that
+ * nobody is assigned. They were the whole household's, so each morning both
+ * phones listed — and badged — the other member's chores as well.
  */
 export function buildDigest(
   items: readonly unknown[],
@@ -110,7 +115,7 @@ export function buildDigest(
   const meals = liveOf(items, 'meal')
   const today = localParts(now, tz).day
   // no day to go by (an instant that is not a date): nothing is overdue or due today
-  const { overdue, dueToday } = today ? bucketByDue(tasks, { today, dayKey: iso => dayKeyIn(iso, tz) }) : { overdue: [], dueToday: [] }
+  const { overdue, dueToday } = today ? bucketByDue(tasks.filter(t => isMineTask(t, userId)), { today, dayKey: iso => dayKeyIn(iso, tz) }) : { overdue: [], dueToday: [] }
   const nowMs = now.getTime()
   const nudgedNext: Record<string, string> = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 

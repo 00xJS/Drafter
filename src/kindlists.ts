@@ -95,6 +95,13 @@ export const LISTS = {
   // Nudges you have put off. Personal, like the journal: a peer's "not this
   // fortnight" is theirs, and never silences the nudge on this device.
   snoozes: spec({ kind: 'snooze', mine: true, draw: (l, myId) => l.filter(i => !i.deletedAt && isMine(i, myId)) }),
+  // The notification hub's entries (v3.32), newest first. Personal: each is
+  // the reader's own row, written for them by the server.
+  notices: spec({
+    kind: 'notice',
+    mine: true,
+    draw: (l, myId) => l.filter(i => !i.deletedAt && isMine(i, myId)).sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id)),
+  }),
 }
 
 export type ListName = keyof typeof LISTS

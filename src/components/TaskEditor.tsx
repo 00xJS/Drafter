@@ -396,7 +396,7 @@ export function TaskEditor({
               </div>
               {failure(aiErrors.tags)}
 
-              <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} />
+              <CommentsField comments={form.comments} set={set} persisted={persisted} latest={latest} onCommit={commit} myId={myId} members={members} />
 
               {task && <VersionsPanel task={task} getLatest={getLatest} onCommit={onCommit} onClose={onClose} />}
             </div>

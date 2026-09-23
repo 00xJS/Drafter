@@ -39,6 +39,7 @@ const ONE_OF_EACH: Record<string, Record<string, unknown>> = {
   account: { kind: 'account', id: 'a1', name: 'Checking' },
   review: { kind: 'review', id: 'rv1', key: '2026-W39' },
   template: { kind: 'template', id: 'tp1', name: 'Move house' },
+  notice: { kind: 'notice', id: 'notice~u1~t1~1', type: 'comment', title: 'Maria commented on “Bins out”', at: '2026-09-23T10:00:00.000Z' },
 }
 
 const fixture = (kind: string) => ({ ...ONE_OF_EACH[kind], createdAt: AT, updatedAt: AT })

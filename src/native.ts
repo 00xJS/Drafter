@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { inAppLink } from './links'
 import type { Theme, ThemePref } from './theme'
 
 // The iOS app is this same web bundle inside a native shell. Everything that
@@ -230,7 +231,8 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
     handles.push(
       await PushNotifications.addListener('pushNotificationActionPerformed', a => {
         const url = (a.notification.data as { url?: unknown } | undefined)?.url
-        if (typeof url === 'string') hooks.onUrl(url)
+        // the server's links are the site's full address, which in here names another host (inAppLink)
+        if (typeof url === 'string') hooks.onUrl(inAppLink(url))
       }),
     )
   } catch {

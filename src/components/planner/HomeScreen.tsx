@@ -116,6 +116,9 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
             goTasksTab('notes')
             setView('tasks')
           }}
+          // the notification hub (v3.32): the bell counts, the sheet lists
+          notices={store.notices}
+          onOpenNotices={() => openSheet({ kind: 'notices' })}
     />
   )
 }

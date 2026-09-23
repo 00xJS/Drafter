@@ -75,6 +75,12 @@
   to = "/.netlify/functions/push"
   status = 200
 
+# telling the other member about a task you share (the hub's notices)
+[[redirects]]
+  from = "/api/notify"
+  to = "/.netlify/functions/notify"
+  status = 200
+
 [[redirects]]
   from = "/api/microsoft"
   to = "/.netlify/functions/microsoft"
