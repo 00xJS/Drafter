@@ -463,6 +463,8 @@ const WAS: Record<string, Record<string, Paint>> = {
     overdue: { color: '#fda4af', bg: 'rgba(244, 63, 94, 0.2)' },
     due: { color: '#fcd34d', bg: 'rgba(245, 158, 11, 0.18)' },
     ok: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },
+    // No reminders came later (2026-09-22), in never's quiet grey
+    off: { color: '#9ca3af', bg: 'rgba(148, 163, 184, 0.16)' },
   },
   GITHUB_STATE_META: {
     open: { color: '#86efac', bg: 'rgba(34, 197, 94, 0.18)' },

@@ -229,9 +229,10 @@ function Overview(p: Lens) {
   // outingsAt is the app's one rule for having been somewhere: a done task
   // carrying the place, AND a past meal eaten out there — counting a takeaway
   // is what keeps the Kitchen and Places agreeing. Only over places that still
-  // exist, or the ring could read more than its own total.
+  // exist, or the ring could read more than its own total. Your own outings
+  // (myId), as the people figures above and Places → Stats count them.
   const livePlaces = useMemo(() => places.filter(pl => !pl.deletedAt), [places])
-  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, tasks, meals, now).length > 0).length, [livePlaces, tasks, meals, now])
+  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, tasks, meals, now, myId).length > 0).length, [livePlaces, tasks, meals, now, myId])
   // doneMonths, not a recount: the Tasks segment's own "Each month" bars are
   // these twelve numbers, and this sparkline is the way into that segment —
   // the two disagreed, because this one counted visits as work

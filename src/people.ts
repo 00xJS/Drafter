@@ -1,10 +1,15 @@
-import { CalendarEntry, Person, PersonGroup, Task } from './types'
+import { Cadence, CalendarEntry, Person, PersonGroup, Task } from './types'
 import { monthsAndTrend } from './stats'
 import { startOfDay } from './taskutils'
 import { dateKey } from './utils'
 import {
   DEFAULT_CADENCE_DAYS,
   DAY_MS,
+  RHYTHM_CHOICES,
+  remindersOff,
+  rhythmOf,
+  suggestRhythm,
+  withRhythm,
   visitsFor as sharedVisitsFor,
   visitDays as sharedVisitDays,
   eventVisits as sharedEventVisits,
@@ -13,7 +18,11 @@ import {
   plannedGift as sharedPlannedGift,
   seenStatus as sharedSeenStatus,
   upcomingOccasions as sharedOccasions,
+  type Rhythm,
 } from '../shared/people.mjs'
+
+export { RHYTHM_CHOICES, remindersOff, rhythmOf, suggestRhythm, withRhythm }
+export type { Rhythm }
 
 // "Seeing someone" is a completed task they're attached to: a logged visit,
 // a dinner you planned, a task you did together. An event of your own they
@@ -28,7 +37,8 @@ export interface Visit {
   at: string
 }
 
-export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok'
+/** 'off' is someone on No reminders: never due, never a nudge. */
+export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'off'
 
 export interface PersonStats {
   person: Person
@@ -195,50 +205,110 @@ export const SEEN_META: Record<SeenStatus, { label: string; color: string; bg: s
   overdue: { label: 'Overdue', color: 'var(--tone-rose)', bg: 'var(--tone-rose-bg)' },
   due: { label: 'Due a catch-up', color: 'var(--tone-amber)', bg: 'var(--tone-amber-bg)' },
   ok: { label: 'On track', color: 'var(--tone-green)', bg: 'var(--tone-green-bg)' },
+  off: { label: 'No reminders', color: 'var(--tone-grey)', bg: 'var(--tone-grey-bg)' },
 }
 
-/** Sort: the people who need attention first, then by how long since. Planned catch-ups sort below true drift. */
+/** Sort: the people who need attention first, then by how long since. Planned catch-ups sort below true drift; No reminders last. */
 export function compareStats(a: PersonStats, b: PersonStats): number {
   const aPlanned = a.planned ? 1 : 0
   const bPlanned = b.planned ? 1 : 0
   if (aPlanned !== bPlanned) return aPlanned - bPlanned
-  const rank: Record<SeenStatus, number> = { overdue: 0, due: 1, never: 2, ok: 3 }
+  const rank: Record<SeenStatus, number> = { overdue: 0, due: 1, never: 2, ok: 3, off: 4 }
   if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status]
   return (b.daysSince ?? 0) - (a.daysSince ?? 0)
 }
 
 /**
- * How many never-seen people Today offers at a time.
- *
- * Two, not all of them. The whole list at once is a backlog, and a backlog on
- * the morning page is something to scroll past; two is an invitation. It needs
- * no rotation to move on, either — logging one makes them "on track", and the
- * next two come up on their own.
+ * How many never-logged people Today offers a day. Two, not all of them: the
+ * whole list at once is a backlog to scroll past, and two is an invitation.
  */
 export const NEVER_NUDGES = 2
+
+/** A YYYY-MM-DD key as a whole day number: the clock the turns go by. */
+const dayIndex = (key: string) => Math.round(Date.parse(`${key}T00:00:00Z`) / DAY_MS)
+
+/**
+ * The never-logged in the order they take their turn today: oldest on the list
+ * first (then by id, so two devices agree), started `per` further on each day.
+ * Everyone comes round every ceil(n / per) days, so the same two are not there
+ * every morning. Without a day key it starts at the oldest.
+ */
+export function neverInTurn<T extends Pick<PersonStats, 'person'>>(unseen: readonly T[], todayKey?: string, per = NEVER_NUDGES): T[] {
+  const order = [...unseen].sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt) || a.person.id.localeCompare(b.person.id))
+  const day = todayKey ? dayIndex(todayKey) : NaN
+  if (!order.length || !Number.isFinite(day)) return order
+  const start = (((day * per) % order.length) + order.length) % order.length
+  return [...order.slice(start), ...order.slice(0, start)]
+}
+
+export interface NudgeOptions {
+  /** Today's key: which of the never-logged take their turn. */
+  todayKey?: string
+  /** Ids put off with the ×: left out, and the next in turn comes up instead. */
+  putOff?: ReadonlySet<string>
+  /** The whole list's cap. */
+  max?: number
+  /** How many of the never-logged a day. */
+  never?: number
+}
+
+/** Seen for the first time on this day: never-logged when the day began. Visits run newest first. */
+const firstSeenOn = (s: PersonStats, todayKey: string) => s.visits.length > 0 && dateKey(s.visits[s.visits.length - 1].at) === todayKey
 
 /**
  * Who Today asks about: the people drifting, then a couple nobody has logged
  * at all.
  *
- * The second half is the whole point of this. Today used to take only `due`
- * and `overdue`, and `seenStatus` gives someone with no visit `never` — so a
- * person had to have been logged once before Today would ever suggest logging
- * them. Thirty-four people were on the list and thirty of them could not be
- * reached: the nudge that would have started it only appeared once it had
- * started. Someone is on the list because you meant to see them, so never
- * having is the strongest reason to ask, not a reason to stay quiet.
- *
- * They go below the drifting ones, oldest on the list first, because the ones
- * that have sat there longest are the ones being forgotten.
+ * Today used to take only `due` and `overdue`, and someone with no visit is
+ * `never`, so a person had to be logged once before Today would suggest
+ * logging them. Never having is the strongest reason to ask, so they come in
+ * below the drifting ones, NEVER_NUDGES a day, taking turns by day
+ * (neverInTurn). The turn is taken over everyone who was never-logged when
+ * the day began, so Saw them on one of today's two leaves the other where it
+ * is and brings the next in turn up, as an × does. Someone on No reminders is
+ * `off` and never here at all.
  */
-export function peopleToNudge(stats: readonly PersonStats[], max = 6, never = NEVER_NUDGES): PersonStats[] {
-  const drifting = stats.filter(s => s.status === 'overdue' || s.status === 'due').sort(compareStats)
-  const unseen = stats
-    .filter(s => s.status === 'never')
-    .sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt))
+export function peopleToNudge(stats: readonly PersonStats[], { todayKey, putOff, max = 6, never = NEVER_NUDGES }: NudgeOptions = {}): PersonStats[] {
+  const waiting = (s: PersonStats) => !putOff?.has(s.person.id)
+  const drifting = stats.filter(s => (s.status === 'overdue' || s.status === 'due') && waiting(s)).sort(compareStats)
+  const unseen = neverInTurn(
+    stats.filter(s => s.status === 'never' || (!!todayKey && s.status !== 'off' && firstSeenOn(s, todayKey))),
+    todayKey,
+    never,
+  )
+    .filter(s => s.status === 'never' && waiting(s))
     .slice(0, never)
   return [...drifting, ...unseen].slice(0, max)
+}
+
+/** The rhythm chips of the setup sheet, in its order: the choices, then No reminders. */
+export const RHYTHM_CHIPS: { value: number | 'off'; label: string }[] = [
+  { value: 7, label: '1 week' },
+  { value: 14, label: '2 weeks' },
+  { value: 30, label: 'Monthly' },
+  { value: 90, label: '3 months' },
+  { value: 180, label: '6 months' },
+  { value: 'off', label: 'No reminders' },
+]
+
+/** An editor's rhythm select, read: '' for none set, 'off' for No reminders, or days. */
+export const cadenceChoice = (v: string): Cadence | '' | 'off' => (v === '' || v === 'off' ? v : (Number(v) as Cadence))
+
+/** A rhythm in words: a chip's own label, "Every 2 months" for one the chips do not offer, "Every 45 days" otherwise. */
+export function rhythmLabel(rhythm: Rhythm): string {
+  if (rhythm === null) return 'None set'
+  const chip = RHYTHM_CHIPS.find(c => c.value === rhythm)
+  if (chip) return chip.label
+  return rhythm === 60 ? 'Every 2 months' : `Every ${rhythm} days`
+}
+
+/**
+ * What the setup sheet suggests for someone with no rhythm yet: from the days
+ * YOU saw them (`seen` is seenTasks narrowed by myId, as People reads it), on
+ * this device's calendar. Null when there is nothing in a year to go on.
+ */
+export function personRhythmSuggestion(person: Person, seen: Task[], todayKey: string): number | null {
+  return suggestRhythm(visitDays(visitsFor(person.id, seen)), todayKey)
 }
 
 /** People's find box: the lower-cased query in a person's name or notes, as findsPlace is Places'. */

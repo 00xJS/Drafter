@@ -310,6 +310,8 @@ export interface Person extends Owned {
   color: string
   group: PersonGroup
   cadenceDays?: number
+  /** No reminders: never nudged about, whatever the visits say (remindersOff in shared/people.mjs). Clears cadenceDays. */
+  noReminders?: boolean
   notes?: string
   /** YYYY-MM-DD (year optional as 0000). */
   birthday?: string
@@ -337,6 +339,8 @@ export interface Place extends Owned {
    * use. Absent = never nag: a place with no cadence is never due or overdue.
    */
   cadenceDays?: number
+  /** No reminders, chosen: never nudged, and left out of Stats' Not been back and Never been. Clears cadenceDays. */
+  noReminders?: boolean
   notes?: string
   /** Where it is, on one line ("21 Warwick St, London"). Open in Maps searches it, and an event whose location holds it is at this place. */
   address?: string

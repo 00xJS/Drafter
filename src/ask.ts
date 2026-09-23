@@ -296,7 +296,7 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
       title: p.name,
       text: line(
         PERSON_GROUP_META[p.group],
-        !!p.cadenceDays && `aims to meet every ${p.cadenceDays} days`,
+        p.noReminders ? 'no catch-up reminders' : !!p.cadenceDays && `aims to meet every ${p.cadenceDays} days`,
         p.birthday && `birthday ${monthDay(p.birthday)}`,
         p.anniversary && `anniversary ${monthDay(p.anniversary)}`,
         excerpt(p.notes ?? '', BODY_MAX),
@@ -311,7 +311,7 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
       kind: 'place',
       id: p.id,
       title: p.name,
-      text: line(PLACE_CATEGORY_META[p.category]?.label, !!p.cadenceDays && `aims to go every ${p.cadenceDays} days`, excerpt(p.notes ?? '', BODY_MAX)),
+      text: line(PLACE_CATEGORY_META[p.category]?.label, p.noReminders ? 'no reminders to go back' : !!p.cadenceDays && `aims to go every ${p.cadenceDays} days`, excerpt(p.notes ?? '', BODY_MAX)),
       links: [p.id],
     })
   }
@@ -759,7 +759,7 @@ function longDate(now: Date, tz: string): string {
   }
 }
 
-const CATCH_UP: Record<string, string> = { ok: 'on track', due: 'due a catch-up', overdue: 'overdue a catch-up' }
+const CATCH_UP: Record<string, string> = { ok: 'on track', due: 'due a catch-up', overdue: 'overdue a catch-up', off: 'no catch-up reminders' }
 
 /**
  * The computed lines sent with every question: today's date, and for anyone or

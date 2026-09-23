@@ -192,10 +192,11 @@ export function buildLocalReminders(
   // to revisit — or about the same one every morning — is a phone you turn
   // reminders off on. Places come last: they carry no schedule of their own,
   // so a cap here is what keeps them from crowding out real work in the
-  // soonest-60 window.
+  // soonest-60 window. Your own outings (myId), as Today counts them, and
+  // never a place on No reminders: its status is 'off', not 'overdue'.
   const overduePlaces = places
     .filter(p => p && !p.deletedAt)
-    .map(p => ({ place: p, status: placeCadenceStatus(p, tasks, now, meals) }))
+    .map(p => ({ place: p, status: placeCadenceStatus(p, tasks, now, meals, opts.myId) }))
     .filter(x => x.status.status === 'overdue')
     // longest overdue first, so the cap keeps the places you have drifted
     // furthest from rather than whichever happened to load first

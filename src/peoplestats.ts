@@ -130,10 +130,14 @@ export const notSeenLately = (shown: readonly PersonStats[]): PersonStats[] => s
 /** How long a new person is given before they count as never seen. */
 export const NEVER_SEEN_DAYS = 14
 
-/** Added two weeks ago or more, with no day seen: the longest waiting first, then by name, then by id. */
+/**
+ * Added two weeks ago or more, with no day seen: the longest waiting first,
+ * then by name, then by id. Someone on No reminders is left out, as from every
+ * other list that asks after people: you said not to be asked.
+ */
 export const neverSeen = (shown: readonly PersonStats[], todayKey: string): PersonStats[] =>
   shown
-    .filter(s => s.daysAll === 0 && daysBetween(dateKey(s.person.createdAt), todayKey) >= NEVER_SEEN_DAYS)
+    .filter(s => s.status !== 'off' && s.daysAll === 0 && daysBetween(dateKey(s.person.createdAt), todayKey) >= NEVER_SEEN_DAYS)
     .sort((a, b) => a.person.createdAt.localeCompare(b.person.createdAt) || a.person.name.localeCompare(b.person.name) || a.person.id.localeCompare(b.person.id))
 
 /** Who of these people you saw on each day, by its key: each person once a day, in the order given. */

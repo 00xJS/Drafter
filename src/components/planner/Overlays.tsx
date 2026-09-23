@@ -8,7 +8,8 @@ import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
-import { AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import { AskSheet, AttendancePicker, EventEditor, ImHereSheet, PlanDaySheet, ProjectEditor, RhythmSheet, Search, ShutdownSheet, TaskEditor, Trash, WeekPlanSheet } from './lazy'
+import type { RhythmChange } from '../RhythmSheet'
 
 /** The zone "today" and every day in the planning sheets are read in. */
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -65,6 +66,15 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
       onClose={closeSheet}
     />
   )
+}
+
+/** The toast after Who, and how often: whose rhythm was saved, by name for one. */
+export function rhythmsSaved(changes: readonly RhythmChange[]): string {
+  if (changes.length === 1) return `Rhythm saved for ${changes[0].after.name}`
+  const people = changes.filter(c => c.after.kind === 'person').length
+  const places = changes.length - people
+  const parts = [people && `${people} ${people === 1 ? 'person' : 'people'}`, places && `${places} ${places === 1 ? 'place' : 'places'}`].filter(Boolean)
+  return `Rhythms saved for ${parts.join(' and ')}`
 }
 
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
@@ -323,6 +333,33 @@ export function Overlays({ p }: { p: PlannerCtx }) {
                 title: note || `At ${place.name}`,
                 placeId: place.id,
                 peopleIds,
+              })
+            }}
+            onClose={closeSheet}
+          />
+        </Layer>
+      )}
+
+      {/* Who, and how often: Save hands back the rows that changed, written
+          here with one toast and one Undo; Find missing addresses saves each
+          pick as it is made */}
+      {sheet?.kind === 'rhythms' && (
+        <Layer name="Who, and how often">
+          <RhythmSheet
+            people={store.people}
+            places={store.places}
+            tasks={store.tasks}
+            entries={store.events}
+            meals={store.meals}
+            // whose visits the suggestions read (v3.24)
+            myId={household.myId}
+            side={sheet.side}
+            onSavePlace={place => store.upsert(place)}
+            onSave={changes => {
+              closeSheet()
+              for (const c of changes) store.upsert(c.after)
+              showToast(rhythmsSaved(changes), () => {
+                for (const c of changes) store.upsert({ ...c.before, updatedAt: newerStamp(c.after.updatedAt) })
               })
             }}
             onClose={closeSheet}

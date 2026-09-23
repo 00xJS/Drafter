@@ -70,13 +70,16 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
   const nowMs = now.getTime()
   const nudgedNext = { ...(nudged && typeof nudged === 'object' ? nudged : {}) }
 
-  // your own past events count as seeing whoever was on them, as on the People page
-  const seen = seenTasks(tasks, items.filter(i => i.kind === 'event'), now)
+  // your own past events count as seeing whoever was on them, as on the People
+  // page — and only YOURS (userId): the address book is the household's, the
+  // log of who saw whom is each member's own
+  const seen = seenTasks(tasks, items.filter(i => i.kind === 'event'), now, userId)
   const peopleDue = []
   const peopleIds = []
   for (const p of people) {
     // an open planned visit means the nudge already did its job
     if (plannedVisit(p.id, tasks)) continue
+    // No reminders is 'off', which is neither of the two below
     const { status, daysSince } = seenStatus(p, seen, now)
     if (status !== 'overdue' && status !== 'never') continue
     if (status === 'never') {
@@ -101,7 +104,7 @@ export function buildDigest(items, tz, now, nudged = {}, userId = null, extra = 
   const placesDue = []
   const placeIds = []
   for (const p of places) {
-    const { status, daysSince } = placeCadenceStatus(p, tasks, now, meals)
+    const { status, daysSince } = placeCadenceStatus(p, tasks, now, meals, userId)
     if (status !== 'overdue') continue
     const lastNudge = nudgedNext[p.id]
     if (lastNudge && today) {

@@ -109,6 +109,8 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           // fortnight's events, for a while and never forever (v3.24)
           snoozes={store.snoozes}
           onSnooze={snooze}
+          // under the people nobody has logged yet: Who, and how often, on its People side
+          onSetUpRhythms={() => openSheet({ kind: 'rhythms', side: 'people' })}
           // the notes are a Tasks segment; Home is a second way in, not a move
           onOpenNotes={() => {
             goTasksTab('notes')

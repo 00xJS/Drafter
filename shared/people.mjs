@@ -1,12 +1,62 @@
 // People cadence / occasions shared by the web app, digest, and MCP.
 // Dependency-free ESM.
 
-import { distinctDays } from './stats.mjs'
+import { daysWithin, distinctDays } from './stats.mjs'
 
 export const DEFAULT_CADENCE_DAYS = 90
 export const DAY_MS = 86_400_000
 
 const OPEN = ['todo', 'doing', 'blocked']
+
+/**
+ * "No reminders": someone (or somewhere) kept on the list but never nudged
+ * about. Stored on the record as `noReminders: true` and read through here by
+ * every surface that nudges or counts who is due. Not a rhythm of 0: a 0 has
+ * always meant "none set", which for a person is the 90-day default.
+ */
+export function remindersOff(record) {
+  return record?.noReminders === true
+}
+
+/** The rhythms the app offers, in days: a week, a fortnight, a month, three months, six. */
+export const RHYTHM_CHOICES = [7, 14, 30, 90, 180]
+
+/** A record's rhythm as the setup sheet and withRhythm read it: 'off', its days, or null for none set. */
+export function rhythmOf(record) {
+  if (remindersOff(record)) return 'off'
+  const days = Number(record?.cadenceDays)
+  return Number.isFinite(days) && days > 0 ? Math.round(days) : null
+}
+
+/**
+ * The record with this rhythm: days, 'off' for No reminders, or null for none
+ * set. The one writer of both fields, so a rhythm clears No reminders and No
+ * reminders clears the rhythm. Not stamped: the caller stamps it (newerStamp).
+ */
+export function withRhythm(record, rhythm) {
+  const { cadenceDays: _days, noReminders: _off, ...rest } = record
+  if (rhythm === 'off') return { ...rest, noReminders: true }
+  return typeof rhythm === 'number' && Number.isFinite(rhythm) && rhythm > 0 ? { ...rest, cadenceDays: Math.round(rhythm) } : rest
+}
+
+/**
+ * A rhythm to suggest from your own history: the days you saw someone (or went
+ * somewhere), as day keys, and today's. The last 90 days count first — seen on
+ * 3 of them is about monthly, on one about every three months — and with none
+ * there the last year, so a visit in the spring reads as about six months. The
+ * gap that implies goes to the nearest choice on a log scale. Nothing in a year
+ * suggests nothing.
+ */
+export function suggestRhythm(days, todayKey) {
+  const unique = [...new Set(days ?? [])]
+  const recent = daysWithin(unique, todayKey, 90)
+  const n = recent || daysWithin(unique, todayKey, 365)
+  if (!n) return null
+  const gap = (recent ? 90 : 365) / n
+  let best = RHYTHM_CHOICES[0]
+  for (const c of RHYTHM_CHOICES) if (Math.abs(Math.log(gap / c)) < Math.abs(Math.log(gap / best))) best = c
+  return best
+}
 
 /** Completed tasks attached to this person, newest first. */
 export function visitsFor(personId, tasks) {
@@ -125,18 +175,25 @@ export function plannedGift(personId, kind, occasionAt, tasks, windowDays = 40) 
 
 /**
  * Cadence status for one person. `nowMs` and optional `todayKey` (YYYY-MM-DD in
- * the viewer's zone) keep digest and client aligned.
+ * the viewer's zone) keep digest and client aligned. Someone on No reminders
+ * is 'off' whatever their visits say: never due, never overdue, never a
+ * cold-start nudge, and with no rhythm to measure against.
  */
 export function seenStatus(person, tasks, now = new Date()) {
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
   const visits = visitsFor(person.id, tasks)
   const lastSeen = visits[0]?.at
   const daysSince = lastSeen ? Math.floor((nowMs - Date.parse(lastSeen)) / DAY_MS) : undefined
-  const cadence = person.cadenceDays
+  const off = remindersOff(person)
+  const cadence = off ? undefined : person.cadenceDays
   const effective = cadence ?? DEFAULT_CADENCE_DAYS
   let status
   let reason
-  if (!lastSeen) {
+  if (off) {
+    status = 'off'
+    const seen = daysSince === undefined ? 'No visits logged' : daysSince === 0 ? 'Seen today' : `Last seen ${daysSince} day${daysSince === 1 ? '' : 's'} ago`
+    reason = `${seen} · no reminders`
+  } else if (!lastSeen) {
     status = 'never'
     reason = 'No visits logged yet'
   } else if (daysSince !== undefined && daysSince > effective * 1.5) {
@@ -151,7 +208,7 @@ export function seenStatus(person, tasks, now = new Date()) {
     status = 'ok'
     reason = daysSince === 0 ? 'Seen today' : `Last seen ${daysSince} day${daysSince === 1 ? '' : 's'} ago`
   }
-  return { status, reason, lastSeen, daysSince, visits, effectiveCadenceDays: effective }
+  return { status, reason, lastSeen, daysSince, visits, effectiveCadenceDays: off ? null : effective }
 }
 
 /**

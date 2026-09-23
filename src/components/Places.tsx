@@ -27,11 +27,14 @@ import {
   prefersAppleMaps,
   recentOutings,
   tidyPlaceAddress,
+  withAddress,
 } from '../places'
-import { SEEN_META } from '../people'
+import { SEEN_META, cadenceChoice } from '../people'
 import { OutingIdea, OutingInput, suggestOuting } from '../ai'
 import { Bars } from './bits'
 import { requestDevicePosition, tidyCoords } from '../geo'
+import { FindAddress } from './AddressFinder'
+import type { AddressCandidate } from '../geocode'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -85,15 +88,18 @@ const SORTS: { key: SortKey; label: string }[] = [
 ]
 
 // Needs attention: overdue, due, never (a rhythm but no outing yet), then the rest by most recently been.
-const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3 }
+const ATTENTION_RANK: Record<PlaceStats['status'], number> = { overdue: 0, due: 1, never: 2, ok: 3, none: 3, off: 3 }
 
 export function PlaceForm({
   place,
+  places = [],
   onSave,
   onDelete,
   onClose,
 }: {
   place?: Place
+  /** Every place: Find address leans its lookup to the middle of the pinned ones. */
+  places?: Place[]
   onSave(p: Place): void
   onDelete?(id: string): void
   onClose(): void
@@ -103,8 +109,8 @@ export function PlaceForm({
   // a new place starts with no kind: Save waits for one, as it does wherever a place is made
   const [category, setCategory] = useState<PlaceCategory | undefined>(place?.category)
   const [color, setColor] = useState(place?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
-  // No target by default: a place only nags when you ask it to.
-  const [cadence, setCadence] = useState<Cadence | ''>((place?.cadenceDays as Cadence | undefined) ?? '')
+  // No target by default: a place only nags when you ask it to. 'off' is No reminders.
+  const [cadence, setCadence] = useState<Cadence | '' | 'off'>(place?.noReminders ? 'off' : ((place?.cadenceDays as Cadence | undefined) ?? ''))
   const [notes, setNotes] = useState(place?.notes ?? '')
   const [address, setAddress] = useState(place?.address ?? '')
   // one box, the names separated by commas: a name rarely holds a comma, an address often does
@@ -121,7 +127,8 @@ export function PlaceForm({
       emoji: emoji.trim() || undefined,
       category,
       color,
-      cadenceDays: cadence === '' ? undefined : cadence,
+      cadenceDays: cadence === '' || cadence === 'off' ? undefined : cadence,
+      noReminders: cadence === 'off' || undefined,
       notes: notes.trim() || undefined,
       address: tidyPlaceAddress(address),
       aliases: placeAliasesFromText(aliases, name.trim()),
@@ -179,6 +186,17 @@ export function PlaceForm({
           </div>
           {pin && <small className="field-hint">Pinned so I&apos;m here can find this place next time.</small>}
         </label>
+        {/* the name (and the address as far as it is typed) looked up on
+            OpenStreetMap: a pick fills the address and the pin, for Save */}
+        <FindAddress
+          name={name}
+          address={address}
+          places={places}
+          onPick={c => {
+            setAddress(c.address)
+            setPin(tidyCoords(c))
+          }}
+        />
         <label className="field">
           <span>
             Other names <small>(optional, separated by commas)</small>
@@ -190,13 +208,14 @@ export function PlaceForm({
           <span>
             How often do you want to go back? <small>(only then does it nudge)</small>
           </span>
-          <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
+          <select value={cadence} onChange={e => setCadence(cadenceChoice(e.target.value))}>
             <option value="">No target — just track it</option>
             {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
               <option key={c} value={c}>
                 {CADENCE_META[c]}
               </option>
             ))}
+            <option value="off">No reminders — not in Stats' lists either</option>
           </select>
         </label>
         <div className="field">
@@ -314,6 +333,8 @@ export function PlaceRow({
   onLog,
   onPlan,
   onOpenTask,
+  places,
+  onSaveAddress,
 }: {
   stats: PlaceStats
   open: boolean
@@ -322,13 +343,18 @@ export function PlaceRow({
   onLog(): void
   onPlan(): void
   onOpenTask(t: Task): void
+  /** Every place, for Find address to lean its lookup to. */
+  places?: Place[]
+  /** Save an address found for a place that has none (Find address on its card). Without it the card offers none. */
+  onSaveAddress?(found: AddressCandidate): void
 }) {
   const { place } = stats
   const cat = PLACE_CATEGORY_META[place.category]
   // the iPhone app is an Apple device whatever its web view says
   const apple = isNative() || prefersAppleMaps()
-  // Only a place with a rhythm gets a badge; the rest are just tracked.
-  const meta = stats.status === 'none' ? null : SEEN_META[stats.status]
+  // Only a place with a rhythm gets a badge; the rest are just tracked, and
+  // one on No reminders is as quiet as one with none
+  const meta = stats.status === 'none' || stats.status === 'off' ? null : SEEN_META[stats.status]
   return (
     <li id={`place-${place.id}`} className={open ? 'person-row open' : 'person-row'}>
       <button className="person-summary" onClick={onToggle} aria-expanded={open}>
@@ -367,6 +393,8 @@ export function PlaceRow({
               {!!place.aliases?.length && <small className="muted">Also called {place.aliases.join(', ')}</small>}
             </div>
           )}
+          {/* no address yet: look it up where the place is shown, and a pick is saved with its pin */}
+          {!place.address && onSaveAddress && <FindAddress name={place.name} address="" places={places ?? []} onPick={onSaveAddress} saves />}
           <div className="person-stats">
             <Bars weekly={stats.weekly} color={place.color} />
             <span className="person-nums">
@@ -739,6 +767,12 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
                   onLog={() => setLogging(s.place)}
                   onPlan={() => onPlan(s.place)}
                   onOpenTask={onOpenTask}
+                  places={places}
+                  onSaveAddress={found => {
+                    // the place as it is now, not as the row was drawn
+                    const now = places.find(p => p.id === s.place.id) ?? s.place
+                    onSave({ ...withAddress(now, found), updatedAt: newerStamp(now.updatedAt) })
+                  }}
                 />
               ))}
             </ul>
@@ -746,7 +780,7 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
         </>
       )}
 
-      {editing && <PlaceForm place={editing.place} onSave={onSave} onDelete={onDelete} onClose={() => setEditing(null)} />}
+      {editing && <PlaceForm place={editing.place} places={places} onSave={onSave} onDelete={onDelete} onClose={() => setEditing(null)} />}
       {logging && (
         <LogOuting
           place={logging}
