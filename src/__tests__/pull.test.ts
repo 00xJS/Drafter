@@ -146,7 +146,8 @@ describe('pull to refresh: wired the way the shell needs', () => {
 
   it('runs the same refresh the header pill does, and the pill runs the foreground set', () => {
     expect(planner).toContain('onRefresh={manualSync}')
-    expect(planner).toContain('Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])')
+    // the feeds asked of their hosts fresh: it was asked for (calendar-feeds.test.ts)
+    expect(planner).toContain('Promise.allSettled([store.syncNowManual(), calendars.refresh({ fresh: true }), googlePush.pullNow(), microsoftSync.pullNow()])')
   })
 
   it('asks the briefing’s weather to refresh too, and the strip fetches it fresh for the ask', () => {

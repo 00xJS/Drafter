@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Settings } from './lazy'
 import type { PlannerCtx } from './ctx'
 import { PushedScreen } from './PushedScreen'
@@ -11,12 +12,15 @@ import { PushedScreen } from './PushedScreen'
  * underneath. The screen's own header holds them still.
  */
 export function SettingsScreen({ p }: { p: PlannerCtx }) {
-  const { store, calendars, googlePush, microsoftSync, household, isOwner, setPushed, setAdminOpen, settingsNonce } = p
+  const { store, calendars, googlePush, microsoftSync, household, isOwner, setPushed, setAdminOpen, settingsNonce, settingsGroup, setSettingsGroup } = p
+  // the group an opener asked for is for that visit: Settings opened any other way starts where it always has
+  useEffect(() => () => setSettingsGroup(undefined), [setSettingsGroup])
   return (
     <PushedScreen title="Settings" onBack={() => setPushed(null)}>
       <Settings
         // bumped when a calendar consent flow returns, so the sections refetch
         key={settingsNonce}
+        initialGroup={settingsGroup}
         store={store}
         calendars={calendars}
         googlePush={googlePush}

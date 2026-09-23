@@ -13,8 +13,11 @@ export interface MicrosoftAccount {
   id: string
   email: string
   name: string
-  refreshToken?: string
+  /** Null once Microsoft refused it: the account then waits, with authFailedAt, for a reconnect. */
+  refreshToken?: string | null
   drafterCalendarId?: string | null
+  /** When Microsoft refused the account's grant (see accessToken). */
+  authFailedAt?: string
 }
 /** What the browser may see of an account: never a token. */
 export interface PublicAccount {
@@ -22,6 +25,8 @@ export interface PublicAccount {
   email: string
   name: string
   hasMirror: boolean
+  /** Microsoft refused this account's sign-in: it needs signing in again. */
+  needsSignIn?: boolean
 }
 export declare function listAccounts(userId: string): Promise<MicrosoftAccount[]>
 export declare function publicAccount(a: MicrosoftAccount): PublicAccount
@@ -74,6 +79,12 @@ export interface TaskLike {
   [key: string]: unknown
 }
 export type PushOutcome = 'created' | 'updated' | 'removed' | 'skipped'
+/** The transactionId a record's Outlook copy is created with: its kind, id and version, hashed into a GUID's shape. */
+/** Microsoft refused the account's grant, which was let go: it waits for a reconnect. */
+export declare function outlookNeedsSignIn(account: { authFailedAt?: string | null; refreshToken?: string | null } | null | undefined): boolean
+/** What a mirror hears for such an account. */
+export declare function outlookSignInAgain(email?: string | null): string
+export declare function graphTransactionId(kind: 'task' | 'event', record: { id: string; updatedAt?: string }): string
 /**
  * Mirror one task: upsert while open and dated, remove otherwise. `opts.tz` is the owner's zone (null for none);
  * `opts.remind` keeps Outlook's own reminder on the copy (off: Drafter sends them).

@@ -195,6 +195,21 @@ describe('Admin → Data: the jobs and the errors', () => {
     expect(html).toContain('sent 3 · 2 subscribed')
     expect(html).toContain('and 1 more')
     expect(jobSummary('digest', run({ counts: { sent: 0, drafted: 2, subscribers: 0 } }))).toBe('sent 0 · drafted 2 · 0 subscribed')
+    // the digest starts Sunday's drafts now, and the background function writes them
+    expect(jobSummary('digest', run({ counts: { sent: 1, draftsStarted: 2, subscribers: 1 } }))).toBe('sent 1 · drafts started 2 · 1 subscribed')
+    expect(jobSummary('sunday-draft', run({ counts: { asked: 2, drafted: 1, skipped: 0, noAnswer: 1 } }))).toBe('asked 2 · drafted 1 · no answer 1')
+    expect(jobSummary('email-triage', run({ counts: { triaged: 1 } }))).toBe('triaged 1')
+  })
+
+  it('shows the background function’s jobs once they have run, and never raises an alarm for them', () => {
+    const failed = run({ ok: false, counts: { asked: 1, noAnswer: 1 }, failures: ['a1b2: NVIDIA answered 502'], failureCount: 1 })
+    const none = renderToStaticMarkup(<JobsCard health={health()} now={NOW} />)
+    expect(none).not.toContain('Sunday’s draft')
+    const html = renderToStaticMarkup(<JobsCard health={health({ jobs: { backup: run(), digest: run(), 'sunday-draft': failed, 'email-triage': run({ counts: { triaged: 1 } }) } })} now={NOW} />)
+    expect(html).toContain('Sunday’s draft')
+    expect(html).toContain('a1b2: NVIDIA answered 502')
+    expect(html).toContain('Email triage')
+    expect(jobAlarms(health({ jobs: { backup: run(), digest: run(), 'sunday-draft': failed } }), NOW)).toEqual([])
   })
 
   it('reads as running when all is well, and says so when the records cannot be read yet', () => {

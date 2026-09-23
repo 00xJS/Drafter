@@ -260,7 +260,10 @@ describe('Plan your day: in the shell and in Settings → Reminders', () => {
     // with the calendar's own events, which ring through the same set, and
     // the tasks' own due rows whether or not server push is on for this phone:
     // the server's "Due now" nudges go to browsers, never to an iPhone
-    expect(shell).toMatch(/deviceReminders\(store, new Date\(\), \{ local, generic: genericRemindersEnabled\(\), planDay, events: store\.events, myId \}\)/)
+    // worked out when the rewrite's turn comes (scheduleLocalReminders runs one at a time), from the latest data
+    expect(shell).toMatch(
+      /deviceReminders\(now, new Date\(\), \{ local: localRemindersEnabled\(\), generic: genericRemindersEnabled\(\), planDay: planDayPref\(\), events: now\.events, myId: me \}\)/,
+    )
     expect(shell).not.toMatch(/skipTaskDue|fetchPushInfo/)
     expect(shell).toMatch(/if \(!local && !planDay\.on\) return/)
     expect(shell).not.toMatch(/!localRemindersEnabled\(\)\) return/)

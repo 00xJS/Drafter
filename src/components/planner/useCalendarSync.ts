@@ -3,7 +3,17 @@ import type { CalendarEntry } from '../../types'
 import type { useHousehold } from '../../household'
 import type { Store } from '../../store'
 import type { MirrorPulled } from '../../calendars'
-import { entryToEvent, GOOGLE_PUSH_ID, googlePushId, useCalendarEvents, useGooglePush, useMicrosoftSync } from '../../calendarstate'
+import {
+  dismissSignIn,
+  entryToEvent,
+  GOOGLE_PUSH_ID,
+  googlePushId,
+  readSignInDismissed,
+  signInBanner,
+  useCalendarEvents,
+  useGooglePush,
+  useMicrosoftSync,
+} from '../../calendarstate'
 import { flushPendingMedia } from '../../media'
 import { requestWeatherRefresh } from '../../weather'
 import type { useToast } from './useToast'
@@ -47,6 +57,14 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     void calendarEngine().then(engine => engine.applyMirrorChanges(store, pulled, source, showToast))
   const googlePush = useGooglePush(store.allItems, store.projects, store.loaded && mirroring, pulled => applyPulled(pulled, 'Google Calendar'), household.myId)
   const microsoftSync = useMicrosoftSync(store.allItems, store.projects, store.loaded ? msMirrorIds : [], pulled => applyPulled(pulled, 'Outlook'), household.myId)
+
+  // A mirror whose account's sign-in died (revoked, expired) stops asking and
+  // is said on Today, once a streak, with the way to Settings → Calendars.
+  const [signInDismissed, setSignInDismissed] = useState(readSignInDismissed)
+  const calendarSignIn = signInBanner([...Object.values(googlePush.signIn ?? {}), ...Object.values(microsoftSync.signIn ?? {})], signInDismissed)
+  const dismissCalendarSignIn = () => {
+    if (calendarSignIn) setSignInDismissed(dismissSignIn(calendarSignIn.id, signInDismissed))
+  }
 
   /**
    * Pushes for one entry to one provider run one after another. Without this a
@@ -138,7 +156,8 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     setSyncing(true)
     requestWeatherRefresh()
     try {
-      await Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])
+      // asked for: each feed's host is asked, not the server's copy of a moment ago
+      await Promise.allSettled([store.syncNowManual(), calendars.refresh({ fresh: true }), googlePush.pullNow(), microsoftSync.pullNow()])
     } finally {
       setSyncing(false)
     }
@@ -147,5 +166,20 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
   /** Our own entries go out to at least one calendar — Google, or any Outlook account — so a time block shows there as busy. */
   const mirrorsOn = mirroring || msMirrorIds.length > 0
 
-  return { calendars, allEvents, sourceMap, googlePush, microsoftSync, mirrorEvent, mirrorsOn, saveEvents, removeEvent, deleteEvent, syncing, manualSync }
+  return {
+    calendars,
+    allEvents,
+    sourceMap,
+    googlePush,
+    microsoftSync,
+    calendarSignIn,
+    dismissCalendarSignIn,
+    mirrorEvent,
+    mirrorsOn,
+    saveEvents,
+    removeEvent,
+    deleteEvent,
+    syncing,
+    manualSync,
+  }
 }

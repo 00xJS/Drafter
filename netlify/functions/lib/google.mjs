@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { settingsGet, settingsSet, settingsStoreConfigured } from './session.mjs'
 import { copyNotes } from './mirror.mjs'
-import { isUntimed, localDate } from '../../../shared/domain.mts'
+import { dueDayKey, hasDueTime } from '../../../shared/due.mts'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
 
@@ -48,12 +48,28 @@ export async function exchangeCode(code, redirectUri) {
   return body
 }
 
+/** What a mirror hears once Google has refused the grant: the app shows it on Today and stops asking until the account is signed in again. */
+export const GOOGLE_SIGN_IN_AGAIN = 'Google Calendar needs you to sign in again.'
+
+const signInAgain = () => Object.assign(new Error(GOOGLE_SIGN_IN_AGAIN), { status: 409, reason: 'reauth' })
+
+/**
+ * Whether the account's Google sign-in has stopped working: it was connected
+ * — its address, or the Drafter calendar it mirrors into, is still kept — but
+ * Google refused its grant, so the grant was let go. Disconnect clears all
+ * three; a reconnect writes a new grant. The morning digest says so meanwhile.
+ */
+export const googleNeedsSignIn = settings => !settings?.google_refresh_token && !!(settings?.google_email || settings?.google_drafter_calendar_id)
+
 export async function accessToken(userId) {
   const hit = cache.get(userId)
   if (hit && Date.now() < hit.exp - 60_000) return hit.token
   const settings = await settingsGet(userId)
   const refresh = settings?.google_refresh_token
-  if (!refresh) throw Object.assign(new Error('Google Calendar is not connected'), { status: 409 })
+  if (!refresh) {
+    if (googleNeedsSignIn(settings)) throw signInAgain()
+    throw Object.assign(new Error('Google Calendar is not connected'), { status: 409, reason: 'not_connected' })
+  }
   const e = env()
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -64,7 +80,15 @@ export async function accessToken(userId) {
   if (!res.ok) {
     cache.delete(userId)
     if (body.error === 'invalid_grant') {
-      throw Object.assign(new Error('Google access was revoked or expired — reconnect Google Calendar in Settings.'), { status: 409 })
+      // Revoked, expired, or the password changed: this grant will never work
+      // again. It used to be offered to Google on every pass, every half hour,
+      // with only Settings saying why. Let it go (the address stays, so a
+      // reconnect keeps the same Drafter calendar and the digest can say what
+      // happened), and every call after this is refused here at once. Only if
+      // it is still the stored grant: a reconnect may have landed meanwhile.
+      const now = await settingsGet(userId).catch(() => null)
+      if (now?.google_refresh_token === refresh) await settingsSet(userId, { google_refresh_token: null }).catch(() => {})
+      throw signInAgain()
     }
     throw new Error(body.error_description ?? body.error ?? `token refresh failed (${res.status})`)
   }
@@ -255,11 +279,15 @@ export function googleReminders(remind) {
   return { useDefault: remind === true, overrides: [] }
 }
 
-/** The Google Calendar body for one task: free time, keyed on taskId, silent unless `remind`. */
+/**
+ * The Google Calendar body for one task: free time, keyed on taskId, silent
+ * unless `remind`. A task with no time of day is an all-day event on its day,
+ * by the app's one rule for that (shared/due.mts), read in the owner's zone.
+ */
 export function googleTaskBody(task, projectName, site, tz, remind = false) {
-  const timed = !isUntimed(task.dueAt, tz)
+  const timed = hasDueTime(task.dueAt, tz)
   const start = new Date(task.dueAt)
-  const dateOnly = localDate(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
+  const dateOnly = dueDayKey(task.dueAt, tz) ?? start.toISOString().slice(0, 10)
   const prefix = task.priority === 'urgent' ? '‼ ' : task.priority === 'high' ? '▲ ' : ''
   return {
     summary: `${prefix}${task.title || 'Untitled task'}`,
@@ -302,6 +330,68 @@ export function editedSinceCancelled(existing, record) {
   return !!existing && existing.status === 'cancelled' && Date.parse(record?.updatedAt) > Date.parse(existing.updated)
 }
 
+// ---- creating a copy once ------------------------------------------------------
+//
+// Two devices can each find no copy of a record and each create one: the phone
+// and the laptop both sweeping the same new entry, or a create whose answer was
+// lost and is sent again. Google takes an id the client chooses, so a copy is
+// created under an id worked out from the record — the second create of the
+// same record is then refused with a 409, and writes over the first instead.
+
+const BASE32HEX = '0123456789abcdefghijklmnopqrstuv'
+
+/** RFC 4648's base32hex of a string's UTF-8 bytes, lower case and unpadded: the alphabet Google allows in an event id. */
+export function base32hex(text) {
+  let out = ''
+  let buffer = 0
+  let bits = 0
+  for (const byte of new TextEncoder().encode(String(text))) {
+    buffer = ((buffer << 8) | byte) & 0xfff
+    bits += 8
+    while (bits >= 5) {
+      out += BASE32HEX[(buffer >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+  }
+  if (bits > 0) out += BASE32HEX[(buffer << (5 - bits)) & 31]
+  return out
+}
+
+/**
+ * The id the Google copy of a record is created under: its kind and id in
+ * base32hex. Google wants 5 to 1024 of those characters; a record whose id
+ * would not fit gets no id of its own, and Google makes one as before.
+ * @param {'task' | 'event'} kind
+ * @param {string} recordId
+ */
+export function googleEventId(kind, recordId) {
+  const id = base32hex(`${kind}:${recordId}`)
+  return id.length >= 5 && id.length <= 1024 ? id : null
+}
+
+/**
+ * Create a record's copy under its own id. A 409 says a copy with that id is
+ * already there — another device's create got in first, or Google took an
+ * earlier try whose answer never arrived — so this version is written over it,
+ * and a copy Drafter had cancelled is confirmed again: the plan only creates
+ * when Drafter's record is newer than any cancellation.
+ */
+async function createCopy(userId, calendarId, eventId, body) {
+  const events = `/calendars/${encodeURIComponent(calendarId)}/events`
+  if (!eventId) {
+    await gapi(userId, events, { method: 'POST', body: JSON.stringify(body) })
+    return 'created'
+  }
+  try {
+    await gapi(userId, events, { method: 'POST', body: JSON.stringify({ ...body, id: eventId }) })
+    return 'created'
+  } catch (e) {
+    if (e?.status !== 409 || e?.reason) throw e
+    await gapi(userId, `${events}/${encodeURIComponent(eventId)}`, { method: 'PATCH', body: JSON.stringify({ ...body, status: 'confirmed' }) })
+    return 'updated'
+  }
+}
+
 async function findMirrored(userId, calendarId, taskId) {
   // showDeleted so we don't recreate an event the user deleted in Google
   const page = await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events?privateExtendedProperty=${encodeURIComponent(`taskId=${taskId}`)}&showDeleted=true&maxResults=5`)
@@ -340,8 +430,7 @@ export async function pushTask(userId, calendarId, task, projectName, site, opts
     await gapi(userId, evPath(live.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) })
-  return 'created'
+  return createCopy(userId, calendarId, googleEventId('task', task.id), body)
 }
 
 /**
@@ -407,13 +496,12 @@ export async function pushEntry(userId, calendarId, entry, site, opts = {}) {
     })
     return 'removed'
   }
-  const body = JSON.stringify(googleEntryBody(entry, site, { remind: opts.remind === true }))
+  const body = googleEntryBody(entry, site, { remind: opts.remind === true })
   if (plan.op === 'patch') {
-    await gapi(userId, evPath(plan.id), { method: 'PATCH', body })
+    await gapi(userId, evPath(plan.id), { method: 'PATCH', body: JSON.stringify(body) })
     return 'updated'
   }
-  await gapi(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body })
-  return 'created'
+  return createCopy(userId, calendarId, googleEventId('event', entry.id), body)
 }
 
 // ---- what moved in Google ---------------------------------------------------------

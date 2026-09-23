@@ -48,7 +48,8 @@ export async function runMirrorBatch(records, push, opts = {}) {
       if (result in counts) counts[result]++
       done.push(id)
     } catch (e) {
-      errors.push({ id, error: e?.message ?? String(e), ...(e?.status ? { status: e.status } : {}) })
+      // `reason: 'reauth'` is the account's sign-in gone for good: the app stops asking until it is signed in again
+      errors.push({ id, error: e?.message ?? String(e), ...(e?.status ? { status: e.status } : {}), ...(e?.reason ? { reason: e.reason } : {}) })
       if (isFatalStatus(e?.status)) fatal = true
     }
   }

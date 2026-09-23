@@ -13,6 +13,13 @@
 // HTTP answer is what it always was.
 
 export const JOBS = ['backup', 'digest']
+/**
+ * The background function's jobs (ai-jobs-background.mjs): Sunday's review
+ * draft and email-in's triage. Recorded the same way and shown in Admin →
+ * Data once they have run; no alarm reads them, since they run when asked, not
+ * on a schedule.
+ */
+export const BACKGROUND_JOBS = ['sunday-draft', 'email-triage']
 /** Failure messages kept per run; the count says how many there were. */
 export const FAILURES_KEPT = 5
 const FAILURE_MAX = 300
@@ -68,12 +75,13 @@ function toRow(job, record) {
   }
 }
 
-/** Every job's last run: { backup, digest }, each null until it has run once. Throws when the table cannot be read. */
+/** Every job's last run: { backup, digest, 'sunday-draft', 'email-triage' }, each null until it has run once. Throws when the table cannot be read. */
 export async function readJobs(rest) {
   const rows = await rest('job_runs?select=*')
+  const names = [...JOBS, ...BACKGROUND_JOBS]
   /** @type {Record<string, ReturnType<typeof fromRow>>} */
-  const out = Object.fromEntries(JOBS.map(j => [j, null]))
-  for (const r of Array.isArray(rows) ? rows : []) if (JOBS.includes(r?.job)) out[r.job] = fromRow(r)
+  const out = Object.fromEntries(names.map(j => [j, null]))
+  for (const r of Array.isArray(rows) ? rows : []) if (names.includes(r?.job)) out[r.job] = fromRow(r)
   return out
 }
 

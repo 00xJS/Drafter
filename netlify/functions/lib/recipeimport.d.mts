@@ -1,5 +1,6 @@
 import type { IngredientLine } from '../../../shared/recipes.mts'
 import type { Take } from './ratelimit.mjs'
+import type { Resolver, Transport } from './safefetch.mjs'
 
 export declare const IMPORT_LIMITS: Readonly<{
   timeoutMs: number
@@ -17,32 +18,10 @@ export declare class ImportError extends Error {
 }
 
 export declare function parseImportUrl(raw: unknown): URL
-export declare function isPublicIPv4(ip: string): boolean
-export declare function ipv6Groups(ip: string): number[] | null
-export declare function isPublicIPv6(ip: string): boolean
-export declare function isPublicAddress(ip: string): boolean
 
-export interface ResolvedAddress {
-  address: string
-  family: number
-}
-export type Resolver = (host: string) => Promise<ResolvedAddress[]>
-
-export declare function publicAddressOf(hostname: string, opts?: { resolve?: Resolver; isAllowed?: (ip: string) => boolean }): Promise<ResolvedAddress>
-
-export interface TransportRequest {
-  url: URL
-  address: string
-  family: number
-  signal: AbortSignal
-  headers: Record<string, string>
-}
-export interface TransportResponse {
-  status: number
-  headers: Record<string, string | string[] | undefined>
-  body: AsyncIterable<Uint8Array | string>
-}
-export type Transport = (req: TransportRequest) => Promise<TransportResponse>
+// the guard and the transport live in safefetch.mjs; the importer re-exports them
+export { isPublicIPv4, ipv6Groups, isPublicIPv6, isPublicAddress, nodeTransport } from './safefetch.mjs'
+export type { ResolvedAddress, Resolver, TransportRequest, TransportResponse, Transport } from './safefetch.mjs'
 
 export interface FetchOptions {
   resolve?: Resolver
@@ -53,7 +32,6 @@ export interface FetchOptions {
   maxRedirects?: number
 }
 
-export declare function nodeTransport(req: TransportRequest): Promise<TransportResponse>
 export declare function fetchPage(start: URL, opts?: FetchOptions): Promise<{ url: URL; html: string }>
 
 export declare function decodeEntities(text: unknown): string

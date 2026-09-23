@@ -230,7 +230,7 @@ describe('the hourly digest records each run', () => {
 
   it('a run with nobody subscribed is still a run that worked', async () => {
     expect(await (await runDigest()).text()).toBe('no subscribers; sync check ok')
-    expect(recordOf('digest')).toMatchObject({ ok: true, counts: { subscribers: 0, sent: 0, drafted: 0 }, ran_at: '2026-09-22T00:00:00.000Z' })
+    expect(recordOf('digest')).toMatchObject({ ok: true, counts: { subscribers: 0, sent: 0, draftsStarted: 0 }, ran_at: '2026-09-22T00:00:00.000Z' })
   })
 
   it('a run that throws is recorded as failed, and still throws', async () => {
@@ -250,7 +250,7 @@ describe('/api/admin: the jobs and the error list, for the site owner', () => {
     jobRuns.set('backup', { job: 'backup', ran_at: backup.at, ok: true, counts: backup.counts, failures: [], failure_count: 0, failing_since: null, last_ok_at: backup.at, last_good_at: backup.at })
     canary = { ok: true, checked: 22, failures: [], error: null, at: '2026-09-22T09:00:00.000Z', failingSince: null, alertedAt: null }
     const body = await (await act('opsHealth')).json()
-    expect(body.jobs).toEqual({ backup: { ...backup }, digest: null })
+    expect(body.jobs).toEqual({ backup: { ...backup }, digest: null, 'sunday-draft': null, 'email-triage': null })
     expect(body.syncCheck.record.at).toBe('2026-09-22T09:00:00.000Z')
     // a backup with a record of its own needs no look in the bucket
     expect(body.lastSnapshotAt).toBeNull()

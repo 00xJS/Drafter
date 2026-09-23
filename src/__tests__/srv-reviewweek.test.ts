@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { previousWeekIn, shiftDayKey, zonedMidnight } from '../../netlify/functions/lib/reviewweek.mjs'
+import { draftSundayReview } from '../../netlify/functions/lib/sundaydraft.mjs'
 import { weekKeyOf } from '../../shared/weeks.mts'
-// @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
-import { upsertSundayReview } from '../../netlify/functions/digest.mjs'
 
 // Sunday's automatic review draft used to work out "last week" on the server's
 // clock (UTC on Netlify). The digest goes out at the reader's local hour, and
@@ -62,17 +61,23 @@ describe('previousWeekIn: the week Sunday’s review is about', () => {
   })
 })
 
-describe('upsertSundayReview files the draft under the reader’s week', () => {
+describe('Sunday’s draft files the review under the reader’s week', () => {
   const SUPABASE = 'https://db.example.test'
+  const SUNDAY = new Date('2026-09-12T23:00:00.000Z')
   let prompt = ''
   let written: Record<string, unknown>[] = []
+  /** The review rows as the table holds them: what sync_posts wrote, the site owner's until handed over. */
+  let rows: { user_id: string; data: Record<string, unknown> }[] = []
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(SUNDAY)
     vi.stubEnv('NVIDIA_API_KEY', 'nvidia-key')
     vi.stubEnv('SUPABASE_URL', SUPABASE)
     vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
     prompt = ''
     written = []
+    rows = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -83,18 +88,28 @@ describe('upsertSundayReview files the draft under the reader’s week', () => {
           return Response.json({ choices: [{ message: { content: 'A steady week.' } }] })
         }
         if (url === `${SUPABASE}/rest/v1/rpc/sync_posts`) {
-          written.push(...body.incoming)
+          for (const item of body.incoming) {
+            written.push(item)
+            const row = rows.find(r => r.data.id === item.id)
+            if (row) row.data = item
+            else rows.push({ user_id: 'site-owner', data: item })
+          }
           return Response.json({ items: [], rejected: [] })
         }
-        // the week's reviews, read again just before the draft's stamp: none yet
-        if (url.startsWith(`${SUPABASE}/rest/v1/posts?select=data,user_id&kind=eq.review&data->>key=eq.`)) return Response.json([])
-        if (url.startsWith(`${SUPABASE}/rest/v1/posts?id=eq.`)) return new Response(null, { status: 204 })
+        // the week's reviews, read straight from the table before and after the model
+        if (url.startsWith(`${SUPABASE}/rest/v1/posts?select=data,user_id&kind=eq.review&data->>key=eq.`)) return Response.json(structuredClone(rows))
+        if (url.startsWith(`${SUPABASE}/rest/v1/posts?id=eq.`)) {
+          const row = rows.find(r => r.data.id === decodeURIComponent(url.split('id=eq.')[1]))
+          if (row) row.user_id = body.user_id
+          return new Response(null, { status: 204 })
+        }
         throw new Error(`unexpected fetch ${url}`)
       }),
     )
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
   })
@@ -106,26 +121,28 @@ describe('upsertSundayReview files the draft under the reader’s week', () => {
       // the Saturday before: the week the old arithmetic reviewed instead
       { kind: 'task', id: 'gutter', title: 'Cleared the gutter', status: 'done', completedAt: '2026-09-05T11:00:00.000Z' },
     ]
-    const review = await upsertSundayReview('user-one', items, new Date('2026-09-12T23:00:00.000Z'), { timezone: 'Asia/Tokyo' })
-    expect(review).toEqual({ id: 'review-2026-W36-user-one', summary: 'A steady week.', drafted: true })
-    // the week's one try is stamped before the model is asked, then the draft lands on the same record
+    const review = await draftSundayReview('user-one', items, SUNDAY, { timezone: 'Asia/Tokyo' })
+    expect(review).toEqual({ state: 'drafted', id: 'review-2026-W36-user-one', summary: 'A steady week.' })
+    // an empty review is made the reader's before the model is asked; the week is claimed only with the summary
     expect(written).toHaveLength(2)
-    expect(written[0]).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36', draftedAt: '2026-09-12T23:00:00.000Z' })
-    expect(written[0].summary).toBeUndefined()
+    expect(written[0]).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36' })
+    expect(written[0]).not.toHaveProperty('draftedAt')
+    expect(written[0]).not.toHaveProperty('summary')
     expect(written[1]).toMatchObject({ id: 'review-2026-W36-user-one', key: '2026-W36', draftedAt: '2026-09-12T23:00:00.000Z', summary: 'A steady week.' })
+    expect(rows[0].user_id).toBe('user-one')
     expect(prompt).toMatch(/Period: last week \(6 Sept? – 12 Sept?\)/)
     expect(prompt).toContain('Fixed the fence')
     expect(prompt).not.toContain('Cleared the gutter')
   })
 
   it('names someone seen at an event of the reader’s own that week, as Review does', async () => {
-    const sunday = new Date('2026-09-12T23:00:00.000Z')
     const mum = { kind: 'person', id: 'mum', name: 'Mum' }
     // Saturday lunch in Tokyo with Mum on it: no task was ever marked done
     const lunch = { kind: 'event', id: 'lunch', title: 'Lunch', start: '2026-09-12T03:00:00.000Z', end: '2026-09-12T04:00:00.000Z', allDay: false, peopleIds: ['mum'] }
-    await upsertSundayReview('user-one', [mum], sunday, { timezone: 'Asia/Tokyo' })
+    await draftSundayReview('user-one', [mum], SUNDAY, { timezone: 'Asia/Tokyo' })
     expect(prompt).toContain('People seen:\n- none')
-    await upsertSundayReview('user-one', [mum, lunch], sunday, { timezone: 'Asia/Tokyo' })
+    rows = []
+    await draftSundayReview('user-one', [mum, lunch], SUNDAY, { timezone: 'Asia/Tokyo' })
     expect(prompt).toContain('People seen:\n- Mum')
   })
 })

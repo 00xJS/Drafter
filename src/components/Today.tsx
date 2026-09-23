@@ -62,6 +62,7 @@ import { canDress } from '../wardrobe'
 import { WardrobeCard, type CardLog } from './wardrobe/WardrobeCard'
 import type { WardrobeOpen } from './planner/useNavigation'
 import type { SyncAlarm } from '../syncalarm'
+import type { SignInTrouble } from '../calendarstate'
 import { bellLabel, hubUnread, useFiredReminders, useHubSeen } from '../hub'
 
 // One ongoing home project: Today shows no project cards, no "stalled" line
@@ -140,6 +141,13 @@ interface Props {
   onOpenSyncCheck?(): void
   /** Hides the banner on this device while this run of failures goes on, for twelve hours. */
   onDismissSyncAlarm?(): void
+  // ---- a calendar mirror whose sign-in stopped working. Optional: without it Today reads as it did.
+  /** Google or an Outlook account refused Drafter's sign-in (calendarstate.ts): a banner at the top, once a streak. */
+  calendarSignIn?: SignInTrouble | null
+  /** Settings → Calendars, where the account is signed in again. */
+  onOpenCalendarSettings?(): void
+  /** Puts this streak aside on this device; a new one shows again. */
+  onDismissCalendarSignIn?(): void
   /** The backlog lives on Tasks — Home is only the day. */
   onOpenTasks?(): void
   /**
@@ -189,6 +197,32 @@ export function SyncAlarmBanner({ alarm, onOpen, onDismiss }: { alarm: SyncAlarm
       )}
       {onDismiss && (
         <button type="button" className="btn subtle" onClick={onDismiss} aria-label="Dismiss the sync alarm" title="Dismiss">
+          ✕
+        </button>
+      )}
+    </section>
+  )
+}
+
+/**
+ * A calendar mirror whose sign-in stopped working: Google or Outlook refused
+ * the grant (revoked, expired), so nothing reaches that calendar until the
+ * account is signed in again. The mirror used to go quiet with only Settings
+ * saying why; this says it once a streak, with the way there.
+ */
+export function CalendarSignInBanner({ trouble, onOpen, onDismiss }: { trouble: SignInTrouble; onOpen?(): void; onDismiss?(): void }) {
+  return (
+    <section className="sync-alarm" role="status" aria-label="Calendar sign-in">
+      <p>
+        <strong>{trouble.message}</strong> Nothing reaches that calendar until you do.
+      </p>
+      {onOpen && (
+        <button type="button" className="btn" onClick={onOpen}>
+          Open Settings → Calendars
+        </button>
+      )}
+      {onDismiss && (
+        <button type="button" className="btn subtle" onClick={onDismiss} aria-label="Dismiss the calendar sign-in notice" title="Dismiss">
           ✕
         </button>
       )}
@@ -682,6 +716,9 @@ export function Today({
   syncAlarm,
   onOpenSyncCheck,
   onDismissSyncAlarm,
+  calendarSignIn,
+  onOpenCalendarSettings,
+  onDismissCalendarSignIn,
   onOpenTasks,
   snoozes = NO_SNOOZES,
   onSnooze,
@@ -877,8 +914,13 @@ export function Today({
   const clearDay = !briefingFacts(events, habits, at).events && s.overdue.length === 0 && s.today.length === 0
   const freeTime = clearDay ? freeTimeWishlist(tasks) : []
 
-  // the owner's sync alarm tops the page, the empty one too
-  const alarm = syncAlarm ? <SyncAlarmBanner alarm={syncAlarm} onOpen={onOpenSyncCheck} onDismiss={onDismissSyncAlarm} /> : null
+  // the owner's sync alarm tops the page, the empty one too, and a calendar sign-in that died under it
+  const alarm = (
+    <>
+      {syncAlarm && <SyncAlarmBanner alarm={syncAlarm} onOpen={onOpenSyncCheck} onDismiss={onDismissSyncAlarm} />}
+      {calendarSignIn && <CalendarSignInBanner trouble={calendarSignIn} onOpen={onOpenCalendarSettings} onDismiss={onDismissCalendarSignIn} />}
+    </>
+  )
 
   // a wardrobe that can dress you has its card to show, tasks or not; and
   // news in the hub is something to see, so its bell has the page to sit on

@@ -199,7 +199,7 @@ describe('visibleItemsFor carries ownership', () => {
     expect(items.find(i => i.id === 't1')?.ownerId).toBeUndefined()
     const peerTask = visibleItemsFor([{ user_id: 'u2', data: { kind: 'task', id: 't2', title: 'shared chore' } }], 'u1', ['u1', 'u2'], 'u1')
     expect(peerTask).toHaveLength(1)
-    // what upsertSundayReview does with it: only my own diary reaches the prompt
+    // what Sunday's draft (lib/sundaydraft.mjs) does with it: only my own diary reaches the prompt
     const mine = items.filter(i => i.kind === 'journal' && (i.ownerId == null || i.ownerId === 'u1'))
     expect(mine.map(i => i.id)).toEqual(['j1'])
   })

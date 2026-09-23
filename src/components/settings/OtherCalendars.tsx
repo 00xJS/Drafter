@@ -78,7 +78,8 @@ export function OtherCalendars({ store, calendars }: SettingsCtx) {
           <small>Events refreshed {timeAgo(calendars.lastAt)}.</small>
         ) : null}{' '}
         {store.calendars.length > 0 && (
-          <button className="btn" disabled={calendars.loading} onClick={() => calendars.refresh()}>
+          // asked for: each feed's host is asked, not the server's copy of a moment ago
+          <button className="btn" disabled={calendars.loading} onClick={() => calendars.refresh({ fresh: true })}>
             {calendars.loading ? 'Refreshing…' : 'Refresh now'}
           </button>
         )}

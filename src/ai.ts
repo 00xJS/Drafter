@@ -5,7 +5,7 @@ import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './type
 import { dateKey, excerpt } from './utils'
 import { deterministicCapture, modelDueAt, type CaptureCtx, type CapturedFields } from './capture'
 import { mealHistory } from '../shared/weekplan.mts'
-import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../shared/ai.mts'
+import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, extractJSON, looksLikeThinking, parseLooseJSON, scanJSON } from '../shared/ai.mts'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -13,9 +13,9 @@ import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
 
 class AIError extends Error {}
 
-// the app and the Sunday digest share these (shared/ai.mts); re-exported so a
-// reader of this file finds them where the calls are
-export { looksLikeThinking }
+// the app and the server's own AI work share these (shared/ai.mts); re-exported
+// so a reader of this file finds them where the calls are
+export { extractJSON, looksLikeThinking }
 
 /** Said when a second reply is thinking too: better an error the reader can act on than thinking saved as their review. */
 export const THOUGHT_OUT_LOUD = 'The model thought out loud instead of answering — try again.'
@@ -100,81 +100,6 @@ export async function complete(system: string, prompt: string, maxTokens = 2048,
   return text
 }
 
-/**
- * Where the first JSON value in `text` starts, where it ends when it is
- * complete (else -1), and where it could be cut short and still hold only
- * whole items: `lastItem`, the end of the last complete element of a
- * top-level array, and `wrapped`, the same for an array one level inside a
- * top-level object ({"tags": [...]}) — with the brackets that close it.
- * String contents never count as brackets.
- */
-function scanJSON(text: string): { start: number; end: number; lastItem: number; wrapped: string | null } {
-  const start = text.search(/[[{]/)
-  let end = -1
-  let lastItem = -1
-  let wrapped: string | null = null
-  if (start === -1) return { start, end, lastItem, wrapped }
-  const closers: string[] = []
-  let inString = false
-  let escaped = false
-  /** An element of the array being read ends at `i`: remember it if that array is the top level or one level inside it. */
-  const itemEnds = (i: number) => {
-    if (closers.length === 1 && closers[0] === ']') lastItem = i
-    else if (closers.length === 2 && closers[0] === '}' && closers[1] === ']') wrapped = `${text.slice(start, i + 1)}]}`
-  }
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]
-    if (inString) {
-      if (escaped) escaped = false
-      else if (ch === '\\') escaped = true
-      else if (ch === '"') {
-        inString = false
-        itemEnds(i)
-      }
-      continue
-    }
-    if (ch === '"') inString = true
-    else if (ch === '{' || ch === '[') closers.push(ch === '{' ? '}' : ']')
-    else if (ch === '}' || ch === ']') {
-      closers.pop()
-      if (closers.length === 0) {
-        end = i
-        break
-      }
-      itemEnds(i)
-    }
-  }
-  return { start, end, lastItem, wrapped }
-}
-
-function parseLoose<T>(json: string): T {
-  try {
-    return JSON.parse(json) as T
-  } catch {
-    try {
-      // the commonest slip: a trailing comma before a closing bracket
-      return JSON.parse(json.replace(/,\s*([}\]])/g, '$1')) as T
-    } catch {
-      throw new AIError('The model returned malformed JSON — try again.')
-    }
-  }
-}
-
-/**
- * The JSON in a model's reply. Models wrap it in ```json fences, add a
- * sentence before or after it, leave a trailing comma, or stop mid-array when
- * they run out of budget: take the first complete value, and failing that,
- * keep the complete elements of a cut-off array.
- */
-export function extractJSON<T>(text: string): T {
-  const clean = text.replace(/```(?:json)?/gi, '')
-  const { start, end, lastItem } = scanJSON(clean)
-  if (start === -1) throw new AIError('The model returned no JSON — try again.')
-  if (end >= 0) return parseLoose<T>(clean.slice(start, end + 1))
-  if (clean[start] === '[' && lastItem > start) return parseLoose<T>(`${clean.slice(start, lastItem + 1)}]`)
-  throw new AIError('The model’s answer was cut off — try again.')
-}
-
 /** Whether a JSON value says anything: a string with words in it, a number or a yes/no, somewhere inside. Keys don't count. */
 function saysSomething(v: unknown): boolean {
   if (typeof v === 'string') return !!v.trim()
@@ -216,7 +141,7 @@ export function readList(text: string, key: string): unknown[] {
   } catch (e) {
     const { wrapped } = scanJSON(text.replace(/```(?:json)?/gi, ''))
     if (!wrapped) throw e
-    value = parseLoose<unknown>(wrapped)
+    value = parseLooseJSON<unknown>(wrapped)
   }
   if (Array.isArray(value)) return value
   if (value && typeof value === 'object') {
