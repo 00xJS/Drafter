@@ -1259,9 +1259,11 @@ export function sanitizeChatTurn(raw: unknown): ChatTurn | null {
 }
 
 /**
- * A nudge put off. The id carries the target (`snooze~person~<id>`), so a
- * second snooze on the same thing overwrites the first; `until` is what the
- * row is for, and a row with no usable instant is nothing at all.
+ * A nudge put off. The id carries the target and whose it is
+ * (`snooze~person~<id>~<member>`, or the member-less id of a row from before
+ * members had their own), so a second snooze on the same thing overwrites the
+ * first; `until` is what the row is for, and a row with no usable instant is
+ * nothing at all.
  */
 export function sanitizeSnooze(raw: unknown): Snooze | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1269,8 +1271,11 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
   const id = str(r.id)
   const deletedAt = isoDate(r.deletedAt)
   const fromId = id ? /^snooze~(person|place|event)~(.+)$/.exec(id) : null
+  // read off the id, the member at its end is the row's owner, not part of what it puts off
+  const owner = idOrUndefined(r.ownerId)
+  const idTarget = owner && fromId?.[2].endsWith(`~${owner}`) ? fromId[2].slice(0, -owner.length - 1) : fromId?.[2]
   const target = typeof r.target === 'string' && SNOOZE_TARGETS.has(r.target) ? (r.target as SnoozeTarget) : (fromId?.[1] as SnoozeTarget | undefined)
-  const targetId = str(r.targetId)?.trim() || fromId?.[2]
+  const targetId = str(r.targetId)?.trim() || idTarget
   const until = isoDate(r.until)
   if (!id || !target || !targetId || (!until && !deletedAt)) return null
   const now = new Date().toISOString()
@@ -1374,14 +1379,122 @@ export function sanitizeTemplate(raw: unknown): Template | null {
   }
 }
 
+// ---- fields a newer build added ------------------------------------------------
+
+/**
+ * Keys never carried over as found, whatever the kind: any name an object
+ * already answers to through its prototype (`__proto__` and `constructor`
+ * among them) and `prototype`; `shared`, whose absence is itself an answer
+ * (posts_private_flag), so only a sanitizer that knows the kind may speak for
+ * it; and the server's own annotations, which it strips from every write.
+ */
+const neverCarried = (key: string) => key in Object.prototype || key === 'prototype' || key === 'shared' || key === 'ownerId' || key === 'syncedAt'
+
+/**
+ * Fields a sanitizer reads but may leave out of what it returns — an older
+ * name folded into a current one, a pair kept only while it is sound — so the
+ * kind's own rule goes on deciding them. Every other field a sanitizer knows
+ * is in what it returns, left undefined when it is dropped.
+ */
+const READ_NOT_RETURNED: Partial<Record<Item['kind'], readonly string[]>> = {
+  task: ['body'],
+  place: ['lat', 'lon'],
+}
+
+/** The most a record carries of fields this build does not know, measured as JSON. */
+export const UNKNOWN_FIELDS_MAX = 16 * 1024
+/** Nesting deeper than this is not a field anybody wrote. */
+const CARRIED_DEPTH_MAX = 32
+
+/**
+ * The length of `v` as JSON, or -1 when it would run past `room` or is not
+ * plain JSON: null, a boolean, a finite number, a string, and arrays and
+ * plain objects of those, no key among them one an object answers to through
+ * its prototype (or `prototype`). A key whose value is undefined is left out,
+ * as JSON leaves it.
+ */
+function jsonLength(v: unknown, room: number, depth = 0): number {
+  const fits = (n: number) => (n > room ? -1 : n)
+  if (room < 0 || depth > CARRIED_DEPTH_MAX) return -1
+  if (v === null) return fits(4)
+  if (typeof v === 'boolean') return fits(v ? 4 : 5)
+  if (typeof v === 'number') return Number.isFinite(v) ? fits(String(v).length) : -1
+  if (typeof v === 'string') return v.length > room ? -1 : fits(JSON.stringify(v).length)
+  if (typeof v !== 'object') return -1
+  // the opening bracket; each member then adds itself and the comma or bracket after it
+  let n = 1
+  if (Array.isArray(v)) {
+    for (const el of v) {
+      const m = jsonLength(el, room - n - 1, depth + 1)
+      if (m < 0) return -1
+      n += m + 1
+    }
+    return fits(Math.max(2, n))
+  }
+  const proto: unknown = Object.getPrototypeOf(v)
+  if (proto !== Object.prototype && proto !== null) return -1
+  for (const [key, val] of Object.entries(v)) {
+    if (key in Object.prototype || key === 'prototype') return -1
+    if (val === undefined) continue
+    const name = JSON.stringify(key).length + 1
+    const m = jsonLength(val, room - n - name - 1, depth + 1)
+    if (m < 0) return -1
+    n += name + m + 1
+  }
+  return fits(Math.max(2, n))
+}
+
+/**
+ * `clean` with the top-level fields of `raw` this build does not know, as
+ * they were.
+ *
+ * The sanitizers keep only the fields they list, every pulled row goes
+ * through them, and sync_posts replaces a row's `data` whole. So a phone still
+ * on an older build dropped a field a newer build had added — a recipe's
+ * source link, build 14's, on a build-12 phone — and its next edit of the
+ * record pushed it back without it: gone on every device. A field this build
+ * has never heard of now rides along untouched, and the older build's edit
+ * carries it back.
+ *
+ * Only what cannot be misread: plain JSON, UNKNOWN_FIELDS_MAX of it at most —
+ * taken in key order, a field that would pass the cap left behind, so every
+ * device keeps the same ones — never a field the kind's sanitizer knows, whose
+ * answer stands even when it was to drop it, and never a key neverCarried
+ * refuses. Each is copied, so the record shares nothing with what it was
+ * read from.
+ */
+function withUnknownFields<T extends Item>(clean: T, raw: Record<string, unknown>): T {
+  const alsoKnown = READ_NOT_RETURNED[clean.kind]
+  let room = UNKNOWN_FIELDS_MAX
+  let out: Record<string, unknown> | null = null
+  for (const key of Object.keys(raw).sort()) {
+    if (Object.prototype.hasOwnProperty.call(clean, key) || neverCarried(key) || alsoKnown?.includes(key)) continue
+    const value = raw[key]
+    const cost = JSON.stringify(key).length + 2
+    const size = jsonLength(value, room - cost)
+    if (size < 0) continue
+    room -= cost + size
+    out ??= { ...clean }
+    out[key] = value !== null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value
+  }
+  return (out ?? clean) as T
+}
+
 /**
  * Coerce any record — task, project, calendar, person, place, review, template, or a pre-v3 post — into a valid Item.
  * Returns null if unusable. Unknown string kinds return null so a stale client never
- * rewrites a newer kind (e.g. place) into a blank task and LWW-destroys it.
+ * rewrites a newer kind (e.g. place) into a blank task and LWW-destroys it. What
+ * the kind's sanitizer returns keeps the fields a newer build added (withUnknownFields).
  */
 export function sanitizeItem(raw: unknown): Item | null {
   if (!raw || typeof raw !== 'object') return null
   const converted = legacyPostToTask(raw) as Record<string, unknown>
+  const clean = sanitizeKnown(converted)
+  return clean && withUnknownFields(clean, converted)
+}
+
+/** What this build knows of a record: its kind's own sanitizer. */
+function sanitizeKnown(converted: Record<string, unknown>): Item | null {
   if (converted.kind === 'project') return sanitizeProject(converted)
   if (converted.kind === 'calendar') return sanitizeCalendar(converted)
   if (converted.kind === 'person') return sanitizePerson(converted)

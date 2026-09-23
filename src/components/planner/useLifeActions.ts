@@ -4,7 +4,7 @@ import { eventStartDate, prepDueFor } from '../../calendarstate'
 import { newerStamp } from '../../../shared/domain.mts'
 import { cookTaskFor, cookTaskId, mealIsShared, mealWrites, syncCookTask } from '../../kitchen'
 import { newPlace } from '../../places'
-import { makeSnooze, snoozeBackLabel, snoozeUntil } from '../../snooze'
+import { snoozeBackLabel, snoozeUntil, snoozeWrite } from '../../snooze'
 import { uid } from '../../utils'
 import type { useOverlays } from './useOverlays'
 import type { useToast } from './useToast'
@@ -185,17 +185,15 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     })
   }
   /**
-   * Put a nudge off for a while (v3.24): one row per thing, so asking again
-   * overwrites rather than piling up. Undo takes it straight back — the row is
-   * removed, not re-dated, so the nudge is there again on the next render.
+   * Put a nudge off for a while (v3.24): one row per member and thing, so
+   * asking again overwrites rather than piling up (snoozeWrite). Undo takes it
+   * straight back — the row is removed, not re-dated, so the nudge is there
+   * again on the next render.
    */
   const snooze = (target: SnoozeTarget, targetId: string, days: number, label: string) => {
-    const row = makeSnooze(target, targetId, snoozeUntil(days))
-    const existing = store.snoozes.find(x => x.id === row.id)
-    store.upsert(existing ? { ...row, createdAt: existing.createdAt, updatedAt: newerStamp(existing.updatedAt) } : row)
-    showToast(`${label} — ${snoozeBackLabel(row.until)}`, () =>
-      existing ? store.upsert({ ...existing, updatedAt: newerStamp(row.updatedAt) }) : store.remove(row.id),
-    )
+    const { row, undo } = snoozeWrite(store.snoozes, target, targetId, snoozeUntil(days), store.myId)
+    store.upsert(row)
+    showToast(`${label} — ${snoozeBackLabel(row.until)}`, () => (undo ? store.upsert(undo) : store.remove(row.id)))
   }
   const planWith = (person: Person, title?: string) => newTask({ title: title ?? `Catch up with ${person.name}`, status: 'todo', peopleIds: [person.id], tags: ['visit'] })
   const planAt = (place: Place) => newTask({ title: `Go to ${place.name}`, status: 'todo', placeId: place.id, tags: ['visit'] })

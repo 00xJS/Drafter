@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { duplicateSpawnPairs, duplicateSpawns, spawnId } from '../../shared/domain.mts'
+import { duplicateSpawnPairs, duplicateSpawns, newerStamp, nextOccurrence, spawnId } from '../../shared/domain.mts'
 import { retiredMessage, type RetiredSpawn } from '../syncengine'
 import { Task } from '../types'
 import { FakeServer, device, edit, idle, ready, task, type Device } from './sync-fakes'
@@ -143,8 +143,10 @@ describe('duplicateSpawns: which next occurrences are extra', () => {
     expect(duplicateSpawns([...items].reverse())).toEqual(['x~daily~2026-09-15'])
   })
 
-  it('counts an occurrence of an occurrence as the same chore', () => {
-    // ticked Monday and again Tuesday on one device, once on Tuesday on the other: both are due Wednesday
+  it('counts an occurrence of an occurrence as the same chore, under an id grown by an older build', () => {
+    // Ticked Monday and again Tuesday on one device, once on Tuesday on the
+    // other: both are due Wednesday. Before the ids stopped growing the first
+    // device's carried both ticks, and such rows are never rewritten.
     const items = [spawn('x~daily~2026-09-15~daily~2026-09-16'), spawn('x~daily~2026-09-16')]
     expect(duplicateSpawns(items)).toEqual(['x~daily~2026-09-15~daily~2026-09-16'])
   })
@@ -166,6 +168,105 @@ describe('duplicateSpawns: which next occurrences are extra', () => {
       { id: 'x~daily~2026-09-15', keptId: 'x~daily~2026-09-17' },
       { id: 'y~daily~2026-09-14', keptId: 'y~daily~2026-09-15' },
     ])
+  })
+})
+
+// A next occurrence's id used to be the id of the one just done with another
+// `~freq~day` on the end, so a daily chore's grew by some 17 characters a day.
+// Now it is the series' root and one segment, whatever came before.
+describe('a repeating chore’s ids stay short', () => {
+  const ROOT = 'water'
+  const SHORT = ROOT.length + '~daily~2026-09-14'.length
+
+  /** Every task of the chore one device holds, tombstones included. */
+  const chain = (d: Device) => d.engine.getState().items.filter((i): i is Task => i.kind === 'task' && i.id.startsWith(ROOT))
+
+  async function daily() {
+    const server = new FakeServer()
+    server.seed(task(ROOT, { title: 'Water the plants', recurrence: { freq: 'daily' }, dueAt: '2026-09-14T08:00:00.000Z' }))
+    const d = device(server)
+    await ready(d)
+    return { server, d }
+  }
+
+  it('however many times it comes round', async () => {
+    const { d } = await daily()
+    let current = ROOT
+    for (let day = 0; day < 400; day++) {
+      current = d.engine.setStatus(current, 'done')!.spawnedId!
+      expect(current.length, current).toBeLessThanOrEqual(SHORT)
+      nextDay()
+    }
+    expect(current).toBe(`${ROOT}~daily~2027-10-19`)
+    expect(chain(d)).toHaveLength(401)
+    expect(Math.max(...chain(d).map(t => t.id.length))).toBe(SHORT)
+  })
+
+  it('from an id an older build grew: its next occurrence takes the short form, and the old row keeps its id', async () => {
+    const server = new FakeServer()
+    const grown = `${ROOT}~daily~2026-09-12~daily~2026-09-13~daily~2026-09-14`
+    server.seed(task(grown, { recurrence: { freq: 'daily' }, dueAt: '2026-09-14T08:00:00.000Z' }))
+    const d = device(server)
+    await ready(d)
+    const next = d.engine.setStatus(grown, 'done')!.spawnedId!
+    expect(next).toBe(`${ROOT}~daily~2026-09-15`)
+    expect(d.item<Task>(grown)!.status).toBe('done')
+    await d.engine.sync()
+    await idle(d)
+    expect(server.row<Task>(grown)!.status).toBe('done')
+    expect(server.row<Task>(next)!.status).toBe('todo')
+    // and the duplicate check still reads both as one chore
+    expect(duplicateSpawnPairs([task(grown, { recurrence: { freq: 'daily' } }), task(next, { recurrence: { freq: 'daily' } })])).toEqual([{ id: grown, keptId: next }])
+  })
+
+  it('ticked off early, the next one never takes the id of one already there', async () => {
+    const { d } = await daily()
+    // today's, then tomorrow's, then the one that came round for tomorrow again, all today:
+    // after the first, each next one falls due on a day its series has already had
+    const first = d.engine.setStatus(ROOT, 'done')!.spawnedId!
+    const second = d.engine.setStatus(first, 'done')!.spawnedId!
+    const third = d.engine.setStatus(second, 'done')!.spawnedId!
+    expect(first).toBe(`${ROOT}~daily~2026-09-15`)
+    expect(new Set([ROOT, first, second, third]).size).toBe(4)
+    expect(second.startsWith(first)).toBe(true)
+    expect(third.startsWith(second)).toBe(true)
+    // the next tick on a later day is short again
+    nextDay()
+    nextDay()
+    const back = d.engine.setStatus(third, 'done')!.spawnedId!
+    expect(back).toBe(`${ROOT}~daily~2026-09-17`)
+    const ids = chain(d).map(t => t.id)
+    expect(new Set(ids).size, 'one record per id').toBe(ids.length)
+    expect(chain(d).filter(t => t.status === 'done')).toHaveLength(4)
+  })
+
+  it('ticked off, undone and ticked off again, the next occurrence comes back once, and the server keeps it', async () => {
+    const { server, d } = await daily()
+    const change = d.engine.setStatus(ROOT, 'done')!
+    // the toast's Undo
+    d.engine.upsert({ ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) })
+    d.engine.remove(change.spawnedId!)
+    await d.engine.sync()
+    await idle(d)
+    expect(server.row<Task>(change.spawnedId!)!.deletedAt).toBeDefined()
+
+    const again = d.engine.setStatus(ROOT, 'done')!
+    expect(again.spawnedId).toBe(change.spawnedId)
+    const copies = chain(d).filter(t => t.id === again.spawnedId)
+    expect(copies, 'the tombstone is replaced, not joined').toHaveLength(1)
+    expect(copies[0].deletedAt).toBeUndefined()
+    await d.engine.sync()
+    await idle(d)
+    expect(server.row<Task>(again.spawnedId!)!.deletedAt).toBeUndefined()
+    expect(server.row<Task>(again.spawnedId!)!.status).toBe('todo')
+  })
+
+  it('never lands on a live record another device wrote under the same id', () => {
+    const done = task(`${ROOT}~daily~2026-09-15`, { status: 'done', completedAt: '2026-09-15T10:00:00.000Z', recurrence: { freq: 'daily' } })
+    const theirs = task(`${ROOT}~daily~2026-09-16`, { recurrence: { freq: 'daily' } })
+    const held = (id: string) => (id === theirs.id ? theirs : undefined)
+    expect(nextOccurrence(done, () => '')!.id).toBe(theirs.id)
+    expect(nextOccurrence(done, () => '', held)!.id).toBe(`${done.id}~daily~2026-09-16`)
   })
 })
 

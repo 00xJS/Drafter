@@ -941,10 +941,12 @@ export type SnoozeTarget = 'person' | 'place' | 'event'
  * snooze it is. Maria putting her mother off for two weeks is not Joseph
  * saying he has called her, any more than Maria's work day is his.
  *
- * One row per thing, keyed `snooze~<target>~<targetId>`, so putting the same
- * nudge off again overwrites instead of piling rows up. A row is spent once
- * `until` has passed; nothing sweeps it, because rewriting the same id is how
- * the next snooze is made.
+ * One row per member and thing, keyed `snooze~<target>~<targetId>~<member>`
+ * (rows from before the member was in it keep `snooze~<target>~<targetId>`),
+ * so putting the same nudge off again overwrites instead of piling rows up,
+ * and two members never write one row. A row is spent once `until` has
+ * passed; nothing sweeps it, because rewriting the same id is how the next
+ * snooze is made.
  */
 export interface Snooze extends Owned {
   kind: 'snooze'

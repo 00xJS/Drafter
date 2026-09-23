@@ -1,9 +1,9 @@
-import { Suspense, useState, type ReactNode } from 'react'
+import { Suspense, useMemo, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mts'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mts'
 import { newerStamp } from '../../itemops'
 import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
-import type { Task } from '../../types'
+import { OPEN_STATUSES, type Task } from '../../types'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { readWeekPlanDismissed } from '../../weekplanstore'
@@ -80,6 +80,21 @@ export function rhythmsSaved(changes: readonly RhythmChange[]): string {
   return `Rhythms saved for ${parts.join(' and ')}`
 }
 
+/**
+ * What the task editor may offer as blockers of `editing`: the open tasks — to
+ * do, doing or blocked — other than itself, from its own project when it has
+ * one, and the ones it already waits on, whatever became of them, so every
+ * blocker it shows keeps its name. Done and wishlist tasks were offered too,
+ * the whole history of the household in one list, and a done one picked from
+ * it was a blocker that had never been there.
+ */
+export function blockerCandidates(tasks: readonly Task[], editing: Task | undefined): Task[] {
+  const listed = new Set(editing?.blockedBy ?? [])
+  return tasks.filter(
+    t => t.id !== editing?.id && (listed.has(t.id) || (OPEN_STATUSES.includes(t.status) && (!editing?.projectId || t.projectId === editing.projectId))),
+  )
+}
+
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
@@ -90,6 +105,9 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
   const today = localDayKey()
+  // drawn again when a task changes or another is opened, never as the editor is typed in
+  const editing = editor?.task
+  const candidates = useMemo(() => blockerCandidates(store.tasks, editing), [store.tasks, editing])
 
   // a citation tapped here closes the sheet first; the same routing serves
   // an answer's sources in Home → Chat (askRouting.ts)
@@ -145,7 +163,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSavePerson={p => store.upsert(p)}
             members={inHousehold ? household.info!.members : []}
             myId={household.myId}
-            candidates={store.tasks.filter(t => t.status !== 'canceled' && t.id !== editor.task?.id && (!editor.task?.projectId || t.projectId === editor.task.projectId))}
+            candidates={candidates}
             getLatest={id => store.tasks.find(x => x.id === id)}
             onSave={t => {
               const before = store.tasks.find(x => x.id === t.id)

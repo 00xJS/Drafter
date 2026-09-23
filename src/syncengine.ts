@@ -223,20 +223,51 @@ const defaultTimers: SyncTimers = {
   clearInterval: h => globalThis.clearInterval(h as number),
 }
 
-/** Tasks blocked only by done tasks move to To do once their last blocker completes. */
-function releaseBlocked(list: Item[]): Item[] {
-  const doneIds = new Set(list.filter(i => i.kind === 'task' && i.status === 'done').map(i => i.id))
-  const live = new Set(list.filter(i => i.kind === 'task' && !i.deletedAt).map(i => i.id))
+/**
+ * A blocked task moves to To do when the edit that completes its last blocker
+ * lands — that edit and no other. `completed` holds the tasks this edit ticked
+ * off; a task none of whose blockers is among them is left as it is.
+ *
+ * It used to run over every blocked task on every edit, and read a blocker
+ * this device does not hold as out of the way. A housemate's private task is
+ * exactly such a blocker: invisible on the other member's device, so any edit
+ * there — a rename, a tick somewhere else — flipped the shared task to To do
+ * under a new stamp, and the release went out to every device. A blocker this
+ * device does not hold is not known to be done, so it still blocks; one it
+ * holds in the Trash no longer does.
+ */
+function releaseBlocked(list: Item[], completed: readonly string[]): Item[] {
+  if (completed.length === 0) return list
+  const tasks = new Map<string, Task>()
+  for (const i of list) if (i.kind === 'task') tasks.set(i.id, i)
+  const blocks = (id: string) => {
+    const t = tasks.get(id)
+    return !t || (!t.deletedAt && t.status !== 'done')
+  }
   let changed = false
   const next = list.map(i => {
     if (i.kind !== 'task' || i.status !== 'blocked' || !i.blockedBy?.length) return i
-    const stillBlocked = i.blockedBy.some(id => live.has(id) && !doneIds.has(id))
-    if (stillBlocked) return i
+    if (!i.blockedBy.some(id => completed.includes(id)) || i.blockedBy.some(blocks)) return i
     changed = true
     return { ...i, status: 'todo' as TaskStatus, updatedAt: newerStamp(i.updatedAt) }
   })
   return changed ? next : list
 }
+
+/**
+ * `list` with a repeat's next occurrence in it: in place of the record that
+ * holds its id — only ever a tombstone it replaces (nextOccurrence) — or at the
+ * end. Two records under one id are one too many: the cache and the server each
+ * keep only one of them, and a chore ticked off, undone and ticked off again
+ * used to leave its first next occurrence's tombstone beside the new one.
+ */
+function withOccurrence(list: Item[], spawn: Task): Item[] {
+  return list.some(x => x.id === spawn.id) ? list.map(x => (x.id === spawn.id ? spawn : x)) : list.concat(spawn)
+}
+
+/** The task this edit ticks off, if it does: [] or its id, for releaseBlocked. */
+const tickedOff = (next: Item, prev: Item | undefined): string[] =>
+  next.kind === 'task' && next.status === 'done' && !(prev?.kind === 'task' && prev.status === 'done') ? [next.id] : []
 
 export function stampStatus(t: Task, status: TaskStatus): Task {
   const next: Task = { ...t, status, updatedAt: newerStamp(t.updatedAt) }
@@ -887,6 +918,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     schedulePush()
   }
 
+  /** What this device holds under an id, tombstones included: where a repeat's next occurrence may not go. */
+  const held = (id: string): Item | undefined => index.get(id)
+
   function upsert(item: Item): void {
     const list = state.items
     const old = list.find(x => x.id === item.id)
@@ -894,14 +928,17 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     let next = old ? list.map(x => (x.id === item.id ? item : x)) : [...list, item]
     const touched = [item.id]
     if (item.kind === 'task' && item.status === 'done' && old?.kind === 'task' && old.status !== 'done' && item.recurrence) {
-      const spawn = nextOccurrence(item, uid)
+      const spawn = nextOccurrence(item, uid, held)
       if (spawn) {
         touched.push(spawn.id)
         const done = item
-        next = next.map(x => (x.id === done.id ? { ...done, recurrence: undefined } : x)).concat(spawn)
+        next = withOccurrence(
+          next.map(x => (x.id === done.id ? { ...done, recurrence: undefined } : x)),
+          spawn,
+        )
       }
     }
-    commit(ensureProjects(releaseBlocked(next)), touched)
+    commit(ensureProjects(releaseBlocked(next, tickedOff(item, old))), touched)
   }
 
   function remove(id: string): void {
@@ -957,11 +994,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     if (!old || old.kind !== 'task' || old.status === status) return null
     const updated = stampStatus(old, status)
     let spawned: Task | null = null
-    if (status === 'done' && old.status !== 'done' && updated.recurrence) spawned = nextOccurrence(updated, uid)
+    if (status === 'done' && old.status !== 'done' && updated.recurrence) spawned = nextOccurrence(updated, uid, held)
     const stored: Task = spawned ? { ...updated, recurrence: undefined } : updated
     let next: Item[] = state.items.map(x => (x.id === id ? stored : x))
-    if (spawned) next = next.concat(spawned)
-    commit(releaseBlocked(next), spawned ? [id, spawned.id] : [id])
+    if (spawned) next = withOccurrence(next, spawned)
+    commit(releaseBlocked(next, tickedOff(stored, old)), spawned ? [id, spawned.id] : [id])
     return { prev: old, next: stored, spawnedId: spawned?.id }
   }
 

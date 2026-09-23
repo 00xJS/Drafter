@@ -124,7 +124,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
       // upsert spawns the next occurrence when a recurring task crosses into
       // done, exactly as setStatus does; the id is deterministic, so this is
       // the copy the undo has to take back out again
-      const spawnedId = stamped.status === 'done' && t.status !== 'done' && stamped.recurrence ? nextOccurrence(stamped, uid)?.id : undefined
+      const spawnedId = stamped.status === 'done' && t.status !== 'done' && stamped.recurrence ? nextOccurrence(stamped, uid, id => store.allItems.find(i => i.id === id))?.id : undefined
       undo.push({ prev: t, spawnedId })
       store.upsert(stamped)
     }
