@@ -150,10 +150,11 @@ export function createActivityQueue(myId: string, deps: ActivityDeps) {
     if (inMemory || !deps.storage) return memory
     try {
       const raw = JSON.parse(deps.storage.getItem(key) ?? '{}') as unknown
-      return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Queue) : {}
+      memory = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Queue) : {}
     } catch {
-      return {}
+      memory = {}
     }
+    return memory
   }
   const write = (q: Queue) => {
     memory = q
@@ -184,6 +185,8 @@ export function createActivityQueue(myId: string, deps: ActivityDeps) {
   function note(before: Item | undefined, after: Item): void {
     if (after.kind !== 'task') return
     const incoming = taskActivity(before?.kind === 'task' ? before : undefined, after, myId)
+    // most edits are of tasks nobody else is party to: those never touch storage
+    if (!incoming.length && !(after.id in memory)) return
     const q = read()
     const had = q[after.id]
     if (!incoming.length && !had) return

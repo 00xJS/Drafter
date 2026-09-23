@@ -211,6 +211,11 @@ describe('one notice per member, task and quarter of an hour', () => {
     expect(n.lines).toEqual(Array.from({ length: 8 }, (_, i) => `step ${i + 4}`))
   })
 
+  it('the same batch told twice (two tabs) is appended once', () => {
+    const once = mergeNotice(notice({ lines: ['Ticked “Green bin”'] }), notice({ lines: ['“On it”', 'Marked it done'] }))
+    expect(mergeNotice(once, notice({ lines: ['“On it”', 'Marked it done'] })).lines).toEqual(['Ticked “Green bin”', '“On it”', 'Marked it done'])
+  })
+
   it('a tombstone takes the news as new', () => {
     expect(mergeNotice(notice({ deletedAt: T, lines: ['old'] }), notice({ lines: ['new'] })).lines).toEqual(['new'])
   })

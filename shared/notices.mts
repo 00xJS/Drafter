@@ -197,11 +197,16 @@ export function activityLine(e: ActivityEvent, tz?: string | null): string | nul
  * A notice with another's news folded in: the lines appended (the newest
  * NOTICE_LINES_MAX kept), the weightier kind and its headline, the later
  * time, and unread again — a new line is news, whatever was read before.
+ * The same batch of lines arriving twice (two tabs telling one edit) is
+ * appended once.
  */
 export function mergeNotice(existing: Notice | null | undefined, incoming: Notice): Notice {
   if (!existing || existing.deletedAt) return { ...incoming, lines: (incoming.lines ?? []).slice(-NOTICE_LINES_MAX), readAt: undefined }
   const type = weightier(existing.type, incoming.type)
-  const lines = [...(existing.lines ?? []), ...(incoming.lines ?? [])].slice(-NOTICE_LINES_MAX)
+  const had = existing.lines ?? []
+  const news = incoming.lines ?? []
+  const again = news.length > 0 && had.length >= news.length && news.every((l, i) => had[had.length - news.length + i] === l)
+  const lines = [...had, ...(again ? [] : news)].slice(-NOTICE_LINES_MAX)
   const later = Date.parse(incoming.at) >= Date.parse(existing.at) ? incoming.at : existing.at
   return {
     ...existing,
