@@ -3,8 +3,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { KEEP_DAYS, LABEL, copiesToPrune, cutoffDay, defaultPaths, launchAgentPlist, listedNames, logLine, main } from '../../scripts/backup-offsite.mjs'
-import type { Cli } from '../../scripts/backup-offsite.mjs'
+import { execFile } from 'node:child_process'
+import { realpathSync } from 'node:fs'
+import {
+  KEEP_DAYS,
+  LABEL,
+  PINNED_FILES,
+  copiesToPrune,
+  cutoffDay,
+  defaultPaths,
+  launchAgentPlist,
+  listedNames,
+  logLine,
+  macNotifier,
+  main,
+  newestCopyDay,
+  notificationArgs,
+  pinCopy,
+  staleCheck,
+} from '../../scripts/backup-offsite.mjs'
+import type { Cli, Notify } from '../../scripts/backup-offsite.mjs'
 
 // The nightly snapshots live in the same Supabase project as what they back
 // up. scripts/backup-offsite.mjs keeps copies in iCloud Drive on the owner's
@@ -66,6 +84,14 @@ const fakeCli: Cli = async args => {
 
 const quiet = { log: () => {}, error: () => {} }
 const run = (argv: string[] = [], cli: Cli | null = fakeCli) => main(['--dest', dest, '--log', log, ...argv], { home, cli, now: NOW, tmp, out: quiet })
+/** A run with a notifier that only writes down what it would have shown. */
+let shown: [string, string][]
+const noticing: Notify = async (title, message) => {
+  shown.push([title, message])
+  return true
+}
+const runAt = (now: Date, cli: Cli = fakeCli) => main(['--dest', dest, '--log', log], { home, cli, now, tmp, out: quiet, notify: noticing })
+const DAY = 86_400_000
 const here = async (account: string) => (await readdir(join(dest, account))).sort()
 
 beforeEach(async () => {
@@ -77,6 +103,7 @@ beforeEach(async () => {
   await mkdir(cloud, { recursive: true })
   await mkdir(tmp, { recursive: true })
   calls = []
+  shown = []
   brokenFor = null
   bucket = new Map([
     [`backups/${A}/2026-09-20.json`, plain(A)],
@@ -247,6 +274,152 @@ describe('the LaunchAgent', () => {
       cloud: '/Users/o/Library/Mobile Documents/com~apple~CloudDocs',
       dest: '/Users/o/Library/Mobile Documents/com~apple~CloudDocs/Drafter Backups',
       log: '/Users/o/Library/Logs/drafter-backup-offsite.log',
+      pinned: '/Users/o/Library/Application Support/Drafter/offsite',
+      state: '/Users/o/Library/Application Support/Drafter/offsite-state.json',
     })
+  })
+})
+
+describe('when a night goes wrong, the Mac says so', () => {
+  it('shows a notification for a failed night, and none for one that worked', async () => {
+    expect(await runAt(NOW)).toBe(0)
+    expect(shown).toEqual([])
+
+    brokenFor = `backups/${A}/`
+    expect(await runAt(NOW)).toBe(1)
+    expect(shown).toEqual([['Drafter off-site backup failed', `1 of 2 account(s) failed: ${A}: supabase storage failed: 503 Service Unavailable — see ~/Library/Logs/drafter-backup-offsite.log`]])
+
+    shown = []
+    await rm(cloud, { recursive: true })
+    expect(await runAt(NOW)).toBe(1)
+    expect(shown).toHaveLength(1)
+    expect(shown[0][1]).toMatch(/^iCloud Drive is not on/)
+  })
+
+  it('warns once a week while the newest copy is more than three days old, and says how old', async () => {
+    // a night that works and copies nothing: the server wrote no new snapshot
+    const stale = new Map([[`backups/${A}/2026-09-15.json`, envelope(A)]])
+    bucket = stale
+    const week = new Date('2026-09-15T10:30:00.000Z')
+    expect(await runAt(week)).toBe(0)
+    expect(shown).toEqual([])
+    // four days on, nothing newer came
+    expect(await runAt(new Date(week.getTime() + 4 * DAY))).toBe(0)
+    expect(shown).toEqual([['Drafter off-site backup is behind', 'The newest off-site copy is 4 days old (2026-09-15). See ~/Library/Logs/drafter-backup-offsite.log.']])
+    expect((await readFile(log, 'utf8')).trim().split('\n').pop()).toBe('2026-09-19T10:30:00.000Z STALE: The newest off-site copy is 4 days old (2026-09-15).')
+    // not every night: the next six say nothing more
+    for (let d = 5; d <= 10; d++) await runAt(new Date(week.getTime() + d * DAY))
+    expect(shown).toHaveLength(1)
+    // a week after the last warning, again
+    await runAt(new Date(week.getTime() + 11 * DAY))
+    expect(shown.map(s => s[1])).toEqual([
+      'The newest off-site copy is 4 days old (2026-09-15). See ~/Library/Logs/drafter-backup-offsite.log.',
+      'The newest off-site copy is 11 days old (2026-09-15). See ~/Library/Logs/drafter-backup-offsite.log.',
+    ])
+    // copies arrive again: the warning is forgotten, so the next time they stop it comes at once
+    bucket.set(`backups/${A}/2026-09-27.json`, envelope(A))
+    await runAt(new Date('2026-09-27T10:30:00.000Z'))
+    expect(JSON.parse(await readFile(defaultPaths(home).state, 'utf8'))).toEqual({ staleWarnedAt: null })
+    await runAt(new Date('2026-10-01T10:30:00.000Z'))
+    expect(shown).toHaveLength(3)
+    expect(shown[2][1]).toMatch(/^The newest off-site copy is 4 days old \(2026-09-27\)/)
+  })
+
+  it('says so when no copy has ever reached iCloud Drive', async () => {
+    // every snapshot written before encryption was on: none may go to iCloud
+    bucket = new Map([[`backups/${A}/2026-09-22.json`, plain(A)]])
+    expect(await runAt(NOW)).toBe(0)
+    expect(shown).toEqual([['Drafter off-site backup is behind', 'There is no off-site copy in iCloud Drive yet. See ~/Library/Logs/drafter-backup-offsite.log.']])
+  })
+
+  it('draws the lines at three days old and a week between warnings', () => {
+    const now = '2026-09-22T03:30:00.000Z'
+    expect(staleCheck({ newest: '2026-09-19', now })).toEqual({ stale: false, ageDays: 3, warn: false })
+    expect(staleCheck({ newest: '2026-09-18', now })).toEqual({ stale: true, ageDays: 4, warn: true })
+    expect(staleCheck({ newest: null, now })).toEqual({ stale: true, ageDays: null, warn: true })
+    expect(staleCheck({ newest: '2026-09-01', now, lastWarnedAt: '2026-09-16T03:30:00.001Z' }).warn).toBe(false)
+    expect(staleCheck({ newest: '2026-09-01', now, lastWarnedAt: '2026-09-15T03:30:00.000Z' }).warn).toBe(true)
+    expect(newestCopyDay(['2026-09-01.json', '.2026-09-20.json.icloud', 'notes.txt', '2026-09-19.json.partial'])).toBe('2026-09-20')
+    expect(newestCopyDay([])).toBeNull()
+  })
+
+  it('hands osascript the words as arguments, never as part of its script', async () => {
+    const args = notificationArgs('Drafter "off-site"', `it said: "end run" \\ do shell script "rm -rf ~"\n${'x'.repeat(500)}`)
+    expect(args.slice(0, 6)).toEqual(['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run'])
+    expect(args[6]).toBe('Drafter "off-site"')
+    expect(args[7]).toMatch(/^it said: "end run" \\ do shell script "rm -rf ~" x+$/)
+    expect(args[7].length).toBeLessThanOrEqual(240)
+    const ran: { bin: string; args: string[] }[] = []
+    const fake = (bin: string, a: string[], _o: unknown, done: (err: Error | null) => void) => {
+      ran.push({ bin, args: a })
+      done(null)
+    }
+    expect(await macNotifier({ run: fake, os: 'darwin' })('Title', 'Body')).toBe(true)
+    expect(ran).toEqual([{ bin: '/usr/bin/osascript', args: notificationArgs('Title', 'Body') }])
+    // anywhere but a Mac it shows nothing, and a notification that fails never fails the night
+    expect(await macNotifier({ run: fake, os: 'linux' })('Title', 'Body')).toBe(false)
+    expect(ran).toHaveLength(1)
+    expect(await macNotifier({ run: (_b: string, _a: string[], _o: unknown, done: (err: Error | null) => void) => done(new Error('no GUI session')), os: 'darwin' })('T', 'B')).toBe(false)
+  })
+})
+
+describe('the pinned copy the LaunchAgent runs', () => {
+  /** A checkout of its own: the files the copy needs, and a link to a project. */
+  async function checkout(linked = true) {
+    const root = join(home, 'checkout')
+    for (const rel of PINNED_FILES) {
+      await mkdir(join(root, rel, '..'), { recursive: true })
+      await writeFile(join(root, rel), `// ${rel}\n`)
+    }
+    if (linked) {
+      await mkdir(join(root, 'supabase', '.temp'), { recursive: true })
+      await writeFile(join(root, 'supabase', '.temp', 'project-ref'), 'abcdefghijklmnop')
+      await writeFile(join(root, 'supabase', '.temp', 'pooler-url'), 'postgresql://postgres.abcdefghijklmnop@pooler.example:6543/postgres')
+    }
+    return root
+  }
+
+  it('holds the script, what it imports and the project link, and replaces the old copy whole', async () => {
+    const from = await checkout()
+    const to = join(home, 'Library', 'Application Support', 'Drafter', 'offsite')
+    await mkdir(to, { recursive: true })
+    await writeFile(join(to, 'left-from-last-time.mjs'), 'old')
+    expect(await pinCopy({ from, to })).toEqual({
+      files: [...PINNED_FILES, join('supabase', '.temp', 'pooler-url'), join('supabase', '.temp', 'project-ref')],
+      linked: true,
+    })
+    expect(await readFile(join(to, 'scripts', 'backup-offsite.mjs'), 'utf8')).toBe('// scripts/backup-offsite.mjs\n')
+    expect(await readFile(join(to, 'supabase', '.temp', 'project-ref'), 'utf8')).toBe('abcdefghijklmnop')
+    await expect(stat(join(to, 'left-from-last-time.mjs'))).rejects.toThrow()
+    // built beside it and moved in: nothing half-made is left behind
+    expect((await readdir(join(to, '..'))).sort()).toEqual(['offsite'])
+  })
+
+  it('says when the checkout is not linked, and leaves the old copy alone when a file is missing', async () => {
+    const from = await checkout(false)
+    const to = join(home, 'pinned')
+    expect((await pinCopy({ from, to })).linked).toBe(false)
+    await rm(join(from, 'netlify'), { recursive: true })
+    await expect(pinCopy({ from, to })).rejects.toThrow(/backupcrypto/)
+    expect(await readFile(join(to, 'scripts', 'backup-offsite.mjs'), 'utf8')).toBe('// scripts/backup-offsite.mjs\n')
+    expect((await readdir(home)).filter(n => n.startsWith('.pinned-'))).toEqual([])
+  })
+
+  it('from this checkout, runs on its own and names itself in the LaunchAgent it prints', { timeout: 30_000 }, async () => {
+    const to = join(home, 'Application Support', 'offsite')
+    const printed: string[] = []
+    expect(await main(['--pin', to], { home, out: { log: (m: string) => printed.push(m), error: () => {} } })).toBe(0)
+    expect(printed[0]).toMatch(new RegExp(`^Pinned \\d+ files into ${to.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+    // the copy's own imports resolve where it is: it prints its LaunchAgent, naming itself and its folder
+    const plist = await new Promise<string>((resolve, reject) =>
+      execFile(process.execPath, [join(to, 'scripts', 'backup-offsite.mjs'), '--launch-agent', '--node', '/opt/homebrew/bin/node', '--supabase', '/opt/homebrew/bin/supabase'], (err, stdout) =>
+        err ? reject(err) : resolve(String(stdout)),
+      ),
+    )
+    // by its real path: the one node reports as the script's own (macOS's /var is /private/var)
+    const real = realpathSync(to)
+    expect(plist).toContain(`<string>${join(real, 'scripts', 'backup-offsite.mjs')}</string>`)
+    expect(plist).toContain(`<key>WorkingDirectory</key>\n  <string>${real}</string>`)
+    expect(plist).not.toContain(ROOT)
   })
 })

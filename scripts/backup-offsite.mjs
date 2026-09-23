@@ -22,14 +22,26 @@
 //      never reaches iCloud;
 //   3. deletes copies older than 60 days, by the date in their names;
 //   4. appends one line to ~/Library/Logs/drafter-backup-offsite.log, and exits
-//      non-zero when anything failed — including finding no backups at all.
+//      non-zero when anything failed — including finding no backups at all;
+//   5. says so on screen, as a macOS notification, when anything failed, and
+//      once a week while the newest copy here is more than 3 days old: a night
+//      that "works" but copies nothing (no new snapshot, or only plain ones)
+//      fails nobody's log, and only the age of the newest copy shows it.
+//
+// The LaunchAgent does not run this file where it is: the installer pins a
+// copy of the few files it needs (PINNED_FILES, and the checkout's link to the
+// Supabase project) under ~/Library/Application Support/Drafter/offsite and
+// runs that (`--pin`). Switching branches, a half-finished edit or moving the
+// checkout no longer changes, or stops, what runs at night; installing again
+// refreshes the copy.
 //
 // It never decrypts anything, and never writes to Supabase.
 
 import { execFile } from 'node:child_process'
-import { appendFile, chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { appendFile, chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, platform, tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isEnvelope } from '../netlify/functions/lib/backupcrypto.mjs'
 
@@ -50,14 +62,28 @@ const SNAPSHOT = /^(\d{4}-\d{2}-\d{2})\.json$/
 /** A copy, or iCloud's stand-in for one it moved off this Mac to save space. */
 const COPY = /^(?:(\d{4}-\d{2}-\d{2})\.json|\.(\d{4}-\d{2}-\d{2})\.json\.icloud)$/
 
+/** A copy older than this many days is a warning: the nightly backup, or this, has stopped reaching iCloud. */
+export const STALE_DAYS = 3
+/** While the copies stay stale, the warning comes back this often, not every night. */
+export const WARN_EVERY_DAYS = 7
+/** What the pinned copy holds, by its path in the checkout: this script and what it imports, and the file the CLI knows a project folder by. */
+export const PINNED_FILES = ['scripts/backup-offsite.mjs', 'netlify/functions/lib/backupcrypto.mjs', 'supabase/config.toml']
+/** Where `supabase link` keeps the checkout's link to the project; the CLI reads it from the folder it runs in. */
+const LINK_DIR = join('supabase', '.temp')
+
 /** Where everything goes by default, under `home`. */
 export function defaultPaths(home = homedir()) {
   const cloud = join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs')
+  const support = join(home, 'Library', 'Application Support', 'Drafter')
   return {
     /** iCloud Drive itself: present only when it is turned on. */
     cloud,
     dest: join(cloud, 'Drafter Backups'),
     log: join(home, 'Library', 'Logs', 'drafter-backup-offsite.log'),
+    /** The copy of this script the LaunchAgent runs (pinCopy). */
+    pinned: join(support, 'offsite'),
+    /** When the last "the newest copy is old" warning was shown. Beside the pinned copy, so installing again keeps it. */
+    state: join(support, 'offsite-state.json'),
   }
 }
 
@@ -194,6 +220,102 @@ export async function copyOffsite({ cli, dest, cloud = dirname(dest), tmp = tmpd
   return result
 }
 
+/** The date of the newest copy among an account folder's names, or null. iCloud's stand-in counts: the copy exists. */
+export function newestCopyDay(names) {
+  let newest = null
+  for (const name of names) {
+    const m = COPY.exec(name)
+    const day = m && (m[1] ?? m[2])
+    if (day && (!newest || day > newest)) newest = day
+  }
+  return newest
+}
+
+/** The newest copy in any account's folder under `dest`, or null when there is none (or no folder). */
+export async function newestCopyIn(dest) {
+  let newest = null
+  for (const account of (await readdir(dest).catch(() => [])).filter(n => ACCOUNT.test(n))) {
+    const day = newestCopyDay(await readdir(join(dest, account)).catch(() => []))
+    if (day && (!newest || day > newest)) newest = day
+  }
+  return newest
+}
+
+/**
+ * Whether to warn that the copies here have gone stale: the newest is more
+ * than STALE_DAYS old (or there is none), and no warning has been shown in
+ * the last WARN_EVERY_DAYS. `ageDays` is null when there is no copy at all.
+ */
+export function staleCheck({ newest, now, lastWarnedAt = null }) {
+  const today = new Date(now).toISOString().slice(0, 10)
+  const ageDays = newest ? Math.round((Date.parse(today) - Date.parse(newest)) / DAY) : null
+  const stale = ageDays === null || ageDays > STALE_DAYS
+  const since = lastWarnedAt ? new Date(now).getTime() - new Date(lastWarnedAt).getTime() : Infinity
+  return { stale, ageDays, warn: stale && !(since < WARN_EVERY_DAYS * DAY) }
+}
+
+/** What the warning says, in the notification and the log. */
+export function staleMessage(newest, ageDays) {
+  return newest ? `The newest off-site copy is ${ageDays} days old (${newest}).` : 'There is no off-site copy in iCloud Drive yet.'
+}
+
+/**
+ * osascript's arguments for a notification. The words go in as arguments to
+ * the script, never into its text, so nothing in a message (a quote, a
+ * backslash) can change what the script does.
+ */
+export function notificationArgs(title, message) {
+  const tidy = (text, max) => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)', '-e', 'end run', tidy(title, 80), tidy(message, 240)]
+}
+
+/**
+ * The real notifier: macOS's own, through osascript. It never throws — a
+ * notification that cannot be shown must not fail the night — and does
+ * nothing anywhere but a Mac.
+ */
+export function macNotifier({ bin = '/usr/bin/osascript', run = execFile, os = platform() } = {}) {
+  return (title, message) =>
+    new Promise(resolve => {
+      if (os !== 'darwin') return resolve(false)
+      run(bin, notificationArgs(title, message), { timeout: 15_000 }, err => resolve(!err))
+    })
+}
+
+/**
+ * Copy what the LaunchAgent runs into `to`, from the checkout at `from`:
+ * PINNED_FILES, keeping their paths so the script's imports resolve, and the
+ * checkout's link to the Supabase project, so the CLI run there finds the same
+ * project. Built beside `to` and moved into place, so a run never finds half a
+ * copy. Resolves what was copied and whether the link was among it.
+ */
+export async function pinCopy({ from = ROOT, to }) {
+  await mkdir(dirname(to), { recursive: true })
+  const next = await mkdtemp(join(dirname(to), `.${basename(to)}-`))
+  try {
+    const files = []
+    for (const rel of PINNED_FILES) {
+      await mkdir(dirname(join(next, rel)), { recursive: true })
+      await copyFile(join(from, rel), join(next, rel))
+      files.push(rel)
+    }
+    let linked = false
+    for (const name of await readdir(join(from, LINK_DIR)).catch(() => [])) {
+      if (!(await stat(join(from, LINK_DIR, name))).isFile()) continue
+      await mkdir(join(next, LINK_DIR), { recursive: true })
+      await copyFile(join(from, LINK_DIR, name), join(next, LINK_DIR, name))
+      files.push(join(LINK_DIR, name))
+      if (name === 'project-ref') linked = true
+    }
+    await rm(to, { recursive: true, force: true })
+    await rename(next, to)
+    return { files, linked }
+  } catch (e) {
+    await rm(next, { recursive: true, force: true })
+    throw e
+  }
+}
+
 /** The one line a run leaves in the log. */
 export function logLine(now, result, error) {
   const at = new Date(now).toISOString()
@@ -257,7 +379,8 @@ ${args.map(a => `    <string>${xml(a)}</string>`).join('\n')}
 }
 
 const USAGE = `usage: node scripts/backup-offsite.mjs [--supabase <cli>] [--dest <folder>] [--log <file>] [--keep-days <n>]
-       node scripts/backup-offsite.mjs --launch-agent --node <node> --supabase <cli>   (print the LaunchAgent)`
+       node scripts/backup-offsite.mjs --launch-agent --node <node> --supabase <cli>   (print the LaunchAgent)
+       node scripts/backup-offsite.mjs --pin <folder>                                  (copy what the LaunchAgent runs there)`
 
 function parseArgs(argv) {
   const out = {}
@@ -274,6 +397,7 @@ function parseArgs(argv) {
     else if (flag === '--dest') out.dest = value()
     else if (flag === '--log') out.log = value()
     else if (flag === '--keep-days') out.keepDays = Number(value())
+    else if (flag === '--pin') out.pin = value()
     else if (flag === '--help' || flag === '-h') out.help = true
     else throw new Error(`unknown argument ${flag}`)
   }
@@ -281,12 +405,28 @@ function parseArgs(argv) {
   return out
 }
 
+/** When the last stale warning was shown, from the state file; null when never, or unreadable. */
+async function readState(file) {
+  try {
+    const state = JSON.parse(await readFile(file, 'utf8'))
+    return typeof state?.staleWarnedAt === 'string' ? state : { staleWarnedAt: null }
+  } catch {
+    return { staleWarnedAt: null }
+  }
+}
+
+async function writeState(file, state) {
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(file, `${JSON.stringify(state)}\n`)
+}
+
 /**
  * The command line. Everything it touches can be handed in — the home folder,
- * the CLI, the clock, a temporary folder — so a test runs it whole against a
- * fake. Resolves the exit code.
+ * the CLI, the clock, a temporary folder, the notifier — so a test runs it
+ * whole against a fake. No notifier, no notification: only the LaunchAgent's
+ * own run (the bottom of this file) hands in the real one. Resolves the exit code.
  */
-export async function main(argv = process.argv.slice(2), { home = homedir(), cli = null, now = new Date(), tmp = tmpdir(), out = console } = {}) {
+export async function main(argv = process.argv.slice(2), { home = homedir(), cli = null, now = new Date(), tmp = tmpdir(), out = console, notify = null } = {}) {
   let args
   try {
     args = parseArgs(argv)
@@ -297,6 +437,17 @@ export async function main(argv = process.argv.slice(2), { home = homedir(), cli
   if (args.help) {
     out.log(USAGE)
     return 0
+  }
+  if (args.pin) {
+    try {
+      const { files, linked } = await pinCopy({ to: args.pin })
+      out.log(`Pinned ${files.length} files into ${args.pin}:\n  ${files.join('\n  ')}`)
+      if (!linked) out.log(`Warning: ${join(ROOT, LINK_DIR, 'project-ref')} is missing: run 'supabase link' in ${ROOT}, then install again, or every night will fail.`)
+      return 0
+    } catch (e) {
+      out.error(`backup-offsite: could not pin a copy into ${args.pin}: ${e?.message ?? e}`)
+      return 1
+    }
   }
   if (args.launchAgent) {
     if (!args.node || !args.supabase) {
@@ -309,32 +460,66 @@ export async function main(argv = process.argv.slice(2), { home = homedir(), cli
 
   const paths = defaultPaths(home)
   const log = args.log ?? paths.log
-  let line
+  const dest = args.dest ?? paths.dest
+  const lines = []
   let code
+  let result = null
+  let failure = null
   try {
-    const result = await copyOffsite({
+    result = await copyOffsite({
       cli: cli ?? supabaseCli({ bin: args.supabase ?? 'supabase' }),
-      dest: args.dest ?? paths.dest,
+      dest,
       cloud: args.dest ? dirname(args.dest) : paths.cloud,
       tmp,
       now,
       keepDays: args.keepDays ?? KEEP_DAYS,
     })
-    line = logLine(now, result)
+    lines.push(logLine(now, result))
     code = result.failures.length ? 1 : 0
+    if (code) failure = `${result.failures.length} of ${result.accounts} account(s) failed: ${result.failures[0]}`
   } catch (e) {
-    line = logLine(now, null, e?.message ?? e)
+    lines.push(logLine(now, null, e?.message ?? e))
+    failure = String(e?.message ?? e)
     code = 1
   }
-  out.log(line)
+
+  // A night that ran — whatever it copied — looks at the newest copy here. One
+  // that could not run at all is its own notification.
+  let staleWarning = null
+  if (result) {
+    const state = await readState(paths.state)
+    const newest = await newestCopyIn(dest)
+    const check = staleCheck({ newest, now, lastWarnedAt: state.staleWarnedAt })
+    if (check.warn) {
+      staleWarning = staleMessage(newest, check.ageDays)
+      lines.push(`${new Date(now).toISOString()} STALE: ${staleWarning}`)
+    }
+    const staleWarnedAt = check.warn ? new Date(now).toISOString() : check.stale ? state.staleWarnedAt : null
+    if (staleWarnedAt !== state.staleWarnedAt) await writeState(paths.state, { staleWarnedAt }).catch(e => out.error(`backup-offsite: could not write ${paths.state}: ${e?.message ?? e}`))
+  }
+
+  for (const line of lines) out.log(line)
   try {
     await mkdir(dirname(log), { recursive: true })
-    await appendFile(log, `${line}\n`)
+    await appendFile(log, lines.map(line => `${line}\n`).join(''))
   } catch (e) {
     out.error(`backup-offsite: could not write the log ${log}: ${e?.message ?? e}`)
     code = 1
   }
+  if (notify) {
+    if (failure) await notify('Drafter off-site backup failed', `${failure} — see ~/Library/Logs/drafter-backup-offsite.log`)
+    if (staleWarning) await notify('Drafter off-site backup is behind', `${staleWarning} See ~/Library/Logs/drafter-backup-offsite.log.`)
+  }
   return code
 }
 
-if (process.argv[1] === SCRIPT) process.exitCode = await main()
+/** Run as a command rather than imported: by the path given or one that resolves to it (macOS's /var is /private/var). */
+function runAsCommand() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === SCRIPT
+  } catch {
+    return false
+  }
+}
+
+if (runAsCommand()) process.exitCode = await main(process.argv.slice(2), { notify: macNotifier() })
