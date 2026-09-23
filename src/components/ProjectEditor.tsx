@@ -385,7 +385,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <div className="field">
           <span>
-            Milestones <small>(show as ◆ on the roadmap)</small>
+            Milestones <small>(show on the calendar)</small>
           </span>
           <ul className="checklist">
             {milestones.map(m => (

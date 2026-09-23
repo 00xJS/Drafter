@@ -42,8 +42,9 @@ describe('weekPolishInput and the member', () => {
     const theirs: Task = { ...tasks[0], id: 'id-peer-lunch', completedAt: '2026-09-14T12:00:00.000Z', ownerId: 'u-peer' }
     const mine = weekPolishInput(plan, { recipes, people, meals, tasks: [...tasks, theirs], now, myId: 'u-me' })
     const anyone = weekPolishInput(plan, { recipes, people, meals, tasks: [...tasks, theirs], now })
-    expect(mine.people.find(p => p.id === 'id-mum')?.daysSince).toBe(45)
-    expect(anyone.people.find(p => p.id === 'id-mum')?.daysSince).toBe(1)
+    // calendar days (1 Aug → 16 Sep, 14 Sep → 16 Sep), whatever the hour
+    expect(mine.people.find(p => p.id === 'id-mum')?.daysSince).toBe(46)
+    expect(anyone.people.find(p => p.id === 'id-mum')?.daysSince).toBe(2)
   })
 })
 
@@ -55,7 +56,7 @@ describe('weekPolishInput', () => {
     ])
     expect(input.nights[0].candidates[0]).toEqual({ ref: 'R1', id: 'id-r1', name: 'Lasagne', tags: ['pasta'], cooked: 3 })
     expect(input.people).toEqual([
-      { ref: 'P1', id: 'id-mum', name: 'Mum', daysSince: 45 },
+      { ref: 'P1', id: 'id-mum', name: 'Mum', daysSince: 46 },
       { ref: 'P2', id: 'id-dad', name: 'Dad', daysSince: null },
     ])
     expect(input.overdue).toEqual(['Fix the fence'])
@@ -119,6 +120,6 @@ describe('polishWeekPlan', () => {
     expect(prompts[0]).not.toContain('id-')
     expect(prompts[0]).not.toMatch(/Allergic|Grandma/)
     expect(prompts[0]).toContain('R1 Lasagne [pasta] ×3')
-    expect(prompts[0]).toContain('P1 Mum: last seen 45 days ago')
+    expect(prompts[0]).toContain('P1 Mum: last seen 46 days ago')
   })
 })

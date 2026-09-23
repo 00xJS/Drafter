@@ -185,3 +185,25 @@ describe('buildReview counts days seen per person', () => {
     expect(data.seen).toEqual({ days: 1, events: 2 })
   })
 })
+
+describe('days since a visit are calendar days', () => {
+  // visits are dated at noon; counting 24-hour blocks read a visit logged for
+  // today as "-1 days ago" in the morning, and yesterday's as "Seen today"
+  const at = (d: number, h: number) => new Date(2026, 8, d, h, 0)
+
+  it('reads a visit logged for today as today at any hour, never as -1 days', () => {
+    const today = [event(local(9, 12))]
+    for (const h of [0, 6, 9, 11, 13, 23]) {
+      const s = sharedSeenStatus(person('mum'), today, at(12, h))
+      expect(s.daysSince, `${h}:00`).toBe(0)
+      expect(s.reason).not.toMatch(/-1/)
+    }
+  })
+
+  it("reads yesterday's visit as one day ago from midnight on, not only after noon", () => {
+    const yesterday = [event(local(9, 11))]
+    for (const h of [0, 6, 11, 13, 23]) expect(sharedSeenStatus(person('mum'), yesterday, at(12, h)).daysSince, `${h}:00`).toBe(1)
+    // and a visit in the evening, from a calendar event, is still that day's
+    expect(sharedSeenStatus(person('mum'), [event(local(9, 11, 19))], at(12, 6)).daysSince).toBe(1)
+  })
+})

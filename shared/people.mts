@@ -2,6 +2,7 @@
 // Dependency-free ESM.
 
 import type { CalendarEntry, Person, Task } from '../src/types.ts'
+import { localDayKey } from './journal.mts'
 import { daysWithin, distinctDays } from './stats.mts'
 import { doneWithTime, openVisitPlan, taskIndex } from './visitindex.mts'
 
@@ -200,6 +201,17 @@ export type SeenStatus = 'never' | 'overdue' | 'due' | 'ok' | 'off'
  * is 'off' whatever their visits say: never due, never overdue, never a
  * cold-start nudge, and with no rhythm to measure against.
  */
+/**
+ * Whole calendar days from one moment to another, in this runtime's zone.
+ * Visits are dated at noon, so counting 24-hour blocks said "-1 days ago" for
+ * a visit logged for today when it was still morning, and "Seen today" for
+ * yesterday's before noon; a calendar never does either.
+ */
+function calendarDaysBetween(fromMs: number, toMs: number): number {
+  const utc = (key: string) => Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, +key.slice(8, 10))
+  return Math.round((utc(localDayKey(toMs)) - utc(localDayKey(fromMs))) / DAY_MS)
+}
+
 export function seenStatus(
   person: Person,
   tasks: readonly Task[],
@@ -216,7 +228,8 @@ export function seenStatus(
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)
   const visits = visitsFor(person.id, tasks)
   const lastSeen = visits[0]?.at
-  const daysSince = lastSeen ? Math.floor((nowMs - Date.parse(lastSeen)) / DAY_MS) : undefined
+  // never below 0: a visit dated later today reads as today, not "-1 days ago"
+  const daysSince = lastSeen ? Math.max(0, calendarDaysBetween(Date.parse(lastSeen), nowMs)) : undefined
   const off = remindersOff(person)
   const cadence = off ? undefined : person.cadenceDays
   const effective = cadence ?? DEFAULT_CADENCE_DAYS
