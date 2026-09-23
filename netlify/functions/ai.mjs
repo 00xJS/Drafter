@@ -18,6 +18,8 @@ const MAX_TOKENS = 4096
 const perUser = slidingWindow({ limit: 30, windowMs: 10 * 60_000 })
 
 const handler = async req => {
+  // the AI budget counts from here: checking the session spends some of it
+  const startedAt = Date.now()
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const { user, response } = await requireUser(req)
@@ -54,7 +56,7 @@ const handler = async req => {
 
   let result
   try {
-    result = await complete({ system, prompt, maxTokens, json })
+    result = await complete({ system, prompt, maxTokens, json, startedAt })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return Response.json({ error: `AI request failed: ${message}` }, { status: 502 })
