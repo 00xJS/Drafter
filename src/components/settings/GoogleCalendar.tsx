@@ -7,8 +7,17 @@ import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
 /** Calendars → Google Calendar: connect, tick calendars to show, and mirror tasks into a Drafter calendar there. */
-export function GoogleCalendar({ store, calendars, googlePush, household }: SettingsCtx) {
-  const [google, setGoogle] = useState<GoogleStatus | null>(null)
+export function GoogleCalendar({
+  store,
+  calendars,
+  googlePush,
+  household,
+  initialStatus = null,
+}: SettingsCtx & {
+  /** Tests and previews: start from this status instead of asking the server. */
+  initialStatus?: GoogleStatus | null
+}) {
+  const [google, setGoogle] = useState<GoogleStatus | null>(initialStatus)
   const [googleCals, setGoogleCals] = useState<GoogleCalendarInfo[] | null>(null)
   // the app may be finishing a Google sign-in as Settings reopens on its return
   const { busy: googleBusy, error: googleError, setBusy: setGoogleBusy, setError: setGoogleError } = useAsyncAction(() => oauthCompleting() === 'google')
@@ -26,7 +35,7 @@ export function GoogleCalendar({ store, calendars, googlePush, household }: Sett
         .catch(e => setGoogleError((e as Error).message))
     // A sign-in the app is finishing right now reports below; asking for its
     // status before it lands would offer "Connect" all over again.
-    if (oauthCompleting() !== 'google') void loadGoogle()
+    if (oauthCompleting() !== 'google' && !initialStatus) void loadGoogle()
     // The iOS app finishes a calendar sign-in itself when Safari hands it back
     // (connectCalendarAccount), and the planner reopens Settings as it does:
     // the result, or the reason it failed, is heard here.
@@ -36,7 +45,7 @@ export function GoogleCalendar({ store, calendars, googlePush, household }: Sett
       if (r.ok) void loadGoogle()
       else setGoogleError(r.error ?? 'Google Calendar could not be connected.')
     })
-  }, [setGoogleBusy, setGoogleError])
+  }, [setGoogleBusy, setGoogleError, initialStatus])
 
   const connectGoogle = async () => {
     setGoogleBusy(true)
@@ -164,12 +173,21 @@ export function GoogleCalendar({ store, calendars, googlePush, household }: Sett
           </p>
         </>
       ) : google?.configured ? (
-        <p className="sync-line">
-          <button className="btn primary" disabled={googleBusy} onClick={connectGoogle}>
-            {googleBusy ? 'Opening Google…' : 'Connect Google Calendar'}
-          </button>
-          <small>Read your calendars and mirror tasks. Tokens stay server-side, per account.</small>
-        </p>
+        <>
+          <p className="sync-line">
+            <button className="btn primary" disabled={googleBusy} onClick={connectGoogle}>
+              {googleBusy ? 'Opening Google…' : 'Connect Google Calendar'}
+            </button>
+            <small>Read your calendars and mirror tasks. Tokens stay server-side, per account.</small>
+          </p>
+          {/* A sign-in that failed — here, or on its way back from Google in
+              the app — used to say nothing at all while not yet connected. */}
+          {googleError && (
+            <p className="warn" role="alert">
+              {googleError}
+            </p>
+          )}
+        </>
       ) : google ? (
         <p className="field-hint">Calendar sync isn’t available yet.</p>
       ) : (

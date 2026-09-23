@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { TaskStatus } from '../../types'
 import type { Store } from '../../store'
+import { onOAuthSettled, type OAuthSettled } from '../../calendars'
 import { newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
@@ -36,6 +37,15 @@ interface Deps {
   openWardrobe: Nav['openWardrobe']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
+}
+
+/** What a calendar sign-in the app finished itself came to, in the toast's words. */
+export function oauthSettledMessage(r: OAuthSettled): string {
+  const who = r.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+  if (r.ok) return `${who} connected — pick the calendars to show in Settings.`
+  const why = (r.error ?? '').trim()
+  if (!why) return `${who} could not be connected.`
+  return why.startsWith(who) ? why : `${who} could not be connected: ${why}`
 }
 
 /**
@@ -86,12 +96,19 @@ export function useDeepLinks({
     const parsed = parseLink(params, { host, allowAct })
     if (parsed.oauth) {
       void closeExternal()
-      const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
-      showToast(
-        parsed.oauth.ok
-          ? `${who} connected — pick the calendars to show in Settings.`
-          : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
-      )
+      // On the web the callback has finished the sign-in before this page
+      // loads, so its answer is the outcome. In the app, drafter://oauth only
+      // hands back a code, which finishOAuthReturn still has to exchange: it
+      // said "connected" before that had happened, and a failed exchange was
+      // never mentioned. The app's toast waits for the outcome (see below).
+      if (host !== 'oauth') {
+        const who = parsed.oauth.provider === 'microsoft' ? 'Outlook' : 'Google Calendar'
+        showToast(
+          parsed.oauth.ok
+            ? `${who} connected — pick the calendars to show in Settings.`
+            : `${who} could not be connected (${parsed.oauth.reason ?? 'unknown error'}).`,
+        )
+      }
       setSettingsNonce(n => n + 1)
       setPushed('settings')
       return
@@ -290,10 +307,16 @@ export function useDeepLinks({
   const applyLinkRef = useRef(applyLink)
   // the deferred "Add" on a web ?journal= link must append to the entry as it is when pressed
   const journalRef = useRef(store.journal)
+  const toastRef = useRef(showToast)
   useLayoutEffect(() => {
     applyLinkRef.current = applyLink
     journalRef.current = store.journal
+    toastRef.current = showToast
   })
+  // A calendar sign-in the app finished itself — the code exchanged for this
+  // account, or the reason it was not — is said once it has happened. Only the
+  // app settles one; the web's callback finishes its own.
+  useEffect(() => onOAuthSettled(r => toastRef.current(oauthSettledMessage(r))), [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
