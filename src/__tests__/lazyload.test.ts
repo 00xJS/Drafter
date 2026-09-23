@@ -144,6 +144,11 @@ const LAZY_ONLY = [
   resolve(SRC, 'finance.ts'),
   // Kitchen → Stats' counting travels with it
   resolve(SRC, 'kitchenstats.ts'),
+  // …and filling recipes in: ✨ Fill in, Fill them in, Import from a link
+  resolve(SRC, 'recipefill.ts'),
+  resolve(SRC, 'recipeimport.ts'),
+  component('kitchen/RecipeCapture'),
+  component('kitchen/RecipeFillFlow'),
   // the wardrobe's screens and its photo pipeline: only Today's card and its
   // thumbnails ride in the Planner chunk. WardrobeStats has a preloadable of
   // its own too (the Stats lens draws it), so it must stay out of the first

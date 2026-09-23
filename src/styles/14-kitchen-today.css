@@ -442,6 +442,7 @@
 }
 .recipe-paste-foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
@@ -1124,5 +1125,156 @@
   }
   .kitchen-grocery-week > .btn.primary {
     flex: 1 0 100%;
+  }
+}
+
+/* ============================================================
+   Kitchen: filling recipes in (level-up 2)
+   ------------------------------------------------------------
+   ✨ Fill in, Paste and Import from a link at the top of the
+   recipe editor; the draft's parts that would have replaced
+   something; the Source link; the quiet line over the recipe
+   and grocery lists while a recipe has nothing to shop for;
+   and the Fill them in sheet, one recipe at a time.
+   ============================================================ */
+.kitchen-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.kitchen-gap p {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.kitchen-gap .btn {
+  flex: none;
+}
+/* under the grocery list's how-it-works line, which sits tight to what is above it */
+.field-hint + .kitchen-gap {
+  margin-top: 12px;
+}
+.recipe-capture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recipe-draft-spare {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--accent-softer);
+}
+.recipe-draft-part {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.recipe-draft-part p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.recipe-draft-part ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.recipe-source {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+/* in cook mode it sits under the history line, as close as that sits to the meta */
+.recipe-cook .recipe-source {
+  margin: -18px 0 12px;
+}
+.recipe-source a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+.recipe-source a:hover {
+  text-decoration: underline;
+}
+.recipe-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recipe-fill-progress {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.recipe-fill-name {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.recipe-fill-steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  line-height: 1.55;
+}
+.recipe-fill-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recipe-fill-failed .warn,
+.recipe-fill-done,
+.recipe-fill-busy {
+  margin: 0;
+}
+.recipe-fill-done {
+  line-height: 1.5;
+}
+@media (max-width: 640px) {
+  .kitchen-gap .btn {
+    flex: 1 1 100%;
+  }
+  /* Fill in on a line of its own, full width; Paste and Import halve the
+     next, with the padding "🔗 Import from a link" needs to stay one line at 375pt */
+  .recipe-capture-row .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding-inline: 8px;
+  }
+  .recipe-capture-row .recipe-fill-btn {
+    flex-basis: 100%;
+  }
+  /* Stop, Skip, Edit and Save share the line in quarters rather than letting
+     a spacer push Save onto a second row at 375pt */
+  .recipe-fill-foot {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .recipe-fill-foot .spacer {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .recipe-source a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    min-height: 44px;
   }
 }

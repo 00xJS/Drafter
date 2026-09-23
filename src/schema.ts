@@ -79,6 +79,7 @@ import { SYNC_KINDS } from '../shared/kinds.mjs'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
 import { isDayKey } from '../shared/weeks.mjs'
 import { tidyCoords } from './geo'
+import { safeHttpUrl } from './links'
 import { sanitizeHtml } from './richtext'
 
 // Hand-rolled validation instead of a schema library: JSON backups and pre-v3
@@ -514,6 +515,24 @@ function sanitizeIngredients(raw: unknown): RecipeIngredient[] {
   return out
 }
 
+/**
+ * Where a recipe came from: a web page, so http or https and nothing else —
+ * the Source link opens it, and a javascript: or data: link must never be
+ * one — with no password in it, and of a sane length.
+ */
+export function recipeSourceUrl(v: unknown): string | undefined {
+  const s = str(v)?.trim()
+  if (!s || s.length > 2048) return undefined
+  const url = safeHttpUrl(s)
+  if (!url) return undefined
+  try {
+    const u = new URL(url)
+    return u.username || u.password ? undefined : url
+  } catch {
+    return undefined
+  }
+}
+
 export function sanitizeRecipe(raw: unknown): Recipe | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
@@ -533,6 +552,7 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
     steps: strList(r.steps).length ? strList(r.steps) : undefined,
     tags: strList(r.tags),
     notes: str(r.notes)?.trim() || undefined,
+    sourceUrl: recipeSourceUrl(r.sourceUrl),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,

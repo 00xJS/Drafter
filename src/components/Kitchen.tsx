@@ -49,12 +49,22 @@ import {
   serialiseCookSteps,
   visibleGroceryLines,
   dishMark,
+  bareRecipesLine,
+  fillQueue,
+  groceryGapLine,
+  groceryGaps,
 } from '../kitchen'
 import type { CookedIndex, VisitIndex } from '../kitchen'
-import { RECIPE_TEXT_HINT, readRecipe } from '../ai'
+import type { ReadRecipe } from '../ai'
+import { safeHttpUrl } from '../links'
+import { fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft } from '../recipefill'
+import type { DraftIngredient, DraftSplit, FillRun, RecipeDraft } from '../recipefill'
 import { useDayKey } from '../useDayKey'
-import { haptic } from '../native'
+import { haptic, openExternal } from '../native'
 import { ConfirmButton } from './ConfirmButton'
+import { RecipeCapture, draftNote, linkHost } from './kitchen/RecipeCapture'
+import type { CaptureMode } from './kitchen/RecipeCapture'
+import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
@@ -212,9 +222,19 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   // until you move off the week or the segment
   const [focusDay, setFocusDay] = useState<string | null>(openDay ?? null)
   // the recipe form, and where Save and Cancel go back to: the list, cook mode
-  // on the recipe, or the side open over its main. Cook mode stays set while
-  // its recipe is edited, so it comes back with its meal's sides and its ticks.
-  const [editing, setEditing] = useState<{ recipe: Recipe | 'new'; from: 'list' | 'cook' | 'side'; paste?: boolean } | null>(null)
+  // on the recipe, the side open over its main, or the Fill them in sheet.
+  // Cook mode stays set while its recipe is edited, so it comes back with its
+  // meal's sides and its ticks; the sheet's run does the same with its drafts.
+  const [editing, setEditing] = useState<{
+    recipe: Recipe | 'new'
+    from: 'list' | 'cook' | 'side' | 'fill'
+    /** Open on Paste or on Import from a link. */
+    capture?: CaptureMode
+    /** A draft from the Fill them in sheet, filled in and not yet saved. */
+    draft?: RecipeDraft
+  } | null>(null)
+  // "Fill them in": the recipes with no ingredients, drafted one at a time
+  const [fillRun, setFillRun] = useState<FillRun | null>(null)
   // cook mode: the recipe, and the meal it was opened from, whose sides it offers
   const [cooking, setCooking] = useState<{ recipe: Recipe; mealId?: string } | null>(null)
   // a side opened from cook mode: drawn over the main, which stays open underneath with its ticks
@@ -250,6 +270,8 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   // and when each place was last gone to, beside it under Eat out
   const visited = useMemo(() => visitIndex(places, tasks ?? [], meals), [places, tasks, meals])
   const latelyCount = useMemo(() => notLately(recipes, cooked).length, [recipes, cooked])
+  // recipes with nothing to shop for, the ones worth filling in first at the front
+  const bare = useMemo(() => fillQueue(recipes, cooked), [recipes, cooked])
   const includeChips = useMemo(() => recipeIncludeChips(recipes), [recipes])
   const activeInclude = include && includeChips.some(c => c.label === include) ? include : null
 
@@ -295,6 +317,23 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   // the latest props, for an Undo pressed after this render's closures went stale
   const latest = useRef({ meals, recipes, groceries, onClearMeal, onSave })
   latest.current = { meals, recipes, groceries, onClearMeal, onSave }
+
+  /** Fill them in, over these recipes in this order. */
+  const startFill = (list: readonly Recipe[]) => {
+    if (list.length) setFillRun(newFillRun(list.map(r => r.id)))
+  }
+  /** The sheet let go of, with a word in the toast when something was saved. */
+  const endFill = () => {
+    const saved = fillRun?.saved ?? 0
+    setFillRun(null)
+    if (saved && onToast) onToast(`Filled in ${saved} recipe${saved === 1 ? '' : 's'}`)
+  }
+  /** A draft saved as it stands: the recipe's empty parts filled, and the grocery weeks that plan it rebuilt. */
+  const saveFill = (recipe: Recipe, draft: RecipeDraft) => {
+    const now = recipes.find(r => r.id === recipe.id) ?? recipe
+    persistRecipe(recipeWithDraft(now, draft))
+    setFillRun(run => run && fillRunDone(run, recipe.id, 'saved'))
+  }
 
   /**
    * "Plan this week's meals", accepted: each meal through onSaveMeal (the
@@ -401,7 +440,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
               <p className="chart-sub">Tap a dish to cook it.</p>
             </div>
             <div className="kitchen-recipe-compose">
-              <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', paste: true })}>
+              <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', capture: 'paste' })}>
                 Paste a recipe
               </button>
               <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
@@ -409,6 +448,16 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
               </button>
             </div>
           </div>
+          {/* Quiet, and only while it is true: a recipe with no ingredients
+              puts nothing on the grocery list, and nothing else says so */}
+          {bare.length > 0 && !q.trim() && (
+            <div className="kitchen-gap" role="status">
+              <p>{bareRecipesLine(bare.length)}</p>
+              <button type="button" className="btn" onClick={() => startFill(bare)}>
+                {bare.length === 1 ? 'Fill it in' : 'Fill them in'}
+              </button>
+            </div>
+          )}
           {recipes.length > 0 && (
             <div className="kitchen-recipe-tools">
               <input className="filter-q kitchen-recipe-q" value={q} onChange={e => setQ(e.target.value)} placeholder="Search recipes" aria-label="Search recipes" />
@@ -463,9 +512,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
               <p className="empty">Everything here was cooked in the last month or is on the plan.</p>
             ) : (
               <div className="kitchen-empty">
-                <p>Save a dish you cook at home — type it, or paste one you already have.</p>
+                <p>Save a dish you cook at home — type it, paste one you already have, or import one from a link.</p>
                 <div className="kitchen-empty-actions">
-                  <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', paste: true })}>
+                  <button className="btn" onClick={() => setEditing({ recipe: 'new', from: 'list', capture: 'paste' })}>
                     Paste a recipe
                   </button>
                   <button className="btn primary" onClick={() => setEditing({ recipe: 'new', from: 'list' })}>
@@ -573,6 +622,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
           grocery={grocery}
           onShift={d => setAnchor(a => shiftRange(weekRange(a), d).start)}
           onSave={onSave}
+          onFill={startFill}
         />
       )}
 
@@ -619,15 +669,33 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
         />
       )}
 
+      {/* Out of the way while Edit has one of its recipes in the editor: the
+          run keeps the drafts, so Cancel comes back to the same one */}
+      {fillRun && editing?.from !== 'fill' && (
+        <RecipeFillFlow
+          run={fillRun}
+          recipes={recipes}
+          onDraft={(id, draft) => setFillRun(run => run && fillRunWithDraft(run, id, draft))}
+          onSave={saveFill}
+          onEdit={(recipe, draft) => setEditing({ recipe, from: 'fill', draft })}
+          onSkip={recipe => setFillRun(run => run && fillRunDone(run, recipe.id, 'skipped'))}
+          onStop={endFill}
+        />
+      )}
+
       {editing && (
         <RecipeForm
+          // a fresh form for each recipe: its fields are seeded once, from the recipe it opened on
+          key={editing.recipe === 'new' ? 'new' : editing.recipe.id}
           recipe={editing.recipe === 'new' ? undefined : editing.recipe}
-          pasteFirst={!!editing.paste}
+          capture={editing.capture}
+          draft={editing.draft}
           onSave={r => {
             persistRecipe(r)
             setEditing(null)
             // back where Edit was pressed, showing what was saved
-            if (editing.from === 'side') setCookingSide(r)
+            if (editing.from === 'fill') setFillRun(run => run && fillRunDone(run, r.id, 'saved'))
+            else if (editing.from === 'side') setCookingSide(r)
             else if (editing.from === 'cook') setCooking(c => (c ? { ...c, recipe: r } : { recipe: r }))
             else cook(r)
           }}
@@ -636,6 +704,10 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
               ? id => {
                   onDelete(id)
                   setEditing(null)
+                  if (editing.from === 'fill') {
+                    setFillRun(run => run && fillRunDone(run, id, 'gone'))
+                    return
+                  }
                   // a deleted side goes back to its main; anything else leaves cook mode
                   setCookingSide(null)
                   if (editing.from !== 'side') setCooking(null)
@@ -850,6 +922,7 @@ function GroceryPane({
   myId,
   onShift,
   onSave,
+  onFill,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
   meals: Meal[]
@@ -866,8 +939,12 @@ function GroceryPane({
   myId?: string | null
   onShift(delta: number): void
   onSave(g: GroceryList): void
+  /** Fill in these recipes (the week's with no ingredients), one at a time. */
+  onFill?(recipes: Recipe[]): void
 }) {
   const [filter, setFilter] = useState<GroceryState | 'all'>('need')
+  // this week's meals whose recipes have nothing to shop for: the reason a list is short or empty
+  const gaps = useMemo(() => groceryGaps(meals, recipes), [meals, recipes])
   const [manual, setManual] = useState('')
   // ids ticked since the pane opened. They stay on screen under their old
   // filter so nothing reflows under a thumb mid-aisle and a mis-tap is undone
@@ -987,12 +1064,25 @@ function GroceryPane({
         Pulls ingredients from recipes planned this week and merges duplicates (two onion recipes become one line). Tick Have if
         it’s already in the house, Need if you’re buying, Got it once it’s in the cart.
       </p>
+      {gaps.meals.length > 0 && (
+        <div className="kitchen-gap" role="status">
+          <p>{groceryGapLine(gaps)}</p>
+          {onFill && (
+            <button type="button" className="btn" onClick={() => onFill(gaps.recipes)}>
+              {gaps.recipes.length === 1 ? 'Fill it in' : 'Fill them in'}
+            </button>
+          )}
+        </div>
+      )}
       {counts.all === 0 && shown.length === 0 ? (
-        <p className="empty">
-          {removed.length
-            ? 'Nothing on the list. The lines you took off it are under Removed, at the bottom.'
-            : 'No ingredients yet. Plan dinners on This week, then tap Build from this week.'}
-        </p>
+        // with planned meals that have no ingredients, the line above is the whole story
+        removed.length || !gaps.meals.length ? (
+          <p className="empty">
+            {removed.length
+              ? 'Nothing on the list. The lines you took off it are under Removed, at the bottom.'
+              : 'No ingredients yet. Plan dinners on This week, then tap Build from this week.'}
+          </p>
+        ) : null
       ) : (
         <>
           <div className="grocery-filter-row">
@@ -1110,6 +1200,32 @@ function GroceryPane({
         </details>
       )}
     </>
+  )
+}
+
+/**
+ * "Source · allrecipes.com ↗": the page a recipe was imported from, opened
+ * outside the app (Safari's sheet on the iPhone, a new tab on the web) so cook
+ * mode and its ticks stay where they are. Nothing unless it is http(s).
+ */
+export function RecipeSource({ url }: { url?: string }) {
+  const href = safeHttpUrl(url)
+  if (!href) return null
+  return (
+    <p className="recipe-source">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={href}
+        onClick={e => {
+          e.preventDefault()
+          void openExternal(href)
+        }}
+      >
+        Source · {linkHost(href) || 'the web'} <span aria-hidden="true">↗</span>
+      </a>
+    </p>
   )
 }
 
@@ -1272,6 +1388,7 @@ export function RecipeCook({
           {recipe.tags.length > 0 && ` · ${recipe.tags.join(', ')}`}
         </p>
         <p className="recipe-cook-history">{cookedSummary(cooked, recipe.id)}</p>
+        <RecipeSource url={recipe.sourceUrl} />
         {sides.length > 0 && (
           <div className="field">
             <span>Sides</span>
@@ -1352,24 +1469,93 @@ export function RecipeCook({
   )
 }
 
+/** Editor rows for ingredients read or drafted elsewhere, each with a row id of its own. */
+function ingredientRows(list: readonly DraftIngredient[]): RecipeIngredient[] {
+  return list.map(i => ({ ...newIngredient(), name: i.name, ...(i.qty !== undefined ? { qty: i.qty } : {}), ...(i.unit ? { unit: i.unit } : {}) }))
+}
+
+/** What each row's quantity box shows for rows that arrive whole. */
+const qtyTexts = (rows: readonly RecipeIngredient[]) => Object.fromEntries(rows.map(r => [r.id, r.qty != null ? String(r.qty) : '']))
+
+/** "2 cup flour" for a list of the draft's ingredients. */
+const ingredientLabel = (i: DraftIngredient) => `${i.qty !== undefined ? `${i.qty}${i.unit ? ' ' + i.unit : ''} ` : ''}${i.name}`
+
+/**
+ * The parts of a draft that would have replaced something the recipe already
+ * had: shown beside it, and used only when the cook says so.
+ */
+function DraftSpare({ spare, onIngredients, onSteps, onDismiss }: { spare: DraftSplit['spare']; onIngredients(): void; onSteps(): void; onDismiss(): void }) {
+  return (
+    <div className="recipe-draft-spare">
+      {spare.ingredients && (
+        <div className="recipe-draft-part">
+          <p>
+            <strong>The draft’s ingredients</strong> · {spare.ingredients.map(ingredientLabel).join(', ')}
+          </p>
+          <button type="button" className="btn" onClick={onIngredients}>
+            Use these instead
+          </button>
+        </div>
+      )}
+      {spare.steps && (
+        <div className="recipe-draft-part">
+          <p>
+            <strong>The draft’s steps</strong>
+          </p>
+          <ol>
+            {spare.steps.map((s, n) => (
+              <li key={n}>{s}</li>
+            ))}
+          </ol>
+          <button type="button" className="btn" onClick={onSteps}>
+            Use these instead
+          </button>
+        </div>
+      )}
+      <button type="button" className="btn subtle" onClick={onDismiss}>
+        Keep mine
+      </button>
+    </div>
+  )
+}
+
 function RecipeForm({
   recipe,
-  pasteFirst,
+  capture,
+  draft,
   onSave,
   onDelete,
   onClose,
 }: {
   recipe?: Recipe
-  /** Open on Paste a recipe — the list's Paste door, not a blank form first. */
-  pasteFirst?: boolean
+  /** Open on Paste or on Import from a link — the list's doors, not a blank form first. */
+  capture?: CaptureMode
+  /** A draft from Fill them in: filled into the empty parts, the rest shown beside them. */
+  draft?: RecipeDraft
   onSave(r: Recipe): void
   onDelete?(id: string): void
   onClose(): void
 }) {
+  // what the form opens with, worked out once: the recipe as saved, and a
+  // handed-over draft where it fills something empty
+  const [start] = useState(() => {
+    const own = recipe?.ingredients ?? []
+    const ownSteps = (recipe?.steps ?? []).join('\n')
+    const has = { ingredients: own.some(i => i.name.trim()), steps: ownSteps.trim() !== '' }
+    const split = draft ? splitDraft(has, draft) : null
+    const rows = split?.fill.ingredients ? ingredientRows(split.fill.ingredients) : own.length ? own : [newIngredient()]
+    return {
+      rows,
+      steps: split?.fill.steps ? split.fill.steps.join('\n') : ownSteps,
+      servings: recipe?.servings != null ? String(recipe.servings) : draft?.servings ? String(draft.servings) : '4',
+      spare: split && (split.spare.ingredients || split.spare.steps) ? split.spare : null,
+      note: draft ? draftNote(has, draft) : '',
+    }
+  })
   const [name, setName] = useState(recipe?.name ?? '')
   const [emoji, setEmoji] = useState(recipe?.emoji ?? '')
-  const [servings, setServings] = useState(recipe?.servings != null ? String(recipe.servings) : '4')
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(recipe?.ingredients.length ? recipe.ingredients : [newIngredient()])
+  const [servings, setServings] = useState(start.servings)
+  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(start.rows)
   /**
    * What is TYPED in each quantity box, which is not the same thing as the
    * number it will become.
@@ -1380,57 +1566,75 @@ function RecipeForm({
    * point; "5" then landed as 5. A half cup was saved as five, and nothing
    * said so — the grocery list just added up ten times the flour.
    */
-  const [qtyText, setQtyText] = useState<Record<string, string>>(() =>
-    Object.fromEntries((recipe?.ingredients ?? []).map(i => [i.id, i.qty != null ? String(i.qty) : ''])),
-  )
-  const [steps, setSteps] = useState((recipe?.steps ?? []).join('\n'))
+  const [qtyText, setQtyText] = useState<Record<string, string>>(() => qtyTexts(start.rows))
+  const [steps, setSteps] = useState(start.steps)
   const [tags, setTags] = useState((recipe?.tags ?? []).join(', '))
   const [notes, setNotes] = useState(recipe?.notes ?? '')
-  const [pasteOpen, setPasteOpen] = useState(Boolean(pasteFirst) && !recipe)
-  const [paste, setPaste] = useState('')
-  const [reading, setReading] = useState(false)
-  const [readErr, setReadErr] = useState('')
-  const [readNote, setReadNote] = useState('')
+  // where it was imported from; the Source link in cook mode
+  const [sourceUrl, setSourceUrl] = useState(recipe?.sourceUrl ?? '')
+  // a draft's parts that would have replaced what is here, waiting for a choice
+  const [spare, setSpare] = useState<DraftSplit['spare'] | null>(start.spare)
+
+  const has = { ingredients: ingredients.some(i => i.name.trim() !== ''), steps: steps.trim() !== '' }
+  // an answer arrives after an await: it lands on what the fields hold then
+  const now = useRef({ has, servings })
+  now.current = { has, servings }
+
+  const setRows = (rows: RecipeIngredient[]) => {
+    setQtyText(t => ({ ...t, ...qtyTexts(rows) }))
+    setIngredients(rows)
+  }
 
   /**
-   * Read a pasted recipe into the fields. It fills them in and stops there —
-   * the cook reads what it found and presses Save, as with every other ✨ in
-   * the app. Anything already typed is kept: a blank row list is replaced, a
-   * started one is added to.
+   * A pasted or imported recipe into the fields. It fills them in and stops
+   * there — the cook reads what it found and presses Save, as with every other
+   * ✨ in the app. Anything already typed is kept: a blank row list is
+   * replaced, a started one is added to.
    */
-  const readPaste = async () => {
-    setReading(true)
-    setReadErr('')
-    setReadNote('')
-    try {
-      const found = await readRecipe(paste)
-      if (!found.ingredients.length && !found.steps.length) {
-        setReadErr('Nothing in there reads like a recipe — check the text and try again.')
-        return
-      }
-      if (found.name && !name.trim()) setName(found.name)
-      if (found.servings) setServings(String(found.servings))
-      if (found.ingredients.length) {
-        const rows = found.ingredients.map(i => ({ ...newIngredient(), ...i }))
-        setQtyText(t => ({ ...t, ...Object.fromEntries(rows.map(r => [r.id, r.qty != null ? String(r.qty) : ''])) }))
-        setIngredients(list => (list.every(i => !i.name.trim()) ? rows : [...list.filter(i => i.name.trim()), ...rows]))
-      }
-      if (found.steps.length) setSteps(s => (s.trim() ? `${s.trim()}\n${found.steps.join('\n')}` : found.steps.join('\n')))
-      const ings = `${found.ingredients.length} ingredient${found.ingredients.length === 1 ? '' : 's'}`
-      const sts = `${found.steps.length} step${found.steps.length === 1 ? '' : 's'}`
-      setReadNote(`${ings} and ${sts}. Check them, then Save.`)
-      setPasteOpen(false)
-      setPaste('')
-    } catch (e) {
-      setReadErr((e as Error).message)
-    } finally {
-      setReading(false)
+  const applyFound = (found: ReadRecipe & { sourceUrl?: string }) => {
+    if (found.name) setName(n => (n.trim() ? n : found.name))
+    if (found.servings) setServings(String(found.servings))
+    if (found.ingredients.length) {
+      const rows = ingredientRows(found.ingredients)
+      setQtyText(t => ({ ...t, ...qtyTexts(rows) }))
+      setIngredients(list => (list.every(i => !i.name.trim()) ? rows : [...list.filter(i => i.name.trim()), ...rows]))
     }
+    if (found.steps.length) setSteps(s => (s.trim() ? `${s.trim()}\n${found.steps.join('\n')}` : found.steps.join('\n')))
+    if (found.sourceUrl) setSourceUrl(found.sourceUrl)
   }
+
+  /** ✨ Fill in's draft: the empty parts filled, the others kept, with the draft's version beside them. */
+  const applyDraft = (d: RecipeDraft) => {
+    const split = splitDraft(now.current.has, d)
+    if (split.fill.ingredients) setRows(ingredientRows(split.fill.ingredients))
+    if (split.fill.steps) setSteps(split.fill.steps.join('\n'))
+    if (!now.current.servings.trim() && d.servings) setServings(String(d.servings))
+    setSpare(split.spare.ingredients || split.spare.steps ? split.spare : null)
+  }
+
+  const takeSpareIngredients = () => {
+    if (!spare?.ingredients) return
+    setRows(ingredientRows(spare.ingredients))
+    setSpare(spare.steps ? { steps: spare.steps } : null)
+  }
+  const takeSpareSteps = () => {
+    if (!spare?.steps) return
+    setSteps(spare.steps.join('\n'))
+    setSpare(spare.ingredients ? { ingredients: spare.ingredients } : null)
+  }
+
+  const stepLines = steps
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+  const tagList = tags
+    .split(',')
+    .map(t => t.trim())
+    .filter(Boolean)
 
   const save = () => {
     if (!name.trim()) return
-    const now = new Date().toISOString()
+    const stamp = new Date().toISOString()
     const n = Number(servings)
     onSave({
       kind: 'recipe',
@@ -1439,17 +1643,12 @@ function RecipeForm({
       emoji: emoji.trim() || undefined,
       servings: Number.isFinite(n) && n > 0 ? Math.round(n) : undefined,
       ingredients: ingredients.filter(i => i.name.trim()),
-      steps: steps
-        .split('\n')
-        .map(s => s.trim())
-        .filter(Boolean),
-      tags: tags
-        .split(',')
-        .map(t => t.trim())
-        .filter(Boolean),
+      steps: stepLines,
+      tags: tagList,
       notes: notes.trim() || undefined,
-      createdAt: recipe?.createdAt ?? now,
-      updatedAt: recipe ? newerStamp(recipe.updatedAt) : now,
+      sourceUrl: safeHttpUrl(sourceUrl) || undefined,
+      createdAt: recipe?.createdAt ?? stamp,
+      updatedAt: recipe ? newerStamp(recipe.updatedAt) : stamp,
     })
   }
 
@@ -1463,45 +1662,31 @@ function RecipeForm({
     setQtyText(t => ({ ...t, [id]: text }))
     setIng(id, { qty: asQty(text) })
   }
+  // the list's Paste and Import doors open a NEW recipe on them
+  const openOn = recipe ? undefined : capture
+  const servingCount = Number(servings)
 
   return (
     <Modal onClose={onClose}>
       <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
       <div className="modal-body">
-        {/* First, because typing a shop's worth of rows one at a time is the
-            reason recipes end up as bare names — and a bare name can never put
-            a line on the grocery list. */}
-        <div className="recipe-paste">
-          {pasteOpen ? (
-            <>
-              <label className="field">
-                <span>Paste a recipe</span>
-                <textarea rows={6} value={paste} onChange={e => setPaste(e.target.value)} placeholder={RECIPE_TEXT_HINT} autoFocus={pasteOpen} />
-              </label>
-              <div className="recipe-paste-foot">
-                <button className="btn primary" disabled={reading || !paste.trim()} onClick={readPaste}>
-                  {reading ? 'Reading…' : '✨ Read it'}
-                </button>
-                <button
-                  className="btn subtle"
-                  disabled={reading}
-                  onClick={() => {
-                    setPasteOpen(false)
-                    setReadErr('')
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : (
-            <button className="btn subtle" onClick={() => setPasteOpen(true)}>
-              ✨ Paste a recipe
-            </button>
-          )}
-          {readErr && <p className="warn">{readErr}</p>}
-          {readNote && !readErr && <p className="chart-sub">{readNote}</p>}
-        </div>
+        <RecipeCapture
+          name={name}
+          has={has}
+          hints={{
+            name,
+            servings: Number.isFinite(servingCount) && servingCount > 0 ? servingCount : undefined,
+            tags: tagList,
+            ingredients: ingredients.map(i => i.name.trim()).filter(Boolean),
+            notes,
+            steps: stepLines,
+          }}
+          openOn={openOn}
+          note={start.note}
+          onFound={applyFound}
+          onDraft={applyDraft}
+        />
+        {spare && <DraftSpare spare={spare} onIngredients={takeSpareIngredients} onSteps={takeSpareSteps} onDismiss={() => setSpare(null)} />}
         <div className="field-row">
           <label className="field emoji-field">
             <span>Icon</span>
@@ -1509,7 +1694,7 @@ function RecipeForm({
           </label>
           <label className="field">
             <span>Name</span>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus={!pasteOpen} />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Friday pizza" autoFocus={!openOn} />
           </label>
           <label className="field" style={{ maxWidth: 90 }}>
             <span>Servings</span>
@@ -1554,6 +1739,14 @@ function RecipeForm({
           <span>Notes</span>
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Kids like extra cheese. Leftovers freeze." />
         </label>
+        {safeHttpUrl(sourceUrl) && (
+          <div className="recipe-source-row">
+            <RecipeSource url={sourceUrl} />
+            <button type="button" className="btn subtle" onClick={() => setSourceUrl('')}>
+              Remove link
+            </button>
+          </div>
+        )}
       </div>
       <footer className="modal-foot">
         {recipe && onDelete && (
