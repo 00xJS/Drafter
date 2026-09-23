@@ -172,7 +172,8 @@ describe('the nightly copy into iCloud Drive', () => {
   })
 })
 
-describe('the real command runner, against a stand-in supabase', () => {
+// these spawn real node processes, which a busy machine can make slow to start
+describe('the real command runner, against a stand-in supabase', { timeout: 30_000 }, () => {
   it('runs the CLI in this checkout with the storage flags, and copies what it downloads', async () => {
     const bin = join(home, 'bin')
     await mkdir(bin, { recursive: true })
