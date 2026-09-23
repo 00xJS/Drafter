@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { nameAmong } from '../../household'
 import { newerStamp } from '../../itemops'
 import { SetForm } from '../../taskform'
 import { Comment, Task } from '../../types'
@@ -11,20 +12,27 @@ interface Props {
   persisted: boolean
   latest(): Task
   onCommit(t: Task): void
+  /** Who is writing: each new comment is signed with it (v3.32). Null in local mode, where there is nobody else. */
+  myId?: string | null
+  /** The household, to name whoever wrote each comment; empty when not in one. */
+  members?: { id: string; displayName: string }[]
 }
 
 /**
  * The Activity feed at the foot of the editor, after every field: progress
  * notes, decisions and blockers, newest last, with the box for the next one at
- * the end — the way a project tool keeps its comments under the task.
+ * the end — the way a project tool keeps its comments under the task. Each
+ * comment says who wrote it where that is known: comments from before
+ * authorship was kept (v3.32) name nobody, and neither does one from a member
+ * no longer in the household.
  */
-export function CommentsField({ comments, set, persisted, latest, onCommit }: Props) {
+export function CommentsField({ comments, set, persisted, latest, onCommit, myId = null, members = [] }: Props) {
   const [newComment, setNewComment] = useState('')
 
   function addComment() {
     const body = newComment.trim()
     if (!body) return
-    const c: Comment = { id: uid(), body, createdAt: new Date().toISOString() }
+    const c: Comment = { id: uid(), body, createdAt: new Date().toISOString(), ...(myId ? { by: myId } : {}) }
     set(f => ({ comments: [...f.comments, c] }))
     setNewComment('')
     if (persisted) {
@@ -52,7 +60,10 @@ export function CommentsField({ comments, set, persisted, latest, onCommit }: Pr
           {comments.map(c => (
             <li key={c.id} className="comment">
               <div className="comment-meta">
-                <span>{fmtDateTime(c.createdAt)}</span>
+                <span>
+                  {nameAmong(members, c.by) && <strong className="comment-by">{nameAmong(members, c.by)} · </strong>}
+                  {fmtDateTime(c.createdAt)}
+                </span>
                 <button type="button" className="btn subtle" aria-label="Delete comment" onClick={() => removeComment(c.id)}>
                   ✕
                 </button>

@@ -39,6 +39,8 @@ export interface TaskForm {
   bill: Bill | undefined
   blockedBy: string[]
   assigneeId: string
+  /** Who handed it to the assignee: whoever last changed "Who's doing it" (AssignFields stamps it). */
+  assignedBy: string
   /**
    * Whether the household can see it. A brand-new task starts false; a task
    * written before the private default (no flag) starts true, which is what
@@ -74,6 +76,7 @@ export function initForm(base: Task): TaskForm {
     bill: base.bill,
     blockedBy: base.blockedBy ?? [],
     assigneeId: base.assigneeId ?? '',
+    assignedBy: base.assignedBy ?? '',
     shared: base.shared !== false,
   }
 }
@@ -374,7 +377,7 @@ export function costsVisible(form: Pick<TaskForm, 'bill' | 'estimateCost' | 'act
 
 /** The form's current value for every editable field, in Task shape. */
 export function formValues(form: TaskForm, base: Task, persisted: boolean) {
-  const { title, description, projectId, status, priority, dueAt, completedAt, tags, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId, shared } = form
+  const { title, description, projectId, status, priority, dueAt, completedAt, tags, githubUrl, checklist, comments, mediaIds, freq, bill, peopleIds, placeId, attachments, estimateCost, actualCost, blockedBy, assigneeId, assignedBy, shared } = form
   return {
     title: title.trim(),
     description,
@@ -410,6 +413,7 @@ export function formValues(form: TaskForm, base: Task, persisted: boolean) {
     actualCost: money(actualCost),
     blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
     assigneeId: assigneeId || undefined,
+    assignedBy: assignedBy || undefined,
     // Both answers are written out loud, and only when they say something. A
     // task nobody has ever withheld carries no flag, as every task before
     // v3.19 does; `false` withholds it; `true` says "share it again", because
@@ -454,6 +458,7 @@ export function baseValues(base: Task) {
     actualCost: base.actualCost,
     blockedBy: base.blockedBy,
     assigneeId: base.assigneeId,
+    assignedBy: base.assignedBy,
     shared: base.shared,
   }
 }

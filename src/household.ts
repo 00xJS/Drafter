@@ -88,9 +88,12 @@ export function useHousehold(): { info: HouseholdInfo | null; myId: string | nul
   return { info, myId, refresh, error }
 }
 
-export const memberName = (info: HouseholdInfo | null, id: string | undefined): string | null => {
+export const memberName = (info: HouseholdInfo | null, id: string | undefined): string | null => nameAmong(info?.members ?? [], id)
+
+/** The same, from a list of members: an editor is handed the list, not the household. */
+export const nameAmong = (members: readonly Pick<Member, 'id' | 'displayName'>[], id: string | undefined): string | null => {
   if (!id) return null
-  const m = info?.members.find(x => x.id === id)
+  const m = members.find(x => x.id === id)
   return m ? m.displayName : null
 }
 

@@ -140,7 +140,8 @@ describe('the control in the editor', () => {
     const tree = fields({ shared: false }, p => patches.push(p))
     const picker = elements(tree).find(e => e.type === 'select' && e.props.children)!
     ;(picker.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: PEER } })
-    expect(patches).toEqual([{ assigneeId: PEER, shared: true }])
+    // and says who handed it over, whom its progress is told to (notify.mjs)
+    expect(patches).toEqual([{ assigneeId: PEER, shared: true, assignedBy: ME }])
   })
 
   it('leaves it alone when the one doing it is you', () => {
@@ -148,7 +149,7 @@ describe('the control in the editor', () => {
     const tree = fields({ shared: false }, p => patches.push(p))
     const picker = elements(tree).find(e => e.type === 'select' && e.props.children)!
     ;(picker.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: ME } })
-    expect(patches).toEqual([{ assigneeId: ME }])
+    expect(patches).toEqual([{ assigneeId: ME, assignedBy: ME }])
   })
 })
 

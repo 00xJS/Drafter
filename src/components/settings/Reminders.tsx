@@ -49,6 +49,31 @@ export function SundayDraft({ journal, ai = true, onChange }: { journal: boolean
 }
 
 /**
+ * Whether the other member's changes to a task you share reach you: the bell
+ * on Home, and your devices with push on. On unless switched off; it is the
+ * account's, kept on the server with the other push preferences, so every
+ * device reads the same answer — and it needs no push to matter, since the
+ * hub keeps what it is told either way. Its own error line, under it.
+ */
+export function TaskUpdates({ on, busy, error, onChange }: { on: boolean; busy: boolean; error?: string; onChange(on: boolean): void }) {
+  return (
+    <>
+      <h4>Shared tasks</h4>
+      <p className="sync-line">
+        <label className="cal-source mirror-row">
+          <input type="checkbox" checked={on} disabled={busy} onChange={e => onChange(e.target.checked)} />
+          <span className="cal-source-name">Tell me when someone updates a task we share</span>
+        </label>
+        <small className="field-hint">
+          When the other member finishes, comments on or changes a task one of you handed the other, it shows under the bell on Home — and on your devices, with push on.
+        </small>
+      </p>
+      {error && <p className="warn">{error}</p>}
+    </>
+  )
+}
+
+/**
  * Drafter sends every reminder itself, so the tasks and events it writes into
  * Google and Outlook stay silent there; this one switch brings each calendar's
  * own reminders back on them. It is the account's, not this device's: every
@@ -193,6 +218,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
   const [genericOn, setGenericOn] = useState(genericRemindersEnabled())
   const [localErr, setLocalErr] = useState('')
   const [copies, setCopies] = useState<boolean | null>(null)
+  const { busy: updatesBusy, error: updatesError, run: runUpdates } = useAsyncAction()
   const { busy: copiesBusy, error: copiesError, run: runCopies, setError: setCopiesError } = useAsyncAction()
   const [planDay, setPlanDay] = useState(planDayPref)
   // whether iOS lets Drafter notify: read on open, and again on coming back
@@ -317,6 +343,20 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
         <p className="field-hint">{pushError ? `Push status unavailable: ${pushError}` : 'Checking push…'}</p>
       )}
       {pushError && push && <p className="warn">{pushError}</p>}
+      {/* the hub keeps notices whether or not push can bring them, so this is not push's */}
+      {push?.sundayDraft && (
+        <TaskUpdates
+          on={push.notifyActivity !== false}
+          busy={updatesBusy}
+          error={updatesError}
+          onChange={on =>
+            runUpdates(async () => {
+              await savePushPrefs({ digestEmail: push.digestEmail, digestHour, notifyActivity: on })
+              setPush({ ...push, notifyActivity: on })
+            })
+          }
+        />
+      )}
       {push?.sundayDraft && (
         <SundayDraft journal={!!push.digestJournal} ai={push.aiConfigured !== false} onChange={on => runPush(() => savePushPrefs({ digestEmail: push.digestEmail, digestHour, digestJournal: on }))} />
       )}
