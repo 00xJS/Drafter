@@ -6,7 +6,7 @@ import { parseGithubUrl, setIssueState } from '../../github'
 import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubboard'
 import { fmtDateTime, uid } from '../../utils'
 import { inInbox } from '../../taskutils'
-import { buildCapturedTask, quickCaptureFields } from '../../capture'
+import { buildCapturedTask, captureNeedsModel, quickCaptureFields } from '../../capture'
 import { haptic } from '../../native'
 import type { useNavigation } from './useNavigation'
 import type { useOverlays } from './useOverlays'
@@ -39,19 +39,24 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
    * model's fuller reading is merged in afterwards, but only while the task is
    * still there and untouched — never over an Undo or an edit. The first toast
    * said where it went, so a merge that dates it says so again with its own
-   * undo, and a date the toast already announced is kept — the model may add
-   * to the task, not contradict what was read out. Like the editor, it never
-   * files the task under a project: there is one ongoing project. Bypasses
-   * newTask on purpose: a capture lands exactly as typed, with no preset of its own.
+   * undo, and what was read out stays: the date the toast announced, and the
+   * title as typed — the model may add to the task, not reword it unseen. A
+   * line whose date was found and that names nobody, no priority and no
+   * repeat asks the model nothing (captureNeedsModel). Like the editor, it
+   * never files the task under a project: there is one ongoing project.
+   * Bypasses newTask on purpose: a capture lands exactly as typed, with no
+   * preset of its own.
    */
   const captureTask = (line: string) => {
     const now = new Date()
     const id = uid()
     const lookup = { people: store.people }
-    const first = buildCapturedTask(quickCaptureFields(line, now), lookup, { id, now })
+    const offline = quickCaptureFields(line, now)
+    const first = buildCapturedTask(offline, lookup, { id, now })
     store.upsert(first)
     showToast(inInbox(first) ? 'Captured to Inbox' : `Captured — due ${fmtDateTime(first.dueAt)}`, () => store.remove(id))
     const personNames = store.people.map(p => p.name)
+    if (!captureNeedsModel(line, offline, personNames)) return
     // the assistant's code (ai.ts) is fetched here, by the first capture that
     // asks the model, never with the shell
     void import('../../ai')
@@ -60,6 +65,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
         const cur = tasksRef.current.find(t => t.id === id)
         if (!cur || cur.updatedAt !== first.updatedAt) return
         const next = buildCapturedTask(parsed, lookup, { id, now })
+        next.title = first.title
         if (first.dueAt) next.dueAt = first.dueAt
         if (JSON.stringify(next) === JSON.stringify(first)) return
         const merged = { ...cur, ...next, createdAt: cur.createdAt, updatedAt: newerStamp(cur.updatedAt) }

@@ -1,16 +1,20 @@
 import type { Task } from './types'
+import { localMidnightIso } from '../shared/domain.mts'
 
 // A typed line read as a task, offline: the date and clock time a sentence
 // names, and the task those fields make. The palette's Shift+Enter, Siri's
 // "Add to Drafter" and the editor all file a capture through these at once, so
 // they load with the shell. The model's fuller reading (parseCapture, in ai.ts)
 // is merged in afterwards, and ai.ts loads only when it is asked for.
+//
+// Every day and time here is this device's: the model is told the time on its
+// clock and in its zone, and a time it names without an offset is read on the
+// same clock (modelDueAt).
 
 // No project in either: there is one ongoing project, and a captured sentence
 // never files a task under one — from the palette or the editor.
 export interface CaptureCtx {
   now?: Date
-  timeZone?: string
   personNames?: string[]
 }
 
@@ -38,6 +42,45 @@ export function isSimpleDateCapture(parsed: CapturedFields, original: string, no
   if (!parsed.dueAt) return false
   if (parsed.priority || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence) return false
   return !!deterministicCapture(original, now)?.dueAt
+}
+
+/**
+ * What the editor applies with no Review tap when the only find is a date:
+ * the date, and the title as typed less the words that named it — the offline
+ * reading's, as the palette files it. Never the model's rewording of the
+ * title, which nobody would have seen before it replaced what they typed.
+ * Null when there is more to it than a date, and the proposal is shown.
+ */
+export function simpleDateCapture(parsed: CapturedFields, original: string, now = new Date()): CapturedFields | null {
+  if (!isSimpleDateCapture(parsed, original, now)) return null
+  const typed = deterministicCapture(original, now)
+  return typed ? { title: typed.title, dueAt: parsed.dueAt } : null
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * The instant a model's `dueAt` names, read the way the person meant it. With
+ * an offset or a Z it is kept as it is. Without one — '2026-09-24T15:00' — it
+ * is this device's wall clock; a bare day is that day with no time, local
+ * midnight, as the editor and reminders read a day. Date.parse read a bare day
+ * as UTC midnight, which in Phoenix is five in the afternoon the day before.
+ * Undefined for anything else, for a day the calendar does not have, and for
+ * a time more than a day gone: a model that guessed the year wrong would file
+ * the task as long overdue.
+ */
+export function modelDueAt(value: unknown, now = new Date()): string | undefined {
+  const s = typeof value === 'string' ? value.trim() : ''
+  let ms = NaN
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/i.exec(s)
+  if (m) {
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+    const at = m[4] === undefined ? new Date(localMidnightIso(`${m[1]}-${m[2]}-${m[3]}`) ?? NaN) : new Date(y, mo - 1, d, Number(m[4]), Number(m[5]), Number(m[6] ?? 0))
+    // new Date rolls 30 February into March; a day that rolled is not the day named
+    if (at.getFullYear() === y && at.getMonth() === mo - 1 && at.getDate() === d && Number(m[4] ?? 0) < 24 && Number(m[5] ?? 0) < 60) ms = at.getTime()
+  } else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) ms = Date.parse(s)
+  if (!Number.isFinite(ms) || ms < now.getTime() - DAY_MS) return undefined
+  return new Date(ms).toISOString()
 }
 
 const WEEKDAYS: Record<string, number> = {
@@ -142,6 +185,36 @@ export function deterministicCapture(text: string, now = new Date()): CapturedFi
  */
 export function quickCaptureFields(line: string, now = new Date()): CapturedFields {
   return deterministicCapture(line, now) ?? { title: line.trim().slice(0, 140) }
+}
+
+/** Words that ask for a priority or a repeat, which only the model reads. */
+const PRIORITY_CUE = /!|\b(?:urgent|urgently|asap|important|priority|critical)\b/i
+const REPEAT_CUE = /\b(?:every|each|daily|weekly|fortnightly|biweekly|monthly|yearly|annually)\b/i
+
+/** Letters and digits only, lower case, no accents: how a name is looked for in a line. */
+const fold = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+/**
+ * Whether the palette's capture still needs the model once the offline read
+ * has landed. The offline read finds a day and a time; only the model reads a
+ * person, a priority or a repeat, or a day put another way ("next weekend").
+ * A line with its date found and none of the others has nothing left for the
+ * model but a guess at tags — and the call would still spend one of the
+ * account's thirty a ten minutes, and could come back half a minute later to
+ * change a task the person has moved on from.
+ */
+export function captureNeedsModel(line: string, offline: CapturedFields, personNames: readonly string[] = []): boolean {
+  if (!offline.dueAt) return true
+  if (PRIORITY_CUE.test(line) || REPEAT_CUE.test(line)) return true
+  const words = ` ${fold(line)} `
+  // any word of a saved name will do: "call Sarah" may mean Sarah Jones
+  return personNames.some(name => fold(name).split(' ').some(w => w.length > 1 && words.includes(` ${w} `)))
 }
 
 /** The names a capture can resolve against — people, matched by name. */

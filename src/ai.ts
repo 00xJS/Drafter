@@ -3,7 +3,7 @@ import { AskDoc, buildAskPrompt, maskContacts, parseAskAnswer } from './ask'
 import { personStats, seenTasks } from './people'
 import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './types'
 import { dateKey, excerpt } from './utils'
-import { deterministicCapture, type CaptureCtx, type CapturedFields } from './capture'
+import { deterministicCapture, modelDueAt, type CaptureCtx, type CapturedFields } from './capture'
 import { mealHistory } from '../shared/weekplan.mts'
 import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, looksLikeThinking } from '../shared/ai.mts'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
@@ -601,25 +601,39 @@ export async function draftPlan(goal: string, name: string, context?: string): P
 }
 
 /**
+ * "Wednesday 2026-09-23 20:30": this device's own wall clock, which is what
+ * "tomorrow" and "at 3" are counted from. The model used to be told the time
+ * as a UTC stamp — in Phoenix at 8:30 on a Wednesday evening, that is already
+ * Thursday — and answered in kind.
+ */
+export function wallClock(now: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.toLocaleDateString('en-US', { weekday: 'long' })} ${dateKey(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}`
+}
+
+/**
  * Turn a typed sentence into structured task fields. Runs a deterministic
- * date/time pre-pass first; on network failure that alone is enough.
+ * date/time pre-pass first; on network failure that alone is enough, and
+ * where both find a date the pre-pass's stands: it read the words the person
+ * typed, on this device's calendar.
  */
 export async function parseCapture(text: string, ctx: CaptureCtx = {}): Promise<CapturedFields> {
   const now = ctx.now ?? new Date()
   const local = deterministicCapture(text, now)
-  const tz = ctx.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
   const people = (ctx.personNames ?? []).slice(0, 40)
   try {
     const modelText = await complete(
-      'You parse a single personal-task capture sentence into structured fields. Never invent person names that are not in the list. Prefer imperative short titles. Respond with ONLY JSON.',
-      `Now: ${now.toISOString()} (${tz})\nPeople: ${JSON.stringify(people)}\n\nSentence:\n"""\n${text.trim()}\n"""\n\nRespond with ONLY JSON: {"title":"…","dueAt":"ISO optional","priority":"low|normal|high|urgent optional","peopleNames":["exact names"],"tags":["…"],"recurrence":"daily|weekly|biweekly|monthly optional"}`,
+      'You parse a single personal-task capture sentence into structured fields. Never invent person names that are not in the list. Prefer imperative short titles. Count days such as "Thursday" or "tomorrow" from Now, in its time zone. Respond with ONLY JSON.',
+      `Now: ${wallClock(now)} (${tz})\nPeople: ${JSON.stringify(people)}\n\nSentence:\n"""\n${text.trim()}\n"""\n\nRespond with ONLY JSON: {"title":"…","dueAt":"YYYY-MM-DDTHH:MM in local time with no offset, or YYYY-MM-DD for a day with no time; omit when there is none","priority":"low|normal|high|urgent optional","peopleNames":["exact names"],"tags":["…"],"recurrence":"daily|weekly|biweekly|monthly optional"}`,
       300,
       true,
+      { reasoning: 'off' },
     )
-    const raw = extractJSON<Record<string, unknown>>(modelText)
-    const title = String(raw.title ?? '').trim().slice(0, 140) || local?.title || text.trim()
-    const dueRaw = typeof raw.dueAt === 'string' ? Date.parse(raw.dueAt) : NaN
-    const dueAt = Number.isFinite(dueRaw) ? new Date(dueRaw).toISOString() : local?.dueAt
+    const value = extractJSON<unknown>(modelText)
+    const raw: Record<string, unknown> = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+    const title = oneLine(raw.title, 140) || local?.title || text.trim()
+    const dueAt = local?.dueAt ?? modelDueAt(raw.dueAt, now)
     const priority = (['low', 'normal', 'high', 'urgent'] as const).find(p => p === raw.priority)
     const peopleNames = Array.isArray(raw.peopleNames)
       ? raw.peopleNames

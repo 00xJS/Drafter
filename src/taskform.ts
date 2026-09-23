@@ -96,8 +96,14 @@ export type StepOp =
 
 export type FormAction =
   | { type: 'set'; patch: FormPatch }
-  /** Fields parsed from a captured sentence; people names are matched against these. It never sets the project. */
-  | { type: 'applyCapture'; capture: CapturedFields; people: Named[] }
+  /**
+   * Fields parsed from a captured sentence; people names are matched against
+   * these. It never sets the project. `asRead` is the title and due as they
+   * were when the sentence was read, for a capture applied with no Review
+   * tap: the model can take half a minute, and a field typed over meanwhile
+   * stays as the person has it.
+   */
+  | { type: 'applyCapture'; capture: CapturedFields; people: Named[]; asRead?: Pick<TaskForm, 'title' | 'dueAt'> }
   | { type: 'step'; op: StepOp }
 
 export function formReducer(form: TaskForm, action: FormAction): TaskForm {
@@ -107,10 +113,11 @@ export function formReducer(form: TaskForm, action: FormAction): TaskForm {
     case 'step':
       return { ...form, checklist: applyStep(form.checklist, action.op) }
     case 'applyCapture': {
-      const { capture: c, people } = action
+      const { capture: c, people, asRead } = action
       const next = { ...form }
-      if (c.title) next.title = c.title
-      if (c.dueAt) next.dueAt = toLocalInput(c.dueAt)
+      const typedOver = (field: 'title' | 'dueAt') => !!asRead && form[field] !== asRead[field]
+      if (c.title && !typedOver('title')) next.title = c.title
+      if (c.dueAt && !typedOver('dueAt')) next.dueAt = toLocalInput(c.dueAt)
       if (c.priority) next.priority = c.priority
       if (c.peopleNames?.length) {
         const ids = c.peopleNames.map(n => people.find(p => p.name.toLowerCase() === n.toLowerCase())?.id).filter((id): id is string => !!id)
