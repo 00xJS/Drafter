@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { preloadable, schedulePreload, warm } from '../../lazyload'
+import { isNative } from '../../native'
 import type { View } from './routes'
 
 // Everything a launch does not paint first, each in a chunk of its own: the
@@ -82,18 +83,36 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
-/** The background warm-up, most-opened first. Admin is not in it: only the
- *  owner fetches that chunk.
+/** The background warm-up on the web, most-opened first. Admin is not in it:
+ *  only the owner fetches that chunk.
  *
- *  Settings and the chat sit near the front because the top bar reaches both
- *  from every screen — Settings was dead last of 29, from when it was a dialog
- *  you rarely opened rather than a screen you navigate to. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
+ *  Settings sits near the front because the top bar reaches it from every
+ *  screen — it was dead last of 29, from when it was a dialog you rarely
+ *  opened rather than a screen you navigate to. The assistant's own views,
+ *  the chat and Ask, come last: theirs is the most code to parse (the chat's
+ *  actions, the retrieval Ask runs), it was parsed at the front while the
+ *  first sync ran, and a finger on the chat's button or the Home tab warms
+ *  them anyway. */
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Chat, AskSheet].map(c => c.preload)
 
-/** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
+/** The warm-up in the iOS app: what the top bar opens from every screen, and nothing else. */
+export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings].map(c => c.preload)
+
+/**
+ * Which warm-up a launch runs. On the web every chunk is a download the next
+ * tap would otherwise wait on. In the iOS app the bundle is already on disk,
+ * so fetching saves nothing: all the warm-up bought was every view's code
+ * parsed on the main thread while the first sync ran. There the rest wait for
+ * a finger on their tab or button (preloadView, the top bar's warms), which
+ * is soon enough to beat the tap.
+ */
+export const preloadOrder = (native: boolean): readonly (() => Promise<void>)[] => (native ? NATIVE_PRELOAD_ORDER : PRELOAD_ORDER)
+
+/** A moment after launch, warm the chunks this launch wants (preloadOrder); on the web, Admin's too for the owner. */
 export function useWarmChunks(isOwner: boolean) {
-  useEffect(() => schedulePreload(PRELOAD_ORDER), [])
+  useEffect(() => schedulePreload(preloadOrder(isNative())), [])
   useEffect(() => {
-    if (isOwner) warm(Admin.preload)
+    // in the app its code is on disk, and parsed when the owner opens it
+    if (isOwner && !isNative()) warm(Admin.preload)
   }, [isOwner])
 }
