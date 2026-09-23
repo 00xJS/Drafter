@@ -30,9 +30,18 @@ import {
 const LEGACY_LS_KEY = 'drafter:v1' // pre-IndexedDB builds
 /** The IndexedDB write waits this long after the last change, off the render hot path. */
 const PERSIST_MS = 300
+/** A cache write that failed is tried again this long after, if nothing else writes first. */
+const PERSIST_RETRY_MS = 5_000
 /** A local edit is pushed this long after the last one, so a burst of typing is one round. */
 const PUSH_MS = 2000
-const PERIODIC_MS = 60_000
+/** The periodic round, while nothing tells this device that something changed. */
+export const PERIODIC_MS = 60_000
+/**
+ * The periodic round while a live channel does (src/realtime.ts): a safety net
+ * for what a channel cannot carry — a record withheld from this reader sends
+ * them no change — not the way changes arrive.
+ */
+export const LIVE_PERIODIC_MS = 5 * 60_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_CAP_MS = 30 * 60_000
 /** The kinds this build syncs, as KINDS_KEY records them: when the stored list differs, boot does one full exchange. */
@@ -89,13 +98,62 @@ export interface CacheRecord {
   shadows?: Item[]
 }
 
+/**
+ * One write of the per-record cache: what changed since the last one. The
+ * storage applies it whole or not at all (one IndexedDB transaction), and
+ * rejects when it did not — the engine then keeps every id for the next write.
+ */
+export interface CacheChanges {
+  /** The account the records belong to, written beside them so another never adopts them. */
+  userId: string | null
+  version: number
+  /** Records new or changed since the last write. */
+  upserts: Item[]
+  /** Ids this device no longer holds. */
+  deletes: string[]
+  /** The merge base of every dirty record — the whole set, each write, beside the records it belongs to. */
+  shadows: Item[]
+  /** Empty the records first: what is on disk is not known (its read failed), so this write is the whole cache. */
+  replace?: boolean
+  /** Remove the single value of an older build in the same transaction: set on the write that moves it over. */
+  dropSnapshot?: boolean
+}
+
 export interface SyncStorage {
+  /**
+   * The single-value cache: every record in one value, rewritten whole. What
+   * an older build left behind, and the whole cache for a storage without the
+   * per-record calls below (the tests' own fakes).
+   */
   readSnapshot(): Promise<unknown>
   writeSnapshot(record: CacheRecord): Promise<unknown>
+  /**
+   * The per-record cache as one CacheRecord (the shape readSnapshot gives), or
+   * undefined when nothing was ever written to it — then the single value is
+   * read, and the first write moves it over and removes it.
+   */
+  readAll?(): Promise<CacheRecord | undefined>
+  /** Write only what changed; with readAll, replaces the single value as the cache. */
+  writeChanges?(changes: CacheChanges): Promise<unknown>
   /** Wipe every trace of an account from this device (clearLocalData in the app). */
   clearAll(): Promise<void>
   /** The dirty set, the cursor and the refusals: small, synchronous, written as they change. */
   kv: KV
+}
+
+/** What boot read, and where from (loadCache). */
+interface LoadedCache {
+  items: Item[]
+  shadows: Item[]
+  /** The cache belonged to another account and was wiped. */
+  wiped: boolean
+  from: 'records' | 'snapshot' | 'none' | 'unknown'
+  /** Every id the per-record cache holds (from 'records'). */
+  ids: Set<string>
+  /** The account the cache says it belongs to. */
+  owner?: string | null
+  /** The records came from the pre-IndexedDB localStorage cache. */
+  legacy: boolean
 }
 
 export interface SyncTimers {
@@ -114,13 +172,39 @@ export interface SyncEngineDeps {
   timers?: SyncTimers
 }
 
+/** The records of each kind, in `items` order. */
+export type KindLists = { readonly [K in Item['kind']]: readonly Extract<Item, { kind: K }>[] }
+
 export interface EngineState {
   items: Item[]
+  /**
+   * `items` by kind. A kind's array is replaced only when a record of that
+   * kind changed, so a list drawn from recipes (store.ts) is handed the same
+   * array, and keeps its own identity, while tasks are edited and synced.
+   */
+  byKind: KindLists
   /** False until the local cache has been read (avoids empty-state flashes). */
   loaded: boolean
   syncInfo: SyncInfo
   /** Rows the server refused, oldest refusal first. */
   failures: SyncFailure[]
+}
+
+const NONE: readonly never[] = Object.freeze([])
+const KINDS = [...KNOWN_KINDS] as Item['kind'][]
+const NO_LISTS = Object.freeze(Object.fromEntries(KINDS.map(k => [k, NONE]))) as unknown as KindLists
+
+/**
+ * `prev` with the arrays of `kinds` drawn again from `items` (every kind when
+ * null), in one pass. Every other kind keeps the very array it had.
+ */
+export function groupByKind(items: readonly Item[], kinds: ReadonlySet<Item['kind']> | null, prev: KindLists = NO_LISTS): KindLists {
+  const fresh = new Map<Item['kind'], Item[]>()
+  for (const k of kinds ?? KINDS) fresh.set(k, [])
+  for (const i of items) fresh.get(i.kind)?.push(i)
+  const next: Record<string, readonly Item[]> = { ...prev }
+  for (const [k, list] of fresh) next[k] = list.length > 0 ? list : NONE
+  return next as unknown as KindLists
 }
 
 const defaultTimers: SyncTimers = {
@@ -284,8 +368,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   const kv = storage.kv
   const now = deps.now ?? (() => Date.now())
   const timers = deps.timers ?? defaultTimers
+  /** One row per record (the app's IndexedDB), or the single value rewritten whole (a storage without the per-record calls). */
+  const perRecord = typeof storage.readAll === 'function' && typeof storage.writeChanges === 'function'
 
-  let state: EngineState = { items: [], loaded: false, syncInfo: { online: false, authError: false }, failures: [] }
+  let state: EngineState = { items: [], byKind: NO_LISTS, loaded: false, syncInfo: { online: false, authError: false }, failures: [] }
   const listeners = new Set<() => void>()
   const conflictListeners = new Set<(conflicts: EngineConflict[]) => void>()
   const retiredListeners = new Set<(retired: RetiredSpawn[]) => void>()
@@ -301,6 +387,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   let persistTimer: unknown = undefined
   let pushTimer: unknown = undefined
   let periodic: unknown = undefined
+  /** The periodic round runs between start and stop… */
+  let started = false
+  /** …every PERIODIC_MS, or every LIVE_PERIODIC_MS while a live channel is up (setLive)… */
+  let live = false
+  /** …and not at all while the page is hidden (setHidden): the return to it syncs. */
+  let hidden = false
   // the round in flight, if any: a second call joins it instead of starting
   // another, so a pull-down during the foreground sync waits for that sync
   let inflight: Promise<boolean> | null = null
@@ -311,7 +403,57 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   /** The next successful round is a full exchange, whatever the stored cursor says. */
   let forceFull = false
 
+  // What the per-record cache needs to write only what changed. Every change
+  // of the list goes through publish, which compares it with `index`, record by
+  // record, by identity: whatever path changed a record — an edit, a round's
+  // answer, retainMine, an import, a tombstone aged out — it is noted here.
+  /** Every record in `state.items`, by id: kept in step with every change of the list. */
+  let index = new Map<string, Item>()
+  /** Ids whose copy on disk may differ from the one in memory: the next write puts or deletes each. */
+  const unsaved = new Set<string>()
+  /** What is on disk is not known (its read failed): the next write replaces the whole cache. */
+  let replaceNext = false
+  /** An older build's single value is still on disk: the next write moves it over and removes it. */
+  let snapshotLeft = false
+  /** The account and shadows the last write put beside the records; null when unknown. */
+  let written: { userId: string | null; shadows: Item[] } | null = null
+  /** The write in progress. Writes run one after another, so an older one can never land last. */
+  let writing: Promise<void> | null = null
+
+  /**
+   * Bring `index` in step with a new list. Each record that is new, changed (a
+   * different object) or gone is noted for the next write, and its kind for a
+   * rebuilt list; returns those kinds. One pass, and a second only when the
+   * sizes say something left.
+   */
+  function reindex(next: Item[]): Set<Item['kind']> {
+    const kinds = new Set<Item['kind']>()
+    for (const item of next) {
+      const was = index.get(item.id)
+      if (was === item) continue
+      if (was) kinds.add(was.kind)
+      kinds.add(item.kind)
+      index.set(item.id, item)
+      unsaved.add(item.id)
+    }
+    if (index.size !== next.length) {
+      const present = new Set<string>()
+      for (const item of next) present.add(item.id)
+      for (const [id, was] of index) {
+        if (present.has(id)) continue
+        index.delete(id)
+        kinds.add(was.kind)
+        unsaved.add(id)
+      }
+    }
+    return kinds
+  }
+
   function publish(patch: Partial<EngineState>): void {
+    if (patch.items && patch.items !== state.items && !patch.byKind) {
+      const kinds = reindex(patch.items)
+      if (kinds.size > 0) patch = { ...patch, byKind: groupByKind(patch.items, kinds, state.byKind) }
+    }
     state = { ...state, ...patch }
     for (const l of [...listeners]) l()
   }
@@ -331,10 +473,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   /** Drop bookkeeping for ids with nothing left to push (removed by retainMine, a wipe, an old purge). */
   function pruneBookkeeping(): void {
-    const ids = new Set(state.items.map(i => i.id))
     let changed = false
     for (const id of [...dirty]) {
-      if (ids.has(id)) continue
+      if (index.has(id)) continue
       dirty.delete(id)
       changed = true
     }
@@ -349,31 +490,90 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   // ---- persistence -----------------------------------------------------------
 
-  async function persistNow(): Promise<void> {
+  /**
+   * Write the cache now. A write already under way finishes first — each
+   * write works out what to write when it starts, so it never lands older data
+   * over newer. With nothing under way the write starts at once, inside this
+   * call, as a flush on the way to the background needs.
+   */
+  function persistNow(): Promise<void> {
     if (persistTimer !== undefined) {
       timers.clearTimeout(persistTimer)
       persistTimer = undefined
     }
+    // after the last write however it ended: one that threw must not stop every write after it
+    const run: Promise<void> = writing ? writing.then(writeCache, writeCache) : writeCache()
+    writing = run
+    run
+      .finally(() => {
+        if (writing === run) writing = null
+      })
+      .catch(() => {})
+    return run
+  }
+
+  /** Whether the account or the shadows differ from what the last write put beside the records. */
+  function metaMoved(shadowList: Item[]): boolean {
+    if (!written || written.userId !== account || written.shadows.length !== shadowList.length) return true
+    return shadowList.some((s, i) => written!.shadows[i] !== s)
+  }
+
+  async function writeCache(): Promise<void> {
     // never overwrite the cache with the empty state from before it was read
     if (!state.loaded) return
-    const snapshot = state.items
-    const record: CacheRecord = { version: STORAGE_VERSION, userId: account, items: snapshot }
-    if (remote && shadows.size > 0) record.shadows = [...shadows.values()]
+    if (!perRecord) {
+      unsaved.clear()
+      const snapshot = state.items
+      const record: CacheRecord = { version: STORAGE_VERSION, userId: account, items: snapshot }
+      if (remote && shadows.size > 0) record.shadows = [...shadows.values()]
+      try {
+        await storage.writeSnapshot(record)
+        // legacy cache retired only once the new cache holds real data
+        if (snapshot.length > 0) kv.removeItem(LEGACY_LS_KEY)
+      } catch (e) {
+        console.error('Failed to save the local cache', e)
+      }
+      return
+    }
+    const ids = [...unsaved]
+    const shadowList = remote ? [...shadows.values()] : []
+    if (ids.length === 0 && !replaceNext && !snapshotLeft && !metaMoved(shadowList)) return
+    unsaved.clear()
+    const change: CacheChanges = { userId: account, version: STORAGE_VERSION, upserts: [], deletes: [], shadows: shadowList }
+    for (const id of ids) {
+      const item = index.get(id)
+      if (item) change.upserts.push(item)
+      else change.deletes.push(id)
+    }
+    if (replaceNext) change.replace = true
+    if (snapshotLeft) change.dropSnapshot = true
     try {
-      await storage.writeSnapshot(record)
+      await storage.writeChanges!(change)
+      written = { userId: change.userId, shadows: shadowList }
+      if (change.replace) replaceNext = false
+      if (change.dropSnapshot) snapshotLeft = false
       // legacy cache retired only once the new cache holds real data
-      if (snapshot.length > 0) kv.removeItem(LEGACY_LS_KEY)
+      if (index.size > 0) kv.removeItem(LEGACY_LS_KEY)
     } catch (e) {
+      // nothing of it was written: every id waits for the next write, which a
+      // later change or this retry brings, whichever comes first
+      for (const id of ids) unsaved.add(id)
       console.error('Failed to save the local cache', e)
+      if (persistTimer === undefined) schedulePersist(PERSIST_RETRY_MS)
     }
   }
 
-  function schedulePersist(): void {
+  function schedulePersist(ms = PERSIST_MS): void {
     if (persistTimer !== undefined) timers.clearTimeout(persistTimer)
     persistTimer = timers.setTimeout(() => {
       persistTimer = undefined
       void persistNow()
-    }, PERSIST_MS)
+    }, ms)
+  }
+
+  /** Something is waiting to be written: a debounce not yet run, or a write that failed. */
+  function persistPending(): boolean {
+    return persistTimer !== undefined || (perRecord && unsaved.size > 0)
   }
 
   function schedulePush(): void {
@@ -385,20 +585,41 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     }, PUSH_MS)
   }
 
-  async function loadCache(myId: string | null): Promise<{ items: Item[]; shadows: Item[]; wiped: boolean }> {
+  /**
+   * Read the cache for this account. `from` is what the per-record cache needs
+   * to know about the disk: the records came from it ('records', with `ids`,
+   * every id stored there), from an older build's single value ('snapshot', to
+   * be moved over), or there was nothing ('none') — or the read failed
+   * ('unknown'). `legacy` says they came from localStorage instead.
+   */
+  async function loadCache(myId: string | null): Promise<LoadedCache> {
+    let from: LoadedCache['from'] = 'none'
+    let ids = new Set<string>()
+    let owner: string | null | undefined
     try {
-      const cached = (await storage.readSnapshot()) as { userId?: string | null; shadows?: unknown } | undefined
+      let cached: { userId?: string | null; shadows?: unknown; items?: unknown } | undefined = perRecord ? await storage.readAll!() : undefined
+      if (cached !== undefined) {
+        from = 'records'
+        for (const raw of Array.isArray(cached.items) ? cached.items : []) {
+          const id = (raw as { id?: unknown } | null)?.id
+          if (typeof id === 'string') ids.add(id)
+        }
+      } else {
+        cached = (await storage.readSnapshot()) as typeof cached
+        if (cached) from = 'snapshot'
+      }
       // a cache written by a different account must never be adopted or re-synced
       if (cached && myId && cached.userId && cached.userId !== myId) {
         await storage.clearAll()
-        return { items: [], shadows: [], wiped: true }
+        return { items: [], shadows: [], wiped: true, from: 'none', ids: new Set(), legacy: false }
       }
+      owner = cached?.userId
       if (cached) {
         const migrated = migrateStored(cached)
         // an empty cache must not shadow a legacy localStorage store (e.g. an
         // interrupted first run of this version)
         if (migrated && migrated.length > 0) {
-          return { items: purgeTombstones(migrated, now()), shadows: migrateStored(Array.isArray(cached.shadows) ? cached.shadows : []) ?? [], wiped: false }
+          return { items: purgeTombstones(migrated, now()), shadows: migrateStored(Array.isArray(cached.shadows) ? cached.shadows : []) ?? [], wiped: false, from, ids, owner, legacy: false }
         }
       }
       // migration from the old localStorage cache — non-destructive: the legacy
@@ -406,12 +627,33 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       const raw = kv.getItem(LEGACY_LS_KEY)
       if (raw !== null) {
         const migrated = migrateStored(JSON.parse(raw))
-        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: [], wiped: false }
+        if (migrated && migrated.length > 0) return { items: purgeTombstones(migrated, now()), shadows: [], wiped: false, from, ids, owner, legacy: true }
       }
     } catch (e) {
       console.error('Failed to load the local cache', e)
+      from = 'unknown'
+      ids = new Set()
     }
-    return { items: [], shadows: [], wiped: false }
+    return { items: [], shadows: [], wiped: false, from, ids, owner, legacy: false }
+  }
+
+  /**
+   * Start the per-record bookkeeping from what boot just read: the records in
+   * memory are the index, and the ids to write are the ones memory and disk
+   * disagree about — tombstones aged out and rows that no longer read (to
+   * delete), a project boot added (to put). Records from anywhere but the
+   * per-record cache are all to be written.
+   */
+  function rebase(items: Item[], cached: LoadedCache): void {
+    index = new Map(items.map(i => [i.id, i]))
+    unsaved.clear()
+    replaceNext = cached.from === 'unknown'
+    snapshotLeft = cached.from === 'snapshot'
+    written = cached.from === 'records' ? { userId: cached.owner ?? null, shadows: cached.shadows } : null
+    if (!perRecord) return
+    const onDisk = cached.from === 'records' ? cached.ids : new Set<string>()
+    for (const id of onDisk) if (!index.has(id)) unsaved.add(id)
+    for (const id of index.keys()) if (!onDisk.has(id)) unsaved.add(id)
   }
 
   // ---- boot and accounts -------------------------------------------------------
@@ -425,7 +667,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     const gen = ++bootGen
     const before = account
     // an edit still waiting on the debounce is written first, under the account it was made in
-    if (persistTimer !== undefined) await persistNow()
+    if (persistPending()) await persistNow()
     account = myId
     const wasLoaded = state.loaded
     const cached = await loadCache(myId)
@@ -473,8 +715,12 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // blanket version re-sent every place, recipe, meal, grocery list, journal
     // entry and event on every load — none of which the server echoed back,
     // so none could ever be confirmed, and all of them read as "n unsynced".
-    publish({ items: ensureProjects(cached.items), loaded: true, failures: failureList() })
-    schedulePersist()
+    const items = ensureProjects(cached.items)
+    rebase(items, cached)
+    publish({ items, byKind: groupByKind(items, null), loaded: true, failures: failureList() })
+    // a cache still in an older build's shape moves over now, not after the debounce
+    if (perRecord && (snapshotLeft || cached.legacy)) void persistNow()
+    else schedulePersist()
     void sync()
   }
 
@@ -532,14 +778,14 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     const prev = state.items
     if (next === prev) return
     if (remote) {
-      const before = new Map(prev.map(i => [i.id, i]))
-      const ids = new Set(touched)
-      for (const i of next) if (before.get(i.id) !== i) ids.add(i.id)
-      const present = new Set(next.map(i => i.id))
+      // `index` is still `prev` by id: publish below moves it on
+      const ids = new Set<string>()
+      for (const i of next) if (index.get(i.id) !== i) ids.add(i.id)
+      // a touched record left unchanged still counts, unless it is gone from the list
+      for (const id of touched) if (!ids.has(id) && next.some(i => i.id === id)) ids.add(id)
       for (const id of ids) {
-        if (!present.has(id)) continue
         if (!dirty.has(id)) {
-          const base = before.get(id)
+          const base = index.get(id)
           if (base) shadows.set(id, base)
         }
         dirty.add(id)
@@ -936,13 +1182,17 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // believing the row was the member's who left; since v3.19 the revocation
     // pass reads that field, so it would then drop the row on the next round.
     const signature = (list: Item[]) => list.map(p => p.id + '@' + p.updatedAt + '@' + (p.ownerId ?? '')).sort().join('|')
+    // The same records, object for object, is the same list — the everyday
+    // round that brought nothing — and needs no signature, which sorts and
+    // joins every id. `index` is still `current` by id.
+    const moved = next.length !== current.length || next.some(i => index.get(i.id) !== i)
     const changed =
       decision.remerged.length > 0 ||
       decision.settled.length > 0 ||
       gone.size > 0 ||
       revoked.size > 0 ||
       removedMidRound.size > 0 ||
-      signature(next) !== signature(current)
+      (moved && signature(next) !== signature(current))
     const items = changed ? next : current
     publish({
       items,
@@ -1003,27 +1253,62 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       timers.clearTimeout(pushTimer)
       pushTimer = undefined
     }
-    if (persistTimer !== undefined) void persistNow()
+    if (persistPending()) void persistNow()
     if (remote && state.loaded && dirty.size > 0) void sync()
   }
 
-  /** Start the periodic round. Returns stop. */
-  function start(): () => void {
-    if (periodic === undefined && remote) periodic = timers.setInterval(() => void sync(), PERIODIC_MS)
-    return stop
+  /**
+   * Another device changed something this account can read (src/realtime.ts
+   * says so). A round that STARTS after this moment — the one in flight may
+   * have asked before the change landed — and none while the page is hidden,
+   * since coming back to it runs one anyway.
+   */
+  function nudge(): Promise<boolean> {
+    if (hidden) return Promise.resolve(false)
+    return syncAfterFlight()
   }
 
-  function stop(): void {
+  /** (Re)start the periodic round at the pace the page's state calls for, or not at all. */
+  function arm(): void {
     if (periodic !== undefined) {
       timers.clearInterval(periodic)
       periodic = undefined
     }
+    if (started && remote && !hidden) periodic = timers.setInterval(() => void sync(), live ? LIVE_PERIODIC_MS : PERIODIC_MS)
+  }
+
+  /** Start the periodic round. Returns stop. */
+  function start(): () => void {
+    if (!started) {
+      started = true
+      arm()
+    }
+    return stop
+  }
+
+  function stop(): void {
+    started = false
+    arm()
     if (pushTimer !== undefined) {
       timers.clearTimeout(pushTimer)
       pushTimer = undefined
     }
     // an edit still waiting on the debounce is written, not dropped
-    if (persistTimer !== undefined) void persistNow()
+    if (persistPending()) void persistNow()
+  }
+
+  /** A live channel is up (true) or down (false): the periodic round slows to a safety net, or picks up again. */
+  function setLive(on: boolean): void {
+    if (live === on) return
+    live = on
+    arm()
+  }
+
+  /** The page is hidden: no periodic round until it shows again (watchLifecycle syncs then). */
+  function setHidden(on: boolean): void {
+    if (hidden === on) return
+    hidden = on
+    arm()
   }
 
   return {
@@ -1052,6 +1337,9 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     start,
     stop,
     sync,
+    nudge,
+    setLive,
+    setHidden,
     fullResync,
     flush,
     upsert,
@@ -1070,8 +1358,28 @@ export function createSyncEngine(deps: SyncEngineDeps) {
      * out of a piece of clothing waits on both (src/media.ts retireMedia).
      */
     unconfirmed: (): { ids: ReadonlySet<string>; shadows: Item[] } => ({ ids: new Set(dirty), shadows: [...shadows.values()] }),
+    /**
+     * Whether this device holds exactly this version of a record — the same
+     * stamp and, when given, the same owner. A change that says so is this
+     * device's own push coming back (src/realtime.ts), and needs no round.
+     */
+    holds(id: string, updatedAt: string, ownerId?: string | null): boolean {
+      const cur = index.get(id)
+      if (!cur || cur.updatedAt !== updatedAt) return false
+      return ownerId == null || (cur.ownerId ?? account) === ownerId
+    },
     /** What the engine holds for the next round — for tests and diagnostics. */
-    inspect: () => ({ dirty: [...dirty].sort(), shadows: new Map(shadows), failures: failureList(), cursor: readCursor(kv), syncing: inflight !== null }),
+    inspect: () => ({
+      dirty: [...dirty].sort(),
+      shadows: new Map(shadows),
+      failures: failureList(),
+      cursor: readCursor(kv),
+      syncing: inflight !== null,
+      /** How often the periodic round runs now, or null while it is off (stopped, hidden, local mode). */
+      pollMs: periodic === undefined ? null : live ? LIVE_PERIODIC_MS : PERIODIC_MS,
+      /** Ids the next cache write will put or delete. */
+      unsaved: [...unsaved].sort(),
+    }),
   }
 }
 
@@ -1090,16 +1398,21 @@ export interface LifecycleEnv {
 /**
  * The page's comings and goings, wired to the engine: sync when the app comes
  * back (visible, focus, online), flush when it goes (hidden, pagehide, the
- * shell's pause). Returns a disposer.
+ * shell's pause), and no periodic round while it is hidden — a tab left in the
+ * background polled every minute for nobody. Returns a disposer.
  */
-export function watchLifecycle(engine: Pick<SyncEngine, 'sync' | 'flush'>, env: LifecycleEnv): () => void {
+export function watchLifecycle(engine: Pick<SyncEngine, 'sync' | 'flush'> & Partial<Pick<SyncEngine, 'setHidden'>>, env: LifecycleEnv): () => void {
   const onVisible = () => {
     if (env.document.visibilityState === 'visible') void engine.sync()
   }
   const onVisibility = () => {
-    if (env.document.visibilityState === 'hidden') engine.flush()
+    const away = env.document.visibilityState === 'hidden'
+    engine.setHidden?.(away)
+    if (away) engine.flush()
     else onVisible()
   }
+  // a page opened in a background tab starts without the round
+  engine.setHidden?.(env.document.visibilityState === 'hidden')
   const onLeave = () => engine.flush()
   env.document.addEventListener('visibilitychange', onVisibility)
   env.window.addEventListener('focus', onVisible)
