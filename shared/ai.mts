@@ -62,6 +62,9 @@ export function looksLikeThinking(text: string, system: string): boolean {
 /** Appended to a brief when a first answer came back as thinking. */
 export const NO_THINKING = 'Reply with the finished text only — no reasoning, no commentary, and do not restate these instructions.'
 
+/** Appended to a brief when a first JSON answer came back cut off, empty or the wrong shape. */
+export const JSON_ONLY = 'Reply with the JSON only — no reasoning and no commentary.'
+
 /**
  * The brief for a period's review, written once for both the ✨ button and the
  * Sunday draft the server writes on its own.

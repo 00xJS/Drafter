@@ -70,10 +70,21 @@ describe('a plain-text call whose reply is the thinking', () => {
     mock.mockResolvedValueOnce(reply(REVIEW_SYSTEM_ECHO)).mockResolvedValueOnce(reply(THE_REAL_THING))
     await expect(summarizeReview(reviewInput)).resolves.toBe(THE_REAL_THING)
     expect(mock).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(String(mock.mock.calls[0][1]?.body))
     const second = JSON.parse(String(mock.mock.calls[1][1]?.body))
     expect(second.system).toContain('no reasoning')
-    // and with room, so the second try does not run out the same way
-    expect(second.maxTokens).toBeGreaterThanOrEqual(2048)
+    // With reasoning off, not with more room: the server lifts every call to
+    // 2048 tokens already, and the thinking is what ran the first one out.
+    // The review's first try reasons, as it always has.
+    expect(first).not.toHaveProperty('reasoning')
+    expect(second).toMatchObject({ maxTokens: first.maxTokens, reasoning: 'off' })
+  })
+
+  it('asks again when the reply is empty — the thinking took the whole budget — rather than failing at once', async () => {
+    mock.mockResolvedValueOnce(reply('')).mockResolvedValueOnce(reply(THE_REAL_THING))
+    await expect(summarizeReview(reviewInput)).resolves.toBe(THE_REAL_THING)
+    expect(mock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(mock.mock.calls[1][1]?.body)).reasoning).toBe('off')
   })
 
   it('throws rather than saving the thinking as the review', async () => {

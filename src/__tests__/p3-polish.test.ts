@@ -113,7 +113,7 @@ describe('polishWeekPlan', () => {
   })
 
   it('never sends a real id, anyone’s notes or a recipe’s', async () => {
-    const prompts = stubAI({ dinners: [], note: '', catchUps: [] })
+    const prompts = stubAI({ dinners: [], note: 'A quiet week.', catchUps: [] })
     await polishWeekPlan(input)
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).not.toContain('id-')

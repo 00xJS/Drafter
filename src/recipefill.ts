@@ -212,7 +212,8 @@ export function parseRecipeFill(text: string): RecipeDraft {
  */
 export async function fillRecipe(input: FillInput): Promise<RecipeDraft> {
   const { system, prompt } = buildFillPrompt(input)
-  const draft = parseRecipeFill(await complete(system, prompt, 2048, true))
+  // an ordinary home version needs no thought first, and the thinking was most of a minute's wait
+  const draft = parseRecipeFill(await complete(system, prompt, 2048, true, { reasoning: 'off' }))
   if (!draft.ingredients.length && !draft.steps.length) throw new Error('The assistant didn’t draft anything for that dish — try again, or add a word about it to its notes.')
   return draft
 }
