@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { imageFiles, mediaURL, saveMedia } from '../media'
+import { openExternal } from '../native'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
 import { Icon } from './Icon'
 import { tipAttrs } from './notes/tips'
@@ -44,6 +45,51 @@ const TOOLS: Cmd[] = [
   { face: '―', tip: 'Divider: a line across the note', does: { exec: 'insertHorizontalRule' } },
 ]
 
+// ---- opening a link --------------------------------------------------------
+//
+// The pad is always editable, so a tap on a link places the caret, as it
+// should — and on a phone that was the end of it: links opened only on
+// Cmd/Ctrl+click, which a phone has no way to make. A tap that lands on a
+// link with nothing selected now offers an Open ↗ beside it.
+
+/** What a tap in the text asks for: a link to offer, a link to open now (Cmd/Ctrl+click), or nothing. */
+export type LinkTap = { href: string; open: boolean } | null
+
+/**
+ * Read one tap. `target` is where it landed; `collapsed` whether the
+ * selection is just a caret. A selection is left alone: that is editing the
+ * link's words, not following it. Only the links the sanitizer keeps count.
+ */
+export function readLinkTap(target: EventTarget | null, keys: { metaKey: boolean; ctrlKey: boolean }, collapsed: boolean): LinkTap {
+  const link = (target as Element | null)?.closest?.('a[href]')
+  const href = link?.getAttribute('href') ?? ''
+  if (!/^(https?:\/\/|mailto:)/i.test(href)) return null
+  if (keys.metaKey || keys.ctrlKey) return { href, open: true }
+  return collapsed ? { href, open: false } : null
+}
+
+/** About how wide the Open ↗ button draws, so it is never placed off the pad's right edge. */
+const LINK_TIP_WIDTH = 96
+
+/** Where the Open ↗ goes, against the pad: just under the link, inside the pad's width; null once the link has scrolled out of the text's view. */
+export function linkTipPlace(link: DOMRectReadOnly, pad: DOMRectReadOnly, view: DOMRectReadOnly, width = LINK_TIP_WIDTH): { top: number; left: number } | null {
+  if (link.bottom <= view.top || link.top >= view.bottom) return null
+  return { top: Math.round(link.bottom - pad.top + 4), left: Math.round(Math.max(0, Math.min(link.left - pad.left, pad.width - width))) }
+}
+
+/** Where the Open ↗ for `link` sits now in `pad`; null when there is nothing on screen to point at. */
+function tipAt(link: Element, pad: HTMLElement | null, text: HTMLElement | null): { top: number; left: number } | null {
+  const padBox = pad?.getBoundingClientRect()
+  const textBox = text?.getBoundingClientRect()
+  return padBox && textBox && link.isConnected ? linkTipPlace(link.getBoundingClientRect(), padBox, textBox) : null
+}
+
+/** Open a note's link where it belongs: a web page in Safari's sheet (a new tab on the web), an address in the mail app. */
+export function openNoteLink(href: string): void {
+  if (/^mailto:/i.test(href)) window.location.href = href
+  else void openExternal(href)
+}
+
 /**
  * One running notepad: type straight into the page, format with the toolbar
  * or shortcuts, paste or drop photos inline. The HTML is sanitized on the way
@@ -51,10 +97,41 @@ const TOOLS: Cmd[] = [
  */
 export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: Props) {
   const box = useRef<HTMLDivElement>(null)
+  const pad = useRef<HTMLDivElement>(null)
+  const tipButton = useRef<HTMLButtonElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  /** The link a tap landed on while its Open ↗ is offered, and where that sits in the pad. */
+  const [linkTip, setLinkTip] = useState<{ link: Element; href: string; top: number; left: number } | null>(null)
   const lastEmitted = useRef(value)
+
+  /** Keep the Open ↗ under its link as the text scrolls or the page resizes (the keyboard coming up). */
+  const followTip = useCallback(
+    () =>
+      setLinkTip(tip => {
+        const at = tip && tipAt(tip.link, pad.current, box.current)
+        return tip && at ? { ...tip, ...at } : null
+      }),
+    [],
+  )
+
+  // a tap anywhere but the text or the Open ↗ itself puts the Open ↗ away
+  const tipShowing = linkTip !== null
+  useEffect(() => {
+    if (!tipShowing) return
+    const away = (e: PointerEvent) => {
+      const t = e.target as Node | null
+      if (t && (box.current?.contains(t) || tipButton.current?.contains(t))) return
+      setLinkTip(null)
+    }
+    document.addEventListener('pointerdown', away)
+    window.addEventListener('resize', followTip)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      window.removeEventListener('resize', followTip)
+    }
+  }, [tipShowing, followTip])
 
   /** Serialize the editable (photos keep only their media id, never a blob URL). */
   const emit = useCallback(() => {
@@ -152,7 +229,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   }
 
   return (
-    <div className={dragging ? 'notes dragging' : 'notes'}>
+    <div ref={pad} className={dragging ? 'notes dragging' : 'notes'}>
       <div className="notes-toolbar">
         {TOOLS.map(t => (
           <button key={t.tip} type="button" className="btn subtle notes-tool" {...tipAttrs(t.tip)} onMouseDown={e => e.preventDefault()} onClick={() => run(t.does)}>
@@ -226,9 +303,15 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
         suppressContentEditableWarning
         spellCheck
         data-placeholder="Start typing. Paste or drop photos right here. Bold, lists, checklists, links, code and emoji from the bar above."
-        onInput={emit}
+        onInput={() => {
+          // writing moves on from the link that was tapped
+          setLinkTip(null)
+          emit()
+        }}
         onBlur={emit}
+        onScroll={() => tipShowing && followTip()}
         onKeyDown={e => {
+          setLinkTip(null)
           if (e.metaKey || e.ctrlKey) {
             const tool = TOOLS.find(t => t.key === e.key.toLowerCase())
             if (tool && tool.key === 'k') {
@@ -242,9 +325,17 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
           if (t instanceof HTMLInputElement && t.type === 'checkbox') {
             // let the checkbox toggle inside the editable, then persist it
             window.setTimeout(emit, 0)
-          } else if (t instanceof HTMLAnchorElement && (e.metaKey || e.ctrlKey)) {
-            window.open(t.href, '_blank', 'noreferrer')
+            return
           }
+          const tap = readLinkTap(t, e, window.getSelection()?.isCollapsed ?? true)
+          if (!tap) return setLinkTip(null)
+          if (tap.open) {
+            setLinkTip(null)
+            return openNoteLink(tap.href)
+          }
+          const link = t.closest('a[href]')!
+          const at = tipAt(link, pad.current, box.current)
+          setLinkTip(at && { link, href: tap.href, ...at })
         }}
         onPaste={e => {
           const files = Array.from(e.clipboardData.files)
@@ -275,8 +366,25 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
           }
         }}
       />
+      {linkTip && (
+        <button
+          ref={tipButton}
+          type="button"
+          className="btn notes-link-tip"
+          style={{ top: linkTip.top, left: linkTip.left }}
+          aria-label={`Open ${linkTip.href}`}
+          // the caret stays where the tap put it
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => {
+            openNoteLink(linkTip.href)
+            setLinkTip(null)
+          }}
+        >
+          Open ↗
+        </button>
+      )}
       <div className="notes-foot">
-        <small>{wordCountHtml(value)} words · Cmd/Ctrl+click a link to open it</small>
+        <small>{wordCountHtml(value)} words · Tap a link to open it</small>
         <span className="spacer" />
         {status && <small>{status}</small>}
       </div>
