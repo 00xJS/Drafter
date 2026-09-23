@@ -1,6 +1,6 @@
 // Place rules shared by the web app and the MCP server. Dependency-free ESM.
 
-import { ownVisit } from './people.mjs'
+import { ownVisit, remindersOff } from './people.mjs'
 
 /**
  * The kinds of place, in the order the app offers them. One list for the app
@@ -211,8 +211,13 @@ export function outingsAt(placeId, tasks, meals = [], now = new Date(), myId = n
  * default cadence for places (people fall back to 90 days) — a restaurant you
  * never set a rhythm for must never read as due or overdue on Today or in the
  * digest. Same 1× due / 1.5× overdue thresholds as people once a cadence is set.
+ *
+ * 'off' is No reminders (remindersOff), a choice rather than a gap: never
+ * nudged, and left out of Stats' Not been back and Never been as well, where a
+ * place with no rhythm ('none') still shows once you have drifted from it.
  */
 export function placeCadenceStatus(place, tasks, now = new Date(), meals = [], myId = null) {
+  if (remindersOff(place)) return { status: 'off', reason: '' }
   const cadence = Number(place?.cadenceDays)
   if (!Number.isFinite(cadence) || cadence <= 0) return { status: 'none', reason: '' }
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now)

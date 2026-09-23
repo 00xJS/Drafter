@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CADENCE_META, Cadence, CalendarEntry, JournalEntry, PLACE_CATEGORY_META, PROJECT_COLORS, Person, PersonGroup, PERSON_GROUPS, PERSON_GROUP_META, Place, Task } from '../types'
 import { newerStamp } from '../itemops'
-import { PersonFilter, PersonStats, SEEN_META, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
+import { PersonFilter, PersonStats, SEEN_META, cadenceChoice, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
@@ -70,7 +70,8 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   const [name, setName] = useState(person?.name ?? '')
   const [emoji, setEmoji] = useState(person?.emoji ?? '')
   const [group, setGroup] = useState<PersonGroup>(person?.group ?? 'family')
-  const [cadence, setCadence] = useState<Cadence | ''>((person?.cadenceDays as Cadence | undefined) ?? '')
+  // '' is none set (the 90-day default), 'off' is No reminders
+  const [cadence, setCadence] = useState<Cadence | '' | 'off'>(person?.noReminders ? 'off' : ((person?.cadenceDays as Cadence | undefined) ?? ''))
   const [color, setColor] = useState(person?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
   const [notes, setNotes] = useState(person?.notes ?? '')
   const [birthday, setBirthday] = useState(person?.birthday ?? '')
@@ -85,7 +86,8 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
       emoji: emoji.trim() || undefined,
       group,
       color,
-      cadenceDays: cadence === '' ? undefined : cadence,
+      cadenceDays: cadence === '' || cadence === 'off' ? undefined : cadence,
+      noReminders: cadence === 'off' || undefined,
       notes: notes.trim() || undefined,
       birthday: birthday || undefined,
       anniversary: anniversary || undefined,
@@ -122,13 +124,14 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
           <span>
             How often do you want to see them? <small>(drives the nudges)</small>
           </span>
-          <select value={cadence} onChange={e => setCadence(e.target.value === '' ? '' : (Number(e.target.value) as Cadence))}>
-            <option value="">No target — just track it</option>
+          <select value={cadence} onChange={e => setCadence(cadenceChoice(e.target.value))}>
+            <option value="">None set — about every 3 months</option>
             {(Object.keys(CADENCE_META).map(Number) as Cadence[]).map(c => (
               <option key={c} value={c}>
                 {CADENCE_META[c]}
               </option>
             ))}
+            <option value="off">No reminders</option>
           </select>
         </label>
         <div className="field-row">
@@ -343,8 +346,8 @@ export function PersonRow({
                 <small>avg gap</small>
               </span>
               <span>
-                <strong>{person.cadenceDays ?? '90 (default)'}</strong>
-                <small>target</small>
+                <strong>{person.noReminders ? 'Off' : (person.cadenceDays ?? '90 (default)')}</strong>
+                <small>{person.noReminders ? 'reminders' : 'target'}</small>
               </span>
               {/* a phone's row hides its 30/90-day figures, so they show here instead */}
               <SeenCount className="seen-window" days={stats.days30} events={stats.count30} span={30} />

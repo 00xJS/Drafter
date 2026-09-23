@@ -20,10 +20,11 @@ export type Outing = { kind: 'task'; task: Task; at: string } | { kind: 'meal'; 
 /** Newest first. Future meals are plans, not visits, so they are excluded. */
 export declare function outingsAt(placeId: string, tasks: Task[], meals?: Meal[], now?: Date, myId?: string | null): Outing[]
 
-export type PlaceCadenceState = 'none' | 'never' | 'ok' | 'due' | 'overdue'
+/** 'none': no rhythm set. 'off': No reminders, chosen. Neither is ever due. */
+export type PlaceCadenceState = 'none' | 'off' | 'never' | 'ok' | 'due' | 'overdue'
 export interface PlaceCadenceStatus {
   status: PlaceCadenceState
-  /** Empty when no cadence is set. */
+  /** Empty when no cadence is set, or on No reminders. */
   reason: string
   lastAt?: string
   daysSince?: number

@@ -33,6 +33,18 @@ export function tidyCoords(raw: { lat?: unknown; lon?: unknown }): Coord | undef
   return lat !== undefined && lon !== undefined ? { lat, lon } : undefined
 }
 
+/**
+ * The middle of the places that have a pin: where Find address leans its
+ * search. Null with none pinned. A plain average, which is right for places
+ * spread over one town or metro area, the only spread it is asked about.
+ */
+export function centroidOf(places: readonly { lat?: unknown; lon?: unknown; deletedAt?: string }[]): Coord | null {
+  const pins = places.flatMap(p => (p.deletedAt ? [] : (tidyCoords(p) ?? [])))
+  if (!pins.length) return null
+  const mean = (k: 'lat' | 'lon') => pins.reduce((s, c) => s + c[k], 0) / pins.length
+  return { lat: mean('lat'), lon: mean('lon') }
+}
+
 /** Great-circle metres between two points. */
 export function haversineMeters(a: Coord, b: Coord): number {
   const toRad = (d: number) => (d * Math.PI) / 180

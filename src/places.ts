@@ -1,5 +1,6 @@
 import { Meal, PLACE_CATEGORY_META, Person, Place, PlaceCategory, Task } from './types'
-import { monthsAndTrend, visitSummary, visitsFor } from './people'
+import { tidyCoords } from './geo'
+import { monthsAndTrend, suggestRhythm, visitDays, visitSummary, visitsFor } from './people'
 import {
   Outing,
   PlaceCadenceState,
@@ -351,6 +352,27 @@ export function filedAt(v: Outing): string {
   if (v.kind !== 'meal') return v.at
   const [y, m, d] = v.meal.date.split('-').map(Number)
   return new Date(y, m - 1, d, 12).toISOString()
+}
+
+/**
+ * A place with an address found for it: the line kept as every address is
+ * (tidyPlaceAddress) and its point in the pin fields "Pin this spot" and I'm
+ * here use, so I'm here finds it next time without a first pin. Both come
+ * from the one candidate picked, so they always agree. Not stamped.
+ */
+export function withAddress(place: Place, found: { address: string; lat: number; lon: number }): Place {
+  const address = tidyPlaceAddress(found.address)
+  const pin = tidyCoords(found)
+  return { ...place, ...(address ? { address } : {}), ...(pin ? { lat: pin.lat, lon: pin.lon } : {}) }
+}
+
+/**
+ * What the setup sheet suggests for a place with no rhythm yet: from the days
+ * YOU went there (outingsAt narrowed by myId, a meal shared with the household
+ * counting for both), each filed on its own date. Null with nothing in a year.
+ */
+export function placeRhythmSuggestion(place: Place, tasks: Task[], meals: Meal[], todayKey: string, now: Date = new Date(), myId?: string | null): number | null {
+  return suggestRhythm(visitDays(outingsAt(place.id, tasks, meals, now, myId).map(v => ({ at: filedAt(v) }))), todayKey)
 }
 
 /**

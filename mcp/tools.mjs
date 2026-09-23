@@ -17,7 +17,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { PRIORITIES, PROJECT_STATUSES, RECURRENCE_FREQS, SOCIAL_PROJECT_ID, TASK_STATUSES, newerStamp, nextOccurrence } from '../shared/domain.mjs'
-import { seenStatus, seenTasks, visitDays, DEFAULT_CADENCE_DAYS } from '../shared/people.mjs'
+import { remindersOff, seenStatus, seenTasks, visitDays } from '../shared/people.mjs'
 import { appendEntry, entriesBetween, entryOn, peopleNameMap, peopleNamesOf, streak } from '../shared/journal.mjs'
 import { MAX_PLACE_ALIASES, PLACE_CATEGORIES, PLACE_CATEGORY_META, matchPlace, normalisePlaceText, outingsAt, placeCadenceStatus, tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mjs'
 import { MAX_SIDES, activeGroceryLines, addGroceryItem, buildGroceryList, groceryId, groceryWeekFor, mealAt, mealLabel, mealSides, mealWithMain, mealsInWeekOf } from '../shared/kitchen.mjs'
@@ -152,17 +152,24 @@ export function resolveContext(all, { peopleIds, placeId, placeName }) {
   return out
 }
 
-export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = Date.now()) {
+/**
+ * A place as the place tools return it. `myId` is whose outings count: the
+ * places are the household's, going to one is each member's own (ownVisit),
+ * and a meal shared with the household counts for both, as in the app.
+ */
+export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = Date.now(), myId = null) {
   // one rule, in shared/places.mjs: done tasks here plus past meals eaten here
-  const outings = outingsAt(p.id, tasks, meals, new Date(nowMs))
+  const outings = outingsAt(p.id, tasks, meals, new Date(nowMs), myId)
   const last = outings[0]?.at ?? null
   const companions = new Map()
   for (const o of outings) {
     if (o.kind !== 'task') continue // a meal records the place, not the company
     for (const id of o.task.peopleIds ?? []) companions.set(id, (companions.get(id) ?? 0) + 1)
   }
-  // opt-in rhythm: status is 'none' unless the user set one — never a nag by default
-  const cadence = placeCadenceStatus(p, tasks, new Date(nowMs), meals)
+  // opt-in rhythm: status is 'none' unless the user set one — never a nag by
+  // default — and 'off' when they chose No reminders
+  const cadence = placeCadenceStatus(p, tasks, new Date(nowMs), meals, myId)
+  const off = remindersOff(p)
   return {
     id: p.id,
     name: p.name,
@@ -172,7 +179,8 @@ export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = D
     address: p.address ?? null,
     /** Other names it goes by; placeName and a calendar location find it by any of them. */
     aliases: Array.isArray(p.aliases) ? p.aliases : [],
-    cadenceDays: p.cadenceDays ?? null,
+    cadenceDays: off ? null : (p.cadenceDays ?? null),
+    noReminders: off,
     status: cadence.status,
     statusReason: cadence.reason || null,
     lastWent: last,
@@ -915,16 +923,18 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      "People you track visits with: last seen, target rhythm, whether they are due or overdue a catch-up, and how often you saw them. visitsLast30Days/visitsLast90Days count events (completed tasks with them and your own past calendar events they were on, so three on one day are three); daysSeenLast30Days/daysSeenLast90Days count the days you saw them, in the user's time zone — the app's how-often figure.",
+      "People you track visits with: last seen, target rhythm, whether they are due or overdue a catch-up, and how often you saw them. Visits are the user's own: a household member seeing someone does not count. status is overdue, due, ok or never (no visit logged), or off when the user chose No reminders for them (noReminders: true) — never nudged, with no rhythm (cadenceDays and effectiveCadenceDays are null). visitsLast30Days/visitsLast90Days count events (completed tasks with them and your own past calendar events they were on, so three on one day are three); daysSeenLast30Days/daysSeenLast90Days count the days you saw them, in the user's time zone — the app's how-often figure.",
     inputSchema: { type: 'object', properties: {} },
-    async run(_args, { db, clock }) {
+    async run(_args, { db, clock, userId }) {
       const all = await db.fetchAll({ kinds: ['person', 'task', 'event'] })
       const nowMs = clock.now().getTime()
-      // your own past events with people on them count as seeing them, as in the app
+      // your own past events with people on them count as seeing them, as in
+      // the app — and only your own visits (userId), as the app counts them
       const seen = seenTasks(
         all.filter(i => i.kind === 'task'),
         all.filter(i => i.kind === 'event'),
         new Date(nowMs),
+        userId,
       )
       return {
         people: all
@@ -932,12 +942,15 @@ export const TOOLS = [
           .map(p => {
             const s = seenStatus(p, seen, new Date(nowMs))
             const within = days => s.visits.filter(v => nowMs - Date.parse(v.at) < days * DAY)
+            const off = remindersOff(p)
             return {
               id: p.id,
               name: p.name,
               group: p.group,
-              cadenceDays: p.cadenceDays ?? null,
-              effectiveCadenceDays: s.effectiveCadenceDays ?? DEFAULT_CADENCE_DAYS,
+              cadenceDays: off ? null : (p.cadenceDays ?? null),
+              noReminders: off,
+              // the rhythm measured against: the one set, 90 days without one, none on No reminders
+              effectiveCadenceDays: s.effectiveCadenceDays,
               lastSeen: s.lastSeen ?? null,
               daysSince: s.daysSince ?? null,
               visitsLast30Days: within(30).length,
@@ -955,23 +968,23 @@ export const TOOLS = [
     name: 'list_places',
     scope: 'read',
     annotations: READS,
-    description: `Places the user goes (restaurants, fast food, cafés, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise). Each has its address and its other names (aliases) when set. category narrows the list to one of: ${PLACE_CATEGORY_CHOICES}.`,
+    description: `Places the user goes (restaurants, fast food, cafés, parks, venues…): when they last went, how often, who they usually go with, and — only for places with a cadenceDays rhythm — whether they are due/overdue a return (status is "none" otherwise, and "off" when the user chose No reminders for it: noReminders is true, and it is never flagged). Outings are the user's own: a household member going somewhere does not count, while a meal shared with the household counts for both. Each has its address and its other names (aliases) when set. category narrows the list to one of: ${PLACE_CATEGORY_CHOICES}.`,
     inputSchema: { type: 'object', properties: { category: { type: 'string', enum: PLACE_CATEGORIES } } },
-    async run({ category } = {}, { db, clock }) {
+    async run({ category } = {}, { db, clock, userId }) {
       const all = await db.fetchAll({ kinds: ['place', 'task', 'person', 'meal'] })
       const tasks = all.filter(i => i.kind === 'task')
       const people = all.filter(i => i.kind === 'person')
       const places = all.filter(i => i.kind === 'place' && (!category || i.category === category))
       const meals = all.filter(i => i.kind === 'meal')
       const nowMs = clock.now().getTime()
-      return { count: places.length, places: places.map(p => summarizePlace(p, tasks, people, meals, nowMs)).sort((a, b) => (b.lastWent ?? '').localeCompare(a.lastWent ?? '')) }
+      return { count: places.length, places: places.map(p => summarizePlace(p, tasks, people, meals, nowMs, userId)).sort((a, b) => (b.lastWent ?? '').localeCompare(a.lastWent ?? '')) }
     },
   },
   {
     name: 'create_place',
     scope: 'write',
     annotations: ADDS,
-    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due. address and aliases (other names it goes by) are optional: a calendar event whose location holds the name or one of the aliases as whole words, or is the address (or opens with it, when it starts with a house number), is marked as at this place, and placeName finds it by any of them.`,
+    description: `Save a place so outings can be logged there. category is one of: ${PLACE_CATEGORY_CHOICES} (other when left out). cadenceDays (optional) sets a return rhythm; without it the place is tracked but never flagged as due. noReminders: true saves it on No reminders instead (never flagged, and left out of the app's "not been back" lists); give one or the other, not both. address and aliases (other names it goes by) are optional: a calendar event whose location holds the name or one of the aliases as whole words, or is the address (or opens with it, when it starts with a house number), is marked as at this place, and placeName finds it by any of them.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -979,13 +992,14 @@ export const TOOLS = [
         category: { type: 'string', enum: PLACE_CATEGORIES },
         emoji: { type: 'string' },
         cadenceDays: { type: 'integer', minimum: 1, description: 'Target days between outings, e.g. 30 for monthly. Omit for no target.' },
+        noReminders: { type: 'boolean', description: 'true: never remind the user about going back. Not with cadenceDays.' },
         notes: { type: 'string', description: 'Best table, what to order, booking tip…' },
         address: { type: 'string', description: 'Where it is, on one line, e.g. "21 Warwick St, London". Open in Maps searches it.' },
         aliases: { type: 'array', items: { type: 'string' }, description: `Other names it goes by, e.g. ["Pret"] for Pret A Manger (at most ${MAX_PLACE_ALIASES})` },
       },
       required: ['name'],
     },
-    async run({ name, category, emoji, cadenceDays, notes, address, aliases } = {}, { db, clock, newId }) {
+    async run({ name, category, emoji, cadenceDays, noReminders, notes, address, aliases } = {}, { db, clock, newId }) {
       const clean = String(name ?? '').trim()
       if (!clean) throw new Error('name must not be empty')
       let cadence
@@ -993,6 +1007,8 @@ export const TOOLS = [
         cadence = Number(cadenceDays)
         if (!Number.isInteger(cadence) || cadence <= 0) throw new Error('cadenceDays must be a positive integer')
       }
+      if (noReminders !== undefined && noReminders !== null && typeof noReminders !== 'boolean') throw new Error('noReminders must be true or false')
+      if (noReminders === true && cadence !== undefined) throw new Error('Give cadenceDays or noReminders, not both.')
       if (aliases !== undefined && aliases !== null && !Array.isArray(aliases)) throw new Error('aliases must be a list of names')
       const all = await db.fetchAll({ kinds: ['place'] })
       // a name is taken when a live place already goes by it, as its own name or one of its others
@@ -1011,6 +1027,7 @@ export const TOOLS = [
         emoji: emoji ? String(emoji).trim() || undefined : undefined,
         color: '#f97316',
         cadenceDays: cadence,
+        noReminders: noReminders === true || undefined,
         notes: notes ? String(notes).trim() || undefined : undefined,
         address: tidyPlaceAddress(typeof address === 'string' ? address : undefined),
         aliases: tidyPlaceAliases(aliases, clean),

@@ -2,6 +2,15 @@ import type { PlannerCtx } from './ctx'
 import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
 
+/** Who, and how often, from the List · Stats row: one word, so the row still fits a 375pt phone. */
+function RhythmsButton({ onOpen }: { onOpen(): void }) {
+  return (
+    <button type="button" className="btn" onClick={onOpen} title="Who, and how often">
+      Rhythms
+    </button>
+  )
+}
+
 /**
  * Keep's People and Places halves, each with its own List · Stats.
  *
@@ -31,9 +40,12 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
             value={innerViews.places}
             onChange={v => setInnerView('places', v)}
             action={
-              <button type="button" className="btn primary" onClick={addAPlace}>
-                + Add place
-              </button>
+              <>
+                <RhythmsButton onOpen={() => openSheet({ kind: 'rhythms', side: 'places' })} />
+                <button type="button" className="btn primary" onClick={addAPlace}>
+                  + Add place
+                </button>
+              </>
             }
           />
           {innerViews.places === 'stats' ? (
@@ -95,9 +107,12 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
             value={innerViews.people}
             onChange={v => setInnerView('people', v)}
             action={
-              <button type="button" className="btn primary" onClick={addAPerson}>
-                + Add person
-              </button>
+              <>
+                <RhythmsButton onOpen={() => openSheet({ kind: 'rhythms', side: 'people' })} />
+                <button type="button" className="btn primary" onClick={addAPerson}>
+                  + Add person
+                </button>
+              </>
             }
           />
           {innerViews.people === 'stats' ? (

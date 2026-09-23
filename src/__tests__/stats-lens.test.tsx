@@ -467,6 +467,14 @@ describe('the lens drawn', () => {
     expect([ring.props.value, ring.props.of]).toEqual([2, 2])
   })
 
+  it('counts the places YOU have been to, as Places \u2192 Stats does: the other member going is not you going', () => {
+    const cafe = { kind: 'place' as const, id: 'cafe', name: 'Caf\u00e9', color: '#a3e635', category: 'cafe' as const, createdAt: STAMP, updatedAt: STAMP }
+    const props = { ...LENS_PROPS, places: [cafe], tasks: [done('hers', '2026-09-15', { placeId: 'cafe', ownerId: 'maria' })] }
+    const visited = (myId: string) => elements(into(settled(StatsLens, { ...props, myId }), 'Overview')).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!.props.value
+    expect(visited('maria')).toBe('1 place')
+    expect(visited('joe')).toBe('0 places')
+  })
+
   it('finishes the heading\u2019s sentence on every window, including All', () => {
     // the headings read "The last {spanWords}", and 'All' lowercased gave the
     // non-phrase "The last all"

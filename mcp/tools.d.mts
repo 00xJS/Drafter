@@ -53,7 +53,8 @@ export declare function resolveContext(
   ctx: { peopleIds?: unknown; placeId?: unknown; placeName?: unknown },
 ): { peopleIds?: string[]; placeId?: string }
 export declare function summarizeTask(t: Item): Record<string, any>
-export declare function summarizePlace(p: Item, tasks?: Item[], people?: Item[], meals?: Item[], nowMs?: number): Record<string, any>
+/** `myId`: whose outings count (ownVisit); absent counts everyone's, as before. */
+export declare function summarizePlace(p: Item, tasks?: Item[], people?: Item[], meals?: Item[], nowMs?: number, myId?: string | null): Record<string, any>
 /** A planned meal as get_week_meals and plan_meal return it: the main, its sides, and a label naming them together. */
 export declare function summarizeMeal(m: Item): {
   id: string

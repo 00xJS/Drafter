@@ -442,6 +442,8 @@ export function sanitizePerson(raw: unknown): Person | null {
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   const cadence = Number(r.cadenceDays)
+  // No reminders wins over a rhythm, as withRhythm writes it: two devices can merge one of each
+  const off = r.noReminders === true
   return {
     kind: 'person',
     id,
@@ -449,7 +451,8 @@ export function sanitizePerson(raw: unknown): Person | null {
     emoji: str(r.emoji)?.trim() || undefined,
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[5],
     group: typeof r.group === 'string' && PERSON_GROUP_SET.has(r.group) ? (r.group as PersonGroup) : 'family',
-    cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
+    cadenceDays: !off && Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
+    noReminders: off || undefined,
     notes: str(r.notes)?.trim() || undefined,
     birthday: dateOnly(r.birthday),
     anniversary: dateOnly(r.anniversary),
@@ -472,6 +475,7 @@ export function sanitizePlace(raw: unknown): Place | null {
   const now = new Date().toISOString()
   const color = str(r.color)?.trim()
   const cadence = Number(r.cadenceDays)
+  const off = r.noReminders === true
   const pin = tidyCoords({ lat: r.lat, lon: r.lon })
   return {
     kind: 'place',
@@ -481,7 +485,8 @@ export function sanitizePlace(raw: unknown): Place | null {
     color: color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : PROJECT_COLORS[0],
     category:
       typeof r.category === 'string' && PLACE_CATEGORY_SET.has(r.category) ? (r.category as PlaceCategory) : 'other',
-    cadenceDays: Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
+    cadenceDays: !off && Number.isFinite(cadence) && cadence > 0 ? Math.round(cadence) : undefined,
+    noReminders: off || undefined,
     notes: str(r.notes)?.trim() || undefined,
     // a place saved before these existed has neither, and reads as it did
     address: tidyPlaceAddress(r.address),

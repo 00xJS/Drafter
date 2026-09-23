@@ -107,8 +107,8 @@ export function mostVisited(stats: readonly PlaceStats[], window: DayWindow, now
  * Been before, and further back than their rhythm: the one you set, due or
  * overdue (the Been a while tile's), or for a place with none, your usual one
  * there (driftedFrom, "Where should we go?"'s drifted-from). A rhythm you set
- * that is still on track keeps a place off, however long the gap. Longest
- * since first.
+ * that is still on track keeps a place off, however long the gap, and so does
+ * No reminders ('off'). Longest since first.
  */
 export function notBeenBack(stats: readonly PlaceStats[]): PlaceStats[] {
   return stats
@@ -116,9 +116,9 @@ export function notBeenBack(stats: readonly PlaceStats[]): PlaceStats[] {
     .sort((a, b) => (b.daysSince ?? 0) - (a.daysSince ?? 0) || byName(a.place, b.place))
 }
 
-/** Saved, with no outing yet: the one waiting longest first. */
+/** Saved, with no outing yet: the one waiting longest first. A place on No reminders is left out, as it is from Not been back. */
 export function neverBeen(stats: readonly PlaceStats[]): PlaceStats[] {
-  return stats.filter(s => s.visits.length === 0).sort((a, b) => a.place.createdAt.localeCompare(b.place.createdAt) || byName(a.place, b.place))
+  return stats.filter(s => s.status !== 'off' && s.visits.length === 0).sort((a, b) => a.place.createdAt.localeCompare(b.place.createdAt) || byName(a.place, b.place))
 }
 
 // ---- by the calendar ---------------------------------------------------------------

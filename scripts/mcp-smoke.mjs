@@ -766,6 +766,12 @@ async function main() {
     eq(nopi?.outingsAllTime, 1, 'list_places counts the outing it just logged')
     eq(nopi?.address, '21-22 Warwick St, London', 'list_places gives the place its address')
     eq(JSON.stringify(nopi?.aliases), '["Nopi Soho"]', 'list_places gives the place its other names')
+    // No reminders: stored on the record as the app stores it, through the real RPC, and read back as off
+    const quiet = (await call('create_place', { name: 'Home Depot', category: 'shop', noReminders: true })).created
+    const quietRow = row(quiet.id)
+    eq(quietRow.data.noReminders, true, 'create_place stored No reminders on the place')
+    eq(quietRow.data.cadenceDays, undefined, 'and no rhythm beside it')
+    eq((await call('list_places', {})).places.find(p => p.id === quiet.id)?.status, 'off', 'list_places reads it as off')
 
     // --------------------------------------------------------------- kitchen
     const d = new Date()

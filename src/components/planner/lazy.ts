@@ -60,6 +60,8 @@ export const ShutdownSheet = preloadable(() => import('../ShutdownSheet').then(m
 export const WeekPlanSheet = preloadable(() => import('../WeekPlanSheet').then(m => m.WeekPlanSheet), 'WeekPlanSheet')
 export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskSheet), 'AskSheet')
 export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => m.ImHereSheet), 'ImHereSheet')
+// Who, and how often: Today's cold-start card and the People and Places rows open it
+export const RhythmSheet = preloadable(() => import('../RhythmSheet').then(m => m.RhythmSheet), 'RhythmSheet')
 
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
@@ -67,7 +69,7 @@ const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
   tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
   calendar: [Calendar.preload, Roadmap.preload],
   // four segments, and a finger cannot say which — so all four, as the lens does
-  keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
+  keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
   insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload],
 }
@@ -79,7 +81,7 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  Settings and the chat sit near the front because the top bar reaches both
  *  from every screen — Settings was dead last of 29, from when it was a dialog
  *  you rarely opened rather than a screen you navigate to. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
+export const PRELOAD_ORDER = [TaskEditor, Search, Settings, Chat, PlanDaySheet, ShutdownSheet, WeekPlanSheet, AskSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Roadmap, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash].map(c => c.preload)
 
 /** A moment after launch, fetch every lazy chunk in the background; Admin's only for the owner. */
 export function useWarmChunks(isOwner: boolean) {

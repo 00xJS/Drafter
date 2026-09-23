@@ -1279,3 +1279,146 @@
 .review-actions {
   gap: 8px;
 }
+
+/* ----- Who, and how often (RhythmSheet): a row per person or place, its
+   rhythm as a row of chips. The chips are .toggle pills (a pick among
+   values, not a switch between views, so not a track); a suggestion from
+   your own visits is the chosen pill drawn dashed in the accent, until a tap
+   makes it yours. Every colour is a token, so both themes read the same. */
+.rhythm-sheet .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rhythm-sheet .field-hint,
+.rhythm-summary {
+  margin: 0;
+}
+.rhythm-summary {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.rhythm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rhythm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+}
+.rhythm-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.rhythm-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rhythm-name strong,
+.rhythm-name small {
+  overflow-wrap: anywhere;
+}
+.rhythm-chip.on {
+  font-weight: 600;
+}
+.rhythm-chip.suggested {
+  border: 1px dashed var(--accent-ring);
+  background: var(--accent-softer);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.find-missing {
+  align-self: flex-start;
+}
+
+/* Find address: the candidates OpenStreetMap offered, each a full-width
+   button — its name when it has one, its address under it. */
+.find-address {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.find-address-panel,
+.missing-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.missing-addresses {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.missing-progress {
+  margin: 0;
+}
+.missing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.address-candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.address-candidate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--touch, 40px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.address-candidate:hover {
+  border-color: var(--accent-ring);
+}
+.address-candidate span {
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.address-town {
+  width: 100%;
+}
+
+/* Today's People card, under the cold start's two: how many are waiting, and
+   the sheet that gives them all a rhythm at once. */
+.nudge-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+}
+
+/* The List · Stats row holds two actions on People and Places: Rhythms and
+   + Add. On a phone they keep their words and the track gives way. */
+.list-stats-action {
+  display: inline-flex;
+  gap: 6px;
+}

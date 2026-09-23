@@ -31,7 +31,7 @@ import { mealLabel, platesOn, tonightDinner } from '../kitchen'
 import { JournalCard } from './Journal'
 import { newerStamp } from '../itemops'
 import { snoozedIds } from '../snooze'
-import { SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
+import { NEVER_NUDGES, SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
 import { defaultReviewAnchor, doneByWeek, isVisit, weekRange, shiftRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
@@ -154,6 +154,11 @@ interface Props {
   snoozes?: Snooze[]
   /** Put one off for `days`; the shell writes the row and offers Undo. */
   onSnooze?(target: SnoozeTarget, targetId: string, days: number, label: string): void
+  /**
+   * Open "Who, and how often" on its People side. Offered under the people
+   * nobody has logged yet: one sheet sets a rhythm for everyone at once.
+   */
+  onSetUpRhythms?(): void
 }
 
 /**
@@ -671,6 +676,7 @@ export function Today({
   snoozes = NO_SNOOZES,
   onSnooze,
   onOpenNotes,
+  onSetUpRhythms,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -755,19 +761,21 @@ export function Today({
     }),
     [snoozes],
   )
-  const peopleNudges = useMemo(
-    () => {
-      // your own events that have happened count as seeing the people on them, as on People.
-      // myId is what makes this YOUR log: the address book is the household's,
-      // but the other member seeing their mother is not you having called her (v3.24).
-      const seen = seenTasks(tasks, entries, new Date(), myId)
-      // peopleToNudge, not a filter here: the rule about who Today asks after
-      // — the drifting, then a couple nobody has logged at all — lives with
-      // the rest of the people rules
-      return peopleToNudge(people.filter(p => !putOff.people.has(p.id)).map(p => personStats(p, seen)))
-    },
-    [people, tasks, entries, myId, putOff],
-  )
+  const { peopleNudges, neverLogged } = useMemo(() => {
+    // your own events that have happened count as seeing the people on them, as on People.
+    // myId is what makes this YOUR log: the address book is the household's,
+    // but the other member seeing their mother is not you having called her (v3.24).
+    const seen = seenTasks(tasks, entries, new Date(), myId)
+    const stats = people.map(p => personStats(p, seen))
+    // peopleToNudge, not a filter here: the rule about who Today asks after —
+    // the drifting, then two nobody has logged, taking turns by day — lives
+    // with the rest of the people rules. What is put off is handed to it, so
+    // the next in turn takes the place of one put off.
+    return {
+      peopleNudges: peopleToNudge(stats, { todayKey, putOff: putOff.people }),
+      neverLogged: stats.filter(s => s.status === 'never').length,
+    }
+  }, [people, tasks, entries, myId, putOff, todayKey])
   // Cadence places only: a place without a rhythm has status 'none' and never lands here.
   // A meal eaten out there counts as going, as it does on Places.
   const placeNudges = useMemo(() => {
@@ -1293,6 +1301,19 @@ export function Today({
               </li>
             ))}
           </ul>
+          {/* under the cold start's two: the one sheet that gives everyone a rhythm, or No reminders, at once */}
+          {onSetUpRhythms && peopleNudges.some(s => s.status === 'never') && (
+            <p className="nudge-foot">
+              <span className="muted">
+                {neverLogged === 1 ? 'One person has' : `${neverLogged} people have`} no visit logged yet
+                {/* NEVER_NUDGES a day take their turn, so the rest are only waiting */}
+                {neverLogged > NEVER_NUDGES ? `; ${NEVER_NUDGES} a day come up here.` : '.'}
+              </span>
+              <button type="button" className="btn" onClick={onSetUpRhythms}>
+                Set up rhythms
+              </button>
+            </p>
+          )}
         </section>
       )}
 
