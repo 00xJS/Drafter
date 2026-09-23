@@ -197,7 +197,8 @@ export function stripQueries(text: unknown): string {
 const maskDigits = (word: string): string => word.replace(/\p{N}{4,}/gu, digits => `${digits.slice(0, 2)}${MASK}`)
 
 /** Masks next to masks are one mask: "… …" and "…-…" say nothing more than "…". */
-const collapse = (text: string): string => text.replace(new RegExp(`${MASK}(?:[\\s.,;:'’"\\-/_]*${MASK})+`, 'g'), MASK)
+const MASK_RUNS = new RegExp(`${MASK}(?:[\\s.,;:'’"\\-/_]*${MASK})+`, 'g')
+const collapse = (text: string): string => text.replace(MASK_RUNS, MASK)
 
 /** One word, with no dot or dash in it: kept when it is code, an acronym or a known word. */
 function scrubWord(word: string): string {
