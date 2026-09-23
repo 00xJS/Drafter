@@ -156,7 +156,8 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
     setSyncing(true)
     requestWeatherRefresh()
     try {
-      await Promise.allSettled([store.syncNowManual(), calendars.refresh(), googlePush.pullNow(), microsoftSync.pullNow()])
+      // asked for: each feed's host is asked, not the server's copy of a moment ago
+      await Promise.allSettled([store.syncNowManual(), calendars.refresh({ fresh: true }), googlePush.pullNow(), microsoftSync.pullNow()])
     } finally {
       setSyncing(false)
     }

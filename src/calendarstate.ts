@@ -18,6 +18,25 @@ const CACHE_KEY = 'calendar-events'
 const FRESH_MS = 15 * 60_000
 const DAY = 86_400_000
 
+/**
+ * How soon after the last one a return to the foreground refetches. Every
+ * switch to another app and back used to refetch every feed and pull every
+ * mirror; a few minutes later nothing has changed that cannot wait for the
+ * half-hourly pass, and pull-to-refresh still asks at once.
+ */
+export const FOREGROUND_GAP_MS = 5 * 60_000
+
+/** A foreground refetch, at most once every `gapMs`: `due()` says whether one should go now, `done()` notes one that went. */
+export function foregroundGate(gapMs = FOREGROUND_GAP_MS, now: () => number = Date.now) {
+  let last = -Infinity
+  return {
+    due: () => now() - last >= gapMs,
+    done: () => {
+      last = now()
+    },
+  }
+}
+
 interface Cached {
   at: string
   events: CalendarEvent[]
@@ -272,6 +291,7 @@ function useMirrorSync(
   const queued = useRef<{ pull: boolean; asked: boolean } | null>(null)
   const retry = useRef<{ timer?: number; delay: number }>({ delay: 0 })
   const debounce = useRef<number | undefined>(undefined)
+  const [foreground] = useState(() => foregroundGate())
 
   // named, so a retry can queue the next pass on the very function that is running
   const trigger = useCallback(function requestPass(pull: boolean, asked = false): Promise<void> {
@@ -301,6 +321,7 @@ function useMirrorSync(
           }
           for (const t of list) if (pass.notices[t.id]) writeCursor(NOTICE_PREFIX + t.key, pass.notices[t.id])
           settleSignIns(list, pass, new Date().toISOString())
+          if (want.pull) foreground.done()
           // a target left out of this pass keeps what it last said
           const all = targetsRef.current
           setState(prev => {
@@ -330,7 +351,7 @@ function useMirrorSync(
     })()
     inflight.current = loop
     return loop
-  }, [])
+  }, [foreground])
 
   const signature = targets.map(t => t.key).join('\n')
   // A mirror switched on or off, or an account added: what is shown is redone
@@ -362,11 +383,12 @@ function useMirrorSync(
     return () => window.clearTimeout(debounce.current)
   }, [items, signature, trigger])
 
-  // now, on focus, every half hour and when the network returns: retry, then pull
+  // now, on focus (a few minutes apart at most), every half hour and when the
+  // network returns: retry, then pull
   useEffect(() => {
     if (!signature) return
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void trigger(true)
+      if (document.visibilityState === 'visible' && foreground.due()) void trigger(true)
     }
     const onOnline = () => void trigger(false)
     const every = window.setInterval(() => void trigger(true), 30 * 60_000)
@@ -378,7 +400,7 @@ function useMirrorSync(
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('online', onOnline)
     }
-  }, [signature, trigger])
+  }, [signature, trigger, foreground])
 
   useEffect(() => () => window.clearTimeout(retry.current.timer), [])
 
@@ -459,7 +481,8 @@ function readerZone(): string | undefined {
   }
 }
 
-async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
+/** `fresh`: a pull-to-refresh, which has the server ask each feed's host rather than answer from its copy (lib/icsfeed.mjs). */
+async function fetchEvents(sources: CalendarSource[], fresh = false): Promise<Cached> {
   const now = Date.now()
   const res = await apiFetch('/api/calendars', {
     method: 'POST',
@@ -469,6 +492,7 @@ async function fetchEvents(sources: CalendarSource[]): Promise<Cached> {
       from: new Date(now - 60 * DAY).toISOString(),
       to: new Date(now + 400 * DAY).toISOString(),
       tz: readerZone(),
+      ...(fresh ? { fresh: true } : {}),
     }),
     timeoutMs: 45_000,
   })
@@ -485,7 +509,8 @@ export interface CalendarState {
   loading: boolean
   /** Network-level failure (proxy unreachable), separate from per-source errors. */
   error?: string
-  refresh(): Promise<void>
+  /** Fetch the feeds again; `fresh` (pull-to-refresh) has the server ask each feed's host rather than answer from its copy. */
+  refresh(opts?: { fresh?: boolean }): Promise<void>
 }
 
 export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
@@ -499,12 +524,13 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
   const inflight = useRef<Promise<void> | null>(null)
   const sigRef = useRef(signature)
   const sourcesRef = useRef(enabled)
+  const [foreground] = useState(() => foregroundGate())
   useLayoutEffect(() => {
     sigRef.current = signature
     sourcesRef.current = enabled
   })
 
-  const refresh = useCallback((): Promise<void> => {
+  const refresh = useCallback((opts: { fresh?: boolean } = {}): Promise<void> => {
     if (inflight.current) return inflight.current
     const list = sourcesRef.current
     if (list.length === 0) {
@@ -513,8 +539,9 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
       return Promise.resolve()
     }
     setState(s => ({ ...s, loading: true, error: undefined }))
-    inflight.current = fetchEvents(list)
+    inflight.current = fetchEvents(list, opts.fresh === true)
       .then(fresh => {
+        foreground.done()
         setState({ ...fresh, lastAt: fresh.at, loading: false })
         idbSet('posts', CACHE_KEY, { ...fresh, signature: sigRef.current }).catch(() => {})
       })
@@ -525,7 +552,7 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
         inflight.current = null
       })
     return inflight.current
-  }, [])
+  }, [foreground])
 
   // boot: serve the cache immediately, refresh if stale or the source list changed
   useEffect(() => {
@@ -536,7 +563,7 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
         const sameSources = cached?.signature === signature
         if (cached && sameSources) setState({ events: cached.events, errors: cached.errors ?? {}, names: cached.names ?? {}, lastAt: cached.at, loading: false })
         const stale = !cached || !sameSources || Date.now() - Date.parse(cached.at) > FRESH_MS
-        if (stale) refresh()
+        if (stale) void refresh()
       })
       .catch(() => refresh())
     return () => {
@@ -544,18 +571,18 @@ export function useCalendarEvents(sources: CalendarSource[]): CalendarState {
     }
   }, [signature, refresh])
 
-  // periodic refresh + when the app returns to the foreground
+  // periodic refresh, and when the app returns to the foreground — a few minutes apart at most
   useEffect(() => {
     const t = window.setInterval(() => refresh(), 30 * 60_000)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh()
+      if (document.visibilityState === 'visible' && foreground.due()) void refresh()
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       window.clearInterval(t)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refresh])
+  }, [refresh, foreground])
 
   return { ...state, refresh }
 }
