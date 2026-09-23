@@ -4,7 +4,7 @@ import type { WeekPlan } from '../../shared/weekplan.mts'
 import { weekDayKeys } from '../../shared/weeks.mts'
 import type { AskSources } from '../ask'
 import { formatMoney } from '../bills'
-import { AskSheet, aiFailureKind, askFailure } from '../components/AskSheet'
+import { AskSheet, aiFailureKind, aiFailureText, askFailure, failedOffline } from '../components/AskSheet'
 import { Review, planWeekIsPrimary } from '../components/Review'
 import { withAskRow } from '../components/Search'
 import { WISHLIST, WeekPlanSheet, acceptedCount, acceptedPlan, initialChoices, readWeekPlanDismissed, rememberWeekPlanDismissed } from '../components/WeekPlanSheet'
@@ -111,10 +111,33 @@ describe('AskSheet', () => {
   })
 
   it('words a failed answer: busy, not here at all, or worth another try', () => {
-    expect(askFailure('Too many AI requests from this account — try again in 1 min.')).toEqual({ text: 'Drafter’s assistant is busy — try again in a minute.', retry: true })
+    // the server knows how long the wait is; every sheet used to say "a minute"
+    expect(askFailure('Too many AI requests from this account — try again in 4 min.')).toEqual({ text: 'Too many AI requests from this account — try again in 4 min.', retry: true })
     expect(askFailure('AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.').retry).toBe(false)
     expect(aiFailureKind('The server is unreachable from here — this runs on the hosted site (or via `netlify dev` locally).')).toBe('unavailable')
     expect(askFailure('The model returned malformed JSON — try again.')).toEqual({ text: 'Couldn’t write an answer: The model returned malformed JSON — try again.', retry: true })
+  })
+
+  it('tells offline apart from not set up, and offers Try again for it', () => {
+    const unreachable = 'The server is unreachable from here — this runs on the hosted site (or via `netlify dev` locally).'
+    // online, the server not being there means there is none: a copy of the app on its own
+    expect(askFailure(unreachable, true)).toEqual({ text: 'The assistant isn’t available here, so there’s no written answer — these are the records that match.', retry: false })
+    expect(askFailure(unreachable, false)).toEqual({
+      text: 'You’re offline, so there’s no written answer — these are the records that match. Try again once you’re connected.',
+      retry: true,
+    })
+    expect(failedOffline(unreachable, false)).toBe(true)
+    // offline or not, a host with no key is not set up, and a rate limit is a rate limit
+    expect(failedOffline('AI is not configured on this site: set NVIDIA_API_KEY (or ANTHROPIC_API_KEY) in the host environment.', false)).toBe(false)
+    expect(failedOffline('Too many AI requests from this account — try again in 4 min.', false)).toBe(false)
+  })
+
+  it('gives each ✨ sheet the same words: offline, the server’s own for a rate limit, the sheet’s own when there is no assistant', () => {
+    const words = { unavailable: 'The picks above still work.', failed: 'Couldn’t get ideas' }
+    expect(aiFailureText('The server is unreachable from here — this runs on the hosted site (or via `netlify dev` locally).', words, false)).toBe('You’re offline — try again once you’re connected.')
+    expect(aiFailureText('The server is unreachable from here — this runs on the hosted site (or via `netlify dev` locally).', words, true)).toBe('The picks above still work.')
+    expect(aiFailureText('Too many AI requests from this account — try again in 4 min.', words, true)).toBe('Too many AI requests from this account — try again in 4 min.')
+    expect(aiFailureText('The model returned no JSON — try again.', words, true)).toBe('Couldn’t get ideas: The model returned no JSON — try again.')
   })
 })
 

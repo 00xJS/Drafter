@@ -55,6 +55,13 @@ describe('looksLikeThinking', () => {
     expect(looksLikeThinking('I named the tasks and the people.', 'Name the tasks and the people in your reply.')).toBe(false)
   })
 
+  it('counts a contraction as one word, so five words and an apostrophe are still five', () => {
+    // "isn't answered by the records" read as six — "isn", "t" — and a plain
+    // "that isn't answered by the records" was sent back as thinking
+    expect(looksLikeThinking('That isn’t answered by the records I have.', "If a question isn't answered by the records, say so plainly.")).toBe(false)
+    expect(looksLikeThinking("So if a question isn't answered by the records I say so", "If a question isn't answered by the records, say so plainly.")).toBe(true)
+  })
+
   it('reads through punctuation and case, which a model does not copy exactly', () => {
     expect(looksLikeThinking('So — PLAIN prose, in short paragraphs, with "-" bullets. Right?', 'Plain prose in short paragraphs with bullets where a list reads better.')).toBe(true)
   })
@@ -70,10 +77,21 @@ describe('a plain-text call whose reply is the thinking', () => {
     mock.mockResolvedValueOnce(reply(REVIEW_SYSTEM_ECHO)).mockResolvedValueOnce(reply(THE_REAL_THING))
     await expect(summarizeReview(reviewInput)).resolves.toBe(THE_REAL_THING)
     expect(mock).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(String(mock.mock.calls[0][1]?.body))
     const second = JSON.parse(String(mock.mock.calls[1][1]?.body))
     expect(second.system).toContain('no reasoning')
-    // and with room, so the second try does not run out the same way
-    expect(second.maxTokens).toBeGreaterThanOrEqual(2048)
+    // With reasoning off, not with more room: the server lifts every call to
+    // 2048 tokens already, and the thinking is what ran the first one out.
+    // The review's first try reasons, as it always has.
+    expect(first).not.toHaveProperty('reasoning')
+    expect(second).toMatchObject({ maxTokens: first.maxTokens, reasoning: 'off' })
+  })
+
+  it('asks again when the reply is empty — the thinking took the whole budget — rather than failing at once', async () => {
+    mock.mockResolvedValueOnce(reply('')).mockResolvedValueOnce(reply(THE_REAL_THING))
+    await expect(summarizeReview(reviewInput)).resolves.toBe(THE_REAL_THING)
+    expect(mock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(String(mock.mock.calls[1][1]?.body)).reasoning).toBe('off')
   })
 
   it('throws rather than saving the thinking as the review', async () => {

@@ -3,7 +3,7 @@ import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
 import { RefineMode, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
-import { CapturedFields, captureSeed, isSimpleDateCapture } from '../capture'
+import { CapturedFields, captureSeed, simpleDateCapture } from '../capture'
 import { AiBusy, FormPatch, StepOp, appendOnce, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
@@ -142,8 +142,11 @@ export function TaskEditor({
           parsed.recurrence ||
           parsed.title !== base.title
         if (!extra) return
-        if (isSimpleDateCapture(parsed, seed.text || base.title) && !parsed.priority && !parsed.peopleNames?.length) {
-          applyCapture(parsed)
+        // a date alone goes in with no Review tap, and so under the title as
+        // typed (simpleDateCapture), into fields nobody has typed in since
+        const simple = simpleDateCapture(parsed, seed.text || base.title)
+        if (simple) {
+          applyCapture(simple, initForm(base))
           return
         }
         setCaptureProposal(parsed)
@@ -159,8 +162,8 @@ export function TaskEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function applyCapture(c: CapturedFields) {
-    dispatch({ type: 'applyCapture', capture: c, people })
+  function applyCapture(c: CapturedFields, asRead?: Pick<ReturnType<typeof initForm>, 'title' | 'dueAt'>) {
+    dispatch({ type: 'applyCapture', capture: c, people, asRead })
     setCaptureProposal(null)
   }
 

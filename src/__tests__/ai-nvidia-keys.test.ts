@@ -7,10 +7,11 @@ import aiFunction from '../../netlify/functions/ai.mjs'
 // tier is about 40 requests a minute per key. Work the server starts by itself
 // (`background`: Sunday's draft, email-in's triage) tries it first, so the
 // owner's own requests keep the main key's quota; a 429 or a 5xx from the key
-// tried first is tried once on the other, on the same model, never more; then
-// the Anthropic fallback applies as before. With the second key unset, nothing
-// changes. NVIDIA is a fetch stub that answers each key as a test says and
-// records the key each call carried; the Anthropic SDK is replaced.
+// tried first is tried once on the other, on the same model, never more, and
+// so is a key NVIDIA rejects; then the Anthropic fallback applies as before.
+// With the second key unset, nothing changes. NVIDIA is a fetch stub that
+// answers each key as a test says and records the key each call carried; the
+// Anthropic SDK is replaced.
 
 const claude = vi.hoisted(() => ({ asked: 0 }))
 vi.mock('@anthropic-ai/sdk', () => {
@@ -159,15 +160,27 @@ describe('with NVIDIA_API_KEY_2 set', () => {
     expect([keys(), claude.asked]).toEqual([['main', 'second'], 1])
   })
 
-  it('tries nothing else on the other key, and names the key that was rejected, in the answer and the log', async () => {
+  it('a key NVIDIA rejects is named in the log, and the other key answers in its place, whichever went first', async () => {
     const spy = logs()
     answers.second = [401]
-    expect(await complete({ prompt: 'x', background: true })).toEqual({ status: 502, upstream: 401, error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY_2 on the host.' })
+    expect(await complete({ prompt: 'x', background: true })).toEqual({ text: 'from the main key', provider: 'nvidia' })
     answers.main = [403]
-    expect(await complete({ prompt: 'x' })).toMatchObject({ status: 502, error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.' })
-    expect(keys()).toEqual(['second', 'main'])
-    // Sunday's draft goes quietly without an answer: the function's log is where a bad key shows
+    expect(await complete({ prompt: 'x' })).toEqual({ text: 'from the second key', provider: 'nvidia' })
+    expect(keys()).toEqual(['second', 'main', 'main', 'second'])
+    // nobody sees the failure now, so the function's log is where a bad key shows
     expect(logged(spy)).toEqual(['ai: NVIDIA rejected the API key — check NVIDIA_API_KEY_2 on the host.', 'ai: NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.'])
+  })
+
+  it('with both keys rejected, the first key’s answer stands, and the log names both', async () => {
+    const spy = logs()
+    answers.main = [401]
+    answers.second = [401]
+    expect(await complete({ prompt: 'x' })).toEqual({ status: 502, upstream: 401, error: 'NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.' })
+    expect(keys()).toEqual(['main', 'second'])
+    expect(logged(spy)).toEqual([
+      'ai: NVIDIA rejected the API key — check NVIDIA_API_KEY on the host.',
+      'ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: NVIDIA rejected the API key — check NVIDIA_API_KEY_2 on the host.',
+    ])
   })
 
   it('a 429 the other key cannot take over, because NVIDIA rejects that key, answers the 429: a busy key still reads as busy', async () => {
@@ -184,13 +197,19 @@ describe('with NVIDIA_API_KEY_2 set', () => {
     const spy = logs()
     answers.main = [503]
     answers.second = [0]
-    expect(await complete({ prompt: 'x' })).toMatchObject({ status: 502, upstream: 503, error: expect.stringMatching(/^NVIDIA API error \(HTTP 503\)/) })
+    // plain words for the page; NVIDIA's own and the thrown error for the log
+    expect(await complete({ prompt: 'x' })).toEqual({ status: 502, upstream: 503, error: 'NVIDIA’s service had a problem (HTTP 503) — try again in a moment.' })
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key')
     answers.main = [503]
     answers.second = [0]
     expect(await complete({ prompt: 'x' })).toEqual({ text: 'from Claude', provider: 'anthropic' })
     expect([keys(), claude.asked]).toEqual([['main', 'second', 'main', 'second'], 1])
-    expect(logged(spy)).toEqual(Array(2).fill('ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: fetch failed'))
+    const once = [
+      expect.stringMatching(/^ai: NVIDIA answered \S+ on NVIDIA_API_KEY with HTTP 503: HTTP 503$/),
+      'ai: the provider call threw: fetch failed',
+      'ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: The assistant’s provider could not be reached — try again in a moment.',
+    ]
+    expect(logged(spy)).toEqual([...once, ...once])
   })
 
   it('asks the same model at the same address on both keys', async () => {
@@ -257,9 +276,10 @@ describe('/api/ai is the owner’s own request', () => {
     expect(keys()).toEqual(['main'])
   })
 
-  it('never hands either key to the page, or to the log, even when one is rejected', async () => {
+  it('never hands either key to the page, or to the log, even when both are rejected', async () => {
     const spy = logs()
     answers.main = [401]
+    answers.second = [401]
     const res = await askAi({ prompt: 'x' })
     expect(res.status).toBe(502)
     const text = await res.text()
@@ -306,6 +326,9 @@ describe('the model, key by key', () => {
     expect(await complete({ prompt: 'x' })).toMatchObject({ status: 429, upstream: 429 })
     expect(keys()).toEqual(['main', 'second'])
     expect(asked[1].model).toBe(asked[0].model)
-    expect(logged(spy)).toEqual([expect.stringMatching(/^ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: No NVIDIA model was available for this key\. Tried: \S+ \(404\)\./)])
+    expect(logged(spy)).toEqual([
+      expect.stringMatching(/^ai: no NVIDIA model answered on NVIDIA_API_KEY_2\. Tried: \S+ \(404\)\. The models this account can use are listed at /),
+      'ai: NVIDIA_API_KEY_2 could not take over from NVIDIA_API_KEY: None of NVIDIA’s models would answer for this key — the site owner can set NVIDIA_MODEL on the host to one the account can use.',
+    ])
   })
 })

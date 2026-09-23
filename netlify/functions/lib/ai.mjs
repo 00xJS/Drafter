@@ -4,9 +4,9 @@
 // out rate limits (the free tier is about 40 requests a minute per key). Work
 // the server starts by itself (`background`) tries it first, so the owner's
 // own requests keep the main key's quota; a 429 or a 5xx from the key tried
-// first is tried once on the other, on the same model, and only then does the
-// Anthropic fallback apply. With the second key unset, all of it is exactly as
-// it was.
+// first is tried once on the other, on the same model, and so is a key NVIDIA
+// rejects; only then does the Anthropic fallback apply. With the second key
+// unset, all of it is exactly as it was.
 // JSON mode: lower temperature + response_format on NVIDIA; on Anthropic an
 // instruction instead (current Claude models accept no temperature at all).
 //
@@ -14,8 +14,12 @@
 // to hold /api/ai open until Netlify killed the function, and the app got the
 // platform's error page instead of a reason; now the attempt is aborted when
 // the budget runs out and answers a 504 with words the app shows as they are.
+//
+// What the app shows is said plainly; what the owner needs to fix it — the
+// provider's own message, the models tried — goes to the function's log.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { stripThinking } from '../../../shared/ai.mts'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 const NVIDIA_FALLBACK_MODELS = [
@@ -25,6 +29,46 @@ const NVIDIA_FALLBACK_MODELS = [
   'nvidia/nemotron-nano-3-30b-a3b',
 ]
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
+
+/**
+ * The models that can be asked to answer without reasoning first, and how:
+ * Nemotron 3, Super and Nano, think before every answer unless the request
+ * says `chat_template_kwargs: { enable_thinking: false }` — the switch their
+ * model cards and NVIDIA's API reference give
+ * (docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b).
+ * Super is the default model here, and its thinking is why a tag suggestion
+ * took twenty seconds and a recipe draft up to a minute. A model not listed
+ * is sent nothing, and answers as it always has. The Nano is listed by the
+ * name on NVIDIA's model page and by the one NVIDIA_FALLBACK_MODELS gives it.
+ */
+const THINKING_SWITCH = new Set(['nvidia/nemotron-3-super-120b-a12b', 'nvidia/nemotron-3-nano-30b-a3b', 'nvidia/nemotron-nano-3-30b-a3b'])
+
+/** Models that refused the switch all the same (a 400 naming it): asked without it from then on, on this instance. */
+const refusedSwitch = new Set()
+
+/** What to add to a request to `model` for `reasoning` ('off' or 'on'), or nothing: the caller said neither, or the model has no switch. */
+function thinkingSwitch(model, reasoning) {
+  if ((reasoning !== 'off' && reasoning !== 'on') || !THINKING_SWITCH.has(model) || refusedSwitch.has(model)) return undefined
+  return { chat_template_kwargs: { enable_thinking: reasoning === 'on' } }
+}
+
+/** A 400 or 422 about the reasoning switch itself. */
+const NAMES_SWITCH = /chat_template_kwargs|enable_thinking/i
+
+/**
+ * A 400 about the model rather than the request: this account cannot use it,
+ * or it takes no such parameter (JSON mode, say). Another model may do. A 400
+ * about the request itself — too long, malformed — used to be sent to every
+ * model in turn and come back as "no model was available", which sent the
+ * owner looking for a key problem that was not there.
+ */
+function modelTrouble(message) {
+  const text = String(message ?? '')
+  return (
+    /\b(?:not found|not supported|unsupported|unknown|does not exist|doesn['’]t exist|not available|unavailable|not permitted|unrecognized)\b/i.test(text) &&
+    /\b(?:model|function|parameters?|arguments?|fields?|inputs?|response_format)\b/i.test(text)
+  )
+}
 
 /**
  * How long one completion may take in all — every model, key and fallback it
@@ -137,27 +181,11 @@ export function resolveProvider() {
   return null
 }
 
-/**
- * A reasoning model's thinking, out of the text. Tagged thinking is the easy
- * half — a closed block, or an opening tag whose close never arrived because
- * the budget ran out. Models tag it `<think>`, `<thinking>` or `<reasoning>`,
- * and some NIM builds wrap it in `◁think▷` instead of angle brackets.
- *
- * The hard half is untagged thinking, which no rule here can see: NVIDIA's
- * default answered a review with 900 tokens of "We need to produce a personal
- * review…" and never reached the review. That one is caught where the answer
- * is read (`looksLikeThinking` in src/ai.ts), not here.
- */
-function stripThinking(text) {
-  return String(text ?? '')
-    .replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/g, '')
-    .replace(/^\s*<(think|thinking|reasoning)>[\s\S]*$/, '')
-    .replace(/◁(think|thinking)▷[\s\S]*?◁\/\1▷/g, '')
-    .replace(/^\s*◁(think|thinking)▷[\s\S]*$/, '')
-    .trim()
-}
+// A reasoning model's tagged thinking comes out of every answer here, by the
+// rule the app's chat reads its replies with (stripThinking, shared/ai.mts).
+// Untagged thinking is caught where the answer is read (`looksLikeThinking`).
 
-async function callNvidia(model, messages, maxTokens, { json, temperature, apiKey, signal }) {
+async function callNvidia(model, messages, maxTokens, { json, temperature, apiKey, signal, extra }) {
   const body = {
     model,
     messages,
@@ -165,6 +193,7 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
     temperature,
     top_p: 0.95,
     stream: false,
+    ...extra,
   }
   if (json) body.response_format = { type: 'json_object' }
   const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
@@ -191,17 +220,20 @@ async function callNvidia(model, messages, maxTokens, { json, temperature, apiKe
 
 /**
  * One NVIDIA completion on one key (`keyName`: the first in nvidiaKeyOrder
- * unless given), trying the models in turn while the model is the trouble, or
- * only `model` when one is given. Answers the completion and the model NVIDIA
+ * unless given), trying the models in turn while the model is the trouble — a
+ * 404, or a 400 that names the model or a parameter it lacks — or only
+ * `model` when one is given. Answers the completion and the model NVIDIA
  * answered for (null when none would), so a retry on the other key can ask the
  * same one. A failure carries the status NVIDIA answered (`upstream`), so
- * complete() can tell a rate limit or an outage, which the other key may ride
- * out, from anything else. Every model tried shares `deadline` (AI_BUDGET_MS
- * from now when none is given): past it the call is abandoned as a 504.
+ * complete() can tell a rate limit, an outage or a rejected key, which the
+ * other key may get past, from anything else. Every model tried shares
+ * `deadline` (AI_BUDGET_MS from now when none is given): past it the call is
+ * abandoned as a 504. `reasoning: 'off'` asks a model that has a switch for it
+ * (THINKING_SWITCH) to answer without thinking first.
  * @param {import('./ai.mjs').CompletionInput & { keyName?: 'NVIDIA_API_KEY' | 'NVIDIA_API_KEY_2', model?: string | null }} input
  * @returns {Promise<{ model: string | null, result: import('./ai.mjs').Completion }>}
  */
-async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null, deadline = Date.now() + AI_BUDGET_MS }) {
+async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning, keyName = nvidiaKeyOrder()[0] ?? NVIDIA_KEYS[0], model: only = null, deadline = Date.now() + AI_BUDGET_MS }) {
   // one of the two NVIDIA names, never another variable
   const apiKey = NVIDIA_KEYS.includes(keyName) ? process.env[keyName] : undefined
   const messages = []
@@ -214,15 +246,27 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
   // but it breaks worse. The week's review asked for 900 tokens and spent all
   // of them thinking about how to write a review, so what was saved and shown
   // as the review was the thinking, cut off mid-sentence. Every call gets the
-  // room now; it is a ceiling, and the prompt still asks for the length.
+  // room now, reasoning off or not (a model with no switch thinks anyway); it
+  // is a ceiling, and the prompt still asks for the length.
   const budget = Math.max(maxTokens ?? 0, 2048)
 
   const configured = process.env.NVIDIA_MODEL?.trim()
   const candidates = only ? [only] : [...new Set([resolvedNvidiaModels.get(keyName), configured, ...NVIDIA_FALLBACK_MODELS].filter(Boolean))]
 
+  /** One request to `model`, and — when the model refuses the reasoning switch its card documents — the same request without it. */
+  const ask = async model => {
+    const send = extra => beforeDeadline(deadline, signal => callNvidia(model, messages, budget, { json, temperature, apiKey, signal, extra }), null)
+    const extra = thinkingSwitch(model, reasoning)
+    const attempt = await send(extra)
+    if (!extra || !attempt || attempt.ok || (attempt.status !== 400 && attempt.status !== 422) || !NAMES_SWITCH.test(attempt.message)) return attempt
+    refusedSwitch.add(model)
+    console.error(`ai: ${model} refused the reasoning switch, so it is asked without one: ${attempt.message}`)
+    return send(undefined)
+  }
+
   const tried = []
   for (const model of candidates) {
-    const attempt = await beforeDeadline(deadline, signal => callNvidia(model, messages, budget, { json, temperature, apiKey, signal }), null)
+    const attempt = await ask(model)
     if (!attempt) return { model, result: outOfTime('NVIDIA') }
     if (attempt.ok) {
       resolvedNvidiaModels.set(keyName, model)
@@ -239,7 +283,7 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
       // and one that does not is caught by stripThinking or by the reader.
       return { model, result: { text: stripThinking(text), provider: 'nvidia' } }
     }
-    if (attempt.status === 404 || attempt.status === 400) {
+    if (attempt.status === 404 || ((attempt.status === 400 || attempt.status === 422) && modelTrouble(attempt.message))) {
       tried.push(`${model} (${attempt.status})`)
       if (resolvedNvidiaModels.get(keyName) === model) resolvedNvidiaModels.delete(keyName)
       continue
@@ -248,14 +292,15 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, keyName = 
       return { model, result: { status: 429, upstream: 429, error: 'NVIDIA rate limit hit (the free tier is about 40 requests a minute) — wait a moment and retry.' } }
     if (attempt.status === 401 || attempt.status === 403)
       return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA rejected the API key — check ${keyName} on the host.` } }
-    return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA API error (HTTP ${attempt.status})${attempt.message ? `: ${attempt.message}` : ''}` } }
+    console.error(`ai: NVIDIA answered ${model} on ${keyName} with HTTP ${attempt.status}${attempt.message ? `: ${attempt.message}` : ''}`)
+    if (attempt.status === 400 || attempt.status === 422)
+      return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA couldn’t take that request (HTTP ${attempt.status}) — try again, or with less text.` } }
+    return { model, result: { status: 502, upstream: attempt.status, error: `NVIDIA’s service had a problem (HTTP ${attempt.status}) — try again in a moment.` } }
   }
+  console.error(`ai: no NVIDIA model answered on ${keyName}. Tried: ${tried.join(', ')}. The models this account can use are listed at ${NVIDIA_BASE_URL}/models.`)
   return {
     model: null,
-    result: {
-      status: 502,
-      error: `No NVIDIA model was available for this key. Tried: ${tried.join(', ')}. Set NVIDIA_MODEL on the host to one your account can serve (list them at ${NVIDIA_BASE_URL}/models).`,
-    },
+    result: { status: 502, error: 'None of NVIDIA’s models would answer for this key — the site owner can set NVIDIA_MODEL on the host to one the account can use.' },
   }
 }
 
@@ -331,10 +376,14 @@ export async function completeAnthropic({ system, prompt, maxTokens, json = fals
 }
 
 /**
- * A throw, answered as a 502.
+ * A throw — the connection dropped, the SDK gave up — answered as a 502 in
+ * plain words, with what was thrown in the log.
  * @returns {import('./ai.mjs').Completion}
  */
-const thrown = err => ({ status: 502, error: err instanceof Error ? err.message : String(err) })
+const thrown = err => {
+  console.error(`ai: the provider call threw: ${err instanceof Error ? err.message : String(err)}`)
+  return { status: 502, error: 'The assistant’s provider could not be reached — try again in a moment.' }
+}
 
 /** One provider's completion, with anything it throws answered as a 502. */
 async function attempt(run, input) {
@@ -348,19 +397,25 @@ async function attempt(run, input) {
 /** What the other NVIDIA key may ride out: this key's rate limit, or NVIDIA failing. */
 const rideable = r => r.upstream === 429 || (r.upstream ?? 0) >= 500
 
+/** A key NVIDIA would not take: the other key stands in for it. */
+const refused = r => r.upstream === 401 || r.upstream === 403
+
 /**
  * Complete a prompt. Prefers NVIDIA when available; on 429/502 retries once via
- * Anthropic when that key is set. `json: true` asks for JSON-shaped output.
- * With a second NVIDIA key, `background: true` (work the server starts by
- * itself) tries that key first, and a 429 or a 5xx from the key tried first is
- * tried once on the other, on the same model, before the Anthropic fallback.
+ * Anthropic when that key is set. `json: true` asks for JSON-shaped output, and
+ * `reasoning: 'off'` asks a model that can be told (THINKING_SWITCH) to answer
+ * without thinking first. With a second NVIDIA key, `background: true` (work
+ * the server starts by itself) tries that key first, and a 429 or a 5xx from
+ * the key tried first is tried once on the other, on the same model — as is a
+ * key NVIDIA rejects, on whichever model the other key serves — before the
+ * Anthropic fallback.
  *
  * All of it runs inside one budget: AI_BUDGET_MS from `startedAt` (pass the
  * request's own start), or a `deadline` of the caller's. A provider still
  * silent when it runs out answers a 504; the other key and the fallback start
  * only with MIN_ATTEMPT_MS left, and get only what is left.
  */
-export async function complete({ system = '', prompt, maxTokens = 2048, json = false, background = false, startedAt, deadline }) {
+export async function complete({ system = '', prompt, maxTokens = 2048, json = false, reasoning, background = false, startedAt, deadline }) {
   const primary = resolveProvider()
   if (!primary) {
     return {
@@ -370,19 +425,23 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
   }
 
   const until = deadlineOf({ deadline, startedAt, background })
-  const input = { system, prompt, maxTokens, json, deadline: until }
+  const input = { system, prompt, maxTokens, json, reasoning, deadline: until }
   let result
   if (primary === 'nvidia') {
     const [first, other] = nvidiaKeyOrder({ background })
     const tried = await nvidiaOnKey({ ...input, keyName: first }).catch(err => ({ model: null, result: thrown(err) }))
     result = tried.result
-    // with two keys, one may go first only for work nobody watches (Sunday's
-    // draft, email-in), so a key NVIDIA rejects is named in the log
-    if (other && (result.upstream === 401 || result.upstream === 403)) console.error(`ai: ${result.error}`)
-    // once, and only for what the other key can ride out, asking the model the
-    // first key asked — and only while there is time for it to answer
-    if (other && rideable(result) && roomFor(until)) {
-      const retry = (await nvidiaOnKey({ ...input, keyName: other, model: tried.model }).catch(err => ({ model: null, result: thrown(err) }))).result
+    // With two keys a rejected one is named in the log, whichever went first,
+    // and the other answers in its place: a key revoked or mistyped on the
+    // host used to fail every request of the owner's while a good key sat
+    // unused beside it. Admin → Test AI still asks each key on its own.
+    if (other && refused(result)) console.error(`ai: ${result.error}`)
+    // once, and only for what the other key can get past, asking the model
+    // the first key asked (a rejected key asked none: the other goes by its
+    // own) — and only while there is time for it to answer
+    if (other && (rideable(result) || refused(result)) && roomFor(until)) {
+      const model = refused(result) ? null : tried.model
+      const retry = (await nvidiaOnKey({ ...input, keyName: other, model }).catch(err => ({ model: null, result: thrown(err) }))).result
       // the other key's answer, or its own rate limit or outage. Anything else
       // (NVIDIA rejects that key, its account can't serve the model, no answer
       // at all) is that key's trouble: the first key's answer stands, so a

@@ -6,7 +6,7 @@ import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMe
 import { cookedIndex, visitIndex, daysAgo, daysBetween, mealAt, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
 import { dateKey } from '../utils'
-import { aiFailureKind } from './AskSheet'
+import { aiFailureText } from './AskSheet'
 import { MealSlotRow } from './MealSlotRow'
 import { Modal, ModalHead } from './Modal'
 
@@ -302,16 +302,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
       setAssist({ status: 'done', ideas, note: res.note })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      const kind = aiFailureKind(message)
-      setAssist({
-        status: 'failed',
-        message:
-          kind === 'busy'
-            ? 'The assistant is busy — try again in a minute.'
-            : kind === 'unavailable'
-              ? 'The assistant isn’t available here — the picks above still work.'
-              : `Couldn’t get ideas: ${message}`,
-      })
+      setAssist({ status: 'failed', message: aiFailureText(message, { unavailable: 'The assistant isn’t available here — the picks above still work.', failed: 'Couldn’t get ideas' }) })
     }
   }
 
