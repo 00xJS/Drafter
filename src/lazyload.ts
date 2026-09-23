@@ -115,15 +115,36 @@ export function shouldReloadForChunk(storage: Pick<Storage, 'getItem' | 'setItem
   }
 }
 
+/** How long a page that began to leave is still taken to be leaving: past this, the navigation was called off. */
+const LEAVING_MS = 3_000
+
 /**
  * Install once, from App.tsx: when Vite reports a chunk that would not load
  * (vite:preloadError), reload the page — at most once a minute, never for a
- * background warm-up, and never offline, where a reload fetches nothing new.
+ * background warm-up, never offline, where a reload fetches nothing new, and
+ * never while the page is already on its way out. WebKit rejects the imports a
+ * page was still fetching when it starts to navigate away with the very error
+ * a chunk gone after a deploy gives, and reloading then cut into the
+ * navigation already under way — a reload landed on the page it was leaving.
  */
 export function guardChunkLoads(): void {
   if (typeof window === 'undefined') return
+  let leaving = false
+  let settle: ReturnType<typeof setTimeout> | undefined
+  const leave = () => {
+    leaving = true
+    clearTimeout(settle)
+    // a navigation called off (a "Leave site?" answered Stay) leaves the page as it was
+    settle = setTimeout(() => (leaving = false), LEAVING_MS)
+  }
+  window.addEventListener('beforeunload', leave)
+  window.addEventListener('pagehide', leave)
+  window.addEventListener('pageshow', () => {
+    leaving = false
+    clearTimeout(settle)
+  })
   window.addEventListener('vite:preloadError', () => {
-    if (warming > 0 || navigator.onLine === false) return
+    if (leaving || warming > 0 || navigator.onLine === false) return
     let storage: Storage | null = null
     try {
       storage = window.sessionStorage
