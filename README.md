@@ -55,7 +55,7 @@ In a household, the address book is shared but the log is not: who you saw, wher
 
 Drafter is an MCP server with 31 tools at `/api/mcp`. Add it to Claude on claude.ai as a custom connector, approved on Drafter's consent screen, or make a token in **Settings → Assistants** for Claude Code and other clients. Assistants work with tasks, notes, people, places, meals, groceries, the wardrobe and the journal, read Today and propose next week; they can't start a second project. A token always reads, and you choose whether it can change things. No connection reaches the journal unless you allow it. Unused tokens lapse after 180 days, Claude connections after 90.
 
-Automations use the **bot** gateway, a Supabase Edge Function with its own `BOT_TOKEN`. A bot acts as the owner and never sees another member's personal things.
+Automations use the **bot** gateway, a Supabase Edge Function with its own `BOT_TOKEN`. A bot acts as the owner and never sees another member's personal things, or a note, task or meal they kept to themselves.
 
 ### The iPhone app
 

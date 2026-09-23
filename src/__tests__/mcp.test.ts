@@ -5,7 +5,9 @@ import { visibleItemsFor } from '../../shared/digest.mjs'
 import { localDayKey, shiftDayKey } from '../../shared/journal.mjs'
 import { groceryId } from '../../shared/kitchen.mjs'
 import { weekKeyOf } from '../../shared/weeks.mjs'
-import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS as SHARED_PERSONAL_KINDS, SHARED_BY_DEFAULT, readableRow } from '../../shared/kinds.mjs'
+import { buildSnapshot } from '../../netlify/functions/lib/backup.mjs'
+import { readableItems } from '../../netlify/functions/lib/feedrows.mjs'
 import { makeClock } from '../../shared/clock.mjs'
 import { PAGE_SIZE, PERSONAL_KINDS, SINCE_WINDOW_MS, createRestData, ownerMaySee } from '../../mcp/data.mjs'
 import { MAX_FOCUS, TOOLS, assertDayKey, createContext, noteText, resolveContext, summarizeMeal, summarizePlace, summarizeTask, textToNoteHtml } from '../../mcp/tools.mjs'
@@ -460,6 +462,39 @@ describe('personal kinds stay with their owner', () => {
     const m = /const PERSONAL_KINDS = new Set\(\[([^\]]*)\]\)/.exec(src)
     expect(m, 'PERSONAL_KINDS in supabase/functions/bot/index.ts').not.toBeNull()
     expect([...m![1].matchAll(/'([a-z]+)'/g)].map(x => x[1]).sort()).toEqual([...PERSONAL_KINDS].sort())
+  })
+
+  // The kinds whose audience is per record — and what an absent flag means for
+  // each — are the other half of the rule. The gateway knew notes and tasks
+  // only, and v3.22's private meals reached the owner's bot. A kind added to
+  // SHARED_BY_DEFAULT fails here until the gateway's copy has it, with the same
+  // default (bot-gateway.test.ts then runs the gateway against readableRow).
+  it('and the same per-record kinds, each with the same default', () => {
+    const src = readFileSync(fileURLToPath(new URL('../../supabase/functions/bot/index.ts', import.meta.url)), 'utf8')
+    const m = /const SHARED_BY_DEFAULT(?:: [^=]+)? = \{([^}]*)\}/.exec(src)
+    expect(m, 'SHARED_BY_DEFAULT in supabase/functions/bot/index.ts').not.toBeNull()
+    const bots = Object.fromEntries([...m![1].matchAll(/([a-z]+): (true|false)/g)].map(x => [x[1], x[2] === 'true']))
+    expect(bots).toEqual({ ...SHARED_BY_DEFAULT })
+  })
+
+  // The other readers that hold the service key — the ICS feed, the nightly
+  // backup, the digest (and Admin's copy of it) and this server — each call
+  // readableRow, so a per-record kind reaches them with no copy to keep in
+  // step. This holds them to that, flag by flag, a private meal among them.
+  it('every other service-key reader withholds what readableRow withholds, per record', () => {
+    expect(readableRow({ kind: 'meal', shared: false }, PEER, OWNER), 'a peer’s private meal').toBe(false)
+    for (const kind of Object.keys(SHARED_BY_DEFAULT)) {
+      for (const shared of [undefined, null, true, false]) {
+        const data = { kind, id: `${kind}-x`, ...(shared === undefined ? {} : { shared }) }
+        const peerRow = { user_id: PEER, data }
+        const want = readableRow(data, PEER, OWNER)
+        const what = `a peer's ${kind} with shared ${String(shared)}`
+        expect(readableItems([peerRow], OWNER).length === 1, `the feed: ${what}`).toBe(want)
+        expect(buildSnapshot(OWNER, [peerRow]).items.length === 1, `the backup: ${what}`).toBe(want)
+        expect(visibleItemsFor([peerRow], OWNER, [PEER], OWNER).length === 1, `the digest: ${what}`).toBe(want)
+        expect(ownerMaySee(peerRow, OWNER), `the MCP server: ${what}`).toBe(want)
+      }
+    }
   })
 
   it('fetchAll drops a peer\'s personal rows and keeps everything the household shares', async () => {

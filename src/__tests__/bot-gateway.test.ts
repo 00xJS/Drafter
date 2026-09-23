@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { SHARED_BY_DEFAULT, SYNC_KINDS, readableRow } from '../../shared/kinds.mjs'
 
 // The bot gateway (supabase/functions/bot/index.ts) is a Deno edge function
 // that imports supabase-js from jsr:, so it cannot run here as it stands. This
@@ -418,5 +419,92 @@ describe('a bot cannot start a second project', () => {
     })
     expect(idsOf(synced[0] as { id: string }[])).toEqual(['first'])
     expect(json.posts.rejected).toEqual(['second'])
+  })
+})
+
+// v3.22 lets a breakfast, lunch or dinner be kept to yourself: a meal is the
+// household's until withheld, as a task is. The gateway knew only notes and
+// tasks, so a housemate's "just me" meal reached the owner's bot — which holds
+// the service key, so nothing else stood in the way.
+describe('a meal kept to yourself', () => {
+  const meal = (user: string, slot: string, over: Record<string, unknown> = {}) =>
+    row(user, { kind: 'meal', id: `meal~2026-09-14~${slot}~${user.slice(-1)}`, date: '2026-09-14', slot, title: `${slot} of ${user.slice(-1)}`, ...over })
+
+  it('never reaches an agent, and the household’s meals still do', async () => {
+    const { call } = gateway([
+      meal(OWNER, 'dinner', { shared: false }),
+      meal(PEER, 'dinner'),
+      meal(PEER, 'lunch', { shared: true }),
+      meal(PEER, 'breakfast', { shared: false, title: 'PEER-PRIVATE' }),
+    ])
+    const { json } = await call({ action: 'list' })
+    expect(idsOf(json.posts).sort()).toEqual(['meal~2026-09-14~dinner~a', 'meal~2026-09-14~dinner~b', 'meal~2026-09-14~lunch~b'])
+    expect(JSON.stringify(json)).not.toContain('PEER-PRIVATE')
+  })
+
+  it('is left out of what a sync echoes back', async () => {
+    const { call } = gateway([meal(PEER, 'dinner'), meal(PEER, 'breakfast', { shared: false, title: 'PEER-PRIVATE' })])
+    const { json } = await call({ action: 'sync', posts: [] })
+    expect(idsOf(json.posts.items)).toEqual(['meal~2026-09-14~dinner~b'])
+    expect(JSON.stringify(json)).not.toContain('PEER-PRIVATE')
+  })
+
+  it('cannot be written over, and a shared one cannot be made private', async () => {
+    const { call, synced } = gateway([meal(PEER, 'breakfast', { shared: false }), meal(PEER, 'dinner')])
+    const { json } = await call({
+      action: 'sync',
+      posts: [
+        { kind: 'meal', id: 'meal~2026-09-14~breakfast~b', date: '2026-09-14', slot: 'breakfast', title: 'Mine now', shared: true, updatedAt: STAMP },
+        { kind: 'meal', id: 'meal~2026-09-14~dinner~b', date: '2026-09-14', slot: 'dinner', title: 'Theirs', shared: false, updatedAt: STAMP },
+      ],
+    })
+    expect((json.posts as { rejected: string[] }).rejected.sort()).toEqual(['meal~2026-09-14~breakfast~b', 'meal~2026-09-14~dinner~b'])
+    expect(synced[0]).toEqual([])
+  })
+
+  it('a peer’s shared meal can still be edited, while the write keeps it shared', async () => {
+    const { call, synced } = gateway([meal(PEER, 'dinner')])
+    const { json } = await call({
+      action: 'sync',
+      posts: [{ kind: 'meal', id: 'meal~2026-09-14~dinner~b', date: '2026-09-14', slot: 'dinner', title: 'Pasta, not pizza', updatedAt: STAMP }],
+    })
+    expect((json.posts as { rejected: string[] }).rejected).toEqual([])
+    expect(idsOf(synced[0] as { id: string }[])).toEqual(['meal~2026-09-14~dinner~b'])
+  })
+})
+
+// shared/kinds.mjs is the one rule for what a household member may read, and
+// the gateway cannot import it. This runs the gateway's own copy against it,
+// kind by kind and flag by flag, through both ways rows leave the gateway. A
+// kind that becomes per-record there fails here until the gateway learns it.
+describe('the gateway agrees with readableRow', () => {
+  // the string "true" is left out on purpose: the policy's text comparison
+  // shares it and so does the gateway, while readableRow is stricter
+  const FLAGS: [string, unknown][] = [
+    ['absent', undefined],
+    ['null', null],
+    ['true', true],
+    ['false', false],
+    ['text-false', 'false'],
+    ['one', 1],
+    ['yes', 'yes'],
+  ]
+
+  it('on every kind: a peer’s row reaches an agent exactly when readableRow lets the owner read it', async () => {
+    const rows: Row[] = []
+    const readable: string[] = []
+    for (const kind of new Set([...SYNC_KINDS, ...Object.keys(SHARED_BY_DEFAULT)])) {
+      for (const [label, shared] of FLAGS) {
+        const data: Record<string, unknown> = { kind, id: `${kind}-${label}` }
+        if (shared !== undefined) data.shared = shared
+        rows.push(row(PEER, data))
+        if (readableRow(data, PEER, OWNER)) readable.push(String(data.id))
+      }
+    }
+    const { call } = gateway(rows)
+    const listed = (await call({ action: 'list', limit: 1000 })).json.posts as { id: string }[]
+    expect(idsOf(listed).sort()).toEqual([...readable].sort())
+    const echoed = (await call({ action: 'sync', posts: [] })).json.posts.items as { id: string }[]
+    expect(idsOf(echoed).sort()).toEqual([...readable].sort())
   })
 })
