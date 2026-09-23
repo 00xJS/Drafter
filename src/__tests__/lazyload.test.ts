@@ -161,6 +161,8 @@ const LAZY_ONLY = [
   component('PersonFace'),
   resolve(SRC, 'markdown.ts'),
   resolve(SRC, 'photo.ts'),
+  // …and the task editor's and the notes pad's pictures, saved through it
+  resolve(SRC, 'picture.ts'),
   // Find address, and the lookup behind it: the place editor's and the rhythm sheet's
   component('AddressFinder'),
   resolve(SRC, 'geocode.ts'),

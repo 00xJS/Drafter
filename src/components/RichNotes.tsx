@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
-import { imageFiles, mediaURL, saveMedia } from '../media'
+import { imageFiles, mediaURL } from '../media'
+import { savePicture } from '../picture'
 import { openExternal } from '../native'
 import { sanitizeHtml, wordCountHtml } from '../richtext'
 import { Icon } from './Icon'
@@ -220,7 +221,8 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     if (list.length === 0) return
     box.current?.focus()
     for (const file of list) {
-      const id = await saveMedia(file)
+      // at the size the app keeps a picture, not the camera's full photo
+      const id = await savePicture(file)
       const url = await mediaURL(id)
       insertHtml(`<p><img data-media="${id}" src="${url ?? ''}" alt="${file.name.replace(/"/g, '')}"></p>`)
     }
