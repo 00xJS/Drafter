@@ -28,6 +28,7 @@
 // same push and email as the digest, at most every twelve hours.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
+import { isMineTask } from '../../shared/domain.mts'
 import { hasDueTime } from '../../shared/due.mts'
 import { entriesBetween, journalLines, peopleNameMap } from '../../shared/journal.mts'
 import { seenTasks } from '../../shared/people.mts'
@@ -503,8 +504,8 @@ async function digestRun(now, run) {
       const patch = {}
       let liveSubs = subs
 
-      const applySend = async (payload) => {
-        const { gone, failed, updated } = await sendToAll(liveSubs, payload)
+      const applySend = async (payload, to = liveSubs) => {
+        const { gone, failed, updated } = await sendToAll(to, payload)
         if (gone.length) liveSubs = liveSubs.filter(s => !gone.includes(s.endpoint))
         if (updated?.length) {
           const byEp = new Map(updated.map(x => [x.endpoint, x]))
@@ -547,13 +548,18 @@ async function digestRun(now, run) {
       //    delayed or repeated invocation neither duplicates nor skips nudges).
       //    Only a time comes due: a day with no time is due all of it, is not
       //    "due now" at the 00:00 it is stored at, and the morning digest lists
-      //    it (shared/due.mts, read in the account's zone).
+      //    it (shared/due.mts, read in the account's zone). Only the person doing
+      //    it is nudged (isMineTask), as on the phones. And only in a browser:
+      //    the iOS app keeps its own task reminders with push on — 9am for a day
+      //    with no time (src/reminders.ts) — so its APNs entries never get a
+      //    "Due now" here, which would be the same task ringing twice.
       if (liveSubs.length && pushConfigured()) {
+        const browsers = () => liveSubs.filter(s => s?.type !== 'apns')
         const lastCheck = Date.parse(u.last_due_check ?? '')
         const from = Math.max(Number.isFinite(lastCheck) ? lastCheck : now.getTime() - HOUR, now.getTime() - MAX_NUDGE_WINDOW)
         // rows of every kind, read here for a task's fields; soonest first
-        const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (items)
-          .filter(t => t.kind === 'task' && !t.deletedAt && OPEN.includes(t.status) && t.dueAt && hasDueTime(t.dueAt, tz))
+        const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (browsers().length ? items : [])
+          .filter(t => t.kind === 'task' && !t.deletedAt && OPEN.includes(t.status) && t.dueAt && isMineTask(t, u.user_id) && hasDueTime(t.dueAt, tz))
           .map(t => ({ t, at: Date.parse(t.dueAt) }))
           .filter(({ at }) => Number.isFinite(at) && at <= now.getTime() && at > from)
           .sort((a, b) => a.at - b.at)
@@ -566,9 +572,10 @@ async function digestRun(now, run) {
         let n = 0
         while (n < due.length && (n < MAX_NUDGES || due[n].at === due[n - 1].at)) {
           const { t } = due[n++]
-          const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 })
+          const to = browsers()
+          const { failed } = await applySend({ title: `Due now: ${t.title || 'Untitled task'}`, body: t.description ? t.description.slice(0, 120) : 'Open Drafter for the details.', tag: `due-${t.id}`, url: `${site || ''}/?task=${encodeURIComponent(t.id)}`, badge: 1 }, to)
           if (failed.length) failures.push(`nudge ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
-          sent += Math.max(0, liveSubs.length - failed.length)
+          sent += Math.max(0, to.length - failed.length)
         }
         patch.last_due_check = n < due.length ? new Date(due[n - 1].at).toISOString() : now.toISOString()
       }

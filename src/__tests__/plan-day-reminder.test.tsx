@@ -257,8 +257,11 @@ describe('Plan your day: when iOS won’t let it through', () => {
 describe('Plan your day: in the shell and in Settings → Reminders', () => {
   it('the shell sets it with the rest, even with the local reminders off, and asks iOS once, never over the lock', () => {
     const shell = source('components/planner/useNativeShell.ts')
-    // with the calendar's own events, which ring through the same set
-    expect(shell).toMatch(/deviceReminders\(store, new Date\(\), \{ local, skipTaskDue, generic: genericRemindersEnabled\(\), planDay, events: store\.events, myId \}\)/)
+    // with the calendar's own events, which ring through the same set, and
+    // the tasks' own due rows whether or not server push is on for this phone:
+    // the server's "Due now" nudges go to browsers, never to an iPhone
+    expect(shell).toMatch(/deviceReminders\(store, new Date\(\), \{ local, generic: genericRemindersEnabled\(\), planDay, events: store\.events, myId \}\)/)
+    expect(shell).not.toMatch(/skipTaskDue|fetchPushInfo/)
     expect(shell).toMatch(/if \(!local && !planDay\.on\) return/)
     expect(shell).not.toMatch(/!localRemindersEnabled\(\)\) return/)
     expect(shell).toMatch(/if \(planDay\.on && !isAppLockShowing\(\)\) await requestLocalNotificationPermission\(\)/)

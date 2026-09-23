@@ -195,13 +195,12 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
       setThisEndpoint(await currentEndpoint())
     })
   // this phone's own reminders are one set, replaced whole (deviceReminders),
-  // so every switch below schedules all of it as it now stands
-  const serverPushHere = !!(thisEndpoint && push?.subscriptions?.includes(thisEndpoint))
+  // so every switch below schedules all of it as it now stands — server push
+  // or not: its "Due now" nudges go to browsers only, never to this iPhone
   const reschedule = (over: { local?: boolean; generic?: boolean; planDay?: PlanDayPref } = {}) =>
     scheduleLocalReminders(
       deviceReminders(store, new Date(), {
         local: over.local ?? localOn,
-        skipTaskDue: serverPushHere,
         generic: over.generic ?? genericOn,
         planDay: over.planDay ?? planDay,
         events: store.events,
@@ -242,7 +241,9 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
                     ? 'Not supported in this browser (on iPhone, install the app to the Home Screen first).'
                     : push.subscriptions.length > 0
                       ? `On for ${push.subscriptions.length} other device${push.subscriptions.length === 1 ? '' : 's'} — turn it on here too.`
-                      : 'A morning digest plus a nudge when timed tasks come due.'}
+                      : isNative()
+                        ? 'A morning digest. Your due tasks are reminded by this iPhone itself, below.'
+                        : 'A morning digest plus a nudge when your timed tasks come due.'}
                 </small>
               </>
             )}
@@ -297,9 +298,9 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
         <>
           <h4>On this iPhone</h4>
           <p className="field-hint">
-            {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
-              ? 'Server push is on for this phone — local “Due now” alerts are off so you are not nudged twice. Your events, occasion reminders (birthdays) and place nudges still fire here.'
-              : 'A notification at each task’s due time, at the start of each of your events, on the morning of a birthday or anniversary, and when a place you set a rhythm for is well overdue. The phone fires these itself. Turn on server push above to use Apple’s delivery instead for due tasks.'}
+            A notification when each task you are doing comes due (9am on a day with no time), at the start of each of your events, on the morning of a birthday or
+            anniversary, and when a place you set a rhythm for is well overdue. The phone fires these itself, with push on or off: push brings the morning digest, never a
+            second “Due now”.
           </p>
           <p className="sync-line">
             <label className="cal-source mirror-row">
@@ -324,11 +325,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
                   }
                 }}
               />
-              <span className="cal-source-name">
-                {thisEndpoint && push?.subscriptions?.includes(thisEndpoint)
-                  ? 'Local event and occasion reminders (due tasks via push)'
-                  : 'Remind me on this iPhone'}
-              </span>
+              <span className="cal-source-name">Remind me on this iPhone</span>
             </label>
           </p>
           {localOn && (
@@ -383,7 +380,7 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
       ) : (
         <>
           <h4>While the app is open</h4>
-          <p className="field-hint">Browser notifications on this device when a task's due time arrives, and as each of your own events starts (9am on the first day of an all-day one; not work days, a household member's events or a subscribed calendar's), unless it is already over.</p>
+          <p className="field-hint">Browser notifications on this device when a task you are doing comes due (9am on a day with no time), and as each of your own events starts (9am on the first day of an all-day one; not work days, a household member's events or a subscribed calendar's), unless it is already over.</p>
           <p>
             {notif === 'granted'
               ? 'Notifications are on.'

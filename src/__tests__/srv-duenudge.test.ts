@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The server's "Due now" nudges: step 2 of each account's hourly run in
-// netlify/functions/digest.mjs. Only a time comes due: a task with a date and
-// no time is stored at local midnight and is due all day, and at 00:00 it was
-// pushed as "Due now". And the watermark that keeps a nudge from going twice
-// or not at all never passes one that was not sent.
+// netlify/functions/digest.mjs. Three rules, and the watermark that keeps a
+// nudge from going twice or not at all:
+//
+// - Only a time comes due. A task with a date and no time is stored at local
+//   midnight and is due all day; at 00:00 it was pushed as "Due now".
+// - Only to a browser. The iOS app keeps its own task reminders with push on
+//   (9am for a day with no time), so its APNs entry never hears one here.
+// - Only to the person doing the task, by the rule the phones use (isMineTask).
 //
 // Push and the model are stubbed at their modules; the database is a fake
 // that keeps what the run writes, so one run sees the last one's watermark.
@@ -25,12 +29,14 @@ import digestFunction from '../../netlify/functions/digest.mjs'
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
 const OWNER = 'a1b2c3d4-0000-4000-8000-0000000000aa'
+const PEER = 'e5f6a7b8-0000-4000-8000-0000000000bb'
 const STAMP = '2026-09-01T00:00:00.000Z'
 const ZONE = 'America/Phoenix'
 const runDigest = digestFunction as () => Promise<Response>
 
-/** A browser's subscription. */
+/** A browser's subscription, and the iOS app's: an APNs device token. */
 const browser = (who: string) => ({ endpoint: `https://push.example.test/${who}`, keys: { p256dh: 'p', auth: 'a' } })
+const iphone = (who: string) => ({ endpoint: `apns:${who}0123456789abcdef0123456789abcdef`, type: 'apns', token: `${who}0123456789abcdef0123456789abcdef` })
 
 type Row = { user_id: string | null; data: Record<string, unknown> }
 let settings: Record<string, any>[]
@@ -122,6 +128,47 @@ describe('a day with no time is not "due now"', () => {
     rows = [task(OWNER, 'Water the tomatoes', '2026-09-23T00:00:00.000Z')]
     await runAt('2026-09-23T00:30:00.000Z')
     expect(titles()).toEqual(['Water the tomatoes'])
+  })
+})
+
+describe('"Due now" goes to a browser, never to the iPhone app', () => {
+  it('nudges only the browser subscriptions an account has', async () => {
+    settings = [account(OWNER, [iphone('a'), browser('joe')], { last_due_check: '2026-09-23T15:00:00.000Z' })]
+    rows = [task(OWNER, 'Call the vet', '2026-09-23T15:15:00.000Z')]
+    await runAt('2026-09-23T15:30:00.000Z')
+    expect(nudges()).toEqual([{ to: ['https://push.example.test/joe'], title: 'Due now: Call the vet' }])
+  })
+
+  it('sends an account with only the iPhone app none, and keeps its watermark moving', async () => {
+    settings = [account(OWNER, [iphone('a')], { last_due_check: '2026-09-23T15:00:00.000Z' })]
+    rows = [task(OWNER, 'Call the vet', '2026-09-23T15:15:00.000Z')]
+    await runAt('2026-09-23T15:30:00.000Z')
+    expect(nudges()).toEqual([])
+    // a browser added later starts from here, not with the last six hours at once
+    expect(watermark(OWNER)).toBe('2026-09-23T15:30:00.000Z')
+  })
+})
+
+describe('"Due now" goes to the person doing the task', () => {
+  it('its assignee, or whoever filed it when nobody is', async () => {
+    households = [
+      { household_id: 'home', user_id: OWNER },
+      { household_id: 'home', user_id: PEER },
+    ]
+    settings = [
+      account(OWNER, [browser('joe')], { last_due_check: '2026-09-23T15:00:00.000Z' }),
+      account(PEER, [browser('maria')], { last_due_check: '2026-09-23T15:00:00.000Z' }),
+    ]
+    rows = [
+      task(OWNER, 'Fix the fence', '2026-09-23T15:05:00.000Z', { assigneeId: PEER }),
+      task(OWNER, 'Clear the gutter', '2026-09-23T15:10:00.000Z'),
+      task(PEER, 'Paint the shed', '2026-09-23T15:15:00.000Z'),
+      task(PEER, 'Mow the lawn', '2026-09-23T15:20:00.000Z', { assigneeId: OWNER }),
+    ]
+    await runAt('2026-09-23T15:30:00.000Z')
+    const to = (who: string) => nudges().filter(p => p.to.includes(`https://push.example.test/${who}`)).map(p => p.title.slice('Due now: '.length))
+    expect(to('joe')).toEqual(['Clear the gutter', 'Mow the lawn'])
+    expect(to('maria')).toEqual(['Fix the fence', 'Paint the shed'])
   })
 })
 
